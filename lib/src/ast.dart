@@ -17,7 +17,7 @@ sealed class Statement extends Node {
 class FunctionDeclaration extends Statement {
   const FunctionDeclaration(this.name, this.parameters, this.returnType,
       this.body, this.expressionBody, super.span,
-      {this.isAsync = false, this.annotations = const []});
+      {this.isAsync = false, this.annotations = const [], this.generator = ''});
   final String name;
   final List<Parameter> parameters;
   final String? returnType;
@@ -25,6 +25,9 @@ class FunctionDeclaration extends Statement {
   final Expression? expressionBody;
   final bool isAsync;
   final List<String> annotations;
+
+  /// Empty, `sync`, or `async`. A non-empty value means a generator.
+  final String generator;
 }
 
 class Parameter extends Node {
@@ -36,16 +39,28 @@ class Parameter extends Node {
   final Expression? defaultValue;
 }
 
-enum BindingMode { inferred, mutable, constant, shadow, shadowMutable }
+enum BindingMode {
+  inferred,
+  mutable,
+  constant,
+  shadow,
+  shadowMutable,
+  lateFinal,
+  lateMutable
+}
 
 class Binding extends Statement {
   const Binding(
-      this.name, this.mode, this.type, this.operator, this.value, super.span);
+      this.name, this.mode, this.type, this.operator, this.value, super.span,
+      {this.open = false});
   final String name;
   final BindingMode mode;
   final String? type;
   final String operator;
   final Expression value;
+
+  /// A `late` binding that has no initializer yet.
+  final bool open;
 }
 
 class IfStatement extends Statement {
@@ -55,10 +70,12 @@ class IfStatement extends Statement {
 }
 
 class ForStatement extends Statement {
-  const ForStatement(this.name, this.iterable, this.body, super.span);
+  const ForStatement(this.name, this.iterable, this.body, super.span,
+      {this.awaiting = false});
   final String name;
   final Expression iterable;
   final List<Statement> body;
+  final bool awaiting;
 }
 
 class ReturnStatement extends Statement {
@@ -347,6 +364,74 @@ class MatchStatement extends Statement {
   const MatchStatement(this.value, this.arms, super.span);
   final Expression value;
   final List<MatchArm> arms;
+}
+
+class SpreadElement extends Expression {
+  const SpreadElement(this.operand, this.nullAware, super.span);
+  final Expression operand;
+  final bool nullAware;
+}
+
+class MapComprehension extends Expression {
+  const MapComprehension(this.condition, this.name, this.iterable, this.thenMap,
+      this.elseMap, super.span);
+  final Expression? condition;
+  final String? name;
+  final Expression? iterable;
+  final MapExpression thenMap;
+  final MapExpression? elseMap;
+}
+
+class IfExpression extends Expression {
+  const IfExpression(
+      this.condition, this.thenValue, this.elseValue, super.span);
+  final Expression condition, thenValue, elseValue;
+}
+
+class MatchExprArm extends Node {
+  const MatchExprArm(this.pattern, this.result, super.span, {this.guard});
+  final Pattern pattern;
+  final Expression result;
+  final Expression? guard;
+}
+
+class MatchExpression extends Expression {
+  const MatchExpression(this.value, this.arms, super.span);
+  final Expression value;
+  final List<MatchExprArm> arms;
+}
+
+class TryExpression extends Expression {
+  const TryExpression(this.operand, this.fallback, super.span);
+  final Expression operand, fallback;
+}
+
+class TryStatement extends Statement {
+  const TryStatement(this.body, this.catches, this.finallyBody, super.span);
+  final List<Statement> body, finallyBody;
+  final List<CatchClause> catches;
+}
+
+class CatchClause extends Node {
+  const CatchClause(this.name, this.type, this.trace, this.body, super.span);
+  final String name;
+  final String? type, trace;
+  final List<Statement> body;
+}
+
+class ThrowStatement extends Statement {
+  const ThrowStatement(this.value, super.span);
+  final Expression value;
+}
+
+class RethrowStatement extends Statement {
+  const RethrowStatement(super.span);
+}
+
+class YieldStatement extends Statement {
+  const YieldStatement(this.value, this.star, super.span);
+  final Expression value;
+  final bool star;
 }
 
 class DestructureStatement extends Statement {

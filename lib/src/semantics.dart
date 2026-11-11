@@ -11,10 +11,12 @@ class Symbol {
       this.classDeclaration,
       this.classCase,
       this.parameterTypes = const [],
-      this.readonly = false});
+      this.readonly = false,
+      this.late = false,
+      this.lateOpen = false});
   final String name, dartName;
   String type;
-  final bool mutable, constant;
+  final bool mutable, constant, late, lateOpen;
   final ConstValue? constantValue;
   final overloads = <FunctionDeclaration>[];
   final ClassDeclaration? classDeclaration;
@@ -50,6 +52,8 @@ class SemanticModel {
   final constants = <Expression, ConstValue>{};
   final imports = <ImportDeclaration>[];
   final warnings = <CompilerException>[];
+  final enumNames = <String>{};
+  final traces = <CatchClause, Symbol>{};
   final wrapAs = <Expression, String>{};
   final captures = <CaptureExpression, List<(Symbol outer, Symbol copy)>>{};
   final shapes = <Node, List<String>>{};
@@ -77,7 +81,9 @@ class Analyzer {
           bool constant = false,
           ConstValue? constantValue,
           FunctionDeclaration? function,
-          bool readonly = false}) =>
+          bool readonly = false,
+          bool late = false,
+          bool lateOpen = false}) =>
       Symbol(
               name,
               name == 'main' && function != null ? 'main' : '_q${_nextName++}',
@@ -86,7 +92,9 @@ class Analyzer {
               constant: constant,
               constantValue: constantValue,
               function: function,
-              readonly: readonly)
+              readonly: readonly,
+              late: late,
+              lateOpen: lateOpen)
           .withFunction(function);
   String? _expected;
   String? _doType;
@@ -169,13 +177,25 @@ class Analyzer {
       [List<FunctionDeclaration>? functions]) {
     final type = statement.returnType ??
         (statement.expressionBody == null
-            ? (statement.isAsync ? 'Future<void>' : 'void')
+            ? (statement.generator == 'sync'
+                ? 'void'
+                : statement.generator == 'async' || statement.isAsync
+                    ? 'void'
+                    : 'void')
             : '<infer>');
-    final effective = statement.isAsync &&
-            statement.returnType != null &&
-            !statement.returnType!.startsWith('Future<')
-        ? 'Future<${statement.returnType}>'
-        : type;
+    final effective = statement.generator == 'sync'
+        ? (statement.returnType == null
+            ? '<infer>'
+            : 'Iterable<${statement.returnType}>')
+        : statement.generator == 'async'
+            ? (statement.returnType == null
+                ? '<infer>'
+                : 'Stream<${statement.returnType}>')
+            : statement.isAsync &&
+                    statement.returnType != null &&
+                    !statement.returnType!.startsWith('Future<')
+                ? 'Future<${statement.returnType}>'
+                : type;
     if (effective != '<infer>') validateType(effective, statement);
     final symbol = create(statement.name, effective, function: statement);
     model.declarations[statement] = symbol;
@@ -201,13 +221,17 @@ class Analyzer {
     }
     final symbol = Symbol(statement.name, statement.name, statement.name,
         classDeclaration: statement);
+    if (statement.kind == 'enum') model.enumNames.add(statement.name);
     _global.symbols[statement.name] = symbol;
     model.declarations[statement] = symbol;
     for (final item in statement.cases) {
       if (_global.lookup(item.name) != null) {
         fail('Duplicate case: ${item.name}', item);
       }
-      final caseSymbol = Symbol(item.name, item.name, statement.name,
+      final dartName = statement.kind == 'enum'
+          ? '${statement.name}.${item.name}'
+          : item.name;
+      final caseSymbol = Symbol(item.name, dartName, statement.name,
           classDeclaration: statement, classCase: item);
       _global.symbols[item.name] = caseSymbol;
       model.declarations[item] = caseSymbol;
@@ -286,7 +310,16 @@ class Analyzer {
       }
       return;
     }
-    if ({'int', 'double', 'num', 'bool', 'String', 'Null'}.contains(type)) {
+    if ({
+      'int',
+      'double',
+      'num',
+      'bool',
+      'String',
+      'Null',
+      'Object',
+      'StackTrace'
+    }.contains(type)) {
       return;
     }
     if (allowVoid && type == 'void') return;
@@ -330,6 +363,12 @@ class Analyzer {
       validateType(type.substring(6, type.length - 1), node, allowVoid: false);
       return;
     }
+    if ((type.startsWith('Iterable<') || type.startsWith('Stream<')) &&
+        type.endsWith('>')) {
+      validateType(type.substring(type.indexOf('<') + 1, type.length - 1), node,
+          allowVoid: false);
+      return;
+    }
     if (type.startsWith('(') && type.contains('->')) return;
     if (type.startsWith('(') && type.endsWith(')')) {
       final inner = type.substring(1, type.length - 1);
@@ -360,11 +399,19 @@ class Analyzer {
     _scope = _Scope(savedScope);
     _function = function;
     final declared = model.declarations[function]!.type;
-    _returnType = function.isAsync &&
-            declared.startsWith('Future<') &&
+    _returnType = function.generator == 'sync' &&
+            declared.startsWith('Iterable<') &&
             declared.endsWith('>')
-        ? declared.substring(7, declared.length - 1)
-        : declared;
+        ? declared.substring(9, declared.length - 1)
+        : function.generator == 'async' &&
+                declared.startsWith('Stream<') &&
+                declared.endsWith('>')
+            ? declared.substring(7, declared.length - 1)
+            : function.isAsync &&
+                    declared.startsWith('Future<') &&
+                    declared.endsWith('>')
+                ? declared.substring(7, declared.length - 1)
+                : declared;
     final parameterNames = <String>[];
     for (final parameter in function.parameters) {
       validateType(parameter.type, parameter, allowVoid: false);
@@ -389,16 +436,24 @@ class Analyzer {
     if (function.expressionBody case final value?) {
       final type = expression(value);
       if (_returnType == '<infer>') {
-        model.declarations[function]!.type =
-            function.isAsync ? 'Future<$type>' : type;
+        model.declarations[function]!.type = function.generator == 'sync'
+            ? 'Iterable<$type>'
+            : function.generator == 'async'
+                ? 'Stream<$type>'
+                : function.isAsync
+                    ? 'Future<$type>'
+                    : type;
       } else if (!compatible(type, _returnType!)) {
         fail('Return type $type is incompatible with $_returnType', value);
       }
     } else {
       statements(function.body!);
-      if (_returnType != 'void' && !returns(function.body!))
+      if (function.generator.isEmpty &&
+          _returnType != 'void' &&
+          !returns(function.body!)) {
         fail(
             'Non-void function must explicitly return on every path', function);
+      }
     }
     _scope = savedScope;
     _function = savedFunction;
@@ -438,6 +493,22 @@ class Analyzer {
             node.type == null) {
           _expected = existing.type;
         }
+        if (node.open) {
+          _expected = savedExpected;
+          if (node.type == null) fail('late binding needs a type', node);
+          validateType(node.type!, node, allowVoid: false);
+          final stored = node.type!.startsWith('readonly ')
+              ? node.type!.substring(9)
+              : node.type!;
+          final symbol = create(node.name, stored,
+              mutable: node.mode == BindingMode.lateMutable,
+              late: true,
+              lateOpen: true,
+              readonly: node.type!.startsWith('readonly '));
+          _scope.symbols[node.name] = symbol;
+          model.declarations[node] = symbol;
+          return;
+        }
         final type = expression(node.value);
         _expected = savedExpected;
         if (type == 'void')
@@ -448,7 +519,7 @@ class Analyzer {
           if (existing.readonly) {
             error('E307', 'A readonly reference cannot be mutated', node);
           }
-          if (!existing.mutable)
+          if (!existing.mutable && !existing.lateOpen)
             fail('Cannot assign immutable binding ${node.name}', node);
           final result = node.operator == '='
               ? type
@@ -491,10 +562,13 @@ class Analyzer {
         }
         final symbol = create(node.name, stored,
             mutable: node.mode == BindingMode.mutable ||
-                node.mode == BindingMode.shadowMutable,
+                node.mode == BindingMode.shadowMutable ||
+                node.mode == BindingMode.lateMutable,
             constant: node.mode == BindingMode.constant,
             constantValue: constantValue,
-            readonly: readonly);
+            readonly: readonly,
+            late: node.mode == BindingMode.lateFinal ||
+                node.mode == BindingMode.lateMutable);
         _scope.symbols[node.name] = symbol;
         model.declarations[node] = symbol;
       case IfStatement():
@@ -504,7 +578,14 @@ class Analyzer {
         statements(node.elseBody, nested: true);
       case ForStatement():
         final type = expression(node.iterable);
-        final element = elementType(type, node.iterable);
+        if (node.awaiting && (_function == null || !_function!.isAsync)) {
+          error('E803', 'await for is only valid inside async', node);
+        }
+        final element = node.awaiting
+            ? (type.startsWith('Stream<') && type.endsWith('>')
+                ? type.substring(7, type.length - 1)
+                : fail('await for requires a Stream', node.iterable))
+            : elementType(type, node.iterable);
         if (_scope.lookup(node.name) != null)
           fail('Loop binding would shadow ${node.name}', node);
         final symbol = create(node.name, element);
@@ -538,7 +619,9 @@ class Analyzer {
         }
       case LabelStatement():
         if (node.statement is! ForStatement &&
-            node.statement is! WhileStatement) {
+            node.statement is! WhileStatement &&
+            node.statement is! RepeatStatement &&
+            node.statement is! CForStatement) {
           fail('A label must be attached to a loop', node);
         }
         _labels.add(node.name);
@@ -557,7 +640,8 @@ class Analyzer {
           statements(arm.body);
           _scope = saved;
         }
-        checkExhaustive(node, matched);
+        checkExhaustive(node, matched, node.arms.map((arm) => arm.pattern),
+            node.arms.map((arm) => arm.guard));
       case DestructureStatement():
         final type = expression(node.value);
         bindPattern(node.pattern, type, declare: true);
@@ -571,7 +655,10 @@ class Analyzer {
         expression(node.expression);
         if (node.expression is! CallExpression &&
             node.expression is! WithExpression &&
-            node.expression is! DoExpression) {
+            node.expression is! DoExpression &&
+            node.expression is! TryExpression &&
+            node.expression is! MatchExpression &&
+            node.expression is! IfExpression) {
           fail('Only calls may be used as expression statements', node);
         }
       case ResultStatement():
@@ -601,6 +688,61 @@ class Analyzer {
         statements(node.body);
         _loopDepth--;
         _scope = savedFor;
+      case TryStatement():
+        statements(node.body, nested: true);
+        for (final clause in node.catches) {
+          final savedCatch = _scope;
+          _scope = _Scope(savedCatch);
+          final caught = clause.type ?? 'Object';
+          validateType(caught, clause);
+          final symbol = create(clause.name, caught);
+          _scope.symbols[clause.name] = symbol;
+          model.declarations[clause] = symbol;
+          if (clause.trace != null) {
+            final trace = create(clause.trace!, 'StackTrace');
+            _scope.symbols[clause.trace!] = trace;
+            model.traces[clause] = trace;
+          }
+          _catchDepth++;
+          statements(clause.body);
+          _catchDepth--;
+          _scope = savedCatch;
+        }
+        if (node.finallyBody.isNotEmpty) {
+          statements(node.finallyBody, nested: true);
+        }
+      case ThrowStatement():
+        if (expression(node.value) == 'void') {
+          fail('throw needs a value', node.value);
+        }
+      case RethrowStatement():
+        if (_catchDepth == 0) {
+          error('E107', 'rethrow is only valid inside catch', node);
+        }
+      case YieldStatement():
+        if (_function == null || _function!.generator.isEmpty) {
+          error('E804', 'yield is only valid inside a generator', node);
+        }
+        final yielded = expression(node.value);
+        if (node.star) {
+          final inner = elementType(yielded, node.value);
+          if (_returnType == '<infer>') {
+            _returnType = inner;
+            model.declarations[_function!]!.type =
+                _function!.generator == 'sync'
+                    ? 'Iterable<$inner>'
+                    : 'Stream<$inner>';
+          } else if (!compatible(inner, _returnType!)) {
+            fail('yield* type $inner is incompatible with $_returnType', node);
+          }
+        } else if (_returnType == '<infer>') {
+          _returnType = yielded;
+          model.declarations[_function!]!.type = _function!.generator == 'sync'
+              ? 'Iterable<$yielded>'
+              : 'Stream<$yielded>';
+        } else if (!compatible(yielded, _returnType!)) {
+          fail('yield type $yielded is incompatible with $_returnType', node);
+        }
       case RepeatStatement():
         if (node.body.isEmpty) fail('repeat needs a body', node);
         _loopDepth++;
@@ -623,6 +765,7 @@ class Analyzer {
 
   final _labels = <String>[];
   var _loopDepth = 0;
+  var _catchDepth = 0;
 
   String elementType(String type, Node node) {
     if (type.startsWith('List<') && type.endsWith('>')) {
@@ -634,7 +777,13 @@ class Analyzer {
     if (type.startsWith('Range<') && type.endsWith('>')) {
       return type.substring(6, type.length - 1);
     }
-    fail('for-in requires a List, Set, or range', node);
+    if (type.startsWith('Iterable<') && type.endsWith('>')) {
+      return type.substring(9, type.length - 1);
+    }
+    if (type.startsWith('Stream<') && type.endsWith('>')) {
+      return type.substring(7, type.length - 1);
+    }
+    fail('for-in requires a List, Set, range, or iterable', node);
   }
 
   void bindPattern(Pattern pattern, String type, {bool declare = false}) {
@@ -825,16 +974,102 @@ class Analyzer {
 
   String mapLiteral(MapExpression node) {
     if (node.keys.isEmpty) fail('Empty maps require a type annotation', node);
-    var key = expression(node.keys.first);
-    var value = expression(node.values.first);
-    for (var i = 1; i < node.keys.length; i++) {
-      final nextKey = expression(node.keys[i]);
-      final nextValue = expression(node.values[i]);
+    String? key;
+    String? value;
+    void unify(String nextKey, String nextValue, Node at) {
+      if (key == null) {
+        key = nextKey;
+        value = nextValue;
+        return;
+      }
       if (nextKey != key || nextValue != value) {
-        fail('Map entries must share key and value types', node.values[i]);
+        fail('Map entries must share key and value types', at);
+      }
+    }
+
+    for (var i = 0; i < node.keys.length; i++) {
+      final entry = node.keys[i];
+      if (entry is SpreadElement) {
+        var spread = expression(entry.operand);
+        if (entry.nullAware) {
+          if (!spread.endsWith('?')) {
+            fail('...? requires a nullable map', entry);
+          }
+          spread = unwrap(spread);
+        }
+        if (!spread.startsWith('Map<') || !spread.endsWith('>')) {
+          fail('A map spread requires a map', entry);
+        }
+        final inner = spread.substring(4, spread.length - 1);
+        final splitAt = inner.indexOf(',');
+        unify(inner.substring(0, splitAt).trim(),
+            inner.substring(splitAt + 1).trim(), entry);
+      } else if (entry is MapComprehension) {
+        final shaped = mapControl(entry);
+        unify(shaped.$1, shaped.$2, entry);
+      } else {
+        unify(expression(entry), expression(node.values[i]), node.values[i]);
       }
     }
     return 'Map<$key, $value>';
+  }
+
+  String mapControlType(MapComprehension node) {
+    final shaped = mapControl(node);
+    return 'Map<${shaped.$1}, ${shaped.$2}>';
+  }
+
+  (String, String) mapControl(MapComprehension node) {
+    if (node.name != null) {
+      final iterable = expression(node.iterable!);
+      final element = elementType(iterable, node.iterable!);
+      if (_scope.lookup(node.name!) != null) {
+        fail('Loop binding would shadow ${node.name}', node);
+      }
+      final symbol = create(node.name!, element);
+      model.declarations[node] = symbol;
+      final saved = _scope;
+      _scope = _Scope(saved);
+      _scope.symbols[node.name!] = symbol;
+      final shaped = mapLiteral(node.thenMap);
+      model.types[node.thenMap] = shaped;
+      _scope = saved;
+      final inner = shaped.substring(4, shaped.length - 1);
+      final splitAt = inner.indexOf(',');
+      return (
+        inner.substring(0, splitAt).trim(),
+        inner.substring(splitAt + 1).trim()
+      );
+    }
+    if (expression(node.condition!) != 'bool') {
+      fail('collection if condition must be bool', node.condition!);
+    }
+    final thenType = mapLiteral(node.thenMap);
+    model.types[node.thenMap] = thenType;
+    if (node.elseMap != null) {
+      final elseType = mapLiteral(node.elseMap!);
+      model.types[node.elseMap!] = elseType;
+      if (elseType != thenType) {
+        fail('Map entries must share key and value types', node);
+      }
+    }
+    final inner = thenType.substring(4, thenType.length - 1);
+    final splitAt = inner.indexOf(',');
+    return (
+      inner.substring(0, splitAt).trim(),
+      inner.substring(splitAt + 1).trim()
+    );
+  }
+
+  String spreadElementType(SpreadElement element) {
+    var type = expression(element.operand);
+    if (element.nullAware) {
+      if (!type.endsWith('?')) {
+        fail('...? requires a nullable collection', element);
+      }
+      type = unwrap(type);
+    }
+    return elementType(type, element);
   }
 
   String setLiteral(SetExpression node) {
@@ -954,6 +1189,11 @@ class Analyzer {
       NullAwareElement() => elementTypeOf(node.value, true),
       CollectionIf() => collectionIfType(node),
       CollectionFor() => collectionForType(node),
+      SpreadElement() => spreadElementType(node),
+      MapComprehension() => mapControlType(node),
+      IfExpression() => ifExpression(node),
+      MatchExpression() => matchExpression(node),
+      TryExpression() => tryExpression(node),
     };
     model.types[node] = type;
     return type;
@@ -1013,6 +1253,7 @@ class Analyzer {
     if (element is NullAwareElement) {
       return elementTypeOf(element.value, true);
     }
+    if (element is SpreadElement) return spreadElementType(element);
     if (element is CollectionIf) return collectionIfType(element);
     if (element is CollectionFor) return collectionForType(element);
     final type = expression(element);
@@ -1233,7 +1474,12 @@ class Analyzer {
         order[target] = i;
         continue;
       }
+      final savedExpected = _expected;
+      if (parameters[target].type != '<infer>') {
+        _expected = parameters[target].type;
+      }
       final type = expression(argument.value);
+      _expected = savedExpected;
       if (!compatible(type, parameters[target].type)) return false;
       order[target] = i;
     }
@@ -1300,7 +1546,12 @@ class Analyzer {
         order[target] = i;
         continue;
       }
+      final savedExpected = _expected;
+      if (parameters[target].type != '<infer>') {
+        _expected = parameters[target].type;
+      }
       final type = expression(argument.value);
+      _expected = savedExpected;
       if (!compatible(type, parameters[target].type)) {
         fail(
             'Argument type $type is incompatible with ${parameters[target].type}',
@@ -1555,23 +1806,30 @@ class Analyzer {
     return false;
   }
 
-  void checkExhaustive(MatchStatement node, String matched) {
+  void checkExhaustive(Node node, String matched, Iterable<Pattern> patterns,
+      Iterable<Expression?> guards,
+      {bool expression = false}) {
+    final declaration = _global.symbols[matched]?.classDeclaration;
+    final finite = declaration != null &&
+        (declaration.kind == 'sealedType' || declaration.kind == 'enum');
     final universe = matched.contains(' | ')
         ? matched.split(' | ').map((part) => part.trim()).toSet()
-        : _global.symbols[matched]?.classDeclaration?.kind == 'sealedType'
-            ? _global.symbols[matched]!.classDeclaration!.cases
-                .map((item) => item.name)
-                .toSet()
+        : finite
+            ? declaration.cases.map((item) => item.name).toSet()
             : null;
     if (universe == null || universe.isEmpty) return;
     final covered = <String>{};
     var closed = false;
-    for (final arm in node.arms) {
+    final guardList = guards.toList();
+    var index = 0;
+    for (final pattern in patterns) {
       if (closed) {
-        error('E313', 'Unreachable match arm', arm.pattern);
+        error('E313', 'Unreachable match arm', pattern);
       }
-      final names = _covered(arm.pattern, universe);
-      if (arm.guard != null) continue;
+      final names = _covered(pattern, universe);
+      final guarded = index < guardList.length && guardList[index] != null;
+      index++;
+      if (guarded) continue;
       if (names == null) {
         covered.addAll(universe);
         closed = true;
@@ -1581,8 +1839,53 @@ class Analyzer {
       }
     }
     if (!covered.containsAll(universe)) {
+      if (expression) {
+        error('E314', 'match expression does not cover every case', node);
+      }
       warn('W001', 'match does not cover every case', node);
     }
+  }
+
+  String ifExpression(IfExpression node) {
+    if (expression(node.condition) != 'bool') {
+      fail('if condition must be bool', node.condition);
+    }
+    final thenType = expression(node.thenValue);
+    final elseType = expression(node.elseValue);
+    return joinTypes(thenType, elseType, node);
+  }
+
+  String matchExpression(MatchExpression node) {
+    final matched = expression(node.value);
+    if (node.arms.isEmpty) fail('match needs at least one arm', node);
+    String? type;
+    for (final arm in node.arms) {
+      final saved = _scope;
+      _scope = _Scope(saved);
+      bindPattern(arm.pattern, matched);
+      if (arm.guard != null && expression(arm.guard!) != 'bool') {
+        fail('when guard must be bool', arm.guard!);
+      }
+      final armType = expression(arm.result);
+      _scope = saved;
+      type = type == null ? armType : joinTypes(type, armType, arm.result);
+    }
+    checkExhaustive(node, matched, node.arms.map((arm) => arm.pattern),
+        node.arms.map((arm) => arm.guard),
+        expression: true);
+    return type!;
+  }
+
+  String tryExpression(TryExpression node) {
+    return joinTypes(expression(node.operand), expression(node.fallback), node);
+  }
+
+  String joinTypes(String left, String right, Node node) {
+    if (left == right) return left;
+    if (numeric(left) && numeric(right)) return 'num';
+    if (left == '$right?') return left;
+    if (right == '$left?') return right;
+    fail('Branches must share a type', node);
   }
 
   Set<String>? _covered(Pattern pattern, Set<String> universe) {

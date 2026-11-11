@@ -251,13 +251,21 @@ unchanged by the map.
 - `test "...":` and `group "...":`. `quds test` runs them. A function whose
   name starts with `test` still runs too.
 - C-style `for var i = 0 while cond step i += 1:` and `repeat:` / `while`.
-  A constant step of zero is `E801`. `continue` runs the step.
+  A constant step of zero is `E801`. A non-constant step of zero throws when
+  the update runs. `continue` runs the step.
+- Spreads `...` and `...?` in lists, sets, maps, and collection blocks.
+  `if` and `for` are collection elements there too. Inside `[]`, a comma that
+  separates list elements sits after the suite, at the list's indentation.
+- `if` expressions, which require `else`, and `match` expressions. A missing
+  expression arm is `E314`.
+- `try` / `catch` / `finally`, `throw`, `rethrow`, and `try expr else fallback`.
+- `late` and `late var`.
+- `enum` declarations, including dot shorthand and exhaustive `match`.
+- `sync*` / `yield` and `async*` / `await for`.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
 
-Still rejected, rather than given an invented meaning: spreads, `if` / `for`
-inside `[]`, `map:`, and `set:`, `await for`, enums, mixins, extensions,
-generators, `try` / `catch`, `late`, `state`, and `computed`. A non-constant
-step of zero is not checked at runtime. Match expressions are not implemented.
-Older diagnostics stay `Q100` and `Q200`. Web numeric behavior has not been
-executed in CI. No claim of full 115-decision conformance is made.
+Still rejected, rather than given an invented meaning: call-site variadic
+spreads, mixins, extensions, `state`, and `computed`. Older diagnostics stay
+`Q100` and `Q200`. Web numeric behavior has not been executed in CI. No claim
+of full 115-decision conformance is made.

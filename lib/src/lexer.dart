@@ -32,6 +32,8 @@ enum TokenKind {
   dot,
   dotDot,
   dotDotLess,
+  spread,
+  spreadQuestion,
   question,
   questionQuestion,
   questionDot,
@@ -81,6 +83,11 @@ class _Scanner {
   final tokens = <Token>[];
   final indents = <int>[0];
   final brackets = <Token>[];
+
+  /// Parentheses hide newlines. Square brackets keep them so a collection
+  /// `if` or `for` can use an indented suite.
+  bool get _insideParen =>
+      brackets.any((token) => token.kind == TokenKind.leftParen);
   int i = 0, line = 1, column = 1;
   bool lineStart = true, hasCode = false;
   static final identifierStart = RegExp(r'^[\p{L}\p{Nl}_]$', unicode: true);
@@ -161,7 +168,7 @@ class _Scanner {
             ch != '\r' &&
             ch != '#' &&
             !at('///') &&
-            brackets.isEmpty) {
+            !_insideParen) {
           if (spaces > indents.last) {
             indents.add(spaces);
             tokens.add(Token(TokenKind.indent, '', here));
@@ -191,7 +198,7 @@ class _Scanner {
         continue;
       }
       if (ch == '\n' || ch == '\r') {
-        if (hasCode && brackets.isEmpty) {
+        if (hasCode && !_insideParen) {
           tokens.add(Token(TokenKind.newline, '', here));
           hasCode = false;
         }
@@ -271,7 +278,23 @@ class _Scanner {
         emit(TokenKind.number, start, sl, sc);
         continue;
       }
+      final four = i + 3 < source.length ? source.substring(i, i + 4) : '';
+      if (four == '...?') {
+        advance();
+        advance();
+        advance();
+        advance();
+        emit(TokenKind.spreadQuestion, start, sl, sc);
+        continue;
+      }
       final triple = i + 2 < source.length ? source.substring(i, i + 3) : '';
+      if (triple == '...') {
+        advance();
+        advance();
+        advance();
+        emit(TokenKind.spread, start, sl, sc);
+        continue;
+      }
       if (triple == '..<') {
         advance();
         advance();

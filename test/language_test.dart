@@ -315,6 +315,101 @@ main():
     await execute(source, 'red\n2\n1\nblue\n');
   });
 
+  test('spreads, enums, try, late, generators, and match expressions execute',
+      () async {
+    await execute('''
+pack(values: List<int>) -> List<int> = values
+enum Color:
+  red
+  green
+count() sync* -> int:
+  yield 1
+  yield 2
+more() async* -> int:
+  yield 1
+  yield 2
+choose(flag: bool) -> int = if flag: 1 else: 2
+pick(color: Color) -> String = match color:
+  red: "red"
+  green: "green"
+shape(flag: bool) -> int:
+  first = [1, 2]
+  extra: List<int>? = null
+  items = [...first, ...?extra, 3, if flag: 4 else: 5, for n in [6]: n]
+  block = [
+    1,
+    if flag:
+      2
+    else:
+      3
+    ,
+    for n in [4]:
+      n
+    ,
+  ]
+  chosen = pack:
+    values:
+      ...first
+      if flag:
+        9
+  flags = set:
+    1
+    ...first
+  ages = map:
+    "a": 1
+    ... map:
+      "b": 2
+  print items.length
+  print block.length
+  print chosen.length
+  print flags.length
+  print ages["b"]
+  return 0
+main() async:
+  print shape(true)
+  print pick(.red)
+  late var saved: int
+  saved = 4
+  print saved
+  print try (1 ~/ 0) else 7
+  try:
+    throw "no"
+  catch error:
+    print error
+  finally:
+    print "done"
+  print choose(true)
+  var total = 0
+  for value in count():
+    total += value
+  await for item in more():
+    total += item
+  print total
+''', '5\n3\n3\n2\n2\n0\nred\n4\n7\nno\ndone\n1\n6\n');
+  });
+
+  test('a non-constant zero step fails when the loop runs', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-step-');
+    try {
+      final output = File('${directory.path}/app.dart')
+        ..writeAsStringSync(compile('''
+step(by: int):
+  for var i = 0 while i < 2 step i += by:
+    i = i
+main():
+  step(0)
+''').dart);
+      final analysis = await Process.run(
+          Platform.resolvedExecutable, ['analyze', output.path]);
+      expect(analysis.exitCode, 0, reason: analysis.stdout.toString());
+      final run = await Process.run(Platform.resolvedExecutable, [output.path]);
+      expect(run.exitCode, isNonZero);
+      expect(run.stderr, contains('A loop step cannot be zero'));
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
+
   test('new diagnostics reject the programs they name', () {
     final rejected = {
       'main():\n  result 1\n': 'E106',
@@ -347,6 +442,18 @@ main():
     Red:
       print "red"
 ''': 'E313',
+      'main():\n  yield 1\n': 'E804',
+      'main():\n  rethrow\n': 'E107',
+      '''
+enum Color:
+  red
+  green
+main():
+  color: Color = .red
+  shown = match color:
+    red: 1
+  print shown
+''': 'E314',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {

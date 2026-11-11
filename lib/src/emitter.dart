@@ -223,7 +223,13 @@ class DartEmitter {
     final parameters = node.parameters
         .map((p) => '${_dartType(p.type)} ${model.declarations[p]!.dartName}')
         .join(', ');
-    final async = node.isAsync ? 'async ' : '';
+    final async = node.generator == 'sync'
+        ? 'sync* '
+        : node.generator == 'async'
+            ? 'async* '
+            : node.isAsync
+                ? 'async '
+                : '';
     final propagate = node.body != null && _containsPropagate(node.body!);
     final doReturn = node.body != null && _containsDoReturn(node.body!);
     if (node.expressionBody case final value?) {
@@ -313,6 +319,11 @@ class DartEmitter {
 
   void emitClass(ClassDeclaration node) {
     _span = node.span;
+    if (node.kind == 'enum') {
+      final values = node.cases.map((item) => item.name).join(', ');
+      line('enum ${node.name} { $values }');
+      return;
+    }
     final sealed = node.kind == 'sealed' || node.kind == 'sealedType';
     final header = sealed ? 'sealed class' : 'class';
     if (node.kind == 'sealedType') {
@@ -380,11 +391,17 @@ class DartEmitter {
               '${model.references[node]!.dartName} ${node.operator} ${expression(node.value)};');
         } else {
           final symbol = model.declarations[node]!;
-          final modifier = symbol.constant
-              ? 'const '
-              : symbol.mutable
-                  ? ''
-                  : 'final ';
+          final modifier = symbol.late
+              ? (symbol.mutable ? 'late ' : 'late final ')
+              : symbol.constant
+                  ? 'const '
+                  : symbol.mutable
+                      ? ''
+                      : 'final ';
+          if (node.open) {
+            line('$modifier${_dartType(symbol.type)} ${symbol.dartName};');
+            return;
+          }
           if (symbol.constant) {
             _constNames.add(symbol.dartName);
             if (_depth == 0) _topLevelConsts.add(symbol.dartName);
@@ -410,7 +427,7 @@ class DartEmitter {
       case CForStatement():
         final init = node.init as Binding;
         final symbol = model.declarations[init]!;
-        final step = node.step == null ? '' : expression(node.step!);
+        final step = node.step == null ? '' : _runtimeStep(node.step!);
         final keyword = symbol.mutable ? '' : 'final ';
         line(
             'for ($keyword${_dartType(symbol.type)} ${symbol.dartName} = ${expression(init.value)}; ${expression(node.condition)}; $step) {');
@@ -418,6 +435,37 @@ class DartEmitter {
         statements(node.body);
         _depth--;
         line('}');
+      case TryStatement():
+        line('try {');
+        _depth++;
+        statements(node.body);
+        _depth--;
+        for (final clause in node.catches) {
+          final caught = model.declarations[clause]!;
+          final trace = model.traces[clause];
+          final names = trace == null
+              ? caught.dartName
+              : '${caught.dartName}, ${trace.dartName}';
+          line(clause.type == null
+              ? '} catch ($names) {'
+              : '} on ${clause.type} catch ($names) {');
+          _depth++;
+          statements(clause.body);
+          _depth--;
+        }
+        if (node.finallyBody.isNotEmpty) {
+          line('} finally {');
+          _depth++;
+          statements(node.finallyBody);
+          _depth--;
+        }
+        line('}');
+      case ThrowStatement():
+        line('throw ${expression(node.value)};');
+      case RethrowStatement():
+        line('rethrow;');
+      case YieldStatement():
+        line('${node.star ? 'yield*' : 'yield'} ${expression(node.value)};');
       case RepeatStatement():
         line('do {');
         _depth++;
@@ -456,7 +504,7 @@ class DartEmitter {
             ? _range(node.iterable as RangeExpression)
             : expression(node.iterable);
         line(
-            'for (final ${_dartType(symbol.type)} ${symbol.dartName} in $iterable) {');
+            '${node.awaiting ? 'await ' : ''}for (final ${_dartType(symbol.type)} ${symbol.dartName} in $iterable) {');
         _depth++;
         statements(node.body);
         _depth--;
@@ -528,7 +576,10 @@ class DartEmitter {
               ? pattern.type
               : 'final ${model.declarations[pattern]!.dartName}',
       BindingPattern() => model.references[pattern]?.classCase != null
-          ? '${model.references[pattern]!.dartName}()'
+          ? (model.enumNames
+                  .contains(model.references[pattern]!.classDeclaration!.name)
+              ? model.references[pattern]!.dartName
+              : '${model.references[pattern]!.dartName}()')
           : 'final ${model.declarations[pattern]!.dartName}',
       LiteralPattern() => expression(pattern.literal),
       ListPattern() => '[${pattern.elements.map(_pattern).join(', ')}]',
@@ -649,6 +700,13 @@ class DartEmitter {
       DotShorthand() => _dot(node),
       AssignExpression() =>
         '${model.references[node]!.dartName} ${node.operator} ${expression(node.value, constantContext: constantContext)}',
+      SpreadElement() =>
+        '${node.nullAware ? '...?' : '...'}${expression(node.operand, constantContext: constantContext)}',
+      IfExpression() => _if(node),
+      MatchExpression() => _match(node),
+      TryExpression() =>
+        '(() { try { return ${expression(node.operand)}; } catch (error) { return ${expression(node.fallback)}; } })()',
+      MapComprehension() => _mapEntry(node, node, 'Object', 'Object'),
       NullAwareElement() => '?(${expression(node.value)})',
       CollectionIf() => _piece(node, 'Object', false),
       CollectionFor() => _piece(node, 'Object', false),
@@ -691,11 +749,70 @@ class DartEmitter {
 
   String _map(MapExpression node) {
     final type = model.types[node]!;
-    final entries = <String>[];
-    for (var i = 0; i < node.keys.length; i++) {
-      entries.add('${expression(node.keys[i])}: ${expression(node.values[i])}');
+    final inner = type.substring(4, type.length - 1);
+    final splitAt = inner.indexOf(',');
+    final keyType = inner.substring(0, splitAt).trim();
+    final valueType = inner.substring(splitAt + 1).trim();
+    return '<$keyType, $valueType>{${_mapEntries(node, keyType, valueType)}}';
+  }
+
+  String _mapEntries(MapExpression node, String keyType, String valueType) => [
+        for (var i = 0; i < node.keys.length; i++)
+          _mapEntry(node.keys[i], node.values[i], keyType, valueType)
+      ].join(', ');
+
+  String _mapEntry(
+      Expression key, Expression value, String keyType, String valueType) {
+    if (key is SpreadElement) {
+      final text = expression(key.operand);
+      return key.nullAware ? '...?$text' : '...$text';
     }
-    return '<${type.substring(4, type.length - 1)}>{${entries.join(', ')}}';
+    if (key is MapComprehension) {
+      if (key.name != null) {
+        final symbol = model.declarations[key]!;
+        return 'for (final ${_dartType(symbol.type)} ${symbol.dartName} in ${expression(key.iterable!)}) ...<$keyType, $valueType>{${_mapEntries(key.thenMap, keyType, valueType)}}';
+      }
+      final tail = key.elseMap == null
+          ? ''
+          : ' else ...<$keyType, $valueType>{${_mapEntries(key.elseMap!, keyType, valueType)}}';
+      return 'if (${expression(key.condition!, opaqueBool: true)}) ...<$keyType, $valueType>{${_mapEntries(key.thenMap, keyType, valueType)}}$tail';
+    }
+    return '${expression(key)}: ${expression(value)}';
+  }
+
+  String _if(IfExpression node) {
+    String chain(Expression branch) {
+      if (branch is IfExpression) {
+        return ' else if (${expression(branch.condition, opaqueBool: true)}) { return ${expression(branch.thenValue)}; }${chain(branch.elseValue)}';
+      }
+      return ' else { return ${expression(branch)}; }';
+    }
+
+    return '(() { if (${expression(node.condition, opaqueBool: true)}) { return ${expression(node.thenValue)}; }${chain(node.elseValue)} })()';
+  }
+
+  String _match(MatchExpression node) {
+    final saved = _matched;
+    _matched = model.types[node.value];
+    if (_matched != null && _matched!.contains(' | ')) _unions.add(_matched!);
+    final arms = node.arms.map((arm) {
+      final guard = arm.guard == null ? '' : ' when ${expression(arm.guard!)}';
+      return 'case ${_pattern(arm.pattern)}$guard: return ${expression(arm.result)};';
+    }).join(' ');
+    _matched = saved;
+    return '(() { switch (${expression(node.value)}) { $arms } })()';
+  }
+
+  String _runtimeStep(Expression step) {
+    if (step is AssignExpression &&
+        (step.operator == '+=' || step.operator == '-=') &&
+        step.value is! Literal) {
+      final target = model.references[step]!.dartName;
+      final temp = '_qs${_temps++}';
+      final op = step.operator == '+=' ? '+=' : '-=';
+      return '(() { final $temp = ${expression(step.value)}; if ($temp == 0) throw StateError(\'A loop step cannot be zero\'); $target $op $temp; })()';
+    }
+    return expression(step);
   }
 
   String _propagate(PropagateExpression node) {
@@ -913,11 +1030,12 @@ class DartEmitter {
   }
 
   String _dot(DotShorthand node) {
+    final type = model.types[node]!;
     if (node.name == 'new') {
-      final type = model.types[node]!;
       final arguments = node.arguments ?? const <Argument>[];
       return '$type(${arguments.map((argument) => '${argument.name}: ${expression(argument.value)}').join(', ')})';
     }
+    if (model.enumNames.contains(type)) return '$type.${node.name}';
     return '${node.name}()';
   }
 
@@ -936,6 +1054,10 @@ class DartEmitter {
       elements.map((element) => _piece(element, type, false)).join(', ');
 
   String _piece(Expression element, String type, bool aware) {
+    if (element is SpreadElement) {
+      final text = expression(element.operand);
+      return element.nullAware ? '...?$text' : '...$text';
+    }
     if (element is NullAwareElement) {
       return '?(${expression(element.value)})';
     }
@@ -959,9 +1081,8 @@ class DartEmitter {
     final element = type.substring(4, type.length - 1);
     final parts = <String>[];
     for (var i = 0; i < node.elements.length; i++) {
-      final text = expression(node.elements[i]);
       final aware = i < node.nullAware.length && node.nullAware[i];
-      parts.add(aware ? '?($text)' : text);
+      parts.add(_piece(node.elements[i], element, aware));
     }
     return '<$element>{${parts.join(', ')}}';
   }

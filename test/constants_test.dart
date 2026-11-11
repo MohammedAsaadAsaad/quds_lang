@@ -663,8 +663,24 @@ List<BinaryExpression> operators(Expression node, String op) {
             CaptureExpression() ||
             WithExpression() ||
             DotShorthand() ||
-            AssignExpression():
+            AssignExpression() ||
+            MapComprehension():
         break;
+      case SpreadElement(:final operand):
+        walk(operand);
+      case TryExpression(:final operand, :final fallback):
+        walk(operand);
+        walk(fallback);
+      case IfExpression(:final condition, :final thenValue, :final elseValue):
+        walk(condition);
+        walk(thenValue);
+        walk(elseValue);
+      case MatchExpression(:final value, :final arms):
+        walk(value);
+        for (final arm in arms) {
+          if (arm.guard != null) walk(arm.guard!);
+          walk(arm.result);
+        }
       case NullAwareElement(:final value):
         walk(value);
       case CollectionIf(

@@ -18,11 +18,9 @@ A program that can be parsed in two ways is a compiler bug or a required rejecti
 
 The language rules above are settled. `MVP_0.md` lists the slice that compiles and runs. These design rules are still rejected instead of being given a meaning:
 
-- Spreads `...` and `...?`, and `if` / `for` elements inside `[]`, `map:`, and `set:`. Collection-element blocks do accept `if` and `for`.
-- `await for`, enums, mixins, extensions, generators, `try` / `catch`, `late`, `state`, and `computed`.
-- A runtime error for a non-constant loop step of zero. A constant step of zero is `E801`.
-- Match expressions. Statement `match` warns `W001` and rejects an unreachable arm with `E313`.
+- Call-site variadic spreads (`sum(...values: int)` and `sum(...items)`). Collection spreads are implemented.
+- Mixins, extensions, `state`, and `computed`.
 - The full `E` / `W` registry. New errors from this slice use their registry codes. Older diagnostics still use `Q100` and `Q200`.
 - Web numeric behavior has not been executed in CI.
 
-`do` / `result`, `readonly`, `capture`, `to` / `to?`, `with` / `with?`, general unions, dot shorthands, null-aware elements, `test` / `group`, collection-element blocks, C-style `for`, and `repeat` / `while` are implemented and covered by `test/language_test.dart`.
+Spreads, collection `if` / `for`, `await for`, enums, generators, `try` / `catch`, `late`, match expressions, and the runtime zero-step check are implemented and covered by `test/language_test.dart`.

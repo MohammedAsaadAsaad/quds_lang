@@ -25,7 +25,7 @@ Program expandMacros(Program program) {
         final macro = macros[note];
         if (macro == null) {
           throw CompilerException(
-              'Q200', 'Unknown macro: $note', statement.span);
+              'E906', 'Unknown macro: $note', statement.span);
         }
         methods.addAll(_expand(macro));
       }
@@ -48,11 +48,11 @@ List<FunctionDeclaration> _expand(ClassDeclaration macro) {
   final define = macro.methods.where((method) => method.name == 'define');
   if (define.length != 1) {
     throw CompilerException(
-        'Q200', 'A macro class needs one define method', macro.span);
+        'E906', 'A macro class needs one define method', macro.span);
   }
   final body = define.single.body;
   if (body == null) {
-    throw CompilerException('Q200',
+    throw CompilerException('E906',
         'define must be a block that calls builder.addMethod', macro.span);
   }
   final added = <FunctionDeclaration>[];
@@ -68,14 +68,14 @@ List<FunctionDeclaration> _expand(ClassDeclaration macro) {
         member.name != 'addMethod' ||
         argument is! Identifier) {
       throw CompilerException(
-          'Q200',
+          'E906',
           'Macros may only call builder.addMethod with a method of the macro class',
           statement.span);
     }
     final method =
         macro.methods.where((item) => item.name == argument.name).toList();
     if (method.length != 1 || method.single.name == 'define') {
-      throw CompilerException('Q200',
+      throw CompilerException('E906',
           'addMethod target is not a method of ${macro.name}', argument.span);
     }
     added.add(method.single);

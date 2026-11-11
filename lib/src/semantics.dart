@@ -61,6 +61,23 @@ class SemanticModel {
   final variadicArguments = <CallExpression, List<int>>{};
   final implicitThis = <Identifier>{};
   final extensions = <ExtensionDeclaration>[];
+  final aliases = <String, String>{};
+
+  String resolve(String type) {
+    var current = type;
+    final seen = <String>{};
+    while (seen.add(current)) {
+      var next = current;
+      for (final entry in aliases.entries) {
+        next = next.replaceAll(
+            RegExp('\\b${RegExp.escape(entry.key)}\\b'), entry.value);
+      }
+      if (next == current) return current;
+      current = next;
+    }
+    return type;
+  }
+
   final wrapAs = <Expression, String>{};
   final captures = <CaptureExpression, List<(Symbol outer, Symbol copy)>>{};
   final shapes = <Node, List<String>>{};
@@ -82,7 +99,7 @@ class Analyzer {
     fail: fail,
   );
   Never fail(String message, Node node) =>
-      throw CompilerException('Q200', message, node.span);
+      throw CompilerException(registryCode(message), message, node.span);
   Symbol create(String name, String type,
           {bool mutable = false,
           bool constant = false,
@@ -125,6 +142,11 @@ class Analyzer {
         Symbol('Ok', 'Ok', 'Result', parameterTypes: const ['*']);
     _global.symbols['Error'] =
         Symbol('Error', 'Error', 'Result', parameterTypes: const ['*']);
+    for (final statement in program.statements) {
+      if (statement is AliasDeclaration) {
+        model.aliases[statement.name] = statement.target;
+      }
+    }
     final functions = <FunctionDeclaration>[];
     final tests = <TestDeclaration>[];
     for (final statement in program.statements) {
@@ -137,6 +159,8 @@ class Analyzer {
           registerClass(statement);
         case ExtensionDeclaration():
           registerExtension(statement);
+        case AliasDeclaration():
+          break;
         case ImportDeclaration():
           registerImport(statement);
         case TestDeclaration():
@@ -163,6 +187,7 @@ class Analyzer {
     for (final statement in program.statements) {
       if (statement is ClassDeclaration) {
         checkShape(statement);
+        checkRequirements(statement);
         for (final method in statement.methods) {
           analyzeMethod(statement, method);
         }
@@ -292,6 +317,31 @@ class Analyzer {
   }
 
   void checkShape(ClassDeclaration type) {
+    if (type.modifiers.contains('singleton')) {
+      for (final field in type.fields) {
+        if (field.initializer == null) {
+          error('E704', 'A singleton field is not initialized', field);
+        }
+      }
+    }
+    final parentName = type.superclass;
+    final parent = parentName == null
+        ? null
+        : _global.symbols[parentName]?.classDeclaration;
+    if (parent != null &&
+        (parent.modifiers.contains('final') || parent.kind == 'final')) {
+      error('E720', 'A final class cannot be extended', type);
+    }
+    if (parent != null && parent.modifiers.contains('base')) {
+      final allowed = type.modifiers.contains('base') ||
+          type.modifiers.contains('final') ||
+          type.modifiers.contains('sealed') ||
+          type.kind == 'sealed';
+      if (!allowed) {
+        error('E720',
+            'A subtype of a base class must be base, final, or sealed', type);
+      }
+    }
     for (final name in type.interfaces) {
       final face = _global.symbols[name]?.classDeclaration;
       if (face == null || face.kind != 'interface') {
@@ -333,6 +383,26 @@ class Analyzer {
     _scope = _Scope(_global);
     _thisType = type.target;
     analyzeFunction(method);
+    _thisType = savedThis;
+    _scope = saved;
+  }
+
+  void checkRequirements(ClassDeclaration type) {
+    if (type.requirements.isEmpty) return;
+    final saved = _scope;
+    final savedThis = _thisType;
+    _scope = _Scope(_global);
+    _thisType = type.name;
+    for (final field in type.fields) {
+      _scope.symbols[field.name] =
+          Symbol(field.name, field.name, model.resolve(field.type));
+    }
+    for (final requirement in type.requirements) {
+      final condition = expression(requirement);
+      if (condition != 'bool') {
+        fail('require condition must be bool', requirement);
+      }
+    }
     _thisType = savedThis;
     _scope = saved;
   }
@@ -380,6 +450,11 @@ class Analyzer {
   }
 
   void validateType(String type, Node node, {bool allowVoid = true}) {
+    final resolved = model.resolve(type);
+    if (resolved != type) {
+      validateType(resolved, node, allowVoid: allowVoid);
+      return;
+    }
     if (type.startsWith('readonly ')) {
       validateType(type.substring(9), node, allowVoid: false);
       return;
@@ -875,6 +950,12 @@ class Analyzer {
       case WatchStatement():
         expression(node.value);
         statements(node.body, nested: true);
+      case RequireStatement():
+        final condition = expression(node.condition);
+        if (condition != 'bool') {
+          fail('require condition must be bool', node.condition);
+        }
+      case AliasDeclaration():
       case ExtensionDeclaration():
       case ClassDeclaration():
       case ImportDeclaration():
@@ -970,6 +1051,8 @@ class Analyzer {
   }
 
   bool compatible(String from, String to) {
+    from = model.resolve(from);
+    to = model.resolve(to);
     if (from == to || from == '*') return true;
     if (to.startsWith('readonly ')) {
       final source = from.startsWith('readonly ') ? from.substring(9) : from;
@@ -1046,6 +1129,12 @@ class Analyzer {
             base.startsWith('Set<') ||
             base.startsWith('Map<'))) {
       return node.nullAware || type.endsWith('?') ? 'int?' : 'int';
+    }
+    final declaration = _global.symbols[base]?.classDeclaration;
+    if (node.name == 'instance' &&
+        declaration != null &&
+        declaration.modifiers.contains('singleton')) {
+      return declaration.name;
     }
     final found = memberType(base, node.name);
     if (found != null) {
@@ -1689,6 +1778,21 @@ class Analyzer {
   }
 
   String constructClass(CallExpression node, ClassDeclaration type) {
+    if (type.modifiers.contains('singleton')) {
+      fail(
+          'Singleton ${type.name} is available as ${type.name}.instance', node);
+    }
+    if (type.modifiers.contains('abstract') || type.kind == 'interface') {
+      error('E700', 'An abstract type cannot be constructed', node);
+    }
+    if (type.kind == 'extensionType') {
+      final field = type.fields.single;
+      applyArguments(
+          node,
+          [Parameter(field.name, model.resolve(field.type), false, field.span)],
+          null);
+      return type.name;
+    }
     final parameters = <Parameter>[];
     for (final field in _fieldsOf(type)) {
       parameters.add(Parameter(field.name, field.type, false, field.span,

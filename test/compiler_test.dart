@@ -87,7 +87,7 @@ main():
     source.writeAsStringSync('main():\n  print unknown\n');
     final bad = await cli(['build', source.path]);
     expect(bad.exitCode, 65);
-    expect(bad.stderr, contains('${source.path}:2:9: Q200'));
+    expect(bad.stderr, contains('${source.path}:2:9: E200'));
     expect(output.readAsStringSync(), 'user file');
     expect((await cli([])).exitCode, 64);
     expect(

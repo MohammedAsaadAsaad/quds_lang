@@ -196,7 +196,9 @@ class ClassDeclaration extends Statement {
       {this.superclass,
       this.mixins = const [],
       this.interfaces = const [],
-      this.onType});
+      this.onType,
+      this.modifiers = const [],
+      this.requirements = const []});
   final String name;
 
   /// `class`, `value`, `sealed`, `sealedType`, `mixin`, `mixinClass`, or `interface`.
@@ -209,6 +211,19 @@ class ClassDeclaration extends Statement {
   final List<String> mixins;
   final List<String> interfaces;
   final String? onType;
+  final List<String> modifiers;
+  final List<Expression> requirements;
+}
+
+class AliasDeclaration extends Statement {
+  const AliasDeclaration(this.name, this.target, super.span);
+  final String name;
+  final String target;
+}
+
+class RequireStatement extends Statement {
+  const RequireStatement(this.condition, super.span);
+  final Expression condition;
 }
 
 class ExtensionDeclaration extends Statement {

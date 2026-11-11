@@ -3,10 +3,10 @@
 This implements Issue #1's first compiler slice. The approved decisions are not
 replaced by this document. Syntax outside this subset is deferred, not removed
 from the language. Design 1.2 in `QUDS_LANGUAGE_SPECIFICATION.md` is the
-language; this file is the compiler that exists today. Its lexer, parser and
-semantic failures still carry category codes Q001, Q100 and Q200 with original
-file, line and column. The design registry is the `E` / `W` codes, and a
-compiler that implements 1.2 uses those instead. Tokens and AST nodes retain
+language; this file is the compiler that exists today. Diagnostics use the
+design registry (`E001`–`E006`, `E100`, `E102`, `E200`, `E300`, `E401`, and
+the other implemented codes) with the original file, line, and column. Tokens
+and AST nodes retain
 source spans; there are no generated-Dart source maps yet.
 
 ## Layout and lexical rules (001, 019, 020, 021, 065)
@@ -32,11 +32,11 @@ Escapes: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\{`, `\}`, `\$`.
 the same lexer/parser; `$` is ordinary Quds text. Literal braces must be escaped.
 Raw strings and comments inside interpolation are deferred.
 
-Numbers support decimal native Dart integer and finite decimal-double literals;
-exponents, radix syntax and digit separators are deferred. Out-of-range positive
-integer literals are rejected instead of silently becoming doubles. Cross-platform
-integer guarantees remain open. Small integers and decimal doubles were executed
-with `dart compile js` and Node.
+Numbers support decimal native Dart integers, finite doubles, hex, exponents,
+and digit separators. A literal outside the signed 64-bit range is `E006`.
+Small integers and decimal doubles match between the VM and JavaScript. An
+integer outside the JavaScript safe range stays exact on the VM, and Dart's
+web compiler rejects it instead of rounding it.
 
 Examples and conformance: `test/lexer_test.dart`, `test/parser_test.dart`, and
 string execution tests in `test/compiler_test.dart`.
@@ -166,7 +166,7 @@ This prints `5`, `false`, and `[10, 5]`. The supported const forms are the
 MVP-0 literals, references to earlier const bindings, unary `+`, `-`, and
 `not`, the arithmetic and comparison operators, `==` and `!=`, `and` and `or`,
 and lists of those values. Calls, general interpolation, mutable bindings, and
-final bindings are not constants. Q200 is reported on the failing subexpression
+final bindings are not constants. `E401` is reported on the failing subexpression
 in the original `.quds` file.
 
 Evaluation uses the host Dart `int` and `double` operators, left to right and
@@ -269,11 +269,22 @@ unchanged by the map.
 - `mixin`, `class ... with`, `interface`, and `extend Type`. A failed mixin
   `on` constraint is `E702`. Two extensions for one member are `E205`.
 - `state`, `computed`, and `watch`. A computed cycle warns `W007`.
+- Transparent aliases `type Name = Type` and extension types `type Name wraps Type`.
+  `require` in the wrapped body rejects a value at construction.
+- Class modifiers `abstract`, `base`, `interface`, `final`, `sealed`, `mixin`,
+  `value`, and `singleton`, in the combinations Dart accepts. Any other
+  combination is `E720`. A final class cannot be extended. A subtype of a
+  `base` class is `base`, `final`, or `sealed`.
+- Diagnostics use the design registry. Lexer errors are `E001`–`E006` and
+  `E102`. A parse failure is `E100`. Semantic failures use codes such as
+  `E200`, `E203`, `E300`, `E401`, and `E500`.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
+A value outside the signed 64-bit range is `E006`. An integer that does not
+fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
+that literal, and `test/language_test.dart` executes both results.
 
-Still rejected, rather than given an invented meaning: extension types,
-`type Name = Type` aliases, and the remaining class modifiers beyond `mixin`
-and `interface`. Older diagnostics stay `Q100` and `Q200`. Integers that do not
-fit in a JavaScript number keep Dart's web limit. No claim of full
-115-decision conformance is made.
+The parity table still includes forms this compiler rejects instead of
+inventing: `property`, `operator`, `private` / `protected`, `init` constructors,
+patterns beyond the current `match`, and library `part` / conditional `use`.
+No claim of full 115-decision conformance is made.

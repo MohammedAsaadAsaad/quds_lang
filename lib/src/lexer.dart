@@ -66,8 +66,8 @@ class Token {
 }
 
 class LexerException extends CompilerException {
-  const LexerException(String message, SourceSpan span)
-      : super('Q001', message, span);
+  const LexerException(String code, String message, SourceSpan span)
+      : super(code, message, span);
 }
 
 class Lexer {
@@ -103,8 +103,8 @@ class _Scanner {
       file: file, offset: utf8.encode(source.substring(0, start)).length);
   SourceSpan get here => SourceSpan(line, column, 0,
       file: file, offset: utf8.encode(source.substring(0, i)).length);
-  Never fail(String message, [SourceSpan? location]) =>
-      throw LexerException(message, location ?? here);
+  Never fail(String code, String message, [SourceSpan? location]) =>
+      throw LexerException(code, message, location ?? here);
   void advance() {
     if (ch == '\r') {
       i++;
@@ -144,7 +144,7 @@ class _Scanner {
         advance();
       }
     }
-    if (depth != 0) fail('Unterminated block comment', location);
+    if (depth != 0) fail('E004', 'Unterminated block comment', location);
   }
 
   List<Token> scan() {
@@ -155,13 +155,14 @@ class _Scanner {
           spaces++;
           advance();
         }
-        if (ch == '\t') fail('Tabs are not permitted for indentation');
+        if (ch == '\t') fail('E002', 'Tabs are not permitted for indentation');
         while (at('/*')) {
           blockComment();
           while (ch == ' ') {
             advance();
           }
-          if (ch == '\t') fail('Tabs are not permitted for indentation');
+          if (ch == '\t')
+            fail('E002', 'Tabs are not permitted for indentation');
         }
         if (end) break;
         if (ch != '\n' &&
@@ -178,7 +179,7 @@ class _Scanner {
               tokens.add(Token(TokenKind.dedent, '', here));
             }
             if (spaces != indents.last)
-              fail('Indentation does not match any outer block');
+              fail('E001', 'Indentation does not match any outer block');
           }
         }
         lineStart = false;
@@ -243,7 +244,7 @@ class _Scanner {
           advance();
           advance();
           if (end || !RegExp(r'[0-9a-fA-F]').hasMatch(ch)) {
-            fail('Invalid hex literal');
+            fail('E006', 'Invalid hex literal');
           }
           while (!end && (RegExp(r'[0-9a-fA-F]').hasMatch(ch) || ch == '_')) {
             advance();
@@ -358,10 +359,13 @@ class _Scanner {
         '~': TokenKind.tilde,
         '@': TokenKind.at,
       };
+      if (ch == ';') fail('E102', 'A semicolon is not allowed');
       final kind = singles[ch];
-      if (kind == null) fail('Unexpected character: $ch');
-      if ((ch == '+' || ch == '-') && at('$ch$ch'))
-        fail('Increment/decrement are not supported; use compound assignment');
+      if (kind == null) fail('E003', 'Unexpected character: $ch');
+      if ((ch == '+' || ch == '-') && at('$ch$ch')) {
+        fail('E003',
+            'Increment/decrement are not supported; use compound assignment');
+      }
       advance();
       emit(kind, start, sl, sc);
       if (kind == TokenKind.leftParen || kind == TokenKind.leftBracket) {
@@ -372,11 +376,12 @@ class _Scanner {
             ? TokenKind.leftParen
             : TokenKind.leftBracket;
         if (brackets.isEmpty || brackets.last.kind != expected)
-          fail('Mismatched closing bracket', tokens.last.span);
+          fail('E100', 'Mismatched closing bracket', tokens.last.span);
         brackets.removeLast();
       }
     }
-    if (brackets.isNotEmpty) fail('Unclosed bracket', brackets.last.span);
+    if (brackets.isNotEmpty)
+      fail('E100', 'Unclosed bracket', brackets.last.span);
     if (hasCode) tokens.add(Token(TokenKind.newline, '', here));
     while (indents.length > 1) {
       indents.removeLast();
@@ -418,18 +423,20 @@ class _Scanner {
             advance();
           }
         }
-        if (depth != 0) fail('Unclosed interpolation', location);
+        if (depth != 0) fail('E004', 'Unclosed interpolation', location);
       } else if (ch == '\\') {
         advance();
         if (end) break;
-        if (!'nrt\\\'"{}\$'.contains(ch)) fail('Unsupported string escape');
+        if (!'nrt\\\'"{}\$'.contains(ch)) {
+          fail('E005', 'Unsupported string escape');
+        }
         advance();
       } else {
         if (!triple && (ch == '\n' || ch == '\r'))
-          fail('Unterminated string', location);
+          fail('E004', 'Unterminated string', location);
         advance();
       }
     }
-    fail('Unterminated string', location);
+    fail('E004', 'Unterminated string', location);
   }
 }

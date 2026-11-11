@@ -369,6 +369,35 @@ main():
 ''', '0\n6\n9\n0\none\nmany\nRex\nAda\nhi!\n4\n012\n6\n');
   });
 
+  test('aliases, extension types, modifiers, and singletons execute', () async {
+    await execute('''
+type UserId = int
+type Meters wraps int:
+  require value > 0
+  next() -> Meters = Meters(value + 1)
+final class Token:
+  text: String required
+base class Animal:
+  name: String required
+base class Dog extends Animal:
+  breed: String required
+singleton class Cache:
+  hits: int = 0
+abstract class Shape:
+  title: String required
+class Box extends Shape:
+  size: int required
+main():
+  id: UserId = 7
+  print id
+  print Meters(2).next()
+  print Token(text: "x").text
+  print Dog(name: "Rex", breed: "mix").name
+  print Cache.instance.hits
+  print Box(title: "s", size: 1).size
+''', '7\n3\nx\nRex\n0\n1\n');
+  });
+
   test('small numbers match between the VM and JavaScript', () async {
     const source = '''
 main():
@@ -387,6 +416,32 @@ main():
       final run = await Process.run('node', [script]);
       expect(run.exitCode, 0, reason: run.stderr.toString());
       expect(run.stdout, '3\n0.5\n16\n');
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
+
+  test('an integer outside the JavaScript safe range is rejected on web',
+      () async {
+    const source = '''
+main():
+  print 9007199254740993
+''';
+    await execute(source, '9007199254740993\n');
+    final directory = Directory.systemTemp.createTempSync('quds-web-int-');
+    try {
+      final dartFile = File('${directory.path}/app.dart')
+        ..writeAsStringSync(compile(source).dart);
+      final compiled = await Process.run(Platform.resolvedExecutable, [
+        'compile',
+        'js',
+        '-o',
+        '${directory.path}/app.js',
+        dartFile.path
+      ]);
+      expect(compiled.exitCode, isNot(0));
+      expect('${compiled.stdout}${compiled.stderr}',
+          contains("can't be represented exactly in JavaScript"));
     } finally {
       directory.deleteSync(recursive: true);
     }
@@ -551,6 +606,21 @@ extend String:
 main():
   print "x".mark()
 ''': 'E205',
+      '''
+final mixin class Broken:
+  name: String required
+main():
+  print "no"
+''': 'E720',
+      '''
+final class Token:
+  text: String required
+class Word extends Token:
+  extra: int required
+main():
+  print "no"
+''': 'E720',
+      'main():\n  print 1;\n': 'E102',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {

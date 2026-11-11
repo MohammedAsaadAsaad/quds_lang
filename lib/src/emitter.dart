@@ -67,7 +67,8 @@ class DartEmitter {
         emitFunction(node);
       } else if (node is! ImportDeclaration &&
           node is! ClassDeclaration &&
-          node is! ExtensionDeclaration) {
+          node is! ExtensionDeclaration &&
+          node is! AliasDeclaration) {
         statement(node);
       }
     }
@@ -331,6 +332,8 @@ class DartEmitter {
   }
 
   String _dartType(String type) {
+    final resolved = model.resolve(type);
+    if (resolved != type) return _dartType(resolved);
     if (type.startsWith('readonly ')) return _dartType(type.substring(9));
     if (type.contains(' | ')) return _unionClass(type);
     if (type.startsWith('(') && type.contains('->')) {
@@ -382,11 +385,53 @@ class DartEmitter {
         _ => false,
       };
 
+  String _header(ClassDeclaration node) {
+    if (node.kind == 'sealedType') return 'sealed class';
+    if (node.kind == 'interface') return 'abstract interface class';
+    if (node.modifiers.isEmpty) {
+      return switch (node.kind) {
+        'mixin' => 'mixin',
+        'mixinClass' => 'mixin class',
+        'sealed' => 'sealed class',
+        _ => 'class',
+      };
+    }
+    final parts = <String>[];
+    if (node.modifiers.contains('abstract')) parts.add('abstract');
+    for (final word in ['base', 'interface', 'final', 'sealed', 'mixin']) {
+      if (node.modifiers.contains(word)) parts.add(word);
+    }
+    if (node.kind != 'mixin') parts.add('class');
+    return parts.join(' ');
+  }
+
   void emitClass(ClassDeclaration node) {
     _span = node.span;
     if (node.kind == 'enum') {
       final values = node.cases.map((item) => item.name).join(', ');
       line('enum ${node.name} { $values }');
+      return;
+    }
+    if (node.kind == 'extensionType') {
+      final field = node.fields.single;
+      final wrapped = _dartType(field.type);
+      if (node.requirements.isEmpty) {
+        line('extension type ${node.name}($wrapped value) {');
+      } else {
+        line('extension type ${node.name}._($wrapped value) {');
+        final checks = node.requirements
+            .map((item) =>
+                'if (!(${expression(item)})) throw ArgumentError(\'require failed\');')
+            .join(' ');
+        line(
+            '  factory ${node.name}($wrapped value) { $checks return ${node.name}._(value); }');
+      }
+      _depth++;
+      for (final method in node.methods) {
+        emitFunction(method);
+      }
+      _depth--;
+      line('}');
       return;
     }
     if (node.kind == 'interface') {
@@ -397,14 +442,7 @@ class DartEmitter {
       line('}');
       return;
     }
-    final sealed = node.kind == 'sealed' || node.kind == 'sealedType';
-    final header = node.kind == 'mixin'
-        ? 'mixin'
-        : node.kind == 'mixinClass'
-            ? 'mixin class'
-            : sealed
-                ? 'sealed class'
-                : 'class';
+    final header = _header(node);
     final tail = [
       if (node.onType != null) 'on ${node.onType}',
       if (node.superclass != null) 'extends ${node.superclass}',
@@ -456,10 +494,21 @@ class DartEmitter {
           return '$required${'this.${field.name}$value'}';
         }(),
     ].join(', ');
-    line('${node.name}({$params});');
+    if (node.modifiers.contains('singleton')) {
+      line('${node.name}._();');
+      line('static ${node.name}? _instance;');
+      line(
+          'static ${node.name} get instance => _instance ??= ${node.name}._();');
+    } else {
+      line('${node.name}({$params});');
+    }
     for (final field in node.fields) {
       final modifier = field.mutable ? '' : 'final ';
-      line('$modifier${field.type} ${field.name};');
+      final initial =
+          node.modifiers.contains('singleton') && field.initializer != null
+              ? ' = ${expression(field.initializer!)}'
+              : '';
+      line('$modifier${_dartType(field.type)} ${field.name}$initial;');
     }
     for (final method in node.methods) {
       if (node.annotations.contains('macro') && method.name == 'define') {
@@ -467,7 +516,7 @@ class DartEmitter {
       }
       emitFunction(method);
     }
-    if (node.kind == 'value') {
+    if (node.kind == 'value' || node.modifiers.contains('value')) {
       final names = node.fields.map((field) => field.name).join(', ');
       final compare = node.fields
           .map((field) => '${field.name} == other.${field.name}')
@@ -702,6 +751,10 @@ class DartEmitter {
         _destructure(node.pattern, temp, 1);
       case FunctionDeclaration():
         emitFunction(node);
+      case RequireStatement():
+        line(
+            'if (!(${expression(node.condition)})) throw ArgumentError(\'require failed\');');
+      case AliasDeclaration():
       case ClassDeclaration():
       case ExtensionDeclaration():
       case ImportDeclaration():
@@ -1015,6 +1068,13 @@ class DartEmitter {
       return '${targetSymbol.name}<$success, $error>($value)';
     }
     if (targetSymbol.classDeclaration != null) {
+      if (targetSymbol.classDeclaration!.kind == 'extensionType') {
+        final value = node.arguments.isEmpty
+            ? ''
+            : expression(node.arguments.first.value,
+                constantContext: constantContext);
+        return '${targetSymbol.name}($value)';
+      }
       final fields = targetSymbol.classCase?.fields ??
           [
             ..._inherited(targetSymbol.classDeclaration!),

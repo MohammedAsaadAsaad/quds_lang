@@ -18,9 +18,10 @@ A program that can be parsed in two ways is a compiler bug or a required rejecti
 
 The language rules above are settled. `MVP_0.md` lists the slice that compiles and runs. These design rules are still rejected instead of being given a meaning:
 
-- Extension types (`type Name wraps Type`) and transparent aliases (`type Name = Type`).
-- Class modifiers other than `mixin`, `mixin class`, and `interface`.
-- The full `E` / `W` registry. New errors from this slice use their registry codes. Older diagnostics still use `Q100` and `Q200`.
-- Integers outside the JavaScript safe range. Small integers and decimal doubles were executed with `dart compile js`.
+- `property` and `operator` declarations.
+- `private`, `protected`, and `readonly` methods.
+- `init` constructors beyond the synthesized field constructor.
+- Patterns beyond the current `match`, and `if value is Pattern`.
+- `part`, `part of`, and conditional `use` / `when`.
 
-Variadic parameters, call spreads, mixins, interfaces, extensions, `state`, `computed`, and `watch` are implemented and covered by `test/language_test.dart`.
+Aliases, extension types, the Dart class modifiers, and the diagnostic registry are implemented. An integer outside the JavaScript safe range stays exact on the VM, and Dart's web compiler rejects it. That behavior is covered by `test/language_test.dart`.

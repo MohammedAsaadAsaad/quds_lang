@@ -197,22 +197,40 @@ class Parser {
     final span = current.span;
     final notes = takeAnnotations();
     if (topLevel && word('use')) return useImport(span);
-    if (word('mixin') && peek().lexeme == 'class') {
-      take();
-      return typeDeclaration(span, notes, forced: 'mixinClass');
-    }
-    if (word('mixin')) return mixinDeclaration(span, notes);
     if (word('extend')) return extensionDeclaration(span, notes);
+    if (word('type') && peek().kind == TokenKind.identifier) {
+      return typeForm(span);
+    }
+    if (word('enum')) return enumDeclaration(span, notes);
+    if (word('sealed') && peek().lexeme == 'type') {
+      return typeDeclaration(span, notes);
+    }
+    final modifiers = <String>[];
+    const modifierWords = {
+      'abstract',
+      'base',
+      'interface',
+      'final',
+      'sealed',
+      'mixin',
+      'value',
+      'singleton',
+    };
+    while (modifierWords.contains(current.lexeme)) {
+      final next = peek().lexeme;
+      if (next != 'class' && !modifierWords.contains(next)) break;
+      modifiers.add(take().lexeme);
+    }
+    if (word('mixin')) {
+      return mixinDeclaration(span, notes, modifiers: modifiers);
+    }
     if (word('interface') && peek().kind == TokenKind.identifier) {
       take();
       return typeDeclaration(span, notes, forced: 'interface');
     }
-    if (word('sealed') ||
-        word('class') ||
-        (word('value') && peek().lexeme == 'class')) {
-      return typeDeclaration(span, notes);
+    if (word('class') || modifiers.isNotEmpty) {
+      return typeDeclaration(span, notes, modifiers: modifiers);
     }
-    if (word('enum')) return enumDeclaration(span, notes);
     if (functionAhead()) return function(notes);
     if (notes.isNotEmpty) {
       fail('Annotation is not attached to a declaration', span);
@@ -232,6 +250,12 @@ class Parser {
     }
     if (word('for')) return forStatement(span);
     if (word('try')) return tryStatement(span);
+    if (word('require')) {
+      take();
+      final condition = expression(bare: true);
+      endLine();
+      return RequireStatement(condition, extent(span));
+    }
     if (word('throw')) {
       take();
       final value = expression(bare: true);
@@ -584,17 +608,44 @@ class Parser {
     return ImportDeclaration(buffer.toString(), prefix, extent(span));
   }
 
+  void _checkModifiers(List<String> modifiers, SourceSpan span) {
+    if (modifiers.toSet().length != modifiers.length) {
+      throw CompilerException('E720', 'Class modifiers are repeated', span);
+    }
+    const extras = {'abstract', 'value', 'singleton'};
+    const core = {'base', 'interface', 'final', 'sealed', 'mixin'};
+    if (modifiers
+        .any((item) => !extras.contains(item) && !core.contains(item))) {
+      throw CompilerException(
+          'E720', 'Class modifiers are not a combination Dart accepts', span);
+    }
+    final chosen = modifiers.where(core.contains).toSet();
+    final legal = chosen.length <= 1 ||
+        chosen.length == 2 &&
+            chosen.contains('base') &&
+            chosen.contains('mixin');
+    if (!legal || chosen.contains('sealed') && modifiers.contains('abstract')) {
+      throw CompilerException(
+          'E720', 'Class modifiers are not a combination Dart accepts', span);
+    }
+  }
+
   ClassDeclaration typeDeclaration(SourceSpan span, List<String> notes,
-      {String? forced}) {
+      {String? forced, List<String> modifiers = const []}) {
+    _checkModifiers(modifiers, span);
     var kind = forced ?? 'class';
     if (forced == 'interface') {
       kind = 'interface';
-    } else if (forced == null && word('sealed')) {
+    } else if (modifiers.isEmpty && word('sealed')) {
       take();
       kind = word('type') ? 'sealedType' : 'sealed';
-    } else if (forced == null && word('value')) {
+    } else if (modifiers.isEmpty && word('value')) {
       take();
       kind = 'value';
+    } else if (forced != 'interface') {
+      if (modifiers.contains('mixin')) kind = 'mixinClass';
+      if (modifiers.contains('value')) kind = 'value';
+      if (modifiers.contains('sealed') && kind != 'value') kind = 'sealed';
     }
     if (kind == 'sealedType') {
       if (!word('type')) fail('Expected type');
@@ -676,10 +727,61 @@ class Parser {
     expect(TokenKind.dedent, 'end of block');
     return ClassDeclaration(
         typeNameToken.lexeme, kind, fields, methods, cases, notes, extent(span),
-        superclass: superclass, mixins: mixins, interfaces: interfaces);
+        superclass: superclass,
+        mixins: mixins,
+        interfaces: interfaces,
+        modifiers: modifiers);
   }
 
-  ClassDeclaration mixinDeclaration(SourceSpan span, List<String> notes) {
+  Statement typeForm(SourceSpan span) {
+    take();
+    final typeNameToken = name();
+    if (word('wraps')) {
+      take();
+      final target = typeName();
+      final methods = <FunctionDeclaration>[];
+      final requirements = <Expression>[];
+      if (at(TokenKind.colon)) {
+        take();
+        endLine();
+        expect(TokenKind.indent, 'indented block');
+        while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+          if (word('require')) {
+            take();
+            requirements.add(expression(bare: true));
+            endLine();
+            continue;
+          }
+          if (!functionAhead())
+            fail('An extension type member must be a function');
+          methods.add(function(const []));
+        }
+        expect(TokenKind.dedent, 'end of extension type');
+      } else {
+        endLine();
+      }
+      return ClassDeclaration(
+          typeNameToken.lexeme,
+          'extensionType',
+          [
+            FieldDeclaration(
+                'value', target, false, true, null, extent(typeNameToken.span))
+          ],
+          methods,
+          const [],
+          const [],
+          extent(span),
+          requirements: requirements);
+    }
+    expect(TokenKind.equals, '=');
+    final target = typeName();
+    endLine();
+    return AliasDeclaration(typeNameToken.lexeme, target, extent(span));
+  }
+
+  ClassDeclaration mixinDeclaration(SourceSpan span, List<String> notes,
+      {List<String> modifiers = const []}) {
+    _checkModifiers([...modifiers, 'mixin'], span);
     take();
     final typeNameToken = name();
     String? onType;
@@ -690,7 +792,7 @@ class Parser {
     final body = typeMembers(const []);
     return ClassDeclaration(typeNameToken.lexeme, 'mixin', body.$1, body.$2,
         const [], notes, extent(span),
-        onType: onType);
+        onType: onType, modifiers: [...modifiers, 'mixin']);
   }
 
   ExtensionDeclaration extensionDeclaration(
@@ -1361,7 +1463,9 @@ class Parser {
         value = int.tryParse(lexeme);
       }
       if (value == null || value is double && !value.isFinite) {
-        fail('Numeric literal is outside the supported native Dart range',
+        throw CompilerException(
+            'E006',
+            'Numeric literal is outside the supported native Dart range',
             token.span);
       }
       return Literal(value, token.span);

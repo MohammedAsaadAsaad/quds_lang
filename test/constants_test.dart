@@ -167,56 +167,56 @@ void main() {
       line: 2,
       column: 17,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'left remainder is reported before the right': (
       source: 'main():\n  const x = (1 % 0) + (2 % 0)\n',
       line: 2,
       column: 14,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'list elements are evaluated left to right': (
       source: 'main():\n  const xs = [1 % 0, 2 % 0]\n',
       line: 2,
       column: 15,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'taken logical branch still divides': (
       source: 'main():\n  const x = false or (1 % 0 == 0)\n',
       line: 2,
       column: 23,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'nested taken branch still divides': (
       source: 'main():\n  const x = false or (true and (1 % 0 == 0))\n',
       line: 2,
       column: 33,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'num zero is an integer remainder': (
       source: 'main():\n  const z: num = 0\n  const x = 4 % z\n',
       line: 3,
       column: 13,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'unreachable const is still evaluated': (
       source: 'main():\n  if false:\n    const x = 1 % 0\n',
       line: 3,
       column: 15,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'call is not a constant': (
       source: 'f() = 1\nmain():\n  const x = f()\n',
       line: 3,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'skipped call is still not a constant': (
       source:
@@ -224,35 +224,35 @@ void main() {
       line: 4,
       column: 23,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'interpolation is not a constant': (
       source: 'main():\n  const s = "hi {1 + 2}"\n',
       line: 2,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'const reference interpolation is not a constant': (
       source: 'main():\n  const name = "Quds"\n  const message = "hi {name}"\n',
       line: 3,
       column: 19,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'mutable binding is not a constant': (
       source: 'main():\n  var a = 1\n  const b = a\n',
       line: 3,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'final binding is not a constant': (
       source: 'main():\n  a = 1\n  const b = a\n',
       line: 3,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'shadow hides an outer constant': (
       source:
@@ -260,42 +260,42 @@ void main() {
       line: 5,
       column: 15,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'loop variable is not a constant': (
       source: 'main():\n  for item in [1]:\n    const x = item\n',
       line: 3,
       column: 15,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'integer literal outside 64 bits': (
       source: 'main():\n  const x = 9223372036854775808\n',
       line: 2,
       column: 13,
       message: 'Numeric literal is outside the supported native Dart range',
-      code: 'Q100',
+      code: 'E006',
     ),
     'top-level remainder keeps the operator span': (
       source: 'const x = 1 % 0\nmain():\n  print x\n',
       line: 1,
       column: 11,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'top-level const cannot see a later const': (
       source: 'const b = a\nconst a = 1\nmain():\n  print b\n',
       line: 1,
       column: 11,
       message: 'Undefined symbol: a',
-      code: 'Q200',
+      code: 'E200',
     ),
     'top-level const cannot call': (
       source: 'id(value: int) = value\nconst x = id(1)\nmain():\n  print x\n',
       line: 2,
       column: 11,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'module scope rejects a mutable binding': (
       source: 'var a = 1\nmain():\n  print a\n',
@@ -303,14 +303,14 @@ void main() {
       column: 1,
       message:
           'Module scope permits functions, classes, imports, and const bindings',
-      code: 'Q200',
+      code: 'E100',
     ),
     'top-level const cannot repeat a function name': (
       source: 'main():\n  print 1\nconst main = 1\n',
       line: 3,
       column: 1,
       message: 'Binding would shadow main; use shadow in an inner scope',
-      code: 'Q200',
+      code: 'E203',
     ),
   };
   for (final entry in errors.entries) {
@@ -395,7 +395,7 @@ main():
           ['run', 'bin/quds.dart', 'build', source.path]);
       expect(built.exitCode, 65, reason: '${built.stdout}\n${built.stderr}');
       expect(built.stderr,
-          contains('${source.path}:2:13: Q200: Integer remainder by zero'));
+          contains('${source.path}:2:13: E401: Integer remainder by zero'));
       expect(output.existsSync(), isFalse);
     } finally {
       directory.deleteSync(recursive: true);

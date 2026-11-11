@@ -623,6 +623,72 @@ main():
         'vm\n');
   });
 
+  test('if let, defer, static members, and const constructors execute',
+      () async {
+    await execute(
+        '''
+class Log:
+  title: String required
+  dispose() async -> void:
+    print "closed {title}"
+mark() async -> void:
+  print "later"
+pick(value: String?) -> String? = value
+class MathUtil:
+  static const pi = 3
+  static twice(n: int) -> int = n * 2
+value class Pair:
+  x: int required
+  y: int required
+  tag: String? = null
+  const init(this.x, this.y, this.tag)
+main() async:
+  print MathUtil.pi
+  print MathUtil.twice(3)
+  pair = Pair(1, 2, null)
+  next = pair.copyWith(y: 5)
+  print next.x
+  print next.y
+  print next.tag == null
+  same = pair.copyWith()
+  print same.x
+  kept = pair.copyWith(tag: "z")
+  print kept.tag
+  cleared = kept.copyWith(tag: null)
+  print cleared.tag == null
+  if let found = pick(null):
+    print found
+  else:
+    print "none"
+  if let found = pick("Ada"):
+    print found
+  else:
+    print "none"
+  using async file = Log(title: "a"):
+    defer print "first"
+    defer print "second"
+    print "body"
+  defer await mark()
+  print "after"
+''',
+        '3\n'
+            '6\n'
+            '1\n'
+            '5\n'
+            'true\n'
+            '1\n'
+            'z\n'
+            'true\n'
+            'none\n'
+            'Ada\n'
+            'body\n'
+            'second\n'
+            'first\n'
+            'closed a\n'
+            'after\n'
+            'later\n');
+  });
+
   test('part lowers to a Dart part directive', () {
     final dart = compile('part "extra.quds"\nmain():\n  print 1\n').dart;
     expect(dart, contains("part 'extra.dart';"));
@@ -750,6 +816,24 @@ part of "b.quds"
 main():
   print 1
 ''': 'E903',
+      '''
+main():
+  found = "outer"
+  name: String? = "Ada"
+  if let found = name:
+    print found
+''': 'E203',
+      '''
+main():
+  defer await ready()
+''': 'E803',
+      '''
+class MathUtil:
+  static const pi = 3
+main():
+  box = MathUtil()
+  print box.pi
+''': 'E300',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {

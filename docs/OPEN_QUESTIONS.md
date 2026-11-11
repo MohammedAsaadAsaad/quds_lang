@@ -18,9 +18,8 @@ A program that can be parsed in two ways is a compiler bug or a required rejecti
 
 The language rules above are settled. `MVP_0.md` lists the slice that compiles and runs. These design rules are still rejected instead of being given a meaning:
 
-- Patterns other than `match` and `if value is Pattern` (map, record, logical, relational, and `if let`).
-- `defer`, and `using` disposal beyond a `dispose()` call.
+- Patterns other than `match`, `if value is Pattern`, and `if let` (map, record, logical, and relational).
 - Cross-file `E206` / `E207`. One compilation is one library, so `private` and `protected` are visible there. `private` still lowers to a Dart `_` name, and `protected` is emitted as a documentation comment.
-- `copyWith` on a value class that declares its own `init`.
+- `copyWith` when an explicit `init` does not initialize every field.
 
-`property`, `operator`, `private` / `protected` / `readonly` methods, `init` and `factory init`, `if value is Pattern`, `part` / `part of`, and constant `when` / `use when` are implemented. `platform` is `"vm"` for `quds build`. A `when` condition that is not a constant boolean is `E902`. A file that contains both `part` and `part of` is `E903`. The unselected `when` branch is not type-checked. Aliases, extension types, the Dart class modifiers, and the diagnostic registry are implemented. An integer outside the JavaScript safe range stays exact on the VM, and Dart's web compiler rejects it. That behavior is covered by `test/language_test.dart`.
+`property`, `operator`, `private` / `protected` / `readonly` methods, `init`, `factory init`, and `const init`, `if value is Pattern`, `if let`, `defer`, `using` / `using async`, `static` members, `part` / `part of`, and constant `when` / `use when` are implemented. `platform` is `"vm"` for `quds build`. A `when` condition that is not a constant boolean is `E902`. A file that contains both `part` and `part of` is `E903`. The unselected `when` branch is not type-checked. Aliases, extension types, the Dart class modifiers, and the diagnostic registry are implemented. An integer outside the JavaScript safe range stays exact on the VM, and Dart's web compiler rejects it. That behavior is covered by `test/language_test.dart`.

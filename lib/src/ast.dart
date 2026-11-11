@@ -22,7 +22,8 @@ class FunctionDeclaration extends Statement {
       this.generator = '',
       this.visibility = '',
       this.isOperator = false,
-      this.readonlyMethod = false});
+      this.readonlyMethod = false,
+      this.isStatic = false});
   final String name;
   final List<Parameter> parameters;
   final String? returnType;
@@ -38,6 +39,7 @@ class FunctionDeclaration extends Statement {
   final String visibility;
   final bool isOperator;
   final bool readonlyMethod;
+  final bool isStatic;
 }
 
 class Parameter extends Node {
@@ -199,7 +201,7 @@ class PartDirective extends Statement {
 class FieldDeclaration extends Node {
   const FieldDeclaration(this.name, this.type, this.mutable, this.requiredField,
       this.initializer, super.span,
-      {this.visibility = ''});
+      {this.visibility = '', this.isStatic = false, this.isConst = false});
   final String name;
   final String type;
   final bool mutable;
@@ -208,6 +210,8 @@ class FieldDeclaration extends Node {
 
   /// Empty, `private`, or `protected`.
   final String visibility;
+  final bool isStatic;
+  final bool isConst;
 }
 
 class PropertyDeclaration extends Node {
@@ -268,6 +272,19 @@ class ClassDeclaration extends Statement {
   final List<Expression> requirements;
   final List<ConstructorDeclaration> constructors;
   final List<PropertyDeclaration> properties;
+}
+
+class IfLetStatement extends Statement {
+  const IfLetStatement(
+      this.name, this.value, this.thenBody, this.elseBody, super.span);
+  final String name;
+  final Expression value;
+  final List<Statement> thenBody, elseBody;
+}
+
+class DeferStatement extends Statement {
+  const DeferStatement(this.expression, super.span);
+  final Expression expression;
 }
 
 class IfCaseStatement extends Statement {

@@ -293,6 +293,12 @@ class Parser {
       return WhenStatement(condition, block(), extent(span));
     }
     if (word('using')) return usingStatement(span);
+    if (word('defer') && !assignments.contains(peek().kind)) {
+      take();
+      final value = expression(bare: true);
+      endLine();
+      return DeferStatement(value, extent(span));
+    }
     if (word('break') || word('continue')) {
       final keyword = take().lexeme;
       String? label;
@@ -800,6 +806,15 @@ class Parser {
         constructors.add(constructorDeclaration());
         continue;
       }
+      var isStatic = false;
+      if (word('static')) {
+        take();
+        isStatic = true;
+        if (word('const') && peek().lexeme != 'init') {
+          fields.add(staticConstant());
+          continue;
+        }
+      }
       var readonlyMethod = false;
       if (word('readonly') &&
           peek().kind == TokenKind.identifier &&
@@ -809,9 +824,12 @@ class Parser {
       }
       if (functionAhead()) {
         methods.add(function(const [],
-            visibility: visibility, readonlyMethod: readonlyMethod));
+            visibility: visibility,
+            readonlyMethod: readonlyMethod,
+            isStatic: isStatic));
         continue;
       }
+      if (isStatic) fail('static applies to a function or a const');
       if (readonlyMethod) fail('readonly applies to a method');
       final mutable = word('var');
       if (mutable) take();
@@ -916,6 +934,12 @@ class Parser {
           factory: factory, constant: constant);
     }
     final parameters = parameterList();
+    if (constant && !at(TokenKind.colon) && !at(TokenKind.equals)) {
+      endLine();
+      return ConstructorDeclaration(
+          ctorName, parameters, null, null, extent(span),
+          factory: factory, constant: true);
+    }
     if (match(TokenKind.arrow)) typeName();
     if (match(TokenKind.equals)) {
       final value = expression(bare: true);
@@ -1170,11 +1194,25 @@ class Parser {
     return BindingPattern(typeOrName.lexeme, typeOrName.span);
   }
 
+  FieldDeclaration staticConstant() {
+    take();
+    final fieldName = name();
+    var type = '<infer>';
+    if (match(TokenKind.colon)) type = typeName();
+    expect(TokenKind.equals, '=');
+    final value = expression(bare: true);
+    endLine();
+    return FieldDeclaration(
+        fieldName.lexeme, type, false, false, value, fieldName.span,
+        isStatic: true, isConst: true);
+  }
+
   FunctionDeclaration function(List<String> notes,
       {String visibility = '',
       bool readonlyMethod = false,
       String? operatorName,
-      SourceSpan? operatorSpan}) {
+      SourceSpan? operatorSpan,
+      bool isStatic = false}) {
     final token = operatorName == null ? name() : null;
     final nameText = operatorName ?? token!.lexeme;
     final span = operatorSpan ?? token!.span;
@@ -1210,7 +1248,8 @@ class Parser {
           generator: generator,
           visibility: visibility,
           isOperator: operatorName != null,
-          readonlyMethod: readonlyMethod);
+          readonlyMethod: readonlyMethod,
+          isStatic: isStatic);
     }
     return FunctionDeclaration(
         nameText, parameters, returnType, block(), null, extent(span),
@@ -1219,7 +1258,8 @@ class Parser {
         generator: generator,
         visibility: visibility,
         isOperator: operatorName != null,
-        readonlyMethod: readonlyMethod);
+        readonlyMethod: readonlyMethod,
+        isStatic: isStatic);
   }
 
   List<Parameter> parameterList() {
@@ -1329,6 +1369,24 @@ class Parser {
 
   Statement ifStatement() {
     final token = take();
+    if (word('let')) {
+      take();
+      final bound = name();
+      expect(TokenKind.equals, '=');
+      final value = expression();
+      final body = block();
+      final otherwise = <Statement>[];
+      if (word('else')) {
+        take();
+        if (word('if')) {
+          otherwise.add(ifStatement());
+        } else {
+          otherwise.addAll(block());
+        }
+      }
+      return IfLetStatement(
+          bound.lexeme, value, body, otherwise, extent(token.span));
+    }
     final condition = expression();
     if (word('is')) {
       take();

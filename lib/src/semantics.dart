@@ -83,6 +83,7 @@ class SemanticModel {
   final shapes = <Node, List<String>>{};
   final skipped = <Statement>{};
   final parts = <PartDirective>[];
+  final asyncDefers = <DeferStatement>{};
 }
 
 class Analyzer {
@@ -300,7 +301,11 @@ class Analyzer {
       model.declarations[item] = caseSymbol;
     }
     for (final field in statement.fields) {
+      if (field.type == '<infer>') continue;
       validateType(field.type, field, allowVoid: false);
+    }
+    for (final field in statement.fields.where((item) => item.isStatic)) {
+      analyzeStaticField(field);
     }
     for (final method in statement.methods) {
       if (statement.annotations.contains('macro') && method.name == 'define') {
@@ -498,7 +503,7 @@ class Analyzer {
           fail('A redirecting constructor must target a constructor', value);
         }
       }
-    } else {
+    } else if (constructor.body != null) {
       statements(constructor.body!);
     }
     _thisType = savedThis;
@@ -532,8 +537,35 @@ class Analyzer {
     _scope = saved;
   }
 
+  void analyzeStaticField(FieldDeclaration field) {
+    final value = field.initializer;
+    if (value == null) fail('A static field needs an initializer', field);
+    final String type;
+    if (field.isConst) {
+      final constant = _constants.evaluate(value);
+      type = switch (constant) {
+        ConstInt() => 'int',
+        ConstDouble() => 'double',
+        ConstBool() => 'bool',
+        ConstString() => 'String',
+        _ => 'Object',
+      };
+    } else {
+      type = expression(value);
+    }
+    final declared = field.type == '<infer>' ? type : field.type;
+    if (field.type != '<infer>') {
+      validateType(field.type, field, allowVoid: false);
+    }
+    if (!compatible(type, declared)) {
+      fail('Cannot initialize $declared with $type', value);
+    }
+    model.declarations[field] = Symbol(field.name, field.name, declared);
+  }
+
   void _installFields(ClassDeclaration type, {bool assignable = false}) {
     for (final field in _fieldsOf(type)) {
+      if (field.isStatic) continue;
       final dart = field.visibility == 'private' && !field.name.startsWith('_')
           ? '_${field.name}'
           : field.name;
@@ -1243,6 +1275,33 @@ class Analyzer {
           break;
         }
         statements(node.body, nested: true);
+      case IfLetStatement():
+        final raw = expression(node.value);
+        if (!raw.endsWith('?') && raw != 'Null') {
+          fail('if let requires a nullable value', node.value);
+        }
+        if (_scope.lookup(node.name) != null) {
+          fail(
+              'Binding would shadow ${node.name}; use shadow in an inner scope',
+              node);
+        }
+        final savedLet = _scope;
+        _scope = _Scope(savedLet);
+        final bound = create(node.name, unwrap(raw));
+        _scope.symbols[node.name] = bound;
+        model.declarations[node] = bound;
+        statements(node.thenBody);
+        _scope = savedLet;
+        if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
+      case DeferStatement():
+        if (_containsAwait(node.expression)) {
+          model.asyncDefers.add(node);
+          if (_function?.isAsync != true) {
+            error(
+                'E803', 'async defer is only valid in an async function', node);
+          }
+        }
+        expression(node.expression);
       case UsingStatement():
         if (node.async && _function?.isAsync != true) {
           error('E803', 'using async is only valid in an async function', node);
@@ -1486,6 +1545,21 @@ class Analyzer {
         declaration.modifiers.contains('singleton')) {
       return declaration.name;
     }
+    final onType = _isTypeReference(node.object);
+    if (declaration != null) {
+      final field =
+          _fieldsOf(declaration).where((item) => item.name == node.name);
+      final method = field.isEmpty ? _method(declaration, node.name) : null;
+      final isStatic =
+          field.isNotEmpty ? field.first.isStatic : method?.isStatic ?? false;
+      if ((field.isNotEmpty || method != null) && isStatic != onType) {
+        fail(
+            isStatic
+                ? 'Static member ${node.name} is used on an instance'
+                : 'Instance member ${node.name} is used on the type',
+            node);
+      }
+    }
     final found = memberType(base, node.name);
     if (found != null) {
       model.references[node] =
@@ -1496,11 +1570,30 @@ class Analyzer {
     fail('No member ${node.name} on $type', node);
   }
 
+  bool _isTypeReference(Expression node) {
+    if (node is! Identifier) return false;
+    final symbol = model.references[node];
+    return symbol?.classDeclaration != null && symbol!.classCase == null;
+  }
+
+  bool _containsAwait(Expression node) => switch (node) {
+        AwaitExpression() => true,
+        UnaryExpression() => _containsAwait(node.operand),
+        BinaryExpression() =>
+          _containsAwait(node.left) || _containsAwait(node.right),
+        CallExpression() => _containsAwait(node.callee) ||
+            node.arguments.any((argument) => _containsAwait(argument.value)),
+        MemberAccess() => _containsAwait(node.object),
+        _ => false,
+      };
+
   String? memberType(String type, String name) {
     final declaration = _global.symbols[type]?.classDeclaration;
     if (declaration != null) {
       for (final field in _fieldsOf(declaration)) {
-        if (field.name == name) return field.type;
+        if (field.name == name) {
+          return model.declarations[field]?.type ?? field.type;
+        }
       }
       for (final property in _propertiesOf(declaration)) {
         if (property.name == name) return property.type;
@@ -2075,6 +2168,13 @@ class Analyzer {
       if (resolved == null) {
         fail('No method ${callee.name} on $objectType', callee);
       }
+      if (resolved.isStatic != _isTypeReference(callee.object)) {
+        fail(
+            resolved.isStatic
+                ? 'Static member ${callee.name} is used on an instance'
+                : 'Instance member ${callee.name} is used on the type',
+            callee);
+      }
       final functionResolved = resolved;
       model.references[callee] = model.declarations[functionResolved]!;
       final returned =
@@ -2119,6 +2219,9 @@ class Analyzer {
         error('E205', 'Two extensions define ${callee.name}', callee);
       }
       if (resolved != null) {
+        if (resolved.isStatic) {
+          fail('Static member ${callee.name} is used on an instance', callee);
+        }
         if (_readonlyMethod && !resolved.readonlyMethod) {
           error('E307', 'A readonly method may only read this', callee);
         }

@@ -285,10 +285,19 @@ unchanged by the map.
 - `init`, `init name`, `factory init`, and initializing formals `this.field`.
   A final field missed by a constructor is `E704`. A `var` field on a value
   class is `E706`. Value classes without their own `init` also get `copyWith`.
-- `if value is Pattern`, `using name = expr`, `part` / `part of`, and
-  constant `when` / `use when`. On the VM, `platform` is `"vm"`. A non-constant
-  `when` is `E902`. Both `part` and `part of` in one file is `E903`. The
-  `when` branch that is not selected is neither type-checked nor emitted.
+- `if value is Pattern`, `if let name = expr`, `using` / `using async`, and
+  `defer`. Deferred calls run at scope exit, last in first out, before `using`
+  disposal. An async `defer` outside an async function is `E803`.
+- `static const` and `static` functions. A static member used on an instance
+  is `E300`.
+- `const init` with initializing formals. A value class `copyWith` calls that
+  constructor when it initializes every field. An omitted argument and an
+  explicit `missing` keep the field. An explicit null stores null when the
+  field is nullable.
+- `part` / `part of`, and constant `when` / `use when`. On the VM, `platform`
+  is `"vm"`. A non-constant `when` is `E902`. Both `part` and `part of` in one
+  file is `E903`. The `when` branch that is not selected is neither type-checked
+  nor emitted.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
 A value outside the signed 64-bit range is `E006`. An integer that does not
@@ -296,5 +305,5 @@ fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
 that literal, and `test/language_test.dart` executes both results.
 
 The parity table still includes forms this compiler rejects instead of
-inventing: patterns beyond `match` and `if value is Pattern`, `defer`, and
+inventing: patterns beyond `match`, `if value is Pattern`, and `if let`, and
 cross-file private access. No claim of full 115-decision conformance is made.

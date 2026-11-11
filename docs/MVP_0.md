@@ -202,17 +202,38 @@ than a Quds constant error. Const initializers do not call `_qBool`.
 
 Tests: `test/constants_test.dart` and `test/fixtures/const_eval.quds`.
 
-## Dart output and remaining work (033, 063, 085, 114)
+## Dart output (033, 063)
 
-Emission is deterministic and uses unique Dart names to avoid keyword/internal
-name collisions. The golden fixtures record exact output; integration tests
-analyze and execute it. `quds build` is the only CLI command implemented. Public
-Dart-facing wrappers, imports and dependencies in Quds, arbitrary Dart interop,
-source maps, error recovery and runtime stack remapping remain future work.
-Const constructors and web numeric behavior are not part of this slice.
+Emission is deterministic and uses unique Dart names for top-level functions so
+the MVP-0 golden fixtures stay stable. Classes, cases, and methods keep their
+Quds names. `quds build` still refuses to overwrite a file that does not start
+with the generated header, and it writes a sibling `.dart.map` (Source Map
+Revision 3, one mapping per generated line). The `.dart` text itself is
+unchanged by the map.
 
-QUDS-082–089 advanced conversions/Optional/defaults/overloads/variadics,
-091–092 capture/readonly, and 094–115 are specified by design 1.2 and are not
-implemented by this slice. Classes, maps/sets/records, lambdas, generics beyond
-`List<T>`, patterns, concurrency, macros and tooling beyond build are also deferred.
-No claim of full 115-decision conformance is made.
+## Language slice beyond MVP-0
+
+`test/language_test.dart` compiles, analyzes, and executes this slice:
+
+- Classes, value classes (`==` and `hashCode`), and `sealed type` cases.
+- Local functions, expression lambdas, and function tear-offs.
+- Nullable types, postfix `!`, and `??`.
+- `use dart:math` for `sqrt`, `sin`, `cos`, `min`, `max`, and `pi`. Other
+  `dart:`, `package:`, and `.quds` imports are emitted and do not invent names.
+- `for` over lists, sets, and ranges (`..` and `..<`), `while`, `break`,
+  `continue`, and `label name` on a loop.
+- `map:` and `set:` literals, records, and `(a, b) = record` destructuring.
+- Default arguments, including defaults that read earlier parameters, and
+  compile-time overloads. Identical signatures are still an error.
+- `missing`, `present`, `Ok`, `Error`, and postfix `?` on `Result`.
+- `async` / `await`. An async `main` returns `Future<void>`.
+- `@macro` classes whose `define` body only calls `builder.addMethod`.
+- `quds run`, `analyze`, `test`, `format`, `create`, `add`, `remove`, `get`,
+  `doc`, and `migrate`, in addition to `build`.
+
+Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
+
+Still rejected, rather than given an invented meaning: `do` / `result`,
+`readonly`, `capture`, `to` / `to?`, `with` configuration, general unions, dot
+shorthands, null-aware collection elements, `test` / `group` declarations, and
+full pattern exhaustiveness. No claim of full 115-decision conformance is made.

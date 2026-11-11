@@ -29,6 +29,23 @@ enum TokenKind {
   greater,
   greaterEqual,
   arrow,
+  dot,
+  dotDot,
+  dotDotLess,
+  question,
+  questionQuestion,
+  questionDot,
+  bang,
+  pipe,
+  pipeGreater,
+  amp,
+  caret,
+  tilde,
+  tildeSlash,
+  shiftLeft,
+  shiftRight,
+  unsignedShiftRight,
+  at,
   newline,
   indent,
   dedent,
@@ -161,7 +178,7 @@ class _Scanner {
         advance();
         continue;
       }
-      if (ch == '#' || at('///')) {
+      if (ch == '#' || at('///') || at('//')) {
         while (!end && ch != '\n' && ch != '\r') {
           advance();
         }
@@ -201,18 +218,60 @@ class _Scanner {
         continue;
       }
       if (RegExp(r'[0-9]').hasMatch(ch)) {
-        while (!end && RegExp(r'[0-9]').hasMatch(ch)) {
+        if (ch == '0' &&
+            i + 1 < source.length &&
+            (source[i + 1] == 'x' || source[i + 1] == 'X')) {
+          advance();
+          advance();
+          if (end || !RegExp(r'[0-9a-fA-F]').hasMatch(ch)) {
+            fail('Invalid hex literal');
+          }
+          while (!end && (RegExp(r'[0-9a-fA-F]').hasMatch(ch) || ch == '_')) {
+            advance();
+          }
+          emit(TokenKind.number, start, sl, sc);
+          continue;
+        }
+        while (!end && (RegExp(r'[0-9]').hasMatch(ch) || ch == '_')) {
           advance();
         }
         if (ch == '.' &&
             i + 1 < source.length &&
             RegExp(r'[0-9]').hasMatch(source[i + 1])) {
           advance();
-          while (!end && RegExp(r'[0-9]').hasMatch(ch)) {
+          while (!end && (RegExp(r'[0-9]').hasMatch(ch) || ch == '_')) {
             advance();
           }
         }
+        if (ch == 'e' || ch == 'E') {
+          final next = i + 1 < source.length ? source[i + 1] : '';
+          final sign = next == '+' || next == '-';
+          final digitAt = sign ? i + 2 : i + 1;
+          if (digitAt < source.length &&
+              RegExp(r'[0-9]').hasMatch(source[digitAt])) {
+            advance();
+            if (sign) advance();
+            while (!end && (RegExp(r'[0-9]').hasMatch(ch) || ch == '_')) {
+              advance();
+            }
+          }
+        }
         emit(TokenKind.number, start, sl, sc);
+        continue;
+      }
+      final triple = i + 2 < source.length ? source.substring(i, i + 3) : '';
+      if (triple == '..<') {
+        advance();
+        advance();
+        advance();
+        emit(TokenKind.dotDotLess, start, sl, sc);
+        continue;
+      }
+      if (triple == '>>>') {
+        advance();
+        advance();
+        advance();
+        emit(TokenKind.unsignedShiftRight, start, sl, sc);
         continue;
       }
       const pairs = {
@@ -225,6 +284,13 @@ class _Scanner {
         '!=': TokenKind.bangEqual,
         '<=': TokenKind.lessEqual,
         '>=': TokenKind.greaterEqual,
+        '..': TokenKind.dotDot,
+        '??': TokenKind.questionQuestion,
+        '?.': TokenKind.questionDot,
+        '|>': TokenKind.pipeGreater,
+        '~/': TokenKind.tildeSlash,
+        '<<': TokenKind.shiftLeft,
+        '>>': TokenKind.shiftRight,
       };
       final pair = i + 1 < source.length ? source.substring(i, i + 2) : '';
       if (pairs.containsKey(pair)) {
@@ -248,6 +314,14 @@ class _Scanner {
         '%': TokenKind.percent,
         '<': TokenKind.less,
         '>': TokenKind.greater,
+        '.': TokenKind.dot,
+        '?': TokenKind.question,
+        '!': TokenKind.bang,
+        '|': TokenKind.pipe,
+        '&': TokenKind.amp,
+        '^': TokenKind.caret,
+        '~': TokenKind.tilde,
+        '@': TokenKind.at,
       };
       final kind = singles[ch];
       if (kind == null) fail('Unexpected character: $ch');

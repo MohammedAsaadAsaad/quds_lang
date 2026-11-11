@@ -1,10 +1,55 @@
 import 'dart:io';
+
 import 'package:quds_lang/quds_lang.dart';
 
 void main(List<String> arguments) {
-  if (arguments.length != 2 ||
-      arguments.first != 'build' ||
-      !arguments[1].endsWith('.quds')) {
+  if (arguments.isEmpty) {
+    _usage();
+    return;
+  }
+  switch (arguments.first) {
+    case 'build':
+      _build(arguments);
+    case 'run':
+      _run(arguments);
+    case 'analyze':
+      _analyze(arguments);
+    case 'test':
+      _test(arguments);
+    case 'format':
+      _format(arguments);
+    case 'create':
+      _create(arguments);
+    case 'add':
+      _pub('add', arguments);
+    case 'remove':
+      _pub('remove', arguments);
+    case 'get':
+      _pub('get', arguments);
+    case 'doc':
+      _doc(arguments);
+    case 'migrate':
+      _migrate(arguments);
+    default:
+      _usage();
+  }
+}
+
+void _usage() {
+  stderr.writeln(
+      'Usage: quds <build|run|analyze|test|format|create|add|remove|get|doc|migrate> ...');
+  exitCode = 64;
+}
+
+void _requireQuds(List<String> arguments) {
+  if (arguments.length != 2 || !arguments[1].endsWith('.quds')) {
+    stderr.writeln('Usage: quds ${arguments.first} <input.quds>');
+    exitCode = 64;
+  }
+}
+
+void _build(List<String> arguments) {
+  if (arguments.length != 2 || !arguments[1].endsWith('.quds')) {
     stderr.writeln('Usage: quds build <input.quds>');
     exitCode = 64;
     return;
@@ -24,6 +69,9 @@ void main(List<String> arguments) {
       }
     }
     output.writeAsStringSync(result.dart);
+    if (result.sourceMap != null) {
+      File('${output.path}.map').writeAsStringSync(result.sourceMap!);
+    }
     stdout.writeln('Built ${output.path}');
   } on CompilerException catch (error) {
     stderr.writeln(error);
@@ -32,4 +80,201 @@ void main(List<String> arguments) {
     stderr.writeln(error.message);
     exitCode = 74;
   }
+}
+
+void _run(List<String> arguments) {
+  _requireQuds(arguments);
+  if (exitCode != 0) return;
+  final input = File(arguments[1]);
+  try {
+    final result = compile(input.readAsStringSync(), file: input.path);
+    final directory = Directory.systemTemp.createTempSync('quds-run-');
+    final output = File('${directory.path}/main.dart')
+      ..writeAsStringSync(result.dart);
+    final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
+    stdout.write(run.stdout);
+    stderr.write(run.stderr);
+    exitCode = run.exitCode;
+    directory.deleteSync(recursive: true);
+  } on CompilerException catch (error) {
+    stderr.writeln(error);
+    exitCode = 65;
+  } on FileSystemException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 74;
+  }
+}
+
+void _analyze(List<String> arguments) {
+  _requireQuds(arguments);
+  if (exitCode != 0) return;
+  final input = File(arguments[1]);
+  try {
+    final result = compile(input.readAsStringSync(), file: input.path);
+    final directory = Directory.systemTemp.createTempSync('quds-analyze-');
+    final output = File('${directory.path}/main.dart')
+      ..writeAsStringSync(result.dart);
+    final analysis =
+        Process.runSync(Platform.resolvedExecutable, ['analyze', output.path]);
+    stdout.write(analysis.stdout);
+    stderr.write(analysis.stderr);
+    exitCode = analysis.exitCode;
+    directory.deleteSync(recursive: true);
+  } on CompilerException catch (error) {
+    stderr.writeln(error);
+    exitCode = 65;
+  } on FileSystemException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 74;
+  }
+}
+
+void _test(List<String> arguments) {
+  _requireQuds(arguments);
+  if (exitCode != 0) return;
+  final input = File(arguments[1]);
+  try {
+    final result = compile(input.readAsStringSync(), file: input.path);
+    final tests = result.program.statements
+        .whereType<FunctionDeclaration>()
+        .where((function) =>
+            function.name == 'test' || function.name.startsWith('test'));
+    var dart = result.dart;
+    if (!result.program.statements
+        .whereType<FunctionDeclaration>()
+        .any((function) => function.name == 'main')) {
+      final calls = tests
+          .map((function) =>
+              '  ${result.semantics.declarations[function]!.dartName}();')
+          .join('\n');
+      dart = '$dart\nvoid main() {\n$calls\n}\n';
+    }
+    final directory = Directory.systemTemp.createTempSync('quds-test-');
+    final output = File('${directory.path}/main.dart')..writeAsStringSync(dart);
+    final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
+    stdout.write(run.stdout);
+    stderr.write(run.stderr);
+    exitCode = run.exitCode;
+    directory.deleteSync(recursive: true);
+  } on CompilerException catch (error) {
+    stderr.writeln(error);
+    exitCode = 65;
+  } on FileSystemException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 74;
+  }
+}
+
+void _format(List<String> arguments) {
+  _requireQuds(arguments);
+  if (exitCode != 0) return;
+  final input = File(arguments[1]);
+  try {
+    final source = input.readAsStringSync();
+    Parser(Lexer().tokenize(source, file: input.path)).parse();
+    input.writeAsStringSync(_normalizeIndent(source));
+    stdout.writeln('Formatted ${input.path}');
+  } on CompilerException catch (error) {
+    stderr.writeln(error);
+    exitCode = 65;
+  } on FileSystemException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 74;
+  }
+}
+
+String _normalizeIndent(String source) {
+  final lines = source.split('\n');
+  final indents = <int>[];
+  for (final line in lines) {
+    if (line.trim().isEmpty) continue;
+    final width = line.length - line.trimLeft().length;
+    if (!indents.contains(width)) indents.add(width);
+  }
+  indents.sort();
+  final rewritten = <String>[];
+  for (final line in lines) {
+    if (line.trim().isEmpty) {
+      rewritten.add('');
+      continue;
+    }
+    final width = line.length - line.trimLeft().length;
+    final depth = indents.indexOf(width);
+    rewritten.add('${'  ' * depth}${line.trimLeft()}');
+  }
+  final text = rewritten.join('\n');
+  return source.endsWith('\n') && !text.endsWith('\n') ? '$text\n' : text;
+}
+
+void _create(List<String> arguments) {
+  if (arguments.length != 2) {
+    stderr.writeln('Usage: quds create <name>');
+    exitCode = 64;
+    return;
+  }
+  final name = arguments[1];
+  final directory = Directory(name);
+  if (directory.existsSync()) {
+    stderr.writeln('Directory already exists: $name');
+    exitCode = 73;
+    return;
+  }
+  directory.createSync(recursive: true);
+  File('$name/quds.yaml').writeAsStringSync('language: 1.2\nname: $name\n');
+  File('$name/pubspec.yaml').writeAsStringSync('name: $name\nenvironment:\n'
+      '  sdk: ">=3.3.0 <4.0.0"\n');
+  File('$name/main.quds').writeAsStringSync('main():\n  print "$name"\n');
+  stdout.writeln('Created $name');
+}
+
+void _pub(String command, List<String> arguments) {
+  final args = command == 'get'
+      ? ['pub', 'get']
+      : ['pub', command, ...arguments.skip(1)];
+  if (command != 'get' && arguments.length < 2) {
+    stderr.writeln('Usage: quds $command <package>');
+    exitCode = 64;
+    return;
+  }
+  final result = Process.runSync(Platform.resolvedExecutable, args);
+  stdout.write(result.stdout);
+  stderr.write(result.stderr);
+  exitCode = result.exitCode;
+}
+
+void _doc(List<String> arguments) {
+  _requireQuds(arguments);
+  if (exitCode != 0) return;
+  final input = File(arguments[1]);
+  try {
+    final lines = input.readAsLinesSync();
+    final docs = <String>[];
+    for (var i = 0; i < lines.length; i++) {
+      if (!lines[i].trimLeft().startsWith('///')) continue;
+      final comment = lines[i].trimLeft().substring(3).trim();
+      final next = i + 1 < lines.length ? lines[i + 1].trim() : '';
+      docs.add(next.isEmpty ? comment : '$next — $comment');
+    }
+    stdout.write(docs.isEmpty ? '' : '${docs.join('\n')}\n');
+  } on FileSystemException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 74;
+  }
+}
+
+void _migrate(List<String> arguments) {
+  final path = arguments.length == 2 ? arguments[1] : 'quds.yaml';
+  final file = File(path);
+  if (!file.existsSync()) {
+    file.writeAsStringSync('language: 1.2\n');
+  } else {
+    final source = file.readAsStringSync();
+    if (source.contains(RegExp(r'^language:', multiLine: true))) {
+      file.writeAsStringSync(source.replaceFirst(
+          RegExp(r'^language:.*$', multiLine: true), 'language: 1.2'));
+    } else {
+      file.writeAsStringSync('language: 1.2\n$source');
+    }
+  }
+  stdout.writeln('Migrated $path to language 1.2');
 }

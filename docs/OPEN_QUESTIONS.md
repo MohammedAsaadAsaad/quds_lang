@@ -16,14 +16,14 @@ A program that can be parsed in two ways is a compiler bug or a required rejecti
 
 ## What the current compiler still does not implement
 
-The language rules above are settled. The MVP-0 compiler is a smaller subset. Its limits are implementation gaps, not competing language rules. See `MVP_0.md`.
+The language rules above are settled. `MVP_0.md` lists the slice that compiles and runs. These design rules are still rejected instead of being given a meaning:
 
-- Named-argument blocks in the compiler are `label: expression` rows only. The specification's collection-block test is not implemented yet.
-- `shadow var` is specified and not implemented. The compiler's `shadow` binding is immutable.
-- Parenthesis-free calls in the compiler take one positional argument. The specification's zero-argument and named-block rules are only partly implemented.
-- The compiler evaluates the native Dart 3.13.7 integer and double operators. Web numeric behavior is the target SDK's behavior and has not been executed in CI.
-- Prefix `+` is specified as numeric identity because Dart has no prefix `+`. The compiler lowers it that way.
-- String interpolation is not a constant expression, matching Dart. The specification does not add a special const-interpolation rule.
-- Const bool conditions are lowered through `_qBool` so generated Dart does not report `dead_code`. That lowering is an emitter detail, not a change to Quds boolean values.
-- Top-level const initializers see earlier consts only. Function bodies see every top-level const. Const constructors wait on classes.
-- Design 1.2 beyond that subset, including classes, patterns, unions, macros, source maps, and the `E` / `W` diagnostic registry, is not implemented. Unsupported syntax is a future `E910`, not a new language rule.
+- `do` / `result`, `readonly`, `capture`, `to` / `to?`, and `with` configuration.
+- General unions, dot shorthands, and null-aware collection elements.
+- `test` and `group` declarations. `quds test` runs functions whose names start with `test`.
+- Collection-element blocks other than `map:` and `set:`.
+- Full pattern exhaustiveness, C-style `for` / `step`, and `repeat` / `while`.
+- The `E` / `W` diagnostic registry. Current diagnostics still use `Q100` and `Q200`.
+- Web numeric behavior has not been executed in CI.
+
+Classes, local functions, lambdas, nullable types, `use`, ranges, `while`, `break`, `continue`, labels, maps, sets, records, defaults, overloads, `Optional`, `Result`, `async`, sealed types, a bounded `@macro` copier, source maps, and the `quds` commands other than `build` are implemented and covered by `test/language_test.dart`.

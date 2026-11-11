@@ -47,7 +47,6 @@ void main() {
     'void operand': 'main():\n  print(print(1) == print(2))\n',
     'heterogeneous list': 'main():\n  xs = [1, "x"]\n',
     'recursive inference': 'f() = f()\n',
-    'function as value': 'f() = 1\nmain():\n  x = f\n',
   };
   for (final entry in invalid.entries) {
     test('rejects ${entry.key}', () {
@@ -57,6 +56,9 @@ void main() {
               .having((e) => e.span.file, 'file', 'bad.quds')));
     });
   }
+  test('a function name is a tear-off', () {
+    compile('f() = 1\nmain():\n  x = f\n  print x()\n');
+  });
   test('undefined interpolation reports original source location', () {
     expect(
         () => compile('main():\n  print "value {unknown}"\n', file: 'bad.quds'),

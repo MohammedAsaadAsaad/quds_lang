@@ -301,7 +301,8 @@ void main() {
       source: 'var a = 1\nmain():\n  print a\n',
       line: 1,
       column: 1,
-      message: 'Module scope permits function declarations and const bindings',
+      message:
+          'Module scope permits functions, classes, imports, and const bindings',
       code: 'Q200',
     ),
     'top-level const cannot repeat a function name': (
@@ -629,6 +630,34 @@ List<BinaryExpression> operators(Expression node, String op) {
         }
       case Literal() || Identifier():
         break;
+      case Lambda(:final expressionBody):
+        if (expressionBody != null) walk(expressionBody);
+      case MemberAccess(:final object):
+        walk(object);
+      case IndexExpression(:final object, :final index):
+        walk(object);
+        walk(index);
+      case MapExpression(:final keys, :final values):
+        for (final key in keys) {
+          walk(key);
+        }
+        for (final value in values) {
+          walk(value);
+        }
+      case SetExpression(:final elements):
+        for (final element in elements) {
+          walk(element);
+        }
+      case RecordExpression(:final fields):
+        for (final field in fields) {
+          walk(field);
+        }
+      case RangeExpression(:final start, :final end):
+        walk(start);
+        walk(end);
+      case AwaitExpression(:final operand) ||
+            PropagateExpression(:final operand):
+        walk(operand);
     }
   }
 

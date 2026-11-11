@@ -2,9 +2,12 @@
 
 This implements Issue #1's first compiler slice. The approved decisions are not
 replaced by this document. Syntax outside this subset is deferred, not removed
-from the language. Lexer, parser and semantic failures carry stable category
-codes Q001, Q100 and Q200 with original file, line and column. Tokens and AST
-nodes retain source spans; there are no generated-Dart source maps yet.
+from the language. Design 1.2 in `QUDS_LANGUAGE_SPECIFICATION.md` is the
+language; this file is the compiler that exists today. Its lexer, parser and
+semantic failures still carry category codes Q001, Q100 and Q200 with original
+file, line and column. The design registry is the `E` / `W` codes, and a
+compiler that implements 1.2 uses those instead. Tokens and AST nodes retain
+source spans; there are no generated-Dart source maps yet.
 
 ## Layout and lexical rules (001, 019, 020, 021, 065)
 
@@ -209,7 +212,7 @@ source maps, error recovery and runtime stack remapping remain future work.
 Const constructors and web numeric behavior are not part of this slice.
 
 QUDS-082–089 advanced conversions/Optional/defaults/overloads/variadics,
-091–092 capture/readonly, and 094–115 provisional advanced features are not
+091–092 capture/readonly, and 094–115 are specified by design 1.2 and are not
 implemented by this slice. Classes, maps/sets/records, lambdas, generics beyond
 `List<T>`, patterns, concurrency, macros and tooling beyond build are also deferred.
 No claim of full 115-decision conformance is made.

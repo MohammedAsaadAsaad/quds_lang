@@ -1,6 +1,6 @@
 # Quds language decisions — 001–115
 
-This is a **faithful concise handoff** of decisions from the design conversation, not a verbatim transcript. The first 91 were approved interactively; QUDS-092–115 were selected by the assistant after the user explicitly delegated the remaining choices. Normative grammar and the resolutions of later conflicts live in `QUDS_LANGUAGE_SPECIFICATION.md` version 1.1-draft. Where this handoff and that file disagree, the specification wins.
+This is a **faithful concise handoff** of decisions from the design conversation, not a verbatim transcript. The first 91 were approved interactively; QUDS-092–115 were selected by the assistant after the user explicitly delegated the remaining choices. The finished grammar, semantics, lowering, and Dart 3.13 parity live in `QUDS_LANGUAGE_SPECIFICATION.md` version 1.2. Where this handoff and that file disagree, the specification wins.
 
 ## Core philosophy
 

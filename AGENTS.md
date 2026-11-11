@@ -2,7 +2,7 @@
 
 ## Mission
 
-Implement Quds, a **general-purpose language**, not a Flutter UI framework, as a Dart-based compiler. The design conversation established 115 numbered language decisions. Read `docs/LANGUAGE_DECISIONS.md` and `docs/IMPLEMENTATION_PLAN.md` before coding.
+Implement Quds, a **general-purpose language**, not a Flutter UI framework, as a Dart-based compiler. The language design is complete in `docs/QUDS_LANGUAGE_SPECIFICATION.md` version 1.2. Read that file, `docs/LANGUAGE_DECISIONS.md`, and `docs/IMPLEMENTATION_PLAN.md` before coding.
 
 ## Priorities
 
@@ -24,14 +24,14 @@ Implement Quds, a **general-purpose language**, not a Flutter UI framework, as a
 - QUDS-090: existing mutable outer bindings are assignable; intentional shadowing uses `shadow`. This requires unambiguous symbol resolution.
 - QUDS-032: explicit `return` in multiline functions/lambdas; expression bodies may return implicitly.
 - QUDS-081: unified call syntax, positional + named + nested calls.
-- QUDS-082: `to Type` explicit conversion, `to Type?` safe conversion; `is`/`as` remain type operations.
+- QUDS-082: `to Type` explicit conversion, `to? Type` safe conversion; `is`/`as` remain type operations. The target may be nullable: `to? int?`.
 - QUDS-083: `Optional<T>` and `missing` distinguish omitted arguments from explicit null.
 - QUDS-085: compile-time function overloading; no dynamic overload dispatch by default.
 - QUDS-086: computed default arguments may refer only to earlier parameters.
 - QUDS-087: typed variadics `...items: T`, spread in calls.
 - QUDS-091: Dart closure capture by default; `capture(...)` snapshots bindings, not object graphs.
 - QUDS-092: `readonly Type` restricts mutation through a reference, including nested access.
-- QUDS-094–115 are provisional decisions requiring formal grammar and semantic reconciliation before implementation.
+- QUDS-094–115 are part of design 1.2. Implement them from the formal grammar. Do not treat them as an open design.
 
 ## Development workflow
 

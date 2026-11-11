@@ -26,6 +26,10 @@ class DartEmitter {
   SourceSpan? _span;
   final mappings = <(int, SourceSpan)>[];
   final _imports = <String>[];
+  var _classes = <String, ClassDeclaration>{};
+  var _useState = false;
+  var _useComputed = false;
+  var _useWatch = false;
   Map<String, String> _names = const {};
   void line(String text) {
     if (_redirect != null) {
@@ -49,14 +53,21 @@ class DartEmitter {
         _imports.add("import '$uri'$prefix;");
       }
     }
+    _classes = {
+      for (final node in program.statements)
+        if (node is ClassDeclaration) node.name: node
+    };
     for (final node in program.statements) {
       if (node is ClassDeclaration) emitClass(node);
+      if (node is ExtensionDeclaration) emitExtension(node);
     }
     for (final node in program.statements) {
       _out.writeln();
       if (node is FunctionDeclaration) {
         emitFunction(node);
-      } else if (node is! ImportDeclaration && node is! ClassDeclaration) {
+      } else if (node is! ImportDeclaration &&
+          node is! ClassDeclaration &&
+          node is! ExtensionDeclaration) {
         statement(node);
       }
     }
@@ -209,6 +220,59 @@ class DartEmitter {
     for (final item in _imports) {
       prelude.writeln(item);
     }
+    if (_useState || _useWatch) {
+      helpers.writeln('class _QudsState<T> {\n'
+          '  _QudsState(this._value);\n'
+          '  T _value;\n'
+          '  final List<void Function()> _listeners = [];\n'
+          '  static Set<Object>? tracking;\n'
+          '  T get value {\n'
+          '    final seen = tracking;\n'
+          '    if (seen != null) seen.add(this);\n'
+          '    return _value;\n'
+          '  }\n'
+          '  set value(T next) {\n'
+          '    if (_value == next) return;\n'
+          '    _value = next;\n'
+          '    for (final listener in List<void Function()>.of(_listeners)) {\n'
+          '      listener();\n'
+          '    }\n'
+          '  }\n'
+          '  void _listen(void Function() listener) {\n'
+          '    _listeners.remove(listener);\n'
+          '    _listeners.add(listener);\n'
+          '  }\n'
+          '}');
+    }
+    if (_useComputed) {
+      helpers.writeln('class _QudsComputed<T> {\n'
+          '  _QudsComputed(this._read);\n'
+          '  final T Function() _read;\n'
+          '  T get value => _read();\n'
+          '}');
+    }
+    if (_useWatch) {
+      helpers.writeln('void _qWatch(void Function() body) {\n'
+          '  var running = false;\n'
+          '  void run() {\n'
+          '    if (running) return;\n'
+          '    running = true;\n'
+          '    final previous = _QudsState.tracking;\n'
+          '    final seen = <Object>{};\n'
+          '    _QudsState.tracking = seen;\n'
+          '    try {\n'
+          '      body();\n'
+          '    } finally {\n'
+          '      _QudsState.tracking = previous;\n'
+          '      running = false;\n'
+          '    }\n'
+          '    for (final state in seen) {\n'
+          '      (state as _QudsState<Object?>)._listen(run);\n'
+          '    }\n'
+          '  }\n'
+          '  run();\n'
+          '}');
+    }
     if (helpers.isNotEmpty) prelude.writeln(helpers.toString());
     if (prelude.isEmpty) return source;
     return source.replaceFirst(
@@ -220,9 +284,10 @@ class DartEmitter {
   void emitFunction(FunctionDeclaration node) {
     _span = node.span;
     final symbol = model.declarations[node]!;
-    final parameters = node.parameters
-        .map((p) => '${_dartType(p.type)} ${model.declarations[p]!.dartName}')
-        .join(', ');
+    final parameters = node.parameters.map((p) {
+      final declared = model.declarations[p]!.type;
+      return '${_dartType(declared)} ${model.declarations[p]!.dartName}';
+    }).join(', ');
     final async = node.generator == 'sync'
         ? 'sync* '
         : node.generator == 'async'
@@ -324,8 +389,29 @@ class DartEmitter {
       line('enum ${node.name} { $values }');
       return;
     }
+    if (node.kind == 'interface') {
+      line('abstract interface class ${node.name} {');
+      for (final field in node.fields) {
+        line('  ${_dartType(field.type)} get ${field.name};');
+      }
+      line('}');
+      return;
+    }
     final sealed = node.kind == 'sealed' || node.kind == 'sealedType';
-    final header = sealed ? 'sealed class' : 'class';
+    final header = node.kind == 'mixin'
+        ? 'mixin'
+        : node.kind == 'mixinClass'
+            ? 'mixin class'
+            : sealed
+                ? 'sealed class'
+                : 'class';
+    final tail = [
+      if (node.onType != null) 'on ${node.onType}',
+      if (node.superclass != null) 'extends ${node.superclass}',
+      if (node.mixins.isNotEmpty) 'with ${node.mixins.join(', ')}',
+      if (node.interfaces.isNotEmpty)
+        'implements ${node.interfaces.join(', ')}',
+    ].join(' ');
     if (node.kind == 'sealedType') {
       line('$header ${node.name} {');
       line('  const ${node.name}();');
@@ -346,16 +432,30 @@ class DartEmitter {
       }
       return;
     }
-    line('$header ${node.name} {');
+    line('$header ${node.name}${tail.isEmpty ? '' : ' $tail'} {');
     _depth++;
-    final params = node.fields.map((field) {
-      final required =
-          field.requiredField && field.initializer == null ? 'required ' : '';
-      final value = field.initializer == null
-          ? ''
-          : ' = ${expression(field.initializer!)}';
-      return '$required${'this.${field.name}$value'}';
-    }).join(', ');
+    if (node.kind == 'mixin') {
+      for (final method in node.methods) {
+        emitFunction(method);
+      }
+      _depth--;
+      line('}');
+      return;
+    }
+    final inherited = _inherited(node);
+    final params = [
+      ...inherited.map((field) => 'required super.${field.name}'),
+      for (final field in node.fields)
+        () {
+          final required = field.requiredField && field.initializer == null
+              ? 'required '
+              : '';
+          final value = field.initializer == null
+              ? ''
+              : ' = ${expression(field.initializer!)}';
+          return '$required${'this.${field.name}$value'}';
+        }(),
+    ].join(', ');
     line('${node.name}({$params});');
     for (final field in node.fields) {
       final modifier = field.mutable ? '' : 'final ';
@@ -382,15 +482,58 @@ class DartEmitter {
     line('}');
   }
 
+  List<FieldDeclaration> _inherited(ClassDeclaration node) {
+    final fields = <FieldDeclaration>[];
+    var name = node.superclass;
+    while (name != null) {
+      final parent = _classes[name];
+      if (parent == null) break;
+      fields.insertAll(0, parent.fields);
+      name = parent.superclass;
+    }
+    return fields;
+  }
+
+  void emitExtension(ExtensionDeclaration node) {
+    _span = node.span;
+    final title = node.name == null ? 'extension' : 'extension ${node.name}';
+    line('$title on ${node.target} {');
+    _depth++;
+    for (final method in node.methods) {
+      emitFunction(method);
+    }
+    _depth--;
+    line('}');
+  }
+
   void statement(Statement node) {
     _span = node.span;
     switch (node) {
       case Binding():
         if (model.assignments.contains(node)) {
           line(
-              '${model.references[node]!.dartName} ${node.operator} ${expression(node.value)};');
+              '${_cell(model.references[node]!)} ${node.operator} ${expression(node.value)};');
         } else {
           final symbol = model.declarations[node]!;
+          if (symbol.reactive == 'state' || symbol.reactive == 'computed') {
+            final computed = symbol.reactive == 'computed';
+            if (computed) {
+              _useComputed = true;
+            } else {
+              _useState = true;
+            }
+            final wrapper = computed ? '_QudsComputed' : '_QudsState';
+            final type = _dartType(symbol.type);
+            if (computed) {
+              line('late $wrapper<$type> ${symbol.dartName};');
+              line(
+                  '${symbol.dartName} = $wrapper<$type>(() => ${expression(node.value)});');
+            } else {
+              line(
+                  'final ${symbol.dartName} = $wrapper<$type>(${expression(node.value)});');
+            }
+            return;
+          }
           final modifier = symbol.late
               ? (symbol.mutable ? 'late ' : 'late final ')
               : symbol.constant
@@ -466,6 +609,16 @@ class DartEmitter {
         line('rethrow;');
       case YieldStatement():
         line('${node.star ? 'yield*' : 'yield'} ${expression(node.value)};');
+      case WatchStatement():
+        _useState = true;
+        _useWatch = true;
+        line('_qWatch(() {');
+        _depth++;
+        line(
+            '(() { final watched = ${expression(node.value)}; return watched; })();');
+        statements(node.body);
+        _depth--;
+        line('});');
       case RepeatStatement():
         line('do {');
         _depth++;
@@ -550,6 +703,7 @@ class DartEmitter {
       case FunctionDeclaration():
         emitFunction(node);
       case ClassDeclaration():
+      case ExtensionDeclaration():
       case ImportDeclaration():
         break;
     }
@@ -699,7 +853,8 @@ class DartEmitter {
       WithExpression() => _with(node),
       DotShorthand() => _dot(node),
       AssignExpression() =>
-        '${model.references[node]!.dartName} ${node.operator} ${expression(node.value, constantContext: constantContext)}',
+        '${_cell(model.references[node]!)} ${node.operator} ${expression(node.value, constantContext: constantContext)}',
+      ThisExpression() => 'this',
       SpreadElement() =>
         '${node.nullAware ? '...?' : '...'}${expression(node.operand, constantContext: constantContext)}',
       IfExpression() => _if(node),
@@ -723,10 +878,27 @@ class DartEmitter {
   }
 
   String _identifier(Identifier node) {
+    if (model.implicitThis.contains(node)) return 'this.${node.name}';
     final symbol = model.references[node];
     if (symbol?.name == 'missing') _useOptional = true;
+    if (symbol != null &&
+        (symbol.reactive == 'state' || symbol.reactive == 'computed')) {
+      return _cell(symbol);
+    }
     final dart = _use(node);
     return _names[dart] ?? dart;
+  }
+
+  String _cell(Symbol symbol) {
+    if (symbol.reactive == 'state' || symbol.reactive == 'computed') {
+      if (symbol.reactive == 'state') {
+        _useState = true;
+      } else {
+        _useComputed = true;
+      }
+      return '${symbol.dartName}.value';
+    }
+    return symbol.dartName;
   }
 
   String _use(Identifier node) {
@@ -844,7 +1016,10 @@ class DartEmitter {
     }
     if (targetSymbol.classDeclaration != null) {
       final fields = targetSymbol.classCase?.fields ??
-          targetSymbol.classDeclaration!.fields;
+          [
+            ..._inherited(targetSymbol.classDeclaration!),
+            ...targetSymbol.classDeclaration!.fields
+          ];
       final ctor =
           targetSymbol.classCase?.name ?? targetSymbol.classDeclaration!.name;
       final order = model.argumentOrder[node] ?? const <int>[];
@@ -873,9 +1048,39 @@ class DartEmitter {
     }
     final member =
         node.callee is MemberAccess ? node.callee as MemberAccess : null;
-    final target = member == null
-        ? targetSymbol.dartName
-        : '${expression(member.object, constantContext: constantContext)}.${member.name}';
+    final target = member != null
+        ? '${expression(member.object, constantContext: constantContext)}.${member.name}'
+        : node.callee is Identifier &&
+                model.implicitThis.contains(node.callee as Identifier)
+            ? 'this.${targetSymbol.name}'
+            : targetSymbol.dartName;
+    final parameters = targetSymbol.function?.parameters ?? const <Parameter>[];
+    final variadic = parameters.indexWhere((parameter) => parameter.variadic);
+    if (variadic >= 0) {
+      final order = model.argumentOrder[node] ?? const <int>[];
+      final fixed = <String>[];
+      for (var i = 0; i < variadic; i++) {
+        final index = i < order.length ? order[i] : -1;
+        if (index >= 0) {
+          fixed.add(expression(node.arguments[index].value,
+              constantContext: constantContext));
+        }
+      }
+      final pieces = <String>[];
+      for (final index in model.variadicArguments[node] ?? const <int>[]) {
+        final value = node.arguments[index].value;
+        if (value is SpreadElement) {
+          final text =
+              expression(value.operand, constantContext: constantContext);
+          pieces.add(value.nullAware ? '...?$text' : '...$text');
+        } else {
+          pieces.add(expression(value, constantContext: constantContext));
+        }
+      }
+      final list =
+          '<${_dartType(parameters[variadic].type)}>[${pieces.join(', ')}]';
+      return '$target(${[...fixed, list].join(', ')})';
+    }
     final order = model.argumentOrder[node];
     final holes = node.arguments.where((a) => _isHole(a.value)).length;
     final simple = holes == 0 &&
@@ -896,7 +1101,6 @@ class DartEmitter {
       declarations.add(
           'final _qa$i = ${expression(node.arguments[i].value, constantContext: constantContext)};');
     }
-    final parameters = targetSymbol.function?.parameters ?? const <Parameter>[];
     final arranged = order ?? List.generate(node.arguments.length, (i) => i);
     for (var i = 0; i < arranged.length; i++) {
       final index = arranged[i];

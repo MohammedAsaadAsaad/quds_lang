@@ -32,11 +32,14 @@ class FunctionDeclaration extends Statement {
 
 class Parameter extends Node {
   const Parameter(this.name, this.type, this.mutable, super.span,
-      {this.defaultValue});
+      {this.defaultValue, this.variadic = false});
   final String name;
   final String type;
   final bool mutable;
   final Expression? defaultValue;
+
+  /// `...name: Type` collects the remaining positional arguments as `List<Type>`.
+  final bool variadic;
 }
 
 enum BindingMode {
@@ -46,7 +49,9 @@ enum BindingMode {
   shadow,
   shadowMutable,
   lateFinal,
-  lateMutable
+  lateMutable,
+  state,
+  computed
 }
 
 class Binding extends Statement {
@@ -187,15 +192,40 @@ class ClassCase extends Node {
 
 class ClassDeclaration extends Statement {
   const ClassDeclaration(this.name, this.kind, this.fields, this.methods,
-      this.cases, this.annotations, super.span);
+      this.cases, this.annotations, super.span,
+      {this.superclass,
+      this.mixins = const [],
+      this.interfaces = const [],
+      this.onType});
   final String name;
 
-  /// `class`, `value`, `sealed`, or `sealedType`.
+  /// `class`, `value`, `sealed`, `sealedType`, `mixin`, `mixinClass`, or `interface`.
   final String kind;
   final List<FieldDeclaration> fields;
   final List<FunctionDeclaration> methods;
   final List<ClassCase> cases;
   final List<String> annotations;
+  final String? superclass;
+  final List<String> mixins;
+  final List<String> interfaces;
+  final String? onType;
+}
+
+class ExtensionDeclaration extends Statement {
+  const ExtensionDeclaration(this.name, this.target, this.methods, super.span);
+  final String? name;
+  final String target;
+  final List<FunctionDeclaration> methods;
+}
+
+class ThisExpression extends Expression {
+  const ThisExpression(super.span);
+}
+
+class WatchStatement extends Statement {
+  const WatchStatement(this.value, this.body, super.span);
+  final Expression value;
+  final List<Statement> body;
 }
 
 class Lambda extends Expression {

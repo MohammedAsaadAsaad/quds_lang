@@ -18,9 +18,9 @@ A program that can be parsed in two ways is a compiler bug or a required rejecti
 
 The language rules above are settled. `MVP_0.md` lists the slice that compiles and runs. These design rules are still rejected instead of being given a meaning:
 
-- Call-site variadic spreads (`sum(...values: int)` and `sum(...items)`). Collection spreads are implemented.
-- Mixins, extensions, `state`, and `computed`.
+- Extension types (`type Name wraps Type`) and transparent aliases (`type Name = Type`).
+- Class modifiers other than `mixin`, `mixin class`, and `interface`.
 - The full `E` / `W` registry. New errors from this slice use their registry codes. Older diagnostics still use `Q100` and `Q200`.
-- Web numeric behavior has not been executed in CI.
+- Integers outside the JavaScript safe range. Small integers and decimal doubles were executed with `dart compile js`.
 
-Spreads, collection `if` / `for`, `await for`, enums, generators, `try` / `catch`, `late`, match expressions, and the runtime zero-step check are implemented and covered by `test/language_test.dart`.
+Variadic parameters, call spreads, mixins, interfaces, extensions, `state`, `computed`, and `watch` are implemented and covered by `test/language_test.dart`.

@@ -111,6 +111,7 @@ class Parser {
     if (i == end) return true;
     while (i < end) {
       if (tokens[i].lexeme == 'var') i++;
+      if (i < end && tokens[i].kind == TokenKind.spread) i++;
       if (i >= end || tokens[i].kind != TokenKind.identifier) return false;
       i++;
       if (i >= end || tokens[i].kind != TokenKind.colon) return false;
@@ -196,6 +197,16 @@ class Parser {
     final span = current.span;
     final notes = takeAnnotations();
     if (topLevel && word('use')) return useImport(span);
+    if (word('mixin') && peek().lexeme == 'class') {
+      take();
+      return typeDeclaration(span, notes, forced: 'mixinClass');
+    }
+    if (word('mixin')) return mixinDeclaration(span, notes);
+    if (word('extend')) return extensionDeclaration(span, notes);
+    if (word('interface') && peek().kind == TokenKind.identifier) {
+      take();
+      return typeDeclaration(span, notes, forced: 'interface');
+    }
     if (word('sealed') ||
         word('class') ||
         (word('value') && peek().lexeme == 'class')) {
@@ -213,6 +224,11 @@ class Parser {
     if (word('await') && peek().lexeme == 'for') {
       take();
       return forStatement(span, awaiting: true);
+    }
+    if (word('watch')) {
+      take();
+      final value = expression();
+      return WatchStatement(value, block(), extent(span));
     }
     if (word('for')) return forStatement(span);
     if (word('try')) return tryStatement(span);
@@ -277,6 +293,13 @@ class Parser {
       return ReturnStatement(value, extent(span));
     }
     var mode = BindingMode.inferred;
+    if (word('state')) {
+      take();
+      mode = BindingMode.state;
+    } else if (word('computed')) {
+      take();
+      mode = BindingMode.computed;
+    }
     if (word('late')) {
       take();
       if (word('var')) {
@@ -561,22 +584,45 @@ class Parser {
     return ImportDeclaration(buffer.toString(), prefix, extent(span));
   }
 
-  ClassDeclaration typeDeclaration(SourceSpan span, List<String> notes) {
-    var kind = 'class';
-    if (word('sealed')) {
+  ClassDeclaration typeDeclaration(SourceSpan span, List<String> notes,
+      {String? forced}) {
+    var kind = forced ?? 'class';
+    if (forced == 'interface') {
+      kind = 'interface';
+    } else if (forced == null && word('sealed')) {
       take();
       kind = word('type') ? 'sealedType' : 'sealed';
-    } else if (word('value')) {
+    } else if (forced == null && word('value')) {
       take();
       kind = 'value';
     }
     if (kind == 'sealedType') {
       if (!word('type')) fail('Expected type');
-    } else if (!word('class')) {
-      fail('Expected class');
+      take();
+    } else if (kind != 'interface') {
+      if (!word('class')) fail('Expected class');
+      take();
     }
-    take();
     final typeNameToken = name();
+    String? superclass;
+    final mixins = <String>[];
+    final interfaces = <String>[];
+    if (word('extends')) {
+      take();
+      superclass = typeName();
+    }
+    if (word('with')) {
+      take();
+      do {
+        mixins.add(typeName());
+      } while (match(TokenKind.comma));
+    }
+    if (word('implements')) {
+      take();
+      do {
+        interfaces.add(typeName());
+      } while (match(TokenKind.comma));
+    }
     expect(TokenKind.colon, ':');
     endLine();
     expect(TokenKind.indent, 'indented block');
@@ -628,8 +674,73 @@ class Parser {
           requiredField || initializer == null, initializer, fieldName.span));
     }
     expect(TokenKind.dedent, 'end of block');
-    return ClassDeclaration(typeNameToken.lexeme, kind, fields, methods, cases,
-        notes, extent(span));
+    return ClassDeclaration(
+        typeNameToken.lexeme, kind, fields, methods, cases, notes, extent(span),
+        superclass: superclass, mixins: mixins, interfaces: interfaces);
+  }
+
+  ClassDeclaration mixinDeclaration(SourceSpan span, List<String> notes) {
+    take();
+    final typeNameToken = name();
+    String? onType;
+    if (word('on')) {
+      take();
+      onType = typeName();
+    }
+    final body = typeMembers(const []);
+    return ClassDeclaration(typeNameToken.lexeme, 'mixin', body.$1, body.$2,
+        const [], notes, extent(span),
+        onType: onType);
+  }
+
+  ExtensionDeclaration extensionDeclaration(
+      SourceSpan span, List<String> notes) {
+    take();
+    final target = typeName();
+    String? extensionName;
+    if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+      extensionName = name().lexeme;
+    }
+    final methods = <FunctionDeclaration>[];
+    expect(TokenKind.colon, ':');
+    endLine();
+    expect(TokenKind.indent, 'indented block');
+    while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+      if (!functionAhead()) fail('An extension member must be a function');
+      methods.add(function(notes));
+    }
+    expect(TokenKind.dedent, 'end of extension');
+    return ExtensionDeclaration(extensionName, target, methods, extent(span));
+  }
+
+  (List<FieldDeclaration>, List<FunctionDeclaration>) typeMembers(
+      List<String> notes) {
+    expect(TokenKind.colon, ':');
+    endLine();
+    expect(TokenKind.indent, 'indented block');
+    final fields = <FieldDeclaration>[];
+    final methods = <FunctionDeclaration>[];
+    while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+      if (functionAhead()) {
+        methods.add(function(notes));
+        continue;
+      }
+      final fieldName = name();
+      expect(TokenKind.colon, ':');
+      final fieldType = typeName();
+      var requiredField = false;
+      Expression? initializer;
+      if (word('required')) {
+        take();
+        requiredField = true;
+      }
+      if (match(TokenKind.equals)) initializer = expression(bare: true);
+      endLine();
+      fields.add(FieldDeclaration(fieldName.lexeme, fieldType, false,
+          requiredField || initializer == null, initializer, fieldName.span));
+    }
+    expect(TokenKind.dedent, 'end of block');
+    return (fields, methods);
   }
 
   bool destructureAhead() {
@@ -767,6 +878,8 @@ class Parser {
     final parameters = <Parameter>[];
     if (!at(TokenKind.rightParen)) {
       do {
+        final variadic = at(TokenKind.spread);
+        if (variadic) take();
         final mutable = word('var');
         if (mutable) take();
         final parameter = name();
@@ -777,10 +890,15 @@ class Parser {
         if (match(TokenKind.equals)) defaultValue = expression();
         parameters.add(Parameter(
             parameter.lexeme, type, mutable, extent(parameter.span),
-            defaultValue: defaultValue));
+            defaultValue: defaultValue, variadic: variadic));
       } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
     }
     expect(TokenKind.rightParen, ')');
+    final variadicAt = parameters.indexWhere((item) => item.variadic);
+    if (variadicAt >= 0 && variadicAt != parameters.length - 1) {
+      throw CompilerException('E503', 'A variadic parameter must be last',
+          parameters[variadicAt].span);
+    }
     var isAsync = false;
     var generator = '';
     if (word('async') || word('sync')) {
@@ -1316,6 +1434,7 @@ class Parser {
       return DotShorthand(member, arguments, extent(token.span));
     }
     if (token.kind == TokenKind.identifier) {
+      if (token.lexeme == 'this') return ThisExpression(token.span);
       if (token.lexeme == 'true' ||
           token.lexeme == 'false' ||
           token.lexeme == 'null') {
@@ -1421,11 +1540,21 @@ class Parser {
       do {
         String? label;
         final span = current.span;
-        if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
-          label = name().lexeme;
-          take();
+        if (at(TokenKind.spread) || at(TokenKind.spreadQuestion)) {
+          final token = take();
+          final operand = expression();
+          arguments.add(Argument(
+              null,
+              SpreadElement(operand, token.kind == TokenKind.spreadQuestion,
+                  extent(token.span)),
+              span));
+        } else {
+          if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+            label = name().lexeme;
+            take();
+          }
+          arguments.add(Argument(label, expression(), span));
         }
-        arguments.add(Argument(label, expression(), span));
       } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
     }
     expect(TokenKind.rightParen, ')');

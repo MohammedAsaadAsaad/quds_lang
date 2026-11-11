@@ -664,7 +664,8 @@ List<BinaryExpression> operators(Expression node, String op) {
             WithExpression() ||
             DotShorthand() ||
             AssignExpression() ||
-            MapComprehension():
+            MapComprehension() ||
+            ThisExpression():
         break;
       case SpreadElement(:final operand):
         walk(operand);

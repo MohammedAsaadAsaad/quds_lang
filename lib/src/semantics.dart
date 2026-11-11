@@ -13,10 +13,14 @@ class Symbol {
       this.parameterTypes = const [],
       this.readonly = false,
       this.late = false,
-      this.lateOpen = false});
+      this.lateOpen = false,
+      this.reactive = ''});
   final String name, dartName;
   String type;
   final bool mutable, constant, late, lateOpen;
+
+  /// Empty, `state`, or `computed`.
+  final String reactive;
   final ConstValue? constantValue;
   final overloads = <FunctionDeclaration>[];
   final ClassDeclaration? classDeclaration;
@@ -54,6 +58,9 @@ class SemanticModel {
   final warnings = <CompilerException>[];
   final enumNames = <String>{};
   final traces = <CatchClause, Symbol>{};
+  final variadicArguments = <CallExpression, List<int>>{};
+  final implicitThis = <Identifier>{};
+  final extensions = <ExtensionDeclaration>[];
   final wrapAs = <Expression, String>{};
   final captures = <CaptureExpression, List<(Symbol outer, Symbol copy)>>{};
   final shapes = <Node, List<String>>{};
@@ -83,7 +90,8 @@ class Analyzer {
           FunctionDeclaration? function,
           bool readonly = false,
           bool late = false,
-          bool lateOpen = false}) =>
+          bool lateOpen = false,
+          String reactive = ''}) =>
       Symbol(
               name,
               name == 'main' && function != null ? 'main' : '_q${_nextName++}',
@@ -94,9 +102,11 @@ class Analyzer {
               function: function,
               readonly: readonly,
               late: late,
-              lateOpen: lateOpen)
+              lateOpen: lateOpen,
+              reactive: reactive)
           .withFunction(function);
   String? _expected;
+  String? _thisType;
   String? _doType;
   int _doDepth = 0;
   Never error(String code, String message, Node node) =>
@@ -125,6 +135,8 @@ class Analyzer {
           break;
         case ClassDeclaration():
           registerClass(statement);
+        case ExtensionDeclaration():
+          registerExtension(statement);
         case ImportDeclaration():
           registerImport(statement);
         case TestDeclaration():
@@ -150,8 +162,14 @@ class Analyzer {
     }
     for (final statement in program.statements) {
       if (statement is ClassDeclaration) {
+        checkShape(statement);
         for (final method in statement.methods) {
           analyzeMethod(statement, method);
+        }
+      }
+      if (statement is ExtensionDeclaration) {
+        for (final method in statement.methods) {
+          analyzeExtension(statement, method);
         }
       }
     }
@@ -168,6 +186,7 @@ class Analyzer {
   bool sameSignature(FunctionDeclaration a, FunctionDeclaration b) {
     if (a.parameters.length != b.parameters.length) return false;
     for (var i = 0; i < a.parameters.length; i++) {
+      if (a.parameters[i].variadic != b.parameters[i].variadic) return false;
       if (a.parameters[i].type != b.parameters[i].type) return false;
     }
     return true;
@@ -260,10 +279,70 @@ class Analyzer {
     }
   }
 
+  void registerExtension(ExtensionDeclaration statement) {
+    model.extensions.add(statement);
+    for (final method in statement.methods) {
+      final type = method.returnType ??
+          (method.expressionBody == null ? 'void' : '<infer>');
+      if (type != '<infer>') validateType(type, method);
+      final symbol = Symbol(method.name, method.name, type, function: method)
+          .withFunction(method);
+      model.declarations[method] = symbol;
+    }
+  }
+
+  void checkShape(ClassDeclaration type) {
+    for (final name in type.interfaces) {
+      final face = _global.symbols[name]?.classDeclaration;
+      if (face == null || face.kind != 'interface') {
+        error('E700', 'implements expects an interface', type);
+      }
+      for (final field in face.fields) {
+        final found = type.fields.where((item) => item.name == field.name);
+        if (found.isEmpty || found.single.type != field.type) {
+          error('E700', 'interface member ${field.name} is not implemented',
+              type);
+        }
+      }
+    }
+    for (final name in type.mixins) {
+      final mixin = _global.symbols[name]?.classDeclaration;
+      if (mixin == null ||
+          (mixin.kind != 'mixin' && mixin.kind != 'mixinClass')) {
+        error('E702', 'with expects a mixin', type);
+      }
+      final onType = mixin.onType;
+      if (onType != null && !_satisfiesOn(type, onType)) {
+        error('E702', 'mixin $name requires $onType', type);
+      }
+    }
+  }
+
+  bool _satisfiesOn(ClassDeclaration type, String onType) {
+    var name = type.superclass;
+    while (name != null) {
+      if (name == onType) return true;
+      name = _global.symbols[name]?.classDeclaration?.superclass;
+    }
+    return false;
+  }
+
+  void analyzeExtension(ExtensionDeclaration type, FunctionDeclaration method) {
+    final saved = _scope;
+    final savedThis = _thisType;
+    _scope = _Scope(_global);
+    _thisType = type.target;
+    analyzeFunction(method);
+    _thisType = savedThis;
+    _scope = saved;
+  }
+
   void analyzeMethod(ClassDeclaration type, FunctionDeclaration method) {
     if (type.annotations.contains('macro') && method.name == 'define') return;
     final saved = _scope;
+    final savedThis = _thisType;
     _scope = _Scope(_global);
+    _thisType = type.onType ?? type.name;
     for (final field in type.fields) {
       if (model.declarations[field] == null) {
         model.declarations[field] =
@@ -272,6 +351,7 @@ class Analyzer {
       _scope.symbols[field.name] = model.declarations[field]!;
     }
     analyzeFunction(method);
+    _thisType = savedThis;
     _scope = saved;
   }
 
@@ -414,12 +494,13 @@ class Analyzer {
                 : declared;
     final parameterNames = <String>[];
     for (final parameter in function.parameters) {
-      validateType(parameter.type, parameter, allowVoid: false);
+      final stored =
+          parameter.variadic ? 'List<${parameter.type}>' : parameter.type;
+      validateType(stored, parameter, allowVoid: false);
       if (_scope.lookup(parameter.name) != null)
         fail('Parameter would shadow an existing symbol: ${parameter.name}',
             parameter);
-      final symbol =
-          create(parameter.name, parameter.type, mutable: parameter.mutable);
+      final symbol = create(parameter.name, stored, mutable: parameter.mutable);
       _scope.symbols[parameter.name] = symbol;
       model.declarations[parameter] = symbol;
       if (parameter.defaultValue case final value?) {
@@ -484,6 +565,40 @@ class Analyzer {
   void check(Statement node) {
     switch (node) {
       case Binding():
+        if (node.mode == BindingMode.state ||
+            node.mode == BindingMode.computed) {
+          if (_scope.lookup(node.name) != null) {
+            fail(
+                'Binding would shadow ${node.name}; use shadow in an inner scope',
+                node);
+          }
+          if (node.operator != '=') {
+            fail('state and computed require =', node);
+          }
+          final reactive =
+              node.mode == BindingMode.state ? 'state' : 'computed';
+          final symbol = create(node.name, node.type ?? '<infer>',
+              mutable: node.mode == BindingMode.state, reactive: reactive);
+          _scope.symbols[node.name] = symbol;
+          model.declarations[node] = symbol;
+          final savedExpected = _expected;
+          if (node.type != null) _expected = node.type;
+          final type = expression(node.value);
+          _expected = savedExpected;
+          if (type == 'void') {
+            fail('A void expression cannot initialize a binding', node);
+          }
+          final target = node.type ?? type;
+          validateType(target, node, allowVoid: false);
+          if (!compatible(type, target)) {
+            fail('Cannot initialize $target with $type', node);
+          }
+          symbol.type = target;
+          if (reactive == 'computed' && computedCycle(node.name, node.value)) {
+            warn('W007', 'computed dependency cycle', node);
+          }
+          return;
+        }
         final existing = _scope.lookup(node.name);
         final savedExpected = _expected;
         if (node.type != null) {
@@ -757,6 +872,10 @@ class Analyzer {
       case FunctionDeclaration():
         registerFunction(node, _scope);
         analyzeFunction(node);
+      case WatchStatement():
+        expression(node.value);
+        statements(node.body, nested: true);
+      case ExtensionDeclaration():
       case ClassDeclaration():
       case ImportDeclaration():
         fail('Classes and imports belong at the top level', node);
@@ -928,23 +1047,89 @@ class Analyzer {
             base.startsWith('Map<'))) {
       return node.nullAware || type.endsWith('?') ? 'int?' : 'int';
     }
-    final declaration = _global.symbols[base]?.classDeclaration;
-    if (declaration != null) {
-      for (final field in declaration.fields) {
-        if (field.name == node.name) {
-          final fieldType = field.type;
-          return node.nullAware || type.endsWith('?')
-              ? '$fieldType?'
-              : fieldType;
-        }
-      }
-      for (final method in declaration.methods) {
-        if (method.name == node.name) {
-          return functionType(method);
-        }
-      }
+    final found = memberType(base, node.name);
+    if (found != null) {
+      if (found.contains('->')) return found;
+      return node.nullAware || type.endsWith('?') ? '$found?' : found;
     }
     fail('No member ${node.name} on $type', node);
+  }
+
+  String? memberType(String type, String name) {
+    final declaration = _global.symbols[type]?.classDeclaration;
+    if (declaration != null) {
+      for (final field in _fieldsOf(declaration)) {
+        if (field.name == name) return field.type;
+      }
+      final method = _method(declaration, name);
+      if (method != null) return functionType(method);
+    }
+    final extensions = _extensions(type, name);
+    if (extensions.length > 1) {
+      error('E205', 'Two extensions define $name and neither is more specific',
+          extensions.first);
+    }
+    if (extensions.length == 1) return functionType(extensions.single);
+    return null;
+  }
+
+  List<FieldDeclaration> _fieldsOf(ClassDeclaration type) {
+    final inherited = <FieldDeclaration>[];
+    var name = type.superclass;
+    while (name != null) {
+      final parent = _global.symbols[name]?.classDeclaration;
+      if (parent == null) break;
+      inherited.insertAll(0, parent.fields);
+      name = parent.superclass;
+    }
+    return [...inherited, ...type.fields];
+  }
+
+  FunctionDeclaration? _method(ClassDeclaration type, String name) {
+    for (final method in type.methods) {
+      if (method.name == name) return method;
+    }
+    for (final mixin in type.mixins.reversed) {
+      final declaration = _global.symbols[mixin]?.classDeclaration;
+      if (declaration == null) continue;
+      final found = _method(declaration, name);
+      if (found != null) return found;
+    }
+    final parent = type.superclass == null
+        ? null
+        : _global.symbols[type.superclass!]?.classDeclaration;
+    if (parent != null) return _method(parent, name);
+    return null;
+  }
+
+  List<FunctionDeclaration> _extensions(String type, String name) => [
+        for (final extension in model.extensions)
+          if (extension.target == type)
+            for (final method in extension.methods)
+              if (method.name == name) method
+      ];
+
+  bool computedCycle(String name, Expression body) {
+    bool walk(Expression node, Set<String> stack) {
+      switch (node) {
+        case Identifier():
+          final symbol = model.references[node];
+          if (symbol == null || symbol.reactive != 'computed') return false;
+          if (stack.contains(symbol.name)) return true;
+          return false;
+        case UnaryExpression():
+          return walk(node.operand, stack);
+        case BinaryExpression():
+          return walk(node.left, stack) || walk(node.right, stack);
+        case CallExpression():
+          return walk(node.callee, stack) ||
+              node.arguments.any((argument) => walk(argument.value, stack));
+        default:
+          return false;
+      }
+    }
+
+    return walk(body, {name});
   }
 
   String index(IndexExpression node) {
@@ -1194,6 +1379,7 @@ class Analyzer {
       IfExpression() => ifExpression(node),
       MatchExpression() => matchExpression(node),
       TryExpression() => tryExpression(node),
+      ThisExpression() => thisExpression(node),
     };
     model.types[node] = type;
     return type;
@@ -1201,6 +1387,13 @@ class Analyzer {
 
   String identifier(Identifier node) {
     final symbol = _scope.lookup(node.name);
+    if (symbol == null && _thisType != null) {
+      final member = memberType(_thisType!, node.name);
+      if (member != null) {
+        model.implicitThis.add(node);
+        return member;
+      }
+    }
     if (symbol == null) fail('Undefined symbol: ${node.name}', node);
     if (symbol.overloads.length > 1) {
       fail('Choose one overload with a call or a typed context', node);
@@ -1282,6 +1475,31 @@ class Analyzer {
 
   bool isHole(Expression node) => node is Identifier && node.name == '_';
 
+  bool variadicArgument(Argument argument, Parameter parameter) {
+    if (argument.value is SpreadElement) {
+      final spread = argument.value as SpreadElement;
+      final type = expression(spread.operand);
+      final bare = spread.nullAware ? unwrap(type) : type;
+      if (spread.nullAware && !type.endsWith('?')) return false;
+      final element = _collectionElement(bare);
+      return element != null && compatible(element, parameter.type);
+    }
+    final saved = _expected;
+    _expected = parameter.type;
+    final type = expression(argument.value);
+    _expected = saved;
+    return compatible(type, parameter.type);
+  }
+
+  String? _collectionElement(String type) {
+    for (final prefix in ['List<', 'Set<', 'Iterable<', 'Range<']) {
+      if (type.startsWith(prefix) && type.endsWith('>')) {
+        return type.substring(prefix.length, type.length - 1);
+      }
+    }
+    return null;
+  }
+
   String call(CallExpression node) {
     final callee = node.callee;
     if (callee is MemberAccess) {
@@ -1294,18 +1512,29 @@ class Analyzer {
           ? rawObject.substring(9)
           : rawObject);
       final declaration = _global.symbols[objectType]?.classDeclaration;
-      final method = declaration?.methods
-          .where((item) => item.name == callee.name)
-          .toList();
-      if (method == null || method.isEmpty) {
+      final function =
+          declaration == null ? null : _method(declaration, callee.name);
+      final resolved = function ??
+          () {
+            final found = _extensions(objectType, callee.name);
+            if (found.length > 1) {
+              error(
+                  'E205',
+                  'Two extensions define ${callee.name} and neither is more specific',
+                  callee);
+            }
+            return found.isEmpty ? null : found.single;
+          }();
+      if (resolved == null) {
         fail('No method ${callee.name} on $objectType', callee);
       }
-      final function = method.single;
-      model.references[callee] = model.declarations[function]!;
-      final returned = applyArguments(node, function.parameters, function);
-      return model.declarations[function]!.type == '<infer>'
+      final functionResolved = resolved;
+      model.references[callee] = model.declarations[functionResolved]!;
+      final returned =
+          applyArguments(node, functionResolved.parameters, functionResolved);
+      return model.declarations[functionResolved]!.type == '<infer>'
           ? returned
-          : model.declarations[function]!.type;
+          : model.declarations[functionResolved]!.type;
     }
     if (callee is! Identifier) {
       final type = expression(callee);
@@ -1330,6 +1559,24 @@ class Analyzer {
       return returns;
     }
     final symbol = _scope.lookup(callee.name);
+    if (symbol == null && _thisType != null) {
+      final declaration = _global.symbols[_thisType!]?.classDeclaration;
+      final method =
+          declaration == null ? null : _method(declaration, callee.name);
+      final extensions = method == null
+          ? _extensions(_thisType!, callee.name)
+          : <FunctionDeclaration>[];
+      final resolved =
+          method ?? (extensions.length == 1 ? extensions.single : null);
+      if (extensions.length > 1) {
+        error('E205', 'Two extensions define ${callee.name}', callee);
+      }
+      if (resolved != null) {
+        model.implicitThis.add(callee);
+        model.references[callee] = model.declarations[resolved]!;
+        return applyArguments(node, resolved.parameters, resolved);
+      }
+    }
     if (symbol == null) fail('Undefined function: ${callee.name}', callee);
     model.references[callee] = symbol;
     final args = node.arguments;
@@ -1385,8 +1632,16 @@ class Analyzer {
         analyzeFunction(candidate);
       }
       if (argumentsMatch(node, candidate.parameters, commit: false)) {
-        if (selected != null) fail('Ambiguous overload: ${callee.name}', node);
-        selected = candidate;
+        final current = selected;
+        final selectedVariadic =
+            current != null && current.parameters.any((p) => p.variadic);
+        final candidateVariadic = candidate.parameters.any((p) => p.variadic);
+        if (selected != null && selectedVariadic == candidateVariadic) {
+          fail('Ambiguous overload: ${callee.name}', node);
+        }
+        if (selected == null || (selectedVariadic && !candidateVariadic)) {
+          selected = candidate;
+        }
       }
     }
     if (selected == null) fail('No overload matches this call', node);
@@ -1435,7 +1690,7 @@ class Analyzer {
 
   String constructClass(CallExpression node, ClassDeclaration type) {
     final parameters = <Parameter>[];
-    for (final field in type.fields) {
+    for (final field in _fieldsOf(type)) {
       parameters.add(Parameter(field.name, field.type, false, field.span,
           defaultValue: field.requiredField ? null : field.initializer));
     }
@@ -1463,6 +1718,13 @@ class Analyzer {
       int target;
       if (argument.name == null) {
         if (named) return false;
+        if (parameters.isNotEmpty &&
+            parameters.last.variadic &&
+            positional >= parameters.length - 1) {
+          if (!variadicArgument(argument, parameters.last)) return false;
+          positional++;
+          continue;
+        }
         target = positional++;
       } else {
         named = true;
@@ -1484,6 +1746,7 @@ class Analyzer {
       order[target] = i;
     }
     for (var i = 0; i < parameters.length; i++) {
+      if (parameters[i].variadic) continue;
       if (order[i] == -1 && parameters[i].defaultValue == null) {
         final hole = node.arguments.any((a) => isHole(a.value));
         if (!hole) return false;
@@ -1522,6 +1785,7 @@ class Analyzer {
       fail('No overload matches this call', node);
     }
     final order = List<int>.filled(parameters.length, -1);
+    final rest = <int>[];
     var positional = 0;
     var named = false;
     final holes = <int>[];
@@ -1531,6 +1795,17 @@ class Analyzer {
       if (argument.name == null) {
         if (named)
           fail('Positional arguments must precede named arguments', argument);
+        if (parameters.isNotEmpty &&
+            parameters.last.variadic &&
+            positional >= parameters.length - 1) {
+          if (!variadicArgument(argument, parameters.last)) {
+            fail('Variadic argument does not match ${parameters.last.type}',
+                argument);
+          }
+          rest.add(i);
+          positional++;
+          continue;
+        }
         target = positional++;
       } else {
         named = true;
@@ -1560,7 +1835,7 @@ class Analyzer {
       order[target] = i;
     }
     for (var i = 0; i < parameters.length; i++) {
-      if (order[i] != -1) continue;
+      if (parameters[i].variadic || order[i] != -1) continue;
       final fallback = parameters[i].defaultValue;
       if (fallback == null) fail('Missing required argument', node);
       final type = model.types[fallback] ?? expression(fallback);
@@ -1570,6 +1845,7 @@ class Analyzer {
       }
     }
     model.argumentOrder[node] = order;
+    model.variadicArguments[node] = rest;
     if (holes.isNotEmpty) {
       final types = holes.map((index) => parameters[index].type).join(', ');
       final returned = function == null
@@ -1874,6 +2150,11 @@ class Analyzer {
         node.arms.map((arm) => arm.guard),
         expression: true);
     return type!;
+  }
+
+  String thisExpression(ThisExpression node) {
+    if (_thisType == null) fail('this is outside a type', node);
+    return _thisType!;
   }
 
   String tryExpression(TryExpression node) {

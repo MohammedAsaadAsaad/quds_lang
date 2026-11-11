@@ -312,7 +312,84 @@ main():
     final compiled = compile(source);
     expect(compiled.semantics.warnings.map((warning) => warning.code),
         contains('W001'));
+    final cycle = compile('''
+main():
+  computed a: int = a
+  print a
+''');
+    expect(cycle.semantics.warnings.map((warning) => warning.code),
+        contains('W007'));
     await execute(source, 'red\n2\n1\nblue\n');
+  });
+
+  test('variadics, mixins, extensions, and reactive state execute', () async {
+    await execute('''
+sum(...values: int) -> int:
+  var total = 0
+  for n in values:
+    total += n
+  return total
+show(x: int) -> String = "one"
+show(...xs: int) -> String = "many"
+class Animal:
+  name: String required
+mixin Walkable on Animal:
+  walk() -> String = name
+class Dog extends Animal with Walkable:
+  breed: String required
+interface Named:
+  name: String
+class Person implements Named:
+  name: String required
+extend String:
+  shout() -> String = this + "!"
+main():
+  items = [4, 5]
+  absent: List<int>? = null
+  print sum()
+  print sum(1, 2, 3)
+  print sum(...items)
+  print sum(...?absent)
+  print show(1)
+  print show(1, 2)
+  print Dog(name: "Rex", breed: "mix").walk()
+  print Person(name: "Ada").name
+  print "hi".shout()
+  state count = 0
+  computed doubled = count * 2
+  var log = ""
+  watch count:
+    log = log + "{count}"
+  count = 1
+  count = 2
+  print doubled
+  print log
+  count = 3
+  print doubled
+''', '0\n6\n9\n0\none\nmany\nRex\nAda\nhi!\n4\n012\n6\n');
+  });
+
+  test('small numbers match between the VM and JavaScript', () async {
+    const source = '''
+main():
+  print 7 ~/ 2
+  print 1 / 2
+  print 16
+''';
+    final directory = Directory.systemTemp.createTempSync('quds-web-');
+    try {
+      final dartFile = File('${directory.path}/app.dart')
+        ..writeAsStringSync(compile(source).dart);
+      final script = '${directory.path}/app.js';
+      final compiled = await Process.run(Platform.resolvedExecutable,
+          ['compile', 'js', '-o', script, dartFile.path]);
+      expect(compiled.exitCode, 0, reason: compiled.stderr.toString());
+      final run = await Process.run('node', [script]);
+      expect(run.exitCode, 0, reason: run.stderr.toString());
+      expect(run.stdout, '3\n0.5\n16\n');
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
   });
 
   test('spreads, enums, try, late, generators, and match expressions execute',
@@ -454,6 +531,26 @@ main():
     red: 1
   print shown
 ''': 'E314',
+      '''
+class Animal:
+  name: String required
+mixin Walkable on Animal:
+  walk() -> String = name
+class Cat with Walkable:
+  name: String required
+main():
+  print "no"
+''': 'E702',
+      'bad(...values: int, extra: int) -> int = extra\nmain():\n  print bad(1)\n':
+          'E503',
+      '''
+extend String:
+  mark() -> String = this + "a"
+extend String:
+  mark() -> String = this + "b"
+main():
+  print "x".mark()
+''': 'E205',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {

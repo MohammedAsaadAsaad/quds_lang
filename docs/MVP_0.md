@@ -35,7 +35,8 @@ Raw strings and comments inside interpolation are deferred.
 Numbers support decimal native Dart integer and finite decimal-double literals;
 exponents, radix syntax and digit separators are deferred. Out-of-range positive
 integer literals are rejected instead of silently becoming doubles. Cross-platform
-integer guarantees remain open; web compilation is not validated.
+integer guarantees remain open. Small integers and decimal doubles were executed
+with `dart compile js` and Node.
 
 Examples and conformance: `test/lexer_test.dart`, `test/parser_test.dart`, and
 string execution tests in `test/compiler_test.dart`.
@@ -262,10 +263,17 @@ unchanged by the map.
 - `late` and `late var`.
 - `enum` declarations, including dot shorthand and exhaustive `match`.
 - `sync*` / `yield` and `async*` / `await for`.
+- Typed variadics `...values: Type` and call spreads `...` / `...?`. A fixed
+  signature wins over a variadic one. A variadic parameter that is not last is
+  `E503`.
+- `mixin`, `class ... with`, `interface`, and `extend Type`. A failed mixin
+  `on` constraint is `E702`. Two extensions for one member are `E205`.
+- `state`, `computed`, and `watch`. A computed cycle warns `W007`.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
 
-Still rejected, rather than given an invented meaning: call-site variadic
-spreads, mixins, extensions, `state`, and `computed`. Older diagnostics stay
-`Q100` and `Q200`. Web numeric behavior has not been executed in CI. No claim
-of full 115-decision conformance is made.
+Still rejected, rather than given an invented meaning: extension types,
+`type Name = Type` aliases, and the remaining class modifiers beyond `mixin`
+and `interface`. Older diagnostics stay `Q100` and `Q200`. Integers that do not
+fit in a JavaScript number keep Dart's web limit. No claim of full
+115-decision conformance is made.

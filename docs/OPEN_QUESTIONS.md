@@ -50,6 +50,17 @@ These are specification questions, not permission to override approved design ch
   references to const bindings, are not constants. That matches Dart, where
   string interpolation is not a constant expression. A later Quds rule for
   const interpolation is not specified here.
+- **Const bool conditions:** Dart reports `dead_code` for a const or literal
+  bool used directly in `if` or `&&`/`||`, including a local Dart can prove is
+  that bool. Emitting the condition unchanged makes valid Quds fail `dart
+  analyze`. The emitter passes those bool leaves through `_qBool`, an identity
+  function, so the generated condition is not a Dart constant. This does not
+  change the value, the single read, or which side of `and`/`or` runs. Const
+  initializers stay Dart constants and do not call `_qBool`.
+- **Top-level const visibility:** initializers see only earlier consts, so a
+  forward or cyclic reference is an error. Function bodies see every top-level
+  const, including one written later, consistent with function visibility in
+  this slice. Const constructors remain deferred with classes.
 
 Implementation gaps (rather than syntax decisions): parser recovery, source
 maps, and contextual inference are not complete. Const evaluation of the MVP-0

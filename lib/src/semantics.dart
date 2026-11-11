@@ -67,21 +67,36 @@ class Analyzer {
           function: function);
   SemanticModel analyze(Program program) {
     _global.symbols['print'] = Symbol('print', 'print', 'void');
+    final functions = <FunctionDeclaration>[];
     for (final statement in program.statements) {
-      if (statement is! FunctionDeclaration)
-        fail('MVP-0 permits only function declarations at module scope',
-            statement);
-      if (_global.lookup(statement.name) != null)
-        fail('Duplicate function or unsupported overload: ${statement.name}',
-            statement);
-      final type = statement.returnType ??
-          (statement.expressionBody == null ? 'void' : '<infer>');
-      if (type != '<infer>') validateType(type, statement);
-      final symbol = create(statement.name, type, function: statement);
-      _global.symbols[statement.name] = symbol;
-      model.declarations[statement] = symbol;
+      switch (statement) {
+        case FunctionDeclaration():
+          if (_global.lookup(statement.name) != null)
+            fail(
+                'Duplicate function or unsupported overload: ${statement.name}',
+                statement);
+          final type = statement.returnType ??
+              (statement.expressionBody == null ? 'void' : '<infer>');
+          if (type != '<infer>') validateType(type, statement);
+          final symbol = create(statement.name, type, function: statement);
+          _global.symbols[statement.name] = symbol;
+          model.declarations[statement] = symbol;
+          functions.add(statement);
+        case Binding(mode: BindingMode.constant):
+          break;
+        default:
+          fail('Module scope permits function declarations and const bindings',
+              statement);
+      }
     }
-    for (final statement in program.statements.cast<FunctionDeclaration>()) {
+    // Initializers run in source order and see only consts already evaluated.
+    // Function bodies then see every top-level const, same as other functions.
+    for (final statement in program.statements) {
+      if (statement is Binding && statement.mode == BindingMode.constant) {
+        check(statement);
+      }
+    }
+    for (final statement in functions) {
       analyzeFunction(statement);
     }
     final main = _global.symbols['main']?.function;

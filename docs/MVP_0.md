@@ -75,7 +75,11 @@ See parser call tests, semantic negative cases, and the `mark` execution test.
 
 ## Functions and statements (005, 006, 007, 032, 084)
 
-Modules currently contain only function declarations. Functions accept typed,
+Modules contain function declarations and top-level `const` bindings. Any other
+module-scope statement is rejected. A const initializer is evaluated in source
+order and can read only consts already evaluated. Function bodies can read
+every top-level const, including one declared later in the file, just as they
+can call other functions. Functions accept typed,
 required parameters, an optional `-> Type` result, and an indented block or
 `= expression` body. This annotation spelling comes from Issue #1's acceptance
 program; alternative return annotation forms are not assumed.
@@ -175,15 +179,23 @@ canonical identity, so two const lists of `0.0 / 0.0` compare equal, while
 and `-0.0 == 0.0`.
 
 A `const` list is a Dart constant list. A final or `var` list remains a
-mutable object; the binding's immutability does not freeze it. Inferred const
-is not implemented. An interpolation whose parts are all literals is already a
-string literal (`"hi {1}"` is `"hi 1"`). Any other interpolation is not a
-constant. Dart has no prefix `+`, so Quds unary `+` is lowered as numeric
-identity, including the sign of zero. Const initializers are emitted as
-expressions so Dart evaluates them again, except `and` and `or`, which are
-emitted as their bool result to avoid Dart's `dead_code` warning. A const local
-that folding leaves unread is kept and marked
-`// ignore: unused_local_variable`.
+mutable object; the binding's immutability does not freeze it. The same rules
+apply to a top-level `const`. Inferred const is not implemented. An
+interpolation whose parts are all literals is already a string literal
+(`"hi {1}"` is `"hi 1"`). Any other interpolation is not a constant. Dart has
+no prefix `+`, so Quds unary `+` is lowered as numeric identity, including the
+sign of zero. Const initializers are emitted as expressions so Dart evaluates
+them again, except `and` and `or`, which are emitted as their bool result to
+avoid Dart's `dead_code` warning. A const that folding leaves unread is kept.
+A local is marked `// ignore: unused_local_variable`; a top-level const is
+marked `// ignore: unused_element`.
+
+Dart also reports `dead_code` when a bool literal, const bool, or
+definitely-assigned bool local is used directly as an `if` condition or as an
+`and`/`or` operand. Those leaves are passed through an identity function
+`_qBool` in the generated Dart. The binding is still read once, `and`/`or`
+still short-circuit, and a taken runtime `1 % 0` is still Dart's error rather
+than a Quds constant error. Const initializers do not call `_qBool`.
 
 Tests: `test/constants_test.dart` and `test/fixtures/const_eval.quds`.
 
@@ -194,9 +206,7 @@ name collisions. The golden fixtures record exact output; integration tests
 analyze and execute it. `quds build` is the only CLI command implemented. Public
 Dart-facing wrappers, imports and dependencies in Quds, arbitrary Dart interop,
 source maps, error recovery and runtime stack remapping remain future work.
-Using a const bool as an `if` condition can still produce Dart's `dead_code`
-warning; conditions are not rewritten. Top-level const, const constructors, and
-web numeric behavior are not part of this slice.
+Const constructors and web numeric behavior are not part of this slice.
 
 QUDS-082–089 advanced conversions/Optional/defaults/overloads/variadics,
 091–092 capture/readonly, and 094–115 provisional advanced features are not

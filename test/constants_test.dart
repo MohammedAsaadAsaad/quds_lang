@@ -276,6 +276,41 @@ void main() {
       message: 'Numeric literal is outside the supported native Dart range',
       code: 'Q100',
     ),
+    'top-level remainder keeps the operator span': (
+      source: 'const x = 1 % 0\nmain():\n  print x\n',
+      line: 1,
+      column: 11,
+      message: 'Integer remainder by zero',
+      code: 'Q200',
+    ),
+    'top-level const cannot see a later const': (
+      source: 'const b = a\nconst a = 1\nmain():\n  print b\n',
+      line: 1,
+      column: 11,
+      message: 'Undefined symbol: a',
+      code: 'Q200',
+    ),
+    'top-level const cannot call': (
+      source: 'id(value: int) = value\nconst x = id(1)\nmain():\n  print x\n',
+      line: 2,
+      column: 11,
+      message: 'const requires a compile-time constant',
+      code: 'Q200',
+    ),
+    'module scope rejects a mutable binding': (
+      source: 'var a = 1\nmain():\n  print a\n',
+      line: 1,
+      column: 1,
+      message: 'Module scope permits function declarations and const bindings',
+      code: 'Q200',
+    ),
+    'top-level const cannot repeat a function name': (
+      source: 'main():\n  print 1\nconst main = 1\n',
+      line: 3,
+      column: 1,
+      message: 'Binding would shadow main; use shadow in an inner scope',
+      code: 'Q200',
+    ),
   };
   for (final entry in errors.entries) {
     test('rejects ${entry.key}', () {
@@ -376,6 +411,129 @@ main():
   print a
 ''', '3\n1\n');
   });
+
+  test('bool conditions stay reachable to the Dart analyzer', () async {
+    const source = '''mark() -> bool:
+  print 999
+  return true
+main():
+  var gate = false
+  gate = true
+  if gate:
+    print "yes"
+  else:
+    print "no"
+  if false:
+    print "dead"
+  else:
+    print "live"
+  const enabled = false
+  if enabled and (1 % 0 == 0):
+    print "skip"
+  else:
+    print "kept"
+  const go = false
+  if go or mark():
+    print "called"
+  const stop = true
+  if stop or mark():
+    print "short"
+  print(false and (1 % 0 == 0))
+  print(true or (1 % 0 == 0))
+''';
+    final result = compile(source);
+    final dart = result.dart;
+    final gate = dartName(result, 'gate');
+    final enabled = dartName(result, 'enabled');
+    expect(dart, contains('bool _qBool(bool value) => value;'));
+    expect(dart, contains('if (_qBool($gate))'));
+    expect(dart, contains('if (_qBool(false))'));
+    expect(dart, contains('_qBool($enabled) &&'));
+    expect(dart, contains('((1 % 0) == 0)'));
+    await execute(source, 'yes\nlive\nkept\n999\ncalled\nshort\nfalse\ntrue\n');
+  });
+
+  test('a taken runtime logical branch still throws for Dart', () async {
+    final dart = compile('main():\n  print(true and (1 % 0 == 0))\n').dart;
+    expect(dart, contains('_qBool(true)'));
+    expect(dart, contains('%'));
+    final directory = Directory.systemTemp.createTempSync('quds-and-');
+    try {
+      final output = File('${directory.path}/app.dart')
+        ..writeAsStringSync(dart);
+      final analysis = await Process.run(
+          Platform.resolvedExecutable, ['analyze', output.path]);
+      expect(analysis.exitCode, 0,
+          reason: '${analysis.stdout}\n${analysis.stderr}\n$dart');
+      final run = await Process.run(Platform.resolvedExecutable, [output.path]);
+      expect(run.exitCode, isNonZero);
+      expect(run.stderr, contains('IntegerDivisionByZeroException'));
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
+
+  test('top-level consts evaluate in order and are visible to functions',
+      () async {
+    const source = '''const base = 10
+const step = base - 3 - 2
+const hidden = false
+const allowed = hidden and (1 % 0 == 0)
+const enabled = false
+const values = [base, step]
+const same = [1]
+const copy = [1]
+const equal = same == copy
+
+show(value: int) = value
+
+main():
+  print step
+  print allowed
+  print enabled
+  print values
+  print equal
+  print show(base)
+  const local = base + 1
+  print local
+''';
+    final result = compile(source);
+    expect(valueOf(result, 'step'), ConstInt(5));
+    expect(valueOf(result, 'allowed'), ConstBool(false));
+    expect(valueOf(result, 'equal'), ConstBool(true));
+    expect(valueOf(result, 'local'), ConstInt(11));
+    expect(
+        result.semantics.constants.containsKey(
+            operators(bindingNamed(result.program, 'allowed').value, '%')
+                .single),
+        isFalse);
+    final base = dartName(result, 'base');
+    final allowed = dartName(result, 'allowed');
+    expect(result.dart, contains('const int $base = 10;'));
+    expect(result.dart, contains('const bool $allowed = false;'));
+    expect(result.dart, isNot(contains('% 0')));
+    expect(result.dart, contains('// ignore: unused_element'));
+    expect(result.dart, contains(dartName(result, 'hidden')));
+    await execute(source, '5\nfalse\nfalse\n[10, 5]\ntrue\n10\n11\n');
+  });
+
+  test('a function can read a top-level const declared later', () async {
+    await execute('''main():
+  print base
+const base = 4
+''', '4\n');
+  });
+
+  test('a top-level const is not reassigned or implicitly shadowed', () {
+    expect(
+        () => compile('const a = 1\nmain():\n  a = 2\n'),
+        throwsA(isA<CompilerException>().having(
+            (e) => e.message, 'message', 'Cannot assign immutable binding a')));
+    expect(
+        () => compile('const a = 1\nmain():\n  a = a + 1\n'),
+        throwsA(isA<CompilerException>().having(
+            (e) => e.message, 'message', 'Cannot assign immutable binding a')));
+  });
 }
 
 const showcaseStdout = '5\n'
@@ -442,6 +600,9 @@ ConstValue valueOf(Compilation compilation, String name) => compilation
     .semantics
     .declarations[bindingNamed(compilation.program, name)]!
     .constantValue!;
+
+String dartName(Compilation compilation, String name) => compilation
+    .semantics.declarations[bindingNamed(compilation.program, name)]!.dartName;
 
 List<BinaryExpression> operators(Expression node, String op) {
   final found = <BinaryExpression>[];

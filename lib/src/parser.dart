@@ -205,13 +205,16 @@ class Parser {
       fail('Annotation is not attached to a declaration', span);
     }
     if (word('if')) return ifStatement();
-    if (word('for')) {
+    if ((word('test') || word('group')) && peek().kind == TokenKind.string) {
+      return testDeclaration(span);
+    }
+    if (word('for')) return forStatement(span);
+    if (word('repeat')) return repeatStatement(span);
+    if (word('result')) {
       take();
-      final variable = name();
-      if (!word('in')) fail('Expected in');
-      take();
-      final iterable = expression();
-      return ForStatement(variable.lexeme, iterable, block(), extent(span));
+      final value = expression(bare: true);
+      endLine();
+      return ResultStatement(value, extent(span));
     }
     if (word('while')) {
       take();
@@ -240,7 +243,7 @@ class Parser {
     if (word('return')) {
       take();
       final value = at(TokenKind.newline) ? null : expression(bare: true);
-      endLine();
+      if (value is! DoExpression && value is! WithExpression) endLine();
       return ReturnStatement(value, extent(span));
     }
     var mode = BindingMode.inferred;
@@ -285,6 +288,7 @@ class Parser {
       return collectionLiteral(value.name, value.span);
     }
     if (at(TokenKind.colon)) return namedBlock(value);
+    if (value is DoExpression || value is WithExpression) return value;
     endLine();
     return value;
   }
@@ -295,12 +299,14 @@ class Parser {
     expect(TokenKind.indent, 'collection literal');
     if (kind == 'set') {
       final elements = <Expression>[];
+      final nullAware = <bool>[];
       while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+        nullAware.add(match(TokenKind.question));
         elements.add(expression(bare: true));
         endLine();
       }
       expect(TokenKind.dedent, 'end of set');
-      return SetExpression(elements, extent(span));
+      return SetExpression(elements, extent(span), nullAware: nullAware);
     }
     final keys = <Expression>[];
     final values = <Expression>[];
@@ -322,6 +328,29 @@ class Parser {
     TokenKind.slashEquals
   };
   String typeName() {
+    var result = typeAtom();
+    while (at(TokenKind.pipe)) {
+      take();
+      result = '$result | ${typeAtom()}';
+    }
+    final parts = result.split(' | ').map((part) => part.trim()).toSet();
+    if (parts.length == 2 &&
+        parts.contains('int') &&
+        parts.contains('double')) {
+      return 'num';
+    }
+    if (parts.length == 2 && parts.contains('Null')) {
+      final other = parts.firstWhere((part) => part != 'Null');
+      return other.endsWith('?') ? other : '$other?';
+    }
+    return result;
+  }
+
+  String typeAtom() {
+    if (word('readonly')) {
+      take();
+      return 'readonly ${typeAtom()}';
+    }
     var result = name().lexeme;
     if (match(TokenKind.less)) {
       result += '<${typeName()}';
@@ -333,6 +362,70 @@ class Parser {
     }
     if (match(TokenKind.question)) result += '?';
     return result;
+  }
+
+  Statement testDeclaration(SourceSpan span) {
+    final kind = take().lexeme;
+    final parsed = string(take());
+    if (parsed is! Literal || parsed.value is! String) {
+      fail('Test title must be a string literal', span);
+    }
+    final async = word('async');
+    if (async) take();
+    return TestDeclaration(
+        kind, parsed.value as String, async, block(), extent(span));
+  }
+
+  Statement forStatement(SourceSpan span) {
+    take();
+    if (at(TokenKind.identifier) && peek().lexeme == 'in') {
+      final variable = name();
+      take();
+      final iterable = expression();
+      return ForStatement(variable.lexeme, iterable, block(), extent(span));
+    }
+    final initSpan = current.span;
+    var mode = BindingMode.inferred;
+    if (word('var')) {
+      take();
+      mode = BindingMode.mutable;
+    }
+    final bindingName = name();
+    String? type;
+    if (match(TokenKind.colon)) type = typeName();
+    if (!match(TokenKind.equals)) fail('Expected =');
+    final value = expression();
+    final init =
+        Binding(bindingName.lexeme, mode, type, '=', value, extent(initSpan));
+    if (!word('while')) fail('Expected while');
+    take();
+    final condition = expression();
+    Expression? step;
+    if (word('step')) {
+      take();
+      step = stepExpression();
+    }
+    return CForStatement(init, condition, step, block(), extent(span));
+  }
+
+  Expression stepExpression() {
+    if (at(TokenKind.identifier) && assignments.contains(peek().kind)) {
+      final name = this.name();
+      final operator = take().lexeme;
+      return AssignExpression(
+          name.lexeme, operator, expression(), extent(name.span));
+    }
+    return expression();
+  }
+
+  Statement repeatStatement(SourceSpan span) {
+    take();
+    final body = block();
+    if (!word('while')) fail('Expected while');
+    take();
+    final condition = expression();
+    endLine();
+    return RepeatStatement(body, condition, extent(span));
   }
 
   ImportDeclaration useImport(SourceSpan span) {
@@ -457,8 +550,13 @@ class Parser {
     while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
       final armSpan = current.span;
       final pattern = patternLiteral();
+      Expression? guard;
+      if (word('when')) {
+        take();
+        guard = expression();
+      }
       final body = block();
-      arms.add(MatchArm(pattern, body, extent(armSpan)));
+      arms.add(MatchArm(pattern, body, extent(armSpan), guard: guard));
     }
     expect(TokenKind.dedent, 'end of block');
     return MatchStatement(value, arms, extent(span));
@@ -466,6 +564,14 @@ class Parser {
 
   Pattern patternLiteral() {
     final span = current.span;
+    const typeWords = {'int', 'double', 'num', 'bool', 'String', 'Null'};
+    if (at(TokenKind.identifier) && typeWords.contains(current.lexeme)) {
+      final type = take().lexeme;
+      final name = at(TokenKind.identifier) && current.lexeme != 'when'
+          ? this.name().lexeme
+          : null;
+      return TypedPattern(type, name, span);
+    }
     if (at(TokenKind.identifier) && current.lexeme == '_') {
       take();
       return WildcardPattern(span);
@@ -607,21 +713,154 @@ class Parser {
   Expression namedBlock(Expression callee) {
     expect(TokenKind.colon, ':');
     endLine();
-    expect(TokenKind.indent, 'named argument block');
-    final arguments = <Argument>[];
-    while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
-      final argument = name();
-      expect(TokenKind.colon, ':');
-      final value = expression(bare: true);
-      endLine();
-      arguments.add(Argument(argument.lexeme, value, argument.span));
+    expect(TokenKind.indent, 'indented block');
+    if (_namedArgumentRows()) {
+      final arguments = <Argument>[];
+      while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+        final argument = name();
+        expect(TokenKind.colon, ':');
+        final Expression value;
+        if (at(TokenKind.newline)) {
+          value = indentedBlock();
+        } else {
+          value = expression(bare: true);
+          endLine();
+        }
+        arguments.add(Argument(argument.lexeme, value, argument.span));
+      }
+      expect(TokenKind.dedent, 'end of named argument block');
+      if (callee is CallExpression) {
+        return CallExpression(callee.callee,
+            [...callee.arguments, ...arguments], extent(callee.span));
+      }
+      return CallExpression(callee, arguments, extent(callee.span));
     }
-    expect(TokenKind.dedent, 'end of named argument block');
+    final list = collectionRows(callee.span);
+    final argument = Argument(null, list, list.span);
     if (callee is CallExpression) {
-      return CallExpression(callee.callee, [...callee.arguments, ...arguments],
-          extent(callee.span));
+      return CallExpression(
+          callee.callee, [...callee.arguments, argument], extent(callee.span));
     }
-    return CallExpression(callee, arguments, extent(callee.span));
+    return CallExpression(callee, [argument], extent(callee.span));
+  }
+
+  /// A value written as an indented block after a named argument's colon.
+  Expression indentedBlock() {
+    endLine();
+    expect(TokenKind.indent, 'indented block');
+    if (_namedArgumentRows()) {
+      fail('A nested label block needs its callee before the colon');
+    }
+    return collectionRows(current.span);
+  }
+
+  bool _namedArgumentRows() {
+    var i = index;
+    var depth = 1;
+    var named = true;
+    var rows = 0;
+    var atRow = true;
+    const blocked = {'if', 'for', 'else', 'repeat'};
+    while (i < tokens.length && depth > 0) {
+      final token = tokens[i];
+      if (token.kind == TokenKind.indent) {
+        depth++;
+        atRow = false;
+        i++;
+        continue;
+      }
+      if (token.kind == TokenKind.dedent) {
+        depth--;
+        atRow = depth == 1;
+        i++;
+        continue;
+      }
+      if (depth != 1) {
+        i++;
+        continue;
+      }
+      if (token.kind == TokenKind.newline) {
+        atRow = true;
+        i++;
+        continue;
+      }
+      if (atRow) {
+        rows++;
+        final next = i + 1 < tokens.length ? tokens[i + 1] : null;
+        final label = token.kind == TokenKind.identifier &&
+            !blocked.contains(token.lexeme) &&
+            next != null &&
+            next.kind == TokenKind.colon;
+        if (!label) named = false;
+        atRow = false;
+      }
+      i++;
+    }
+    if (rows == 0) fail('A colon block needs a row');
+    return named;
+  }
+
+  ListExpression collectionRows(SourceSpan span) {
+    final elements = <Expression>[];
+    final nullAware = <bool>[];
+    while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+      if (word('if')) {
+        elements.add(collectionIf());
+        nullAware.add(false);
+        continue;
+      }
+      if (word('for')) {
+        elements.add(collectionFor());
+        nullAware.add(false);
+        continue;
+      }
+      final aware = match(TokenKind.question);
+      var value = expression(bare: true);
+      if (at(TokenKind.colon))
+        value = namedBlock(value);
+      else
+        endLine();
+      elements.add(aware ? NullAwareElement(value, value.span) : value);
+      nullAware.add(false);
+    }
+    expect(TokenKind.dedent, 'end of block');
+    return ListExpression(elements, extent(span), nullAware: nullAware);
+  }
+
+  CollectionIf collectionIf() {
+    final token = take();
+    final condition = expression();
+    final thenElements = elementBlock();
+    final elseElements = <Expression>[];
+    if (word('else')) {
+      take();
+      if (word('if')) {
+        elseElements.add(collectionIf());
+      } else {
+        elseElements.addAll(elementBlock());
+      }
+    }
+    return CollectionIf(
+        condition, thenElements, elseElements, extent(token.span));
+  }
+
+  CollectionFor collectionFor() {
+    final token = take();
+    final binding = name();
+    expect(TokenKind.identifier, 'in');
+    if (tokens[index - 1].lexeme != 'in') {
+      fail('Expected in', tokens[index - 1].span);
+    }
+    final iterable = expression();
+    return CollectionFor(
+        binding.lexeme, iterable, elementBlock(), extent(token.span));
+  }
+
+  List<Expression> elementBlock() {
+    expect(TokenKind.colon, ':');
+    endLine();
+    expect(TokenKind.indent, 'indented block');
+    return collectionRows(current.span).elements;
   }
 
   bool arrowAfterGroup() {
@@ -718,6 +957,13 @@ class Parser {
         left = finishLambda([parameter], left.span);
         continue;
       }
+      if ((word('to') || at(TokenKind.toQuestion)) && 4 >= minimum) {
+        final safe = at(TokenKind.toQuestion);
+        take();
+        final type = typeName();
+        left = ConversionExpression(left, type, safe, extent(left.span));
+        continue;
+      }
       final power = precedence(current);
       if (power < minimum) break;
       final operator = take();
@@ -777,6 +1023,52 @@ class Parser {
     }
     if (token.lexeme == 'await') {
       return AwaitExpression(expression(minimum: 8), extent(token.span));
+    }
+    if (token.lexeme == 'do') {
+      return DoExpression(block(), extent(token.span));
+    }
+    if (token.lexeme == 'capture' && at(TokenKind.leftParen)) {
+      take();
+      final names = <String>[];
+      if (!at(TokenKind.rightParen)) {
+        do {
+          names.add(name().lexeme);
+        } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
+      }
+      expect(TokenKind.rightParen, ')');
+      expect(TokenKind.arrow, '->');
+      final body = at(TokenKind.colon) ? null : expression(bare: true);
+      if (body == null) {
+        fail('capture body must be an expression', token.span);
+      }
+      return CaptureExpression(names, body, extent(token.span));
+    }
+    if (token.lexeme == 'with' || token.kind == TokenKind.withQuestion) {
+      final receiver = expression();
+      expect(TokenKind.colon, ':');
+      endLine();
+      expect(TokenKind.indent, 'indented block');
+      final fields = <String>[];
+      final values = <Expression>[];
+      while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+        fields.add(name().lexeme);
+        if (!match(TokenKind.colon) && !match(TokenKind.equals)) {
+          fail('Expected : or =');
+        }
+        values.add(expression(bare: true));
+        endLine();
+      }
+      expect(TokenKind.dedent, 'end of block');
+      return WithExpression(receiver, fields, values,
+          token.kind == TokenKind.withQuestion, extent(token.span));
+    }
+    if (token.kind == TokenKind.dot) {
+      final member = word('new') ? (take().lexeme) : name().lexeme;
+      List<Argument>? arguments;
+      if (at(TokenKind.leftParen)) {
+        arguments = call(Identifier(member, token.span)).arguments;
+      }
+      return DotShorthand(member, arguments, extent(token.span));
     }
     if (token.kind == TokenKind.identifier) {
       if (token.lexeme == 'true' ||
@@ -851,13 +1143,15 @@ class Parser {
     }
     if (token.kind == TokenKind.leftBracket) {
       final values = <Expression>[];
+      final nullAware = <bool>[];
       if (!at(TokenKind.rightBracket)) {
         do {
+          nullAware.add(match(TokenKind.question));
           values.add(expression());
         } while (match(TokenKind.comma) && !at(TokenKind.rightBracket));
       }
       expect(TokenKind.rightBracket, ']');
-      return ListExpression(values, extent(token.span));
+      return ListExpression(values, extent(token.span), nullAware: nullAware);
     }
     fail('Expected expression', token.span);
   }

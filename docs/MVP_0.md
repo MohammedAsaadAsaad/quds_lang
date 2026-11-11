@@ -230,10 +230,34 @@ unchanged by the map.
 - `@macro` classes whose `define` body only calls `builder.addMethod`.
 - `quds run`, `analyze`, `test`, `format`, `create`, `add`, `remove`, `get`,
   `doc`, and `migrate`, in addition to `build`.
+- `do` / `result`. `result` finishes the `do`. `return` inside `do` leaves the
+  function. `E106` outside `do`, `E109` when a value `do` has no `result`.
+- `readonly` on one reference. Assignment and a mutating method name are
+  `E307`. Another binding of the same object may still call that method.
+- `capture(names) -> expr` snapshots those bindings. Object contents are not
+  copied.
+- `to` and `to?`. Failure throws `ConversionError` or yields null. The target
+  may be nullable.
+- `with` and `with?`. The receiver runs once. `with?` yields null and skips
+  the block when the receiver is null. A readonly receiver is `E307`.
+- Unions. `int | double` is `num`. `T | Null` is `T?`. Any other union lowers
+  to a sealed hierarchy. A statement `match` warns `W001` when a sealed type
+  or union is incomplete, and an unreachable arm is `E313`. A guard does not
+  cover its arm.
+- Dot shorthands `.member` and `.new` when the expected type is unique
+  (`E302` otherwise).
+- Null-aware list and set elements, and collection-element blocks, including
+  `if` and `for` in those blocks.
+- `test "...":` and `group "...":`. `quds test` runs them. A function whose
+  name starts with `test` still runs too.
+- C-style `for var i = 0 while cond step i += 1:` and `repeat:` / `while`.
+  A constant step of zero is `E801`. `continue` runs the step.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
 
-Still rejected, rather than given an invented meaning: `do` / `result`,
-`readonly`, `capture`, `to` / `to?`, `with` configuration, general unions, dot
-shorthands, null-aware collection elements, `test` / `group` declarations, and
-full pattern exhaustiveness. No claim of full 115-decision conformance is made.
+Still rejected, rather than given an invented meaning: spreads, `if` / `for`
+inside `[]`, `map:`, and `set:`, `await for`, enums, mixins, extensions,
+generators, `try` / `catch`, `late`, `state`, and `computed`. A non-constant
+step of zero is not checked at runtime. Match expressions are not implemented.
+Older diagnostics stay `Q100` and `Q200`. Web numeric behavior has not been
+executed in CI. No claim of full 115-decision conformance is made.

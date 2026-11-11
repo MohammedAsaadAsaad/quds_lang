@@ -10,7 +10,8 @@ class Symbol {
       FunctionDeclaration? function,
       this.classDeclaration,
       this.classCase,
-      this.parameterTypes = const []});
+      this.parameterTypes = const [],
+      this.readonly = false});
   final String name, dartName;
   String type;
   final bool mutable, constant;
@@ -19,6 +20,7 @@ class Symbol {
   final ClassDeclaration? classDeclaration;
   final ClassCase? classCase;
   final List<String> parameterTypes;
+  final bool readonly;
   FunctionDeclaration? get function =>
       overloads.length == 1 ? overloads.single : null;
 
@@ -47,6 +49,10 @@ class SemanticModel {
   /// Const expressions that were evaluated. Short-circuited operands are absent.
   final constants = <Expression, ConstValue>{};
   final imports = <ImportDeclaration>[];
+  final warnings = <CompilerException>[];
+  final wrapAs = <Expression, String>{};
+  final captures = <CaptureExpression, List<(Symbol outer, Symbol copy)>>{};
+  final shapes = <Node, List<String>>{};
 }
 
 class Analyzer {
@@ -70,7 +76,8 @@ class Analyzer {
           {bool mutable = false,
           bool constant = false,
           ConstValue? constantValue,
-          FunctionDeclaration? function}) =>
+          FunctionDeclaration? function,
+          bool readonly = false}) =>
       Symbol(
               name,
               name == 'main' && function != null ? 'main' : '_q${_nextName++}',
@@ -78,8 +85,18 @@ class Analyzer {
               mutable: mutable,
               constant: constant,
               constantValue: constantValue,
-              function: function)
+              function: function,
+              readonly: readonly)
           .withFunction(function);
+  String? _expected;
+  String? _doType;
+  int _doDepth = 0;
+  Never error(String code, String message, Node node) =>
+      throw CompilerException(code, message, node.span);
+  void warn(String code, String message, Node node) {
+    model.warnings.add(CompilerException(code, message, node.span));
+  }
+
   SemanticModel analyze(Program program) {
     _global.symbols['print'] = Symbol('print', 'print', 'void');
     _global.symbols['missing'] =
@@ -91,6 +108,7 @@ class Analyzer {
     _global.symbols['Error'] =
         Symbol('Error', 'Error', 'Result', parameterTypes: const ['*']);
     final functions = <FunctionDeclaration>[];
+    final tests = <TestDeclaration>[];
     for (final statement in program.statements) {
       switch (statement) {
         case FunctionDeclaration():
@@ -101,6 +119,8 @@ class Analyzer {
           registerClass(statement);
         case ImportDeclaration():
           registerImport(statement);
+        case TestDeclaration():
+          tests.add(statement);
         default:
           fail(
               'Module scope permits functions, classes, imports, and const bindings',
@@ -116,6 +136,9 @@ class Analyzer {
     }
     for (final statement in functions) {
       analyzeFunction(statement);
+    }
+    for (final statement in tests) {
+      check(statement);
     }
     for (final statement in program.statements) {
       if (statement is ClassDeclaration) {
@@ -253,6 +276,16 @@ class Analyzer {
   }
 
   void validateType(String type, Node node, {bool allowVoid = true}) {
+    if (type.startsWith('readonly ')) {
+      validateType(type.substring(9), node, allowVoid: false);
+      return;
+    }
+    if (type.contains(' | ')) {
+      for (final part in type.split(' | ')) {
+        validateType(part.trim(), node, allowVoid: false);
+      }
+      return;
+    }
     if ({'int', 'double', 'num', 'bool', 'String', 'Null'}.contains(type)) {
       return;
     }
@@ -397,12 +430,24 @@ class Analyzer {
     switch (node) {
       case Binding():
         final existing = _scope.lookup(node.name);
+        final savedExpected = _expected;
+        if (node.type != null) {
+          _expected = node.type;
+        } else if (existing != null &&
+            node.mode == BindingMode.inferred &&
+            node.type == null) {
+          _expected = existing.type;
+        }
         final type = expression(node.value);
+        _expected = savedExpected;
         if (type == 'void')
           fail('A void expression cannot initialize a binding', node);
         if (existing != null &&
             node.mode == BindingMode.inferred &&
             node.type == null) {
+          if (existing.readonly) {
+            error('E307', 'A readonly reference cannot be mutated', node);
+          }
           if (!existing.mutable)
             fail('Cannot assign immutable binding ${node.name}', node);
           final result = node.operator == '='
@@ -430,16 +475,26 @@ class Analyzer {
         validateType(target, node, allowVoid: false);
         if (!compatible(type, target))
           fail('Cannot initialize $target with $type', node);
+        var stored = target;
+        var readonly = false;
+        if (stored.startsWith('readonly ')) {
+          readonly = true;
+          stored = stored.substring(9);
+        }
+        if (stored.contains(' | ') && !type.contains(' | ')) {
+          model.wrapAs[node.value] = stored;
+        }
         ConstValue? constantValue;
         if (node.mode == BindingMode.constant) {
           constantValue = _constants.evaluate(node.value);
           checkConstShape(target, constantValue);
         }
-        final symbol = create(node.name, target,
+        final symbol = create(node.name, stored,
             mutable: node.mode == BindingMode.mutable ||
                 node.mode == BindingMode.shadowMutable,
             constant: node.mode == BindingMode.constant,
-            constantValue: constantValue);
+            constantValue: constantValue,
+            readonly: readonly);
         _scope.symbols[node.name] = symbol;
         model.declarations[node] = symbol;
       case IfStatement():
@@ -496,9 +551,13 @@ class Analyzer {
           final saved = _scope;
           _scope = _Scope(saved);
           bindPattern(arm.pattern, matched);
+          if (arm.guard != null && expression(arm.guard!) != 'bool') {
+            fail('when guard must be bool', arm.guard!);
+          }
           statements(arm.body);
           _scope = saved;
         }
+        checkExhaustive(node, matched);
       case DestructureStatement():
         final type = expression(node.value);
         bindPattern(node.pattern, type, declare: true);
@@ -510,8 +569,49 @@ class Analyzer {
           fail('Return type $type is incompatible with $_returnType', node);
       case ExpressionStatement():
         expression(node.expression);
-        if (node.expression is! CallExpression)
+        if (node.expression is! CallExpression &&
+            node.expression is! WithExpression &&
+            node.expression is! DoExpression) {
           fail('Only calls may be used as expression statements', node);
+        }
+      case ResultStatement():
+        if (_doDepth == 0) {
+          error('E106', 'result is only valid inside do', node);
+        }
+        final type = expression(node.value);
+        if (_doType != null && _doType != type) {
+          error(
+              'E300', 'result type $type is incompatible with $_doType', node);
+        }
+        _doType = type;
+      case CForStatement():
+        final savedFor = _scope;
+        _scope = _Scope(savedFor);
+        check(node.init);
+        if (expression(node.condition) != 'bool') {
+          fail('for condition must be bool', node.condition);
+        }
+        if (node.step case final step?) {
+          if (_zeroStep(step)) {
+            error('E801', 'A loop step cannot be zero', step);
+          }
+          expression(step);
+        }
+        _loopDepth++;
+        statements(node.body);
+        _loopDepth--;
+        _scope = savedFor;
+      case RepeatStatement():
+        if (node.body.isEmpty) fail('repeat needs a body', node);
+        _loopDepth++;
+        statements(node.body, nested: true);
+        _loopDepth--;
+        if (expression(node.condition) != 'bool') {
+          fail('repeat condition must be bool', node.condition);
+        }
+      case TestDeclaration():
+        model.declarations[node] = create(node.title, 'void');
+        statements(node.body, nested: true);
       case FunctionDeclaration():
         registerFunction(node, _scope);
         analyzeFunction(node);
@@ -541,6 +641,12 @@ class Analyzer {
     switch (pattern) {
       case WildcardPattern():
         return;
+      case TypedPattern():
+        if (pattern.name != null) {
+          final symbol = create(pattern.name!, pattern.type);
+          _scope.symbols[pattern.name!] = symbol;
+          model.declarations[pattern] = symbol;
+        }
       case BindingPattern():
         final existing = _scope.lookup(pattern.name);
         if (existing?.classCase != null) {
@@ -597,6 +703,17 @@ class Analyzer {
 
   bool compatible(String from, String to) {
     if (from == to || from == '*') return true;
+    if (to.startsWith('readonly ')) {
+      final source = from.startsWith('readonly ') ? from.substring(9) : from;
+      return compatible(source, to.substring(9));
+    }
+    if (from.startsWith('readonly ')) return false;
+    if (to.contains(' | ')) {
+      return to.split(' | ').any((arm) => compatible(from, arm.trim()));
+    }
+    if (from.contains(' | ')) {
+      return from.split(' | ').every((arm) => compatible(arm.trim(), to));
+    }
     if (to == 'num' && (from == 'int' || from == 'double')) return true;
     if (to.endsWith('?')) {
       final inner = to.substring(0, to.length - 1);
@@ -652,7 +769,8 @@ class Analyzer {
   }
 
   String member(MemberAccess node) {
-    final type = expression(node.object);
+    final raw = expression(node.object);
+    final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
     final base = unwrap(type);
     if (node.name == 'length' &&
         (base == 'String' ||
@@ -681,7 +799,8 @@ class Analyzer {
   }
 
   String index(IndexExpression node) {
-    final type = unwrap(expression(node.object));
+    final raw = expression(node.object);
+    final type = unwrap(raw.startsWith('readonly ') ? raw.substring(9) : raw);
     final indexType = expression(node.index);
     if (type.startsWith('List<')) {
       if (!compatible(indexType, 'int'))
@@ -721,10 +840,11 @@ class Analyzer {
   String setLiteral(SetExpression node) {
     if (node.elements.isEmpty)
       fail('Empty sets require a type annotation', node);
-    var type = expression(node.elements.first);
-    for (final element in node.elements.skip(1)) {
-      if (expression(element) != type)
-        fail('Set elements must share a type', element);
+    var type = elementTypeOf(node.elements.first, aware(node.nullAware, 0));
+    for (var i = 1; i < node.elements.length; i++) {
+      final next = elementTypeOf(node.elements[i], aware(node.nullAware, i));
+      if (next != type)
+        fail('Set elements must share a type', node.elements[i]);
     }
     return 'Set<$type>';
   }
@@ -825,6 +945,15 @@ class Analyzer {
       RangeExpression() => range(node),
       AwaitExpression() => awaitExpression(node),
       PropagateExpression() => propagate(node),
+      DoExpression() => doExpression(node),
+      CaptureExpression() => captureExpression(node),
+      ConversionExpression() => conversion(node),
+      WithExpression() => withExpression(node),
+      DotShorthand() => dotShorthand(node),
+      AssignExpression() => assignExpression(node),
+      NullAwareElement() => elementTypeOf(node.value, true),
+      CollectionIf() => collectionIfType(node),
+      CollectionFor() => collectionForType(node),
     };
     model.types[node] = type;
     return type;
@@ -841,7 +970,7 @@ class Analyzer {
     if (symbol.parameterTypes.isNotEmpty) {
       return '(${symbol.parameterTypes.join(', ')}) -> ${symbol.type}';
     }
-    return symbol.type;
+    return symbol.readonly ? 'readonly ${symbol.type}' : symbol.type;
   }
 
   String functionType(FunctionDeclaration function) {
@@ -864,17 +993,42 @@ class Analyzer {
   String list(ListExpression node) {
     if (node.elements.isEmpty)
       fail('Empty lists require contextual typing (not supported yet)', node);
-    var type = expression(node.elements.first);
-    if (type == 'void') fail('List elements cannot be void', node);
-    for (final element in node.elements.skip(1)) {
-      final next = expression(element);
+    var type = elementTypeOf(node.elements.first, aware(node.nullAware, 0));
+    for (var i = 1; i < node.elements.length; i++) {
+      final next = elementTypeOf(node.elements[i], aware(node.nullAware, i));
       if (numeric(type) && numeric(next) && type != next) {
         type = 'num';
       } else if (type != next) {
-        fail('List elements must have a common supported static type', element);
+        fail('List elements must have a common supported static type',
+            node.elements[i]);
       }
     }
     return 'List<$type>';
+  }
+
+  bool aware(List<bool> flags, int index) =>
+      index < flags.length && flags[index];
+
+  String elementTypeOf(Expression element, bool nullAware) {
+    if (element is NullAwareElement) {
+      return elementTypeOf(element.value, true);
+    }
+    if (element is CollectionIf) return collectionIfType(element);
+    if (element is CollectionFor) return collectionForType(element);
+    final type = expression(element);
+    if (type == 'void') fail('List elements cannot be void', element);
+    if (!nullAware) return type;
+    if (type == 'Null') {
+      final expected = _expected;
+      if (expected != null &&
+          expected.startsWith('List<') &&
+          expected.endsWith('>')) {
+        return expected.substring(5, expected.length - 1);
+      }
+      error('E302', 'A null-aware element needs an expected element type',
+          element);
+    }
+    return type.endsWith('?') ? unwrap(type) : type;
   }
 
   String interpolation(InterpolatedString node) {
@@ -890,7 +1044,14 @@ class Analyzer {
   String call(CallExpression node) {
     final callee = node.callee;
     if (callee is MemberAccess) {
-      final objectType = unwrap(expression(callee.object));
+      final rawObject = expression(callee.object);
+      if (rawObject.startsWith('readonly ') &&
+          _mutating.contains(callee.name)) {
+        error('E307', 'A readonly reference cannot be mutated', callee);
+      }
+      final objectType = unwrap(rawObject.startsWith('readonly ')
+          ? rawObject.substring(9)
+          : rawObject);
       final declaration = _global.symbols[objectType]?.classDeclaration;
       final method = declaration?.methods
           .where((item) => item.name == callee.name)
@@ -1171,5 +1332,268 @@ class Analyzer {
       analyzeFunction(function);
     }
     return function == null ? 'void' : model.declarations[function]!.type;
+  }
+
+  static const _mutating = {
+    'add',
+    'addAll',
+    'remove',
+    'removeAt',
+    'removeLast',
+    'removeWhere',
+    'retainWhere',
+    'clear',
+    'insert',
+    'insertAll',
+    'putIfAbsent',
+    'update',
+    'updateAll',
+    'shuffle',
+    'sort',
+    'fillRange',
+    'replaceRange',
+    'setAll',
+    'removeRange',
+  };
+
+  String doExpression(DoExpression node) {
+    final saved = _doType;
+    _doType = null;
+    _doDepth++;
+    for (final statement in node.body) {
+      check(statement);
+    }
+    _doDepth--;
+    final type = _doType;
+    _doType = saved;
+    if (type == null) error('E109', 'do must finish with result', node);
+    return type;
+  }
+
+  String captureExpression(CaptureExpression node) {
+    final saved = _scope;
+    _scope = _Scope(saved);
+    final copies = <(Symbol, Symbol)>[];
+    for (final name in node.names) {
+      final outer = saved.lookup(name);
+      if (outer == null) fail('Undefined symbol: $name', node);
+      final copy = create(name, outer.type);
+      _scope.symbols[name] = copy;
+      copies.add((outer, copy));
+    }
+    model.captures[node] = copies;
+    final type = expression(node.body);
+    _scope = saved;
+    return '() -> $type';
+  }
+
+  String conversion(ConversionExpression node) {
+    final source =
+        unwrap(expression(node.operand).replaceFirst('readonly ', ''));
+    final target = node.type.endsWith('?')
+        ? node.type.substring(0, node.type.length - 1)
+        : node.type;
+    validateType(target, node, allowVoid: false);
+    if (source != target && !_convertible(source, target)) {
+      error('E300', 'Cannot convert $source to $target', node);
+    }
+    if (!node.safe) return node.type;
+    return node.type.endsWith('?') ? node.type : '${node.type}?';
+  }
+
+  bool _convertible(String from, String to) {
+    const kinds = {'int', 'double', 'num', 'String', 'bool'};
+    return kinds.contains(from) && kinds.contains(to);
+  }
+
+  String withExpression(WithExpression node) {
+    final type = expression(node.receiver);
+    if (type.startsWith('readonly ')) {
+      error('E307', 'A readonly reference cannot be mutated', node);
+    }
+    final bare = unwrap(type);
+    final declaration = _global.symbols[bare]?.classDeclaration;
+    if (declaration == null) {
+      error('E300', 'with requires a class value', node);
+    }
+    model.shapes[node] = declaration.fields.map((field) => field.name).toList();
+    for (var i = 0; i < node.fields.length; i++) {
+      final fields =
+          declaration.fields.where((field) => field.name == node.fields[i]);
+      if (fields.length != 1) {
+        error('E300', 'No field ${node.fields[i]} on $bare', node);
+      }
+      final value = expression(node.values[i]);
+      if (!compatible(value, fields.single.type)) {
+        error(
+            'E300', 'Cannot set ${node.fields[i]} from $value', node.values[i]);
+      }
+    }
+    return type;
+  }
+
+  String dotShorthand(DotShorthand node) {
+    final expected = _expected;
+    if (expected == null) {
+      error('E302', 'Dot shorthand needs one expected type', node);
+    }
+    var bare =
+        expected.startsWith('readonly ') ? expected.substring(9) : expected;
+    if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+    final symbol = _global.symbols[bare];
+    final declaration = symbol?.classDeclaration;
+    if (declaration == null) {
+      error('E302', 'No type $bare for .${node.name}', node);
+    }
+    if (node.name == 'new') {
+      if (node.arguments != null) {
+        for (final argument in node.arguments!) {
+          if (argument.name == null) {
+            error('E500', 'Dot shorthand constructor uses named fields',
+                argument);
+          }
+          final field = declaration.fields
+              .where((item) => item.name == argument.name)
+              .toList();
+          if (field.length != 1) {
+            error('E500', 'Unknown field ${argument.name}', argument);
+          }
+          final saved = _expected;
+          _expected = field.single.type;
+          final type = expression(argument.value);
+          _expected = saved;
+          if (!compatible(type, field.single.type)) {
+            error('E300', 'Cannot initialize ${argument.name} with $type',
+                argument);
+          }
+        }
+      }
+      return bare;
+    }
+    final matched =
+        declaration.cases.where((item) => item.name == node.name).toList();
+    if (matched.length != 1) {
+      error('E302', 'No member ${node.name} on $bare', node);
+    }
+    return bare;
+  }
+
+  String assignExpression(AssignExpression node) {
+    final symbol = _scope.lookup(node.name);
+    if (symbol == null) fail('Undefined symbol: ${node.name}', node);
+    if (symbol.readonly) {
+      error('E307', 'A readonly reference cannot be mutated', node);
+    }
+    if (!symbol.mutable) {
+      fail('Cannot assign immutable binding ${node.name}', node);
+    }
+    model.references[node] = symbol;
+    final type = expression(node.value);
+    final result = node.operator == '='
+        ? type
+        : binaryType(symbol.type, node.operator[0], type, node);
+    if (!compatible(result, symbol.type)) {
+      fail('Cannot assign $result to ${symbol.type}', node);
+    }
+    return symbol.type;
+  }
+
+  String collectionIfType(CollectionIf node) {
+    if (expression(node.condition) != 'bool') {
+      fail('collection if condition must be bool', node.condition);
+    }
+    if (node.thenElements.isEmpty) fail('collection if needs an element', node);
+    final type = groupElementType(node.thenElements);
+    if (node.elseElements.isNotEmpty) {
+      final other = groupElementType(node.elseElements);
+      if (other != type) {
+        fail('List elements must have a common supported static type', node);
+      }
+    }
+    return type;
+  }
+
+  String collectionForType(CollectionFor node) {
+    final iterable = expression(node.iterable);
+    final element = elementType(iterable, node.iterable);
+    if (_scope.lookup(node.name) != null) {
+      fail('Loop binding would shadow ${node.name}', node);
+    }
+    if (node.body.isEmpty) fail('collection for needs an element', node);
+    final symbol = create(node.name, element);
+    model.declarations[node] = symbol;
+    final saved = _scope;
+    _scope = _Scope(saved);
+    _scope.symbols[node.name] = symbol;
+    final type = groupElementType(node.body);
+    _scope = saved;
+    return type;
+  }
+
+  String groupElementType(List<Expression> elements) {
+    var type = elementTypeOf(elements.first, false);
+    for (var i = 1; i < elements.length; i++) {
+      final next = elementTypeOf(elements[i], false);
+      if (numeric(type) && numeric(next) && type != next) {
+        type = 'num';
+      } else if (type != next) {
+        fail('List elements must have a common supported static type',
+            elements[i]);
+      }
+    }
+    return type;
+  }
+
+  bool _zeroStep(Expression step) {
+    if (step is Literal && step.value == 0) return true;
+    if (step is AssignExpression &&
+        (step.operator == '+=' || step.operator == '-=') &&
+        step.value is Literal &&
+        (step.value as Literal).value == 0) {
+      return true;
+    }
+    return false;
+  }
+
+  void checkExhaustive(MatchStatement node, String matched) {
+    final universe = matched.contains(' | ')
+        ? matched.split(' | ').map((part) => part.trim()).toSet()
+        : _global.symbols[matched]?.classDeclaration?.kind == 'sealedType'
+            ? _global.symbols[matched]!.classDeclaration!.cases
+                .map((item) => item.name)
+                .toSet()
+            : null;
+    if (universe == null || universe.isEmpty) return;
+    final covered = <String>{};
+    var closed = false;
+    for (final arm in node.arms) {
+      if (closed) {
+        error('E313', 'Unreachable match arm', arm.pattern);
+      }
+      final names = _covered(arm.pattern, universe);
+      if (arm.guard != null) continue;
+      if (names == null) {
+        covered.addAll(universe);
+        closed = true;
+      } else {
+        covered.addAll(names);
+        if (covered.containsAll(universe)) closed = true;
+      }
+    }
+    if (!covered.containsAll(universe)) {
+      warn('W001', 'match does not cover every case', node);
+    }
+  }
+
+  Set<String>? _covered(Pattern pattern, Set<String> universe) {
+    return switch (pattern) {
+      WildcardPattern() => null,
+      TypedPattern() => {pattern.type},
+      BindingPattern() =>
+        model.references[pattern]?.classCase == null ? null : {pattern.name},
+      ConstructorPattern() =>
+        pattern.typeName.isEmpty ? null : {pattern.typeName},
+      LiteralPattern() || ListPattern() => <String>{},
+    };
   }
 }

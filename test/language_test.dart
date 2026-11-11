@@ -198,7 +198,162 @@ main():
     expect(File('${directory.path}/sample/main.quds').existsSync(), isTrue);
     expect(File('${directory.path}/sample/quds.yaml').readAsStringSync(),
         contains('language: 1.2'));
+
+    File('${directory.path}/suite.quds').writeAsStringSync('''
+test "adds":
+  print 1
+group "suite":
+  test "inner":
+    print 2
+''');
+    final suite = await cli(['test', '${directory.path}/suite.quds']);
+    expect(suite.exitCode, 0, reason: '${suite.stdout}\n${suite.stderr}');
+    expect(suite.stdout, '1\n2\n');
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('do, capture, conversion, with, unions, and loops execute', () async {
+    await execute('''
+value class Point:
+  x: int
+  y: int
+class Box:
+  n: int
+pick(flag: bool) -> int:
+  value = do:
+    if flag:
+      return 4
+    result 0
+  return value
+pack(values: List<int>) -> List<int> = values
+main():
+  answer = do:
+    result 1 + 2
+  print answer
+  print pick(true)
+  var count = 1
+  saved = capture(count) -> count + 1
+  count = 9
+  print saved()
+  var box = Box(n: 1)
+  read = capture(box) -> box.n
+  box = Box(n: 9)
+  print read()
+  print "16" to int
+  print "no" to? int
+  print "1" to? int?
+  moved = with Point(x: 1, y: 2):
+    x: 4
+  print moved.x
+  point: Point? = null
+  skipped = with? point:
+    x: 9
+  print skipped
+  value: int | String = 1
+  match value:
+    int n:
+      print n
+    String:
+      print "text"
+  number: int | double = 1
+  print number
+  text: String | Null = null
+  print text ?? "none"
+  var total = 0
+  for var i = 0 while i < 4 step i += 1:
+    if i == 1:
+      continue
+    total += i
+  print total
+  var n = 0
+  repeat:
+    n += 1
+  while n < 2
+  print n
+  items = pack:
+    values:
+      1
+      if total > 0:
+        2
+      for item in [4]:
+        item
+  print items.length
+''', '3\n4\n2\n1\n16\nnull\n1\n4\nnull\n1\n1\nnone\n5\n2\n3\n');
+  });
+
+  test('dot shorthand, null-aware elements, and exhaustiveness', () async {
+    final source = '''
+sealed type Color:
+  Red
+  Blue
+value class Point:
+  x: int
+  y: int
+main():
+  color: Color = .Red
+  match color:
+    Red:
+      print "red"
+    Blue:
+      print "blue"
+  point: Point = .new(x: 1, y: 2)
+  print point.y
+  name: String? = null
+  items = [?name, "Ada"]
+  print items.length
+  show(skip: bool):
+    chosen = Blue()
+    match chosen:
+      Red when skip:
+        print "no"
+      Blue:
+        print "blue"
+  show(false)
+''';
+    final compiled = compile(source);
+    expect(compiled.semantics.warnings.map((warning) => warning.code),
+        contains('W001'));
+    await execute(source, 'red\n2\n1\nblue\n');
+  });
+
+  test('new diagnostics reject the programs they name', () {
+    final rejected = {
+      'main():\n  result 1\n': 'E106',
+      'main():\n  value = do:\n    print 1\n  print value\n': 'E109',
+      'main():\n  for var i = 0 while i < 3 step i += 0:\n    print i\n':
+          'E801',
+      '''
+class Bag:
+  n: int
+  add(value: int) -> int = n + value
+main():
+  bag: readonly Bag = Bag(n: 1)
+  print bag.add(2)
+''': 'E307',
+      '''
+sealed type Color:
+  Red
+  Blue
+main():
+  color = .Red
+''': 'E302',
+      '''
+sealed type Color:
+  Red
+  Blue
+main():
+  match Red():
+    _:
+      print "all"
+    Red:
+      print "red"
+''': 'E313',
+    };
+    rejected.forEach((source, code) {
+      expect(() => compile(source), throwsA(predicate((error) {
+        return '$error'.contains(code);
+      })), reason: source);
+    });
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

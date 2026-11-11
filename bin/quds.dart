@@ -135,7 +135,8 @@ void _test(List<String> arguments) {
   final input = File(arguments[1]);
   try {
     final result = compile(input.readAsStringSync(), file: input.path);
-    final tests = result.program.statements
+    final tests = result.program.statements.whereType<TestDeclaration>();
+    final legacy = result.program.statements
         .whereType<FunctionDeclaration>()
         .where((function) =>
             function.name == 'test' || function.name.startsWith('test'));
@@ -143,10 +144,12 @@ void _test(List<String> arguments) {
     if (!result.program.statements
         .whereType<FunctionDeclaration>()
         .any((function) => function.name == 'main')) {
-      final calls = tests
-          .map((function) =>
-              '  ${result.semantics.declarations[function]!.dartName}();')
-          .join('\n');
+      final calls = [
+        ...tests.map(
+            (test) => '  ${result.semantics.declarations[test]!.dartName}();'),
+        ...legacy.map((function) =>
+            '  ${result.semantics.declarations[function]!.dartName}();'),
+      ].join('\n');
       dart = '$dart\nvoid main() {\n$calls\n}\n';
     }
     final directory = Directory.systemTemp.createTempSync('quds-test-');

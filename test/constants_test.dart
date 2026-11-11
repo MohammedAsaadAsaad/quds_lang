@@ -656,8 +656,34 @@ List<BinaryExpression> operators(Expression node, String op) {
         walk(start);
         walk(end);
       case AwaitExpression(:final operand) ||
-            PropagateExpression(:final operand):
+            PropagateExpression(:final operand) ||
+            ConversionExpression(:final operand):
         walk(operand);
+      case DoExpression() ||
+            CaptureExpression() ||
+            WithExpression() ||
+            DotShorthand() ||
+            AssignExpression():
+        break;
+      case NullAwareElement(:final value):
+        walk(value);
+      case CollectionIf(
+          :final condition,
+          :final thenElements,
+          :final elseElements
+        ):
+        walk(condition);
+        for (final element in thenElements) {
+          walk(element);
+        }
+        for (final element in elseElements) {
+          walk(element);
+        }
+      case CollectionFor(:final iterable, :final body):
+        walk(iterable);
+        for (final element in body) {
+          walk(element);
+        }
     }
   }
 

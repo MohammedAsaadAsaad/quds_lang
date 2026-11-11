@@ -98,8 +98,11 @@ class BinaryExpression extends Expression {
 }
 
 class ListExpression extends Expression {
-  const ListExpression(this.elements, super.span);
+  const ListExpression(this.elements, super.span, {this.nullAware = const []});
   final List<Expression> elements;
+
+  /// Parallel to [elements]. True omits a null element after one evaluation.
+  final List<bool> nullAware;
 }
 
 class Argument extends Node {
@@ -204,8 +207,9 @@ class MapExpression extends Expression {
 }
 
 class SetExpression extends Expression {
-  const SetExpression(this.elements, super.span);
+  const SetExpression(this.elements, super.span, {this.nullAware = const []});
   final List<Expression> elements;
+  final List<bool> nullAware;
 }
 
 class RecordExpression extends Expression {
@@ -260,9 +264,83 @@ class ListPattern extends Pattern {
 }
 
 class MatchArm extends Node {
-  const MatchArm(this.pattern, this.body, super.span);
+  const MatchArm(this.pattern, this.body, super.span, {this.guard});
   final Pattern pattern;
   final List<Statement> body;
+  final Expression? guard;
+}
+
+class TypedPattern extends Pattern {
+  const TypedPattern(this.type, this.name, super.span);
+  final String type;
+  final String? name;
+}
+
+class DoExpression extends Expression {
+  const DoExpression(this.body, super.span);
+  final List<Statement> body;
+}
+
+class ResultStatement extends Statement {
+  const ResultStatement(this.value, super.span);
+  final Expression value;
+}
+
+class CaptureExpression extends Expression {
+  const CaptureExpression(this.names, this.body, super.span);
+  final List<String> names;
+  final Expression body;
+}
+
+class ConversionExpression extends Expression {
+  const ConversionExpression(this.operand, this.type, this.safe, super.span);
+  final Expression operand;
+  final String type;
+  final bool safe;
+}
+
+class WithExpression extends Expression {
+  const WithExpression(
+      this.receiver, this.fields, this.values, this.nullAware, super.span);
+  final Expression receiver;
+  final List<String> fields;
+  final List<Expression> values;
+  final bool nullAware;
+}
+
+class DotShorthand extends Expression {
+  const DotShorthand(this.name, this.arguments, super.span);
+  final String name;
+  final List<Argument>? arguments;
+}
+
+class AssignExpression extends Expression {
+  const AssignExpression(this.name, this.operator, this.value, super.span);
+  final String name, operator;
+  final Expression value;
+}
+
+class TestDeclaration extends Statement {
+  const TestDeclaration(
+      this.kind, this.title, this.isAsync, this.body, super.span);
+  final String kind, title;
+  final bool isAsync;
+  final List<Statement> body;
+}
+
+class CForStatement extends Statement {
+  const CForStatement(
+      this.init, this.condition, this.step, this.body, super.span);
+  final Statement init;
+  final Expression condition;
+  final Expression? step;
+  final List<Statement> body;
+}
+
+class RepeatStatement extends Statement {
+  const RepeatStatement(this.body, this.condition, super.span);
+  final List<Statement> body;
+  final Expression condition;
 }
 
 class MatchStatement extends Statement {
@@ -275,4 +353,24 @@ class DestructureStatement extends Statement {
   const DestructureStatement(this.pattern, this.value, super.span);
   final Pattern pattern;
   final Expression value;
+}
+
+class NullAwareElement extends Expression {
+  const NullAwareElement(this.value, super.span);
+  final Expression value;
+}
+
+class CollectionIf extends Expression {
+  const CollectionIf(
+      this.condition, this.thenElements, this.elseElements, super.span);
+  final Expression condition;
+  final List<Expression> thenElements;
+  final List<Expression> elseElements;
+}
+
+class CollectionFor extends Expression {
+  const CollectionFor(this.name, this.iterable, this.body, super.span);
+  final String name;
+  final Expression iterable;
+  final List<Expression> body;
 }

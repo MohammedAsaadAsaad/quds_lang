@@ -46,6 +46,8 @@ enum TokenKind {
   shiftRight,
   unsignedShiftRight,
   at,
+  toQuestion,
+  withQuestion,
   newline,
   indent,
   dedent,
@@ -213,6 +215,16 @@ class _Scanner {
           for (var n = 0; n < width; n++) {
             advance();
           }
+        }
+        final word = source.substring(start, i);
+        if ((word == 'to' || word == 'with') &&
+            ch == '?' &&
+            (i + 1 >= source.length ||
+                (source[i + 1] != '?' && source[i + 1] != '.'))) {
+          advance();
+          emit(word == 'to' ? TokenKind.toQuestion : TokenKind.withQuestion,
+              start, sl, sc);
+          continue;
         }
         emit(TokenKind.identifier, start, sl, sc);
         continue;

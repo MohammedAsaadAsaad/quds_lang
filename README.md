@@ -4,9 +4,9 @@ Quds is a general-purpose, statically typed, indentation-based language targetin
 Dart. MVP-0 implements a small compiler pipeline: source spans → indentation-aware
 lexer → typed AST/Pratt parser → static semantics → deterministic Dart emitter.
 Supported `const` initializers, including top-level consts, are evaluated in
-the compiler, and their errors use the original `.quds` location. The 115
-design decisions remain the roadmap;
-most are not implemented yet.
+the compiler, and their errors use the original `.quds` location. The language design is version 1.2 in
+[the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md).
+The compiler implements the MVP-0 subset only.
 
 ## Build and run
 
@@ -60,4 +60,4 @@ export PUB_CACHE=/workspace/.pub-cache
 See [supported grammar and limitations](docs/MVP_0.md),
 [validation results](docs/VALIDATION.md), [environment setup](docs/ENVIRONMENT.md),
 [approved decisions](docs/LANGUAGE_DECISIONS.md), and
-[open specification questions](docs/OPEN_QUESTIONS.md).
+[what the design closed](docs/OPEN_QUESTIONS.md).

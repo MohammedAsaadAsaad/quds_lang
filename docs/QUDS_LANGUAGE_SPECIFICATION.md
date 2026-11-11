@@ -1,6 +1,6 @@
 # Quds Language — Complete Design Decisions and Agent Implementation Specification
 
-**Version:** Design baseline 1.1-draft · **Date:** 2026-11-11 · **Rules:** QUDS-001 through QUDS-115 · **Status:** Design decisions with normative conflict resolutions. Not a finished executable language, and not a claim that the compiler implements these rules.
+**Version:** 1.2 · **Date:** 2026-11-11 · **Rules:** QUDS-001 through QUDS-115 · **Status:** Language design complete through Dart 3.13. The compiler is not claimed to implement this version; it still implements the MVP-0 subset.
 
 ## Agent instructions — read before implementation
 
@@ -8,7 +8,7 @@ You are implementing **Quds**, a general-purpose, indentation-based, strongly an
 
 **Priority rules:**
 
-1. Preserve all numbered decisions unless an explicit contradiction is found. Record conflicts in `docs/OPEN_QUESTIONS.md`, propose alternatives, and implement only non-controversial subsets until resolved.
+1. Preserve the numbered decisions and the formal grammar. A contradiction between them is a specification bug. Record it in `docs/OPEN_QUESTIONS.md` and do not invent a third meaning in the compiler.
 2. Implement a proper lexer → parser → typed AST → symbol resolution → type checker → normalized IR → Dart emitter, not a regex-based translator.
 3. Source locations and diagnostics must refer to original `.quds` source. Generated Dart must preserve evaluation order and side effects.
 4. Start with an executable, tested MVP; do not claim 115 features are implemented until every one has positive, negative and interop conformance tests.
@@ -16,9 +16,9 @@ You are implementing **Quds**, a general-purpose, indentation-based, strongly an
 6. Reuse Dart runtime semantics where specified. Do not claim compile-time safety that is only enforced by a runtime wrapper, particularly for `readonly`, union types and external APIs.
 7. Keep syntax short and consistent, favoring `:` plus indentation, but never introduce parsing ambiguity to save characters.
 8. Generated Dart should be readable, deterministic, testable and compatible with supported Dart SDK versions.
-9. Mark normative vs illustrative syntax. Some examples below are *design sketches* pending a formal EBNF and lowering specification; do not silently treat ambiguous sketches as settled grammar.
+9. Illustrations may omit imports and surrounding declarations. They are examples. The formal grammar is the syntax.
 10. Report exactly what was coded, what was tested, and what remains unsupported.
-11. If an illustration or an earlier sentence in a rule conflicts with **Normative resolutions**, that section wins. Illustrations stay sketches until they match it. Do not reintroduce a second meaning for a token that section assigns.
+11. Authority order is: the single-meaning token table, then **Formal grammar and semantics**, then **Normative resolutions**, then illustrations. An elaboration must not give a token a second meaning in the same position.
 
 ## Canonical design illustrations
 
@@ -54,7 +54,7 @@ for i in 1..5:
 
 ## Rule catalogue
 
-Each rule contains: **decision**, **Quds illustration**, **compiler obligations**, and **conformance cases**. A sample may omit imports or surrounding declarations to focus on the feature.
+Each rule contains: **decision**, **Quds illustration**, **compiler obligations**, and **conformance cases**. A sample may omit imports or surrounding declarations. Illustrations are examples of the formal grammar, not a second syntax.
 
 ### QUDS-001 — Indentation-sensitive blocks
 
@@ -89,7 +89,7 @@ const maxItems = 10
 
 ### QUDS-003 — Core collection literals
 
-**Approved decision.** Lists use `[]`; maps and sets use the keywords `map:` and `set:` followed by an indented element block; records are parenthesized and first-class. `map:` and `set:` are not calls. A function or constructor named `map` or `set` is called with parentheses or a positional argument (`map items`), never as a bare colon block. Type inference preserves element, key, and value types. Empty lists, maps, and sets are allowed where the element type is known from context or from an explicit annotation; otherwise the program is rejected and is not given type `dynamic`.
+**Approved decision.** Lists use `[]`; maps and sets use the keywords `map:` and `set:` followed by an indented element block; records are parenthesized and first-class. `map:` and `set:` are not calls. A function or constructor named `map` or `set` is called with parentheses or a positional argument (`map items`), never as a bare colon block. Inside `map:`, a row is `key-expression: value-expression`; an identifier key is that variable's value, so a string key is quoted. Type inference preserves element, key, and value types. Empty lists, maps, and sets are allowed where the element type is known from context or from an explicit annotation; otherwise the program is rejected and is not given type `dynamic`. A prefix `?` on a collection element is a null-aware element: the expression runs once and is omitted when the value is null.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -999,7 +999,7 @@ quds build app.quds
 
 ### QUDS-064 — Testing DSL
 
-**Approved decision.** Support test/group/expect, async tests and Flutter widget tests via Dart ecosystem.
+**Approved decision.** `test "description":` and `group "description":` are declarations whose indented blocks are function bodies. `expect` is a function. These declarations lower to the Dart `test` package. They are not call colon-blocks, so a test body is not reclassified as a collection. Async tests are `test "description" async:`. Flutter widget tests call the Flutter test library; the language adds no widget syntax.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1812,6 +1812,7 @@ Longest match wins. These are single tokens: `..<`, `??`, `??=`, `?.`, `...?`, `
 | `with expr:` / `with? expr:` | Object configuration. Receiver runs once. `with?` yields null without entering the block when the receiver is null. |
 | `?` in type position | Nullable type `T?`. |
 | `?` in expression position, postfix | Unwrap `Result` or return its error from the nearest compatible `Result` function. |
+| `?` before a collection element | Null-aware element. The expression runs once and is omitted when null. |
 | `?.` | Null-aware member, call, or index. |
 | `??` / `??=` | If-null expression and if-null assignment. The right side runs only when the left is null. |
 | `to` | Explicit conversion. Failure is an error. |
@@ -1819,6 +1820,7 @@ Longest match wins. These are single tokens: `..<`, `??`, `??=`, `?.`, `...?`, `
 | `with?` | Null-aware configuration. Not `with` plus Result `?`. |
 | `...?` | Null-aware spread. The operand spreads only when non-null. |
 | postfix `!` | Null assertion. |
+| `.` before an identifier with no written receiver | Member selection whose receiver type is the expected type (dot shorthand). The same selection as `Type.member`. |
 | prefix `!` or `not` | Boolean negation. |
 | `++` / `--` | Not in the language. The effect is `+= 1` or `-= 1`, and the target runs once. |
 | `?:` | Not in the language. The effect is an if-expression. |
@@ -1841,8 +1843,9 @@ From tightest to loosest, with Dart's order where Quds keeps the operator:
 10. `and`
 11. `or`
 12. `??`
-13. `|>`
-14. Assignment and compound assignment
+13. Juxtaposition call. The argument is everything tighter than this slot, including `??`, so `print a + b` is `print(a + b)`, `expect a == b` is `expect(a == b)`, and `print a ?? b` is `print(a ?? b)`. It is left-associative: `f g h` is `(f g) h`.
+14. `|>`
+15. Assignment and compound assignment
 
 If-expressions, `do:`, `match`, and `with` are primary forms, not infix operators. There is no ternary and no cascade at the Dart cascade level.
 
@@ -1855,6 +1858,8 @@ Classification uses the tokens in the block, never the expected type.
 3. A block whose rows are all `identifier:` entries is a named-argument block. `if`, `for`, `repeat`, spread, and any row that is not an identifier label keep the block from being a named-argument block.
 4. Every other indented block after `:` in argument or element position is a collection-element block. `if` and `for` there are collection forms (QUDS-080).
 5. A named-argument value that is itself a nested block is classified again from that nested block alone.
+6. `test "..." :` and `group "..." :` are declarations. The indented block is a function body, not an argument block and not a collection.
+7. `task group:` is a statement. Its indented block is a suite of `spawn` statements and nested groups.
 
 ```quds
 Column:
@@ -1981,14 +1986,586 @@ Every Dart language rule below is either the same rule, a renamed spelling, or a
 | `augment` | Allowed with the target Dart SDK's augmentation grammar when that SDK supports it |
 | Isolates, FFI, zones, core libraries | `use dart:isolate`, `use dart:ffi`, and the corresponding Dart libraries. No second runtime |
 | Const contexts and implicit const | Same as Dart, and only inside a const context |
+| Null-aware collection elements | Prefix `?` on an element. A null-aware dot shorthand is `?(.member)`, because `?.` stays null-aware access |
+| Dot shorthands `.member` and `.new` | Same selection, written without the type when the expected type is unique. `.new` is the unnamed constructor |
+| Private named initializing formals | A `private` field is initialized by a public parameter of the same Quds name. Dart receives `this._name` and callers pass `name:` |
+| Primary constructors | Fields in a class body are that constructor. The emitter uses Dart's primary-constructor header when the target language version is at least 3.13, and an explicit constructor of the same shape otherwise |
+| `new` and `factory` in a class body without repeating the class name | `init` and `factory` |
+| Generator `return` adds no null element | Same rule as Dart 3.10. `sync*` is `Iterable<T>`, not `Iterable<T?>`, when every `yield` is `T` |
+| Multiple wildcard `_` bindings | `_` never declares a name. It may be repeated |
+| Semicolons | A newline ends the statement. `;` is a lexical error |
+| `{` `}` collection literals | `map:` and `set:` and `[]`. Braces are interpolation and string escapes only |
+| Adjacent string literals | Concatenate, as in Dart |
 
 Overloads, unions, intersections, `readonly`, `Optional`, and `Result` are Quds features. Each overload and each `copyWith` remains callable from Dart through the generated names and the `quds.missing` sentinel. `readonly` is a Quds checker rule plus a boundary check where a Dart API cannot express it. It does not pretend the Dart VM tracks readonly aliases. `protected` is the same kind of honest lowering.
 
-### Still not a second language design
+### Design closure
 
-Macro sandbox limits, diagnostic code numbers, package layout details, and source-map encoding still need engineering specifications. They must follow the rules above. They must not invent a second meaning for a token, a second evaluation order, or a Dart feature with no row in the parity table.
+Formal grammar and semantics, later in this file, specifies the productions, the disambiguation procedures, the lowering, the project layout, the diagnostic registry, the source-map encoding, and the macro sandbox. Those items follow the token table and the resolutions above. A program that can be parsed two ways is a compiler bug or a required rejection, not a new language rule.
 
-**Agent process:** implement from this section. If a program can be parsed two ways, that is a compiler bug or a missing rejection, not a new language rule. If a choice would change behavior this section already fixes, do not change it without an explicit language revision.
+**Agent process:** implement from the formal grammar. If a choice would change behavior this file already fixes, do not change it without an explicit language revision.
+
+## Formal grammar and semantics
+
+This section is the syntax and the meaning of Quds 1.2. It elaborates the token table and the normative resolutions. It does not give a token a second meaning in the same position. A partial compiler rejects a construct it does not implement with `E910`. It does not guess a meaning.
+
+### Notation
+
+In the grammar, `"x"` is a terminal, `[ x ]` is optional, `{ x }` is zero or more, `( x )` groups, and `|` separates alternatives. Those meta-symbols are not Quds tokens. Words written in italics are grammar names. An indented block is written `suite` and means `":"` followed by a newline, a strictly greater indent, statements, and a dedent back to an existing indent.
+
+### Source text
+
+Line endings are `\n`, `\r\n`, and a lone `\r`. All three start a new line. A trailing newline at the end of the file is optional and does not create an extra empty statement.
+
+Whitespace between tokens is a space or a tab and is not significant. Indentation is only spaces. A tab in the indentation of a line is `E002`. A tab inside a line, after the first non-space, is ordinary whitespace.
+
+Comments do not nest. `#` and `//` comment through the end of the line. `/*` comments through the next `*/`. An unclosed comment or string is `E004`. `///` and `/**` are documentation when they sit immediately above a declaration with no blank line between the comment and the declaration. Documentation is attached to that declaration and is emitted as Dart `///`.
+
+`;` is `E102`. `{` and `}` appear only inside strings, as interpolation delimiters or as the doubled escapes `{{` and `}}`.
+
+### Tokens
+
+Longest match wins for the operators in the token table, including `..<`, `?.`, `??`, `??=`, `...?`, `to?`, `with?`, `is!`, and the compound assignments. A number uses Dart's numeric lexical syntax, including hex, scientific notation, digit separators, and a trailing dot that makes a double (`1.`). There is no binary literal. The next character after a number decides: a digit or `_` continues the number when Dart's lexer would continue it; an identifier character after a finished number starts a new token, which is then a syntax error unless an operator separates them. `1.toString` is the double `1.` followed by the name `toString`, the same rejection Dart makes. Write `(1).toString` or `1 .toString`.
+
+An identifier is a letter or `_` or `$`, then letters, digits, `_`, or `$`. The single character `_` is the wildcard token, not an identifier. `__` is an identifier. `$` is allowed so a Dart name can be spelled. Reserved words are not identifiers:
+
+`and`, `as`, `async`, `await`, `break`, `catch`, `class`, `const`, `continue`, `do`, `else`, `enum`, `false`, `for`, `if`, `in`, `is`, `late`, `match`, `not`, `null`, `or`, `return`, `super`, `switch`, `this`, `throw`, `true`, `try`, `var`, `while`, `with`, `yield`.
+
+Every other word in this grammar is contextual. It is a keyword only when the production that uses it matches. Otherwise it is an identifier. `map` and `set` are keywords only when the next token is `:`.
+
+Strings use `'` , `"`, `'''`, and `"""`, with an optional raw prefix `r`. Raw strings have no backslash escapes and no interpolation. Non-raw strings use Dart's backslash escapes. `$` never starts interpolation. `{` starts an interpolation and `}` ends it. `{{` and `}}` are literal braces. The interpolated text is one expression. A `}` inside that expression is the end of the interpolation, so a nested string is the way to include one. Adjacent string literals, with only whitespace or comments between them, concatenate. Their interpolations stay in order and run left to right when the combined string is evaluated.
+
+### Indentation and continuation
+
+A blank line, or a line whose only tokens are comments, does not change the indent. After a header `:` the next non-ignored line must be indented strictly deeper than the header. That depth is the block's indent. Every later line of the block uses that same indent. A smaller indent ends the block and must land on an indent that is already open. Any other indent is `E001`.
+
+A newline does not end an expression while parentheses or brackets are open, while a string is unclosed, or when the last token is a comma, an infix operator, `|>`, or `->`. The following line continues that expression. A continuation may be indented more than the current statement without opening a block. It must not be indented less than the line where the expression started.
+
+A header colon is not a continuation. A match arm and a named-argument row may put their expression on the same line. A `suite` never does.
+
+### Compilation unit
+
+```
+file          = { libraryDirective } , { topLevel }
+libraryDirective
+              = "use" , uri , [ "as" , identifier ]
+                  , [ "show" , nameList | "hide" , nameList ] , [ "deferred" ]
+              | "use" , uri , "when" , constExpression
+              | "when" , constExpression , suiteOfUse
+              | "export" , uri , [ "show" , nameList | "hide" , nameList ]
+              | "part" , stringLiteral
+              | "part" , "of" , uri
+topLevel      = declaration | statement
+declaration   = classDecl | interfaceDecl | enumDecl | mixinDecl
+              | extensionDecl | typeDecl | sealedTypeDecl | annotationDecl
+              | function | binding | testDecl | configDecl
+```
+
+`uri` is a `dart:`, `package:`, or `quds:` name, or a relative path. `nameList` is names separated by commas. `suiteOfUse` is a suite whose statements are `use` directives. `constExpression` is an expression the constant rules accept.
+
+`dart:core` and `quds:core` are imported without a `use` line. `quds:core` defines `Optional`, `missing`, `present`, `Result`, `Ok`, and `Error`. A program name hides a prelude name. `hide` on an explicit `use quds:core` removes the hidden names. A missing library is `E900`. Two unprefixed imports that bring in the same name from different declarations are `E204`. The same declaration imported twice is one binding.
+
+`part` and `part of` follow Dart: parts share one library privacy scope. A mismatched `part of` is `E903`.
+
+A `when` condition is a constant boolean. The names available in it are `platform` (`"vm"`, `"web"`, or `"flutter"`) and the Dart `dart.library.*` flags. The branch that is not selected is not type-checked and is not emitted. A condition that is not a constant boolean is `E902`.
+
+### Declarations and statements
+
+A statement that starts with an identifier, or with a contextual keyword whose keyword production does not match, is a binding, an assignment, or an expression statement. The choice is fixed by the tokens, in this order:
+
+1. `shadow`, `var`, `const`, `late`, or `late var`, followed by a name, is a binding.
+2. A name, optional `: type`, then `=`, is a binding when no binding of that name is visible. It is an assignment when a mutable binding is visible. It is `E202` when an immutable binding is visible.
+3. In statement or member position, a name followed by a parameter list and then `->`, `:`, `=`, `async`, or `sync` is a function declaration. A parameter list is a parenthesized group whose every item is a parameter. In expression position those parentheses are a call.
+4. `test` or `group`, followed by a string literal and `:`, is a test declaration. `test` or `group`, followed by a string, `async`, and `:`, is an async test declaration.
+5. A list, map, record, or object pattern followed by `=` is destructuring. Each name in that pattern follows the binding rule: an invisible name is declared immutable, a visible mutable name is assigned, and a visible immutable name is `E202`. `var` before the pattern declares every new name mutable. A refutable pattern on the left of `=` is `E100`.
+6. Otherwise a name followed by an argument is a call statement. A name alone is an expression statement, which is a tear-off or a value. A zero-argument call is `name()`. A bare name is never a call (`E110`).
+
+```
+binding       = [ "shadow" ] , ( "var" | "const" | "late" "var" | "late" | "state" )
+                  , name , [ ":" , type ] , [ "=" , expression ]
+              | [ "shadow" ] , name , [ ":" , type ] , "=" , expression
+function      = name , [ typeParameters ] , parameterList
+                  , [ "async" | "sync" "*" | "async" "*" ]
+                  , [ "->" , type ]
+                  , ( suite | "=" , expression )
+testDecl      = ( "test" | "group" ) , stringLiteral , [ "async" ] , suite
+parameterList = "(" , [ parameter , { "," , parameter } ] , ")"
+parameter     = [ "var" ] , name , ":" , type , [ "required" ]
+              | [ "var" ] , name , ":" , type , "=" , expression
+              | "[" , parameter , { "," , parameter } , "]"
+              | "..." , name , ":" , type
+              | "this" "." , name , ":" , type , [ "required" | "=" , expression ]
+              | "super" "." , name , ":" , type , [ "required" | "=" , expression ]
+```
+
+`name: Type` is a dual parameter: a Quds caller may pass it by position or by name. `name: Type required` is named-only and required. `name: Type = default` is named-only and optional. A bracket group is optional positional, and a Quds caller may also pass those by name. `...name: Type` is the last positional parameter and has no default; omitting it passes an empty list. A variadic parameter that is not last, or that has a default, is `E503`. A default expression may mention only parameters that appear earlier in the same list (`E503`).
+
+`state name = expression` declares a reactive cell and requires the initializer. `computed name = expression` declares a reactive value that is not assignable and requires the initializer. Both are statement forms, not calls. `test` and `group` are legal at library scope and nested inside `group` only. `config` followed by a dotted name, `:`, and a type is a configuration declaration, not member access:
+
+```
+configDecl    = "config" , [ "secret" ] , dottedName , ":" , type , [ "=" , expression ]
+computedDecl  = "computed" , name , [ ":" , type ] , "=" , expression
+dottedName    = identifier , { "." , identifier }
+```
+
+`config name: Type` is required at startup. `config name: Type = expression` uses the expression when the environment does not supply a value. `config secret name: Type` reads the environment and has no source initializer. A literal assigned to a secret key is `E908`. Lookup order is the process environment, then the `config:` map in `quds.yaml`, then the source default. The environment name is the dotted name in upper case with `.` replaced by `_`.
+
+Other statements:
+
+```
+statement     = binding | computedDecl | function | testDecl | configDecl
+              | ifStatement | loop | matchStatement
+              | "return" , [ expression ]
+              | "result" , expression
+              | "yield" , expression | "yield" "*" , expression
+              | "throw" , expression | "rethrow"
+              | "break" , [ name ] | "continue" , [ name ]
+              | "assert" , expression , [ "," , expression ]
+              | "require" , expression , [ "," , expression ]
+              | "check" , expression , [ "," , expression ]
+              | "defer" , expression
+              | "label" , name
+              | usingStatement | withStatement | watchStatement
+              | "batch" , suite
+              | "task" "group" , suite
+              | "spawn" , expression
+              | tryStatement
+              | expression
+ifStatement   = "if" , condition , suite , { "else" "if" , condition , suite } , [ "else" , suite ]
+condition     = expression | expression , "is" , pattern
+loop          = "for" , pattern , "in" , expression , suite
+              | "await" "for" , pattern , "in" , expression , suite
+              | "for" , forInit , "while" , expression , [ "step" , expression ] , suite
+              | "while" , condition , suite
+              | "repeat" , suite , "while" , expression
+forInit       = binding | expression
+tryStatement  = "try" , suite , { catchClause } , [ "finally" , suite ]
+              | "try" , expression , "else" , expression
+catchClause   = "catch" , name , [ ":" , type ] , [ "," , name ] , suite
+usingStatement= "using" , [ "async" ] , name , "=" , expression , suite
+withStatement = "with" , [ name "=" ] , expression , suite
+              | "with?" , [ name "=" ] , expression , suite
+watchStatement= "watch" , expression , suite
+matchStatement= ( "match" | "switch" ) , expression , matchArms
+```
+
+`result` outside `do:` is `E106`. `return` and `yield` outside the function or generator that can accept them are `E107` and `E804`. `break` and `continue` outside a loop, or with an unknown label, are `E105` and `E800`. `await` outside `async` is `E803`. `spawn` outside `task group` is `E107`. `rethrow` outside `catch` is `E107`.
+
+An `if` statement may omit `else`. Its branches are suites. An `if` in expression position is not this statement.
+
+`label name` applies to the next statement, which must be a loop (`E800` otherwise). The name lives in the label namespace and does not hide a variable.
+
+`for name in expression` binds a fresh immutable name on each iteration. `for var name in expression` binds a fresh mutable name. A range `a..b` or `a..<b` is a legal iterable. `await for` requires an async function and a stream.
+
+The C-style loop runs the initializer once, tests the condition before each iteration, and runs the step after the body. `break` leaves without running the step. `continue` runs the step, then the condition. A constant step of `0` is `E801`. A non-constant step of `0` throws at runtime.
+
+`repeat` runs the suite, then the condition, and repeats while the condition is true. `continue` goes to that condition.
+
+### Expressions
+
+From tightest to loosest:
+
+```
+primary       = literal | list | "map" suite | "set" suite
+              | identifier | dotShorthand | "(" , expression , ")"
+              | record | "do" suite | ifExpression | matchExpression
+              | lambda | captureLambda | withExpression
+              | "await" "all" suite | "await" "isolate" suite
+dotShorthand  = "." , ( identifier | "new" ) , [ arguments ]
+record        = "(" , ")"
+              | "(" , expression , "," , [ recordField , { "," , recordField } ] , [ "," ] , ")"
+              | "(" , name , ":" , expression , { "," , recordField } , [ "," ] , ")"
+recordField   = expression | name , ":" , expression
+matchExpression = ( "match" | "switch" ) , expression , matchArms
+withExpression = withStatement
+ifExpression  = "if" , condition , suiteOfExpression
+                  , { "else" "if" , condition , suiteOfExpression }
+                  , "else" , suiteOfExpression
+postfix       = primary , { call | index | "." , identifier | "?." , identifier
+                  | "?." , call | "?." , index | "!" | "?" }
+prefix        = ( "await" | "not" | "!" | "~" | "-" | "+" ) , prefix | postfix
+multiplicative= prefix , { ( "*" | "/" | "~/" | "%" ) , prefix }
+additive      = multiplicative , { ( "+" | "-" ) , multiplicative }
+shift         = additive , { ( "<<" | ">>" | ">>>" ) , additive }
+bitAnd        = shift , { "&" , shift }
+bitXor        = bitAnd , { "^" , bitAnd }
+bitOr         = bitXor , { "|" , bitXor }
+range         = bitOr , [ ( ".." | "..<" ) , bitOr ]
+relational    = range , [ ( "<" | ">" | "<=" | ">=" ) , range
+                  | ( "is" | "is!" | "as" | "to" | "to?" ) , type ]
+equality      = relational , [ ( "==" | "!=" ) , relational ]
+conjunction   = equality , { "and" , equality }
+disjunction   = conjunction , { "or" , conjunction }
+ifNull        = disjunction , { "??" , disjunction }
+application   = ifNull , { ifNull }
+pipeline      = application , { "|>" , application }
+assignment    = pipeline , [ assignOp , assignment ]
+expression    = assignment
+```
+
+`application`'s extra `ifNull` is juxtaposition: a call written beside its argument. The argument includes `??` and stops before `|>` and assignment.
+
+`assignOp` is `=` or a compound assignment. `++` and `--` do not exist. Assignment is right-associative. Every other binary operator above is left-associative. Relational operators do not chain: `a < b < c` is `E100`. A bare name followed by `=` declares or assigns only in statement position. In expression position those tokens assign to an existing binding. No binding is `E200`. An immutable binding is `E202`.
+
+`await all:` and `await isolate:` are the primary forms. `await for` is the loop. Any other `await` is the prefix operator.
+
+Juxtaposition is left-associative. It is looser than `??` and tighter than `|>`. `print a + b` is `print(a + b)`. `expect a == b` is `expect(a == b)`. `print a ?? b` is `print(a ?? b)`. `f g h` is `(f g) h`. `print a |> f` is `(print a) |> f`, so a pipeline used as the argument is `print (a |> f)`.
+
+`and`, `or`, and prefix `not` / `!` require `bool`. A nullable bool is `E308` until it is promoted or handled with `??` or `!`. Prefix `+` is numeric identity. `/` is Dart's `/`. Integer division is `~/`.
+
+`is` in a relational expression requires a type and produces `bool`. `is` in an `if` or `while` condition accepts a pattern. `as` is a cast. `to` converts and throws `ConversionError` on failure. `to?` converts and yields null on failure. The target of either conversion may be nullable.
+
+A pipeline whose right side is a name or a function value calls it with the left value as the first positional argument. A pipeline whose right side is a call with exactly one hole fills that hole. Any other right side is `E512`.
+
+`suiteOfExpression` is a colon and one expression, which may be a `do` expression. It is not a statement suite (`E108`). A one-field record needs a trailing comma. Named record fields use `name: expression` and follow positional fields. `()` is the empty record. `.name` and `.new` are dot shorthands, and a following argument list is part of the same primary. The shorthand is legal only when the expected type has exactly one matching static member or constructor (`E302` when the type or the member is not unique). `new` here is contextual and is not a reserved word.
+
+```
+lambda        = identifier , "->" , ( expression | suite )
+              | parameterList , [ "->" , type ] , "->" , ( expression | suite )
+              | "(" , ")" , "->" , ( expression | suite )
+captureLambda = "capture" , "(" , [ name , { "," , name } ] , ")" , "->" , ( expression | suite )
+```
+
+A parameter type is `name: Type`. In expression position, `(String) -> bool` is a lambda whose parameter is named `String` only when `String` is not a type name. A type name in that slot is the parameter's type, and the parameter needs a separate name: `(s: String) -> bool`. The function type `(String) -> bool` is legal in type position.
+
+`capture` snapshots the listed bindings by value when the closure is created. The copies are immutable. Object contents are not copied. A closure without `capture` keeps Dart's live capture. A `for-in` binding is a new binding on every iteration, so a closure created in the body captures that iteration.
+
+`do` is an expression. `result` ends it with a value and does not return from the function. `return` inside `do` returns from the function and the `do` does not complete. A path that finishes a value `do` without `result` is `E109`.
+
+```
+list          = "[" , [ element , { "," , element } ] , "]"
+element       = "?" , expression
+              | "..." , expression
+              | "...?" , expression
+              | "if" , condition , suite , [ "else" , suite ]
+              | "for" , pattern , "in" , expression , suite
+              | expression , [ "for" , pattern , "in" , expression , [ "if" , expression ] ]
+```
+
+The same elements appear in `set:` and, as key or value, in `map:`. A `map:` row is `expression ":" expression`. A collection `if` or `for` may omit `else`. Prefix `?` omits a null value and does not change a non-null value's type. `?.member` is not this prefix. A null-aware element that is a dot shorthand is `? ( .member )`.
+
+A call is parentheses immediately after a postfix, or juxtaposition of one `ifNull` argument, or a colon block in argument position, or a combination of those. Parentheses that belong to a call are arguments, never a record. A record argument is wrapped again: `f((1, 2))` and `f((name: 1))`. `f(1, 2)` is two arguments. `f(name: 1)` is one named argument.
+
+```
+arguments     = "(" , [ argument , { "," , argument } ] , ")" , [ argumentBlock ]
+              | expression , [ argumentBlock ]
+              | argumentBlock
+argument      = expression | name ":" , expression | "..." , expression | "...?" , expression
+argumentBlock = ":" , newline , INDENT , { row } , DEDENT
+```
+
+An argument block is classified from its rows, never from the expected type:
+
+1. Every row is `identifier ":" expression` (the expression may be a nested block): named arguments. The block must contain one row. A call with no arguments is `name()`.
+2. Every row is a collection element: a collection-element block.
+3. Any other row is `E100`.
+
+A named-argument block is not a collection. A collection whose only elements would look like labels is written with `[]`, `map:`, or `set:`. Inside `map:`, identifier keys are values, not labels, because `map:` is production 1 of the colon-block rules and never reaches this classifier.
+
+A hole is an argument whose expression is exactly `_`. If any argument is a hole, the call is not evaluated. It produces a function. The function's parameters are positional, one per hole, in source order, with the parameter types of those slots. When that function is called, the callee and the non-hole arguments are evaluated once, in normal call order, with the holes filled by the invocation arguments.
+
+`with expression` evaluates the receiver once and yields it after the block. `with?` yields null and skips the block when the receiver is null; inside the block the receiver is non-null. A row `name: expression` writes that setter. An unqualified name inside the block resolves to a member of the receiver when exactly one of the member and the outer scope defines it. When both define it, the program is `E204` and must write the receiver binding or an outer prefix. The receiver binding is `it` when `it` is not already in scope. When `it` is in scope, the form `with name = expression` is the way to name the receiver. The implicit name is not created in that case, so no outer binding is shadowed. A readonly receiver rejects setters (`E307`).
+
+`await all:` starts every child expression immediately. The value is a record of the results in source order. If a child throws, the others are cancelled cooperatively and the first error in source order propagates after cancellation is requested. `await isolate:` runs the expression on a new isolate. The expression is a top-level or static call. Its arguments are sendable. Capturing a local binding is `E805`.
+
+`task group` waits for its `spawn` children. A child failure cancels the remaining children and throws `TaskFailed` with the child errors in source order. `spawn` schedules work on the current isolate. It is not `await isolate`.
+
+`watch expression` subscribes for the rest of the enclosing scope and disposes the subscription on every exit. `batch` holds reactive notifications until the suite exits, including an exceptional exit, then flushes once. `state` and `computed` track reads. A cycle discovered while a computed value is already evaluating throws `CycleError`. A cycle visible from the static dependency graph is `W007`.
+
+### Types, patterns, and matches
+
+```
+type          = union
+union         = intersection , { "|" , intersection }
+intersection  = postfixType , { "&" , postfixType }
+postfixType   = primaryType , [ "?" ]
+primaryType   = "readonly" , primaryType
+              | name , [ "<" , type , { "," , type } , ">" ]
+              | functionType
+              | "(" , type , ")"
+functionType  = [ typeParameters ] , "(" , [ functionParameter , { "," , functionParameter } ] , ")" , "->" , type
+functionParameter = parameter | type
+typeParameters = "<" , typeParameter , { "," , typeParameter } , ">"
+typeParameter = [ "in" | "out" ] , name , [ ":" , type ]
+```
+
+`|` and `&` are left-associative. `&` binds tighter than `|`. `?` binds tighter than both, so `A | B?` is `A | (B?)`. A nullable union is `(A | B)?`. `readonly` applies to the type it prefixes, including a parenthesized union.
+
+`T | Null` is exactly `T?`. `int | double` is `num`. Any other union lowers to a sealed hierarchy named by mangling the alternatives, in the library's generated part. After `is` or a matching pattern narrows the union, the checker sees the alternative and the emitter unwraps the case. A Dart caller of a public union sees that sealed hierarchy. The name is stable: `QudsUnion_` plus the mangled alternatives.
+
+`A & B` is one object that is a subtype of both. It is not a merged wrapper. A parameter of that type lowers to a generic `T extends A` plus a `is! B` check so a Dart caller is rejected at runtime. A Quds caller is rejected at compile time (`E306` when no type can satisfy both).
+
+```
+pattern       = literal | "null" | "_" | identifier
+              | "(" , pattern , ")"
+              | listPattern | mapPattern | recordPattern | objectPattern
+              | pattern "|" , pattern | pattern "and" , pattern
+              | relationalOp , expression | pattern "as" , type
+              | pattern "?" | pattern "!"
+              | name , ":" , pattern
+objectPattern = name , "(" , [ patternField , { "," , patternField } ] , ")"
+```
+
+List, map, and record patterns use the same brackets and parentheses as the literals, with `...` and a rest pattern. A parenthesized pattern of one element without a trailing comma is a grouped pattern. A one-field record pattern has a trailing comma. `_` binds nothing and may be repeated. A name in a `for` pattern, an `if` or `while` pattern, or a match arm declares an immutable binding in that branch. `shadow` is required there when the name is already visible (`E203`). A name in a destructuring assignment follows the statement rule instead: it assigns a visible mutable binding and does not implicitly shadow it.
+
+`match` and `switch` accept the same grammar. In statement position each arm is a suite, and a missing case is `W001`. In expression position each arm is an expression, a missing case is `E314`, and the arm types join. An unreachable arm is `E313`. Guards use `when expression` before the arm colon. The sealed cases of a `sealed type` and the same-library subtypes of a `sealed class` are the finite set. `if value is pattern` and `while value is pattern` use the same patterns and bind in the successful branch only. The scrutinee runs once.
+
+A `sealed type` case is a value class. A case with no fields is a constant. `match` on that type is exhaustive only when every case is covered or a wildcard is present.
+
+### Names, scopes, and overloads
+
+A scope is a library, a type body, a function, a suite, a `do`, a catch, a `with`, or a pattern arm. Resolution order is: the innermost scope, then enclosing scopes, then the current library, then an explicit import prefix, then unprefixed imports. A member access `a.b` looks only at the type of `a` and at extensions on that type. An extension is applicable when the receiver type matches its `on` type. If two extensions are applicable and neither receiver type is more specific, the call is `E205`.
+
+A new binding is visible after its initializer. The initializer still sees the outer name. `shadow name = expression` and `shadow var name = expression` are the only ways to declare a local when that name is already visible.
+
+Imports, members, and locals occupy one namespace per kind: values, types, and labels are separate, as in Dart. A value and a type may share a spelling. A label and a value may share a spelling.
+
+Overload resolution considers every visible function of that name. A candidate is applicable when the supplied arguments match its parameter types, every required parameter is supplied, extra arguments are absent, and a variadic parameter absorbs only the remaining positional arguments of its element type. Among applicable candidates, a signature that does not use a variadic parameter beats one that does. Otherwise a candidate whose every parameter type is a subtype of the other's, with at least one strict subtype, wins. If more than one candidate remains, the program is `E310`. There is no runtime overload dispatch.
+
+A tear-off is a bare name in expression position. One visible signature selects that function. An overload set uses the expected function type. If that does not select one signature, the program is `E311`. An explicit type-argument list `name<Type>` instantiates that function before overload resolution.
+
+The emitted Dart name is the Quds name when it is the only signature. Otherwise it is the name, `$`, and a suffix built from the parameters in declaration order, joined by `_`: a dual or positional parameter contributes its mangled type; a named parameter contributes its name, `_`, and the mangled type; an optional positional contributes `opt_` and the mangled type; a variadic contributes `rest_` and the mangled element type. Mangling writes a named type as its name, type arguments as `_of_` joined by `_and_`, `T?` as the inner mangle plus `_nullable`, a union with `_or_`, an intersection with `_and_`, and a function type as `fn_`, the parameter mangles, `_to_`, and the return mangle. A suffix collision appends `_2`, `_3`, in source order. `parse(x: String)` and `parse(x: int)` become `parse$String` and `parse$int`.
+
+### Types of declarations
+
+A class body is a suite of fields, functions, properties, operators, and constructors.
+
+```
+classDecl     = { classModifier } , "class" , name , [ typeParameters ]
+                  , [ "extends" , type ] , [ "with" , type , { "," , type } ]
+                  , [ "implements" , type , { "," , type } ] , suite
+classModifier = "abstract" | "base" | "interface" | "final" | "sealed" | "mixin" | "singleton" | "value"
+interfaceDecl = "interface" , name , [ typeParameters ] , [ "extends" , type , { "," , type } ] , suite
+enumDecl      = "enum" , name , [ typeParameters ] , suite
+mixinDecl     = "mixin" , name , [ typeParameters ] , [ "on" , type , { "," , type } ] , suite
+extensionDecl = "extend" , type , [ name ] , [ typeParameters ] , suite
+typeDecl      = "type" , name , [ typeParameters ] , "=" , type
+              | "type" , name , [ typeParameters ] , "wraps" , type , [ suite ]
+sealedTypeDecl= "sealed" , "type" , name , [ typeParameters ] , suite
+annotationDecl= "annotation" , name , [ parameterList ] , suite
+matchArms     = ":" , INDENT , { pattern , [ "when" , expression ] , ":" , arm } , DEDENT
+```
+
+`arm` is one expression when the match is an expression, and a suite or one expression statement when the match is a statement. `interface` members are abstract. `sealed type` cases are value-class constructors. `annotation` defines a const metadata class. `type Name = Type` is the transparent alias. `type Name wraps Type` is the distinct wrapped type. In a function type, a bare type is a positional parameter and `name: Type` uses the parameter grammar, so `(String) -> bool` is the type of a function from `String` to `bool`. On `extend`, a type-argument name that is not already a type declares a type parameter of the extension. `extend List<T>:` declares `T`. `extend List<String>:` extends that instantiation only.
+
+Where a form is listed in both `declaration` and `statement`, it is one production. A line that contains `class` before the type name is a class, including `mixin class`, `value class`, and `singleton class`. `mixin` followed by a name is a mixin. `interface` followed by a name is an interface. `interface` followed by `class` is a class modifier. `sealed class` is a class. `sealed type` is the algebraic declaration.
+
+The legal combinations of `abstract`, `base`, `interface`, `final`, `sealed`, and `mixin` are exactly the combinations Dart accepts. Any other combination is `E720`. `value` may accompany a legal combination and adds value-class equality. `singleton` may accompany a legal combination and adds the instance rule below. `with` in this header is mixin application only.
+
+A field is `name: Type`, with `required`, `= expression`, or both, and with the binding modifiers `var`, `const`, `late`, `private`, `protected`, and `readonly`. `name: Type` in an `interface` is an abstract getter. A writable interface member uses `property`. An implementing class supplies a field, a getter, or a property of a compatible type (`E700`).
+
+When a class declares no `init`, the fields synthesize one constructor. `required` fields are required dual parameters. Fields with defaults are optional named parameters. A `private` field lowers to a Dart `_` field and a public initializing parameter of the Quds name, which is Dart's private named parameter. When the target Dart language version is at least 3.13 and the synthesized constructor fits a primary constructor, the emitter uses that header. Otherwise it emits an explicit constructor. The behavior is the same.
+
+`init`, `init name`, `factory init`, `factory init name`, `const init`, and `init = other` are the generative, named, factory, const, and redirecting constructors. The class name is not repeated. `this.field` and `super.field` are initializing formals. A concrete class with an abstract method is `E700` unless the class is `abstract` or `sealed` or an interface. A final field that is not initialized on every constructor path is `E704`.
+
+`singleton class` has a private constructor and a static `instance` member, created on first use, once per isolate. A cycle in that initialization is `E707`.
+
+`enum` uses the same body. Values are the constant cases. Fields and a synthesized or explicit constructor are allowed. Enumerations are exhaustive in `match`.
+
+`mixin name [on type] :` and `mixin class` follow Dart's mixin rules, including `on`. An application that fails `on` is `E702`.
+
+```
+property      = [ "private" | "protected" ] , "property" , name , ":" , type , suite
+operatorDecl  = "operator" , operatorToken , parameterList , [ "->" , type ]
+                  , ( suite | "=" , expression )
+```
+
+A property suite contains `get = expression` or `get suite`, and optionally `set ( value ) suite`. Missing `set` is read-only. Missing `get` is write-only. Operators that Dart fixes to a result type use that type. Other operators default to the enclosing type when `->` is omitted. `==` returns `bool` and is paired with `hashCode` on a value class.
+
+`value class` fields are immutable. `var` on one of those fields is `E706`. Equality and `hashCode` use the fields. Nested value classes use their own equality. `List`, `Map`, and `Set` fields use deep collection equality. A mutable collection field is `W004` because mutation changes later equality results. Assignment does not copy that collection.
+
+`copyWith` is generated. Each parameter defaults to `quds.missing`. An omitted argument, and an explicit `missing`, keep the current field. An explicit null stores null when the field is nullable.
+
+`extend type :` is a Dart extension. `extend type name :` is an extension with a name. Generic and bounded extensions are allowed. `type Name = Type` is a transparent alias. `type Name wraps Type :` is a distinct extension type. Its constructor rejects a value that fails a `require` in the body, and a constant that fails is `E401`. The representation is named `value` inside that body.
+
+`annotation Name :` defines a const class used as metadata. `@Name` and `@Name(...)` attach const metadata. The arguments are constant expressions.
+
+`private` is library-private and lowers to a Dart `_` name. `protected` is visible to the declaring library and to subtypes; the Quds checker enforces it, and the emitter writes `@protected` when `package:meta` is a dependency, otherwise a documentation comment. The Dart VM does not enforce `protected`. A Quds name that itself starts with `_` is already the Dart private spelling.
+
+`readonly` on a reference rejects assignment, compound assignment, and any call that is not a read. Reads are getters, `[]` when it does not write, `==`, `hashCode`, `toString`, and a method declared `readonly`. For `List`, `Map`, and `Set`, methods that add, remove, reorder, or replace elements are writes, and methods that only return a value or a new collection are reads. A `readonly` method may itself perform only reads on `this` (`E307`). Another alias of the same object is not affected.
+
+`in` and `out` are accepted only when every use of the type parameter is in the matching variance position and the emitted Dart type is sound. A violation is `E304`. Dart generics without `in` or `out` keep Dart's generic rules.
+
+A function type in type position uses the parameter grammar. A lambda in expression position uses the lambda grammar. The two arrows are the same token in different positions.
+
+### Evaluation
+
+Every expression runs once, left to right, except the short-circuit operators `and`, `or`, `??`, `?.`, `...?`, `with?`, a pipeline's right side before the left value exists, and a partial application, which runs nothing until the resulting function is called. Each invocation of that function then follows the call rule once.
+
+Call order is the callee, then the supplied arguments in the order written, then the omitted defaults in declaration order. Compound assignment reads the target once, evaluates the right side, and writes once. A multi-assignment evaluates the whole right side, then writes the left side from left to right. A pipeline evaluates the left side once.
+
+`defer` statements in a scope run at scope exit, last in first out, after the body and before that scope's `using` disposal finishes. `using` disposal is the outer `finally` of its scope. An explicit `finally` runs when its `try` exits, inside this order. A `defer` or disposal that throws replaces a pending success and follows Dart's `finally` rule: the new error propagates, and the previous error is chained when the target can chain it. `using async` and an async `defer` require an async function.
+
+`assert` is removed from a release build, the same builds that remove Dart's `assert`. `require` throws `ArgumentError` and remains in release. `check` throws `StateError` and remains in release. All three evaluate a message expression only when the condition is false.
+
+`try expression else expression` evaluates the first expression. If it throws, the second expression runs and its value is the result. It does not catch `Result` errors. Postfix `?` does that. `?` requires `Result<T, E>`, has type `T`, and returns `Error` from the nearest function whose result is `Result<R, F>` or `Future<Result<R, F>>` with `E` a subtype of `F`. There is no such function: `E600`. The error types are incompatible: `E601`. `?` returns from the function, including through a `do`.
+
+Constant evaluation follows Dart's constant rules for the shared operators, literals, and const constructors. Implicit const applies only inside a constant context. A top-level or static const initializer may mention consts that are already initialized: earlier in the same library, or imported. A later const in the same library is `E402`. A function body may mention any const in the library. A cycle is `E401`. String interpolation is not a constant expression.
+
+### Lowering
+
+Generated Dart is a library a Dart caller can import. Quds-only values use these public spellings:
+
+| Quds | Dart |
+| --- | --- |
+| Dual parameter | `{required T name}` and a Quds call rewritten to the named argument |
+| Optional named, optional positional, variadic | Dart optional named, optional positional, and a `List<T>` parameter |
+| Overload | The mangled name above |
+| `missing` | `quds.missing`, one sentinel identity |
+| `Optional<T>` | `Optional<T>` with present and missing tags. Present null is not missing |
+| Union that is not a Dart type | The stable sealed hierarchy |
+| `readonly` | The same Dart type, plus checker errors and a boundary check where a Dart signature cannot say `readonly` |
+| `private` / `protected` | `_name` / `@protected` or a documentation comment |
+| Range | `quds.Range`, iterated by `for` |
+| `with` / `with?` | A temporary, then the assignments. `with?` is a null check around that temporary |
+| Partial application | A closure |
+| `do` | A local function invoked immediately, or a block in the IR that preserves `return` |
+| `test` / `group` | `package:test` declarations |
+| `state` / `computed` / `watch` | `quds:reactive` cells |
+
+`copyWith` defaults every parameter to `quds.missing`. A Dart caller omits the argument, passes null, or passes `missing`.
+
+### Project layout
+
+```
+pubspec.yaml
+quds.yaml
+lib/<package>.quds
+lib/src/<library>.quds
+bin/<tool>.quds
+test/<name>_test.quds
+.dart_tool/quds/cache/
+```
+
+`quds.yaml` holds `language: "1.2"` and any `config:` map. The language version is this field. A comment does not select a version. `pubspec.yaml` holds the package name and the Dart SDK constraint. Published packages commit the generated `.dart` next to each `.quds` file so a Dart consumer needs no Quds compiler. `.dart_tool/quds/cache/` is the incremental cache and is not published.
+
+`use package:name` is `lib/name.quds`. `use package:name/src/util` is `lib/src/util.quds`. `use dart:math` is that Dart library. `use util` is `util.quds` beside the current file. The generated import uses the `.dart` path. `use generated:user_models` is the generated library of that name in the same package.
+
+One library is one `.quds` file plus its `part` files. Library privacy is that set. The emitter writes a generated-file header. `quds build` refuses to overwrite a `.dart` file that lacks the header.
+
+### Diagnostics
+
+The MVP-0 compiler reports `Q001`, `Q100`, and `Q200`. Those categories belong to that compiler. Design 1.2 uses the registry below and does not also use the `Q` categories.
+
+A diagnostic is `path:line:column: severity[CODE]: message`, using the original `.quds` coordinate. The object also carries related spans and, when one edit is determined by this specification, a replacement. Wording may change. A published code is never renumbered or reused. A new code takes the next free number in its class.
+
+`E` is an error, `W` a warning, `L` a lint. `W001` through `W007` are enabled by default. Lints are enabled only by `quds analyze`.
+
+| Code | Condition |
+| --- | --- |
+| `E001` | Indent is inconsistent |
+| `E002` | A tab is used to indent |
+| `E003` | A character is not part of a token |
+| `E004` | A comment or string is not closed |
+| `E005` | A string escape is invalid |
+| `E006` | A number is invalid |
+| `E100` | The tokens do not match a production, including a colon block that is neither names nor elements |
+| `E102` | A semicolon appears |
+| `E105` | `break` or `continue` is outside a loop |
+| `E106` | `result` is outside `do` |
+| `E107` | `return`, `rethrow`, or `spawn` is outside the form that accepts it |
+| `E108` | An if-expression has no `else` or has a statement branch |
+| `E109` | A value `do` ends without `result` |
+| `E110` | A zero-argument call has no parentheses |
+| `E200` | A name is not defined |
+| `E201` | A name is already defined in this scope |
+| `E202` | An immutable binding is assigned |
+| `E203` | A new local needs `shadow` |
+| `E204` | An import or a `with` name is ambiguous |
+| `E205` | Two extensions apply and neither is more specific |
+| `E206` | A private name is used outside its library |
+| `E207` | A protected name is used outside a subtype or its library |
+| `E300` | A type does not match |
+| `E302` | A type cannot be inferred, including an empty literal with no expected type |
+| `E304` | A variance annotation is not sound |
+| `E306` | An intersection cannot be satisfied |
+| `E307` | A readonly reference is mutated |
+| `E308` | A nullable value is used where a non-null value is required |
+| `E310` | An overload is ambiguous |
+| `E311` | A tear-off does not select one signature |
+| `E312` | A value-returning path has no `return` |
+| `E313` | A match arm is unreachable |
+| `E314` | A match expression is not exhaustive |
+| `E401` | A constant cannot be evaluated |
+| `E402` | A const initializer uses a const declared later in the library |
+| `E500` | A required argument is missing or an argument is unexpected or duplicated |
+| `E503` | A default reads a later parameter, or a variadic parameter is illegal |
+| `E512` | A pipeline is not a bare callee or a one-hole call |
+| `E600` | Postfix `?` has no compatible `Result` function |
+| `E601` | A `Result` error type does not fit the function |
+| `E700` | A member is not implemented, or a concrete class has an abstract member |
+| `E702` | A mixin `on` constraint fails |
+| `E703` | A sealed type is extended outside its library |
+| `E704` | A final field is not initialized |
+| `E706` | A value class field is mutable |
+| `E707` | Singleton initialization cycles |
+| `E720` | Class modifiers are not a combination Dart accepts |
+| `E800` | A label is unknown or is not on a loop |
+| `E801` | A constant loop step is zero |
+| `E803` | `await` or async disposal is outside `async` |
+| `E804` | `yield` is outside a generator |
+| `E805` | An isolate argument is not sendable, or the isolate call captures a local |
+| `E900` | A library is not found |
+| `E901` | The declared language version is not supported |
+| `E902` | A `when` condition is not a constant boolean |
+| `E903` | `part of` does not match the library |
+| `E904` | Macro expansion cycles |
+| `E905` | A macro uses a forbidden capability |
+| `E906` | Macro expansion fails |
+| `E908` | A secret configuration has a source literal |
+| `E910` | This compiler does not implement the construct |
+| `W001` | A match statement is not exhaustive |
+| `W002` | A binding or import is unused |
+| `W003` | Code is unreachable |
+| `W004` | A value-class field has a mutable collection type |
+| `W007` | A computed dependency cycle is visible statically |
+
+`E203` suggests inserting `shadow`. `E110` suggests `()`. No other fix is required by this version.
+
+### Source maps
+
+Each generated `.dart` file has a sibling `.quds.map` and a final line `//# sourceMappingURL=<file>.quds.map`. The map is Source Map Revision 3 JSON: `version` is 3, `file` is the generated file name, `sources` are paths of `.quds` files relative to the package root, `names` lists original identifiers, and `mappings` is the standard base64 VLQ. Generated helpers that have no source span are omitted from `mappings`. A synthetic macro node maps to the annotation that created it and records the macro declaration as a related source in `x_quds_macro`.
+
+`quds.mapStack` rewrites a Dart stack string. Each frame that hits the map is reported with the `.quds` path, line, and column. A frame that does not hit stays as a Dart frame. Async and isolate stacks are mapped one frame at a time. A web stack is mapped by composing this map under the Dart-to-JavaScript map; the composition is ordinary source-map composition, not a second encoding.
+
+### Macros
+
+A macro is a const class marked `@macro` that implements `Macro`. It has one or both of `declare(library, builder)` and `define(type, builder)`. `declare` may add top-level declarations. `define` may add fields, methods, getters, and constructors to the annotated type. There is no phase that replaces, deletes, or rewrites an existing node. The builder accepts structured descriptors only. Emitting source text is `E905`.
+
+Macro code may use `quds:macro` and the const subset of `dart:core`. It cannot use `dart:io`, `dart:isolate`, the clock, randomness, or the network. Those uses are `E905`. Expansion is a pure function of the language version, the macro's transitive source, and the typed AST of the annotated declaration. The cache key is the SHA-256 of those bytes. One annotation may add at most 1000 declarations. Expansion that re-enters the same macro on a node it created stops at depth 8 (`E904` on a cycle, `E906` past the depth). A macro exception is `E906` and points at the annotation. Generated nodes are synthetic and are not formatted as hand-written source.
+
+Introspection exposes names, type parameters, supertypes, fields, signatures, and annotations. Existing method bodies are readable as typed AST and cannot be edited.
+
+### Tooling and versioning
+
+`quds create`, `add`, `remove`, `get`, `run`, `build`, `test`, `analyze`, `format`, `doc`, and `migrate` are the tools. Exit `0` is success, `1` is a source diagnostic, `2` is bad usage, and `3` is a tool failure. `quds migrate` edits source from one declared language version to a newer one and does not change a project whose `quds.yaml` still names the old version.
+
+The formatter uses two-space indents and a width of 80. It preserves comments, documentation, and string contents. Formatting is idempotent and does not change which production a program uses. A newline ends the file. Trailing whitespace is removed.
+
+The LSP and the debugger use these diagnostics and these source maps. A breakpoint binds to a `.quds` span. Hot reload follows the target Flutter tool and does not add a language rule.
+
+### Parses that this grammar fixes
+
+| Program | Parse |
+| --- | --- |
+| `Column:` then `spacing: 12` and `children:` then `Text "Hello"` | Named arguments. The inner block is a collection because `Text "Hello"` is not a label |
+| `settings = map:` then `"mode": "dark"` | Map literal. `"mode"` is a key expression |
+| `map items` | A call of `map`, one positional argument |
+| `(a)` and `(a,)` and `(a, b)` | Grouping, one-field record, two-field record |
+| `name = 1` when `var name` is visible | Assignment. When nothing is visible, an immutable binding. When `name` is immutable, `E202` |
+| `shadow name = 1` | A new immutable local |
+| `process(item: Widget):` | A function declaration, because the parentheses are parameters and `:` follows |
+| `process:` then `item: Widget` | A call with one named argument |
+| `text to? int?` | Safe conversion to a nullable int |
+| `value?` and `List<int>?` and `[?name]` | Result propagation, nullable type, null-aware element |
+| `class Dog extends Animal with Walker:` | Mixin application |
+| `with button:` then `enabled: true` | Configuration. The receiver runs once |
+| `for i in 1..5:` and `for i in 1..<5:` | Inclusive range and exclusive range |
+| `test "adds":` then `expect ...` | A test declaration. The body is not a collection |
+| `multiply(2, _)` | A function of the remaining parameter. Nothing runs yet |
+| `capture(count) -> count` | A snapshot lambda, not a call of a function named `capture` |
+| `.running` where the expected type is one enum | That enum's value. `.new` is the unnamed constructor |
+| `Point:` then `private x: int required` | A private field initialized by the public argument `x:` |
 
 ## Suggested compiler milestones and gates
 

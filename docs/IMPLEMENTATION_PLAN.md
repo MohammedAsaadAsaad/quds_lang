@@ -1,5 +1,7 @@
 # Compiler implementation plan
 
+Language design 1.2 is complete in `QUDS_LANGUAGE_SPECIFICATION.md`. The milestones below are implementation work. A compiler that has not reached a milestone rejects those constructs with `E910` instead of inventing a meaning.
+
 ## Architecture
 
 Source manager → indentation-aware lexer → token stream → parser → typed AST → symbol table/name resolution → type checking → lowering IR → Dart emitter → diagnostics/source maps.

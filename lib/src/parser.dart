@@ -639,14 +639,17 @@ class Parser {
     take();
     final secret = word('secret');
     if (secret) take();
-    final configName = name();
+    final parts = <String>[name().lexeme];
+    while (match(TokenKind.dot)) {
+      parts.add(name().lexeme);
+    }
     expect(TokenKind.colon, ':');
     final type = typeName();
-    expect(TokenKind.equals, '=');
-    final value = expression(bare: true);
+    Expression? value;
+    if (match(TokenKind.equals)) value = expression(bare: true);
     endLine();
     return ConfigDeclaration(
-        configName.lexeme, type, value, secret, extent(span));
+        parts.join('.'), type, value, secret, extent(span));
   }
 
   TaskGroupStatement taskGroup(SourceSpan span) {

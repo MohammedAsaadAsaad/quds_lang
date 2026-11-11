@@ -309,9 +309,9 @@ unchanged by the map.
   Dart; a bound is `extends`. A constructor call infers type arguments from
   named arguments, and `Box<String>(...)` passes them explicitly.
 - Intersection types `A & B`. `&` binds tighter than `|`. A parameter lowers
-  to the first type, then checks `is!` for each later part. Two disjoint
-  concrete types are `E306`. A member that belongs to a later part is cast to
-  that part in the generated Dart.
+  to `T extends` the first type, then checks `is!` for each later part. Two
+  disjoint concrete types are `E306`. A member that belongs to a later part is
+  cast to that part in the generated Dart.
 - `extend List<T>:` treats an unbound type argument as an extension type
   parameter and emits `extension<T> on List<T>`.
 - `await all:` starts every child immediately and yields a record in source
@@ -330,8 +330,13 @@ unchanged by the map.
 - `annotation Name:` emits a const class, and `@Name` emits `@Name()` only for
   a declared annotation. `@Reflectable` on a class emits
   `qudsReflectName` with the class name and field names.
-- `config name: Type = expression` emits `class config` with a static field.
-  `config secret name: Type = literal` is `E908`.
+- `config name: Type = expression` reads the process environment, then the
+  `config:` map in `quds.yaml` beside the working directory, then the source
+  default. A dotted name such as `server.host` is read as `config.server.host`
+  and as the environment variable `SERVER_HOST`. `config name: Type` is
+  required and throws `StateError` when every layer is absent. The value is
+  `int`, `double`, `bool`, or `String`. `config secret name: Type` has no
+  source initializer. A secret literal is `E908`.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
 A value outside the signed 64-bit range is `E006`. An integer that does not
@@ -340,6 +345,6 @@ that literal, and `test/language_test.dart` executes both results.
 
 The parity table still includes forms this compiler rejects instead of
 inventing: cross-file private access, `copyWith` for a field assigned only in
-a constructor body, environment precedence for `config`, and cooperative
-cancellation of a future that has already started. No claim of full
-115-decision conformance is made.
+a constructor body, annotation arguments, and cooperative cancellation of a
+future that has already started. No claim of full 115-decision conformance is
+made.

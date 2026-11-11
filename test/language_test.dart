@@ -827,6 +827,73 @@ Symbol("name")
 ''');
     expect(compile(source).dart, contains('qudsReflectItem'));
     expect(compile(source).dart, contains('@Tag()'));
+    expect(compile(source).dart, contains('extends Named'));
+  });
+
+  test('config follows the environment, then quds.yaml, then the source',
+      () async {
+    const source = '''
+config port: int = 8080
+config secret token: String
+config server.host: String = "localhost"
+main():
+  print config.port
+  print config.server.host
+  print config.token
+''';
+    final directory = Directory.systemTemp.createTempSync('quds-config-');
+    try {
+      final output = File('${directory.path}/app.dart')
+        ..writeAsStringSync(compile(source).dart);
+      final analysis = await Process.run(
+          Platform.resolvedExecutable, ['analyze', output.path]);
+      expect(analysis.exitCode, 0,
+          reason: '${analysis.stdout}\n${output.readAsStringSync()}');
+      Future<ProcessResult> run(
+          {Map<String, String>? environment, String? yaml}) {
+        final file = File('${directory.path}/quds.yaml');
+        if (yaml == null) {
+          if (file.existsSync()) file.deleteSync();
+        } else {
+          file.writeAsStringSync(yaml);
+        }
+        final env = Map<String, String>.of(Platform.environment)
+          ..remove('PORT')
+          ..remove('SERVER_HOST')
+          ..remove('TOKEN');
+        if (environment != null) env.addAll(environment);
+        return Process.run(Platform.resolvedExecutable, [output.path],
+            workingDirectory: directory.path, environment: env);
+      }
+
+      final defaults = await run();
+      expect(defaults.exitCode, isNot(0), reason: '${defaults.stderr}');
+      expect('${defaults.stderr}', contains('Missing required config token'));
+
+      final yaml = await run(environment: {'TOKEN': 'hidden'}, yaml: '''
+config:
+  port: 9090
+  server:
+    host: db
+''');
+      expect(yaml.exitCode, 0, reason: '${yaml.stderr}\n${yaml.stdout}');
+      expect(yaml.stdout, '9090\ndb\nhidden\n');
+
+      final environment = await run(environment: {
+        'PORT': '7070',
+        'SERVER_HOST': 'primary',
+        'TOKEN': 'secret'
+      }, yaml: '''
+config:
+  port: 9090
+  server:
+    host: db
+''');
+      expect(environment.exitCode, 0, reason: '${environment.stderr}');
+      expect(environment.stdout, '7070\nprimary\nsecret\n');
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
   });
 
   test('new diagnostics reject the programs they name', () {

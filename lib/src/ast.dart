@@ -708,6 +708,6 @@ class ConfigDeclaration extends Statement {
       this.name, this.type, this.value, this.secret, super.span);
   final String name;
   final String type;
-  final Expression value;
+  final Expression? value;
   final bool secret;
 }

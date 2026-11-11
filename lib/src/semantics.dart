@@ -1815,22 +1815,66 @@ class Analyzer {
 
   void registerConfig(ConfigDeclaration node) {
     validateType(node.type, node, allowVoid: false);
-    if (node.secret && node.value is Literal) {
-      error('E908', 'A secret configuration has a source literal', node.value);
+    final sourceValue = node.value;
+    if (node.secret && sourceValue != null) {
+      if (sourceValue is Literal) {
+        error(
+            'E908', 'A secret configuration has a source literal', sourceValue);
+      }
+      fail('A secret configuration has no source initializer', sourceValue);
     }
-    final value = expression(node.value);
-    if (!compatible(value, node.type)) {
-      fail('Cannot initialize ${node.type} with $value', node.value);
+    const readable = {'int', 'double', 'bool', 'String'};
+    if (!readable.contains(node.type)) {
+      fail('Configuration ${node.name} must be int, double, bool, or String',
+          node);
+    }
+    if (!node.secret && sourceValue != null) {
+      final value = expression(sourceValue);
+      if (!compatible(value, node.type)) {
+        fail('Cannot initialize ${node.type} with $value', sourceValue);
+      }
     }
     _configType ??= ClassDeclaration('config', 'class', <FieldDeclaration>[],
         const [], const [], const [], node.span);
+    final parts = node.name.split('.');
+    var type = _configType!;
+    for (var i = 0; i < parts.length - 1; i++) {
+      type = _configChild(type, parts[i], node.span);
+    }
+    final leaf = parts.last;
+    if (type.fields.any((field) => field.name == leaf)) {
+      fail('Configuration ${node.name} is already declared', node);
+    }
     final field = FieldDeclaration(
-        node.name, node.type, true, false, node.value, node.span,
-        isStatic: true);
-    _configType!.fields.add(field);
-    model.declarations[field] = Symbol(node.name, node.name, node.type);
+        leaf, node.type, false, false, node.value, node.span,
+        isStatic: identical(type, _configType));
+    type.fields.add(field);
+    model.declarations[field] = Symbol(leaf, leaf, node.type);
     _global.symbols['config'] ??=
         Symbol('config', 'config', 'config', classDeclaration: _configType);
+  }
+
+  ClassDeclaration _configChild(
+      ClassDeclaration parent, String part, SourceSpan span) {
+    final existing = parent.fields.where((field) => field.name == part);
+    if (existing.isNotEmpty) {
+      final nested = _global.symbols[existing.first.type]?.classDeclaration;
+      if (nested == null) {
+        fail('Configuration $part is not a group', existing.first);
+      }
+      return nested;
+    }
+    final childName =
+        parent.name == 'config' ? '_QudsConfig_$part' : '${parent.name}_$part';
+    final child = ClassDeclaration(childName, 'class', <FieldDeclaration>[],
+        const [], const [], const [], span);
+    _global.symbols[childName] =
+        Symbol(childName, childName, childName, classDeclaration: child);
+    final field = FieldDeclaration(part, childName, false, false, null, span,
+        isStatic: identical(parent, _configType));
+    parent.fields.add(field);
+    model.declarations[field] = Symbol(part, part, childName);
+    return child;
   }
 
   String _substitute(String type, Map<String, String> substitution) {

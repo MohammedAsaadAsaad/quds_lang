@@ -278,6 +278,17 @@ unchanged by the map.
 - Diagnostics use the design registry. Lexer errors are `E001`–`E006` and
   `E102`. A parse failure is `E100`. Semantic failures use codes such as
   `E200`, `E203`, `E300`, `E401`, and `E500`.
+- `property` getters and setters, `operator` declarations, and `readonly`
+  methods. A write inside a `readonly` method is `E307`.
+- `private` members lower to Dart `_` names. `protected` members are visible
+  in the same library and are emitted with a `/// protected` comment.
+- `init`, `init name`, `factory init`, and initializing formals `this.field`.
+  A final field missed by a constructor is `E704`. A `var` field on a value
+  class is `E706`. Value classes without their own `init` also get `copyWith`.
+- `if value is Pattern`, `using name = expr`, `part` / `part of`, and
+  constant `when` / `use when`. On the VM, `platform` is `"vm"`. A non-constant
+  `when` is `E902`. Both `part` and `part of` in one file is `E903`. The
+  `when` branch that is not selected is neither type-checked nor emitted.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
 A value outside the signed 64-bit range is `E006`. An integer that does not
@@ -285,6 +296,5 @@ fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
 that literal, and `test/language_test.dart` executes both results.
 
 The parity table still includes forms this compiler rejects instead of
-inventing: `property`, `operator`, `private` / `protected`, `init` constructors,
-patterns beyond the current `match`, and library `part` / conditional `use`.
-No claim of full 115-decision conformance is made.
+inventing: patterns beyond `match` and `if value is Pattern`, `defer`, and
+cross-file private access. No claim of full 115-decision conformance is made.

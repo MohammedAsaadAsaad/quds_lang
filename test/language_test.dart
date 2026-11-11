@@ -537,6 +537,97 @@ main():
     }
   });
 
+  test('properties, operators, constructors, and conditional code execute',
+      () async {
+    final source = '''
+use dart:math when platform == "web"
+class Person:
+  private var stored: String = ""
+  protected note: String = "n"
+  property name: String:
+    get = stored
+    set(value):
+      stored = value
+class Vec:
+  x: int required
+  y: int required
+  operator +(other: Vec) -> Vec = Vec(x: x + other.x, y: y + other.y)
+class Point:
+  x: int required
+  y: int required
+  init(this.x, this.y):
+    print x + y
+  factory init same(n: int) -> Point = Point(n, n)
+class File:
+  title: String required
+  dispose():
+    print "closed"
+class Box:
+  private secret() -> String = "hidden"
+  read() -> String = secret()
+value class User:
+  name: String required
+  age: int? = null
+main():
+  person = Person()
+  person.name = "Ada"
+  print person.name
+  print person.note
+  total = Vec(x: 1, y: 2) + Vec(x: 3, y: 4)
+  print total.x
+  print total.y
+  point = Point(1, 2)
+  print point.x
+  same = Point.same(3)
+  print same.y
+  using file = File(title: "a"):
+    print file.title
+  print Box().read()
+  user = User(name: "Ada")
+  next = user.copyWith(name: "Ann")
+  aged = next.copyWith(age: 4)
+  print next.name
+  print aged.age
+  value: String | int = "ok"
+  if value is String:
+    print "text"
+  when platform == "vm":
+    print "vm"
+  when platform == "web":
+    print missingName
+''';
+    final dart = compile(source).dart;
+    expect(dart, contains('String _stored'));
+    expect(dart, contains('/// protected'));
+    expect(dart, contains('operator +'));
+    expect(dart, contains('copyWith'));
+    expect(dart, contains('_secret'));
+    expect(dart, isNot(contains('dart:math')));
+    expect(dart, isNot(contains('missingName')));
+    await execute(
+        source,
+        'Ada\n'
+        'n\n'
+        '4\n'
+        '6\n'
+        '3\n'
+        '1\n'
+        '6\n'
+        '3\n'
+        'a\n'
+        'closed\n'
+        'hidden\n'
+        'Ann\n'
+        '4\n'
+        'text\n'
+        'vm\n');
+  });
+
+  test('part lowers to a Dart part directive', () {
+    final dart = compile('part "extra.quds"\nmain():\n  print 1\n').dart;
+    expect(dart, contains("part 'extra.dart';"));
+  });
+
   test('new diagnostics reject the programs they name', () {
     final rejected = {
       'main():\n  result 1\n': 'E106',
@@ -616,6 +707,49 @@ main():
   print "no"
 ''': 'E720',
       'main():\n  print 1;\n': 'E102',
+      '''
+main():
+  flag = true
+  when flag:
+    print 1
+''': 'E902',
+      '''
+class Gap:
+  x: int required
+  init():
+    print 1
+main():
+  print 1
+''': 'E704',
+      '''
+value class Bag:
+  var n: int = 1
+main():
+  print 1
+''': 'E706',
+      '''
+class Box:
+  var n: int = 0
+  readonly bump():
+    n = 1
+main():
+  print 1
+''': 'E307',
+      '''
+class File:
+  title: String required
+  dispose():
+    print title
+main():
+  using async file = File(title: "a"):
+    print file.title
+''': 'E803',
+      '''
+part "a.quds"
+part of "b.quds"
+main():
+  print 1
+''': 'E903',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {

@@ -81,6 +81,8 @@ class SemanticModel {
   final wrapAs = <Expression, String>{};
   final captures = <CaptureExpression, List<(Symbol outer, Symbol copy)>>{};
   final shapes = <Node, List<String>>{};
+  final skipped = <Statement>{};
+  final parts = <PartDirective>[];
 }
 
 class Analyzer {
@@ -124,6 +126,8 @@ class Analyzer {
           .withFunction(function);
   String? _expected;
   String? _thisType;
+  final _fieldSymbols = <Symbol>{};
+  var _readonlyMethod = false;
   String? _doType;
   int _doDepth = 0;
   Never error(String code, String message, Node node) =>
@@ -163,6 +167,10 @@ class Analyzer {
           break;
         case ImportDeclaration():
           registerImport(statement);
+        case PartDirective():
+          model.parts.add(statement);
+        case WhenStatement():
+          registerWhen(statement);
         case TestDeclaration():
           tests.add(statement);
         default:
@@ -191,12 +199,23 @@ class Analyzer {
         for (final method in statement.methods) {
           analyzeMethod(statement, method);
         }
+        for (final constructor in statement.constructors) {
+          analyzeConstructor(statement, constructor);
+        }
+        for (final property in statement.properties) {
+          analyzeProperty(statement, property);
+        }
       }
       if (statement is ExtensionDeclaration) {
         for (final method in statement.methods) {
           analyzeExtension(statement, method);
         }
       }
+    }
+    if (model.parts.any((part) => part.of) &&
+        model.parts.any((part) => !part.of)) {
+      final mismatched = model.parts.firstWhere((part) => part.of);
+      error('E903', 'part of does not match the library', mismatched);
     }
     final main = _global.symbols['main']?.function;
     if (main != null &&
@@ -287,7 +306,12 @@ class Analyzer {
       if (statement.annotations.contains('macro') && method.name == 'define') {
         continue;
       }
-      final type = method.returnType ??
+      final declared = method.isOperator && method.returnType == null
+          ? (const {'==', '<', '<=', '>', '>='}.contains(method.name)
+              ? 'bool'
+              : statement.name)
+          : method.returnType;
+      final type = declared ??
           (method.expressionBody == null
               ? (method.isAsync ? 'Future<void>' : 'void')
               : '<infer>');
@@ -297,9 +321,13 @@ class Analyzer {
           ? 'Future<${method.returnType}>'
           : type;
       if (effective != '<infer>') validateType(effective, method);
-      final symbol =
-          Symbol(method.name, method.name, effective, function: method)
-              .withFunction(method);
+      final dartName = method.isOperator
+          ? method.name
+          : method.visibility == 'private' && !method.name.startsWith('_')
+              ? '_${method.name}'
+              : method.name;
+      final symbol = Symbol(method.name, dartName, effective, function: method)
+          .withFunction(method);
       model.declarations[method] = symbol;
     }
   }
@@ -321,6 +349,28 @@ class Analyzer {
       for (final field in type.fields) {
         if (field.initializer == null) {
           error('E704', 'A singleton field is not initialized', field);
+        }
+      }
+    }
+    if (type.kind == 'value' || type.modifiers.contains('value')) {
+      for (final field in type.fields) {
+        if (field.mutable) {
+          error('E706', 'A value class field cannot be var', field);
+        }
+      }
+    }
+    if (type.constructors.isNotEmpty &&
+        !type.modifiers.contains('abstract') &&
+        type.kind != 'interface') {
+      for (final field in type.fields) {
+        if (field.mutable || field.initializer != null) continue;
+        for (final constructor
+            in type.constructors.where((item) => !item.factory)) {
+          final initialized = constructor.parameters.any((parameter) =>
+              parameter.initializing == 'this' && parameter.name == field.name);
+          if (!initialized && !_bodyAssigns(constructor.body, field.name)) {
+            error('E704', 'A final field is not initialized', field);
+          }
         }
       }
     }
@@ -411,21 +461,240 @@ class Analyzer {
     if (type.annotations.contains('macro') && method.name == 'define') return;
     final saved = _scope;
     final savedThis = _thisType;
+    final savedReadonly = _readonlyMethod;
     _scope = _Scope(_global);
     _thisType = type.onType ?? type.name;
-    for (final field in type.fields) {
-      if (model.declarations[field] == null) {
-        model.declarations[field] =
-            Symbol(field.name, field.name, field.type, mutable: field.mutable);
-      }
-      _scope.symbols[field.name] = model.declarations[field]!;
-    }
+    _readonlyMethod = method.readonlyMethod;
+    _installFields(type);
     analyzeFunction(method);
+    _readonlyMethod = savedReadonly;
     _thisType = savedThis;
     _scope = saved;
   }
 
+  void analyzeConstructor(
+      ClassDeclaration type, ConstructorDeclaration constructor) {
+    final saved = _scope;
+    final savedThis = _thisType;
+    _scope = _Scope(_global);
+    _thisType = type.name;
+    _installFields(type, assignable: true);
+    for (final parameter in _ctorParameters(type, constructor)) {
+      final symbol =
+          Symbol(parameter.name, parameter.name, model.resolve(parameter.type));
+      _scope.symbols[parameter.name] = symbol;
+      model.declarations[parameter] = symbol;
+      final original = constructor.parameters
+          .where((item) => item.name == parameter.name)
+          .firstOrNull;
+      if (original != null) model.declarations[original] = symbol;
+    }
+    if (constructor.expressionBody case final value?) {
+      final returned = expression(value);
+      if (!compatible(returned, type.name) && !constructor.factory) {
+        final target = _redirectName(value);
+        if (target == null ||
+            !type.constructors.any((item) => item.name == target)) {
+          fail('A redirecting constructor must target a constructor', value);
+        }
+      }
+    } else {
+      statements(constructor.body!);
+    }
+    _thisType = savedThis;
+    _scope = saved;
+  }
+
+  void analyzeProperty(ClassDeclaration type, PropertyDeclaration property) {
+    final saved = _scope;
+    final savedThis = _thisType;
+    _scope = _Scope(_global);
+    _thisType = type.name;
+    _installFields(type);
+    if (property.getter case final getter?) {
+      final returned = expression(getter);
+      if (!compatible(returned, property.type)) {
+        fail('Getter type $returned is incompatible with ${property.type}',
+            getter);
+      }
+    } else if (property.getterBody case final body?) {
+      statements(body);
+    }
+    if (property.setterBody case final body?) {
+      final nested = _scope;
+      _scope = _Scope(nested);
+      final param = property.setter ?? 'value';
+      _scope.symbols[param] = Symbol(param, param, property.type);
+      statements(body);
+      _scope = nested;
+    }
+    _thisType = savedThis;
+    _scope = saved;
+  }
+
+  void _installFields(ClassDeclaration type, {bool assignable = false}) {
+    for (final field in _fieldsOf(type)) {
+      final dart = field.visibility == 'private' && !field.name.startsWith('_')
+          ? '_${field.name}'
+          : field.name;
+      final symbol = Symbol(field.name, dart, model.resolve(field.type),
+          mutable: assignable || field.mutable);
+      if (assignable) {
+        _scope.symbols[field.name] = symbol;
+      } else {
+        model.declarations[field] ??= symbol;
+        _scope.symbols[field.name] = model.declarations[field]!;
+        _fieldSymbols.add(model.declarations[field]!);
+      }
+    }
+  }
+
+  List<Parameter> _ctorParameters(
+      ClassDeclaration type, ConstructorDeclaration constructor) {
+    return [
+      for (final parameter in constructor.parameters)
+        if (parameter.initializing.isEmpty)
+          parameter
+        else
+          Parameter(
+              parameter.name,
+              _fieldType(type, parameter.name, parameter.span),
+              false,
+              parameter.span,
+              initializing: parameter.initializing)
+    ];
+  }
+
+  String _fieldType(ClassDeclaration type, String name, SourceSpan span) {
+    final found = _fieldsOf(type).where((field) => field.name == name);
+    if (found.isEmpty) {
+      throw CompilerException(
+          'E200', 'No field $name for an initializing formal', span);
+    }
+    return model.resolve(found.first.type);
+  }
+
+  bool _bodyAssigns(List<Statement>? body, String name) {
+    if (body == null) return false;
+    for (final statement in body) {
+      if (statement is Binding &&
+          statement.name == name &&
+          statement.operator == '=') {
+        return true;
+      }
+      if (statement is MemberAssignment &&
+          statement.object is ThisExpression &&
+          statement.name == name) {
+        return true;
+      }
+      if (statement is IfStatement &&
+          _bodyAssigns(statement.thenBody, name) &&
+          _bodyAssigns(statement.elseBody, name)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String? _redirectName(Expression node) {
+    if (node is Identifier) return node.name;
+    if (node is CallExpression && node.callee is Identifier) {
+      return (node.callee as Identifier).name;
+    }
+    return null;
+  }
+
+  void registerWhen(WhenStatement node) {
+    final selected = _constBool(node.condition);
+    if (selected == null) {
+      error(
+          'E902', 'A when condition is not a constant boolean', node.condition);
+    }
+    if (!selected) {
+      model.skipped.add(node);
+      return;
+    }
+    for (final statement in node.body) {
+      switch (statement) {
+        case ImportDeclaration():
+          registerImport(statement);
+        case WhenStatement():
+          registerWhen(statement);
+        default:
+          fail('A top-level when contains use directives', statement);
+      }
+    }
+  }
+
+  bool? _constBool(Expression node) {
+    if (node is Literal && node.value is bool) return node.value as bool;
+    final flag = _libraryFlag(node);
+    if (flag != null) return flag;
+    if (node is UnaryExpression &&
+        (node.operator == 'not' || node.operator == '!')) {
+      final inner = _constBool(node.operand);
+      if (inner != null) return !inner;
+    }
+    if (node is BinaryExpression &&
+        (node.operator == 'and' || node.operator == 'or')) {
+      final left = _constBool(node.left);
+      final right = _constBool(node.right);
+      if (left == null || right == null) return null;
+      return node.operator == 'and' ? left && right : left || right;
+    }
+    if (node is BinaryExpression &&
+        (node.operator == '==' || node.operator == '!=')) {
+      final left = _constText(node.left);
+      final right = _constText(node.right);
+      if (left == null || right == null) return null;
+      final same = left == right;
+      return node.operator == '==' ? same : !same;
+    }
+    return null;
+  }
+
+  String? _constText(Expression node) {
+    if (node is Literal && node.value is String) return node.value as String;
+    if (node is Identifier && node.name == 'platform') return 'vm';
+    return null;
+  }
+
+  bool? _libraryFlag(Expression node) {
+    final path = _memberPath(node);
+    if (path == null || !path.startsWith('dart.library.')) return null;
+    const enabled = {
+      'dart.library.core',
+      'dart.library.io',
+      'dart.library.async',
+      'dart.library.collection',
+      'dart.library.convert',
+      'dart.library.typed_data',
+    };
+    return enabled.contains(path);
+  }
+
+  String? _memberPath(Expression node) {
+    if (node is Identifier) return node.name;
+    if (node is MemberAccess && !node.nullAware) {
+      final parent = _memberPath(node.object);
+      if (parent == null) return null;
+      return '$parent.${node.name}';
+    }
+    return null;
+  }
+
   void registerImport(ImportDeclaration node) {
+    if (node.condition != null) {
+      final selected = _constBool(node.condition!);
+      if (selected == null) {
+        error('E902', 'A when condition is not a constant boolean',
+            node.condition!);
+      }
+      if (!selected) {
+        model.skipped.add(node);
+        return;
+      }
+    }
     model.imports.add(node);
     if (node.uri == 'dart:math' && node.prefix == null) {
       void external(String name, String type, List<String> parameters) {
@@ -706,7 +975,8 @@ class Analyzer {
         if (existing != null &&
             node.mode == BindingMode.inferred &&
             node.type == null) {
-          if (existing.readonly) {
+          if (existing.readonly ||
+              (_readonlyMethod && _fieldSymbols.contains(existing))) {
             error('E307', 'A readonly reference cannot be mutated', node);
           }
           if (!existing.mutable && !existing.lateOpen)
@@ -955,12 +1225,92 @@ class Analyzer {
         if (condition != 'bool') {
           fail('require condition must be bool', node.condition);
         }
+      case IfCaseStatement():
+        final matched = expression(node.scrutinee);
+        final savedCase = _scope;
+        _scope = _Scope(savedCase);
+        bindPattern(node.pattern, matched, declare: true);
+        statements(node.body);
+        _scope = savedCase;
+      case WhenStatement():
+        final selected = _constBool(node.condition);
+        if (selected == null) {
+          error('E902', 'A when condition is not a constant boolean',
+              node.condition);
+        }
+        if (!selected) {
+          model.skipped.add(node);
+          break;
+        }
+        statements(node.body, nested: true);
+      case UsingStatement():
+        if (node.async && _function?.isAsync != true) {
+          error('E803', 'using async is only valid in an async function', node);
+        }
+        final used = expression(node.value);
+        final usedType =
+            unwrap(used.startsWith('readonly ') ? used.substring(9) : used);
+        final declaration = _global.symbols[usedType]?.classDeclaration;
+        if (declaration == null || _method(declaration, 'dispose') == null) {
+          fail('using requires a value with dispose', node.value);
+        }
+        final savedUsing = _scope;
+        _scope = _Scope(savedUsing);
+        final resource = create(node.name, usedType);
+        _scope.symbols[node.name] = resource;
+        model.declarations[node] = resource;
+        statements(node.body);
+        _scope = savedUsing;
+      case MemberAssignment():
+        _assignMember(node);
+      case PartDirective():
+        fail('part belongs at the top level', node);
       case AliasDeclaration():
       case ExtensionDeclaration():
       case ClassDeclaration():
       case ImportDeclaration():
         fail('Classes and imports belong at the top level', node);
     }
+  }
+
+  void _assignMember(MemberAssignment node) {
+    final raw = expression(node.object);
+    if (raw.startsWith('readonly ') ||
+        (_readonlyMethod &&
+            (node.object is ThisExpression ||
+                node.object is Identifier &&
+                    model.implicitThis.contains(node.object)))) {
+      error('E307', 'A readonly reference cannot be mutated', node);
+    }
+    final type = unwrap(raw);
+    final declaration = _global.symbols[type]?.classDeclaration;
+    if (declaration == null) fail('No member ${node.name} on $raw', node);
+    final properties =
+        _propertiesOf(declaration).where((item) => item.name == node.name);
+    if (properties.isNotEmpty) {
+      final property = properties.first;
+      if (property.setter == null && property.setterBody == null) {
+        fail('Property ${node.name} is read-only', node);
+      }
+      final value = expression(node.value);
+      if (!compatible(value, property.type)) {
+        fail('Cannot assign $value to ${property.type}', node);
+      }
+      model.references[node] = Symbol(
+          property.name, _dartMember(type, property.name), property.type);
+      return;
+    }
+    final fields =
+        _fieldsOf(declaration).where((item) => item.name == node.name);
+    if (fields.isEmpty || !fields.first.mutable) {
+      fail('Cannot assign immutable field ${node.name}', node);
+    }
+    final value = expression(node.value);
+    if (!compatible(value, fields.first.type)) {
+      fail('Cannot assign $value to ${fields.first.type}', node);
+    }
+    model.references[node] = Symbol(fields.first.name,
+        _dartMember(type, fields.first.name), fields.first.type);
   }
 
   final _labels = <String>[];
@@ -1138,6 +1488,8 @@ class Analyzer {
     }
     final found = memberType(base, node.name);
     if (found != null) {
+      model.references[node] =
+          Symbol(node.name, _dartMember(base, node.name), found);
       if (found.contains('->')) return found;
       return node.nullAware || type.endsWith('?') ? '$found?' : found;
     }
@@ -1150,6 +1502,9 @@ class Analyzer {
       for (final field in _fieldsOf(declaration)) {
         if (field.name == name) return field.type;
       }
+      for (final property in _propertiesOf(declaration)) {
+        if (property.name == name) return property.type;
+      }
       final method = _method(declaration, name);
       if (method != null) return functionType(method);
     }
@@ -1160,6 +1515,45 @@ class Analyzer {
     }
     if (extensions.length == 1) return functionType(extensions.single);
     return null;
+  }
+
+  List<PropertyDeclaration> _propertiesOf(ClassDeclaration type) {
+    final inherited = <PropertyDeclaration>[];
+    var name = type.superclass;
+    while (name != null) {
+      final parent = _global.symbols[name]?.classDeclaration;
+      if (parent == null) break;
+      inherited.insertAll(0, parent.properties);
+      name = parent.superclass;
+    }
+    return [...inherited, ...type.properties];
+  }
+
+  String _dartMember(String type, String name) {
+    final declaration = _global.symbols[type]?.classDeclaration;
+    if (declaration == null) return name;
+    for (final field in declaration.fields) {
+      if (field.name == name) {
+        return field.visibility == 'private' && !name.startsWith('_')
+            ? '_$name'
+            : name;
+      }
+    }
+    for (final property in declaration.properties) {
+      if (property.name == name) {
+        return property.visibility == 'private' && !name.startsWith('_')
+            ? '_$name'
+            : name;
+      }
+    }
+    for (final method in declaration.methods) {
+      if (method.name == name) {
+        return model.declarations[method]?.dartName ?? name;
+      }
+    }
+    final parent = declaration.superclass;
+    if (parent == null) return name;
+    return _dartMember(parent, name);
   }
 
   List<FieldDeclaration> _fieldsOf(ClassDeclaration type) {
@@ -1425,6 +1819,19 @@ class Analyzer {
       if (left == 'num' || right == 'num') return 'num';
       return left == 'double' || right == 'double' ? 'double' : 'int';
     }
+    final owner = _global.symbols[unwrap(left)]?.classDeclaration;
+    final method = owner == null ? null : _method(owner, op);
+    if (owner != null && method != null && method.isOperator) {
+      if (method.parameters.isNotEmpty) {
+        final expected = method.parameters.first.type;
+        if (expected != '<field>' && !compatible(right, expected)) {
+          fail('Operator $op is not defined for $left and $right', node);
+        }
+      }
+      return model.declarations[method]?.type ??
+          method.returnType ??
+          owner.name;
+    }
     fail('Operator $op is not defined for $left and $right', node);
   }
 
@@ -1480,6 +1887,8 @@ class Analyzer {
       final member = memberType(_thisType!, node.name);
       if (member != null) {
         model.implicitThis.add(node);
+        model.references[node] =
+            Symbol(node.name, _dartMember(_thisType!, node.name), member);
         return member;
       }
     }
@@ -1591,8 +2000,57 @@ class Analyzer {
 
   String call(CallExpression node) {
     final callee = node.callee;
+    if (callee is MemberAccess && callee.object is Identifier) {
+      final owner = _scope.lookup((callee.object as Identifier).name);
+      final type = owner?.classDeclaration;
+      final named = type?.constructors
+          .where((constructor) => constructor.name == callee.name)
+          .toList();
+      if (type != null && named != null && named.isNotEmpty) {
+        model.references[callee.object as Identifier] = owner!;
+        final parameters = _ctorParameters(type, named.first);
+        applyArguments(node, parameters, null);
+        model.references[callee] = Symbol(callee.name, callee.name, type.name,
+            function: FunctionDeclaration(callee.name, parameters, type.name,
+                null, null, named.first.span));
+        return type.name;
+      }
+    }
     if (callee is MemberAccess) {
       final rawObject = expression(callee.object);
+      if (callee.name == 'copyWith') {
+        final objectType = unwrap(rawObject.startsWith('readonly ')
+            ? rawObject.substring(9)
+            : rawObject);
+        final declaration = _global.symbols[objectType]?.classDeclaration;
+        if (declaration != null &&
+            (declaration.kind == 'value' ||
+                declaration.modifiers.contains('value'))) {
+          for (final argument in node.arguments) {
+            if (argument.name == null) {
+              fail('copyWith arguments are named', argument);
+            }
+            final fields = _fieldsOf(declaration)
+                .where((field) => field.name == argument.name);
+            if (fields.isEmpty) {
+              fail('Unknown argument: ${argument.name}', argument);
+            }
+            if (argument.value is Identifier &&
+                (argument.value as Identifier).name == 'missing') {
+              continue;
+            }
+            final value = expression(argument.value);
+            if (!compatible(value, fields.first.type)) {
+              fail(
+                  'Argument type $value is incompatible with ${fields.first.type}',
+                  argument);
+            }
+          }
+          model.references[callee] =
+              Symbol('copyWith', 'copyWith', declaration.name);
+          return declaration.name;
+        }
+      }
       if (rawObject.startsWith('readonly ') &&
           _mutating.contains(callee.name)) {
         error('E307', 'A readonly reference cannot be mutated', callee);
@@ -1661,6 +2119,9 @@ class Analyzer {
         error('E205', 'Two extensions define ${callee.name}', callee);
       }
       if (resolved != null) {
+        if (_readonlyMethod && !resolved.readonlyMethod) {
+          error('E307', 'A readonly method may only read this', callee);
+        }
         model.implicitThis.add(callee);
         model.references[callee] = model.declarations[resolved]!;
         return applyArguments(node, resolved.parameters, resolved);
@@ -1791,6 +2252,20 @@ class Analyzer {
           node,
           [Parameter(field.name, model.resolve(field.type), false, field.span)],
           null);
+      return type.name;
+    }
+    if (type.constructors.isNotEmpty) {
+      final unnamed =
+          type.constructors.where((constructor) => constructor.name == null);
+      if (unnamed.isEmpty) {
+        fail('${type.name} has no unnamed constructor', node);
+      }
+      final constructor = unnamed.first;
+      final parameters = _ctorParameters(type, constructor);
+      applyArguments(node, parameters, null);
+      model.references[node.callee] = Symbol(type.name, type.name, type.name,
+          function: FunctionDeclaration(type.name, parameters, type.name,
+              constructor.body, constructor.expressionBody, constructor.span));
       return type.name;
     }
     final parameters = <Parameter>[];

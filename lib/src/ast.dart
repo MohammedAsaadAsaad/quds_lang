@@ -17,7 +17,12 @@ sealed class Statement extends Node {
 class FunctionDeclaration extends Statement {
   const FunctionDeclaration(this.name, this.parameters, this.returnType,
       this.body, this.expressionBody, super.span,
-      {this.isAsync = false, this.annotations = const [], this.generator = ''});
+      {this.isAsync = false,
+      this.annotations = const [],
+      this.generator = '',
+      this.visibility = '',
+      this.isOperator = false,
+      this.readonlyMethod = false});
   final String name;
   final List<Parameter> parameters;
   final String? returnType;
@@ -28,11 +33,16 @@ class FunctionDeclaration extends Statement {
 
   /// Empty, `sync`, or `async`. A non-empty value means a generator.
   final String generator;
+
+  /// Empty, `private`, or `protected`.
+  final String visibility;
+  final bool isOperator;
+  final bool readonlyMethod;
 }
 
 class Parameter extends Node {
   const Parameter(this.name, this.type, this.mutable, super.span,
-      {this.defaultValue, this.variadic = false});
+      {this.defaultValue, this.variadic = false, this.initializing = ''});
   final String name;
   final String type;
   final bool mutable;
@@ -40,6 +50,9 @@ class Parameter extends Node {
 
   /// `...name: Type` collects the remaining positional arguments as `List<Type>`.
   final bool variadic;
+
+  /// Empty, `this`, or `super`. A non-empty value is an initializing formal.
+  final String initializing;
 }
 
 enum BindingMode {
@@ -169,19 +182,57 @@ class LabelStatement extends Statement {
 }
 
 class ImportDeclaration extends Statement {
-  const ImportDeclaration(this.uri, this.prefix, super.span);
+  const ImportDeclaration(this.uri, this.prefix, super.span, {this.condition});
   final String uri;
   final String? prefix;
+
+  /// `use uri when condition`. The import is kept only when the condition is true.
+  final Expression? condition;
+}
+
+class PartDirective extends Statement {
+  const PartDirective(this.uri, this.of, super.span);
+  final String uri;
+  final bool of;
 }
 
 class FieldDeclaration extends Node {
   const FieldDeclaration(this.name, this.type, this.mutable, this.requiredField,
-      this.initializer, super.span);
+      this.initializer, super.span,
+      {this.visibility = ''});
   final String name;
   final String type;
   final bool mutable;
   final bool requiredField;
   final Expression? initializer;
+
+  /// Empty, `private`, or `protected`.
+  final String visibility;
+}
+
+class PropertyDeclaration extends Node {
+  const PropertyDeclaration(this.name, this.type, this.getter, this.getterBody,
+      this.setter, this.setterBody, super.span,
+      {this.visibility = ''});
+  final String name;
+  final String type;
+  final Expression? getter;
+  final List<Statement>? getterBody;
+  final String? setter;
+  final List<Statement>? setterBody;
+  final String visibility;
+}
+
+class ConstructorDeclaration extends Node {
+  const ConstructorDeclaration(
+      this.name, this.parameters, this.body, this.expressionBody, super.span,
+      {this.factory = false, this.constant = false});
+  final String? name;
+  final List<Parameter> parameters;
+  final List<Statement>? body;
+  final Expression? expressionBody;
+  final bool factory;
+  final bool constant;
 }
 
 class ClassCase extends Node {
@@ -198,7 +249,9 @@ class ClassDeclaration extends Statement {
       this.interfaces = const [],
       this.onType,
       this.modifiers = const [],
-      this.requirements = const []});
+      this.requirements = const [],
+      this.constructors = const [],
+      this.properties = const []});
   final String name;
 
   /// `class`, `value`, `sealed`, `sealedType`, `mixin`, `mixinClass`, or `interface`.
@@ -213,6 +266,39 @@ class ClassDeclaration extends Statement {
   final String? onType;
   final List<String> modifiers;
   final List<Expression> requirements;
+  final List<ConstructorDeclaration> constructors;
+  final List<PropertyDeclaration> properties;
+}
+
+class IfCaseStatement extends Statement {
+  const IfCaseStatement(this.scrutinee, this.pattern, this.body, super.span);
+  final Expression scrutinee;
+  final Pattern pattern;
+  final List<Statement> body;
+}
+
+class WhenStatement extends Statement {
+  const WhenStatement(this.condition, this.body, super.span);
+  final Expression condition;
+  final List<Statement> body;
+}
+
+class UsingStatement extends Statement {
+  const UsingStatement(this.name, this.value, this.body, super.span,
+      {this.async = false});
+  final String name;
+  final Expression value;
+  final List<Statement> body;
+  final bool async;
+}
+
+class MemberAssignment extends Statement {
+  const MemberAssignment(
+      this.object, this.name, this.operator, this.value, super.span);
+  final Expression object;
+  final String name;
+  final String operator;
+  final Expression value;
 }
 
 class AliasDeclaration extends Statement {

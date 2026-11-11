@@ -197,6 +197,7 @@ class Parser {
     final span = current.span;
     final notes = takeAnnotations();
     if (topLevel && word('use')) return useImport(span);
+    if (topLevel && word('part')) return partDirective(span);
     if (word('extend')) return extensionDeclaration(span, notes);
     if (word('type') && peek().kind == TokenKind.identifier) {
       return typeForm(span);
@@ -286,6 +287,12 @@ class Parser {
       final condition = expression();
       return WhileStatement(condition, block(), extent(span));
     }
+    if (word('when') && !assignments.contains(peek().kind)) {
+      take();
+      final condition = expression();
+      return WhenStatement(condition, block(), extent(span));
+    }
+    if (word('using')) return usingStatement(span);
     if (word('break') || word('continue')) {
       final keyword = take().lexeme;
       String? label;
@@ -368,6 +375,32 @@ class Parser {
       value = finishBlockValue(value);
       return Binding(
           bindingName.lexeme, mode, type, operator, value, extent(span));
+    }
+    if (at(TokenKind.identifier) &&
+        peek().kind == TokenKind.dot &&
+        peek(2).kind == TokenKind.identifier &&
+        assignments.contains(peek(3).kind)) {
+      final object = name();
+      take();
+      final member = name();
+      final operator = take().lexeme;
+      final value = expression(bare: true);
+      endLine();
+      return MemberAssignment(Identifier(object.lexeme, object.span),
+          member.lexeme, operator, value, extent(span));
+    }
+    if (word('this') &&
+        peek().kind == TokenKind.dot &&
+        peek(2).kind == TokenKind.identifier &&
+        assignments.contains(peek(3).kind)) {
+      final token = take();
+      take();
+      final member = name();
+      final operator = take().lexeme;
+      final value = expression(bare: true);
+      endLine();
+      return MemberAssignment(ThisExpression(token.span), member.lexeme,
+          operator, value, extent(span));
     }
     var value = expression(bare: true);
     value = finishBlockValue(value);
@@ -595,7 +628,7 @@ class Parser {
     take();
     final buffer = StringBuffer();
     while (!at(TokenKind.newline) && !at(TokenKind.eof)) {
-      if (word('as')) break;
+      if (word('as') || word('when')) break;
       buffer.write(take().lexeme);
     }
     String? prefix;
@@ -603,9 +636,51 @@ class Parser {
       take();
       prefix = name().lexeme;
     }
+    Expression? condition;
+    if (word('when')) {
+      take();
+      condition = expression();
+    }
     endLine();
     if (buffer.isEmpty) fail('Expected import uri', span);
-    return ImportDeclaration(buffer.toString(), prefix, extent(span));
+    return ImportDeclaration(buffer.toString(), prefix, extent(span),
+        condition: condition);
+  }
+
+  PartDirective partDirective(SourceSpan span) {
+    take();
+    final of = word('of');
+    if (of) take();
+    final uri = readUri();
+    endLine();
+    return PartDirective(uri, of, extent(span));
+  }
+
+  String readUri() {
+    if (at(TokenKind.string)) {
+      final token = take().lexeme;
+      return token.length >= 2 ? token.substring(1, token.length - 1) : token;
+    }
+    final buffer = StringBuffer();
+    while (!at(TokenKind.newline) &&
+        !at(TokenKind.eof) &&
+        !word('as') &&
+        !word('when')) {
+      buffer.write(take().lexeme);
+    }
+    if (buffer.isEmpty) fail('Expected a uri');
+    return buffer.toString();
+  }
+
+  UsingStatement usingStatement(SourceSpan span) {
+    take();
+    final async = word('async');
+    if (async) take();
+    final resource = name();
+    expect(TokenKind.equals, '=');
+    final value = expression();
+    return UsingStatement(resource.lexeme, value, block(), extent(span),
+        async: async);
   }
 
   void _checkModifiers(List<String> modifiers, SourceSpan span) {
@@ -680,6 +755,8 @@ class Parser {
     final fields = <FieldDeclaration>[];
     final methods = <FunctionDeclaration>[];
     final cases = <ClassCase>[];
+    final constructors = <ConstructorDeclaration>[];
+    final properties = <PropertyDeclaration>[];
     while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
       if (kind == 'sealedType' && !functionAhead()) {
         final caseToken = name();
@@ -705,14 +782,42 @@ class Parser {
         }
         continue;
       }
-      if (functionAhead()) {
-        methods.add(function(const []));
+      var visibility = '';
+      if (word('private') || word('protected')) {
+        visibility = take().lexeme;
+      }
+      if (word('property')) {
+        properties.add(propertyDeclaration(visibility));
         continue;
       }
+      if (word('operator')) {
+        methods.add(operatorDeclaration());
+        continue;
+      }
+      if (word('init') ||
+          (word('factory') && peek().lexeme == 'init') ||
+          (word('const') && peek().lexeme == 'init')) {
+        constructors.add(constructorDeclaration());
+        continue;
+      }
+      var readonlyMethod = false;
+      if (word('readonly') &&
+          peek().kind == TokenKind.identifier &&
+          peek(2).kind == TokenKind.leftParen) {
+        take();
+        readonlyMethod = true;
+      }
+      if (functionAhead()) {
+        methods.add(function(const [],
+            visibility: visibility, readonlyMethod: readonlyMethod));
+        continue;
+      }
+      if (readonlyMethod) fail('readonly applies to a method');
+      final mutable = word('var');
+      if (mutable) take();
       final fieldName = name();
       expect(TokenKind.colon, ':');
       final fieldType = typeName();
-      final mutable = false;
       var requiredField = false;
       Expression? initializer;
       if (word('required')) {
@@ -722,7 +827,8 @@ class Parser {
       if (match(TokenKind.equals)) initializer = expression(bare: true);
       endLine();
       fields.add(FieldDeclaration(fieldName.lexeme, fieldType, mutable,
-          requiredField || initializer == null, initializer, fieldName.span));
+          requiredField || initializer == null, initializer, fieldName.span,
+          visibility: visibility));
     }
     expect(TokenKind.dedent, 'end of block');
     return ClassDeclaration(
@@ -730,7 +836,97 @@ class Parser {
         superclass: superclass,
         mixins: mixins,
         interfaces: interfaces,
-        modifiers: modifiers);
+        modifiers: modifiers,
+        constructors: constructors,
+        properties: properties);
+  }
+
+  PropertyDeclaration propertyDeclaration(String visibility) {
+    final token = take();
+    final propertyName = name();
+    expect(TokenKind.colon, ':');
+    final type = typeName();
+    Expression? getter;
+    List<Statement>? getterBody;
+    String? setter;
+    List<Statement>? setterBody;
+    if (match(TokenKind.colon)) {
+      endLine();
+      expect(TokenKind.indent, 'indented block');
+      while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+        if (word('get')) {
+          take();
+          if (match(TokenKind.equals)) {
+            getter = expression(bare: true);
+            endLine();
+          } else {
+            getterBody = block();
+          }
+        } else if (word('set')) {
+          take();
+          expect(TokenKind.leftParen, '(');
+          setter = at(TokenKind.identifier) ? name().lexeme : 'value';
+          expect(TokenKind.rightParen, ')');
+          setterBody = block();
+        } else {
+          fail('A property suite contains get or set');
+        }
+      }
+      expect(TokenKind.dedent, 'end of property');
+    } else {
+      endLine();
+    }
+    return PropertyDeclaration(propertyName.lexeme, type, getter, getterBody,
+        setter, setterBody, extent(token.span),
+        visibility: visibility);
+  }
+
+  FunctionDeclaration operatorDeclaration() {
+    final token = take();
+    if (at(TokenKind.newline) || at(TokenKind.eof)) fail('Expected operator');
+    final op = take();
+    return function(const [],
+        operatorName: op.lexeme, operatorSpan: extent(token.span));
+  }
+
+  ConstructorDeclaration constructorDeclaration() {
+    final span = current.span;
+    var factory = false;
+    var constant = false;
+    if (word('factory')) {
+      take();
+      factory = true;
+    }
+    if (word('const')) {
+      take();
+      constant = true;
+    }
+    if (!word('init')) fail('Expected init');
+    take();
+    String? ctorName;
+    if (at(TokenKind.identifier) && peek().kind == TokenKind.leftParen) {
+      ctorName = name().lexeme;
+    }
+    if (at(TokenKind.equals)) {
+      take();
+      final value = expression(bare: true);
+      endLine();
+      return ConstructorDeclaration(
+          ctorName, const [], null, value, extent(span),
+          factory: factory, constant: constant);
+    }
+    final parameters = parameterList();
+    if (match(TokenKind.arrow)) typeName();
+    if (match(TokenKind.equals)) {
+      final value = expression(bare: true);
+      endLine();
+      return ConstructorDeclaration(
+          ctorName, parameters, null, value, extent(span),
+          factory: factory, constant: constant);
+    }
+    return ConstructorDeclaration(
+        ctorName, parameters, block(), null, extent(span),
+        factory: factory, constant: constant);
   }
 
   Statement typeForm(SourceSpan span) {
@@ -974,33 +1170,15 @@ class Parser {
     return BindingPattern(typeOrName.lexeme, typeOrName.span);
   }
 
-  FunctionDeclaration function(List<String> notes) {
-    final token = name();
-    expect(TokenKind.leftParen, '(');
-    final parameters = <Parameter>[];
-    if (!at(TokenKind.rightParen)) {
-      do {
-        final variadic = at(TokenKind.spread);
-        if (variadic) take();
-        final mutable = word('var');
-        if (mutable) take();
-        final parameter = name();
-        expect(TokenKind.colon, ':');
-        final type = typeName();
-        if (word('required')) take();
-        Expression? defaultValue;
-        if (match(TokenKind.equals)) defaultValue = expression();
-        parameters.add(Parameter(
-            parameter.lexeme, type, mutable, extent(parameter.span),
-            defaultValue: defaultValue, variadic: variadic));
-      } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
-    }
-    expect(TokenKind.rightParen, ')');
-    final variadicAt = parameters.indexWhere((item) => item.variadic);
-    if (variadicAt >= 0 && variadicAt != parameters.length - 1) {
-      throw CompilerException('E503', 'A variadic parameter must be last',
-          parameters[variadicAt].span);
-    }
+  FunctionDeclaration function(List<String> notes,
+      {String visibility = '',
+      bool readonlyMethod = false,
+      String? operatorName,
+      SourceSpan? operatorSpan}) {
+    final token = operatorName == null ? name() : null;
+    final nameText = operatorName ?? token!.lexeme;
+    final span = operatorSpan ?? token!.span;
+    final parameters = parameterList();
     var isAsync = false;
     var generator = '';
     if (word('async') || word('sync')) {
@@ -1026,12 +1204,68 @@ class Parser {
         endLine();
       }
       return FunctionDeclaration(
-          token.lexeme, parameters, returnType, null, value, extent(token.span),
-          isAsync: isAsync, annotations: notes, generator: generator);
+          nameText, parameters, returnType, null, value, extent(span),
+          isAsync: isAsync,
+          annotations: notes,
+          generator: generator,
+          visibility: visibility,
+          isOperator: operatorName != null,
+          readonlyMethod: readonlyMethod);
     }
     return FunctionDeclaration(
-        token.lexeme, parameters, returnType, block(), null, extent(token.span),
-        isAsync: isAsync, annotations: notes, generator: generator);
+        nameText, parameters, returnType, block(), null, extent(span),
+        isAsync: isAsync,
+        annotations: notes,
+        generator: generator,
+        visibility: visibility,
+        isOperator: operatorName != null,
+        readonlyMethod: readonlyMethod);
+  }
+
+  List<Parameter> parameterList() {
+    expect(TokenKind.leftParen, '(');
+    final parameters = <Parameter>[];
+    if (!at(TokenKind.rightParen)) {
+      do {
+        parameters.add(parameter());
+      } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
+    }
+    expect(TokenKind.rightParen, ')');
+    final variadicAt = parameters.indexWhere((item) => item.variadic);
+    if (variadicAt >= 0 && variadicAt != parameters.length - 1) {
+      throw CompilerException('E503', 'A variadic parameter must be last',
+          parameters[variadicAt].span);
+    }
+    return parameters;
+  }
+
+  Parameter parameter() {
+    final span = current.span;
+    if (word('this') || word('super')) {
+      final kind = take().lexeme;
+      expect(TokenKind.dot, '.');
+      final field = name();
+      var type = '<field>';
+      if (match(TokenKind.colon)) type = typeName();
+      if (word('required')) take();
+      Expression? defaultValue;
+      if (match(TokenKind.equals)) defaultValue = expression();
+      return Parameter(field.lexeme, type, false, extent(span),
+          defaultValue: defaultValue, initializing: kind);
+    }
+    final variadic = at(TokenKind.spread);
+    if (variadic) take();
+    final mutable = word('var');
+    if (mutable) take();
+    final parameterName = name();
+    expect(TokenKind.colon, ':');
+    final type = typeName();
+    if (word('required')) take();
+    Expression? defaultValue;
+    if (match(TokenKind.equals)) defaultValue = expression();
+    return Parameter(
+        parameterName.lexeme, type, mutable, extent(parameterName.span),
+        defaultValue: defaultValue, variadic: variadic);
   }
 
   ClassDeclaration enumDeclaration(SourceSpan span, List<String> notes) {
@@ -1093,9 +1327,14 @@ class Parser {
     return TryStatement(body, catches, finallyBody, extent(span));
   }
 
-  IfStatement ifStatement() {
+  Statement ifStatement() {
     final token = take();
     final condition = expression();
+    if (word('is')) {
+      take();
+      final pattern = patternLiteral();
+      return IfCaseStatement(condition, pattern, block(), extent(token.span));
+    }
     final body = block();
     final otherwise = <Statement>[];
     if (word('else')) {

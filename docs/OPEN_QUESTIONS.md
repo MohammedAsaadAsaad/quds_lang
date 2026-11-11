@@ -35,10 +35,25 @@ These are specification questions, not permission to override approved design ch
   general optional-parenthesis calls needs normative specification before expansion.
 - **Question 12:** This slice targets native Dart integers/doubles. It rejects
   oversized positive integer literals rather than converting them to doubles.
-  Web integer guarantees and spelling the minimum signed integer literal remain
-  follow-up work. No cross-platform numeric guarantee is inferred from native tests.
+  Const arithmetic uses native Dart 3.13.7 `int` operators, which wrap at
+  signed 64 bits. Web integers remain unvalidated, and no cross-platform
+  numeric guarantee is inferred from native tests. Quds spells a leading minus
+  as unary `-`, and `int.tryParse` rejects `9223372036854775808`, so the
+  minimum signed 64-bit value still cannot be written as one literal. It can
+  be computed, for example `9223372036854775807 + 1`. No separate lexical
+  exception was added.
+- **Unary `+`:** MVP-0 accepts prefix `+`, but Dart has no prefix `+`, so
+  emitting it produces invalid Dart. It is lowered as numeric identity,
+  including the sign of zero. This does not add an operator Dart lacks.
+- **Const interpolation:** an interpolation whose parts are all literals is
+  reduced to one string literal by the parser. Other interpolations, including
+  references to const bindings, are not constants. That matches Dart, where
+  string interpolation is not a constant expression. A later Quds rule for
+  const interpolation is not specified here.
 
-Implementation gaps (rather than syntax decisions): parser recovery, source maps,
-Quds-side constant evaluation with source diagnostics, and contextual inference
-are not complete. The supported subset and further deferred features are listed
-in `MVP_0.md`. Original questions above remain open beyond these scoped choices.
+Implementation gaps (rather than syntax decisions): parser recovery, source
+maps, and contextual inference are not complete. Const evaluation of the MVP-0
+expression subset, with Q200 diagnostics in original `.quds` coordinates, is
+implemented; const forms outside that subset are not. The supported subset and
+further deferred features are listed in `MVP_0.md`. Original questions above
+remain open beyond these scoped choices.

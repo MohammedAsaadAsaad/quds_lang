@@ -123,9 +123,8 @@ main():
 
 `name = value` declares a final binding if no symbol is visible, or assigns an
 existing mutable binding. `var` explicitly declares a mutable binding; `const`
-requires a structurally constant initializer. Constant arithmetic errors are
-currently diagnosed by Dart tooling on the generated file; evaluating them in
-Quds with mapped diagnostics remains follow-up work. Typed declarations use `name: Type = value`.
+requires a compile-time constant initializer, which Quds evaluates before
+emission. Typed declarations use `name: Type = value`.
 Compound assignment requires an existing mutable binding. `shadow` requires an
 outer binding and creates a new final local binding after resolving its initializer
 against the outer scope. It cannot redeclare a name in the same scope. `var` or
@@ -142,13 +141,62 @@ Numeric values may widen to `num`; implicit `int` to `double`, nullable types,
 contextual empty-list typing and generalized subtype inference are deferred.
 See the explicit-shadow, mutability, parameter and type conformance tests.
 
+## Const evaluation (002, 004, 065)
+
+```quds
+main():
+  const base = 10
+  const step = base - 3 - 2
+  const allowed = false and (1 % 0 == 0)
+  const values = [base, step]
+  print step
+  print allowed
+  print values
+```
+
+This prints `5`, `false`, and `[10, 5]`. The supported const forms are the
+MVP-0 literals, references to earlier const bindings, unary `+`, `-`, and
+`not`, the arithmetic and comparison operators, `==` and `!=`, `and` and `or`,
+and lists of those values. Calls, general interpolation, mutable bindings, and
+final bindings are not constants. Q200 is reported on the failing subexpression
+in the original `.quds` file.
+
+Evaluation uses the host Dart `int` and `double` operators, left to right and
+once. On the validated native SDK, integers wrap at signed 64 bits, so
+`9223372036854775807 + 1` is `-9223372036854775808`. The positive literal
+`9223372036854775808` is rejected because it is not a native `int`. Integer
+remainder by zero, including a `num` const whose value is the integer `0`, is
+`Integer remainder by zero`. Double remainder by zero is `NaN`. `/` by zero is
+a non-finite double, not an error. `and` and `or` short-circuit: a skipped
+`1 % 0` is not evaluated, but a skipped call is still rejected because both
+operands must be constant expressions. Const `==` on lists follows Dart
+canonical identity, so two const lists of `0.0 / 0.0` compare equal, while
+`[-0.0] == [0.0]` is false. Numeric `==` stays IEEE: NaN is not equal to NaN,
+and `-0.0 == 0.0`.
+
+A `const` list is a Dart constant list. A final or `var` list remains a
+mutable object; the binding's immutability does not freeze it. Inferred const
+is not implemented. An interpolation whose parts are all literals is already a
+string literal (`"hi {1}"` is `"hi 1"`). Any other interpolation is not a
+constant. Dart has no prefix `+`, so Quds unary `+` is lowered as numeric
+identity, including the sign of zero. Const initializers are emitted as
+expressions so Dart evaluates them again, except `and` and `or`, which are
+emitted as their bool result to avoid Dart's `dead_code` warning. A const local
+that folding leaves unread is kept and marked
+`// ignore: unused_local_variable`.
+
+Tests: `test/constants_test.dart` and `test/fixtures/const_eval.quds`.
+
 ## Dart output and remaining work (033, 063, 085, 114)
 
 Emission is deterministic and uses unique Dart names to avoid keyword/internal
-name collisions. The golden fixture records exact output; integration tests
+name collisions. The golden fixtures record exact output; integration tests
 analyze and execute it. `quds build` is the only CLI command implemented. Public
 Dart-facing wrappers, imports and dependencies in Quds, arbitrary Dart interop,
 source maps, error recovery and runtime stack remapping remain future work.
+Using a const bool as an `if` condition can still produce Dart's `dead_code`
+warning; conditions are not rewritten. Top-level const, const constructors, and
+web numeric behavior are not part of this slice.
 
 QUDS-082–089 advanced conversions/Optional/defaults/overloads/variadics,
 091–092 capture/readonly, and 094–115 provisional advanced features are not

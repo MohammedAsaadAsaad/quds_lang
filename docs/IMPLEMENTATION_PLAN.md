@@ -60,4 +60,6 @@ acceptance program is analyzed and executed in integration tests. This does not
 complete every item in milestones 0–4: recovery, source maps, contextual typing,
 full collection/call grammar and advanced semantics remain incremental work.
 See `MVP_0.md` for the exact supported subset and `VALIDATION.md` for commands and
-results. The approved language decisions remain unchanged.
+results. Const initializers in that subset are now evaluated in Quds, and
+failures are reported at the original `.quds` span. The approved language
+decisions remain unchanged.

@@ -694,6 +694,141 @@ main() async:
     expect(dart, contains("part 'extra.dart';"));
   });
 
+  test('patterns, generics, await groups, and contracts execute', () async {
+    final source = '''
+interface Named:
+  name: String
+interface Identifiable:
+  id: int
+class User implements Named, Identifiable:
+  name: String required
+  id: int required
+class Box<T>:
+  value: T required
+  same() -> T:
+    return value
+class Producer<out T>:
+  value: T required
+class Counter:
+  static var count: int = 0
+class Proxy:
+  noSuchMethod(invocation: Invocation) -> dynamic:
+    return "missing"
+extend List<T>:
+  secondOrNull() -> T?:
+    if length < 2:
+      return null
+    return this[1]
+value class Pair:
+  x: int required
+  y: int = 2
+  init(this.x):
+    require x == x
+annotation Tag:
+@Tag
+@Reflectable
+class Item:
+  caption: String = "item"
+one() async -> int:
+  return 1
+two() async -> int:
+  return 2
+doubleIt(n: int) -> int = n * 2
+show(item: Named & Identifiable):
+  print item.name
+  print item.id
+config port: int = 8080
+main() async:
+  print config.port
+  show(User(name: "Ada", id: 7))
+  box = Box(value: "Ada")
+  print box.same()
+  Counter.count = 4
+  print Counter.count
+  items = [1, 2, 3]
+  print items.secondOrNull()
+  pair = Pair(x: 1)
+  next = pair.copyWith(x: 9)
+  print next.x
+  print next.y
+  point = (1, 2)
+  match point:
+    (x, y):
+      print x
+      print y
+  match items:
+    [first, ...rest]:
+      print first
+      print rest.length
+  match 3:
+    < 0:
+      print "neg"
+    >= 0 and < 10:
+      print "small"
+    _:
+      print "other"
+  match 1:
+    0 | 1:
+      print "low"
+    _:
+      print "other"
+  captionText: String? = "Ada"
+  match captionText:
+    text?:
+      print text
+    null:
+      print "none"
+  data = map:
+    "mode": "dark"
+  match data:
+    map:
+      "mode": mode
+    :
+      print mode
+  proxy: dynamic = Proxy()
+  print proxy.other()
+  waited = await all:
+    one()
+    two()
+  print waited
+  print await isolate:
+    doubleIt(4)
+  task group:
+    spawn one()
+    spawn two()
+  print "done"
+  require 1 < 2
+  check 2 > 1, "ok"
+  assert true
+  print symbol "name"
+''';
+    await execute(source, '''
+8080
+Ada
+7
+Ada
+4
+2
+9
+2
+1
+2
+1
+2
+small
+low
+Ada
+dark
+missing
+(1, 2)
+8
+done
+Symbol("name")
+''');
+    expect(compile(source).dart, contains('qudsReflectItem'));
+    expect(compile(source).dart, contains('@Tag()'));
+  });
+
   test('new diagnostics reject the programs they name', () {
     final rejected = {
       'main():\n  result 1\n': 'E106',
@@ -834,6 +969,35 @@ main():
   box = MathUtil()
   print box.pi
 ''': 'E300',
+      '''
+class Bad<out T>:
+  take(item: T) -> void:
+    return
+main():
+  print 1
+''': 'E304',
+      '''
+show(item: int & String):
+  print item
+main():
+  print 1
+''': 'E306',
+      '''
+main() async:
+  n = 4
+  print await isolate:
+    doubleIt(n)
+doubleIt(n: int) -> int = n
+''': 'E805',
+      '''
+config secret token: String = "hidden"
+main():
+  print 1
+''': 'E908',
+      '''
+main():
+  spawn ready()
+''': 'E107',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {

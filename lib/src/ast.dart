@@ -23,9 +23,11 @@ class FunctionDeclaration extends Statement {
       this.visibility = '',
       this.isOperator = false,
       this.readonlyMethod = false,
-      this.isStatic = false});
+      this.isStatic = false,
+      this.typeParameters = const []});
   final String name;
   final List<Parameter> parameters;
+  final List<TypeParameter> typeParameters;
   final String? returnType;
   final List<Statement>? body;
   final Expression? expressionBody;
@@ -245,6 +247,15 @@ class ClassCase extends Node {
   final List<FieldDeclaration> fields;
 }
 
+class TypeParameter extends Node {
+  const TypeParameter(this.name, super.span, {this.variance = '', this.bound});
+  final String name;
+
+  /// Empty, `in`, or `out`.
+  final String variance;
+  final String? bound;
+}
+
 class ClassDeclaration extends Statement {
   const ClassDeclaration(this.name, this.kind, this.fields, this.methods,
       this.cases, this.annotations, super.span,
@@ -255,7 +266,8 @@ class ClassDeclaration extends Statement {
       this.modifiers = const [],
       this.requirements = const [],
       this.constructors = const [],
-      this.properties = const []});
+      this.properties = const [],
+      this.typeParameters = const []});
   final String name;
 
   /// `class`, `value`, `sealed`, `sealedType`, `mixin`, `mixinClass`, or `interface`.
@@ -272,6 +284,7 @@ class ClassDeclaration extends Statement {
   final List<Expression> requirements;
   final List<ConstructorDeclaration> constructors;
   final List<PropertyDeclaration> properties;
+  final List<TypeParameter> typeParameters;
 }
 
 class IfLetStatement extends Statement {
@@ -325,15 +338,22 @@ class AliasDeclaration extends Statement {
 }
 
 class RequireStatement extends Statement {
-  const RequireStatement(this.condition, super.span);
+  const RequireStatement(this.condition, super.span,
+      {this.message, this.kind = 'require'});
   final Expression condition;
+  final Expression? message;
+
+  /// `require`, `check`, or `assert`.
+  final String kind;
 }
 
 class ExtensionDeclaration extends Statement {
-  const ExtensionDeclaration(this.name, this.target, this.methods, super.span);
+  const ExtensionDeclaration(this.name, this.target, this.methods, super.span,
+      {this.typeParameters = const []});
   final String? name;
   final String target;
   final List<FunctionDeclaration> methods;
+  final List<TypeParameter> typeParameters;
 }
 
 class ThisExpression extends Expression {
@@ -606,4 +626,88 @@ class CollectionFor extends Expression {
   final String name;
   final Expression iterable;
   final List<Expression> body;
+}
+
+class MapPattern extends Pattern {
+  const MapPattern(this.keys, this.values, super.span);
+  final List<Expression> keys;
+  final List<Pattern> values;
+}
+
+class RestPattern extends Pattern {
+  const RestPattern(this.name, super.span);
+  final String? name;
+}
+
+class OrPattern extends Pattern {
+  const OrPattern(this.left, this.right, super.span);
+  final Pattern left, right;
+}
+
+class AndPattern extends Pattern {
+  const AndPattern(this.left, this.right, super.span);
+  final Pattern left, right;
+}
+
+class RelationalPattern extends Pattern {
+  const RelationalPattern(this.operator, this.value, super.span);
+  final String operator;
+  final Expression value;
+}
+
+class CastPattern extends Pattern {
+  const CastPattern(this.inner, this.type, super.span);
+  final Pattern inner;
+  final String type;
+}
+
+class NullCheckPattern extends Pattern {
+  const NullCheckPattern(this.inner, super.span);
+  final Pattern inner;
+}
+
+class NullAssertPattern extends Pattern {
+  const NullAssertPattern(this.inner, super.span);
+  final Pattern inner;
+}
+
+class TypeApplication extends Expression {
+  const TypeApplication(this.callee, this.arguments, super.span);
+  final Expression callee;
+  final List<String> arguments;
+}
+
+class AwaitAllExpression extends Expression {
+  const AwaitAllExpression(this.arms, super.span);
+  final List<Expression> arms;
+}
+
+class AwaitIsolateExpression extends Expression {
+  const AwaitIsolateExpression(this.call, super.span);
+  final Expression call;
+}
+
+class SymbolExpression extends Expression {
+  const SymbolExpression(this.text, super.span);
+  final String text;
+}
+
+class TaskGroupStatement extends Statement {
+  const TaskGroupStatement(this.spawns, super.span);
+  final List<Expression> spawns;
+}
+
+class AnnotationDeclaration extends Statement {
+  const AnnotationDeclaration(this.name, this.parameters, super.span);
+  final String name;
+  final List<Parameter> parameters;
+}
+
+class ConfigDeclaration extends Statement {
+  const ConfigDeclaration(
+      this.name, this.type, this.value, this.secret, super.span);
+  final String name;
+  final String type;
+  final Expression value;
+  final bool secret;
 }

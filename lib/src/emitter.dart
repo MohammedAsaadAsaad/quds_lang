@@ -30,6 +30,9 @@ class DartEmitter {
   var _useState = false;
   var _useComputed = false;
   var _useWatch = false;
+  var _useIsolate = false;
+  var _useTask = false;
+  var _useAwaitAll = false;
   Map<String, String> _names = const {};
   void line(String text) {
     if (_redirect != null) {
@@ -49,7 +52,21 @@ class DartEmitter {
       for (final node in program.statements)
         if (node is ClassDeclaration) node.name: node
     };
+    final configs = program.statements.whereType<ConfigDeclaration>().toList();
+    if (configs.isNotEmpty) {
+      line('class config {');
+      _depth++;
+      for (final item in configs) {
+        line(
+            'static ${_dartType(item.type)} ${item.name} = ${expression(item.value)};');
+      }
+      _depth--;
+      line('}');
+    }
     for (final node in program.statements) {
+      if (node is AnnotationDeclaration) {
+        line('class ${node.name} { const ${node.name}(); }');
+      }
       if (node is ClassDeclaration) emitClass(node);
       if (node is ExtensionDeclaration) emitExtension(node);
     }
@@ -60,7 +77,9 @@ class DartEmitter {
       } else if (node is! ImportDeclaration &&
           node is! ClassDeclaration &&
           node is! ExtensionDeclaration &&
-          node is! AliasDeclaration) {
+          node is! AliasDeclaration &&
+          node is! AnnotationDeclaration &&
+          node is! ConfigDeclaration) {
         statement(node);
       }
     }
@@ -317,6 +336,49 @@ class DartEmitter {
           '  run();\n'
           '}');
     }
+    if (_useIsolate) {
+      prelude.writeln("import 'dart:isolate';");
+    }
+    if (_useTask) {
+      helpers.writeln('class TaskFailed implements Exception {\n'
+          '  TaskFailed(this.errors);\n'
+          '  final List<Object> errors;\n'
+          '  String toString() => \'TaskFailed: \$errors\';\n'
+          '}\n'
+          'Future<void> _qTaskGroup(List<Future<Object?>> tasks) async {\n'
+          '  final found = <int, Object>{};\n'
+          '  await Future.wait([\n'
+          '    for (var i = 0; i < tasks.length; i++)\n'
+          '      tasks[i].then((_) {}, onError: (Object error, StackTrace _) {\n'
+          '        found[i] = error;\n'
+          '      }),\n'
+          '  ]);\n'
+          '  if (found.isEmpty) return;\n'
+          '  final order = found.keys.toList()..sort();\n'
+          '  throw TaskFailed([for (final index in order) found[index]!]);\n'
+          '}');
+    }
+    if (_useAwaitAll) {
+      helpers.writeln(
+          'Future<List<Object?>> _qAwaitAll(List<Future<Object?>> futures) async {\n'
+          '  final values = List<Object?>.filled(futures.length, null);\n'
+          '  Object? first;\n'
+          '  var index = -1;\n'
+          '  await Future.wait([\n'
+          '    for (var i = 0; i < futures.length; i++)\n'
+          '      futures[i].then((value) { values[i] = value; }, onError: (Object error, StackTrace _) {\n'
+          '        if (index < 0 || i < index) {\n'
+          '          index = i;\n'
+          '          first = error;\n'
+          '        }\n'
+          '      }),\n'
+          '  ]);\n'
+          '  if (index >= 0) {\n'
+          '    Error.throwWithStackTrace(first!, StackTrace.current);\n'
+          '  }\n'
+          '  return values;\n'
+          '}');
+    }
     if (helpers.isNotEmpty) prelude.writeln(helpers.toString());
     if (prelude.isEmpty) return source;
     return source.replaceFirst(
@@ -332,6 +394,7 @@ class DartEmitter {
       final declared = model.declarations[p]!.type;
       return '${_dartType(declared)} ${model.declarations[p]!.dartName}';
     }).join(', ');
+    final generics = _typeParameters(node.typeParameters);
     final async = node.generator == 'sync'
         ? 'sync* '
         : node.generator == 'async'
@@ -344,13 +407,29 @@ class DartEmitter {
     if (node.visibility == 'protected') line('/// protected');
     final title = node.isOperator ? 'operator ${node.name}' : symbol.dartName;
     final staticPrefix = node.isStatic ? 'static ' : '';
+    final checks = _intersectionChecks(node);
     if (node.expressionBody case final value?) {
-      line(
-          '$staticPrefix${_dartType(symbol.type)} $title($parameters) ${async}=> ${expression(value)};');
+      if (checks.isEmpty) {
+        line(
+            '$staticPrefix${_dartType(symbol.type)} $title$generics($parameters) ${async}=> ${expression(value)};');
+      } else {
+        line(
+            '$staticPrefix${_dartType(symbol.type)} $title$generics($parameters) $async{');
+        _depth++;
+        for (final check in checks) {
+          line(check);
+        }
+        line('return ${expression(value)};');
+        _depth--;
+        line('}');
+      }
     } else {
       line(
-          '$staticPrefix${_dartType(symbol.type)} $title($parameters) $async{');
+          '$staticPrefix${_dartType(symbol.type)} $title$generics($parameters) $async{');
       _depth++;
+      for (final check in checks) {
+        line(check);
+      }
       if (propagate || doReturn) {
         line('try {');
         _depth++;
@@ -382,6 +461,9 @@ class DartEmitter {
     final resolved = model.resolve(type);
     if (resolved != type) return _dartType(resolved);
     if (type.startsWith('readonly ')) return _dartType(type.substring(9));
+    if (type.contains(' & ')) {
+      return _dartType(type.split(' & ').first.trim());
+    }
     if (type.contains(' | ')) return _unionClass(type);
     if (type.startsWith('(') && type.contains('->')) {
       final arrow = type.lastIndexOf('->');
@@ -489,10 +571,16 @@ class DartEmitter {
       return;
     }
     if (node.kind == 'interface') {
-      line('abstract interface class ${node.name} {');
+      line(
+          'abstract interface class ${node.name}${_typeParameters(node.typeParameters)} {');
+      _depth++;
       for (final field in node.fields) {
-        line('  ${_dartType(field.type)} get ${field.name};');
+        line('${_dartType(field.type)} get ${field.name};');
       }
+      for (final method in node.methods) {
+        emitFunction(method);
+      }
+      _depth--;
       line('}');
       return;
     }
@@ -524,7 +612,11 @@ class DartEmitter {
       }
       return;
     }
-    line('$header ${node.name}${tail.isEmpty ? '' : ' $tail'} {');
+    for (final note in node.annotations) {
+      if (model.annotations.contains(note)) line('@$note()');
+    }
+    line(
+        '$header ${node.name}${_typeParameters(node.typeParameters)}${tail.isEmpty ? '' : ' $tail'} {');
     _depth++;
     if (node.kind == 'mixin') {
       for (final property in node.properties) {
@@ -568,16 +660,26 @@ class DartEmitter {
         final initial = field.initializer == null
             ? ''
             : ' = ${expression(field.initializer!)}';
-        final kind = field.isConst ? 'static const' : 'static final';
+        final kind = field.isConst
+            ? 'static const'
+            : field.mutable
+                ? 'static'
+                : 'static final';
         line('$kind ${_dartType(declared)} ${field.name}$initial;');
         continue;
       }
       if (field.visibility == 'protected') line('/// protected');
       final modifier = field.mutable ? '' : 'final ';
-      final initial =
-          node.modifiers.contains('singleton') && field.initializer != null
-              ? ' = ${expression(field.initializer!)}'
-              : '';
+      final initializedByConstructor = node.constructors.isEmpty ||
+          node.constructors.any((constructor) => constructor.parameters.any(
+              (parameter) =>
+                  parameter.initializing == 'this' &&
+                  parameter.name == field.name));
+      final initial = field.initializer != null &&
+              (node.modifiers.contains('singleton') ||
+                  !initializedByConstructor)
+          ? ' = ${expression(field.initializer!)}'
+          : '';
       line('$modifier${_dartType(field.type)} ${_fieldDart(field)}$initial;');
     }
     for (final property in node.properties) {
@@ -611,6 +713,36 @@ class DartEmitter {
     }
     _depth--;
     line('}');
+    if (model.reflectable.contains(node)) {
+      final names = node.fields.map((field) => "'${field.name}'").join(', ');
+      line(
+          'const qudsReflect${node.name} = <String, Object?>{\'name\': \'${node.name}\', \'fields\': <String>[$names]};');
+    }
+  }
+
+  String _typeParameters(List<TypeParameter> parameters) {
+    if (parameters.isEmpty) return '';
+    final body = parameters.map((parameter) {
+      final bound = parameter.bound == null
+          ? ''
+          : ' extends ${_dartType(parameter.bound!)}';
+      return '${parameter.name}$bound';
+    }).join(', ');
+    return '<$body>';
+  }
+
+  List<String> _intersectionChecks(FunctionDeclaration node) {
+    final checks = <String>[];
+    for (final parameter in node.parameters) {
+      final type = model.declarations[parameter]?.type ?? parameter.type;
+      if (!type.contains(' & ')) continue;
+      final dart = model.declarations[parameter]!.dartName;
+      for (final part in type.split(' & ').skip(1)) {
+        checks.add(
+            'if ($dart is! ${_dartType(part.trim())}) throw ArgumentError(\'intersection\');');
+      }
+    }
+    return checks;
   }
 
   String _fieldDart(FieldDeclaration field) =>
@@ -720,9 +852,11 @@ class DartEmitter {
     if (generative.length != 1) return null;
     final constructor = generative.single;
     final fields = node.fields.where((field) => !field.isStatic).toList();
-    final covers = fields.every((field) => constructor.parameters.any(
-        (parameter) =>
-            parameter.initializing == 'this' && parameter.name == field.name));
+    bool covered(FieldDeclaration field) =>
+        constructor.parameters.any((parameter) =>
+            parameter.initializing == 'this' && parameter.name == field.name);
+    final covers =
+        fields.every((field) => covered(field) || field.initializer != null);
     final onlyFields = constructor.parameters.every((parameter) =>
         parameter.initializing == 'this' &&
         fields.any((field) => field.name == parameter.name));
@@ -749,6 +883,12 @@ class DartEmitter {
           fields.map((field) => '${field.name}: ${argument(field)}').join(', ');
       line('return ${node.name}($args);');
     } else {
+      final covered = constructor.parameters.map((item) => item.name).toSet();
+      for (final field in fields) {
+        if (covered.contains(field.name) || field.initializer == null) continue;
+        line(
+            'if (!identical(${field.name}, missing)) throw ArgumentError(\'copyWith cannot replace ${field.name}\');');
+      }
       final args = constructor.parameters.map((parameter) {
         final field = fields.firstWhere((item) => item.name == parameter.name);
         return argument(field);
@@ -773,7 +913,10 @@ class DartEmitter {
 
   void emitExtension(ExtensionDeclaration node) {
     _span = node.span;
-    final title = node.name == null ? 'extension' : 'extension ${node.name}';
+    final generics = _typeParameters(node.typeParameters);
+    final title = node.name == null
+        ? 'extension$generics'
+        : 'extension ${node.name}$generics';
     line('$title on ${node.target} {');
     _depth++;
     for (final method in node.methods) {
@@ -1040,14 +1183,73 @@ class DartEmitter {
       case FunctionDeclaration():
         emitFunction(node);
       case RequireStatement():
-        line(
-            'if (!(${expression(node.condition)})) throw ArgumentError(\'require failed\');');
+        final failure = switch (node.kind) {
+          'assert' => null,
+          'check' => 'StateError',
+          _ => 'ArgumentError',
+        };
+        final message = node.message == null
+            ? "'${node.kind} failed'"
+            : expression(node.message!);
+        if (node.kind == 'assert') {
+          line(node.message == null
+              ? 'assert(${expression(node.condition)});'
+              : 'assert(${expression(node.condition)}, $message);');
+        } else {
+          line(
+              'if (!(${expression(node.condition)})) throw $failure($message);');
+        }
+      case TaskGroupStatement():
+        _useTask = true;
+        final arms = node.spawns
+            .map((spawn) => 'Future<Object?>.value(${expression(spawn)})')
+            .toList();
+        line('await _qTaskGroup(<Future<Object?>>[${arms.join(', ')}]);');
+      case AnnotationDeclaration():
+      case ConfigDeclaration():
+        break;
       case AliasDeclaration():
       case ClassDeclaration():
       case ExtensionDeclaration():
       case ImportDeclaration():
         break;
     }
+  }
+
+  String _constructed(CallExpression node, String ctor) {
+    final type = model.types[node];
+    if (type != null && type.startsWith('$ctor<') && type.endsWith('>')) {
+      return type;
+    }
+    return ctor;
+  }
+
+  String _awaitedType(String type) =>
+      type.startsWith('Future<') && type.endsWith('>')
+          ? type.substring(7, type.length - 1)
+          : type;
+
+  String _awaitAll(AwaitAllExpression node) {
+    _useAwaitAll = true;
+    final calls = node.arms
+        .map((arm) => 'Future<Object?>.value(${expression(arm)})')
+        .join(', ');
+    final fields = [
+      for (var i = 0; i < node.arms.length; i++)
+        '_values[$i] as ${_dartType(_awaitedType(model.types[node.arms[i]] ?? 'Object'))}'
+    ].join(', ');
+    final record = node.arms.length == 1 ? '($fields,)' : '($fields)';
+    return '(await (() async { final _values = await _qAwaitAll(<Future<Object?>>[$calls]); return $record; })())';
+  }
+
+  String _awaitIsolate(AwaitIsolateExpression node) {
+    _useIsolate = true;
+    return '(await Isolate.run(() => ${expression(node.call)}))';
+  }
+
+  String _symbol(String text) {
+    if (RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(text)) return '#$text';
+    return 'Symbol(${quote(text)})';
   }
 
   String _range(RangeExpression node) {
@@ -1078,6 +1280,22 @@ class DartEmitter {
           : 'final ${model.declarations[pattern]!.dartName}',
       LiteralPattern() => expression(pattern.literal),
       ListPattern() => '[${pattern.elements.map(_pattern).join(', ')}]',
+      MapPattern() => '{${[
+          for (var i = 0; i < pattern.keys.length; i++)
+            '${expression(pattern.keys[i])}: ${_pattern(pattern.values[i])}'
+        ].join(', ')}}',
+      RestPattern() => pattern.name == null
+          ? '...'
+          : '...final ${model.declarations[pattern]!.dartName}',
+      OrPattern() =>
+        '(${_pattern(pattern.left)} || ${_pattern(pattern.right)})',
+      AndPattern() =>
+        '(${_pattern(pattern.left)} && ${_pattern(pattern.right)})',
+      RelationalPattern() => '${pattern.operator} ${expression(pattern.value)}',
+      CastPattern() =>
+        '${_pattern(pattern.inner)} as ${_dartType(pattern.type)}',
+      NullCheckPattern() => '${_pattern(pattern.inner)}?',
+      NullAssertPattern() => '${_pattern(pattern.inner)}!',
       ConstructorPattern() => pattern.typeName.isEmpty
           ? '(${pattern.fields.map(_pattern).join(', ')})'
           : '${pattern.typeName}(${[
@@ -1109,6 +1327,31 @@ class DartEmitter {
         for (var i = 0; i < pattern.elements.length; i++) {
           _destructure(pattern.elements[i], '$source[$i]', position);
         }
+      case MapPattern():
+        for (var i = 0; i < pattern.values.length; i++) {
+          _destructure(pattern.values[i],
+              '$source[${expression(pattern.keys[i])}]', position);
+        }
+      case RestPattern():
+        if (pattern.name != null) {
+          final declared = model.declarations[pattern]!;
+          line('final ${declared.type} ${declared.dartName} = $source;');
+        }
+      case OrPattern():
+      case AndPattern():
+        _destructure(
+            pattern is OrPattern ? pattern.left : (pattern as AndPattern).left,
+            source,
+            position);
+      case RelationalPattern():
+      case CastPattern():
+        if (pattern is CastPattern) {
+          _destructure(pattern.inner, source, position);
+        }
+      case NullCheckPattern():
+        _destructure(pattern.inner, source, position);
+      case NullAssertPattern():
+        _destructure(pattern.inner, source, position);
       case ConstructorPattern():
         for (var i = 0; i < pattern.fields.length; i++) {
           final field = pattern.names[i];
@@ -1205,6 +1448,10 @@ class DartEmitter {
       NullAwareElement() => '?(${expression(node.value)})',
       CollectionIf() => _piece(node, 'Object', false),
       CollectionFor() => _piece(node, 'Object', false),
+      TypeApplication() => expression(node.callee),
+      AwaitAllExpression() => _awaitAll(node),
+      AwaitIsolateExpression() => _awaitIsolate(node),
+      SymbolExpression() => _symbol(node.text),
     };
   }
 
@@ -1220,7 +1467,31 @@ class DartEmitter {
   String _member(MemberAccess node, {bool constantContext = false}) {
     final dart = model.references[node]?.dartName ?? node.name;
     final access = node.nullAware ? '?.' : '.';
-    return '${expression(node.object, constantContext: constantContext)}$access$dart';
+    var object = expression(node.object, constantContext: constantContext);
+    final type = model.types[node.object];
+    if (type != null && type.contains(' & ')) {
+      final parts = type.split(' & ').map((part) => part.trim()).toList();
+      final owner = parts.cast<String?>().firstWhere(
+          (part) => _declaresMember(part!, node.name),
+          orElse: () => null);
+      if (owner != null && owner != parts.first) {
+        object = '($object as ${_dartType(owner)})';
+      }
+    }
+    return '$object$access$dart';
+  }
+
+  bool _declaresMember(String type, String name) {
+    final declaration = _classes[_genericHead(type)];
+    if (declaration == null) return false;
+    return declaration.fields.any((field) => field.name == name) ||
+        declaration.methods.any((method) => method.name == name) ||
+        declaration.properties.any((property) => property.name == name);
+  }
+
+  String _genericHead(String type) {
+    final open = type.indexOf('<');
+    return open < 0 ? type : type.substring(0, open);
   }
 
   String _identifier(Identifier node) {
@@ -1386,8 +1657,9 @@ class DartEmitter {
         parts.add(
             '${fields[i].name}: ${expression(node.arguments[index].value, constantContext: constantContext)}');
       }
+      final rendered = _constructed(node, ctor);
       if (node.arguments.length <= 1) {
-        return '$ctor(${parts.join(', ')})';
+        return '$rendered(${parts.join(', ')})';
       }
       final declarations = <String>[];
       final named = <String>[];
@@ -1400,7 +1672,7 @@ class DartEmitter {
         if (index < 0) continue;
         named.add('${fields[i].name}: _qa$index');
       }
-      return '(() { ${declarations.join(' ')} return $ctor(${named.join(', ')}); })()';
+      return '(() { ${declarations.join(' ')} return $rendered(${named.join(', ')}); })()';
     }
     final member =
         node.callee is MemberAccess ? node.callee as MemberAccess : null;
@@ -1415,12 +1687,17 @@ class DartEmitter {
           .join(', ');
       return '${expression(member.object, constantContext: constantContext)}.copyWith($args)';
     }
+    final constructed = _constructed(node, targetSymbol.name);
     final target = member != null
         ? '${expression(member.object, constantContext: constantContext)}.${model.references[member]?.dartName ?? member.name}'
         : node.callee is Identifier &&
                 model.implicitThis.contains(node.callee as Identifier)
             ? 'this.${targetSymbol.dartName}'
-            : targetSymbol.dartName;
+            : constructed != targetSymbol.name &&
+                    (node.callee is Identifier ||
+                        node.callee is TypeApplication)
+                ? constructed
+                : targetSymbol.dartName;
     final parameters = targetSymbol.function?.parameters ?? const <Parameter>[];
     final variadic = parameters.indexWhere((parameter) => parameter.variadic);
     if (variadic >= 0) {

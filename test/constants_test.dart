@@ -665,8 +665,17 @@ List<BinaryExpression> operators(Expression node, String op) {
             DotShorthand() ||
             AssignExpression() ||
             MapComprehension() ||
-            ThisExpression():
+            ThisExpression() ||
+            SymbolExpression():
         break;
+      case TypeApplication(:final callee):
+        walk(callee);
+      case AwaitAllExpression(:final arms):
+        for (final arm in arms) {
+          walk(arm);
+        }
+      case AwaitIsolateExpression(:final call):
+        walk(call);
       case SpreadElement(:final operand):
         walk(operand);
       case TryExpression(:final operand, :final fallback):

@@ -288,16 +288,50 @@ unchanged by the map.
 - `if value is Pattern`, `if let name = expr`, `using` / `using async`, and
   `defer`. Deferred calls run at scope exit, last in first out, before `using`
   disposal. An async `defer` outside an async function is `E803`.
-- `static const` and `static` functions. A static member used on an instance
+- `static const`, `static var`, `static final`, and `static` functions. A
+  static member used on an instance, or an instance member used on the class,
   is `E300`.
 - `const init` with initializing formals. A value class `copyWith` calls that
   constructor when it initializes every field. An omitted argument and an
   explicit `missing` keep the field. An explicit null stores null when the
-  field is nullable.
+  field is nullable. A field with an initializer that the constructor does not
+  initialize may be omitted; replacing it throws `ArgumentError`.
 - `part` / `part of`, and constant `when` / `use when`. On the VM, `platform`
   is `"vm"`. A non-constant `when` is `E902`. Both `part` and `part of` in one
   file is `E903`. The `when` branch that is not selected is neither type-checked
   nor emitted.
+- Patterns: `or` (`|`), `and`, relational (`<`, `<=`, `>`, `>=`, `==`, `!=`),
+  list rest (`...` and `...name`), indented `map:` patterns, records, `as`,
+  null-check `?`, and null-assert `!`. A parenthesized pattern with no comma
+  is grouping. `(pattern,)` is a one-field record.
+- Generic classes and functions, written `<T: Bound>`, and variance `in` /
+  `out`. A use in the wrong position is `E304`. `in` and `out` are dropped in
+  Dart; a bound is `extends`. A constructor call infers type arguments from
+  named arguments, and `Box<String>(...)` passes them explicitly.
+- Intersection types `A & B`. `&` binds tighter than `|`. A parameter lowers
+  to the first type, then checks `is!` for each later part. Two disjoint
+  concrete types are `E306`. A member that belongs to a later part is cast to
+  that part in the generated Dart.
+- `extend List<T>:` treats an unbound type argument as an extension type
+  parameter and emits `extension<T> on List<T>`.
+- `await all:` starts every child immediately and yields a record in source
+  order. The first source-order error propagates. The form requires `async`
+  (`E803`). `await isolate:` lowers a top-level or static call to
+  `Isolate.run`. A captured local is `E805`.
+- `task group:` / `spawn`. `spawn` outside the group is `E107`. The group
+  requires `async` (`E803`). Child errors are collected in source order into
+  `TaskFailed`.
+- `noSuchMethod` on a `dynamic` receiver. A typed missing member is still
+  `E300`. `symbol "name"` is `#name` when the text is an identifier.
+- `require`, `check`, and `assert`, with an optional message after a comma.
+  `require` throws `ArgumentError` and stays in release. `check` throws
+  `StateError` and stays in release. `assert` is Dart's `assert`. The message
+  runs only when the condition is false.
+- `annotation Name:` emits a const class, and `@Name` emits `@Name()` only for
+  a declared annotation. `@Reflectable` on a class emits
+  `qudsReflectName` with the class name and field names.
+- `config name: Type = expression` emits `class config` with a static field.
+  `config secret name: Type = literal` is `E908`.
 
 Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
 A value outside the signed 64-bit range is `E006`. An integer that does not
@@ -305,5 +339,7 @@ fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
 that literal, and `test/language_test.dart` executes both results.
 
 The parity table still includes forms this compiler rejects instead of
-inventing: patterns beyond `match`, `if value is Pattern`, and `if let`, and
-cross-file private access. No claim of full 115-decision conformance is made.
+inventing: cross-file private access, `copyWith` for a field assigned only in
+a constructor body, environment precedence for `config`, and cooperative
+cancellation of a future that has already started. No claim of full
+115-decision conformance is made.

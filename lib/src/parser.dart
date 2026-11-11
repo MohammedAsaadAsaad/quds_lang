@@ -77,10 +77,18 @@ class Parser {
   }
 
   bool functionAhead() {
-    if (!at(TokenKind.identifier) || peek().kind != TokenKind.leftParen)
+    if (!at(TokenKind.identifier)) return false;
+    var open = index + 1;
+    if (open < tokens.length && tokens[open].kind == TokenKind.less) {
+      final after = _skipAngles(open);
+      if (after < 0) return false;
+      open = after;
+    }
+    if (open >= tokens.length || tokens[open].kind != TokenKind.leftParen) {
       return false;
+    }
     var depth = 0;
-    for (var j = index + 1; j < tokens.length; j++) {
+    for (var j = open; j < tokens.length; j++) {
       if (tokens[j].kind == TokenKind.leftParen) depth++;
       if (tokens[j].kind == TokenKind.rightParen) {
         depth--;
@@ -97,7 +105,7 @@ class Parser {
               next != TokenKind.equals) {
             return false;
           }
-          return _parameterList(index + 2, j);
+          return _parameterList(open + 1, j);
         }
       }
     }
@@ -178,8 +186,26 @@ class Parser {
       }
     }
     if (i < end && tokens[i].kind == TokenKind.question) i++;
+    while (i < end &&
+        (tokens[i].kind == TokenKind.amp || tokens[i].kind == TokenKind.pipe)) {
+      i++;
+      if (!_skipType(i, end, (next) => i = next)) return false;
+    }
     move(i);
     return true;
+  }
+
+  /// Index just after a `<...>` group, or `-1` when the brackets do not close.
+  int _skipAngles(int start) {
+    var depth = 0;
+    for (var i = start; i < tokens.length; i++) {
+      if (tokens[i].kind == TokenKind.less) depth++;
+      if (tokens[i].kind == TokenKind.greater) {
+        depth--;
+        if (depth == 0) return i + 1;
+      }
+    }
+    return -1;
   }
 
   List<String> takeAnnotations() {
@@ -198,6 +224,8 @@ class Parser {
     final notes = takeAnnotations();
     if (topLevel && word('use')) return useImport(span);
     if (topLevel && word('part')) return partDirective(span);
+    if (word('annotation')) return annotationDeclaration(span);
+    if (topLevel && word('config')) return configDeclaration(span);
     if (word('extend')) return extensionDeclaration(span, notes);
     if (word('type') && peek().kind == TokenKind.identifier) {
       return typeForm(span);
@@ -251,11 +279,21 @@ class Parser {
     }
     if (word('for')) return forStatement(span);
     if (word('try')) return tryStatement(span);
-    if (word('require')) {
-      take();
+    if (word('require') || word('check') || word('assert')) {
+      final kind = take().lexeme;
       final condition = expression(bare: true);
+      Expression? message;
+      if (match(TokenKind.comma)) message = expression(bare: true);
       endLine();
-      return RequireStatement(condition, extent(span));
+      return RequireStatement(condition, extent(span),
+          message: message, kind: kind);
+    }
+    if (word('task') && peek().lexeme == 'group') {
+      return taskGroup(span);
+    }
+    if (word('spawn')) {
+      throw CompilerException(
+          'E107', 'spawn is only valid inside task group', span);
     }
     if (word('throw')) {
       take();
@@ -324,6 +362,8 @@ class Parser {
       if (value is! DoExpression &&
           value is! WithExpression &&
           value is! MatchExpression &&
+          value is! AwaitAllExpression &&
+          value is! AwaitIsolateExpression &&
           !(value is IfExpression && !at(TokenKind.newline))) {
         endLine();
       }
@@ -413,6 +453,20 @@ class Parser {
     return ExpressionStatement(value, extent(span));
   }
 
+  bool _ownsLine(Expression value) {
+    if (value is DoExpression ||
+        value is WithExpression ||
+        value is MatchExpression ||
+        value is AwaitAllExpression ||
+        value is AwaitIsolateExpression) {
+      return true;
+    }
+    if (value is CallExpression) {
+      return value.arguments.any((argument) => _ownsLine(argument.value));
+    }
+    return false;
+  }
+
   Expression finishBlockValue(Expression value) {
     if (at(TokenKind.colon) &&
         value is Identifier &&
@@ -422,7 +476,10 @@ class Parser {
     if (at(TokenKind.colon)) return namedBlock(value);
     if (value is DoExpression ||
         value is WithExpression ||
-        value is MatchExpression) {
+        value is MatchExpression ||
+        value is AwaitAllExpression ||
+        value is AwaitIsolateExpression ||
+        _ownsLine(value)) {
       return value;
     }
     if (value is IfExpression && !at(TokenKind.newline)) return value;
@@ -528,10 +585,10 @@ class Parser {
     TokenKind.slashEquals
   };
   String typeName() {
-    var result = typeAtom();
+    var result = intersection();
     while (at(TokenKind.pipe)) {
       take();
-      result = '$result | ${typeAtom()}';
+      result = '$result | ${intersection()}';
     }
     final parts = result.split(' | ').map((part) => part.trim()).toSet();
     if (parts.length == 2 &&
@@ -544,6 +601,86 @@ class Parser {
       return other.endsWith('?') ? other : '$other?';
     }
     return result;
+  }
+
+  String intersection() {
+    var result = typeAtom();
+    while (at(TokenKind.amp)) {
+      take();
+      result = '$result & ${typeAtom()}';
+    }
+    return result;
+  }
+
+  bool _typeArgumentsAhead() {
+    if (!at(TokenKind.less)) return false;
+    final after = _skipAngles(index);
+    if (after < 0 || after >= tokens.length) return false;
+    return tokens[after].kind == TokenKind.leftParen;
+  }
+
+  AnnotationDeclaration annotationDeclaration(SourceSpan span) {
+    take();
+    final annotation = name();
+    final parameters =
+        at(TokenKind.leftParen) ? parameterList() : const <Parameter>[];
+    if (match(TokenKind.colon)) {
+      if (at(TokenKind.newline)) {
+        endLine();
+        if (at(TokenKind.indent)) block();
+      }
+    } else {
+      endLine();
+    }
+    return AnnotationDeclaration(annotation.lexeme, parameters, extent(span));
+  }
+
+  ConfigDeclaration configDeclaration(SourceSpan span) {
+    take();
+    final secret = word('secret');
+    if (secret) take();
+    final configName = name();
+    expect(TokenKind.colon, ':');
+    final type = typeName();
+    expect(TokenKind.equals, '=');
+    final value = expression(bare: true);
+    endLine();
+    return ConfigDeclaration(
+        configName.lexeme, type, value, secret, extent(span));
+  }
+
+  TaskGroupStatement taskGroup(SourceSpan span) {
+    take();
+    take();
+    expect(TokenKind.colon, ':');
+    endLine();
+    expect(TokenKind.indent, 'task group');
+    final spawns = <Expression>[];
+    while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+      if (!word('spawn')) fail('task group contains spawn');
+      take();
+      spawns.add(expression(bare: true));
+      endLine();
+    }
+    expect(TokenKind.dedent, 'end of task group');
+    return TaskGroupStatement(spawns, extent(span));
+  }
+
+  List<TypeParameter> typeParameterList() {
+    if (!match(TokenKind.less)) return const [];
+    final parameters = <TypeParameter>[];
+    do {
+      final span = current.span;
+      var variance = '';
+      if (word('in') || word('out')) variance = take().lexeme;
+      final parameter = name();
+      String? bound;
+      if (match(TokenKind.colon)) bound = typeName();
+      parameters.add(TypeParameter(parameter.lexeme, extent(span),
+          variance: variance, bound: bound));
+    } while (match(TokenKind.comma) && !at(TokenKind.greater));
+    expect(TokenKind.greater, '>');
+    return parameters;
   }
 
   String typeAtom() {
@@ -736,6 +873,7 @@ class Parser {
       take();
     }
     final typeNameToken = name();
+    final typeParameters = typeParameterList();
     String? superclass;
     final mixins = <String>[];
     final interfaces = <String>[];
@@ -814,6 +952,10 @@ class Parser {
           fields.add(staticConstant());
           continue;
         }
+        if (!functionAhead()) {
+          fields.add(staticField());
+          continue;
+        }
       }
       var readonlyMethod = false;
       if (word('readonly') &&
@@ -829,7 +971,7 @@ class Parser {
             isStatic: isStatic));
         continue;
       }
-      if (isStatic) fail('static applies to a function or a const');
+      if (isStatic) fail('static applies to a field, function, or const');
       if (readonlyMethod) fail('readonly applies to a method');
       final mutable = word('var');
       if (mutable) take();
@@ -856,7 +998,8 @@ class Parser {
         interfaces: interfaces,
         modifiers: modifiers,
         constructors: constructors,
-        properties: properties);
+        properties: properties,
+        typeParameters: typeParameters);
   }
 
   PropertyDeclaration propertyDeclaration(String visibility) {
@@ -1019,6 +1162,7 @@ class Parser {
       SourceSpan span, List<String> notes) {
     take();
     final target = typeName();
+    final typeParameters = extensionParameters(target, span);
     String? extensionName;
     if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
       extensionName = name().lexeme;
@@ -1032,7 +1176,67 @@ class Parser {
       methods.add(function(notes));
     }
     expect(TokenKind.dedent, 'end of extension');
-    return ExtensionDeclaration(extensionName, target, methods, extent(span));
+    return ExtensionDeclaration(extensionName, target, methods, extent(span),
+        typeParameters: typeParameters);
+  }
+
+  List<TypeParameter> extensionParameters(String target, SourceSpan span) {
+    const known = {
+      'int',
+      'double',
+      'num',
+      'bool',
+      'String',
+      'Null',
+      'Object',
+      'dynamic',
+      'void',
+      'Never',
+      'List',
+      'Map',
+      'Set',
+      'Future',
+      'Stream',
+      'Iterable',
+      'Result',
+      'Optional',
+      'Range'
+    };
+    final names = <String>[];
+    void walk(String type) {
+      final open = type.indexOf('<');
+      if (open < 0) return;
+      final close = type.lastIndexOf('>');
+      if (close < open) return;
+      final inner = type.substring(open + 1, close);
+      var depth = 0;
+      final buffer = StringBuffer();
+      final parts = <String>[];
+      for (final rune in inner.codeUnits) {
+        final char = String.fromCharCode(rune);
+        if (char == '<') depth++;
+        if (char == '>') depth--;
+        if (char == ',' && depth == 0) {
+          parts.add(buffer.toString());
+          buffer.clear();
+        } else {
+          buffer.write(char);
+        }
+      }
+      parts.add(buffer.toString());
+      for (final part in parts) {
+        final trimmed = part.trim();
+        walk(trimmed);
+        if (RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(trimmed) &&
+            !known.contains(trimmed) &&
+            !names.contains(trimmed)) {
+          names.add(trimmed);
+        }
+      }
+    }
+
+    walk(target);
+    return [for (final name in names) TypeParameter(name, span)];
   }
 
   (List<FieldDeclaration>, List<FunctionDeclaration>) typeMembers(
@@ -1112,7 +1316,64 @@ class Parser {
   }
 
   Pattern patternLiteral() {
+    var left = patternAnd();
+    while (at(TokenKind.pipe)) {
+      final span = left.span;
+      take();
+      left = OrPattern(left, patternAnd(), extent(span));
+    }
+    return left;
+  }
+
+  Pattern patternAnd() {
+    var left = patternPostfix();
+    while (word('and')) {
+      final span = left.span;
+      take();
+      left = AndPattern(left, patternPostfix(), extent(span));
+    }
+    return left;
+  }
+
+  Pattern patternPostfix() {
+    var pattern = patternPrimary();
+    while (true) {
+      if (word('as')) {
+        final span = pattern.span;
+        take();
+        pattern = CastPattern(pattern, typeName(), extent(span));
+        continue;
+      }
+      if (at(TokenKind.question)) {
+        final span = pattern.span;
+        take();
+        pattern = NullCheckPattern(pattern, extent(span));
+        continue;
+      }
+      if (at(TokenKind.bang)) {
+        final span = pattern.span;
+        take();
+        pattern = NullAssertPattern(pattern, extent(span));
+        continue;
+      }
+      return pattern;
+    }
+  }
+
+  bool relationalAhead() =>
+      at(TokenKind.less) ||
+      at(TokenKind.lessEqual) ||
+      at(TokenKind.greater) ||
+      at(TokenKind.greaterEqual) ||
+      at(TokenKind.equalEqual) ||
+      at(TokenKind.bangEqual);
+
+  Pattern patternPrimary() {
     final span = current.span;
+    if (relationalAhead()) {
+      final operator = take().lexeme;
+      return RelationalPattern(operator, expression(minimum: 3), extent(span));
+    }
     const typeWords = {'int', 'double', 'num', 'bool', 'String', 'Null'};
     if (at(TokenKind.identifier) && typeWords.contains(current.lexeme)) {
       final type = take().lexeme;
@@ -1132,15 +1393,36 @@ class Parser {
         word('null')) {
       return LiteralPattern(prefix(), span);
     }
+    if (word('map') && peek().kind == TokenKind.colon) {
+      take();
+      take();
+      endLine();
+      expect(TokenKind.indent, 'map pattern');
+      final keys = <Expression>[];
+      final values = <Pattern>[];
+      while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+        keys.add(expression());
+        expect(TokenKind.colon, ':');
+        values.add(patternLiteral());
+        endLine();
+      }
+      expect(TokenKind.dedent, 'end of map pattern');
+      return MapPattern(keys, values, extent(span));
+    }
     if (at(TokenKind.leftParen)) {
       take();
       final fields = <Pattern>[];
+      var comma = false;
       if (!at(TokenKind.rightParen)) {
-        do {
+        while (true) {
           fields.add(patternLiteral());
-        } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
+          if (!match(TokenKind.comma)) break;
+          comma = true;
+          if (at(TokenKind.rightParen)) break;
+        }
       }
       expect(TokenKind.rightParen, ')');
+      if (fields.length == 1 && !comma) return fields.single;
       return ConstructorPattern(
           '', fields, List.filled(fields.length, null), extent(span));
     }
@@ -1148,9 +1430,21 @@ class Parser {
       take();
       final elements = <Pattern>[];
       if (!at(TokenKind.rightBracket)) {
-        do {
-          elements.add(patternLiteral());
-        } while (match(TokenKind.comma) && !at(TokenKind.rightBracket));
+        while (true) {
+          if (at(TokenKind.spread)) {
+            final rest = take();
+            String? bound;
+            if (at(TokenKind.identifier) &&
+                current.lexeme != '_' &&
+                current.lexeme != 'when') {
+              bound = name().lexeme;
+            }
+            elements.add(RestPattern(bound, rest.span));
+          } else {
+            elements.add(patternLiteral());
+          }
+          if (!match(TokenKind.comma) || at(TokenKind.rightBracket)) break;
+        }
       }
       expect(TokenKind.rightBracket, ']');
       return ListPattern(elements, extent(span));
@@ -1194,6 +1488,20 @@ class Parser {
     return BindingPattern(typeOrName.lexeme, typeOrName.span);
   }
 
+  FieldDeclaration staticField() {
+    final mutable = word('var');
+    if (mutable) take();
+    final fieldName = name();
+    var type = '<infer>';
+    if (match(TokenKind.colon)) type = typeName();
+    expect(TokenKind.equals, '=');
+    final value = expression(bare: true);
+    endLine();
+    return FieldDeclaration(
+        fieldName.lexeme, type, mutable, false, value, fieldName.span,
+        isStatic: true);
+  }
+
   FieldDeclaration staticConstant() {
     take();
     final fieldName = name();
@@ -1216,6 +1524,8 @@ class Parser {
     final token = operatorName == null ? name() : null;
     final nameText = operatorName ?? token!.lexeme;
     final span = operatorSpan ?? token!.span;
+    final typeParameters =
+        operatorName == null ? typeParameterList() : const <TypeParameter>[];
     final parameters = parameterList();
     var isAsync = false;
     var generator = '';
@@ -1249,7 +1559,8 @@ class Parser {
           visibility: visibility,
           isOperator: operatorName != null,
           readonlyMethod: readonlyMethod,
-          isStatic: isStatic);
+          isStatic: isStatic,
+          typeParameters: typeParameters);
     }
     return FunctionDeclaration(
         nameText, parameters, returnType, block(), null, extent(span),
@@ -1259,7 +1570,8 @@ class Parser {
         visibility: visibility,
         isOperator: operatorName != null,
         readonlyMethod: readonlyMethod,
-        isStatic: isStatic);
+        isStatic: isStatic,
+        typeParameters: typeParameters);
   }
 
   List<Parameter> parameterList() {
@@ -1676,6 +1988,16 @@ class Parser {
   Expression expression({int minimum = -1, bool bare = false}) {
     var left = prefix();
     while (true) {
+      if (left is Identifier && _typeArgumentsAhead()) {
+        final arguments = <String>[];
+        take();
+        do {
+          arguments.add(typeName());
+        } while (match(TokenKind.comma) && !at(TokenKind.greater));
+        expect(TokenKind.greater, '>');
+        left = TypeApplication(left, arguments, extent(left.span));
+        continue;
+      }
       if (at(TokenKind.leftParen)) {
         left = call(left);
         continue;
@@ -1775,7 +2097,38 @@ class Parser {
           token.lexeme, expression(minimum: 8), extent(token.span));
     }
     if (token.lexeme == 'await') {
+      if (word('all') && peek().kind == TokenKind.colon) {
+        take();
+        take();
+        endLine();
+        expect(TokenKind.indent, 'await all');
+        final arms = <Expression>[];
+        while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+          arms.add(expression(bare: true));
+          endLine();
+        }
+        expect(TokenKind.dedent, 'end of await all');
+        return AwaitAllExpression(arms, extent(token.span));
+      }
+      if (word('isolate') && peek().kind == TokenKind.colon) {
+        take();
+        take();
+        endLine();
+        expect(TokenKind.indent, 'await isolate');
+        final call = expression(bare: true);
+        endLine();
+        expect(TokenKind.dedent, 'end of await isolate');
+        return AwaitIsolateExpression(call, extent(token.span));
+      }
       return AwaitExpression(expression(minimum: 8), extent(token.span));
+    }
+    if (token.lexeme == 'symbol') {
+      if (!at(TokenKind.string)) fail('symbol expects a string', token.span);
+      final parsed = string(take());
+      if (parsed is! Literal || parsed.value is! String) {
+        fail('symbol expects a string', token.span);
+      }
+      return SymbolExpression(parsed.value as String, extent(token.span));
     }
     if (token.lexeme == 'if') return ifExpression(token);
     if (token.lexeme == 'match' || token.lexeme == 'switch') {

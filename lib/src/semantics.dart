@@ -84,6 +84,8 @@ class SemanticModel {
   final skipped = <Statement>{};
   final parts = <PartDirective>[];
   final asyncDefers = <DeferStatement>{};
+  final annotations = <String>{};
+  final reflectable = <ClassDeclaration>{};
 }
 
 class Analyzer {
@@ -92,6 +94,7 @@ class Analyzer {
   late _Scope _scope = _global;
   final _checked = <FunctionDeclaration>{};
   final _checking = <FunctionDeclaration>{};
+  final _typeNames = <String>{};
   FunctionDeclaration? _function;
   String? _returnType;
   int _nextName = 0;
@@ -164,6 +167,10 @@ class Analyzer {
           registerClass(statement);
         case ExtensionDeclaration():
           registerExtension(statement);
+        case AnnotationDeclaration():
+          model.annotations.add(statement.name);
+        case ConfigDeclaration():
+          registerConfig(statement);
         case AliasDeclaration():
           break;
         case ImportDeclaration():
@@ -260,7 +267,17 @@ class Analyzer {
                     !statement.returnType!.startsWith('Future<')
                 ? 'Future<${statement.returnType}>'
                 : type;
+    final savedTypes = {..._typeNames};
+    _typeNames.addAll(statement.typeParameters.map((item) => item.name));
     if (effective != '<infer>') validateType(effective, statement);
+    for (final parameter in statement.typeParameters) {
+      if (parameter.bound != null) {
+        validateType(parameter.bound!, parameter, allowVoid: false);
+      }
+    }
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
     final symbol = create(statement.name, effective, function: statement);
     model.declarations[statement] = symbol;
     final existing = scope.symbols[statement.name];
@@ -300,9 +317,20 @@ class Analyzer {
       _global.symbols[item.name] = caseSymbol;
       model.declarations[item] = caseSymbol;
     }
+    final savedTypes = {..._typeNames};
+    _typeNames.addAll(statement.typeParameters.map((item) => item.name));
+    for (final parameter in statement.typeParameters) {
+      if (parameter.bound != null) {
+        validateType(parameter.bound!, parameter, allowVoid: false);
+      }
+    }
     for (final field in statement.fields) {
       if (field.type == '<infer>') continue;
       validateType(field.type, field, allowVoid: false);
+    }
+    _checkVariance(statement);
+    if (statement.annotations.contains('Reflectable')) {
+      model.reflectable.add(statement);
     }
     for (final field in statement.fields.where((item) => item.isStatic)) {
       analyzeStaticField(field);
@@ -325,7 +353,13 @@ class Analyzer {
               !method.returnType!.startsWith('Future<')
           ? 'Future<${method.returnType}>'
           : type;
+      final added = method.typeParameters
+          .map((item) => item.name)
+          .where((name) => !_typeNames.contains(name))
+          .toList();
+      _typeNames.addAll(added);
       if (effective != '<infer>') validateType(effective, method);
+      _typeNames.removeAll(added);
       final dartName = method.isOperator
           ? method.name
           : method.visibility == 'private' && !method.name.startsWith('_')
@@ -335,10 +369,15 @@ class Analyzer {
           .withFunction(method);
       model.declarations[method] = symbol;
     }
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
   }
 
   void registerExtension(ExtensionDeclaration statement) {
     model.extensions.add(statement);
+    final savedTypes = {..._typeNames};
+    _typeNames.addAll(statement.typeParameters.map((item) => item.name));
     for (final method in statement.methods) {
       final type = method.returnType ??
           (method.expressionBody == null ? 'void' : '<infer>');
@@ -347,6 +386,9 @@ class Analyzer {
           .withFunction(method);
       model.declarations[method] = symbol;
     }
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
   }
 
   void checkShape(ClassDeclaration type) {
@@ -437,7 +479,12 @@ class Analyzer {
     final savedThis = _thisType;
     _scope = _Scope(_global);
     _thisType = type.target;
+    final savedTypes = {..._typeNames};
+    _typeNames.addAll(type.typeParameters.map((item) => item.name));
     analyzeFunction(method);
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
     _thisType = savedThis;
     _scope = saved;
   }
@@ -469,9 +516,16 @@ class Analyzer {
     final savedReadonly = _readonlyMethod;
     _scope = _Scope(_global);
     _thisType = type.onType ?? type.name;
+    final savedTypes = {..._typeNames};
+    _typeNames
+      ..addAll(type.typeParameters.map((item) => item.name))
+      ..addAll(method.typeParameters.map((item) => item.name));
     _readonlyMethod = method.readonlyMethod;
     _installFields(type);
     analyzeFunction(method);
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
     _readonlyMethod = savedReadonly;
     _thisType = savedThis;
     _scope = saved;
@@ -760,6 +814,20 @@ class Analyzer {
       validateType(type.substring(9), node, allowVoid: false);
       return;
     }
+    if (_typeNames.contains(type) ||
+        type == 'dynamic' ||
+        type == 'Never' ||
+        type == 'Invocation') {
+      return;
+    }
+    if (type.contains(' & ')) {
+      final parts = type.split(' & ').map((part) => part.trim()).toList();
+      _checkIntersection(parts, node);
+      for (final part in parts) {
+        validateType(part, node, allowVoid: false);
+      }
+      return;
+    }
     if (type.contains(' | ')) {
       for (final part in type.split(' | ')) {
         validateType(part.trim(), node, allowVoid: false);
@@ -838,12 +906,33 @@ class Analyzer {
         _global.symbols[type]?.classCase != null) {
       return;
     }
+    final open = type.indexOf('<');
+    if (open > 0 && type.endsWith('>')) {
+      final head = type.substring(0, open);
+      if (_global.symbols[head]?.classDeclaration != null) {
+        final inner = type.substring(open + 1, type.length - 1);
+        for (final part in _splitTypes(inner)) {
+          validateType(part, node, allowVoid: false);
+        }
+        return;
+      }
+    }
     fail('Unsupported type: $type', node);
   }
 
   void analyzeFunction(FunctionDeclaration function) {
-    if (_checked.contains(function)) return;
+    final savedTypes = {..._typeNames};
+    _typeNames.addAll(function.typeParameters.map((item) => item.name));
+    if (_checked.contains(function)) {
+      _typeNames
+        ..clear()
+        ..addAll(savedTypes);
+      return;
+    }
     if (!_checking.add(function)) {
+      _typeNames
+        ..clear()
+        ..addAll(savedTypes);
       if (model.declarations[function]!.type == '<infer>')
         fail('Recursive expression functions require a return annotation',
             function);
@@ -917,6 +1006,9 @@ class Analyzer {
     _returnType = savedReturn;
     _checking.remove(function);
     _checked.add(function);
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
   }
 
   bool returns(List<Statement> body) {
@@ -1329,6 +1421,85 @@ class Analyzer {
       case ClassDeclaration():
       case ImportDeclaration():
         fail('Classes and imports belong at the top level', node);
+      case TaskGroupStatement():
+        if (_function == null || !_function!.isAsync) {
+          error('E803', 'task group is only valid inside async', node);
+        }
+        for (final spawn in node.spawns) {
+          expression(spawn);
+        }
+      case AnnotationDeclaration():
+      case ConfigDeclaration():
+        fail('Classes and imports belong at the top level', node);
+    }
+  }
+
+  String _awaitedType(String type) =>
+      type.startsWith('Future<') && type.endsWith('>')
+          ? type.substring(7, type.length - 1)
+          : type;
+
+  String typeApplication(TypeApplication node) {
+    fail('Type arguments belong to a call', node);
+  }
+
+  String awaitAll(AwaitAllExpression node) {
+    if (_function == null || !_function!.isAsync) {
+      error('E803', 'await is only valid inside async', node);
+    }
+    if (node.arms.isEmpty) fail('await all needs a child', node);
+    final types = [for (final arm in node.arms) _awaitedType(expression(arm))];
+    return '(${types.join(', ')})';
+  }
+
+  String awaitIsolate(AwaitIsolateExpression node) {
+    if (_function == null || !_function!.isAsync) {
+      error('E803', 'await is only valid inside async', node);
+    }
+    final call = node.call;
+    if (call is! CallExpression) {
+      error('E805', 'await isolate needs a top-level or static call', node);
+    }
+    final type = expression(call);
+    final callee = call.callee;
+    final topLevel =
+        callee is Identifier && _global.symbols[callee.name]?.function != null;
+    final staticMember = callee is MemberAccess &&
+        _isTypeReference(callee.object) &&
+        () {
+          final owner = _global
+              .symbols[(callee.object as Identifier).name]?.classDeclaration;
+          final method = owner == null ? null : _method(owner, callee.name);
+          return method != null && method.isStatic;
+        }();
+    if (!topLevel && !staticMember) {
+      error('E805', 'await isolate needs a top-level or static call', node);
+    }
+    if (_capturesLocal(call)) {
+      error('E805', 'An isolate call captures a local', node);
+    }
+    return type.startsWith('Future<') && type.endsWith('>')
+        ? type.substring(7, type.length - 1)
+        : type;
+  }
+
+  bool _capturesLocal(Expression node) {
+    switch (node) {
+      case Identifier():
+        final symbol = _scope.lookup(node.name);
+        return symbol != null &&
+            !_global.symbols.containsKey(node.name) &&
+            symbol.function == null &&
+            symbol.classDeclaration == null;
+      case CallExpression():
+        return _capturesLocal(node.callee) ||
+            node.arguments.any((argument) => _capturesLocal(argument.value));
+      case MemberAccess():
+        return _capturesLocal(node.object);
+      case Literal():
+        return false;
+      default:
+        return true;
     }
   }
 
@@ -1363,6 +1534,13 @@ class Analyzer {
         _fieldsOf(declaration).where((item) => item.name == node.name);
     if (fields.isEmpty || !fields.first.mutable) {
       fail('Cannot assign immutable field ${node.name}', node);
+    }
+    if (fields.first.isStatic != _isTypeReference(node.object)) {
+      fail(
+          fields.first.isStatic
+              ? 'Static member ${node.name} is used on an instance'
+              : 'Instance member ${node.name} is used on the type',
+          node);
     }
     final value = expression(node.value);
     if (!compatible(value, fields.first.type)) {
@@ -1431,7 +1609,8 @@ class Analyzer {
       case ListPattern():
         final element = elementType(type, pattern);
         for (final item in pattern.elements) {
-          bindPattern(item, element, declare: declare);
+          bindPattern(item, item is RestPattern ? type : element,
+              declare: declare);
         }
       case ConstructorPattern():
         if (pattern.typeName.isEmpty &&
@@ -1456,13 +1635,57 @@ class Analyzer {
           final fieldType = i < fields.length ? fields[i].type : type;
           bindPattern(pattern.fields[i], fieldType, declare: declare);
         }
+      case MapPattern():
+        final valueType = type.startsWith('Map<') && type.endsWith('>')
+            ? () {
+                final inner = type.substring(4, type.length - 1);
+                final splitAt = inner.indexOf(',');
+                return splitAt < 0 ? type : inner.substring(splitAt + 1).trim();
+              }()
+            : type;
+        for (var i = 0; i < pattern.keys.length; i++) {
+          expression(pattern.keys[i]);
+          bindPattern(pattern.values[i], valueType, declare: declare);
+        }
+      case RestPattern():
+        if (pattern.name != null) {
+          final symbol = create(pattern.name!, type);
+          _scope.symbols[pattern.name!] = symbol;
+          model.declarations[pattern] = symbol;
+        }
+      case OrPattern():
+        bindPattern(pattern.left, type, declare: declare);
+        bindPattern(pattern.right, type, declare: declare);
+      case AndPattern():
+        bindPattern(pattern.left, type, declare: declare);
+        bindPattern(pattern.right, type, declare: declare);
+      case RelationalPattern():
+        expression(pattern.value);
+      case CastPattern():
+        validateType(pattern.type, pattern, allowVoid: false);
+        bindPattern(pattern.inner, pattern.type, declare: declare);
+      case NullCheckPattern():
+      case NullAssertPattern():
+        bindPattern(
+            pattern is NullCheckPattern
+                ? pattern.inner
+                : (pattern as NullAssertPattern).inner,
+            unwrap(type),
+            declare: declare);
     }
   }
 
   bool compatible(String from, String to) {
     from = model.resolve(from);
     to = model.resolve(to);
-    if (from == to || from == '*') return true;
+    if (from == to || from == '*' || to == 'dynamic') return true;
+    if (to.contains(' & ')) {
+      return to.split(' & ').every((part) => compatible(from, part.trim()));
+    }
+    if (from.contains(' & ')) {
+      return from.split(' & ').any((part) => compatible(part.trim(), to));
+    }
+    if (_implementsType(from, to)) return true;
     if (to.startsWith('readonly ')) {
       final source = from.startsWith('readonly ') ? from.substring(9) : from;
       return compatible(source, to.substring(9));
@@ -1480,6 +1703,217 @@ class Analyzer {
       return from == 'Null' || compatible(from, inner);
     }
     return false;
+  }
+
+  bool _implementsType(String from, String to) {
+    final declaration = _global.symbols[unwrap(from)]?.classDeclaration;
+    if (declaration == null) return false;
+    if (declaration.interfaces.contains(to) || declaration.superclass == to) {
+      return true;
+    }
+    if (declaration.superclass != null &&
+        _implementsType(declaration.superclass!, to)) {
+      return true;
+    }
+    for (final name in declaration.interfaces) {
+      if (_implementsType(name, to)) return true;
+    }
+    return false;
+  }
+
+  void _checkIntersection(List<String> parts, Node node) {
+    const concrete = {'int', 'double', 'num', 'bool', 'String', 'Null'};
+    for (var i = 0; i < parts.length; i++) {
+      for (var j = i + 1; j < parts.length; j++) {
+        final left = parts[i];
+        final right = parts[j];
+        if (compatible(left, right) || compatible(right, left)) continue;
+        if (concrete.contains(left) && concrete.contains(right)) {
+          error('E306', 'An intersection cannot be satisfied', node);
+        }
+      }
+    }
+  }
+
+  void _checkVariance(ClassDeclaration type) {
+    for (final parameter in type.typeParameters) {
+      if (parameter.variance.isEmpty) continue;
+      final want = parameter.variance == 'out' ? 1 : -1;
+      void visit(String raw, int polarity) {
+        final current = raw.trim();
+        if (current.isEmpty || current == 'dynamic') return;
+        if (current.startsWith('readonly ')) {
+          visit(current.substring(9), polarity);
+          return;
+        }
+        if (current.endsWith('?')) {
+          visit(current.substring(0, current.length - 1), polarity);
+          return;
+        }
+        if (current.contains(' & ') || current.contains(' | ')) {
+          for (final part in current.split(RegExp(' [&|] '))) {
+            visit(part, polarity);
+          }
+          return;
+        }
+        if (current.startsWith('(') && current.contains('->')) {
+          final arrow = current.lastIndexOf('->');
+          final parameters = current.substring(1, current.indexOf(')'));
+          if (parameters.trim().isNotEmpty) {
+            for (final item in parameters.split(',')) {
+              visit(item, -polarity);
+            }
+          }
+          visit(current.substring(arrow + 3), polarity);
+          return;
+        }
+        final open = current.indexOf('<');
+        if (open > 0 && current.endsWith('>')) {
+          final head = current.substring(0, open);
+          final inner = current.substring(open + 1, current.length - 1);
+          final covariant = {
+            'List',
+            'Set',
+            'Iterable',
+            'Future',
+            'Stream',
+            'Optional'
+          }.contains(head);
+          if (head == 'Map' || head == 'Result') {
+            final splitAt = inner.indexOf(',');
+            if (splitAt > 0) {
+              visit(inner.substring(0, splitAt), 0);
+              visit(inner.substring(splitAt + 1),
+                  covariant ? polarity : polarity);
+            }
+          } else {
+            visit(inner, covariant ? polarity : 0);
+          }
+          return;
+        }
+        if (current == parameter.name && polarity != want) {
+          error(
+              'E304',
+              'Variance ${parameter.variance} ${parameter.name} is not sound',
+              parameter);
+        }
+      }
+
+      for (final field in type.fields) {
+        visit(field.type, field.mutable ? 0 : 1);
+      }
+      for (final method in type.methods) {
+        if (method.returnType != null) visit(method.returnType!, 1);
+        for (final item in method.parameters) {
+          visit(item.type, -1);
+        }
+      }
+    }
+  }
+
+  ClassDeclaration? _configType;
+
+  void registerConfig(ConfigDeclaration node) {
+    validateType(node.type, node, allowVoid: false);
+    if (node.secret && node.value is Literal) {
+      error('E908', 'A secret configuration has a source literal', node.value);
+    }
+    final value = expression(node.value);
+    if (!compatible(value, node.type)) {
+      fail('Cannot initialize ${node.type} with $value', node.value);
+    }
+    _configType ??= ClassDeclaration('config', 'class', <FieldDeclaration>[],
+        const [], const [], const [], node.span);
+    final field = FieldDeclaration(
+        node.name, node.type, true, false, node.value, node.span,
+        isStatic: true);
+    _configType!.fields.add(field);
+    model.declarations[field] = Symbol(node.name, node.name, node.type);
+    _global.symbols['config'] ??=
+        Symbol('config', 'config', 'config', classDeclaration: _configType);
+  }
+
+  String _substitute(String type, Map<String, String> substitution) {
+    var result = type;
+    for (final entry in substitution.entries) {
+      result = result.replaceAll(
+          RegExp('\\b${RegExp.escape(entry.key)}\\b'), entry.value);
+    }
+    return result;
+  }
+
+  String _genericHead(String type) {
+    final open = type.indexOf('<');
+    return open < 0 ? type : type.substring(0, open);
+  }
+
+  Map<String, String> _genericSubstitution(
+      String type, ClassDeclaration? declaration) {
+    if (declaration == null || declaration.typeParameters.isEmpty) {
+      return const {};
+    }
+    if (!type.startsWith('${declaration.name}<') || !type.endsWith('>')) {
+      return const {};
+    }
+    final inner = type.substring(declaration.name.length + 1, type.length - 1);
+    final args = _splitTypes(inner);
+    if (args.length != declaration.typeParameters.length) return const {};
+    return {
+      for (var i = 0; i < args.length; i++)
+        declaration.typeParameters[i].name: args[i]
+    };
+  }
+
+  List<String> _splitTypes(String inner) {
+    final parts = <String>[];
+    final buffer = StringBuffer();
+    var depth = 0;
+    for (final char in inner.split('')) {
+      if (char == '<') depth++;
+      if (char == '>') depth--;
+      if (char == ',' && depth == 0) {
+        parts.add(buffer.toString().trim());
+        buffer.clear();
+      } else {
+        buffer.write(char);
+      }
+    }
+    if (buffer.isNotEmpty) parts.add(buffer.toString().trim());
+    return parts;
+  }
+
+  Map<String, String>? _extensionMatch(
+      ExtensionDeclaration extension, String type) {
+    if (extension.typeParameters.isEmpty) {
+      return extension.target == type ? const {} : null;
+    }
+    final names = extension.typeParameters.map((item) => item.name).toSet();
+    return _templateMatch(extension.target, type, names);
+  }
+
+  Map<String, String>? _templateMatch(
+      String template, String type, Set<String> names) {
+    if (names.contains(template)) return {template: type};
+    final templateOpen = template.indexOf('<');
+    final typeOpen = type.indexOf('<');
+    if (templateOpen < 0 || typeOpen < 0) {
+      return template == type ? const {} : null;
+    }
+    if (template.substring(0, templateOpen) != type.substring(0, typeOpen)) {
+      return null;
+    }
+    if (!template.endsWith('>') || !type.endsWith('>')) return null;
+    final left =
+        _splitTypes(template.substring(templateOpen + 1, template.length - 1));
+    final right = _splitTypes(type.substring(typeOpen + 1, type.length - 1));
+    if (left.length != right.length) return null;
+    final found = <String, String>{};
+    for (var i = 0; i < left.length; i++) {
+      final nested = _templateMatch(left[i], right[i], names);
+      if (nested == null) return null;
+      found.addAll(nested);
+    }
+    return found;
   }
 
   String unwrap(String type) =>
@@ -1539,7 +1973,18 @@ class Analyzer {
             base.startsWith('Map<'))) {
       return node.nullAware || type.endsWith('?') ? 'int?' : 'int';
     }
-    final declaration = _global.symbols[base]?.classDeclaration;
+    if (base == 'dynamic') return 'dynamic';
+    if (base.contains(' & ')) {
+      for (final part in base.split(' & ')) {
+        final found = memberType(part.trim(), node.name);
+        if (found == null) continue;
+        model.references[node] =
+            Symbol(node.name, _dartMember(part.trim(), node.name), found);
+        return node.nullAware || type.endsWith('?') ? '$found?' : found;
+      }
+    }
+    final declaration = _global.symbols[_genericHead(base)]?.classDeclaration;
+    final substitution = _genericSubstitution(base, declaration);
     if (node.name == 'instance' &&
         declaration != null &&
         declaration.modifiers.contains('singleton')) {
@@ -1562,10 +2007,13 @@ class Analyzer {
     }
     final found = memberType(base, node.name);
     if (found != null) {
-      model.references[node] =
-          Symbol(node.name, _dartMember(base, node.name), found);
-      if (found.contains('->')) return found;
-      return node.nullAware || type.endsWith('?') ? '$found?' : found;
+      final substituted = _substitute(found, substitution);
+      model.references[node] = Symbol(
+          node.name, _dartMember(_genericHead(base), node.name), substituted);
+      if (substituted.contains('->')) return substituted;
+      return node.nullAware || type.endsWith('?')
+          ? '$substituted?'
+          : substituted;
     }
     fail('No member ${node.name} on $type', node);
   }
@@ -1577,7 +2025,10 @@ class Analyzer {
   }
 
   bool _containsAwait(Expression node) => switch (node) {
-        AwaitExpression() => true,
+        AwaitExpression() ||
+        AwaitAllExpression() ||
+        AwaitIsolateExpression() =>
+          true,
         UnaryExpression() => _containsAwait(node.operand),
         BinaryExpression() =>
           _containsAwait(node.left) || _containsAwait(node.right),
@@ -1588,7 +2039,7 @@ class Analyzer {
       };
 
   String? memberType(String type, String name) {
-    final declaration = _global.symbols[type]?.classDeclaration;
+    final declaration = _global.symbols[_genericHead(type)]?.classDeclaration;
     if (declaration != null) {
       for (final field in _fieldsOf(declaration)) {
         if (field.name == name) {
@@ -1680,10 +2131,19 @@ class Analyzer {
 
   List<FunctionDeclaration> _extensions(String type, String name) => [
         for (final extension in model.extensions)
-          if (extension.target == type)
+          if (_extensionMatch(extension, type) != null)
             for (final method in extension.methods)
               if (method.name == name) method
       ];
+
+  Map<String, String> _extensionSubstitution(
+      String type, FunctionDeclaration method) {
+    for (final extension in model.extensions) {
+      if (!extension.methods.contains(method)) continue;
+      return _extensionMatch(extension, type) ?? const {};
+    }
+    return const {};
+  }
 
   bool computedCycle(String name, Expression body) {
     bool walk(Expression node, Set<String> stack) {
@@ -1969,6 +2429,10 @@ class Analyzer {
       MatchExpression() => matchExpression(node),
       TryExpression() => tryExpression(node),
       ThisExpression() => thisExpression(node),
+      TypeApplication() => typeApplication(node),
+      AwaitAllExpression() => awaitAll(node),
+      AwaitIsolateExpression() => awaitIsolate(node),
+      SymbolExpression() => 'Symbol',
     };
     model.types[node] = type;
     return type;
@@ -1977,6 +2441,16 @@ class Analyzer {
   String identifier(Identifier node) {
     final symbol = _scope.lookup(node.name);
     if (symbol == null && _thisType != null) {
+      final current = _thisType!;
+      if (node.name == 'length' &&
+          (current == 'String' ||
+              current.startsWith('List<') ||
+              current.startsWith('Set<') ||
+              current.startsWith('Map<'))) {
+        model.implicitThis.add(node);
+        model.references[node] = Symbol('length', 'length', 'int');
+        return 'int';
+      }
       final member = memberType(_thisType!, node.name);
       if (member != null) {
         model.implicitThis.add(node);
@@ -2092,6 +2566,9 @@ class Analyzer {
   }
 
   String call(CallExpression node) {
+    if (node.callee is TypeApplication) {
+      return callApplied(node, node.callee as TypeApplication);
+    }
     final callee = node.callee;
     if (callee is MemberAccess && callee.object is Identifier) {
       final owner = _scope.lookup((callee.object as Identifier).name);
@@ -2151,7 +2628,15 @@ class Analyzer {
       final objectType = unwrap(rawObject.startsWith('readonly ')
           ? rawObject.substring(9)
           : rawObject);
-      final declaration = _global.symbols[objectType]?.classDeclaration;
+      if (objectType == 'dynamic') {
+        for (final argument in node.arguments) {
+          expression(argument.value);
+        }
+        model.references[callee] = Symbol(callee.name, callee.name, 'dynamic');
+        return 'dynamic';
+      }
+      final declaration =
+          _global.symbols[_genericHead(objectType)]?.classDeclaration;
       final function =
           declaration == null ? null : _method(declaration, callee.name);
       final resolved = function ??
@@ -2177,11 +2662,16 @@ class Analyzer {
       }
       final functionResolved = resolved;
       model.references[callee] = model.declarations[functionResolved]!;
+      final substitution = {
+        ..._genericSubstitution(objectType, declaration),
+        ..._extensionSubstitution(objectType, functionResolved)
+      };
       final returned =
           applyArguments(node, functionResolved.parameters, functionResolved);
-      return model.declarations[functionResolved]!.type == '<infer>'
+      final declared = model.declarations[functionResolved]!.type == '<infer>'
           ? returned
           : model.declarations[functionResolved]!.type;
+      return _substitute(declared, substitution);
     }
     if (callee is! Identifier) {
       final type = expression(callee);
@@ -2341,7 +2831,54 @@ class Analyzer {
     return symbol.type;
   }
 
-  String constructClass(CallExpression node, ClassDeclaration type) {
+  String callApplied(CallExpression node, TypeApplication applied) {
+    if (applied.callee is! Identifier) {
+      fail('Type arguments need a name', applied);
+    }
+    final name = (applied.callee as Identifier).name;
+    final symbol = _scope.lookup(name);
+    if (symbol == null) fail('Undefined function: $name', node);
+    model.references[applied.callee as Identifier] = symbol;
+    model.references[node.callee] = symbol;
+    if (symbol.classDeclaration != null && symbol.classCase == null) {
+      return constructClass(node, symbol.classDeclaration!, applied.arguments);
+    }
+    final candidates = symbol.overloads.isEmpty && symbol.function != null
+        ? [symbol.function!]
+        : symbol.overloads;
+    if (candidates.isEmpty) fail('$name is not callable', node);
+    if (candidates.length != 1) {
+      fail('Choose one overload with a call or a typed context', node);
+    }
+    final selected = candidates.single;
+    if (applied.arguments.length != selected.typeParameters.length) {
+      fail('Type arguments do not match ${selected.name}', node);
+    }
+    final substitution = {
+      for (var i = 0; i < selected.typeParameters.length; i++)
+        selected.typeParameters[i].name: applied.arguments[i]
+    };
+    for (var i = 0; i < selected.typeParameters.length; i++) {
+      final bound = selected.typeParameters[i].bound;
+      if (bound != null && !compatible(applied.arguments[i], bound)) {
+        fail('Type ${applied.arguments[i]} is not a $bound', node);
+      }
+    }
+    final parameters = [
+      for (final parameter in selected.parameters)
+        Parameter(parameter.name, _substitute(parameter.type, substitution),
+            parameter.mutable, parameter.span,
+            defaultValue: parameter.defaultValue, variadic: parameter.variadic)
+    ];
+    final returned = applyArguments(node, parameters, selected);
+    final declared = model.declarations[selected]!.type;
+    return declared == '<infer>'
+        ? returned
+        : _substitute(declared, substitution);
+  }
+
+  String constructClass(CallExpression node, ClassDeclaration type,
+      [List<String> explicit = const []]) {
     if (type.modifiers.contains('singleton')) {
       fail(
           'Singleton ${type.name} is available as ${type.name}.instance', node);
@@ -2365,19 +2902,102 @@ class Analyzer {
       }
       final constructor = unnamed.first;
       final parameters = _ctorParameters(type, constructor);
-      applyArguments(node, parameters, null);
-      model.references[node.callee] = Symbol(type.name, type.name, type.name,
-          function: FunctionDeclaration(type.name, parameters, type.name,
-              constructor.body, constructor.expressionBody, constructor.span));
-      return type.name;
+      return _finishConstruct(node, type, parameters, explicit);
     }
-    final parameters = <Parameter>[];
-    for (final field in _fieldsOf(type)) {
-      parameters.add(Parameter(field.name, field.type, false, field.span,
-          defaultValue: field.requiredField ? null : field.initializer));
+    final parameters = <Parameter>[
+      for (final field in _fieldsOf(type).where((field) => !field.isStatic))
+        Parameter(field.name, field.type, false, field.span,
+            defaultValue: field.requiredField ? null : field.initializer)
+    ];
+    return _finishConstruct(node, type, parameters, explicit);
+  }
+
+  String _finishConstruct(CallExpression node, ClassDeclaration type,
+      List<Parameter> parameters, List<String> explicit) {
+    final substitution =
+        _constructorSubstitution(node, type, parameters, explicit);
+    final instantiated = [
+      for (final parameter in parameters)
+        Parameter(parameter.name, _substitute(parameter.type, substitution),
+            parameter.mutable, parameter.span,
+            defaultValue: parameter.defaultValue,
+            variadic: parameter.variadic,
+            initializing: parameter.initializing)
+    ];
+    applyArguments(node, instantiated, null);
+    model.references[node.callee] = type.constructors.isEmpty
+        ? Symbol(type.name, type.name, type.name, classDeclaration: type)
+        : Symbol(type.name, type.name, type.name,
+            function: FunctionDeclaration(
+                type.name, instantiated, type.name, null, null, type.span));
+    if (type.typeParameters.isEmpty) return type.name;
+    final args = type.typeParameters
+        .map((parameter) => substitution[parameter.name]!)
+        .join(', ');
+    return '${type.name}<$args>';
+  }
+
+  Map<String, String> _constructorSubstitution(
+      CallExpression node,
+      ClassDeclaration type,
+      List<Parameter> parameters,
+      List<String> explicit) {
+    if (type.typeParameters.isEmpty) return const {};
+    if (explicit.isNotEmpty) {
+      if (explicit.length != type.typeParameters.length) {
+        fail('Type arguments do not match ${type.name}', node);
+      }
+      for (var i = 0; i < explicit.length; i++) {
+        final bound = type.typeParameters[i].bound;
+        if (bound != null && !compatible(explicit[i], bound)) {
+          fail('Type ${explicit[i]} is not a $bound', node);
+        }
+      }
+      return {
+        for (var i = 0; i < explicit.length; i++)
+          type.typeParameters[i].name: explicit[i]
+      };
     }
-    applyArguments(node, parameters, null);
-    return type.name;
+    final found = <String, String>{};
+    for (final argument in node.arguments) {
+      final parameter = argument.name == null
+          ? null
+          : parameters.where((item) => item.name == argument.name).firstOrNull;
+      if (parameter == null) continue;
+      _inferType(parameter.type, expression(argument.value), found,
+          type.typeParameters);
+    }
+    for (final parameter in type.typeParameters) {
+      final inferred = found[parameter.name];
+      if (inferred == null) {
+        error('E302', 'A type cannot be inferred', node);
+      }
+      final bound = parameter.bound;
+      if (bound != null && !compatible(inferred, bound)) {
+        fail('Type $inferred is not a $bound', node);
+      }
+    }
+    return found;
+  }
+
+  void _inferType(String parameterType, String argumentType,
+      Map<String, String> found, List<TypeParameter> parameters) {
+    if (parameters.any((parameter) => parameter.name == parameterType)) {
+      found[parameterType] = argumentType;
+      return;
+    }
+    for (final prefix in ['List<', 'Set<', 'Future<', 'Iterable<']) {
+      if (parameterType.startsWith(prefix) &&
+          parameterType.endsWith('>') &&
+          argumentType.startsWith(prefix) &&
+          argumentType.endsWith('>')) {
+        _inferType(
+            parameterType.substring(prefix.length, parameterType.length - 1),
+            argumentType.substring(prefix.length, argumentType.length - 1),
+            found,
+            parameters);
+      }
+    }
   }
 
   String constructCase(CallExpression node, Symbol symbol) {
@@ -2859,7 +3479,34 @@ class Analyzer {
         model.references[pattern]?.classCase == null ? null : {pattern.name},
       ConstructorPattern() =>
         pattern.typeName.isEmpty ? null : {pattern.typeName},
-      LiteralPattern() || ListPattern() => <String>{},
+      LiteralPattern() ||
+      ListPattern() ||
+      MapPattern() ||
+      RestPattern() ||
+      RelationalPattern() ||
+      CastPattern() ||
+      NullCheckPattern() ||
+      NullAssertPattern() =>
+        <String>{},
+      OrPattern() => _unionCovered(pattern.left, pattern.right, universe),
+      AndPattern() => _intersectCovered(pattern.left, pattern.right, universe),
     };
+  }
+
+  Set<String>? _unionCovered(
+      Pattern left, Pattern right, Set<String> universe) {
+    final first = _covered(left, universe);
+    final second = _covered(right, universe);
+    if (first == null || second == null) return null;
+    return {...first, ...second};
+  }
+
+  Set<String>? _intersectCovered(
+      Pattern left, Pattern right, Set<String> universe) {
+    final first = _covered(left, universe);
+    final second = _covered(right, universe);
+    if (first == null) return second;
+    if (second == null) return first;
+    return first.intersection(second);
   }
 }

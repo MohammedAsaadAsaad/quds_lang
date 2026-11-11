@@ -16,3 +16,29 @@
 14. **Compiler compatibility:** specify Quds versioning and Dart SDK constraints.
 
 These are specification questions, not permission to override approved design choices. Propose precise resolutions with tests before implementation.
+
+## MVP-0 scoped resolutions and remaining conflicts
+
+- **Questions 1/11:** Issue #1 supplies `sum(a: int, b: int) -> int:`.
+  MVP-0 uses that return annotation and `= expression` bodies. Named argument
+  blocks currently contain only `label: expression` rows on a call statement or
+  binding RHS. Child expression sequences and property configuration still need
+  reconciliation; accepting this subset does not decide their grammar.
+- **Question 2 / QUDS-090:** Initializers resolve before declaring a new symbol.
+  Bare assignment targets an existing visible mutable binding; otherwise it
+  declares a final binding. `shadow` explicitly introduces a final binding in an
+  inner scope; typed/var redeclarations cannot implicitly shadow. Supporting
+  mutable explicit shadows (`shadow var` or another spelling) remains open.
+- **Simple calls / QUDS-081:** MVP-0 supports one parenthesis-free argument and
+  right-nested simple calls. Use parentheses for multiple arguments and unary
+  arguments (`print(-1)`). Precedence between unary/binary operations and more
+  general optional-parenthesis calls needs normative specification before expansion.
+- **Question 12:** This slice targets native Dart integers/doubles. It rejects
+  oversized positive integer literals rather than converting them to doubles.
+  Web integer guarantees and spelling the minimum signed integer literal remain
+  follow-up work. No cross-platform numeric guarantee is inferred from native tests.
+
+Implementation gaps (rather than syntax decisions): parser recovery, source maps,
+Quds-side constant evaluation with source diagnostics, and contextual inference
+are not complete. The supported subset and further deferred features are listed
+in `MVP_0.md`. Original questions above remain open beyond these scoped choices.

@@ -51,3 +51,13 @@ Source manager → indentation-aware lexer → token stream → parser → typed
 ## Acceptance
 
 A milestone is done only after syntax examples parse, invalid cases fail predictably, generated Dart passes `dart analyze`, runtime tests pass, and documentation is updated.
+
+## MVP-0 implementation status
+
+Issue #1 now has a working first slice through the lexer, typed AST/Pratt parser,
+scoped static semantics, deterministic Dart emission and `quds build`. The native
+acceptance program is analyzed and executed in integration tests. This does not
+complete every item in milestones 0–4: recovery, source maps, contextual typing,
+full collection/call grammar and advanced semantics remain incremental work.
+See `MVP_0.md` for the exact supported subset and `VALIDATION.md` for commands and
+results. The approved language decisions remain unchanged.

@@ -1,3 +1,8 @@
 library quds_lang;
 
+export 'src/ast.dart';
+export 'src/compiler.dart';
+export 'src/emitter.dart';
 export 'src/lexer.dart';
+export 'src/parser.dart';
+export 'src/semantics.dart';

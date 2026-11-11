@@ -1,7 +1,7 @@
-/// Minimal indentation-aware lexer bootstrap for Quds.
-///
-/// This intentionally implements only a small lexical subset. It is not a
-/// parser or a full implementation of the Quds language specification.
+import 'dart:convert';
+import 'source.dart';
+export 'source.dart';
+
 enum TokenKind {
   identifier,
   number,
@@ -10,172 +10,317 @@ enum TokenKind {
   comma,
   leftParen,
   rightParen,
+  leftBracket,
+  rightBracket,
   equals,
   plus,
   minus,
   star,
   slash,
+  percent,
+  plusEquals,
+  minusEquals,
+  starEquals,
+  slashEquals,
+  equalEqual,
+  bangEqual,
+  less,
+  lessEqual,
+  greater,
+  greaterEqual,
+  arrow,
   newline,
   indent,
   dedent,
   eof,
 }
 
-class SourceSpan {
-  const SourceSpan(this.line, this.column, this.length);
-
-  final int line;
-  final int column;
-  final int length;
-
-  @override
-  String toString() => '$line:$column+$length';
-}
-
 class Token {
   const Token(this.kind, this.lexeme, this.span);
-
   final TokenKind kind;
   final String lexeme;
   final SourceSpan span;
-
   @override
-  String toString() => '${kind.name}($lexeme)@${span.toString()}';
+  String toString() => '${kind.name}($lexeme)@$span';
 }
 
-class LexerException implements Exception {
-  const LexerException(this.message, this.span);
-
-  final String message;
-  final SourceSpan span;
-
-  @override
-  String toString() => 'LexerException at $span: $message';
+class LexerException extends CompilerException {
+  const LexerException(String message, SourceSpan span)
+      : super('Q001', message, span);
 }
 
 class Lexer {
   const Lexer();
+  List<Token> tokenize(String source, {String file = '<input>'}) =>
+      _Scanner(source, file).scan();
+}
 
-  List<Token> tokenize(String source) {
-    final result = <Token>[];
-    final indents = <int>[0];
-    final lines = source.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
-    for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-      final lineNumber = lineIndex + 1;
-      final line = lines[lineIndex];
-      var offset = 0;
-      while (offset < line.length && line[offset] == ' ') {
-        offset++;
-      }
-      if (offset < line.length && line[offset] == '\t') {
-        throw LexerException('Tabs are not permitted for indentation',
-            SourceSpan(lineNumber, offset + 1, 1));
-      }
-      final rest = line.substring(offset).trim();
-      if (rest.isEmpty || rest.startsWith('#')) continue;
-
-      if (offset > indents.last) {
-        indents.add(offset);
-        result.add(Token(TokenKind.indent, '', SourceSpan(lineNumber, 1, offset)));
-      } else if (offset < indents.last) {
-        while (indents.length > 1 && offset < indents.last) {
-          indents.removeLast();
-          result.add(Token(TokenKind.dedent, '', SourceSpan(lineNumber, 1, 0)));
-        }
-        if (offset != indents.last) {
-          throw LexerException('Indentation does not match any outer block',
-              SourceSpan(lineNumber, 1, offset));
-        }
-      }
-
-      while (offset < line.length) {
-        final ch = line[offset];
-        if (ch == ' ' || ch == '\t') {
-          offset++;
-          continue;
-        }
-        if (ch == '#') break;
-        final column = offset + 1;
-        if (_isIdentifierStart(ch)) {
-          final start = offset++;
-          while (offset < line.length && _isIdentifierPart(line[offset])) {
-            offset++;
-          }
-          result.add(Token(TokenKind.identifier, line.substring(start, offset),
-              SourceSpan(lineNumber, column, offset - start)));
-          continue;
-        }
-        if (_isDigit(ch)) {
-          final start = offset++;
-          while (offset < line.length && _isDigit(line[offset])) {
-            offset++;
-          }
-          if (offset + 1 < line.length &&
-              line[offset] == '.' &&
-              _isDigit(line[offset + 1])) {
-            offset++;
-            while (offset < line.length && _isDigit(line[offset])) {
-              offset++;
-            }
-          }
-          result.add(Token(TokenKind.number, line.substring(start, offset),
-              SourceSpan(lineNumber, column, offset - start)));
-          continue;
-        }
-        if (ch == '"' || ch == "'") {
-          final quote = ch;
-          final start = offset++;
-          var terminated = false;
-          while (offset < line.length) {
-            if (line[offset] == '\\') {
-              offset += 2;
-              continue;
-            }
-            if (line[offset] == quote) {
-              offset++;
-              terminated = true;
-              break;
-            }
-            offset++;
-          }
-          if (!terminated) {
-            throw LexerException('Unterminated string',
-                SourceSpan(lineNumber, column, line.length - start));
-          }
-          result.add(Token(TokenKind.string, line.substring(start, offset),
-              SourceSpan(lineNumber, column, offset - start)));
-          continue;
-        }
-        final kind = switch (ch) {
-          ':' => TokenKind.colon,
-          ',' => TokenKind.comma,
-          '(' => TokenKind.leftParen,
-          ')' => TokenKind.rightParen,
-          '=' => TokenKind.equals,
-          '+' => TokenKind.plus,
-          '-' => TokenKind.minus,
-          '*' => TokenKind.star,
-          '/' => TokenKind.slash,
-          _ => null,
-        };
-        if (kind == null) {
-          throw LexerException('Unexpected character: $ch',
-              SourceSpan(lineNumber, column, 1));
-        }
-        result.add(Token(kind, ch, SourceSpan(lineNumber, column, 1)));
-        offset++;
-      }
-      result.add(Token(TokenKind.newline, '', SourceSpan(lineNumber, line.length + 1, 0)));
+class _Scanner {
+  _Scanner(this.source, this.file);
+  final String source;
+  final String file;
+  final tokens = <Token>[];
+  final indents = <int>[0];
+  final brackets = <Token>[];
+  int i = 0, line = 1, column = 1;
+  bool lineStart = true, hasCode = false;
+  static final identifierStart = RegExp(r'^[\p{L}\p{Nl}_]$', unicode: true);
+  static final identifierPart =
+      RegExp(r'^[\p{L}\p{Nl}\p{N}\p{M}_]$', unicode: true);
+  bool get end => i >= source.length;
+  String get ch => end ? '' : source[i];
+  String get rune =>
+      end ? '' : String.fromCharCode(source.substring(i).runes.first);
+  bool at(String value) => source.startsWith(value, i);
+  SourceSpan span(int start, int startLine, int startColumn) => SourceSpan(
+      startLine, startColumn, utf8.encode(source.substring(start, i)).length,
+      file: file, offset: utf8.encode(source.substring(0, start)).length);
+  SourceSpan get here => SourceSpan(line, column, 0,
+      file: file, offset: utf8.encode(source.substring(0, i)).length);
+  Never fail(String message, [SourceSpan? location]) =>
+      throw LexerException(message, location ?? here);
+  void advance() {
+    if (ch == '\r') {
+      i++;
+      if (ch == '\n') i++;
+      line++;
+      column = 1;
+    } else if (ch == '\n') {
+      i++;
+      line++;
+      column = 1;
+    } else {
+      i++;
+      column++;
     }
-    while (indents.length > 1) {
-      indents.removeLast();
-      result.add(Token(TokenKind.dedent, '', SourceSpan(lines.length, 1, 0)));
-    }
-    result.add(Token(TokenKind.eof, '', SourceSpan(lines.length, 1, 0)));
-    return result;
   }
 
-  bool _isDigit(String ch) => RegExp(r'^[0-9]$').hasMatch(ch);
-  bool _isIdentifierStart(String ch) => RegExp(r'^[a-zA-Z_]$').hasMatch(ch);
-  bool _isIdentifierPart(String ch) => RegExp(r'^[a-zA-Z0-9_]$').hasMatch(ch);
+  void emit(TokenKind kind, int start, int sl, int sc) {
+    tokens.add(Token(kind, source.substring(start, i), span(start, sl, sc)));
+    hasCode = true;
+  }
+
+  void blockComment() {
+    final location = here;
+    advance();
+    advance();
+    var depth = 1;
+    while (!end && depth > 0) {
+      if (at('/*')) {
+        depth++;
+        advance();
+        advance();
+      } else if (at('*/')) {
+        depth--;
+        advance();
+        advance();
+      } else {
+        advance();
+      }
+    }
+    if (depth != 0) fail('Unterminated block comment', location);
+  }
+
+  List<Token> scan() {
+    while (!end) {
+      if (lineStart) {
+        var spaces = 0;
+        while (ch == ' ') {
+          spaces++;
+          advance();
+        }
+        if (ch == '\t') fail('Tabs are not permitted for indentation');
+        while (at('/*')) {
+          blockComment();
+          while (ch == ' ') {
+            advance();
+          }
+          if (ch == '\t') fail('Tabs are not permitted for indentation');
+        }
+        if (end) break;
+        if (ch != '\n' &&
+            ch != '\r' &&
+            ch != '#' &&
+            !at('///') &&
+            brackets.isEmpty) {
+          if (spaces > indents.last) {
+            indents.add(spaces);
+            tokens.add(Token(TokenKind.indent, '', here));
+          } else {
+            while (spaces < indents.last) {
+              indents.removeLast();
+              tokens.add(Token(TokenKind.dedent, '', here));
+            }
+            if (spaces != indents.last)
+              fail('Indentation does not match any outer block');
+          }
+        }
+        lineStart = false;
+      }
+      if (ch == ' ' || ch == '\t') {
+        advance();
+        continue;
+      }
+      if (ch == '#' || at('///')) {
+        while (!end && ch != '\n' && ch != '\r') {
+          advance();
+        }
+        continue;
+      }
+      if (at('/*')) {
+        blockComment();
+        continue;
+      }
+      if (ch == '\n' || ch == '\r') {
+        if (hasCode && brackets.isEmpty) {
+          tokens.add(Token(TokenKind.newline, '', here));
+          hasCode = false;
+        }
+        advance();
+        lineStart = true;
+        continue;
+      }
+      final start = i, sl = line, sc = column;
+      if (ch == '"' || ch == "'") {
+        scanString();
+        emit(TokenKind.string, start, sl, sc);
+        continue;
+      }
+      if (identifierStart.hasMatch(rune)) {
+        final width = rune.length;
+        for (var n = 0; n < width; n++) {
+          advance();
+        }
+        while (!end && identifierPart.hasMatch(rune)) {
+          final width = rune.length;
+          for (var n = 0; n < width; n++) {
+            advance();
+          }
+        }
+        emit(TokenKind.identifier, start, sl, sc);
+        continue;
+      }
+      if (RegExp(r'[0-9]').hasMatch(ch)) {
+        while (!end && RegExp(r'[0-9]').hasMatch(ch)) {
+          advance();
+        }
+        if (ch == '.' &&
+            i + 1 < source.length &&
+            RegExp(r'[0-9]').hasMatch(source[i + 1])) {
+          advance();
+          while (!end && RegExp(r'[0-9]').hasMatch(ch)) {
+            advance();
+          }
+        }
+        emit(TokenKind.number, start, sl, sc);
+        continue;
+      }
+      const pairs = {
+        '->': TokenKind.arrow,
+        '+=': TokenKind.plusEquals,
+        '-=': TokenKind.minusEquals,
+        '*=': TokenKind.starEquals,
+        '/=': TokenKind.slashEquals,
+        '==': TokenKind.equalEqual,
+        '!=': TokenKind.bangEqual,
+        '<=': TokenKind.lessEqual,
+        '>=': TokenKind.greaterEqual,
+      };
+      final pair = i + 1 < source.length ? source.substring(i, i + 2) : '';
+      if (pairs.containsKey(pair)) {
+        advance();
+        advance();
+        emit(pairs[pair]!, start, sl, sc);
+        continue;
+      }
+      const singles = {
+        ':': TokenKind.colon,
+        ',': TokenKind.comma,
+        '(': TokenKind.leftParen,
+        ')': TokenKind.rightParen,
+        '[': TokenKind.leftBracket,
+        ']': TokenKind.rightBracket,
+        '=': TokenKind.equals,
+        '+': TokenKind.plus,
+        '-': TokenKind.minus,
+        '*': TokenKind.star,
+        '/': TokenKind.slash,
+        '%': TokenKind.percent,
+        '<': TokenKind.less,
+        '>': TokenKind.greater,
+      };
+      final kind = singles[ch];
+      if (kind == null) fail('Unexpected character: $ch');
+      if ((ch == '+' || ch == '-') && at('$ch$ch'))
+        fail('Increment/decrement are not supported; use compound assignment');
+      advance();
+      emit(kind, start, sl, sc);
+      if (kind == TokenKind.leftParen || kind == TokenKind.leftBracket) {
+        brackets.add(tokens.last);
+      } else if (kind == TokenKind.rightParen ||
+          kind == TokenKind.rightBracket) {
+        final expected = kind == TokenKind.rightParen
+            ? TokenKind.leftParen
+            : TokenKind.leftBracket;
+        if (brackets.isEmpty || brackets.last.kind != expected)
+          fail('Mismatched closing bracket', tokens.last.span);
+        brackets.removeLast();
+      }
+    }
+    if (brackets.isNotEmpty) fail('Unclosed bracket', brackets.last.span);
+    if (hasCode) tokens.add(Token(TokenKind.newline, '', here));
+    while (indents.length > 1) {
+      indents.removeLast();
+      tokens.add(Token(TokenKind.dedent, '', here));
+    }
+    tokens.add(Token(TokenKind.eof, '', here));
+    return tokens;
+  }
+
+  void scanString() {
+    final location = here, quote = ch;
+    final triple = at(quote * 3);
+    final delimiter = quote * (triple ? 3 : 1);
+    for (var n = 0; n < delimiter.length; n++) {
+      advance();
+    }
+    while (!end) {
+      if (at(delimiter)) {
+        for (var n = 0; n < delimiter.length; n++) {
+          advance();
+        }
+        return;
+      }
+      if (ch == '{') {
+        advance();
+        var depth = 1;
+        while (!end && depth > 0) {
+          if (ch == '\"' || ch == "'") {
+            scanString();
+          } else if (at('/*')) {
+            blockComment();
+          } else if (ch == '{') {
+            depth++;
+            advance();
+          } else if (ch == '}') {
+            depth--;
+            advance();
+          } else {
+            advance();
+          }
+        }
+        if (depth != 0) fail('Unclosed interpolation', location);
+      } else if (ch == '\\') {
+        advance();
+        if (end) break;
+        if (!'nrt\\\'"{}\$'.contains(ch)) fail('Unsupported string escape');
+        advance();
+      } else {
+        if (!triple && (ch == '\n' || ch == '\r'))
+          fail('Unterminated string', location);
+        advance();
+      }
+    }
+    fail('Unterminated string', location);
+  }
 }

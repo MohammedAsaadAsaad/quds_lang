@@ -1,0 +1,11 @@
+sum(a: int, b: int) -> int:
+  return a + b
+
+main():
+  numbers = [10, 20, 30]
+  var total = 0
+  for number in numbers:
+    total += number
+  if total > 50:
+    print "Total: {total}"
+  print sum(5, 7)

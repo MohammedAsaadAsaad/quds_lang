@@ -432,13 +432,8 @@ main():
     try {
       final dartFile = File('${directory.path}/app.dart')
         ..writeAsStringSync(compile(source).dart);
-      final compiled = await Process.run(Platform.resolvedExecutable, [
-        'compile',
-        'js',
-        '-o',
-        '${directory.path}/app.js',
-        dartFile.path
-      ]);
+      final compiled = await Process.run(Platform.resolvedExecutable,
+          ['compile', 'js', '-o', '${directory.path}/app.js', dartFile.path]);
       expect(compiled.exitCode, isNot(0));
       expect('${compiled.stdout}${compiled.stderr}',
           contains("can't be represented exactly in JavaScript"));

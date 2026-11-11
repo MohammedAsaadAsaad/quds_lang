@@ -1,6 +1,6 @@
 # Quds Language — Complete Design Decisions and Agent Implementation Specification
 
-**Version:** Design baseline 1.0-draft · **Date:** 2026-11-11 · **Rules:** QUDS-001 through QUDS-115 · **Status:** Design decisions, not a finished executable language standard.
+**Version:** Design baseline 1.1-draft · **Date:** 2026-11-11 · **Rules:** QUDS-001 through QUDS-115 · **Status:** Design decisions with normative conflict resolutions. Not a finished executable language, and not a claim that the compiler implements these rules.
 
 ## Agent instructions — read before implementation
 
@@ -18,6 +18,7 @@ You are implementing **Quds**, a general-purpose, indentation-based, strongly an
 8. Generated Dart should be readable, deterministic, testable and compatible with supported Dart SDK versions.
 9. Mark normative vs illustrative syntax. Some examples below are *design sketches* pending a formal EBNF and lowering specification; do not silently treat ambiguous sketches as settled grammar.
 10. Report exactly what was coded, what was tested, and what remains unsupported.
+11. If an illustration or an earlier sentence in a rule conflicts with **Normative resolutions**, that section wins. Illustrations stay sketches until they match it. Do not reintroduce a second meaning for a token that section assigns.
 
 ## Canonical design illustrations
 
@@ -88,7 +89,7 @@ const maxItems = 10
 
 ### QUDS-003 — Core collection literals
 
-**Approved decision.** Lists use `[]`; maps and sets have explicit readable forms (`map:` and `set:`); records are first-class. Type inference must preserve element/key/value types.
+**Approved decision.** Lists use `[]`; maps and sets use the keywords `map:` and `set:` followed by an indented element block; records are parenthesized and first-class. `map:` and `set:` are not calls. A function or constructor named `map` or `set` is called with parentheses or a positional argument (`map items`), never as a bare colon block. Type inference preserves element, key, and value types. Empty lists, maps, and sets are allowed where the element type is known from context or from an explicit annotation; otherwise the program is rejected and is not given type `dynamic`.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -104,7 +105,7 @@ settings = map:
 
 ### QUDS-004 — Operators and boolean words
 
-**Approved decision.** Preserve Dart-like arithmetic/comparison/null operators. Support `and`, `or`, `not` with short-circuit evaluation and documented precedence.
+**Approved decision.** Preserve Dart arithmetic, comparison, bitwise, shift, `~/`, and null operators, using the precedence in Normative resolutions. Boolean words are `and`, `or`, and `not` (prefix `!` is the same operator as `not`). They short-circuit. `and` and `or` require `bool`; a nullable bool is a type error until promoted or handled with `??` / `!`. There is no Dart cascade token: `..` and `..<` are ranges.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -119,7 +120,7 @@ if active and not blocked:
 
 ### QUDS-005 — Conditionals as statements and expressions
 
-**Approved decision.** Support `if`, `else if`, `else` blocks and expression forms; expression forms must produce compatible types.
+**Approved decision.** `if` / `else if` / `else` exist as statements, as expressions, and as collection elements. The three are distinguished by position, not by a fourth spelling. An if-expression requires `else`, and its branches are expressions whose types join. A statement may omit `else`. A collection `if` contributes elements and may omit `else`. See Normative resolutions.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -136,7 +137,7 @@ else:
 
 ### QUDS-006 — Loops and ranges
 
-**Approved decision.** Support `for x in iterable`, inclusive `a..b`, exclusive `a..<b`, steps, `while`, `break`, `continue`, and asynchronous iteration.
+**Approved decision.** Support `for x in iterable`, inclusive range `a..b`, exclusive range `a..<b` (`..<` is one token), `for` with `while` and `step` (the C-style loop), `while`, `repeat` / `while` (the do-while loop), `break`, `continue`, labeled breaks, and `await for`. `..` is never a cascade. A zero step is a compile-time error when the step is a constant, and a runtime error otherwise. `1..5` contains 1, 2, 3, 4, and 5. `1..<5` contains 1, 2, 3, and 4. A negative step walks downward and still honors the inclusive or exclusive end.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -183,7 +184,7 @@ class Person:
 
 ### QUDS-009 — Unified calls and configuration blocks
 
-**Approved decision.** Simple calls may omit parentheses; nested named argument blocks use colon and indentation. `Column:` is ordinary constructor invocation, not special Flutter syntax.
+**Approved decision.** A call may omit parentheses only when it has at least one positional argument written by juxtaposition (`print "OK"`, `Text "Hello"`) or uses a named-argument colon block (`Column:`). A bare name is a value or tear-off, never a call. Zero-argument calls use parentheses: `toUpperCase()`. `Column:` is an ordinary constructor call, not Flutter syntax. Nested named arguments and collection blocks are classified by the syntactic test in Normative resolutions, not by the expected type.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -290,7 +291,7 @@ property name: String:
 
 ### QUDS-016 — Visibility
 
-**Approved decision.** Public by default; support private and protected access controls in Quds with explicit Dart-compatible lowering.
+**Approved decision.** Public by default. `private` is library-private and lowers to a Dart library-private name, which Dart actually enforces. `protected` is enforced by the Quds checker for Quds subclasses and is emitted as `@protected` documentation for Dart readers. The Dart VM does not enforce `protected`; this specification does not claim that it does. Dart `_` privacy remains available on imported Dart libraries under Dart's own rule.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -304,7 +305,7 @@ private token: String = "secret"
 
 ### QUDS-017 — Inheritance and composition
 
-**Approved decision.** Support `extends`, `implements`, `with`, and class modifiers consistent with Dart constraints.
+**Approved decision.** Support `extends`, `implements`, mixin application, and Dart class modifiers. In a class header, `with` is mixin application only (`class Dog extends Animal with Walker:`). It is not object configuration. Object configuration uses statement/expression `with` and `with?` (QUDS-027, QUDS-047).
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -348,7 +349,7 @@ squares = [x * x for x in 1..5]
 
 ### QUDS-020 — Strings and interpolation
 
-**Approved decision.** Use `{expression}` interpolation, escaped `{{` and `}}`, raw strings and triple-quoted multiline strings.
+**Approved decision.** Interpolation is `{expression}`. A literal brace is written by doubling: `{{` and `}}`. That is the only brace escape. Backslash escapes cover the other Dart string escapes (`\n`, `\t`, `\\`, quotes) and are not a second way to escape braces. Raw strings and triple-quoted strings exist. `$` does not start interpolation.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -453,7 +454,7 @@ class Point:
 
 ### QUDS-027 — Object configuration with with
 
-**Approved decision.** `with object:` configures an object; `this` and `super` remain available; class mixin `with` is context-specific.
+**Approved decision.** Statement or expression `with receiver:` configures that object and evaluates the receiver once. Mixin application is only the class-header `with` (QUDS-017), never this form. `this` and `super` remain available inside instance members.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -530,12 +531,12 @@ if let name = user?.name:
 
 ### QUDS-032 — Explicit multiline returns
 
-**Approved decision.** Every multiline function/lambda that returns a value uses explicit `return`; expression-bodied functions return implicitly.
+**Approved decision.** `return` always exits the nearest function, never a `do:` block. Every multiline function or lambda that produces a value uses explicit `return`. An expression-bodied function returns its expression. A `do:` block produces its value with `result`, defined in QUDS-106.
 
 **Quds syntax illustration** (may be a fragment):
 
 ```quds
-sum(a, b) = a + b
+sum(a: int, b: int) = a + b
 ```
 
 **Compiler / runtime requirements.** Reject accidental implicit last-expression return in block bodies.
@@ -573,7 +574,7 @@ extend String:
 
 ### QUDS-035 — Interfaces, abstract types, mixins
 
-**Approved decision.** Support interfaces, abstract classes and mixins with sound implementation checking.
+**Approved decision.** Support interfaces, abstract classes, and mixins with sound implementation checking. In an `interface`, `name: Type` is an abstract getter. A writable abstract member is declared with `property` (QUDS-015). It is not also a stored field. An implementing class supplies a field, getter, or property of a compatible type.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -618,7 +619,7 @@ numbers() sync*:
 
 ### QUDS-038 — Records and destructuring
 
-**Approved decision.** Support positional/named records and destructuring declarations.
+**Approved decision.** Support positional and named records and destructuring. `(expr)` is grouping. A record of one element is `(expr,)`. An empty record is `()`. Named fields use `(name: expr)`. On the left of `=` the same shapes are patterns. Inside a call's parentheses, `name: expr` is a named argument, not a record. Full rules are in Normative resolutions.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -718,7 +719,7 @@ use generated:user_models
 
 ### QUDS-045 — Function types
 
-**Approved decision.** Function types use `(Args) -> Return`, including named parameter metadata.
+**Approved decision.** In type position, function types use `(parameters) -> Return`, including named and optional parameter metadata. In expression position the same arrow is a lambda, so `(String) -> bool` as a type appears only where a type is legal. `capture` is a keyword, not a call followed by a lambda (QUDS-091).
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -747,7 +748,7 @@ class Adder:
 
 ### QUDS-047 — Cascade replacement
 
-**Approved decision.** `with` and `with?` replace Dart `..` and `?..` cascades while preserving receiver evaluation once.
+**Approved decision.** `with` and `with?` replace Dart `..` and `?..`. The receiver runs once. `with?` skips the block when the receiver is null and the expression result is null. These keywords are not mixin `with` and not the range tokens `..` and `..<`.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -809,7 +810,7 @@ value class Point:
 
 ### QUDS-051 — Value-class copyWith
 
-**Approved decision.** Generate `copyWith` for value classes; distinguish omitted field from explicit null.
+**Approved decision.** Generate `copyWith` for value classes. Omitting a field keeps the current value. Passing null sets null. The generated Dart signature defaults each parameter to the public sentinel `quds.missing`, so a Dart caller who does not have the Quds compiler can omit the argument, pass null, or pass `missing` explicitly. `missing` is not null (QUDS-083).
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -852,11 +853,12 @@ defer closeResource()
 
 ### QUDS-054 — Safe const inference
 
-**Approved decision.** Infer const when observationally equivalent; preserve identity/canonicalization behavior.
+**Approved decision.** Implicit const exists only inside an already constant context, as in Dart: an inner literal or constructor does not need its own `const` keyword when the enclosing context is const. A normal binding `colors = ["red", "blue"]` is not const. The list remains mutable and keeps ordinary identity. Inference must not change mutation or identity.
 
 **Quds syntax illustration** (may be a fragment):
 
 ```quds
+const palette = ["red", "blue"]
 colors = ["red", "blue"]
 ```
 
@@ -1054,12 +1056,12 @@ test "adds":
 
 ### QUDS-068 — Language versioning
 
-**Approved decision.** Each project declares Quds language version; support compatibility policy and `quds migrate`.
+**Approved decision.** Each project declares its Quds language version in project metadata, not in a comment. `# quds: 1.0` is an ordinary comment and does not select a language version. `quds migrate` upgrades sources between declared versions. The compiler must not silently change the meaning of a project pinned to an older version.
 
 **Quds syntax illustration** (may be a fragment):
 
 ```quds
-# quds: 1.0
+# version lives in project metadata, not in this comment
 ```
 
 **Compiler / runtime requirements.** Version-gate syntax and semantics, never silently change old projects.
@@ -1211,7 +1213,7 @@ task group:
 
 ### QUDS-079 — Reactive primitives
 
-**Approved decision.** Provide generic `state`, `computed`, `watch` and subscriptions, without coupling core language to Flutter widgets.
+**Approved decision.** `state name = expr` is a mutable binding, like `var`, that also notifies reactive subscribers. It is not the immutable binding of bare `name =`. `computed` and `watch` are part of the same library feature and are not Flutter widgets.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1226,7 +1228,7 @@ computed doubled = count * 2
 
 ### QUDS-080 — Declarative collection conditionals
 
-**Approved decision.** Allow `if` and `for` inside collection/children blocks as generic collection syntax, not Flutter-specific DSL.
+**Approved decision.** `if` and `for` inside a collection literal or a syntactically classified collection block are collection elements, not statements and not if-expressions. This is generic collection syntax. The block is recognized by the syntactic test in Normative resolutions, not by the expected type.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1258,12 +1260,12 @@ sendEmail:
 
 ### QUDS-082 — Explicit and safe conversion
 
-**Approved decision.** `expr to Type` converts explicitly; `expr to Type?` safely returns null on failed conversion. Keep `is` and `as` semantics; custom conversion protocol.
+**Approved decision.** `expr to Type` converts explicitly and fails on failure. Safe conversion is the token `to?`: `expr to? Type` returns null on failure. The target may itself be nullable (`expr to? int?`). `is` and `as` keep Dart's test and cast meanings. Custom types participate through a declared conversion protocol. `to?` is not the nullable-type suffix and not Result `?`.
 
 **Quds syntax illustration** (may be a fragment):
 
 ```quds
-age = input to int?
+age = input to? int
 ```
 
 **Compiler / runtime requirements.** Specify whether conversion can parse strings, numeric coercion, and custom hooks.
@@ -1301,7 +1303,7 @@ increment(var x: int):
 
 ### QUDS-085 — Static overload resolution
 
-**Approved decision.** Multiple functions may share a name with distinguishable signatures. Resolve at compile time, reject ambiguity; emit uniquely named Dart symbols.
+**Approved decision.** Multiple Quds functions may share a name when signatures are distinguishable. Resolution is compile-time; ambiguity is an error. Each overload is emitted as its own Dart function with a stable public name: the bare name when there is only one, otherwise `name$` plus a documented encoding of the parameter types. Dart has no overload set, so a Dart caller uses those generated names. A Quds tear-off must select one signature from context or from an explicit type; if it does not, the program is rejected.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1316,7 +1318,7 @@ parse(x: int) = ...
 
 ### QUDS-086 — Computed defaults
 
-**Approved decision.** Default expressions evaluate for each call when argument omitted, may refer to earlier parameters, and distinguish omission from explicit null.
+**Approved decision.** A default runs on each call where that argument is omitted, may read earlier parameters, and is not the same as passing null. Evaluation order is the two-phase order in QUDS-111: supplied argument expressions run once, left to right in source order; omitted defaults then run once, in declaration order.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1374,7 +1376,7 @@ var b = 2
 
 ### QUDS-090 — Lexical scopes and explicit shadowing
 
-**Approved decision.** Scopes are lexical. Assigning existing mutable outer binding updates it. New local with same name requires `shadow`; immutable outer cannot be reassigned.
+**Approved decision.** Scopes are lexical. Assigning an existing mutable outer binding updates it. A new local with the same name requires `shadow` and is immutable. A mutable new local is `shadow var`. An immutable outer binding cannot be reassigned. Initializers resolve before the new binding is declared, so the initializer still sees the outer name.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1391,7 +1393,7 @@ if true:
 
 ### QUDS-091 — Closure capture and snapshots
 
-**Approved decision.** Capture variables using Dart semantics by default; `capture(x, ...) -> body` snapshots specified binding values when closure is created, not deep copies.
+**Approved decision.** Closures use Dart capture by default: a mutable binding stays live. `capture` is a keyword. `capture(x, ...) -> body` snapshots the listed binding values when the closure is created. It does not deep-copy object graphs. It is not a call of a function named `capture` followed by a lambda. A `for-in` binding is a fresh binding per iteration.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1501,7 +1503,7 @@ sealed type LoadResult<T>:
 
 ### QUDS-098 — Match exhaustiveness
 
-**Approved decision.** Match expressions over finite types must cover all cases; statement matches warn when incomplete; detect unreachable cases.
+**Approved decision.** One exhaustiveness checker covers every finite type: a `sealed type`'s declared cases and a `sealed class`'s same-library subtypes. A `match` or `switch` expression must be exhaustive. A statement form warns when incomplete. Unreachable cases are errors. `switch` is an alias of `match` with the same grammar.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1533,7 +1535,7 @@ find<T: Identifiable>(items: List<T>, id: int) -> T?:
 
 ### QUDS-100 — Variance declarations
 
-**Approved decision.** Support safe `out` and `in` on generic parameters only when positions are valid and Dart lowering preserves soundness.
+**Approved decision.** `out` and `in` are allowed only when every use site is in the matching position and the Dart lowering is sound. Otherwise the declaration is rejected. It is not silently weakened. Dart's ordinary generic types, without `in` or `out`, remain available with Dart's own generic rules.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1609,7 +1611,7 @@ extend List<T>:
 
 ### QUDS-105 — Pipeline operator
 
-**Approved decision.** `expr |> function` feeds the value to next call as first compatible positional argument; deterministic evaluation and static resolution.
+**Approved decision.** `expr |> callee` evaluates `expr` once and passes it to `callee`. If `callee` is a name or function value, the value is the first positional argument. If `callee` is a call with exactly one hole, the value fills that hole and the call's other arguments then run in source order. Overload resolution uses the type of the piped value. The operator is left-associative and sits just above assignment.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1625,7 +1627,7 @@ result = loadData()
 
 ### QUDS-106 — Value-producing do blocks
 
-**Approved decision.** `do:` creates lexical expression scope; explicit `return` supplies its value.
+**Approved decision.** `do:` is a lexical expression scope. Its value is `result expr`, which does not exit the enclosing function. `return` inside `do:` still returns from the function, and the `do:` does not complete. A missing `result` on a path that finishes the block is an error when the `do:` is used as a value.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1633,7 +1635,7 @@ result = loadData()
 total = do:
   price = 100
   tax = price * 0.15
-  return price + tax
+  result price + tax
 ```
 
 **Compiler / runtime requirements.** Lower to local function/IIFE or IR block preserving control flow.
@@ -1642,7 +1644,7 @@ total = do:
 
 ### QUDS-107 — Partial application
 
-**Approved decision.** `_` marks missing argument positions in statically resolved calls; produces callable with inferred signature.
+**Approved decision.** In an argument position, `_` is a hole and the call produces a function whose signature is inferred. That form is not evaluated as a call. In a pattern, `_` is a wildcard and binds nothing. A local or parameter may not be named `_`. The two uses meet only in different grammar positions, so they are not ambiguous.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1674,7 +1676,7 @@ divide(a: double,b: double) -> Result<double,String>:
 
 ### QUDS-109 — Result error propagation
 
-**Approved decision.** Suffix `?` on Result unwraps Ok or early-returns compatible Error; distinct from `?.` and conversion `to T?`.
+**Approved decision.** In expression position, postfix `?` unwraps `Result` or returns the error from the nearest function whose result type is a compatible `Result`. In type position, postfix `?` is the nullable type. The two positions do not overlap. Null-aware access is the token `?.`. Safe conversion is the token `to?`. `with?` is a keyword. None of these is the Result suffix.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1708,7 +1710,7 @@ withdraw(balance: double, amount: double) -> double:
 
 ### QUDS-111 — Evaluation order
 
-**Approved decision.** Expressions, arguments and defaults evaluate left-to-right and exactly once unless short-circuited by explicit semantics.
+**Approved decision.** Every expression runs once, left to right, unless a rule explicitly short-circuits it. At a call, supplied argument expressions run once in source order, then omitted defaults run once in declaration order. A default sees parameters that are already available: earlier defaults and any supplied argument. Compound-assignment targets, pipeline inputs, and multi-assignment right-hand sides also run once.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1784,32 +1786,209 @@ Column:
 
 - **No implicit mutation:** immutable binding, readonly reference and deeply immutable object are distinct concepts. `readonly` is transitive *through that reference* but does not freeze all aliases.
 - **No implicit shadowing:** QUDS-090 requires explicit `shadow`; assignment to an existing mutable outer binding mutates it; assignment to an existing immutable outer binding is an error.
-- **No implicit multiline return:** expression-bodied function returns its expression; block-bodied function must explicitly return values.
+- **No implicit multiline return:** an expression-bodied function returns its expression. A block-bodied function returns only with `return`. A `do:` block yields only with `result`.
 - **No silent dynamic fallback:** inference failures produce actionable diagnostics, not untyped behavior.
-- **Omission differs from null:** `Optional<T>`, `missing` and computed defaults must preserve the distinction across calls and generated Dart.
-- **Exactly-once evaluation:** RHS of multi-assignment, pipeline input, compound assignment receivers, computed defaults and argument expressions cannot be duplicated.
+- **Omission differs from null:** `Optional<T>`, `missing`, `copyWith`, and computed defaults keep that distinction in generated Dart. The public sentinel is `quds.missing`.
+- **Exactly-once evaluation:** the right-hand side of a multi-assignment, a pipeline input, a compound-assignment receiver, each supplied argument, and each default expression run once. Supplied arguments run in source order before defaults run in declaration order.
 - **Dart-compatible closures:** captured mutable bindings are live; `capture(...)` freezes the binding value only, not object graph contents.
 - **Dart-first interoperability:** emit usable Dart, even for Quds-only constructs requiring generated adapters.
 - **Not a Flutter DSL:** `Column:` and `children:` are demonstrations of generic call/collection syntax; the core grammar must work with any library.
 
-## Formalization required before claiming specification completeness
+## Normative resolutions
 
-The following are unresolved or need precise normative grammar and semantics; agents **must not invent consensus**:
+This section removes the contradictions between numbered rules. It is grammar and semantics, not a compiler status report. An illustration elsewhere is wrong if it disagrees with this section.
 
-1. Lexical details: Unicode identifiers, tabs/indent width, newline continuation, raw/triple strings, interpolations, operator precedence.
-2. Ambiguity resolution for `name = expr` (new binding vs assignment), named argument blocks, configuration blocks and children expression lists.
-3. Grammar of `capture(...) ->`, `do:`, pipeline partial calls, Result `?`, safe conversion `to Type?`, and overloaded function tear-offs.
-4. Type representation and Dart lowering for unions, intersections, declared variance and transitive readonly.
-5. Explicit rules for method mutability classification, aliasing and interop escape hatches.
-6. Error classes and evaluation ordering for `require`, `check`, Result propagation, deferred cleanup and async task groups.
-7. Precise defaults/overload resolution ranking, including named/variadic/generic candidates.
-8. Semantics of ranges with steps, async iteration, comprehensions and generators.
-9. Grammar and code generation of class constructors, value classes, copyWith, ADTs and patterns.
-10. Compile-time macro sandbox, reflection metadata, conditional imports and platform support.
-11. Project/module visibility, source maps, package publication and versioning.
-12. Full compatibility policy with Dart SDK, AOT, web, native and Flutter.
+### Tokens that share a character
 
-**Agent process for each ambiguity:** write a minimal conflicting example → propose one or more resolutions that preserve prior decisions → add grammar and tests → document chosen resolution. If a choice materially changes language behavior, request explicit approval.
+Longest match wins. These are single tokens: `..<`, `??`, `??=`, `?.`, `...?`, `to?`, `with?`, `is!`, `~/`, `<<`, `>>`, `>>>`, and the compound assignments. A following shorter token must not be split out of one of these.
+
+| Token | Only meaning |
+| --- | --- |
+| `#` | Line comment through the end of the line. Not a Dart symbol. |
+| `//` | Also a line comment, so Dart line comments are legal Quds. Not division. |
+| `..` | Inclusive range. Not a cascade. |
+| `..<` | Exclusive range. Not a range followed by `<`. |
+| `with` in a class header (`extends Super with Mixin`) | Mixin application. Not legal after `implements`. |
+| `with expr:` / `with? expr:` | Object configuration. Receiver runs once. `with?` yields null without entering the block when the receiver is null. |
+| `?` in type position | Nullable type `T?`. |
+| `?` in expression position, postfix | Unwrap `Result` or return its error from the nearest compatible `Result` function. |
+| `?.` | Null-aware member, call, or index. |
+| `??` / `??=` | If-null expression and if-null assignment. The right side runs only when the left is null. |
+| `to` | Explicit conversion. Failure is an error. |
+| `to?` | Safe conversion. Failure is null. The target type may be nullable: `text to? int?`. |
+| `with?` | Null-aware configuration. Not `with` plus Result `?`. |
+| `...?` | Null-aware spread. The operand spreads only when non-null. |
+| postfix `!` | Null assertion. |
+| prefix `!` or `not` | Boolean negation. |
+| `++` / `--` | Not in the language. The effect is `+= 1` or `-= 1`, and the target runs once. |
+| `?:` | Not in the language. The effect is an if-expression. |
+
+`#name` as a Dart symbol is written `symbol "name"` and lowers to Dart `#name`.
+
+### Precedence
+
+From tightest to loosest, with Dart's order where Quds keeps the operator:
+
+1. Postfix `.` `?.` `!` `?` calls `()` `[]`
+2. Prefix `-` `not` / `!` `~` `await`
+3. Multiplicative `*` `/` `~/` `%`
+4. Additive `+` `-`
+5. Shift `<<` `>>` `>>>`
+6. Bitwise `&` then `^` then `|`
+7. Range `..` `..<`
+8. Relational `<` `>` `<=` `>=` `as` `is` `is!` `to` `to?`
+9. Equality `==` `!=`
+10. `and`
+11. `or`
+12. `??`
+13. `|>`
+14. Assignment and compound assignment
+
+If-expressions, `do:`, `match`, and `with` are primary forms, not infix operators. There is no ternary and no cascade at the Dart cascade level.
+
+### Colon blocks
+
+Classification uses the tokens in the block, never the expected type.
+
+1. `map:` and `set:` always open collection literals. A call to something named `map` or `set` uses `map(...)` or `map argument`.
+2. `class`, `enum`, `mixin`, `interface`, `extend`, `value class`, `sealed type`, `sealed class`, and a function declaration open declaration bodies.
+3. A block whose rows are all `identifier:` entries is a named-argument block. `if`, `for`, `repeat`, spread, and any row that is not an identifier label keep the block from being a named-argument block.
+4. Every other indented block after `:` in argument or element position is a collection-element block. `if` and `for` there are collection forms (QUDS-080).
+5. A named-argument value that is itself a nested block is classified again from that nested block alone.
+
+```quds
+Column:
+  spacing: 12
+  children:
+    Text "Hello"
+    if visible:
+      Text "Shown"
+settings = map:
+  "mode": "dark"
+```
+
+The outer `Column:` block is only identifier labels, so it is named arguments. The `children:` block contains a call and an `if`, so it is a collection. `map:` cannot be read as a call.
+
+A named-argument block must contain at least one row. A zero-argument call is `name()`. A bare `name` is a tear-off or value.
+
+### Statements, functions, and calls
+
+In statement or member position, `name(parameters) ->`, `name(parameters):`, and `name(parameters) =` are function declarations when every item in the parentheses is a parameter. A parameter is `name: Type`, `var name: Type`, `name: Type required`, `name: Type = default`, or one of those forms inside an optional-positional `[...]` group.
+
+`name(arguments)` with any non-parameter item is a call. `name argument` is a one-argument call. `name:` plus a named-argument block is a call. `name(...) :` with a parameter list is a declaration, not a call. To pass a type as a value, put it in a named-argument block or in a call that is not a declaration:
+
+```quds
+process:
+  item: Widget
+```
+
+Parameter kinds, all four Dart kinds:
+
+| Kind | Quds | Dart lowering |
+| --- | --- | --- |
+| Required positional, also passable by name from Quds | `a: int` | `{required int a}` so the Dart name survives. Quds may still pass it by position. |
+| Required named | `to: String required` | `{required String to}` |
+| Optional named | `subject: String = ""` | `{String subject = ""}` |
+| Optional positional | `[times: int = 1]` | `[int times = 1]` |
+
+A Quds positional call of a dual parameter is rewritten to the Dart named argument. A Dart caller of the generated API uses the name. Calling a Dart positional-only API from Quds stays positional.
+
+### `if`, loops, and `match`
+
+- Statement `if` may omit `else`.
+- Expression `if` is legal in expression position, requires `else`, and each branch is an expression. A branch that needs statements is a `do:` expression.
+- Collection `if` exists only in collection position.
+- `for x in iterable:` iterates. `for x in 1..5:` uses an inclusive range. `for x in 1..<5:` is exclusive.
+- `for var i = 0 while i < n step i += 1:` is the C-style loop. `step` may be omitted when there is no update. The condition is an expression, not a `while` statement.
+- `while cond:` is the while loop.
+- `repeat:` body then `while cond` is do-while. Expression `do:` is not this form; `repeat` is the only do-while head.
+- `label name` before a loop names it. `break` and `continue` may take that name. A label is not `name:`, so it is not a call.
+- `await for x in stream:` is asynchronous iteration.
+- `match` and `switch` are the same grammar in statement and expression position. Patterns cover Dart patterns: constant, variable, identifier, parenthesized, list, map, record, object, wildcard `_`, rest, logical-or, logical-and, relational, cast, null-check, and null-assert, plus `when` guards. `if value is Pattern:` is the if-case form. `if let name = expr:` binds a non-null value and evaluates `expr` once.
+
+### Arrows, records, holes, and capture
+
+- Type position `(parameters) -> Type` is a function type. Named and optional parameters use the same parameter grammar as declarations.
+- Expression position `x -> expr`, `(x) -> expr`, and `(x: int) -> expr` are lambdas. A parameter type is written `name: Type`. A bare `(String) -> bool` in expression position is a lambda with a parameter named `String` only if `String` is not parsed as a type keyword; type keywords in that slot are parameter types, so write a value parameter as `(s: String) -> ...`.
+- `capture(names) -> expr` is the snapshot keyword. The names are bindings, snapshotted by value, not deep-copied.
+- `(a)` groups. `(a,)` is a one-field record. `(a, b)` and `(name: expr, other: expr)` are records. The same forms on the left of `=` are patterns. Call parentheses do not form a record; their `name:` items are arguments.
+- Argument `_` is a hole (QUDS-107). Pattern `_` is a wildcard. No binding is named `_`.
+
+### Evaluation
+
+Short-circuit operators are `and`, `or`, `??`, `?.`, `...?`, and `with?`. Everything else runs once.
+
+Call order:
+
+1. The callee expression.
+2. Supplied argument expressions, source order, left to right, including named arguments in the order written.
+3. Omitted defaults, declaration order. A default may read earlier parameters only. Those parameters are already supplied or already defaulted.
+
+`return` exits the function. `result` finishes a `do:` only. `yield` and `yield*` belong to generators and do not exit an outer function.
+
+`defer` statements in a scope run at scope exit in LIFO order, after the body and before the scope's `using` disposal completes. `using` disposal is the outermost `finally` of that scope. `finally` on an explicit `try` runs when that `try` exits, inside this order. A `defer` or disposal that throws replaces a pending success and follows Dart `finally` exception rules: the new error propagates, and the previous error is not dropped silently if the platform error object can chain it.
+
+`require` fails as an argument error before the callee body. `check` fails as a state error and is not removed in production. `assert` is removed from production. Production here means a release build, the same notion as Dart's `assert`.
+
+### Constants, bindings, and reactive state
+
+- Bare `name = expr` declares an immutable binding if no visible binding exists. If a mutable binding is visible, it assigns that binding. If an immutable binding is visible, it is an error. A new same-name local is `shadow name = expr` and is immutable. A mutable shadow is `shadow var name = expr`.
+- `var` is mutable. `const` is a compile-time constant. `late` is immutable and assigned once. `late var` is mutable and may be read only after assignment.
+- Implicit const applies only inside a constant context. `colors = ["red", "blue"]` is a mutable list. `const palette = ["red", "blue"]` is a constant list. Inference must not take mutability or identity away.
+- `state name = expr` is mutable storage with notifications. It is not an immutable binding.
+
+### Dart parity
+
+Every Dart language rule below is either the same rule, a renamed spelling, or an honest lowered spelling. Library APIs (`dart:isolate`, `dart:ffi`, `dart:async`, `dart:core`) are usable through `use`.
+
+| Dart rule | Quds availability |
+| --- | --- |
+| `var`, `final`, `const`, `late`, `late final` | `var`, bare binding, `const`, `late var`, `late` |
+| Local functions | Allowed with the function-declaration grammar |
+| Type inference and explicit types | Same. No silent `dynamic` |
+| `int`, `double`, `num`, bitwise, shifts, `~/`, hex, scientific, digit separators | Same tokens and Dart values, including `0xFF`, `1e-3`, `1_000` |
+| Strings, raw strings, multiline strings | Quotes and triple quotes. Raw prefix `r`. Interpolation is `{expr}` |
+| `//`, `/* */`, `///` | `//` and `#`, plus `/* */` and `///` |
+| Booleans and logical operators | `and`, `or`, `not` / prefix `!` |
+| Lists, sets, maps, spreads, null-aware spreads, collection if/for | `[]`, `set:`, `map:`, `...`, `...?`, collection `if`/`for` |
+| Records and record equality | Parentheses form above. Equality is Dart record equality |
+| `null`, `T?`, `!`, `??`, `??=`, `?.`, `?..` | Same, except `?..` is `with?` |
+| Promotion, `is`, `is!`, `as` | Same |
+| `Never`, `void`, `dynamic`, `Object` | Same, and `dynamic` is explicit only |
+| Functions, closures, tear-offs | Closures are lambdas. A bare name is the tear-off. Zero-arg calls use `()` |
+| Optional positional, named, `required`, defaults | Parameter table above |
+| `sync*`, `async*`, `yield`, `yield*` | Same keywords |
+| `async`, `await`, `Future`, `Stream` | Same. `await for` is asynchronous iteration |
+| Classes, abstract members, `this`, `super` | `class`. Interface members as specified in QUDS-035 |
+| Generative, named, redirecting, factory, and const constructors, initializer lists, initializing formals, super parameters | `init`, `init name`, `init = other`, `factory`, `const init`, with `this.field` and `super.field` |
+| `extends`, `implements`, `with`, `on` | Same words, with `with` restricted to the class header for mixins |
+| `base`, `interface`, `final`, `sealed`, `mixin`, `mixin class` | Same modifiers |
+| Getters, setters, operators | `property` and `operator`. Dart-mandated operator result types stay mandated |
+| `covariant`, `external`, `static` | Same modifiers |
+| `noSuchMethod` | Available only on a class that opts into dynamic dispatch. It does not weaken static checks on typed receivers |
+| Enums with fields | `enum` |
+| Extensions and extension types | `extend Type:` and `type Name wraps Type:` |
+| Generics, bounds, generic methods, typedefs | Same. A transparent alias is `type Name = Type`. `in` / `out` only when the lowering is sound |
+| Patterns, switch statements and expressions, if-case, guards, exhaustiveness, sealed types | `match` / `switch`, `if value is Pattern:`, `when`, QUDS-098 |
+| `import`, `export`, `show`, `hide`, `as`, deferred, `part`, `part of` | `use`, `export`, `show`, `hide`, `as`, `deferred`, `part`, `part of` |
+| Conditional import | `when` (QUDS-062), resolved before the discarded branch is analyzed |
+| Library privacy | `private`, lowered to Dart `_` privacy |
+| Annotations and `Symbol` | `@Name` arguments. `symbol "name"` lowers to `#name` |
+| `assert`, `try`, `on`, `catch`, `finally`, `throw`, `rethrow`, stack traces | Same. `catch e: Type` is the typed catch. `require` and `check` stay in production; `assert` does not |
+| C-style `for`, `while`, do-while, `break`, `continue`, labels | `for`/`while`/`step`, `while`, `repeat`/`while`, `label` |
+| Cascades | `with` and `with?` |
+| Ternary `?:` and `++` / `--` | If-expression, `+= 1`, `-= 1`. The Dart tokens are not reused |
+| `augment` | Allowed with the target Dart SDK's augmentation grammar when that SDK supports it |
+| Isolates, FFI, zones, core libraries | `use dart:isolate`, `use dart:ffi`, and the corresponding Dart libraries. No second runtime |
+| Const contexts and implicit const | Same as Dart, and only inside a const context |
+
+Overloads, unions, intersections, `readonly`, `Optional`, and `Result` are Quds features. Each overload and each `copyWith` remains callable from Dart through the generated names and the `quds.missing` sentinel. `readonly` is a Quds checker rule plus a boundary check where a Dart API cannot express it. It does not pretend the Dart VM tracks readonly aliases. `protected` is the same kind of honest lowering.
+
+### Still not a second language design
+
+Macro sandbox limits, diagnostic code numbers, package layout details, and source-map encoding still need engineering specifications. They must follow the rules above. They must not invent a second meaning for a token, a second evaluation order, or a Dart feature with no row in the parity table.
+
+**Agent process:** implement from this section. If a program can be parsed two ways, that is a compiler bug or a missing rejection, not a new language rule. If a choice would change behavior this section already fixes, do not change it without an explicit language revision.
 
 ## Suggested compiler milestones and gates
 

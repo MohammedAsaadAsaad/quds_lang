@@ -1,6 +1,6 @@
 # Quds language decisions — 001–115
 
-This is a **faithful concise handoff** of decisions from the design conversation, not a verbatim transcript or complete normative grammar. The first 91 were approved interactively; QUDS-092–115 were selected by the assistant after the user explicitly delegated the remaining choices. For exact grammar and semantics, create normative specification sections and conformance tests; log unresolved conflicts in OPEN_QUESTIONS.md.
+This is a **faithful concise handoff** of decisions from the design conversation, not a verbatim transcript. The first 91 were approved interactively; QUDS-092–115 were selected by the assistant after the user explicitly delegated the remaining choices. Normative grammar and the resolutions of later conflicts live in `QUDS_LANGUAGE_SPECIFICATION.md` version 1.1-draft. Where this handoff and that file disagree, the specification wins.
 
 ## Core philosophy
 
@@ -97,7 +97,7 @@ Column:
 - **QUDS-079** Generic state/computed/watch reactive primitives.
 - **QUDS-080** Declarative if/for inside collection/children contexts; not Flutter-specific framework features.
 - **QUDS-081** Unified calls: positional+named arguments, nested calls, precise parsing.
-- **QUDS-082** to Type conversion, to Type? safe conversion, is/as type checking/casting, explicit custom conversion protocol.
+- **QUDS-082** `to Type` explicit conversion, `to? Type` safe conversion, `is`/`as` type tests and casts, explicit custom conversion protocol. `Type?` remains the nullable type.
 - **QUDS-083** Optional<T>, missing, present distinguish omission from explicit null.
 - **QUDS-084** Parameters non-reassignable by default; var parameter allows local reassignment only.
 - **QUDS-085** Static function overloading; deterministic compile-time resolution, reject ambiguity, unique Dart internal names.

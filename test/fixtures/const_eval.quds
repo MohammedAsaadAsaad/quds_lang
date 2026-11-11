@@ -1,0 +1,63 @@
+main():
+  const base = 10
+  const step = base - 3 - 2
+  const product = 2 + 3 * 4
+  const ratio = 7 / 2
+  const max = 9223372036854775807
+  const wrapped = max + 1
+  const negmin = -wrapped
+  const mod = -5 % 3
+  const negdiv = 5 % -3
+  const flag = false and (1 % 0 == 0)
+  const other = true or (false and (1 % 0 == 0))
+  const text = "ab" + "c"
+  const money = "c\$"
+  const values = [base, step, 2.0]
+  const inner = [1]
+  const nested = [inner, inner]
+  const copy = [[1], [1]]
+  const sameNested = nested == copy
+  const nan = 0.0 / 0.0
+  const inf = 1.0 / 0.0
+  const ninf = 1.0 / -0.0
+  const negzero = -0.0
+  const plus = + -4
+  const tiny = 1.0 / 10000000000.0
+  const approx = 0.1 + 0.2
+  const nanList = [nan]
+  const otherNan = [0.0 / 0.0]
+  const zeros = [negzero]
+  const poszeros = [0.0]
+  print step
+  print(10 - 3 - 2)
+  print product
+  print(2 + 3 * 4)
+  print ratio
+  print(7 / 2)
+  print wrapped
+  print(max + 1)
+  print negmin
+  print(-wrapped)
+  print mod
+  print(-5 % 3)
+  print negdiv
+  print(5 % -3)
+  print flag
+  print other
+  print text
+  print money
+  print values
+  print nested
+  print sameNested
+  print(nested == copy)
+  print nan
+  print(nan == nan)
+  print inf
+  print ninf
+  print negzero
+  print(negzero == 0.0)
+  print plus
+  print tiny
+  print approx
+  print(nanList == otherNan)
+  print(zeros == poszeros)

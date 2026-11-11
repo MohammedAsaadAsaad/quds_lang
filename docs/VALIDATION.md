@@ -71,11 +71,76 @@ The initial lexer formatting issue is resolved in the new implementation.
 GitHub Actions configuration was added for the same format/analyze/test workflow;
 remote CI execution has not been observed.
 
+## Const evaluation — 2026-11-11
+
+Re-validated from the repository root on Linux x64 with Dart **3.13.7 (stable)**
+after evaluating the supported `const` subset in Quds. The SDK used for this
+run is the official `3.13.7` archive; the digest-pinned Docker extraction in
+`ENVIRONMENT.md` was not repeated because Docker was not installed. No
+application dependency or lockfile changed.
+
+| Command | Result |
+| --- | --- |
+| `dart pub get --enforce-lockfile` | Passed; no dependency changes |
+| `dart format --output=none --set-exit-if-changed .` | Passed; zero changed files |
+| `dart analyze` | Passed; no issues |
+| `dart test --reporter expanded` | Passed; **97 tests**, zero failures/skips |
+| `quds build examples/sum.quds` | Passed; generated adjacent Dart |
+| `dart analyze examples/sum.dart` | Passed; no issues |
+| `dart examples/sum.dart` | Exit 0; exact output below |
+| `git diff --check` | Passed |
+
+```text
+Total: 60
+12
+```
+
+The added tests cover const arithmetic and wrapping, numeric and list equality,
+references to earlier constants, short-circuit `and`/`or` (including a skipped
+integer remainder and a rejected skipped call), original-source Q200/Q100
+coordinates, unary `+` lowered once, runtime remainder left to Dart, and the
+const CLI diagnostic. Generated const Dart is checked against
+`test/goldens/const_eval.dart.txt` and executed. No assertion was disabled.
+
+## Top-level const and bool conditions — 2026-11-11
+
+Re-validated from the repository root on Linux x64 with Dart **3.13.7 (stable)**
+after accepting top-level `const` bindings and lowering bool conditions so
+generated Dart does not report `dead_code`. No dependency or lockfile changed.
+`examples/sum.dart` was regenerated and stayed identical to its golden.
+
+| Command | Result |
+| --- | --- |
+| `dart pub get --enforce-lockfile` | Passed; no dependency changes |
+| `dart format --output=none --set-exit-if-changed .` | Passed; zero changed files |
+| `dart analyze` | Passed; no issues |
+| `dart test --reporter expanded` | Passed; **107 tests**, zero failures/skips |
+| `dart run bin/quds.dart build examples/sum.quds` | Passed; generated adjacent Dart |
+| `dart analyze examples/sum.dart` | Passed; no issues |
+| `dart examples/sum.dart` | Exit 0; exact output below |
+| `git diff --check` | Passed |
+
+```text
+Total: 60
+12
+```
+
+The added tests cover top-level arithmetic, earlier-const references, a skipped
+remainder, list equality, a const declared after `main`, original Q200
+coordinates for remainder, forward reference, calls, module-scope `var`, and a
+repeated name. Bool literals, const bools, and reassigned bool locals used in
+`if`/`and`/`or` are executed under `dart analyze`. A taken runtime `true and
+(1 % 0 == 0)` still throws Dart's integer remainder error. No assertion was
+disabled.
+
 ## Limits and environment persistence
 
-This validates MVP-0, not all 115 decisions. See `MVP_0.md` and
-`OPEN_QUESTIONS.md` for the supported grammar, conservative typing, unresolved
-syntax, source-map/constant-evaluation gaps and deferred language features.
+This validates MVP-0 plus const evaluation of that subset, including top-level
+consts, not all 115 decisions. See `MVP_0.md` and `OPEN_QUESTIONS.md` for the
+supported grammar, conservative typing, unresolved syntax, source-map gap, and
+deferred language features. Const forms outside the MVP-0 expressions, inferred
+const, const constructors, web numeric behavior, and the minimum signed 64-bit
+literal spelling remain open.
 Native execution was tested; web/Flutter, other Dart SDK versions, and published
 snapshot restoration were not tested.
 

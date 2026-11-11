@@ -1,12 +1,17 @@
 import 'ast.dart';
+import 'constants.dart';
 import 'source.dart';
 
 class Symbol {
   Symbol(this.name, this.dartName, this.type,
-      {this.mutable = false, this.constant = false, this.function});
+      {this.mutable = false,
+      this.constant = false,
+      this.constantValue,
+      this.function});
   final String name, dartName;
   String type;
   final bool mutable, constant;
+  final ConstValue? constantValue;
   final FunctionDeclaration? function;
 }
 
@@ -25,6 +30,9 @@ class SemanticModel {
 
   /// Parameter order expressed as indices into source-order arguments.
   final argumentOrder = <CallExpression, List<int>>{};
+
+  /// Const expressions that were evaluated. Short-circuited operands are absent.
+  final constants = <Expression, ConstValue>{};
 }
 
 class Analyzer {
@@ -36,11 +44,18 @@ class Analyzer {
   FunctionDeclaration? _function;
   String? _returnType;
   int _nextName = 0;
+  late final _constants = ConstantEvaluator(
+    constants: model.constants,
+    constantValueOf: (node) => model.references[node]?.constantValue,
+    typeOf: (node) => model.types[node],
+    fail: fail,
+  );
   Never fail(String message, Node node) =>
       throw CompilerException('Q200', message, node.span);
   Symbol create(String name, String type,
           {bool mutable = false,
           bool constant = false,
+          ConstValue? constantValue,
           FunctionDeclaration? function}) =>
       Symbol(
           name,
@@ -48,24 +63,40 @@ class Analyzer {
           type,
           mutable: mutable,
           constant: constant,
+          constantValue: constantValue,
           function: function);
   SemanticModel analyze(Program program) {
     _global.symbols['print'] = Symbol('print', 'print', 'void');
+    final functions = <FunctionDeclaration>[];
     for (final statement in program.statements) {
-      if (statement is! FunctionDeclaration)
-        fail('MVP-0 permits only function declarations at module scope',
-            statement);
-      if (_global.lookup(statement.name) != null)
-        fail('Duplicate function or unsupported overload: ${statement.name}',
-            statement);
-      final type = statement.returnType ??
-          (statement.expressionBody == null ? 'void' : '<infer>');
-      if (type != '<infer>') validateType(type, statement);
-      final symbol = create(statement.name, type, function: statement);
-      _global.symbols[statement.name] = symbol;
-      model.declarations[statement] = symbol;
+      switch (statement) {
+        case FunctionDeclaration():
+          if (_global.lookup(statement.name) != null)
+            fail(
+                'Duplicate function or unsupported overload: ${statement.name}',
+                statement);
+          final type = statement.returnType ??
+              (statement.expressionBody == null ? 'void' : '<infer>');
+          if (type != '<infer>') validateType(type, statement);
+          final symbol = create(statement.name, type, function: statement);
+          _global.symbols[statement.name] = symbol;
+          model.declarations[statement] = symbol;
+          functions.add(statement);
+        case Binding(mode: BindingMode.constant):
+          break;
+        default:
+          fail('Module scope permits function declarations and const bindings',
+              statement);
+      }
     }
-    for (final statement in program.statements.cast<FunctionDeclaration>()) {
+    // Initializers run in source order and see only consts already evaluated.
+    // Function bodies then see every top-level const, same as other functions.
+    for (final statement in program.statements) {
+      if (statement is Binding && statement.mode == BindingMode.constant) {
+        check(statement);
+      }
+    }
+    for (final statement in functions) {
       analyzeFunction(statement);
     }
     final main = _global.symbols['main']?.function;
@@ -187,11 +218,15 @@ class Analyzer {
         validateType(target, node, allowVoid: false);
         if (!compatible(type, target))
           fail('Cannot initialize $target with $type', node);
-        if (node.mode == BindingMode.constant && !isConstant(node.value))
-          fail('const requires a compile-time constant', node);
+        ConstValue? constantValue;
+        if (node.mode == BindingMode.constant) {
+          constantValue = _constants.evaluate(node.value);
+          checkConstShape(target, constantValue);
+        }
         final symbol = create(node.name, target,
             mutable: node.mode == BindingMode.mutable,
-            constant: node.mode == BindingMode.constant);
+            constant: node.mode == BindingMode.constant,
+            constantValue: constantValue);
         _scope.symbols[node.name] = symbol;
         model.declarations[node] = symbol;
       case IfStatement():
@@ -359,13 +394,4 @@ class Analyzer {
     model.argumentOrder[node] = order;
     return symbol.type;
   }
-
-  bool isConstant(Expression node) => switch (node) {
-        Literal() => true,
-        Identifier() => model.references[node]?.constant ?? false,
-        UnaryExpression() => isConstant(node.operand),
-        BinaryExpression() => isConstant(node.left) && isConstant(node.right),
-        ListExpression() => node.elements.every(isConstant),
-        _ => false,
-      };
 }

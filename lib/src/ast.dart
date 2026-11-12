@@ -388,6 +388,11 @@ class WatchStatement extends Statement {
   final List<Statement> body;
 }
 
+class BatchStatement extends Statement {
+  const BatchStatement(this.body, super.span);
+  final List<Statement> body;
+}
+
 class Lambda extends Expression {
   const Lambda(this.parameters, this.expressionBody, this.body, super.span);
   final List<Parameter> parameters;

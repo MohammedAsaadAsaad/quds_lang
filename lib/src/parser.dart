@@ -295,6 +295,10 @@ class Parser {
       final value = expression();
       return WatchStatement(value, block(), extent(span));
     }
+    if (word('batch') && peek().kind == TokenKind.colon) {
+      take();
+      return BatchStatement(block(), extent(span));
+    }
     if (word('for')) return forStatement(span);
     if (word('try')) return tryStatement(span);
     if (word('require') || word('check') || word('assert')) {
@@ -1724,17 +1728,15 @@ class Parser {
       final caught = name();
       String? type;
       String? trace;
-      expect(TokenKind.colon, ':');
-      if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+      if (match(TokenKind.comma)) {
+        trace = name().lexeme;
+      } else if (at(TokenKind.colon) && peek().kind == TokenKind.identifier) {
+        take();
         type = typeName();
         if (match(TokenKind.comma)) trace = name().lexeme;
-        catches.add(CatchClause(
-            caught.lexeme, type, trace, block(), extent(token.span)));
-      } else {
-        if (match(TokenKind.comma)) trace = name().lexeme;
-        catches.add(CatchClause(caught.lexeme, type, trace,
-            block(colonTaken: true), extent(token.span)));
       }
+      catches.add(
+          CatchClause(caught.lexeme, type, trace, block(), extent(token.span)));
     }
     final finallyBody = <Statement>[];
     if (word('finally')) {

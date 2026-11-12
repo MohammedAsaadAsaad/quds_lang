@@ -35,6 +35,8 @@ class DartEmitter {
   var _useState = false;
   var _useComputed = false;
   var _useWatch = false;
+  var _useBatch = false;
+  String? _watchList;
   var _useIsolate = false;
   var _useTask = false;
   var _useAwaitAll = false;
@@ -247,16 +249,25 @@ class DartEmitter {
 
   void statements(List<Statement> body) {
     final deferred = body.whereType<DeferStatement>().toList();
-    if (deferred.isEmpty) {
+    final watched = body.whereType<WatchStatement>().isNotEmpty;
+    if (deferred.isEmpty && !watched) {
       for (final node in body) {
         statement(node);
       }
       return;
     }
     final id = _temps++;
+    final previousWatch = _watchList;
     final asyncScope = deferred.any(model.asyncDefers.contains);
-    final type = asyncScope ? 'Future<void> Function()' : 'void Function()';
-    line('final _qd$id = <$type>[];');
+    if (deferred.isNotEmpty) {
+      final type = asyncScope ? 'Future<void> Function()' : 'void Function()';
+      line('final _qd$id = <$type>[];');
+    }
+    if (watched) {
+      _useWatch = true;
+      _watchList = '_qw$id';
+      line('final $_watchList = <void Function()>[];');
+    }
     line('try {');
     _depth++;
     for (final node in body) {
@@ -268,9 +279,17 @@ class DartEmitter {
       }
     }
     _depth--;
-    line(asyncScope
-        ? '} finally { for (final _action in _qd$id.reversed) { await _action(); } }'
-        : '} finally { for (final _action in _qd$id.reversed) { _action(); } }');
+    final cleanup = <String>[];
+    if (deferred.isNotEmpty) {
+      cleanup.add(asyncScope
+          ? 'for (final _action in _qd$id.reversed) { await _action(); }'
+          : 'for (final _action in _qd$id.reversed) { _action(); }');
+    }
+    if (watched) {
+      cleanup.add('for (final _stop in $_watchList) { _stop(); }');
+    }
+    line('} finally { ${cleanup.join(' ')} }');
+    _watchList = previousWatch;
   }
 
   String _withHelpers(String source) {
@@ -377,12 +396,42 @@ class DartEmitter {
     for (final item in _imports) {
       prelude.writeln(item);
     }
-    if (_useState || _useWatch) {
+    if (_useState || _useWatch || _useBatch) {
+      final batchFields = _useBatch
+          ? '  static var batchDepth = 0;\n'
+              '  static final List<_QudsState<Object?>> _pending = [];\n'
+          : '';
+      final batchSet = _useBatch
+          ? '    if (batchDepth > 0) {\n'
+              '      final cell = this as _QudsState<Object?>;\n'
+              '      if (!_pending.contains(cell)) _pending.add(cell);\n'
+              '      return;\n'
+              '    }\n'
+          : '';
+      final listeners = _useWatch
+          ? '  void _listen(void Function() listener) {\n'
+              '    _listeners.remove(listener);\n'
+              '    _listeners.add(listener);\n'
+              '  }\n'
+              '  void _forget(void Function() listener) {\n'
+              '    _listeners.remove(listener);\n'
+              '  }\n'
+          : '';
+      final flush = _useBatch
+          ? '  static void flush() {\n'
+              '    final queued = List<_QudsState<Object?>>.of(_pending);\n'
+              '    _pending.clear();\n'
+              '    for (final state in queued) {\n'
+              '      state._notify();\n'
+              '    }\n'
+              '  }\n'
+          : '';
       helpers.writeln('class _QudsState<T> {\n'
           '  _QudsState(this._value);\n'
           '  T _value;\n'
           '  final List<void Function()> _listeners = [];\n'
           '  static Set<Object>? tracking;\n'
+          '$batchFields'
           '  T get value {\n'
           '    final seen = tracking;\n'
           '    if (seen != null) seen.add(this);\n'
@@ -391,26 +440,52 @@ class DartEmitter {
           '  set value(T next) {\n'
           '    if (_value == next) return;\n'
           '    _value = next;\n'
+          '$batchSet'
+          '    _notify();\n'
+          '  }\n'
+          '  void _notify() {\n'
           '    for (final listener in List<void Function()>.of(_listeners)) {\n'
           '      listener();\n'
           '    }\n'
           '  }\n'
-          '  void _listen(void Function() listener) {\n'
-          '    _listeners.remove(listener);\n'
-          '    _listeners.add(listener);\n'
-          '  }\n'
+          '$listeners'
+          '$flush'
           '}');
     }
     if (_useComputed) {
-      helpers.writeln('class _QudsComputed<T> {\n'
+      helpers.writeln('class CycleError implements Exception {\n'
+          '  String toString() => \'CycleError\';\n'
+          '}\n'
+          'class _QudsComputed<T> {\n'
           '  _QudsComputed(this._read);\n'
           '  final T Function() _read;\n'
-          '  T get value => _read();\n'
+          '  var _evaluating = false;\n'
+          '  T get value {\n'
+          '    if (_evaluating) throw CycleError();\n'
+          '    _evaluating = true;\n'
+          '    try {\n'
+          '      return _read();\n'
+          '    } finally {\n'
+          '      _evaluating = false;\n'
+          '    }\n'
+          '  }\n'
+          '}');
+    }
+    if (_useBatch) {
+      helpers.writeln('void _qBatch(void Function() body) {\n'
+          '  _QudsState.batchDepth++;\n'
+          '  try {\n'
+          '    body();\n'
+          '  } finally {\n'
+          '    _QudsState.batchDepth--;\n'
+          '    if (_QudsState.batchDepth == 0) _QudsState.flush();\n'
+          '  }\n'
           '}');
     }
     if (_useWatch) {
-      helpers.writeln('void _qWatch(void Function() body) {\n'
+      helpers.writeln('void Function() _qWatch(void Function() body) {\n'
           '  var running = false;\n'
+          '  final subscribed = <_QudsState<Object?>>[];\n'
           '  void run() {\n'
           '    if (running) return;\n'
           '    running = true;\n'
@@ -424,10 +499,18 @@ class DartEmitter {
           '      running = false;\n'
           '    }\n'
           '    for (final state in seen) {\n'
-          '      (state as _QudsState<Object?>)._listen(run);\n'
+          '      final cell = state as _QudsState<Object?>;\n'
+          '      cell._listen(run);\n'
+          '      if (!subscribed.contains(cell)) subscribed.add(cell);\n'
           '    }\n'
           '  }\n'
           '  run();\n'
+          '  return () {\n'
+          '    for (final cell in subscribed) {\n'
+          '      cell._forget(run);\n'
+          '    }\n'
+          '    subscribed.clear();\n'
+          '  };\n'
           '}');
     }
     if (_useIsolate) {
@@ -1371,10 +1454,18 @@ class DartEmitter {
       case WatchStatement():
         _useState = true;
         _useWatch = true;
-        line('_qWatch(() {');
+        line('${_watchList}.add(_qWatch(() {');
         _depth++;
         line(
             '(() { final watched = ${expression(node.value)}; return watched; })();');
+        statements(node.body);
+        _depth--;
+        line('}));');
+      case BatchStatement():
+        _useState = true;
+        _useBatch = true;
+        line('_qBatch(() {');
+        _depth++;
         statements(node.body);
         _depth--;
         line('});');

@@ -369,6 +369,84 @@ main():
 ''', '0\n6\n9\n0\none\nmany\nRex\nAda\nhi!\n4\n012\n6\n');
   });
 
+  test('typed catches run in order and finally still runs', () async {
+    await execute('''
+main():
+  try:
+    throw "text"
+  catch error: int:
+    print error
+  catch error: String:
+    print error
+  catch error:
+    print error
+  finally:
+    print "after"
+  try:
+    try:
+      throw "again"
+    catch error, stack:
+      print "{stack}".length > 0
+      rethrow
+    finally:
+      print "end"
+  catch error:
+    print error
+''', 'text\nafter\ntrue\nend\nagain\n');
+  });
+
+  test('a var parameter can change locally and leaves the caller', () async {
+    await execute('''
+bump(var x: int) -> int:
+  later = () -> x + 1
+  x = x + 1
+  return later()
+main():
+  n = 1
+  print bump(n)
+  print n
+''', '3\n1\n');
+  });
+
+  test('batch, watch disposal, and computed cycles execute', () async {
+    await execute('''
+main():
+  state count = 0
+  var seen = ""
+  watch count:
+    seen = "{count}"
+  batch:
+    count = 1
+    count = 2
+    print seen
+  print seen
+  var inner = ""
+  if true:
+    watch count:
+      inner = inner + "x"
+    count = 3
+  count = 4
+  print seen
+  print inner
+  computed current: int = current + 1
+  try:
+    print current
+    print "ran"
+  catch error:
+    print error
+  state other = 0
+  var flushed = -1
+  watch other:
+    flushed = other
+  try:
+    batch:
+      other = 7
+      throw "stop"
+  catch error:
+    print flushed
+''', '0\n2\n4\nxx\nCycleError\n7\n');
+  });
+
   test('aliases, extension types, modifiers, and singletons execute', () async {
     await execute('''
 type UserId = int

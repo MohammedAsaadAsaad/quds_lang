@@ -134,6 +134,8 @@ void walkAst(Node node, void Function(Node node) visit) {
     case WatchStatement(:final value, :final body):
       walkAst(value, visit);
       _nodes(body, visit);
+    case BatchStatement(:final body):
+      _nodes(body, visit);
     case Lambda(:final parameters, :final expressionBody, :final body):
       _nodes(parameters, visit);
       _optional(expressionBody, visit);

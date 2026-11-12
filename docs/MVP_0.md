@@ -262,7 +262,7 @@ unchanged by the map.
   separates list elements sits after the suite, at the list's indentation.
 - `if` expressions, which require `else`, and `match` expressions. A missing
   expression arm is `E314`.
-- `try` / `catch` / `finally`, `throw`, `rethrow`, and `try expr else fallback`.
+- `try` / `catch` / `finally`, `throw`, `rethrow`, and `try expr else fallback`. Typed catches run in source order. `finally` runs when the suite exits, including after `rethrow`. `catch error, stack` binds the `StackTrace`. `rethrow` outside `catch` is `E107`.
 - `late` and `late var`.
 - `enum` declarations, including dot shorthand and exhaustive `match`.
 - `sync*` / `yield` and `async*` / `await for`.
@@ -271,7 +271,7 @@ unchanged by the map.
   `E503`.
 - `mixin`, `class ... with`, `interface`, and `extend Type`. A failed mixin
   `on` constraint is `E702`. Two extensions for one member are `E205`.
-- `state`, `computed`, and `watch`. A computed cycle warns `W007`.
+- `state`, `computed`, and `watch`. A computed cycle warns `W007`. A cycle found while a computed value is already evaluating throws `CycleError`. `watch` drops its subscription when its scope exits. `batch` holds notifications until the suite exits, including an exceptional exit, then flushes once.
 - Transparent aliases `type Name = Type` and extension types `type Name wraps Type`.
   `require` in the wrapped body rejects a value at construction.
 - Class modifiers `abstract`, `base`, `interface`, `final`, `sealed`, `mixin`,

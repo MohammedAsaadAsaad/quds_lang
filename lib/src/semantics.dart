@@ -1838,6 +1838,8 @@ class Analyzer {
       case WatchStatement():
         expression(node.value);
         statements(node.body, nested: true);
+      case BatchStatement():
+        statements(node.body, nested: true);
       case RequireStatement():
         final condition = expression(node.condition);
         if (condition != 'bool') {

@@ -414,6 +414,14 @@ is not a top-level function or class in that file is `E200` (`Broken link:
 Name`). An example that fails to compile or run exits 65. No HTML API site
 is written.
 
+`??=` assigns only when the binding is null, and the right side does not run
+otherwise. After that assignment, or after `if name != null`, a local nullable
+binding is promoted. Using it while it is still nullable is `E308`. Assigning
+it again removes the promotion. `List<List<int>>` and
+`List<List<List<int>>>` close every type argument. An index or member read
+through `readonly` stays readonly, so a nested write is `E307`. Another alias
+of the same object can still write.
+
 A list or set element `value for name in iterable if condition` builds that
 collection immediately. The iterable runs once. A false filter skips the
 element expression. A comprehension may contain another comprehension. A

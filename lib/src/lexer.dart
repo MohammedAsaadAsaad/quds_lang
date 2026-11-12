@@ -36,6 +36,7 @@ enum TokenKind {
   spreadQuestion,
   question,
   questionQuestion,
+  questionQuestionEquals,
   questionDot,
   bang,
   pipe,
@@ -308,6 +309,13 @@ class _Scanner {
         advance();
         advance();
         emit(TokenKind.unsignedShiftRight, start, sl, sc);
+        continue;
+      }
+      if (triple == '??=') {
+        advance();
+        advance();
+        advance();
+        emit(TokenKind.questionQuestionEquals, start, sl, sc);
         continue;
       }
       const pairs = {

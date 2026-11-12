@@ -175,12 +175,14 @@ class Parser {
       var depth = 0;
       while (i < end) {
         if (tokens[i].kind == TokenKind.less) depth++;
-        if (tokens[i].kind == TokenKind.greater) {
-          depth--;
+        final close = _angleCloseWidth(tokens[i].kind);
+        if (close > 0) {
+          depth -= close;
           if (depth == 0) {
             i++;
             break;
           }
+          if (depth < 0) return false;
         }
         i++;
       }
@@ -200,9 +202,11 @@ class Parser {
     var depth = 0;
     for (var i = start; i < tokens.length; i++) {
       if (tokens[i].kind == TokenKind.less) depth++;
-      if (tokens[i].kind == TokenKind.greater) {
-        depth--;
+      final close = _angleCloseWidth(tokens[i].kind);
+      if (close > 0) {
+        depth -= close;
         if (depth == 0) return i + 1;
+        if (depth < 0) return -1;
       }
     }
     return -1;
@@ -472,6 +476,14 @@ class Parser {
           operator, value, extent(span));
     }
     var value = expression(bare: true);
+    if (value is MemberAccess && assignments.contains(current.kind)) {
+      if (value.nullAware) fail('Cannot assign through ?.');
+      final operator = take().lexeme;
+      final written = expression(bare: true);
+      endLine();
+      return MemberAssignment(
+          value.object, value.name, operator, written, extent(span));
+    }
     value = finishBlockValue(value);
     return ExpressionStatement(value, extent(span));
   }
@@ -613,7 +625,8 @@ class Parser {
     TokenKind.plusEquals,
     TokenKind.minusEquals,
     TokenKind.starEquals,
-    TokenKind.slashEquals
+    TokenKind.slashEquals,
+    TokenKind.questionQuestionEquals
   };
   String typeName() {
     var result = intersection();
@@ -716,9 +729,48 @@ class Parser {
       if (match(TokenKind.colon)) bound = typeName();
       parameters.add(TypeParameter(parameter.lexeme, extent(span),
           variance: variance, bound: bound));
-    } while (match(TokenKind.comma) && !at(TokenKind.greater));
-    expect(TokenKind.greater, '>');
+    } while (match(TokenKind.comma) && !atTypeClose());
+    expectTypeClose();
     return parameters;
+  }
+
+  /// `>>` and `>>>` are one token. In a type argument they close two or three
+  /// argument lists, one `>` at a time.
+  int _angleCloseWidth(TokenKind kind) => switch (kind) {
+        TokenKind.greater => 1,
+        TokenKind.shiftRight => 2,
+        TokenKind.unsignedShiftRight => 3,
+        _ => 0,
+      };
+
+  bool atTypeClose() => _angleCloseWidth(current.kind) > 0;
+
+  bool takeTypeClose() {
+    if (match(TokenKind.greater)) return true;
+    if (at(TokenKind.shiftRight)) {
+      _leaveTypeClose(TokenKind.greater, '>');
+      return true;
+    }
+    if (at(TokenKind.unsignedShiftRight)) {
+      _leaveTypeClose(TokenKind.shiftRight, '>>');
+      return true;
+    }
+    return false;
+  }
+
+  void _leaveTypeClose(TokenKind kind, String lexeme) {
+    final token = current;
+    tokens[index] = Token(
+        kind,
+        lexeme,
+        SourceSpan(token.span.line, token.span.column + 1, lexeme.length,
+            file: token.span.file, offset: token.span.offset + 1));
+  }
+
+  void expectTypeClose() {
+    if (!takeTypeClose()) {
+      fail('Expected >, found ${current.kind.name}');
+    }
   }
 
   String typeAtom() {
@@ -736,7 +788,7 @@ class Parser {
       while (match(TokenKind.comma)) {
         result += ', ${typeName()}';
       }
-      expect(TokenKind.greater, '>');
+      expectTypeClose();
       result += '>';
     }
     if (match(TokenKind.question)) result += '?';
@@ -2125,8 +2177,8 @@ class Parser {
         take();
         do {
           arguments.add(typeName());
-        } while (match(TokenKind.comma) && !at(TokenKind.greater));
-        expect(TokenKind.greater, '>');
+        } while (match(TokenKind.comma) && !atTypeClose());
+        expectTypeClose();
         left = TypeApplication(left, arguments, extent(left.span));
         continue;
       }

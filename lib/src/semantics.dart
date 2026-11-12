@@ -175,6 +175,7 @@ class Analyzer {
           .withFunction(function);
   String? _expected;
   String? _thisType;
+  final _promoted = <String, String>{};
   final _fieldSymbols = <Symbol>{};
   var _readonlyMethod = false;
   String? _doType;
@@ -1590,6 +1591,8 @@ class Analyzer {
     final savedScope = _scope,
         savedFunction = _function,
         savedReturn = _returnType;
+    final savedPromoted = Map<String, String>.from(_promoted);
+    _promoted.clear();
     _scope = _Scope(savedScope);
     _function = function;
     final declared = model.declarations[function]!.type;
@@ -1653,6 +1656,9 @@ class Analyzer {
     _scope = savedScope;
     _function = savedFunction;
     _returnType = savedReturn;
+    _promoted
+      ..clear()
+      ..addAll(savedPromoted);
     _checking.remove(function);
     _checked.add(function);
     _typeNames
@@ -1757,13 +1763,19 @@ class Analyzer {
           }
           if (!existing.mutable && !existing.lateOpen)
             fail('Cannot assign immutable binding ${node.name}', node);
-          final result = node.operator == '='
-              ? type
-              : binaryType(existing.type, node.operator[0], type, node);
-          if (!compatible(result, existing.type))
-            fail('Cannot assign $result to ${existing.type}', node);
+          if (node.operator == '??=') {
+            _checkIfNull(existing.type, type, node);
+          } else {
+            final result = node.operator == '='
+                ? type
+                : binaryType(existing.type, node.operator[0], type, node);
+            if (!compatible(result, existing.type)) {
+              fail('Cannot assign $result to ${existing.type}', node);
+            }
+          }
           model.references[node] = existing;
           model.assignments.add(node);
+          _afterAssignment(node.name, existing.type, type, node.operator);
           return;
         }
         if (node.operator != '=')
@@ -1808,10 +1820,11 @@ class Analyzer {
         _scope.symbols[node.name] = symbol;
         model.declarations[node] = symbol;
       case IfStatement():
-        if (expression(node.condition) != 'bool')
-          fail('if condition must be bool', node.condition);
-        statements(node.thenBody, nested: true);
-        statements(node.elseBody, nested: true);
+        _requireBool(node.condition, 'if condition must be bool');
+        _withPromotions(_promotions(node.condition, whenTrue: true),
+            () => statements(node.thenBody, nested: true));
+        _withPromotions(_promotions(node.condition, whenTrue: false),
+            () => statements(node.elseBody, nested: true));
       case ForStatement():
         final type = expression(node.iterable);
         if (node.awaiting && (_function == null || !_function!.isAsync)) {
@@ -1834,11 +1847,10 @@ class Analyzer {
         _loopDepth--;
         _scope = saved;
       case WhileStatement():
-        if (expression(node.condition) != 'bool') {
-          fail('while condition must be bool', node.condition);
-        }
+        _requireBool(node.condition, 'while condition must be bool');
         _loopDepth++;
-        statements(node.body, nested: true);
+        _withPromotions(_promotions(node.condition, whenTrue: true),
+            () => statements(node.body, nested: true));
         _loopDepth--;
       case BreakStatement():
       case ContinueStatement():
@@ -2010,7 +2022,12 @@ class Analyzer {
         final savedCase = _scope;
         _scope = _Scope(savedCase);
         bindPattern(node.pattern, matched, declare: true);
-        statements(node.body);
+        final facts = <String, String>{};
+        if (node.scrutinee is Identifier && node.pattern is TypedPattern) {
+          facts[(node.scrutinee as Identifier).name] =
+              (node.pattern as TypedPattern).type;
+        }
+        _withPromotions(facts, () => statements(node.body));
         _scope = savedCase;
       case WhenStatement():
         final selected = _constBool(node.condition);
@@ -2205,7 +2222,9 @@ class Analyzer {
           node);
     }
     final value = expression(node.value);
-    if (!compatible(value, fields.first.type)) {
+    if (node.operator == '??=') {
+      _checkIfNull(fields.first.type, value, node);
+    } else if (!compatible(value, fields.first.type)) {
       fail('Cannot assign $value to ${fields.first.type}', node);
     }
     if (type == '_QudsLog' && fields.first.name == 'minimum') {
@@ -2769,6 +2788,8 @@ class Analyzer {
       }
     }
     final saved = _scope;
+    final savedPromoted = Map<String, String>.from(_promoted);
+    _promoted.clear();
     _scope = _Scope(saved);
     for (final parameter in node.parameters) {
       _scope.symbols[parameter.name] = model.declarations[parameter]!;
@@ -2800,6 +2821,9 @@ class Analyzer {
     _lambdaAwait = savedAwait;
     _lambdaDepth = savedDepth;
     _scope = saved;
+    _promoted
+      ..clear()
+      ..addAll(savedPromoted);
     final parameters =
         node.parameters.map((p) => model.declarations[p]!.type).join(', ');
     return '($parameters) -> $type';
@@ -2886,6 +2910,10 @@ class Analyzer {
       }
     }
     final raw = expression(node.object);
+    if (raw.endsWith('?') && !node.nullAware) {
+      error('E308',
+          'A nullable value is used where a non-null value is required', node);
+    }
     final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
     final base = unwrap(type);
     if (node.name == 'length' &&
@@ -2893,7 +2921,8 @@ class Analyzer {
             base.startsWith('List<') ||
             base.startsWith('Set<') ||
             base.startsWith('Map<'))) {
-      return node.nullAware || type.endsWith('?') ? 'int?' : 'int';
+      final lengthType = node.nullAware || type.endsWith('?') ? 'int?' : 'int';
+      return _readonlyView(raw, lengthType);
     }
     if (base == 'dynamic') return 'dynamic';
     final look = _typeBounds[base] ?? base;
@@ -2903,7 +2932,9 @@ class Analyzer {
         if (found == null) continue;
         model.references[node] =
             Symbol(node.name, _dartMember(part.trim(), node.name), found);
-        return node.nullAware || type.endsWith('?') ? '$found?' : found;
+        final foundType =
+            node.nullAware || type.endsWith('?') ? '$found?' : found;
+        return _readonlyView(raw, foundType);
       }
     }
     final declaration = _global.symbols[_genericHead(look)]?.classDeclaration;
@@ -2935,9 +2966,9 @@ class Analyzer {
       model.references[node] = Symbol(
           node.name, _dartMember(_genericHead(look), node.name), substituted);
       if (substituted.contains('->')) return substituted;
-      return node.nullAware || type.endsWith('?')
-          ? '$substituted?'
-          : substituted;
+      final foundType =
+          node.nullAware || type.endsWith('?') ? '$substituted?' : substituted;
+      return _readonlyView(raw, foundType);
     }
     fail('No member ${node.name} on $type', node);
   }
@@ -3094,12 +3125,16 @@ class Analyzer {
 
   String index(IndexExpression node) {
     final raw = expression(node.object);
+    if (raw.endsWith('?')) {
+      error('E308',
+          'A nullable value is used where a non-null value is required', node);
+    }
     final type = unwrap(raw.startsWith('readonly ') ? raw.substring(9) : raw);
     final indexType = expression(node.index);
     if (type.startsWith('List<')) {
       if (!compatible(indexType, 'int'))
         fail('List index must be int', node.index);
-      return type.substring(5, type.length - 1);
+      return _readonlyView(raw, type.substring(5, type.length - 1));
     }
     if (type.startsWith('Map<')) {
       final inner = type.substring(4, type.length - 1);
@@ -3107,7 +3142,7 @@ class Analyzer {
       final key = inner.substring(0, splitAt).trim();
       final value = inner.substring(splitAt + 1).trim();
       if (!compatible(indexType, key)) fail('Map key type is $key', node.index);
-      return value;
+      return _readonlyView(raw, value);
     }
     if (type == 'String') {
       if (!compatible(indexType, 'int'))
@@ -3294,6 +3329,148 @@ class Analyzer {
     return value;
   }
 
+  void _requireBool(Expression condition, String message) {
+    final type = expression(condition);
+    if (type == 'bool?') {
+      error(
+          'E308',
+          'A nullable value is used where a non-null value is required',
+          condition);
+    }
+    if (type != 'bool') fail(message, condition);
+  }
+
+  void _withPromotions(Map<String, String> extra, void Function() body) {
+    if (extra.isEmpty) {
+      body();
+      return;
+    }
+    final saved = Map<String, String>.from(_promoted);
+    _promoted.addAll(extra);
+    try {
+      body();
+    } finally {
+      _promoted
+        ..clear()
+        ..addAll(saved);
+    }
+  }
+
+  T _withPromoted<T>(Map<String, String> extra, T Function() body) {
+    if (extra.isEmpty) return body();
+    final saved = Map<String, String>.from(_promoted);
+    _promoted.addAll(extra);
+    try {
+      return body();
+    } finally {
+      _promoted
+        ..clear()
+        ..addAll(saved);
+    }
+  }
+
+  Map<String, String> _promotions(Expression node, {required bool whenTrue}) {
+    if (node is UnaryExpression && node.operator == 'not') {
+      return _promotions(node.operand, whenTrue: !whenTrue);
+    }
+    if (node is BinaryExpression && node.operator == 'and') {
+      if (!whenTrue) return const {};
+      return {
+        ..._promotions(node.left, whenTrue: true),
+        ..._promotions(node.right, whenTrue: true),
+      };
+    }
+    if (node is BinaryExpression && node.operator == 'or') {
+      if (whenTrue) return const {};
+      return {
+        ..._promotions(node.left, whenTrue: false),
+        ..._promotions(node.right, whenTrue: false),
+      };
+    }
+    if (node is BinaryExpression &&
+        (node.operator == '==' || node.operator == '!=')) {
+      final name = _comparedName(node);
+      if (name == null) return const {};
+      final symbol = _scope.lookup(name);
+      if (symbol == null || symbol.field) return const {};
+      final current = _promoted[name] ?? symbol.type;
+      if (!current.endsWith('?')) return const {};
+      final unequal = node.operator == '!=';
+      if (unequal != whenTrue) return const {};
+      return {name: unwrap(current)};
+    }
+    return const {};
+  }
+
+  String? _comparedName(BinaryExpression node) {
+    final rightNull =
+        node.right is Literal && (node.right as Literal).value == null;
+    final leftNull =
+        node.left is Literal && (node.left as Literal).value == null;
+    if (rightNull && node.left is Identifier) {
+      return (node.left as Identifier).name;
+    }
+    if (leftNull && node.right is Identifier) {
+      return (node.right as Identifier).name;
+    }
+    return null;
+  }
+
+  void _checkIfNull(String target, String value, Node node) {
+    if (!target.endsWith('?') && target != 'Null') {
+      fail('??= requires a nullable binding', node);
+    }
+    final inner = unwrap(target);
+    if (!compatible(value, inner)) {
+      fail('Cannot assign $value to $inner', node);
+    }
+  }
+
+  void _afterAssignment(
+      String name, String target, String value, String operator) {
+    if ((operator == '=' || operator == '??=') &&
+        target.endsWith('?') &&
+        !value.endsWith('?') &&
+        value != 'Null') {
+      _promoted[name] = value;
+      return;
+    }
+    _promoted.remove(name);
+  }
+
+  String _readonlyView(String receiver, String memberType) {
+    if (!receiver.startsWith('readonly ') ||
+        memberType.startsWith('readonly ')) {
+      return memberType;
+    }
+    if (memberType.endsWith('?')) {
+      final inner = _readonlyView(receiver, unwrap(memberType));
+      return inner == unwrap(memberType) ? memberType : '$inner?';
+    }
+    const plain = {'int', 'double', 'num', 'bool', 'String', 'void', 'Null'};
+    if (plain.contains(memberType) || memberType.contains('->')) {
+      return memberType;
+    }
+    if (memberType.startsWith('List<') ||
+        memberType.startsWith('Map<') ||
+        memberType.startsWith('Set<') ||
+        _global.symbols[_genericHead(memberType)]?.classDeclaration != null) {
+      return 'readonly $memberType';
+    }
+    return memberType;
+  }
+
+  String binary(BinaryExpression node) {
+    if (node.operator == 'and' || node.operator == 'or') {
+      final left = expression(node.left);
+      final facts = _promotions(node.left, whenTrue: node.operator == 'and');
+      final right = _withPromoted(facts, () => expression(node.right));
+      return binaryType(left, node.operator, right, node);
+    }
+    return binaryType(
+        expression(node.left), node.operator, expression(node.right), node);
+  }
+
   String binaryType(String left, String op, String right, Node node) {
     if (left == 'void' || right == 'void')
       fail('Void expressions cannot be operands', node);
@@ -3304,6 +3481,12 @@ class Analyzer {
     }
     if (op == '==' || op == '!=') return 'bool';
     if (op == 'and' || op == 'or') {
+      if (left == 'bool?' || right == 'bool?') {
+        error(
+            'E308',
+            'A nullable value is used where a non-null value is required',
+            node);
+      }
       if (left == 'bool' && right == 'bool') return 'bool';
     } else if (op == '+' && left == 'String' && right == 'String') {
       return 'String';
@@ -3341,8 +3524,7 @@ class Analyzer {
         },
       Identifier() => identifier(node),
       UnaryExpression() => unary(node),
-      BinaryExpression() => binaryType(
-          expression(node.left), node.operator, expression(node.right), node),
+      BinaryExpression() => binary(node),
       ListExpression() => list(node),
       CallExpression() => call(node),
       InterpolatedString() => interpolation(node),
@@ -3416,7 +3598,8 @@ class Analyzer {
     if (symbol.parameterTypes.isNotEmpty) {
       return '(${symbol.parameterTypes.join(', ')}) -> ${symbol.type}';
     }
-    return symbol.readonly ? 'readonly ${symbol.type}' : symbol.type;
+    final visible = _promoted[symbol.name] ?? symbol.type;
+    return symbol.readonly ? 'readonly $visible' : visible;
   }
 
   String functionType(FunctionDeclaration function) {
@@ -3627,6 +3810,12 @@ class Analyzer {
           return declaration.name;
         }
       }
+      if (rawObject.endsWith('?') && !callee.nullAware) {
+        error(
+            'E308',
+            'A nullable value is used where a non-null value is required',
+            callee);
+      }
       if (rawObject.startsWith('readonly ') &&
           _mutating.contains(callee.name)) {
         error('E307', 'A readonly reference cannot be mutated', callee);
@@ -3684,6 +3873,12 @@ class Analyzer {
     }
     if (callee is! Identifier) {
       final type = expression(callee);
+      if (type.endsWith('?')) {
+        error(
+            'E308',
+            'A nullable value is used where a non-null value is required',
+            callee);
+      }
       if (!type.contains('->')) fail('Value is not callable', callee);
       final (parameters, returns) = _functionParts(type);
       final expected = parameters.isEmpty
@@ -4406,13 +4601,18 @@ class Analyzer {
     }
     model.references[node] = symbol;
     final type = expression(node.value);
-    final result = node.operator == '='
-        ? type
-        : binaryType(symbol.type, node.operator[0], type, node);
-    if (!compatible(result, symbol.type)) {
-      fail('Cannot assign $result to ${symbol.type}', node);
+    if (node.operator == '??=') {
+      _checkIfNull(symbol.type, type, node);
+    } else {
+      final result = node.operator == '='
+          ? type
+          : binaryType(symbol.type, node.operator[0], type, node);
+      if (!compatible(result, symbol.type)) {
+        fail('Cannot assign $result to ${symbol.type}', node);
+      }
     }
-    return symbol.type;
+    _afterAssignment(node.name, symbol.type, type, node.operator);
+    return _promoted[node.name] ?? symbol.type;
   }
 
   String collectionIfType(CollectionIf node) {

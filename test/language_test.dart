@@ -755,6 +755,66 @@ main():
 ''');
   });
 
+  test('null promotion, if-null assignment, and nested types execute',
+      () async {
+    await execute('''
+class Cell:
+  var n: int = 1
+text() -> String? = "a"
+word() -> String? = "Ada"
+yes() -> bool? = true
+main():
+  var hits = 0
+  next() -> String:
+    hits = hits + 1
+    return "b"
+  kept = text()
+  print kept ?? next()
+  print hits
+  var slot = text()
+  slot ??= next()
+  print slot
+  print hits
+  slot = null
+  slot ??= next()
+  print slot
+  print hits
+  print slot.length
+  var name = word()
+  if name != null and name.length == 3:
+    print name.length
+  var flag = yes()
+  if flag != null and flag:
+    print "yes"
+  name = null
+  if name == null:
+    print "none"
+  else:
+    print name.length
+  grid: List<List<List<int>>> = [[[4]]]
+  print grid[0][0][0]
+  var cell = Cell()
+  row: readonly List<Cell> = [cell]
+  print row[0].n
+  cell.n = 5
+  print row[0].n
+''', '''
+a
+0
+a
+0
+b
+1
+1
+3
+yes
+none
+4
+1
+5
+''');
+  });
+
   test('spreads, enums, try, late, generators, and match expressions execute',
       () async {
     await execute('''
@@ -1442,6 +1502,36 @@ main():
 main():
   values = [n for n in 1..2 if n]
 ''': 'E300',
+      '''
+main():
+  name: String? = "Ada"
+  print name.length
+''': 'E308',
+      '''
+main():
+  var flag: bool? = true
+  if flag:
+    print 1
+''': 'E308',
+      '''
+main():
+  var name: String? = "Ada"
+  if name != null:
+    name = null
+    print name.length
+''': 'E308',
+      '''
+main():
+  var n = 1
+  n ??= 2
+''': 'E300',
+      '''
+class Cell:
+  var n: int = 1
+main():
+  row: readonly List<Cell> = [Cell()]
+  row[0].n = 2
+''': 'E307',
       '''
 interface Named:
   name: String

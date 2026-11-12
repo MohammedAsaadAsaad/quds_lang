@@ -402,8 +402,8 @@ one annotation, are `E906`. A class `call` method is invoked by calling the
 instance, including a generic class and named arguments. `protected` is
 emitted as `@protected` when the package depends on `package:meta`, and as
 a documentation comment otherwise. `quds migrate` leaves a `quds.yaml`
-pinned to a version other than 1.2 unchanged. `quds lsp` answers definition
-and rename. `quds debug` binds a breakpoint to the `.quds` statement on a
+pinned to a version other than 1.2 unchanged. `quds lsp` answers definition,
+rename, formatting, and diagnostics for an open buffer. `quds debug` binds a breakpoint to the `.quds` statement on a
 line. Neither command launches a program. `mapStack` rewrites a stack frame
 that hits the source map. `quds format` rewrites indentation outside a
 multiline string to two spaces, keeps comments and string contents, drops

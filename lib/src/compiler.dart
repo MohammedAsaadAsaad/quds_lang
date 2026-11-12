@@ -65,6 +65,27 @@ Compilation compile(String source, {String file = '<input>'}) {
       models: _generatedModels(program, file));
 }
 
+/// Parse and analyze [source]. Every recorded parse error is returned. A
+/// later failure is that one error. A successful program returns its warnings.
+List<CompilerException> diagnose(String source, {String file = '<input>'}) {
+  Parser? parser;
+  try {
+    parser = Parser(Lexer().tokenize(source, file: file));
+    parser.parse();
+  } on CompilerException catch (error) {
+    if (parser != null && parser.errors.isNotEmpty) {
+      return List<CompilerException>.of(parser.errors);
+    }
+    return [error];
+  }
+  try {
+    return List<CompilerException>.of(
+        compile(source, file: file).semantics.warnings);
+  } on CompilerException catch (error) {
+    return [error];
+  }
+}
+
 List<GeneratedModel> _generatedModels(Program program, String file) {
   final names = <String>{
     for (final statement in program.statements)

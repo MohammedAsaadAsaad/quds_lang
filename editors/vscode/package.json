@@ -1,0 +1,54 @@
+{
+  "name": "quds",
+  "displayName": "Quds",
+  "description": "Highlight, format, and diagnose Quds (.quds) files.",
+  "version": "0.0.1",
+  "publisher": "quds-lang",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Formatters", "Linters"],
+  "activationEvents": ["onLanguage:quds"],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "quds",
+        "aliases": ["Quds", "quds"],
+        "extensions": [".quds"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "quds",
+        "scopeName": "source.quds",
+        "path": "./syntaxes/quds.tmLanguage.json"
+      }
+    ],
+    "configurationDefaults": {
+      "[quds]": {
+        "editor.defaultFormatter": "quds-lang.quds",
+        "editor.tabSize": 2,
+        "editor.insertSpaces": true
+      }
+    },
+    "configuration": {
+      "title": "Quds",
+      "properties": {
+        "quds.serverCommand": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Command that starts the language server. An empty list uses `dart run bin/quds.dart lsp` when the workspace is the `quds_lang` package, and `quds lsp` otherwise."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "quds.restartServer",
+        "title": "Quds: Restart Language Server"
+      }
+    ]
+  }
+}

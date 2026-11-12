@@ -1,0 +1,124 @@
+{
+  "name": "Quds",
+  "scopeName": "source.quds",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#keyword" },
+    { "include": "#number" },
+    { "include": "#function" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.block.quds",
+          "begin": "/\\*",
+          "end": "\\*/"
+        },
+        {
+          "name": "comment.line.documentation.quds",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.double-slash.quds",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.line.number-sign.quds",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "string": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.double.quds",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [{ "include": "#string-inner" }]
+        },
+        {
+          "name": "string.quoted.triple.single.quds",
+          "begin": "'''",
+          "end": "'''",
+          "patterns": [{ "include": "#string-inner" }]
+        },
+        {
+          "name": "string.quoted.double.quds",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "include": "#string-inner" }]
+        },
+        {
+          "name": "string.quoted.single.quds",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "include": "#string-inner" }]
+        }
+      ]
+    },
+    "string-inner": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.quds",
+          "match": "\\\\."
+        },
+        {
+          "name": "meta.interpolation.quds",
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.interpolation.begin.quds" }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.interpolation.end.quds" }
+          },
+          "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "name": "constant.language.quds",
+          "match": "\\b(?:true|false|null)\\b"
+        },
+        {
+          "name": "keyword.control.quds",
+          "match": "\\b(?:if|else|for|in|while|break|continue|return|match|switch|await|async|yield|throw|rethrow|try|catch|finally)\\b"
+        },
+        {
+          "name": "keyword.operator.word.quds",
+          "match": "\\b(?:and|or|not|is|as|to|with)\\b"
+        },
+        {
+          "name": "keyword.other.quds",
+          "match": "\\b(?:var|const|shadow|label|class|sealed|use|export|part|type|annotation|config|do|result|repeat|when|task|group|spawn|defer|using|late|enum|mixin|interface|extend|abstract|base|final|value|singleton|property|operator|private|protected|init|factory|static|readonly|capture|state|computed|watch|require|check|assert)\\b"
+        },
+        {
+          "name": "keyword.operator.quds",
+          "match": "->|\\.\\.<|\\.\\.|\\?\\?=?|\\?\\.|\\|>|~/|<<|>>>|>>|==|!=|<=|>=|\\+=|-=|\\*=|/=|\\.\\.\\.\\?"
+        }
+      ]
+    },
+    "number": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.quds",
+          "match": "\\b0[xX][0-9a-fA-F_]+\\b"
+        },
+        {
+          "name": "constant.numeric.quds",
+          "match": "\\b\\d[\\d_]*(?:\\.\\d[\\d_]*)?(?:[eE][+-]?\\d[\\d_]*)?\\b"
+        }
+      ]
+    },
+    "function": {
+      "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.quds" }
+      }
+    }
+  }
+}

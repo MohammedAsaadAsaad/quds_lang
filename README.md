@@ -57,6 +57,15 @@ export PATH="/workspace/toolchains/dart/bin:/workspace/.pub-cache/bin:$PATH"
 export PUB_CACHE=/workspace/.pub-cache
 ```
 
+## Editor
+
+[`editors/vscode`](editors/vscode) is a VS Code extension for `.quds` files.
+It highlights the source, formats the open buffer with `quds format`, and
+shows diagnostics from that buffer. Install it with **Developer: Install
+Extension from Location** and choose `editors/vscode`. In this package it
+starts `dart run bin/quds.dart lsp`. Elsewhere it starts `quds lsp`.
+`quds.serverCommand` replaces that command.
+
 See [supported grammar and limitations](docs/MVP_0.md),
 [validation results](docs/VALIDATION.md), [environment setup](docs/ENVIRONMENT.md),
 [approved decisions](docs/LANGUAGE_DECISIONS.md), and

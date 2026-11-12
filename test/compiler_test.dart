@@ -599,6 +599,95 @@ main():
     await process.stdin.close();
     final output = await process.stdout.transform(utf8.decoder).join();
     expect(output, contains('definitionProvider'));
+    expect(output, contains('documentFormattingProvider'));
+  });
+
+  test('lsp formats an open buffer and publishes its diagnostics', () {
+    final directory = Directory.systemTemp.createTempSync('quds-buffer-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final uri = Uri.file('${directory.path}/app.quds').toString();
+    final session = LspSession();
+    final source = 'main():\n  value = 1\n  print value\n';
+    final opened = session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': source,
+        }
+      }
+    });
+    expect(opened.response, isNull);
+    final published = opened.notifications.single['params'] as Map;
+    expect(published['diagnostics'], isEmpty);
+    final line = source.split('\n')[2];
+    final definition = session.handle({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'textDocument/definition',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {'line': 2, 'character': line.indexOf('value')},
+      }
+    });
+    final range = (definition.response!['result'] as Map)['range'] as Map;
+    expect((range['start'] as Map)['line'], 1);
+    expect(File('${directory.path}/app.quds').existsSync(), isFalse);
+
+    final indented = session.handle({
+      'method': 'textDocument/didChange',
+      'params': {
+        'textDocument': {'uri': uri, 'version': 2},
+        'contentChanges': [
+          {'text': 'main():\n    print 1\n'}
+        ],
+      }
+    });
+    expect((indented.notifications.single['params'] as Map)['diagnostics'],
+        isEmpty);
+    final formatted = session.handle({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'textDocument/formatting',
+      'params': {
+        'textDocument': {'uri': uri},
+      }
+    });
+    final edits = formatted.response!['result'] as List;
+    expect((edits.single as Map)['newText'], 'main():\n  print 1\n');
+
+    final broken = session.handle({
+      'method': 'textDocument/didChange',
+      'params': {
+        'textDocument': {'uri': uri, 'version': 3},
+        'contentChanges': [
+          {'text': 'main():\n  x = [1, 2\n'}
+        ],
+      }
+    });
+    final diagnostics =
+        (broken.notifications.single['params'] as Map)['diagnostics'] as List;
+    expect((diagnostics.single as Map)['code'], 'E100');
+    expect((diagnostics.single as Map)['source'], 'quds');
+    final refused = session.handle({
+      'jsonrpc': '2.0',
+      'id': 4,
+      'method': 'textDocument/formatting',
+      'params': {
+        'textDocument': {'uri': uri},
+      }
+    });
+    expect(refused.response!['error'], isNotNull);
+    final closed = session.handle({
+      'method': 'textDocument/didClose',
+      'params': {
+        'textDocument': {'uri': uri}
+      }
+    });
+    expect(
+        (closed.notifications.single['params'] as Map)['diagnostics'], isEmpty);
   });
 
   test('format keeps comments, documentation, and multiline strings', () async {

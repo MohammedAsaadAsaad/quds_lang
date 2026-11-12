@@ -71,6 +71,7 @@ class SemanticModel {
   final warnings = <CompilerException>[];
   final enumNames = <String>{};
   final traces = <CatchClause, Symbol>{};
+  final asyncLambdas = <Lambda>{};
   final variadicArguments = <CallExpression, List<int>>{};
   final implicitThis = <Identifier>{};
   final extensions = <ExtensionDeclaration>[];
@@ -132,6 +133,8 @@ class Analyzer {
   final _typeNames = <String>{};
   FunctionDeclaration? _function;
   String? _returnType;
+  var _lambdaDepth = 0;
+  var _lambdaAwait = false;
   int _nextName = 0;
   late final _constants = ConstantEvaluator(
     constants: model.constants,
@@ -1724,9 +1727,11 @@ class Analyzer {
         final type = expression(node.value);
         bindPattern(node.pattern, type, declare: true);
       case ReturnStatement():
-        if (_function == null)
+        if (_function == null && _returnType != '<infer>') {
           fail('return is only valid inside a function', node);
+        }
         final type = node.value == null ? 'void' : expression(node.value!);
+        if (_returnType == '<infer>') break;
         if (!compatible(type, _returnType!))
           fail('Return type $type is incompatible with $_returnType', node);
       case ExpressionStatement():
@@ -2592,28 +2597,56 @@ class Analyzer {
     for (final parameter in node.parameters) {
       _scope.symbols[parameter.name] = model.declarations[parameter]!;
     }
+    final savedDepth = _lambdaDepth;
+    final savedAwait = _lambdaAwait;
+    _lambdaDepth++;
+    _lambdaAwait = false;
     String type;
     if (node.expressionBody case final value?) {
       type = expression(value);
     } else {
-      final savedFunction = _function;
       final savedReturn = _returnType;
-      _returnType = 'void';
+      _returnType = '<infer>';
       statements(node.body!);
       type = 'void';
       for (final statement in node.body!) {
         if (statement is ReturnStatement && statement.value != null) {
-          type = expression(statement.value!);
+          type = model.types[statement.value!] ?? 'void';
           break;
         }
       }
-      _function = savedFunction;
       _returnType = savedReturn;
     }
+    if (_lambdaAwait) {
+      model.asyncLambdas.add(node);
+      if (!type.startsWith('Future<')) type = 'Future<$type>';
+    }
+    _lambdaAwait = savedAwait;
+    _lambdaDepth = savedDepth;
     _scope = saved;
     final parameters =
         node.parameters.map((p) => model.declarations[p]!.type).join(', ');
     return '($parameters) -> $type';
+  }
+
+  (String, String) _functionParts(String type) {
+    var depth = 0;
+    for (var i = 0; i < type.length; i++) {
+      if (type[i] == '(') depth++;
+      if (type[i] == ')') {
+        depth--;
+        if (depth == 0) {
+          final arrow = type.indexOf('->', i);
+          if (arrow < 0) break;
+          return (type.substring(1, i), type.substring(arrow + 2).trim());
+        }
+      }
+    }
+    final arrow = type.lastIndexOf('->');
+    return (
+      type.substring(1, type.indexOf(')')),
+      type.substring(arrow + 3).trim()
+    );
   }
 
   void parameterType(Parameter parameter, String type) {
@@ -2991,7 +3024,9 @@ class Analyzer {
   }
 
   String awaitExpression(AwaitExpression node) {
-    if (_function == null || !_function!.isAsync) {
+    if (_lambdaDepth > 0) {
+      _lambdaAwait = true;
+    } else if (_function == null || !_function!.isAsync) {
       fail('await is only valid inside async', node);
     }
     final type = expression(node.operand);
@@ -3407,9 +3442,7 @@ class Analyzer {
     if (callee is! Identifier) {
       final type = expression(callee);
       if (!type.contains('->')) fail('Value is not callable', callee);
-      final arrow = type.lastIndexOf('->');
-      final parameters = type.substring(1, type.indexOf(')'));
-      final returns = type.substring(arrow + 3).trim();
+      final (parameters, returns) = _functionParts(type);
       final expected = parameters.isEmpty
           ? <String>[]
           : parameters.split(',').map((item) => item.trim()).toList();
@@ -3476,9 +3509,7 @@ class Analyzer {
         symbol.overloads.isEmpty &&
         symbol.parameterTypes.isEmpty &&
         symbol.type.contains('->')) {
-      final arrow = symbol.type.lastIndexOf('->');
-      final parameters = symbol.type.substring(1, symbol.type.indexOf(')'));
-      final returns = symbol.type.substring(arrow + 3).trim();
+      final (parameters, returns) = _functionParts(symbol.type);
       final expected = parameters.trim().isEmpty
           ? <String>[]
           : parameters.split(',').map((item) => item.trim()).toList();

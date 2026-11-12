@@ -482,7 +482,8 @@ class Parser {
         value is AwaitAllExpression ||
         value is AwaitIsolateExpression ||
         value is MapExpression ||
-        value is SetExpression) {
+        value is SetExpression ||
+        value is Lambda && value.body != null) {
       return true;
     }
     if (value is CallExpression) {

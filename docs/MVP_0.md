@@ -271,6 +271,7 @@ unchanged by the map.
   `E503`.
 - `mixin`, `class ... with`, `interface`, and `extend Type`. A failed mixin
   `on` constraint is `E702`. Two extensions for one member are `E205`.
+- Lambdas: `x -> expr`, nested arrows, an indented body with `return`, and `await` inside the lambda. A closure sees a later assignment to a mutable binding.
 - `state`, `computed`, and `watch`. A computed cycle warns `W007`. A cycle found while a computed value is already evaluating throws `CycleError`. `watch` drops its subscription when its scope exits. `batch` holds notifications until the suite exits, including an exceptional exit, then flushes once.
 - Transparent aliases `type Name = Type` and extension types `type Name wraps Type`.
   `require` in the wrapped body rejects a value at construction.

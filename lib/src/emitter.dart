@@ -770,6 +770,25 @@ class DartEmitter {
     }
   }
 
+  (String, String) _splitFunctionType(String type) {
+    var depth = 0;
+    for (var i = 0; i < type.length; i++) {
+      if (type[i] == '(') depth++;
+      if (type[i] == ')') {
+        depth--;
+        if (depth == 0) {
+          final arrow = type.indexOf('->', i);
+          return (type.substring(1, i), type.substring(arrow + 2).trim());
+        }
+      }
+    }
+    final arrow = type.lastIndexOf('->');
+    return (
+      type.substring(1, type.indexOf(')')),
+      type.substring(arrow + 3).trim()
+    );
+  }
+
   String _dartType(String type) {
     final resolved = model.resolve(type);
     if (resolved != type) return _dartType(resolved);
@@ -779,9 +798,7 @@ class DartEmitter {
     }
     if (type.contains(' | ')) return _unionClass(type);
     if (type.startsWith('(') && type.contains('->')) {
-      final arrow = type.lastIndexOf('->');
-      final parameters = type.substring(1, type.indexOf(')'));
-      final returns = type.substring(arrow + 3).trim();
+      final (parameters, returns) = _splitFunctionType(type);
       final args = parameters.trim().isEmpty
           ? ''
           : parameters
@@ -1971,11 +1988,15 @@ class DartEmitter {
         .map((p) =>
             '${model.declarations[p]!.type} ${model.declarations[p]!.dartName}')
         .join(', ');
+    final async = model.asyncLambdas.contains(node) ? 'async ' : '';
     if (node.expressionBody case final value?) {
-      return '(($parameters) => ${expression(value)})';
+      return '(($parameters) $async=> ${expression(value)})';
     }
-    final buffer = StringBuffer('(($parameters) { ');
-    return '$buffer})';
+    final savedDepth = _depth;
+    _depth = 0;
+    final body = _captureBlock(() => statements(node.body!));
+    _depth = savedDepth;
+    return '(($parameters) $async{\n$body})';
   }
 
   String _map(MapExpression node) {
@@ -2054,6 +2075,14 @@ class DartEmitter {
   }
 
   String call(CallExpression node, {bool constantContext = false}) {
+    if (model.references[node.callee] == null) {
+      final callee = expression(node.callee, constantContext: constantContext);
+      final arguments = node.arguments
+          .map((argument) =>
+              expression(argument.value, constantContext: constantContext))
+          .join(', ');
+      return '($callee)($arguments)';
+    }
     final targetSymbol = model.references[node.callee]!;
     if (targetSymbol.name == 'missing') _useOptional = true;
     if (targetSymbol.name == 'present') {

@@ -408,6 +408,25 @@ main():
 ''', '3\n1\n');
   });
 
+  test('nested, async, and capturing lambdas execute', () async {
+    await execute('''
+load() async -> int = 5
+main() async:
+  nested = x -> y -> x + y
+  print nested(3)(4)
+  var n = 1
+  add = x -> x + n
+  n = 4
+  print add(3)
+  later = () -> :
+    n = n + 1
+    return n
+  print later()
+  read = () -> await load()
+  print await read()
+''', '7\n7\n5\n5\n');
+  });
+
   test('batch, watch disposal, and computed cycles execute', () async {
     await execute('''
 main():

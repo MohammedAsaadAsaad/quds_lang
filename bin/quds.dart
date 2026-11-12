@@ -284,7 +284,7 @@ void _format(List<String> arguments) {
   try {
     final source = input.readAsStringSync();
     Parser(Lexer().tokenize(source, file: input.path)).parse();
-    input.writeAsStringSync(_normalizeIndent(source));
+    input.writeAsStringSync(_formatSource(source));
     stdout.writeln('Formatted ${input.path}');
   } on CompilerException catch (error) {
     stderr.writeln(error);
@@ -295,27 +295,81 @@ void _format(List<String> arguments) {
   }
 }
 
-String _normalizeIndent(String source) {
+/// Two-space indents. Comments, documentation, and string contents stay.
+/// A line is not reflowed, so the production does not change. Trailing
+/// whitespace outside a string is removed, and a newline ends the file.
+String _formatSource(String source) {
   final lines = source.split('\n');
+  if (lines.isNotEmpty && lines.last.isEmpty) lines.removeLast();
+  final inside = <bool>[];
   final indents = <int>[];
+  var open = '';
   for (final line in lines) {
-    if (line.trim().isEmpty) continue;
-    final width = line.length - line.trimLeft().length;
-    if (!indents.contains(width)) indents.add(width);
+    if (open.isNotEmpty) {
+      inside.add(true);
+      open = _advanceQuotes(line, open);
+      continue;
+    }
+    inside.add(false);
+    if (line.trim().isNotEmpty) {
+      final width = line.length - line.trimLeft().length;
+      if (!indents.contains(width)) indents.add(width);
+    }
+    open = _advanceQuotes(line, '');
   }
   indents.sort();
   final rewritten = <String>[];
-  for (final line in lines) {
+  for (var i = 0; i < lines.length; i++) {
+    if (inside[i]) {
+      rewritten.add(lines[i]);
+      continue;
+    }
+    final line = lines[i].trimRight();
     if (line.trim().isEmpty) {
       rewritten.add('');
       continue;
     }
     final width = line.length - line.trimLeft().length;
     final depth = indents.indexOf(width);
-    rewritten.add('${'  ' * depth}${line.trimLeft()}');
+    rewritten.add('${'  ' * (depth < 0 ? 0 : depth)}${line.trimLeft()}');
   }
-  final text = rewritten.join('\n');
-  return source.endsWith('\n') && !text.endsWith('\n') ? '$text\n' : text;
+  return '${rewritten.join('\n')}\n';
+}
+
+String _advanceQuotes(String line, String open) {
+  var current = open;
+  var i = 0;
+  while (i < line.length) {
+    if (current.isNotEmpty) {
+      if (line.startsWith(current, i)) {
+        current = '';
+        i += 3;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (line.startsWith('"""', i) || line.startsWith("'''", i)) {
+      current = line.substring(i, i + 3);
+      i += 3;
+      continue;
+    }
+    final quote = line[i];
+    if (quote == '"' || quote == "'") {
+      i++;
+      while (i < line.length && line[i] != quote) {
+        if (line[i] == '\\' && i + 1 < line.length) {
+          i += 2;
+          continue;
+        }
+        i++;
+      }
+      if (i < line.length) i++;
+      continue;
+    }
+    i++;
+  }
+  return current;
 }
 
 void _create(List<String> arguments) {
@@ -355,10 +409,23 @@ void _pub(String command, List<String> arguments) {
 }
 
 void _doc(List<String> arguments) {
-  _requireQuds(arguments);
-  if (exitCode != 0) return;
-  final input = File(arguments[1]);
+  final testing = arguments.length >= 2 && arguments[1] == 'test';
+  final path = testing
+      ? (arguments.length == 3 ? arguments[2] : null)
+      : (arguments.length == 2 ? arguments[1] : null);
+  if (path == null || !path.endsWith('.quds')) {
+    stderr.writeln(testing
+        ? 'Usage: quds doc test <input.quds>'
+        : 'Usage: quds doc <input.quds>');
+    exitCode = 64;
+    return;
+  }
+  final input = File(path);
   try {
+    if (testing) {
+      _docTest(input);
+      return;
+    }
     final lines = input.readAsLinesSync();
     final docs = <String>[];
     for (var i = 0; i < lines.length; i++) {
@@ -368,9 +435,78 @@ void _doc(List<String> arguments) {
       docs.add(next.isEmpty ? comment : '$next — $comment');
     }
     stdout.write(docs.isEmpty ? '' : '${docs.join('\n')}\n');
+  } on CompilerException catch (error) {
+    stderr.writeln(error);
+    exitCode = 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
     exitCode = 74;
+  }
+}
+
+void _docTest(File input) {
+  final source = input.readAsStringSync();
+  final program = Parser(Lexer().tokenize(source, file: input.path)).parse();
+  final names = <String>{
+    for (final statement in program.statements)
+      if (statement is FunctionDeclaration) statement.name,
+    for (final statement in program.statements)
+      if (statement is ClassDeclaration) statement.name,
+  };
+  final lines = source.split('\n');
+  final examples = <String>[];
+  final fence = StringBuffer();
+  var inFence = false;
+  final link = RegExp(r'\[([A-Za-z_][A-Za-z0-9_]*)\](?!\()');
+  for (final line in lines) {
+    final trimmed = line.trimLeft();
+    if (!trimmed.startsWith('///')) continue;
+    var body = trimmed.substring(3);
+    if (body.startsWith(' ')) body = body.substring(1);
+    if (body.startsWith('```')) {
+      if (inFence) {
+        examples.add(fence.toString());
+        fence.clear();
+        inFence = false;
+      } else {
+        inFence = true;
+      }
+      continue;
+    }
+    if (inFence) {
+      fence.writeln(body);
+      continue;
+    }
+    final found = link.firstMatch(body);
+    if (found != null && !names.contains(found.group(1))) {
+      throw CompilerException('E200', 'Broken link: ${found.group(1)}',
+          SourceSpan(1, 1, 0, file: input.path));
+    }
+  }
+  if (inFence) {
+    throw CompilerException('E100', 'A doctest fence is not closed',
+        SourceSpan(1, 1, 0, file: input.path));
+  }
+  for (final example in examples) {
+    final directory = Directory.systemTemp.createTempSync('quds-doc-');
+    try {
+      final dart = compile(example, file: input.path).dart;
+      final output = File('${directory.path}/doc.dart')
+        ..writeAsStringSync(dart);
+      final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
+      if (run.exitCode != 0) {
+        stderr.write(run.stdout);
+        stderr.write(run.stderr);
+        exitCode = 65;
+        return;
+      }
+    } on CompilerException catch (error) {
+      stderr.writeln(error);
+      exitCode = 65;
+      return;
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
   }
 }
 

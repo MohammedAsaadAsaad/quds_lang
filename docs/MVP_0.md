@@ -326,7 +326,8 @@ unchanged by the map.
 - `require`, `check`, and `assert`, with an optional message after a comma.
   `require` throws `ArgumentError` and stays in release. `check` throws
   `StateError` and stays in release. `assert` is Dart's `assert`. The message
-  runs only when the condition is false.
+  runs only when the condition is false. `dart run --no-enable-asserts` skips
+  the assert, so its condition does not run. `require` and `check` still run.
 - `annotation Name:` and `annotation Name(parameters)` emit a const class.
   `@Name` and `@Name(name: value)` emit that metadata. Arguments are named
   constants. A missing required argument is `E500`. A non-constant argument is
@@ -396,7 +397,14 @@ a documentation comment otherwise. `quds migrate` leaves a `quds.yaml`
 pinned to a version other than 1.2 unchanged. `quds lsp` answers definition
 and rename. `quds debug` binds a breakpoint to the `.quds` statement on a
 line. Neither command launches a program. `mapStack` rewrites a stack frame
-that hits the source map.
+that hits the source map. `quds format` rewrites indentation outside a
+multiline string to two spaces, keeps comments and string contents, drops
+trailing whitespace, and ends the file with a newline. A second format is
+identical. Lines are not wrapped to 80 columns. `quds doc` lists `///`
+lines. `quds doc test` compiles and runs a fenced example. A `[Name]` that
+is not a top-level function or class in that file is `E200` (`Broken link:
+Name`). An example that fails to compile or run exits 65. No HTML API site
+is written.
 
 The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.

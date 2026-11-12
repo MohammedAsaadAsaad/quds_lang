@@ -591,6 +591,97 @@ main():
     final output = await process.stdout.transform(utf8.decoder).join();
     expect(output, contains('definitionProvider'));
   });
+
+  test('format keeps comments, documentation, and multiline strings', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-format-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')..writeAsStringSync('''
+# note   
+main():
+    # inner
+    text = """
+      kept
+"""
+    print text
+    print add(
+        1,
+        2
+    )
+add(a: int, b: int) -> int = a + b
+''');
+    Future<ProcessResult> cli(List<String> args) => Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args]);
+    final formatted = await cli(['format', source.path]);
+    expect(formatted.exitCode, 0, reason: '${formatted.stderr}');
+    final once = source.readAsStringSync();
+    expect(once, contains('# note'));
+    expect(once, contains('  # inner'));
+    expect(once, contains('      kept'));
+    expect(once, endsWith('\n'));
+    expect(once, isNot(contains(' \n')));
+    await cli(['format', source.path]);
+    expect(source.readAsStringSync(), once);
+    await execute(once, '\n      kept\n\n3\n');
+  });
+
+  test('doc test reports a broken link and a failing example', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-doc-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    Future<ProcessResult> cli(List<String> args) => Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args]);
+    final broken = File('${directory.path}/broken.quds')
+      ..writeAsStringSync('/// See [Missing].\nmain():\n  print 1\n');
+    final failed = await cli(['doc', 'test', broken.path]);
+    expect(failed.exitCode, 65);
+    expect(failed.stderr, contains('Broken link: Missing'));
+    final example = File('${directory.path}/example.quds')
+      ..writeAsStringSync('''
+/// See [main].
+/// ```
+/// main():
+///   print "doc"
+/// ```
+main():
+  print 1
+''');
+    final passed = await cli(['doc', 'test', example.path]);
+    expect(passed.exitCode, 0, reason: '${passed.stdout}\n${passed.stderr}');
+    example.writeAsStringSync('''
+/// ```
+/// main():
+///   print nowhere
+/// ```
+main():
+  print 1
+''');
+    final bad = await cli(['doc', 'test', example.path]);
+    expect(bad.exitCode, 65);
+    expect(bad.stderr, contains('E200'));
+  });
+
+  test('assert runs in development and is absent in production', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-assert-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final dart = compile('''
+tick() -> bool:
+  print "tick"
+  return false
+main():
+  assert tick(), "boom"
+  require true
+  check true
+  print "ok"
+''').dart;
+    final output = File('${directory.path}/app.dart')..writeAsStringSync(dart);
+    final debug = await Process.run(
+        Platform.resolvedExecutable, ['run', '--enable-asserts', output.path]);
+    expect(debug.stdout, contains('tick'));
+    expect(debug.exitCode, isNot(0));
+    final release = await Process.run(Platform.resolvedExecutable,
+        ['run', '--no-enable-asserts', output.path]);
+    expect(release.exitCode, 0, reason: '${release.stderr}');
+    expect(release.stdout, 'ok\n');
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

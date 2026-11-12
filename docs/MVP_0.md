@@ -332,6 +332,16 @@ unchanged by the map.
   constants. A missing required argument is `E500`. A non-constant argument is
   `E401`. `@Reflectable` on a class emits `qudsReflectName` with the class
   name and field names.
+- `log.info "message", data: map:` writes a structured line. Levels are
+  `debug`, `info`, `warning`, and `error`. `log.minimum = "info"` drops
+  anything below that level. `log.sink writer` replaces the default printer.
+  A map key named `secret`, or ending in `_secret` or `.secret`, is written
+  as `***`. An exception from the sink propagates. An unknown literal level
+  is `E300`.
+- `task group` and `await all` enter each child immediately until one throws
+  before returning. Later children are then not entered. A child that has
+  already started still runs, and the group reports `TaskFailed` in source
+  order. `await all` rethrows the first source-order error.
 - `config name: Type = expression` reads the process environment, then the
   `config:` map in `quds.yaml` beside the working directory, then the source
   default. A dotted name such as `server.host` is read as `config.server.host`
@@ -346,6 +356,5 @@ fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
 that literal, and `test/language_test.dart` executes both results.
 
 The parity table still includes forms this compiler rejects instead of
-inventing: cross-file private access, and cooperative cancellation of a
-future that has already started. No claim of full 115-decision conformance is
-made.
+inventing: cross-file private access, and aborting a future that has already
+started. No claim of full 115-decision conformance is made.

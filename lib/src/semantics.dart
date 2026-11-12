@@ -154,6 +154,7 @@ class Analyzer {
         Symbol('Ok', 'Ok', 'Result', parameterTypes: const ['*']);
     _global.symbols['Error'] =
         Symbol('Error', 'Error', 'Result', parameterTypes: const ['*']);
+    _installLog();
     for (final statement in program.statements) {
       if (statement is AliasDeclaration) {
         model.aliases[statement.name] = statement.target;
@@ -1580,8 +1581,59 @@ class Analyzer {
     if (!compatible(value, fields.first.type)) {
       fail('Cannot assign $value to ${fields.first.type}', node);
     }
+    if (type == '_QudsLog' && fields.first.name == 'minimum') {
+      final written = node.value;
+      if (written is Literal &&
+          written.value is String &&
+          !const {'debug', 'info', 'warning', 'error'}
+              .contains(written.value)) {
+        error('E300', 'Unknown log level ${written.value}', written);
+      }
+    }
     model.references[node] = Symbol(fields.first.name,
         _dartMember(type, fields.first.name), fields.first.type);
+  }
+
+  void _installLog() {
+    const span = SourceSpan(1, 1, 0);
+    Parameter parameter(String name, {Expression? fallback}) =>
+        Parameter(name, 'dynamic', false, span, defaultValue: fallback);
+    final methods = <FunctionDeclaration>[
+      for (final level in const ['debug', 'info', 'warning', 'error'])
+        FunctionDeclaration(
+            level,
+            [
+              parameter('message'),
+              parameter('data', fallback: const Literal(null, span)),
+            ],
+            'void',
+            const <Statement>[],
+            null,
+            span),
+      FunctionDeclaration('sink', [parameter('writer')], 'void',
+          const <Statement>[], null, span),
+    ];
+    final type = ClassDeclaration(
+        '_QudsLog',
+        'class',
+        [
+          const FieldDeclaration(
+              'minimum', 'String', true, false, Literal('debug', span), span)
+        ],
+        methods,
+        const <ClassCase>[],
+        const <Metadata>[],
+        span);
+    final symbol =
+        Symbol('_QudsLog', '_QudsLog', '_QudsLog', classDeclaration: type);
+    _global.symbols['_QudsLog'] = symbol;
+    model.declarations[type] = symbol;
+    for (final method in methods) {
+      model.declarations[method] =
+          Symbol(method.name, method.name, 'void', function: method)
+              .withFunction(method);
+    }
+    _global.symbols['log'] = Symbol('log', 'log', '_QudsLog');
   }
 
   final _labels = <String>[];

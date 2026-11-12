@@ -475,7 +475,9 @@ class Parser {
         value is WithExpression ||
         value is MatchExpression ||
         value is AwaitAllExpression ||
-        value is AwaitIsolateExpression) {
+        value is AwaitIsolateExpression ||
+        value is MapExpression ||
+        value is SetExpression) {
       return true;
     }
     if (value is CallExpression) {
@@ -2077,7 +2079,34 @@ class Parser {
       left = CallExpression(
           left, [Argument(null, argument, argument.span)], extent(left.span));
     }
+    if (bare && left is MemberAccess && startsExpression()) {
+      final arguments = <Argument>[];
+      do {
+        arguments.add(_juxtaposedArgument());
+      } while (match(TokenKind.comma));
+      left = CallExpression(left, arguments, extent(left.span));
+    }
     return left;
+  }
+
+  /// `log.info "Loaded", data: map:` is a call. `map:` and `set:` stay collections.
+  Argument _juxtaposedArgument() {
+    String? label;
+    final span = current.span;
+    if (at(TokenKind.identifier) &&
+        peek().kind == TokenKind.colon &&
+        current.lexeme != 'map' &&
+        current.lexeme != 'set') {
+      label = name().lexeme;
+      take();
+    }
+    final value = expression(bare: true);
+    if (value is Identifier &&
+        (value.name == 'map' || value.name == 'set') &&
+        at(TokenKind.colon)) {
+      return Argument(label, collectionLiteral(value.name, value.span), span);
+    }
+    return Argument(label, value, span);
   }
 
   bool startsExpression() =>

@@ -38,6 +38,7 @@ class DartEmitter {
   var _useIsolate = false;
   var _useTask = false;
   var _useAwaitAll = false;
+  var _useLog = false;
   var _useConfig = false;
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
@@ -451,17 +452,70 @@ class DartEmitter {
           '  return result;\n'
           '}');
     }
+    if (_useLog) {
+      helpers.writeln('bool _qPrivateLogKey(String key) {\n'
+          '  final lower = key.toLowerCase();\n'
+          '  return lower == \'secret\' || lower.endsWith(\'_secret\') || lower.endsWith(\'.secret\');\n'
+          '}\n'
+          'Object? _qRedactLog(Object? data) {\n'
+          '  if (data is Map) {\n'
+          '    return <String, Object?>{\n'
+          '      for (final entry in data.entries)\n'
+          '        entry.key.toString(): _qPrivateLogKey(entry.key.toString()) ? \'***\' : _qRedactLog(entry.value),\n'
+          '    };\n'
+          '  }\n'
+          '  return data;\n'
+          '}\n'
+          'void _qDefaultLog(String level, Object? message, Object? data) {\n'
+          '  final shown = _qRedactLog(data);\n'
+          '  final text = shown == null ? \'\' : \' \$shown\';\n'
+          '  print(\'[\$level] \$message\$text\');\n'
+          '}\n'
+          'class _QudsLog {\n'
+          '  String minimum = \'debug\';\n'
+          '  void Function(String, Object?, Object?) _sink = _qDefaultLog;\n'
+          '  void sink(Object? next) {\n'
+          '    _sink = (String level, Object? message, Object? data) {\n'
+          '      Function.apply(next as Function, <Object?>[level, message, data]);\n'
+          '    };\n'
+          '  }\n'
+          '  void _write(String level, Object? message, Object? data) {\n'
+          '    const ranks = <String, int>{\'debug\': 0, \'info\': 1, \'warning\': 2, \'error\': 3};\n'
+          '    final floor = ranks[minimum];\n'
+          '    final rank = ranks[level];\n'
+          '    if (floor != null && rank != null && rank < floor) return;\n'
+          '    _sink(level, message, _qRedactLog(data));\n'
+          '  }\n'
+          '  void debug(Object? message, [Object? data]) => _write(\'debug\', message, data);\n'
+          '  void info(Object? message, [Object? data]) => _write(\'info\', message, data);\n'
+          '  void warning(Object? message, [Object? data]) => _write(\'warning\', message, data);\n'
+          '  void error(Object? message, [Object? data]) => _write(\'error\', message, data);\n'
+          '}\n'
+          'final log = _QudsLog();\n');
+    }
+    if (_useTask || _useAwaitAll) {
+      helpers.writeln('class _QudsCancel {\n'
+          '  bool cancelled = false;\n'
+          '}');
+    }
     if (_useTask) {
       helpers.writeln('class TaskFailed implements Exception {\n'
           '  TaskFailed(this.errors);\n'
           '  final List<Object> errors;\n'
           '  String toString() => \'TaskFailed: \$errors\';\n'
           '}\n'
-          'Future<void> _qTaskGroup(List<Future<Object?>> tasks) async {\n'
+          'Future<void> _qTaskGroup(List<Future<Object?> Function(_QudsCancel)> tasks) async {\n'
+          '  final token = _QudsCancel();\n'
+          '  final futures = <Future<Object?>>[];\n'
+          '  for (final task in tasks) {\n'
+          '    if (token.cancelled) continue;\n'
+          '    futures.add(task(token));\n'
+          '  }\n'
           '  final found = <int, Object>{};\n'
           '  await Future.wait([\n'
-          '    for (var i = 0; i < tasks.length; i++)\n'
-          '      tasks[i].then((_) {}, onError: (Object error, StackTrace _) {\n'
+          '    for (var i = 0; i < futures.length; i++)\n'
+          '      futures[i].then((_) {}, onError: (Object error, StackTrace _) {\n'
+          '        token.cancelled = true;\n'
           '        found[i] = error;\n'
           '      }),\n'
           '  ]);\n'
@@ -472,13 +526,23 @@ class DartEmitter {
     }
     if (_useAwaitAll) {
       helpers.writeln(
-          'Future<List<Object?>> _qAwaitAll(List<Future<Object?>> futures) async {\n'
+          'Future<List<Object?>> _qAwaitAll(List<Future<Object?> Function(_QudsCancel)> tasks) async {\n'
+          '  final token = _QudsCancel();\n'
+          '  final futures = <Future<Object?>>[];\n'
+          '  for (final task in tasks) {\n'
+          '    if (token.cancelled) {\n'
+          '      futures.add(Future<Object?>.value(null));\n'
+          '      continue;\n'
+          '    }\n'
+          '    futures.add(task(token));\n'
+          '  }\n'
           '  final values = List<Object?>.filled(futures.length, null);\n'
           '  Object? first;\n'
           '  var index = -1;\n'
           '  await Future.wait([\n'
           '    for (var i = 0; i < futures.length; i++)\n'
           '      futures[i].then((value) { values[i] = value; }, onError: (Object error, StackTrace _) {\n'
+          '        token.cancelled = true;\n'
           '        if (index < 0 || i < index) {\n'
           '          index = i;\n'
           '          first = error;\n'
@@ -1410,10 +1474,9 @@ class DartEmitter {
         }
       case TaskGroupStatement():
         _useTask = true;
-        final arms = node.spawns
-            .map((spawn) => 'Future<Object?>.value(${expression(spawn)})')
-            .toList();
-        line('await _qTaskGroup(<Future<Object?>>[${arms.join(', ')}]);');
+        final arms = node.spawns.map(_cancelThunk).toList();
+        line(
+            'await _qTaskGroup(<Future<Object?> Function(_QudsCancel)>[${arms.join(', ')}]);');
       case AnnotationDeclaration():
       case ConfigDeclaration():
         break;
@@ -1440,15 +1503,24 @@ class DartEmitter {
 
   String _awaitAll(AwaitAllExpression node) {
     _useAwaitAll = true;
-    final calls = node.arms
-        .map((arm) => 'Future<Object?>.value(${expression(arm)})')
-        .join(', ');
+    final calls = node.arms.map(_cancelThunk).join(', ');
     final fields = [
       for (var i = 0; i < node.arms.length; i++)
         '_values[$i] as ${_dartType(_awaitedType(model.types[node.arms[i]] ?? 'Object'))}'
     ].join(', ');
     final record = node.arms.length == 1 ? '($fields,)' : '($fields)';
-    return '(await (() async { final _values = await _qAwaitAll(<Future<Object?>>[$calls]); return $record; })())';
+    return '(await (() async { final _values = await _qAwaitAll(<Future<Object?> Function(_QudsCancel)>[$calls]); return $record; })())';
+  }
+
+  /// A child that throws before returning is cancelled, and later children are
+  /// not entered. An async child still starts immediately.
+  String _cancelThunk(Expression spawn) {
+    final value = expression(spawn);
+    final type = model.types[spawn];
+    final call = type == 'void' || type == 'Future<void>'
+        ? '(() { $value; return null; })()'
+        : value;
+    return '(_QudsCancel token) { try { return Future<Object?>.value($call); } catch (error) { token.cancelled = true; return Future<Object?>.error(error); } }';
   }
 
   String _awaitIsolate(AwaitIsolateExpression node) {
@@ -1709,6 +1781,7 @@ class DartEmitter {
       return 'this.$dart';
     }
     final symbol = model.references[node];
+    if (symbol?.name == 'log' && symbol?.dartName == 'log') _useLog = true;
     if (symbol?.name == 'missing') _useOptional = true;
     if (symbol != null &&
         (symbol.reactive == 'state' || symbol.reactive == 'computed')) {
@@ -1978,14 +2051,17 @@ class DartEmitter {
       }
     }
     final invocation = '$target(${values.join(', ')})';
+    final returnsVoid =
+        targetSymbol.type == 'void' || targetSymbol.type == 'Future<void>';
+    final body = returnsVoid ? '$invocation;' : 'return $invocation;';
     if (holeNames.isNotEmpty) {
       final signature = [
         for (var i = 0; i < holeNames.length; i++)
           '${holeTypes[i]} ${holeNames[i]}'
       ].join(', ');
-      return '(($signature) { ${declarations.join(' ')} return $invocation; })';
+      return '(($signature) { ${declarations.join(' ')} $body })';
     }
-    return '(() { ${declarations.join(' ')} return $invocation; })()';
+    return '(() { ${declarations.join(' ')} $body })()';
   }
 
   bool _isHole(Expression node) => node is Identifier && node.name == '_';

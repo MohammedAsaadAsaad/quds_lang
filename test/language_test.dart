@@ -357,13 +357,13 @@ main():
   print "hi".shout()
   state count = 0
   computed doubled = count * 2
-  var log = ""
+  var trace = ""
   watch count:
-    log = log + "{count}"
+    trace = trace + "{count}"
   count = 1
   count = 2
   print doubled
-  print log
+  print trace
   count = 3
   print doubled
 ''', '0\n6\n9\n0\none\nmany\nRex\nAda\nhi!\n4\n012\n6\n');
@@ -1114,12 +1114,91 @@ main():
 main():
   spawn ready()
 ''': 'E107',
+      '''
+main():
+  log.minimum = "verbose"
+''': 'E300',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {
         return '$error'.contains(code);
       })), reason: source);
     });
+  });
+
+  test('logs filter and redact, and a task group skips an unentered child',
+      () async {
+    await execute('''
+class Probe:
+  static var hits: int = 0
+boom() -> int:
+  var ready = true
+  if ready:
+    throw "bad"
+  return 0
+later() -> int:
+  Probe.hits = Probe.hits + 1
+  return Probe.hits
+slow() async -> int:
+  Probe.hits = Probe.hits + 1
+  return Probe.hits
+boomAsync() async -> int:
+  var ready = true
+  if ready:
+    throw "bad"
+  return 0
+inner() async -> int:
+  task group:
+    spawn boom()
+    spawn later()
+  return 1
+record(level: String, message: dynamic, data: dynamic):
+  print "{level}:{message}:{data}"
+failSink(level: String, message: dynamic, data: dynamic):
+  throw "sink"
+main() async:
+  log.minimum = "info"
+  log.debug "skip", data: map:
+    "secret": "nope"
+  log.info "Loaded", data: map:
+    "count": "3"
+    "secret": "token"
+    "token_secret": "abc"
+  log.sink record
+  log.warning "kept", data: map:
+    "name": "Ada"
+    "api_secret": "hidden"
+  log.sink failSink
+  try:
+    log.error "boom"
+  catch error:
+    print error
+  try:
+    task group:
+      spawn boom()
+      spawn later()
+  catch error:
+    print Probe.hits
+  Probe.hits = 0
+  try:
+    task group:
+      spawn boomAsync()
+      spawn slow()
+  catch error:
+    print Probe.hits
+  Probe.hits = 0
+  try:
+    print await inner()
+  catch error:
+    print Probe.hits
+''', '''
+[info] Loaded {count: 3, secret: ***, token_secret: ***}
+warning:kept:{name: Ada, api_secret: ***}
+sink
+0
+1
+0
+''');
   });
 }
 

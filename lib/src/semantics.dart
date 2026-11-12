@@ -14,10 +14,11 @@ class Symbol {
       this.readonly = false,
       this.late = false,
       this.lateOpen = false,
-      this.reactive = ''});
+      this.reactive = '',
+      this.field = false});
   final String name, dartName;
   String type;
-  final bool mutable, constant, late, lateOpen;
+  final bool mutable, constant, late, lateOpen, field;
 
   /// Empty, `state`, or `computed`.
   final String reactive;
@@ -85,6 +86,7 @@ class SemanticModel {
   final parts = <PartDirective>[];
   final asyncDefers = <DeferStatement>{};
   final annotations = <String>{};
+  final annotationShapes = <String, AnnotationDeclaration>{};
   final reflectable = <ClassDeclaration>{};
 }
 
@@ -114,7 +116,8 @@ class Analyzer {
           bool readonly = false,
           bool late = false,
           bool lateOpen = false,
-          String reactive = ''}) =>
+          String reactive = '',
+          bool field = false}) =>
       Symbol(
               name,
               name == 'main' && function != null ? 'main' : '_q${_nextName++}',
@@ -126,7 +129,8 @@ class Analyzer {
               readonly: readonly,
               late: late,
               lateOpen: lateOpen,
-              reactive: reactive)
+              reactive: reactive,
+              field: field)
           .withFunction(function);
   String? _expected;
   String? _thisType;
@@ -168,7 +172,7 @@ class Analyzer {
         case ExtensionDeclaration():
           registerExtension(statement);
         case AnnotationDeclaration():
-          model.annotations.add(statement.name);
+          registerAnnotation(statement);
         case ConfigDeclaration():
           registerConfig(statement);
         case AliasDeclaration():
@@ -192,6 +196,33 @@ class Analyzer {
     for (final statement in program.statements) {
       if (statement is Binding && statement.mode == BindingMode.constant) {
         check(statement);
+      }
+    }
+    for (final statement in program.statements) {
+      switch (statement) {
+        case ClassDeclaration():
+          _checkMetadata(statement.annotations);
+          for (final method in statement.methods) {
+            _checkMetadata(method.annotations);
+          }
+        case FunctionDeclaration():
+          _checkMetadata(statement.annotations);
+        case ExtensionDeclaration():
+          for (final method in statement.methods) {
+            _checkMetadata(method.annotations);
+          }
+        case AnnotationDeclaration():
+          for (final parameter in statement.parameters) {
+            final value = parameter.defaultValue;
+            if (value == null) continue;
+            final type = expression(value);
+            if (!compatible(type, parameter.type)) {
+              fail('Cannot initialize ${parameter.type} with $type', value);
+            }
+            _constants.ensureConstant(value);
+          }
+        default:
+          break;
       }
     }
     for (final statement in functions) {
@@ -329,14 +360,15 @@ class Analyzer {
       validateType(field.type, field, allowVoid: false);
     }
     _checkVariance(statement);
-    if (statement.annotations.contains('Reflectable')) {
+    if (hasAnnotation(statement.annotations, 'Reflectable')) {
       model.reflectable.add(statement);
     }
     for (final field in statement.fields.where((item) => item.isStatic)) {
       analyzeStaticField(field);
     }
     for (final method in statement.methods) {
-      if (statement.annotations.contains('macro') && method.name == 'define') {
+      if (hasAnnotation(statement.annotations, 'macro') &&
+          method.name == 'define') {
         continue;
       }
       final declared = method.isOperator && method.returnType == null
@@ -510,7 +542,9 @@ class Analyzer {
   }
 
   void analyzeMethod(ClassDeclaration type, FunctionDeclaration method) {
-    if (type.annotations.contains('macro') && method.name == 'define') return;
+    if (hasAnnotation(type.annotations, 'macro') && method.name == 'define') {
+      return;
+    }
     final saved = _scope;
     final savedThis = _thisType;
     final savedReadonly = _readonlyMethod;
@@ -624,7 +658,7 @@ class Analyzer {
           ? '_${field.name}'
           : field.name;
       final symbol = Symbol(field.name, dart, model.resolve(field.type),
-          mutable: assignable || field.mutable);
+          mutable: assignable || field.mutable, field: true);
       if (assignable) {
         _scope.symbols[field.name] = symbol;
       } else {
@@ -1812,6 +1846,52 @@ class Analyzer {
   }
 
   ClassDeclaration? _configType;
+
+  void registerAnnotation(AnnotationDeclaration node) {
+    if (model.annotations.contains(node.name)) {
+      fail('Annotation ${node.name} is already defined', node);
+    }
+    for (final parameter in node.parameters) {
+      validateType(parameter.type, parameter, allowVoid: false);
+    }
+    model.annotations.add(node.name);
+    model.annotationShapes[node.name] = node;
+  }
+
+  void _checkMetadata(List<Metadata> notes) {
+    for (final note in notes) {
+      if (note.name == 'Reflectable' || note.name == 'macro') {
+        if (note.arguments.isNotEmpty) {
+          fail('${note.name} takes no arguments', note);
+        }
+        continue;
+      }
+      final shape = model.annotationShapes[note.name];
+      if (shape == null) continue;
+      final seen = <String>{};
+      for (final argument in note.arguments) {
+        final label = argument.name;
+        if (label == null) {
+          fail('Positional arguments are not allowed on annotations', argument);
+        }
+        if (!seen.add(label)) fail('Duplicate argument: $label', argument);
+        final parameter =
+            shape.parameters.where((item) => item.name == label).firstOrNull;
+        if (parameter == null) fail('Unknown argument: $label', argument);
+        final type = expression(argument.value);
+        if (!compatible(type, parameter.type)) {
+          fail('Argument type $type is incompatible with ${parameter.type}',
+              argument);
+        }
+        _constants.ensureConstant(argument.value);
+      }
+      for (final parameter in shape.parameters) {
+        if (parameter.defaultValue == null && !seen.contains(parameter.name)) {
+          fail('Missing required argument ${parameter.name}', note);
+        }
+      }
+    }
+  }
 
   void registerConfig(ConfigDeclaration node) {
     validateType(node.type, node, allowVoid: false);

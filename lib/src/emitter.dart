@@ -39,6 +39,7 @@ class DartEmitter {
   var _useTask = false;
   var _useAwaitAll = false;
   var _useConfig = false;
+  var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
   void line(String text) {
     if (_redirect != null) {
@@ -61,9 +62,7 @@ class DartEmitter {
     final configs = program.statements.whereType<ConfigDeclaration>().toList();
     if (configs.isNotEmpty) _emitConfigs(configs);
     for (final node in program.statements) {
-      if (node is AnnotationDeclaration) {
-        line('class ${node.name} { const ${node.name}(); }');
-      }
+      if (node is AnnotationDeclaration) _emitAnnotation(node);
       if (node is ClassDeclaration) emitClass(node);
       if (node is ExtensionDeclaration) emitExtension(node);
     }
@@ -525,6 +524,9 @@ class DartEmitter {
                 : '';
     final propagate = node.body != null && _containsPropagate(node.body!);
     final doReturn = node.body != null && _containsDoReturn(node.body!);
+    for (final note in node.annotations) {
+      _emitMetadata(note);
+    }
     if (node.visibility == 'protected') line('/// protected');
     final title = node.isOperator ? 'operator ${node.name}' : symbol.dartName;
     final staticPrefix = node.isStatic ? 'static ' : '';
@@ -734,7 +736,7 @@ class DartEmitter {
       return;
     }
     for (final note in node.annotations) {
-      if (model.annotations.contains(note)) line('@$note()');
+      _emitMetadata(note);
     }
     line(
         '$header ${node.name}${_typeParameters(node.typeParameters)}${tail.isEmpty ? '' : ' $tail'} {');
@@ -796,7 +798,11 @@ class DartEmitter {
               (parameter) =>
                   parameter.initializing == 'this' &&
                   parameter.name == field.name));
+      final copied =
+          (node.kind == 'value' || node.modifiers.contains('value')) &&
+              node.fields.any((item) => !item.isStatic);
       final initial = field.initializer != null &&
+              !copied &&
               (node.modifiers.contains('singleton') ||
                   !initializedByConstructor)
           ? ' = ${expression(field.initializer!)}'
@@ -807,15 +813,14 @@ class DartEmitter {
       _emitProperty(property);
     }
     for (final method in node.methods) {
-      if (node.annotations.contains('macro') && method.name == 'define') {
+      if (hasAnnotation(node.annotations, 'macro') && method.name == 'define') {
         continue;
       }
       emitFunction(method);
     }
     final valueFields = node.fields.where((field) => !field.isStatic).toList();
     if ((node.kind == 'value' || node.modifiers.contains('value')) &&
-        valueFields.isNotEmpty &&
-        _copyWithConstructor(node) != null) {
+        valueFields.isNotEmpty) {
       _emitCopyWith(node, valueFields);
     }
     if (node.kind == 'value' || node.modifiers.contains('value')) {
@@ -906,9 +911,14 @@ class DartEmitter {
           type.fields.where((item) => item.name == parameter.name).firstOrNull;
       return field != null && field.visibility == 'private';
     });
-    final tail = private.isEmpty
-        ? ''
-        : ' : ${private.map((parameter) => '_${parameter.name} = ${parameter.name}').join(', ')}';
+    final lifted = _liftedFields(type, constructor);
+    final inits = [
+      ...private.map((parameter) => '_${parameter.name} = ${parameter.name}'),
+      ..._copyInitializers(type, constructor),
+      for (final binding in lifted)
+        '${model.references[binding]!.dartName} = ${expression(binding.value)}',
+    ];
+    final tail = inits.isEmpty ? '' : ' : ${inits.join(', ')}';
     final prefix = '${constructor.constant ? 'const ' : ''}'
         '${constructor.factory ? 'factory ' : ''}';
     final name = constructor.name == null
@@ -932,9 +942,33 @@ class DartEmitter {
     }
     line('$prefix$name($params)$tail {');
     _depth++;
+    final saved = _skipBindings;
+    _skipBindings = {...lifted};
     statements(constructor.body!);
+    _skipBindings = saved;
     _depth--;
     line('}');
+  }
+
+  List<Binding> _liftedFields(
+      ClassDeclaration type, ConstructorDeclaration constructor) {
+    final body = constructor.body;
+    if (body == null || constructor.factory) return const [];
+    final lifted = <Binding>[];
+    for (final statement in body) {
+      if (statement is! Binding || !model.assignments.contains(statement)) {
+        continue;
+      }
+      final symbol = model.references[statement];
+      final field = type.fields
+          .where((item) => item.name == statement.name && !item.isStatic)
+          .firstOrNull;
+      if (symbol == null || !symbol.field || field == null || field.mutable) {
+        continue;
+      }
+      lifted.add(statement);
+    }
+    return lifted;
   }
 
   void _emitProperty(PropertyDeclaration node) {
@@ -961,61 +995,112 @@ class DartEmitter {
     }
   }
 
-  /// The unnamed generative constructor copyWith can call, or a sentinel when
-  /// the class still uses the synthesized named constructor.
-  ConstructorDeclaration? _copyWithConstructor(ClassDeclaration node) {
-    if (node.constructors.isEmpty)
-      return ConstructorDeclaration(null, const [], null, null, node.span);
-    final generative = node.constructors
-        .where(
-            (constructor) => constructor.name == null && !constructor.factory)
-        .toList();
-    if (generative.length != 1) return null;
-    final constructor = generative.single;
-    final fields = node.fields.where((field) => !field.isStatic).toList();
-    bool covered(FieldDeclaration field) =>
-        constructor.parameters.any((parameter) =>
-            parameter.initializing == 'this' && parameter.name == field.name);
-    final covers =
-        fields.every((field) => covered(field) || field.initializer != null);
-    final onlyFields = constructor.parameters.every((parameter) =>
-        parameter.initializing == 'this' &&
-        fields.any((field) => field.name == parameter.name));
-    if (!covers || !onlyFields) return null;
-    return constructor;
+  List<String> _copyInitializers(
+      ClassDeclaration type, ConstructorDeclaration constructor) {
+    if (constructor.factory || constructor.expressionBody != null) {
+      return const [];
+    }
+    if (type.kind != 'value' && !type.modifiers.contains('value')) {
+      return const [];
+    }
+    final inits = <String>[];
+    for (final field in type.fields) {
+      if (field.isStatic || field.initializer == null) continue;
+      final formal = constructor.parameters.any((parameter) =>
+          parameter.initializing == 'this' && parameter.name == field.name);
+      if (formal || _bodyAssigns(constructor.body, field.name)) continue;
+      inits.add('${_fieldDart(field)} = ${expression(field.initializer!)}');
+    }
+    return inits;
+  }
+
+  bool _bodyAssigns(List<Statement>? body, String name) {
+    if (body == null) return false;
+    for (final statement in body) {
+      if (_statementAssigns(statement, name)) return true;
+    }
+    return false;
+  }
+
+  bool _statementAssigns(Statement node, String name) {
+    switch (node) {
+      case Binding():
+        return node.name == name && model.assignments.contains(node);
+      case MemberAssignment():
+        return node.name == name && node.object is ThisExpression;
+      case IfStatement():
+        return _bodyAssigns(node.thenBody, name) ||
+            _bodyAssigns(node.elseBody, name);
+      case ForStatement():
+        return _bodyAssigns(node.body, name);
+      case WhileStatement():
+        return _bodyAssigns(node.body, name);
+      case UsingStatement():
+        return _bodyAssigns(node.body, name);
+      case LabelStatement():
+        return _statementAssigns(node.statement, name);
+      default:
+        return false;
+    }
+  }
+
+  void _emitAnnotation(AnnotationDeclaration node) {
+    final params = node.parameters.map((parameter) {
+      final required = parameter.defaultValue == null ? 'required ' : '';
+      final value = parameter.defaultValue == null
+          ? ''
+          : ' = ${expression(parameter.defaultValue!)}';
+      return '$required this.${parameter.name}$value';
+    }).join(', ');
+    line('class ${node.name} {');
+    _depth++;
+    line(params.isEmpty
+        ? 'const ${node.name}();'
+        : 'const ${node.name}({$params});');
+    for (final parameter in node.parameters) {
+      line('final ${_dartType(parameter.type)} ${parameter.name};');
+    }
+    _depth--;
+    line('}');
+  }
+
+  void _emitMetadata(Metadata note) {
+    if (!model.annotations.contains(note.name)) return;
+    if (note.arguments.isEmpty) {
+      line('@${note.name}()');
+      return;
+    }
+    final args = note.arguments
+        .map((argument) => '${argument.name}: ${expression(argument.value)}')
+        .join(', ');
+    line('@${note.name}($args)');
   }
 
   void _emitCopyWith(ClassDeclaration node, List<FieldDeclaration> fields) {
     _useOptional = true;
-    final constructor = node.constructors
-        .where((item) => item.name == null && !item.factory)
-        .firstOrNull;
-    final params =
+    final params = fields.map((field) {
+      if (field.visibility == 'private') {
+        return 'required ${_dartType(field.type)} ${field.name}';
+      }
+      return 'required this.${_fieldDart(field)}';
+    }).join(', ');
+    final private = fields.where((field) => field.visibility == 'private');
+    final tail = private.isEmpty
+        ? ''
+        : ' : ${private.map((field) => '${_fieldDart(field)} = ${field.name}').join(', ')}';
+    line('${node.name}._qudsCopy({$params})$tail;');
+    final copy =
         fields.map((field) => 'Object? ${field.name} = missing').join(', ');
-    line('${node.name} copyWith({$params}) {');
+    line('${node.name} copyWith({$copy}) {');
     _depth++;
     String argument(FieldDeclaration field) {
       final cast = _dartType(field.type);
       return 'identical(${field.name}, missing) ? this.${_fieldDart(field)} : ${field.name} as $cast';
     }
 
-    if (constructor == null) {
-      final args =
-          fields.map((field) => '${field.name}: ${argument(field)}').join(', ');
-      line('return ${node.name}($args);');
-    } else {
-      final covered = constructor.parameters.map((item) => item.name).toSet();
-      for (final field in fields) {
-        if (covered.contains(field.name) || field.initializer == null) continue;
-        line(
-            'if (!identical(${field.name}, missing)) throw ArgumentError(\'copyWith cannot replace ${field.name}\');');
-      }
-      final args = constructor.parameters.map((parameter) {
-        final field = fields.firstWhere((item) => item.name == parameter.name);
-        return argument(field);
-      }).join(', ');
-      line('return ${node.name}($args);');
-    }
+    final args =
+        fields.map((field) => '${field.name}: ${argument(field)}').join(', ');
+    line('return ${node.name}._qudsCopy($args);');
     _depth--;
     line('}');
   }
@@ -1052,8 +1137,11 @@ class DartEmitter {
     switch (node) {
       case Binding():
         if (model.assignments.contains(node)) {
-          line(
-              '${_cell(model.references[node]!)} ${node.operator} ${expression(node.value)};');
+          if (_skipBindings.contains(node)) break;
+          final symbol = model.references[node]!;
+          final target =
+              symbol.field ? 'this.${symbol.dartName}' : _cell(symbol);
+          line('$target ${node.operator} ${expression(node.value)};');
         } else {
           final symbol = model.declarations[node]!;
           if (symbol.reactive == 'state' || symbol.reactive == 'computed') {

@@ -7,7 +7,7 @@ Program expandMacros(Program program) {
   final macros = <String, ClassDeclaration>{};
   for (final statement in program.statements) {
     if (statement is ClassDeclaration &&
-        statement.annotations.contains('macro')) {
+        hasAnnotation(statement.annotations, 'macro')) {
       macros[statement.name] = statement;
     }
   }
@@ -15,17 +15,17 @@ Program expandMacros(Program program) {
   final statements = <Statement>[];
   for (final statement in program.statements) {
     if (statement is ClassDeclaration &&
-        statement.annotations.contains('macro')) {
+        hasAnnotation(statement.annotations, 'macro')) {
       continue;
     }
     if (statement is ClassDeclaration) {
       final methods = [...statement.methods];
       for (final note in statement.annotations) {
-        if (note == 'macro') continue;
-        final macro = macros[note];
+        if (note.name == 'macro') continue;
+        final macro = macros[note.name];
         if (macro == null) {
           throw CompilerException(
-              'E906', 'Unknown macro: $note', statement.span);
+              'E906', 'Unknown macro: ${note.name}', statement.span);
         }
         methods.addAll(_expand(macro));
       }
@@ -35,7 +35,7 @@ Program expandMacros(Program program) {
           statement.fields,
           methods,
           statement.cases,
-          statement.annotations.where((note) => note == 'macro').toList(),
+          statement.annotations.where((note) => note.name == 'macro').toList(),
           statement.span));
     } else {
       statements.add(statement);

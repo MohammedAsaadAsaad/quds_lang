@@ -208,11 +208,28 @@ class Parser {
     return -1;
   }
 
-  List<String> takeAnnotations() {
-    final notes = <String>[];
+  List<Metadata> takeAnnotations() {
+    final notes = <Metadata>[];
     while (at(TokenKind.at)) {
+      final span = current.span;
       take();
-      notes.add(name().lexeme);
+      final annotation = name();
+      final arguments = <Argument>[];
+      if (match(TokenKind.leftParen)) {
+        if (!at(TokenKind.rightParen)) {
+          do {
+            String? label;
+            final argumentSpan = current.span;
+            if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+              label = name().lexeme;
+              take();
+            }
+            arguments.add(Argument(label, expression(), argumentSpan));
+          } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
+        }
+        expect(TokenKind.rightParen, ')');
+      }
+      notes.add(Metadata(annotation.lexeme, arguments, extent(span)));
       if (at(TokenKind.newline) && peek().kind == TokenKind.at) endLine();
     }
     if (notes.isNotEmpty && at(TokenKind.newline)) endLine();
@@ -851,7 +868,7 @@ class Parser {
     }
   }
 
-  ClassDeclaration typeDeclaration(SourceSpan span, List<String> notes,
+  ClassDeclaration typeDeclaration(SourceSpan span, List<Metadata> notes,
       {String? forced, List<String> modifiers = const []}) {
     _checkModifiers(modifiers, span);
     var kind = forced ?? 'class';
@@ -1145,7 +1162,7 @@ class Parser {
     return AliasDeclaration(typeNameToken.lexeme, target, extent(span));
   }
 
-  ClassDeclaration mixinDeclaration(SourceSpan span, List<String> notes,
+  ClassDeclaration mixinDeclaration(SourceSpan span, List<Metadata> notes,
       {List<String> modifiers = const []}) {
     _checkModifiers([...modifiers, 'mixin'], span);
     take();
@@ -1162,7 +1179,7 @@ class Parser {
   }
 
   ExtensionDeclaration extensionDeclaration(
-      SourceSpan span, List<String> notes) {
+      SourceSpan span, List<Metadata> notes) {
     take();
     final target = typeName();
     final typeParameters = extensionParameters(target, span);
@@ -1243,7 +1260,7 @@ class Parser {
   }
 
   (List<FieldDeclaration>, List<FunctionDeclaration>) typeMembers(
-      List<String> notes) {
+      List<Metadata> notes) {
     expect(TokenKind.colon, ':');
     endLine();
     expect(TokenKind.indent, 'indented block');
@@ -1518,7 +1535,7 @@ class Parser {
         isStatic: true, isConst: true);
   }
 
-  FunctionDeclaration function(List<String> notes,
+  FunctionDeclaration function(List<Metadata> notes,
       {String visibility = '',
       bool readonlyMethod = false,
       String? operatorName,
@@ -1623,7 +1640,7 @@ class Parser {
         defaultValue: defaultValue, variadic: variadic);
   }
 
-  ClassDeclaration enumDeclaration(SourceSpan span, List<String> notes) {
+  ClassDeclaration enumDeclaration(SourceSpan span, List<Metadata> notes) {
     take();
     final typeNameToken = name();
     expect(TokenKind.colon, ':');

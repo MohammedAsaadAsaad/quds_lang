@@ -896,6 +896,38 @@ config:
     }
   });
 
+  test('annotation arguments and constructor-body copyWith execute', () async {
+    final source = '''
+annotation Tag(caption: String = "item"):
+@Tag(caption: "box")
+value class Pair:
+  x: int
+  y: int
+  init(this.x):
+    y = x + 1
+main():
+  pair = Pair(x: 1)
+  print pair.y
+  copied = pair.copyWith(x: 4)
+  print copied.x
+  print copied.y
+  replaced = pair.copyWith(y: 9)
+  print replaced.x
+  print replaced.y
+''';
+    final dart = compile(source).dart;
+    expect(dart, contains('@Tag(caption: "box")'));
+    expect(dart, contains('this.caption = "item"'));
+    expect(dart, contains('_qudsCopy'));
+    await execute(
+        source,
+        '2\n'
+        '4\n'
+        '2\n'
+        '1\n'
+        '9\n');
+  });
+
   test('new diagnostics reject the programs they name', () {
     final rejected = {
       'main():\n  result 1\n': 'E106',
@@ -1061,6 +1093,23 @@ config secret token: String = "hidden"
 main():
   print 1
 ''': 'E908',
+      '''
+annotation Tag(caption: String):
+@Tag
+class Item:
+  n: int = 1
+main():
+  print 1
+''': 'E500',
+      '''
+annotation Tag(caption: String = "a"):
+@Tag(caption: captionText())
+class Item:
+  n: int = 1
+captionText() -> String = "b"
+main():
+  print 1
+''': 'E401',
       '''
 main():
   spawn ready()

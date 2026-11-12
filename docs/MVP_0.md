@@ -291,11 +291,11 @@ unchanged by the map.
 - `static const`, `static var`, `static final`, and `static` functions. A
   static member used on an instance, or an instance member used on the class,
   is `E300`.
-- `const init` with initializing formals. A value class `copyWith` calls that
-  constructor when it initializes every field. An omitted argument and an
-  explicit `missing` keep the field. An explicit null stores null when the
-  field is nullable. A field with an initializer that the constructor does not
-  initialize may be omitted; replacing it throws `ArgumentError`.
+- `const init` with initializing formals. A value class `copyWith` copies
+  every instance field through a generated constructor, including a field
+  assigned in the constructor body. The user constructor body is not run
+  again. An omitted argument and an explicit `missing` keep the field. An
+  explicit null stores null when the field is nullable.
 - `part` / `part of`, and constant `when` / `use when`. On the VM, `platform`
   is `"vm"`. A non-constant `when` is `E902`. Both `part` and `part of` in one
   file is `E903`. The `when` branch that is not selected is neither type-checked
@@ -327,9 +327,11 @@ unchanged by the map.
   `require` throws `ArgumentError` and stays in release. `check` throws
   `StateError` and stays in release. `assert` is Dart's `assert`. The message
   runs only when the condition is false.
-- `annotation Name:` emits a const class, and `@Name` emits `@Name()` only for
-  a declared annotation. `@Reflectable` on a class emits
-  `qudsReflectName` with the class name and field names.
+- `annotation Name:` and `annotation Name(parameters)` emit a const class.
+  `@Name` and `@Name(name: value)` emit that metadata. Arguments are named
+  constants. A missing required argument is `E500`. A non-constant argument is
+  `E401`. `@Reflectable` on a class emits `qudsReflectName` with the class
+  name and field names.
 - `config name: Type = expression` reads the process environment, then the
   `config:` map in `quds.yaml` beside the working directory, then the source
   default. A dotted name such as `server.host` is read as `config.server.host`
@@ -344,7 +346,6 @@ fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
 that literal, and `test/language_test.dart` executes both results.
 
 The parity table still includes forms this compiler rejects instead of
-inventing: cross-file private access, `copyWith` for a field assigned only in
-a constructor body, annotation arguments, and cooperative cancellation of a
+inventing: cross-file private access, and cooperative cancellation of a
 future that has already started. No claim of full 115-decision conformance is
 made.

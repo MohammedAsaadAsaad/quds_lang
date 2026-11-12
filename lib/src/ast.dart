@@ -18,7 +18,7 @@ class FunctionDeclaration extends Statement {
   const FunctionDeclaration(this.name, this.parameters, this.returnType,
       this.body, this.expressionBody, super.span,
       {this.isAsync = false,
-      this.annotations = const [],
+      this.annotations = const <Metadata>[],
       this.generator = '',
       this.visibility = '',
       this.isOperator = false,
@@ -32,7 +32,7 @@ class FunctionDeclaration extends Statement {
   final List<Statement>? body;
   final Expression? expressionBody;
   final bool isAsync;
-  final List<String> annotations;
+  final List<Metadata> annotations;
 
   /// Empty, `sync`, or `async`. A non-empty value means a generator.
   final String generator;
@@ -43,6 +43,15 @@ class FunctionDeclaration extends Statement {
   final bool readonlyMethod;
   final bool isStatic;
 }
+
+class Metadata extends Node {
+  const Metadata(this.name, this.arguments, super.span);
+  final String name;
+  final List<Argument> arguments;
+}
+
+bool hasAnnotation(List<Metadata> notes, String name) =>
+    notes.any((note) => note.name == name);
 
 class Parameter extends Node {
   const Parameter(this.name, this.type, this.mutable, super.span,
@@ -275,7 +284,7 @@ class ClassDeclaration extends Statement {
   final List<FieldDeclaration> fields;
   final List<FunctionDeclaration> methods;
   final List<ClassCase> cases;
-  final List<String> annotations;
+  final List<Metadata> annotations;
   final String? superclass;
   final List<String> mixins;
   final List<String> interfaces;

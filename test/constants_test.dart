@@ -167,56 +167,56 @@ void main() {
       line: 2,
       column: 17,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'left remainder is reported before the right': (
       source: 'main():\n  const x = (1 % 0) + (2 % 0)\n',
       line: 2,
       column: 14,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'list elements are evaluated left to right': (
       source: 'main():\n  const xs = [1 % 0, 2 % 0]\n',
       line: 2,
       column: 15,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'taken logical branch still divides': (
       source: 'main():\n  const x = false or (1 % 0 == 0)\n',
       line: 2,
       column: 23,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'nested taken branch still divides': (
       source: 'main():\n  const x = false or (true and (1 % 0 == 0))\n',
       line: 2,
       column: 33,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'num zero is an integer remainder': (
       source: 'main():\n  const z: num = 0\n  const x = 4 % z\n',
       line: 3,
       column: 13,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'unreachable const is still evaluated': (
       source: 'main():\n  if false:\n    const x = 1 % 0\n',
       line: 3,
       column: 15,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'call is not a constant': (
       source: 'f() = 1\nmain():\n  const x = f()\n',
       line: 3,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'skipped call is still not a constant': (
       source:
@@ -224,35 +224,35 @@ void main() {
       line: 4,
       column: 23,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'interpolation is not a constant': (
       source: 'main():\n  const s = "hi {1 + 2}"\n',
       line: 2,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'const reference interpolation is not a constant': (
       source: 'main():\n  const name = "Quds"\n  const message = "hi {name}"\n',
       line: 3,
       column: 19,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'mutable binding is not a constant': (
       source: 'main():\n  var a = 1\n  const b = a\n',
       line: 3,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'final binding is not a constant': (
       source: 'main():\n  a = 1\n  const b = a\n',
       line: 3,
       column: 13,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'shadow hides an outer constant': (
       source:
@@ -260,56 +260,80 @@ void main() {
       line: 5,
       column: 15,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'loop variable is not a constant': (
       source: 'main():\n  for item in [1]:\n    const x = item\n',
       line: 3,
       column: 15,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
     ),
     'integer literal outside 64 bits': (
       source: 'main():\n  const x = 9223372036854775808\n',
       line: 2,
       column: 13,
       message: 'Numeric literal is outside the supported native Dart range',
-      code: 'Q100',
+      code: 'E006',
     ),
     'top-level remainder keeps the operator span': (
       source: 'const x = 1 % 0\nmain():\n  print x\n',
       line: 1,
       column: 11,
       message: 'Integer remainder by zero',
-      code: 'Q200',
+      code: 'E401',
     ),
     'top-level const cannot see a later const': (
       source: 'const b = a\nconst a = 1\nmain():\n  print b\n',
       line: 1,
       column: 11,
       message: 'Undefined symbol: a',
-      code: 'Q200',
+      code: 'E200',
     ),
     'top-level const cannot call': (
       source: 'id(value: int) = value\nconst x = id(1)\nmain():\n  print x\n',
       line: 2,
       column: 11,
       message: 'const requires a compile-time constant',
-      code: 'Q200',
+      code: 'E401',
+    ),
+    'a non-const constructor is not a constant': (
+      source:
+          'class Box:\n  n: int required\n  init(this.n):\n    print n\nconst bad = Box(n: 1)\nmain():\n  print bad.n\n',
+      line: 5,
+      column: 13,
+      message: 'const requires a compile-time constant',
+      code: 'E401',
+    ),
+    'a const constructor cannot have a body': (
+      source:
+          'class Box:\n  n: int required\n  const init(this.n):\n    print n\nmain():\n  print 1\n',
+      line: 3,
+      column: 3,
+      message: 'A const constructor cannot have a body',
+      code: 'E401',
+    ),
+    'a mutable list is not implicitly const': (
+      source: 'main():\n  colors = ["red"]\n  const bad = [colors]\n',
+      line: 3,
+      column: 16,
+      message: 'const requires a compile-time constant',
+      code: 'E401',
     ),
     'module scope rejects a mutable binding': (
       source: 'var a = 1\nmain():\n  print a\n',
       line: 1,
       column: 1,
-      message: 'Module scope permits function declarations and const bindings',
-      code: 'Q200',
+      message:
+          'Module scope permits functions, classes, imports, and const bindings',
+      code: 'E100',
     ),
     'top-level const cannot repeat a function name': (
       source: 'main():\n  print 1\nconst main = 1\n',
       line: 3,
       column: 1,
       message: 'Binding would shadow main; use shadow in an inner scope',
-      code: 'Q200',
+      code: 'E203',
     ),
   };
   for (final entry in errors.entries) {
@@ -394,7 +418,7 @@ main():
           ['run', 'bin/quds.dart', 'build', source.path]);
       expect(built.exitCode, 65, reason: '${built.stdout}\n${built.stderr}');
       expect(built.stderr,
-          contains('${source.path}:2:13: Q200: Integer remainder by zero'));
+          contains('${source.path}:2:13: E401: Integer remainder by zero'));
       expect(output.existsSync(), isFalse);
     } finally {
       directory.deleteSync(recursive: true);
@@ -524,6 +548,63 @@ const base = 4
 ''', '4\n');
   });
 
+  test('implicit const stays inside a constant context', () async {
+    final source = '''
+class Point:
+  x: int required
+  y: int required
+  const init(this.x, this.y)
+const palette = ["red", "blue"]
+const again = ["red", "blue"]
+const samePalette = palette == again
+const ages = map:
+  "Ada": 36
+const agesAgain = map:
+  "Ada": 36
+const sameAges = ages == agesAgain
+const flags = set:
+  1
+  2
+const origin = Point(x: 0, y: 0)
+const shifted = Point(x: 1, y: 2)
+const sameOrigin = Point(x: 0, y: 0)
+main():
+  colors = ["red", "blue"]
+  other = ["red", "blue"]
+  fresh = Point(x: 1, y: 2)
+  print samePalette
+  print sameAges
+  print flags.length
+  print origin.y
+  print shifted.y
+  print origin == sameOrigin
+  print origin == fresh
+  print colors.length
+  print other[0]
+  print ages["Ada"]
+  print palette[0]
+''';
+    final result = compile(source);
+    final colors = dartName(result, 'colors');
+    expect(result.dart, contains('final List<String> $colors = <String>['));
+    expect(result.dart, isNot(contains('final List<String> $colors = const')));
+    expect(result.dart,
+        contains('const List<String> ${dartName(result, 'palette')} ='));
+    await execute(
+        source,
+        'true\n'
+        'true\n'
+        '2\n'
+        '0\n'
+        '2\n'
+        'true\n'
+        'false\n'
+        '2\n'
+        'red\n'
+        '36\n'
+        'red\n');
+  });
+
   test('a top-level const is not reassigned or implicitly shadowed', () {
     expect(
         () => compile('const a = 1\nmain():\n  a = 2\n'),
@@ -629,6 +710,87 @@ List<BinaryExpression> operators(Expression node, String op) {
         }
       case Literal() || Identifier():
         break;
+      case Lambda(:final expressionBody):
+        if (expressionBody != null) walk(expressionBody);
+      case MemberAccess(:final object):
+        walk(object);
+      case IndexExpression(:final object, :final index):
+        walk(object);
+        walk(index);
+      case MapExpression(:final keys, :final values):
+        for (final key in keys) {
+          walk(key);
+        }
+        for (final value in values) {
+          walk(value);
+        }
+      case SetExpression(:final elements):
+        for (final element in elements) {
+          walk(element);
+        }
+      case RecordExpression(:final fields):
+        for (final field in fields) {
+          walk(field);
+        }
+      case RangeExpression(:final start, :final end):
+        walk(start);
+        walk(end);
+      case AwaitExpression(:final operand) ||
+            PropagateExpression(:final operand) ||
+            ConversionExpression(:final operand) ||
+            TypeTestExpression(:final operand):
+        walk(operand);
+      case DoExpression() ||
+            CaptureExpression() ||
+            WithExpression() ||
+            DotShorthand() ||
+            AssignExpression() ||
+            MapComprehension() ||
+            ThisExpression() ||
+            SymbolExpression():
+        break;
+      case TypeApplication(:final callee):
+        walk(callee);
+      case AwaitAllExpression(:final arms):
+        for (final arm in arms) {
+          walk(arm);
+        }
+      case AwaitIsolateExpression(:final call):
+        walk(call);
+      case SpreadElement(:final operand):
+        walk(operand);
+      case TryExpression(:final operand, :final fallback):
+        walk(operand);
+        walk(fallback);
+      case IfExpression(:final condition, :final thenValue, :final elseValue):
+        walk(condition);
+        walk(thenValue);
+        walk(elseValue);
+      case MatchExpression(:final value, :final arms):
+        walk(value);
+        for (final arm in arms) {
+          if (arm.guard != null) walk(arm.guard!);
+          walk(arm.result);
+        }
+      case NullAwareElement(:final value):
+        walk(value);
+      case CollectionIf(
+          :final condition,
+          :final thenElements,
+          :final elseElements
+        ):
+        walk(condition);
+        for (final element in thenElements) {
+          walk(element);
+        }
+        for (final element in elseElements) {
+          walk(element);
+        }
+      case CollectionFor(:final iterable, :final body):
+        walk(iterable);
+        for (final element in body) {
+          walk(element);
+        }
     }
   }
 

@@ -3,10 +3,10 @@
 This implements Issue #1's first compiler slice. The approved decisions are not
 replaced by this document. Syntax outside this subset is deferred, not removed
 from the language. Design 1.2 in `QUDS_LANGUAGE_SPECIFICATION.md` is the
-language; this file is the compiler that exists today. Its lexer, parser and
-semantic failures still carry category codes Q001, Q100 and Q200 with original
-file, line and column. The design registry is the `E` / `W` codes, and a
-compiler that implements 1.2 uses those instead. Tokens and AST nodes retain
+language; this file is the compiler that exists today. Diagnostics use the
+design registry (`E001`–`E006`, `E100`, `E102`, `E200`, `E300`, `E401`, and
+the other implemented codes) with the original file, line, and column. Tokens
+and AST nodes retain
 source spans; there are no generated-Dart source maps yet.
 
 ## Layout and lexical rules (001, 019, 020, 021, 065)
@@ -32,10 +32,11 @@ Escapes: `\n`, `\r`, `\t`, `\\`, `\'`, `\"`, `\{`, `\}`, `\$`.
 the same lexer/parser; `$` is ordinary Quds text. Literal braces must be escaped.
 Raw strings and comments inside interpolation are deferred.
 
-Numbers support decimal native Dart integer and finite decimal-double literals;
-exponents, radix syntax and digit separators are deferred. Out-of-range positive
-integer literals are rejected instead of silently becoming doubles. Cross-platform
-integer guarantees remain open; web compilation is not validated.
+Numbers support decimal native Dart integers, finite doubles, hex, exponents,
+and digit separators. A literal outside the signed 64-bit range is `E006`.
+Small integers and decimal doubles match between the VM and JavaScript. An
+integer outside the JavaScript safe range stays exact on the VM, and Dart's
+web compiler rejects it instead of rounding it.
 
 Examples and conformance: `test/lexer_test.dart`, `test/parser_test.dart`, and
 string execution tests in `test/compiler_test.dart`.
@@ -165,7 +166,7 @@ This prints `5`, `false`, and `[10, 5]`. The supported const forms are the
 MVP-0 literals, references to earlier const bindings, unary `+`, `-`, and
 `not`, the arithmetic and comparison operators, `==` and `!=`, `and` and `or`,
 and lists of those values. Calls, general interpolation, mutable bindings, and
-final bindings are not constants. Q200 is reported on the failing subexpression
+final bindings are not constants. `E401` is reported on the failing subexpression
 in the original `.quds` file.
 
 Evaluation uses the host Dart `int` and `double` operators, left to right and
@@ -183,7 +184,10 @@ and `-0.0 == 0.0`.
 
 A `const` list is a Dart constant list. A final or `var` list remains a
 mutable object; the binding's immutability does not freeze it. The same rules
-apply to a top-level `const`. Inferred const is not implemented. An
+apply to a top-level `const`. Inside a `const` binding, a list, map, set,
+or const constructor call is constant without another `const` keyword. The
+same list in an ordinary binding stays mutable. A constructor that is not
+`const`, and a `const` constructor with a body, are rejected. An
 interpolation whose parts are all literals is already a string literal
 (`"hi {1}"` is `"hi 1"`). Any other interpolation is not a constant. Dart has
 no prefix `+`, so Quds unary `+` is lowered as numeric identity, including the
@@ -202,17 +206,226 @@ than a Quds constant error. Const initializers do not call `_qBool`.
 
 Tests: `test/constants_test.dart` and `test/fixtures/const_eval.quds`.
 
-## Dart output and remaining work (033, 063, 085, 114)
+## Dart output (033, 063)
 
-Emission is deterministic and uses unique Dart names to avoid keyword/internal
-name collisions. The golden fixtures record exact output; integration tests
-analyze and execute it. `quds build` is the only CLI command implemented. Public
-Dart-facing wrappers, imports and dependencies in Quds, arbitrary Dart interop,
-source maps, error recovery and runtime stack remapping remain future work.
-Const constructors and web numeric behavior are not part of this slice.
+Emission is deterministic and uses unique Dart names for top-level functions so
+the MVP-0 golden fixtures stay stable. Classes, cases, and methods keep their
+Quds names. `quds build` still refuses to overwrite a file that does not start
+with the generated header, and it writes a sibling `.dart.map` (Source Map
+Revision 3, one mapping per generated line). The `.dart` text itself is
+unchanged by the map.
 
-QUDS-082–089 advanced conversions/Optional/defaults/overloads/variadics,
-091–092 capture/readonly, and 094–115 are specified by design 1.2 and are not
-implemented by this slice. Classes, maps/sets/records, lambdas, generics beyond
-`List<T>`, patterns, concurrency, macros and tooling beyond build are also deferred.
+## Language slice beyond MVP-0
+
+`test/language_test.dart` compiles, analyzes, and executes this slice:
+
+- Classes, value classes (`==` and `hashCode`), and `sealed type` cases.
+- Local functions, expression lambdas, function tear-offs, and function types `(parameters) -> Type`.
+- Nullable types, postfix `!`, and `??`.
+- `use dart:math` for `sqrt`, `sin`, `cos`, `min`, `max`, and `pi`. Other
+  `dart:`, `package:`, and `.quds` imports are emitted and do not invent names.
+- `for` over lists, sets, and ranges (`..` and `..<`), including a range whose end is below its start, `while`, `break`,
+  `continue`, and `label name` on a loop.
+- `map:` and `set:` literals, records, and `(a, b) = record` destructuring.
+- Default arguments, including defaults that read earlier parameters, and
+  compile-time overloads. Identical signatures are still an error.
+- `missing`, `present`, `Ok`, `Error`, and postfix `?` on `Result`.
+- `async` / `await`. An async `main` returns `Future<void>`.
+- `@macro` classes whose `define` body only calls `builder.addMethod`.
+- `quds run`, `analyze`, `test`, `format`, `create`, `add`, `remove`, `get`,
+  `doc`, and `migrate`, in addition to `build`.
+- `do` / `result`. `result` finishes the `do`. `return` inside `do` leaves the
+  function. `E106` outside `do`, `E109` when a value `do` has no `result`.
+- `readonly` on one reference. Assignment and a mutating method name are
+  `E307`. Another binding of the same object may still call that method.
+- `capture(names) -> expr` snapshots those bindings. Object contents are not
+  copied.
+- `to` and `to?`. Failure throws `ConversionError` or yields null. The target
+  may be nullable.
+- `with` and `with?`. The receiver runs once. `with?` yields null and skips
+  the block when the receiver is null. A readonly receiver is `E307`.
+- Unions. `int | double` is `num`. `T | Null` is `T?`. Any other union lowers
+  to a sealed hierarchy. A statement `match` warns `W001` when a sealed type
+  or union is incomplete, and an unreachable arm is `E313`. A guard does not
+  cover its arm.
+- Dot shorthands `.member` and `.new` when the expected type is unique
+  (`E302` otherwise).
+- Null-aware list and set elements, and collection-element blocks, including
+  `if` and `for` in those blocks.
+- `test "...":` and `group "...":`. `quds test` runs them. A function whose
+  name starts with `test` still runs too.
+- C-style `for var i = 0 while cond step i += 1:` and `repeat:` / `while`.
+  A constant step of zero is `E801`. A non-constant step of zero throws when
+  the update runs. `continue` runs the step.
+- Spreads `...` and `...?` in lists, sets, maps, and collection blocks.
+  `if` and `for` are collection elements there too. Inside `[]`, a comma that
+  separates list elements sits after the suite, at the list's indentation.
+- `if` expressions, which require `else`, and `match` expressions. A missing
+  expression arm is `E314`.
+- `try` / `catch` / `finally`, `throw`, `rethrow`, and `try expr else fallback`. Typed catches run in source order. `finally` runs when the suite exits, including after `rethrow`. `catch error, stack` binds the `StackTrace`. `rethrow` outside `catch` is `E107`.
+- `late` and `late var`.
+- `enum` declarations, including dot shorthand and exhaustive `match`.
+- `sync*` / `yield` and `async*` / `await for`.
+- Typed variadics `...values: Type` and call spreads `...` / `...?`. A fixed
+  signature wins over a variadic one. A variadic parameter that is not last is
+  `E503`.
+- `mixin`, `class ... with`, `interface`, and `extend Type`. A failed mixin
+  `on` constraint is `E702`. A mixin member that does not override the previous
+  signature is `E300`. Two extensions for one member are `E205`.
+- `singleton class` builds one instance per isolate. An initialization cycle is
+  `E707`. Empty `map:` and `set:` use the expected type. A repeated map key
+  keeps the later value.
+- Lambdas: `x -> expr`, nested arrows, an indented body with `return`, and `await` inside the lambda. A closure sees a later assignment to a mutable binding.
+- `state`, `computed`, and `watch`. A computed cycle warns `W007`. A cycle found while a computed value is already evaluating throws `CycleError`. `watch` drops its subscription when its scope exits. `batch` holds notifications until the suite exits, including an exceptional exit, then flushes once.
+- Transparent aliases `type Name = Type` and extension types `type Name wraps Type`.
+  `require` in the wrapped body rejects a value at construction.
+- Class modifiers `abstract`, `base`, `interface`, `final`, `sealed`, `mixin`,
+  `value`, and `singleton`, in the combinations Dart accepts. Any other
+  combination is `E720`. A final class cannot be extended. A subtype of a
+  `base` class is `base`, `final`, or `sealed`.
+- Diagnostics use the design registry. Lexer errors are `E001`–`E006` and
+  `E102`. A parse failure is `E100`. Semantic failures use codes such as
+  `E200`, `E203`, `E300`, `E401`, and `E500`.
+- `property` getters and setters, `operator` declarations, and `readonly`
+  methods. A write inside a `readonly` method is `E307`.
+- `private` members lower to Dart `_` names. `protected` members are visible
+  in the same library and are emitted with a `/// protected` comment.
+- `init`, `init name`, `factory init`, and initializing formals `this.field`.
+  A final field missed by a constructor is `E704`. A `var` field on a value
+  class is `E706`. Value classes without their own `init` also get `copyWith`.
+- `if value is Pattern`, `if let name = expr`, `using` / `using async`, and
+  `defer`. Deferred calls run at scope exit, last in first out, before `using`
+  disposal. An async `defer` outside an async function is `E803`.
+- `static const`, `static var`, `static final`, and `static` functions. A
+  static member used on an instance, or an instance member used on the class,
+  is `E300`.
+- `const init` with initializing formals. A value class `copyWith` copies
+  every instance field through a generated constructor, including a field
+  assigned in the constructor body. The user constructor body is not run
+  again. An omitted argument and an explicit `missing` keep the field. An
+  explicit null stores null when the field is nullable.
+- `part` / `part of`, and constant `when` / `use when`. On the VM, `platform`
+  is `"vm"`. A non-constant `when` is `E902`. Both `part` and `part of` in one
+  file is `E903`. The `when` branch that is not selected is neither type-checked
+  nor emitted.
+- Patterns: `or` (`|`), `and`, relational (`<`, `<=`, `>`, `>=`, `==`, `!=`),
+  list rest (`...` and `...name`), indented `map:` patterns, records, `as`,
+  null-check `?`, and null-assert `!`. A parenthesized pattern with no comma
+  is grouping. `(pattern,)` is a one-field record.
+- Generic classes and functions, written `<T: Bound>`, and variance `in` /
+  `out`. A use in the wrong position is `E304`. `in` and `out` are dropped in
+  Dart; a bound is `extends`. A constructor call infers type arguments from
+  named arguments, and `Box<String>(...)` passes them explicitly.
+- Intersection types `A & B`. `&` binds tighter than `|`. A parameter lowers
+  to `T extends` the first type, then checks `is!` for each later part. Two
+  disjoint concrete types are `E306`. A member that belongs to a later part is
+  cast to that part in the generated Dart.
+- `extend List<T>:` treats an unbound type argument as an extension type
+  parameter and emits `extension<T> on List<T>`.
+- `await all:` starts every child immediately and yields a record in source
+  order. The first source-order error propagates. The form requires `async`
+  (`E803`). `await isolate:` lowers a top-level or static call to
+  `Isolate.run`. A captured local is `E805`.
+- `task group:` / `spawn`, including a nested group. `spawn` outside the group is `E107`. The group
+  requires `async` (`E803`). Child errors are collected in source order into
+  `TaskFailed`. A nested group is not entered after an earlier child has failed.
+- `noSuchMethod` on a `dynamic` receiver. A typed missing member is still
+  `E300`. `symbol "name"` is `#name` when the text is an identifier.
+- `require`, `check`, and `assert`, with an optional message after a comma.
+  `require` throws `ArgumentError` and stays in release. `check` throws
+  `StateError` and stays in release. `assert` is Dart's `assert`. The message
+  runs only when the condition is false. `dart run --no-enable-asserts` skips
+  the assert, so its condition does not run. `require` and `check` still run.
+- `annotation Name:` and `annotation Name(parameters)` emit a const class.
+  `@Name` and `@Name(name: value)` emit that metadata. Arguments are named
+  constants. A missing required argument is `E500`. A non-constant argument is
+  `E401`. `@Reflectable` on a class emits `qudsReflectName` with the class
+  name and field names.
+- `log.info "message", data: map:` writes a structured line. Levels are
+  `debug`, `info`, `warning`, and `error`. `log.minimum = "info"` drops
+  anything below that level. `log.sink writer` replaces the default printer.
+  A map key named `secret`, or ending in `_secret` or `.secret`, is written
+  as `***`. An exception from the sink propagates. An unknown literal level
+  is `E300`.
+- `task group` and `await all` enter each child immediately until one throws
+  before returning. Later children are then not entered. A child that has
+  already started still runs, and the group reports `TaskFailed` in source
+  order. `await all` rethrows the first source-order error.
+- `config name: Type = expression` reads the process environment, then the
+  `config:` map in `quds.yaml` beside the working directory, then the source
+  default. A dotted name such as `server.host` is read as `config.server.host`
+  and as the environment variable `SERVER_HOST`. `config name: Type` is
+  required and throws `StateError` when every layer is absent. The value is
+  `int`, `double`, `bool`, or `String`. `config secret name: Type` has no
+  source initializer. A secret literal is `E908`.
+
+Numbers also accept hex (`0x10`), exponents (`1e2`), and `_` separators.
+A value outside the signed 64-bit range is `E006`. An integer that does not
+fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
+that literal, and `test/language_test.dart` executes both results.
+
+`use "other.quds"` loads that library. Public classes and functions are
+visible. `show` keeps only the named ones, and `hide` drops them. A `show`
+name that is not in the library is `E200`. `use "other.quds" as math` binds
+`math.Box` and `math.doubleIt`. `export "other.quds" show doubleIt`
+re-exports that name. A private member used from another library is `E206`.
+A protected member used outside the library and its subtypes is `E207`. A
+subtype in another library may read `protected`. A public function is also
+emitted under its Quds name. `part "detail.quds"` and `part of "parent.quds"`
+share that privacy scope. A missing part is `E900`, and a mismatched
+`part of` is `E903`.
+
+`quds.yaml` beside the source may set `language: "1.2"`. Any other declared
+version is `E901`. A `# quds:` comment does not select a version.
+
+`@Reflectable` emits `qudsReflectName` with the public fields, a separate
+`private` list, and `typeParameters`. `qudsReflectable` lists those const
+maps. A class without the annotation is absent from the list.
+
+`quds build` writes `.dart_tool/quds/cache/` with a hash of the source and
+the `.quds` files it loads. A second build of the same bytes prints
+`Unchanged` and does not rewrite the output. Changing an imported library,
+or a macro in the same file, rebuilds the generated Dart. `quds build
+--watch` repeats that build when one of those files changes.
+
+The generated `.dart` has no import of the Quds package. `dart analyze` and
+`dart run` execute it on their own.
+
+`use package:name` loads `lib/name.quds` beside `pubspec.yaml` and emits
+`import 'package:name/name.dart'`. `use package:name/src/util` loads
+`lib/src/util.quds`. A missing file is `E900`. `use generated:user_models`
+loads `lib/generated/user_models.quds`. `declare` copies a method to a
+top-level function. `define` copies methods, fields, properties, and
+constructors. A macro cycle is `E904`. Source text and a forbidden
+capability are `E905`. Depth past 8, and more than 1000 declarations from
+one annotation, are `E906`. A class `call` method is invoked by calling the
+instance, including a generic class and named arguments. `protected` is
+emitted as `@protected` when the package depends on `package:meta`, and as
+a documentation comment otherwise. `quds migrate` leaves a `quds.yaml`
+pinned to a version other than 1.2 unchanged. `quds lsp` answers definition
+and rename. `quds debug` binds a breakpoint to the `.quds` statement on a
+line. Neither command launches a program. `mapStack` rewrites a stack frame
+that hits the source map. `quds format` rewrites indentation outside a
+multiline string to two spaces, keeps comments and string contents, drops
+trailing whitespace, and ends the file with a newline. A second format is
+identical. Lines are not wrapped to 80 columns. `quds doc` lists `///`
+lines. `quds doc test` compiles and runs a fenced example. A `[Name]` that
+is not a top-level function or class in that file is `E200` (`Broken link:
+Name`). An example that fails to compile or run exits 65. No HTML API site
+is written.
+
+`??=` assigns only when the binding is null, and the right side does not run
+otherwise. After that assignment, or after `if name != null`, a local nullable
+binding is promoted. Using it while it is still nullable is `E308`. Assigning
+it again removes the promotion. `List<List<int>>` and
+`List<List<List<int>>>` close every type argument. An index or member read
+through `readonly` stays readonly, so a nested write is `E307`. Another alias
+of the same object can still write.
+
+A list or set element `value for name in iterable if condition` builds that
+collection immediately. The iterable runs once. A false filter skips the
+element expression. A comprehension may contain another comprehension. A
+`sync*` generator does not run until something iterates it.
+
+The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.

@@ -1,6 +1,6 @@
 # Quds Language — Complete Design Decisions and Agent Implementation Specification
 
-**Version:** 1.2 · **Date:** 2026-11-11 · **Rules:** QUDS-001 through QUDS-115 · **Status:** Language design complete through Dart 3.13. The compiler is not claimed to implement this version; it still implements the MVP-0 subset.
+**Version:** 1.2 · **Date:** 2026-11-11 · **Rules:** QUDS-001 through QUDS-115 · **Status:** Language design complete through Dart 3.13. The test suite covers the required conformance line of each rule. An already-started future is not aborted, and `quds migrate` does not rewrite a project whose `quds.yaml` names a version other than 1.2.
 
 ## Agent instructions — read before implementation
 

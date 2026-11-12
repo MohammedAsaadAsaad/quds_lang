@@ -427,6 +427,70 @@ main() async:
 ''', '7\n7\n5\n5\n');
   });
 
+  test('ranges, function types, generics, and nested task groups execute',
+      () async {
+    await execute('''
+interface Named:
+  name: String
+interface Identifiable:
+  id: int
+class User implements Named, Identifiable:
+  name: String required
+  id: int required
+show<T: Named & Identifiable>(item: T) -> String = item.name
+pick<T: Named>(item: T) -> T = item
+class Base:
+  id(value: int) -> int = value
+class Child extends Base:
+  id(value: int) -> int = value + 1
+load() async -> int = 5
+mark() -> int:
+  Probe.hits = Probe.hits + 1
+  return Probe.hits
+bad() -> int:
+  var ready = true
+  if ready:
+    throw "bad"
+  return 0
+class Probe:
+  static var hits: int = 0
+main() async:
+  var down = ""
+  for n in 3..1:
+    down = down + "{n}"
+  print down
+  var exclusive = ""
+  for n in 3..<1:
+    exclusive = exclusive + "{n}"
+  print exclusive
+  items: List<String> = []
+  print items.length
+  length: (String) -> int = text -> text.length
+  print length("Ada")
+  handler: ((int) -> int)? = null
+  print handler == null
+  read: () -> Future<int> = () -> await load()
+  print await read()
+  print show(User(name: "Ada", id: 7))
+  chosen = pick(User(name: "Bea", id: 4))
+  print chosen.name
+  print Child().id(3)
+  task group:
+    spawn mark()
+    task group:
+      spawn mark()
+  print Probe.hits
+  Probe.hits = 0
+  try:
+    task group:
+      spawn bad()
+      task group:
+        spawn mark()
+  catch error:
+    print Probe.hits
+''', '321\n32\n0\n3\ntrue\n5\nAda\nBea\n4\n2\n0\n');
+  });
+
   test('batch, watch disposal, and computed cycles execute', () async {
     await execute('''
 main():
@@ -1172,6 +1236,39 @@ class Bad<out T>:
 main():
   print 1
 ''': 'E304',
+      '''
+class Bad<out T>:
+  reader: (T) -> int
+main():
+  print 1
+''': 'E304',
+      '''
+class Base:
+  id(value: int) -> int = value
+class Child extends Base:
+  id(value: int) -> String = "no"
+main():
+  print 1
+''': 'E300',
+      '''
+main():
+  f = x -> x
+''': 'E302',
+      '''
+main():
+  items = []
+''': 'E302',
+      '''
+interface Named:
+  name: String
+interface Identifiable:
+  id: int
+class Only implements Named:
+  name: String required
+show<T: Named & Identifiable>(item: T) -> String = item.name
+main():
+  print show(Only(name: "No"))
+''': 'E500',
       '''
 show(item: int & String):
   print item

@@ -424,7 +424,8 @@ class Parser {
     final bindingAhead = at(TokenKind.identifier) &&
         (assignments.contains(peek().kind) ||
             peek().kind == TokenKind.colon &&
-                peek(2).kind == TokenKind.identifier);
+                (peek(2).kind == TokenKind.identifier ||
+                    peek(2).kind == TokenKind.leftParen));
     if (bindingAhead || mode != BindingMode.inferred) {
       final bindingName = name();
       String? type;
@@ -683,15 +684,19 @@ class Parser {
     expect(TokenKind.colon, ':');
     endLine();
     expect(TokenKind.indent, 'task group');
-    final spawns = <Expression>[];
+    final children = <Node>[];
     while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+      if (word('task') && peek().lexeme == 'group') {
+        children.add(taskGroup(current.span));
+        continue;
+      }
       if (!word('spawn')) fail('task group contains spawn');
       take();
-      spawns.add(expression(bare: true));
+      children.add(expression(bare: true));
       endLine();
     }
     expect(TokenKind.dedent, 'end of task group');
-    return TaskGroupStatement(spawns, extent(span));
+    return TaskGroupStatement(children, extent(span));
   }
 
   List<TypeParameter> typeParameterList() {
@@ -716,6 +721,7 @@ class Parser {
       take();
       return 'readonly ${typeAtom()}';
     }
+    if (at(TokenKind.leftParen)) return groupedType();
     var result = name().lexeme;
     while (match(TokenKind.dot)) {
       result += '.${name().lexeme}';
@@ -730,6 +736,32 @@ class Parser {
     }
     if (match(TokenKind.question)) result += '?';
     return result;
+  }
+
+  String groupedType() {
+    expect(TokenKind.leftParen, '(');
+    final parameters = <String>[];
+    if (!at(TokenKind.rightParen)) {
+      do {
+        if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+          final parameter = name();
+          take();
+          parameters.add('${parameter.lexeme}: ${typeName()}');
+        } else {
+          parameters.add(typeName());
+        }
+      } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
+    }
+    expect(TokenKind.rightParen, ')');
+    if (match(TokenKind.arrow)) {
+      return '(${parameters.join(', ')}) -> ${typeName()}';
+    }
+    if (parameters.length == 1 && !parameters.single.contains(':')) {
+      final inner = parameters.single;
+      if (!match(TokenKind.question)) return inner;
+      return inner.startsWith('(') ? '($inner)?' : '$inner?';
+    }
+    fail('Expected ->');
   }
 
   Statement testDeclaration(SourceSpan span) {

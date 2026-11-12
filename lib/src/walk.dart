@@ -271,8 +271,8 @@ void walkAst(Node node, void Function(Node node) visit) {
       _nodes(arms, visit);
     case AwaitIsolateExpression(:final call):
       walkAst(call, visit);
-    case TaskGroupStatement(:final spawns):
-      _nodes(spawns, visit);
+    case TaskGroupStatement(:final children):
+      _nodes(children, visit);
     case AnnotationDeclaration(:final parameters):
       _nodes(parameters, visit);
     case ConfigDeclaration(:final value):

@@ -620,8 +620,8 @@ class DartEmitter {
           '  final List<Object> errors;\n'
           '  String toString() => \'TaskFailed: \$errors\';\n'
           '}\n'
-          'Future<void> _qTaskGroup(List<Future<Object?> Function(_QudsCancel)> tasks) async {\n'
-          '  final token = _QudsCancel();\n'
+          'Future<void> _qTaskGroup(List<Future<Object?> Function(_QudsCancel)> tasks, [_QudsCancel? parent]) async {\n'
+          '  final token = parent ?? _QudsCancel();\n'
           '  final futures = <Future<Object?>>[];\n'
           '  for (final task in tasks) {\n'
           '    if (token.cancelled) continue;\n'
@@ -797,6 +797,9 @@ class DartEmitter {
       return _dartType(type.split(' & ').first.trim());
     }
     if (type.contains(' | ')) return _unionClass(type);
+    if (type.startsWith('(') && type.endsWith(')?')) {
+      return '${_dartType(type.substring(1, type.length - 2))}?';
+    }
     if (type.startsWith('(') && type.contains('->')) {
       final (parameters, returns) = _splitFunctionType(type);
       final args = parameters.trim().isEmpty
@@ -1648,7 +1651,7 @@ class DartEmitter {
         }
       case TaskGroupStatement():
         _useTask = true;
-        final arms = node.spawns.map(_cancelThunk).toList();
+        final arms = node.children.map(_taskStep).toList();
         line(
             'await _qTaskGroup(<Future<Object?> Function(_QudsCancel)>[${arms.join(', ')}]);');
       case AnnotationDeclaration():
@@ -1688,6 +1691,12 @@ class DartEmitter {
 
   /// A child that throws before returning is cancelled, and later children are
   /// not entered. An async child still starts immediately.
+  String _taskStep(Node node) {
+    if (node is! TaskGroupStatement) return _cancelThunk(node as Expression);
+    final inner = node.children.map(_taskStep).join(', ');
+    return '(_QudsCancel token) { if (token.cancelled) return Future<Object?>.value(null); return _qTaskGroup(<Future<Object?> Function(_QudsCancel)>[$inner], token); }';
+  }
+
   String _cancelThunk(Expression spawn) {
     final value = expression(spawn);
     final type = model.types[spawn];
@@ -2384,7 +2393,7 @@ class DartEmitter {
 
   String _list(ListExpression node) {
     final type = model.types[node]!;
-    final element = type.substring(5, type.length - 1);
+    final element = _dartType(type.substring(5, type.length - 1));
     final parts = <String>[];
     for (var i = 0; i < node.elements.length; i++) {
       final aware = i < node.nullAware.length && node.nullAware[i];

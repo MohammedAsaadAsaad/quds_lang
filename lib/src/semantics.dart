@@ -2,6 +2,7 @@ import 'ast.dart';
 import 'constants.dart';
 import 'libraries.dart';
 import 'source.dart';
+import 'walk.dart';
 
 class Symbol {
   Symbol(this.name, this.dartName, this.type,
@@ -131,6 +132,7 @@ class Analyzer {
   final _checked = <FunctionDeclaration>{};
   final _checking = <FunctionDeclaration>{};
   final _typeNames = <String>{};
+  final _typeBounds = <String, String>{};
   FunctionDeclaration? _function;
   String? _returnType;
   var _lambdaDepth = 0;
@@ -605,12 +607,25 @@ class Analyzer {
     _typeNames
       ..addAll(type.typeParameters.map((item) => item.name))
       ..addAll(method.typeParameters.map((item) => item.name));
+    final savedBounds = {..._typeBounds};
+    for (final parameter in [
+      ...type.typeParameters,
+      ...method.typeParameters
+    ]) {
+      if (parameter.bound != null) {
+        _typeBounds[parameter.name] = parameter.bound!;
+      }
+    }
     _readonlyMethod = method.readonlyMethod;
     _installFields(type);
     analyzeFunction(method);
+    _checkOverride(type, method);
     _typeNames
       ..clear()
       ..addAll(savedTypes);
+    _typeBounds
+      ..clear()
+      ..addAll(savedBounds);
     _readonlyMethod = savedReadonly;
     _thisType = savedThis;
     _scope = saved;
@@ -1325,6 +1340,22 @@ class Analyzer {
       }
       return;
     }
+    if (type.startsWith('(') && type.endsWith(')?')) {
+      validateType(type.substring(1, type.length - 2), node, allowVoid: true);
+      return;
+    }
+    if (type.startsWith('(') && type.contains('->')) {
+      final (parameters, returns) = _functionParts(type);
+      if (parameters.trim().isNotEmpty) {
+        for (final part in _splitTypes(parameters)) {
+          final declared =
+              part.contains(':') ? part.split(':').last.trim() : part;
+          validateType(declared, node, allowVoid: false);
+        }
+      }
+      validateType(returns, node, allowVoid: true);
+      return;
+    }
     if ({
       'int',
       'double',
@@ -1390,7 +1421,6 @@ class Analyzer {
           allowVoid: false);
       return;
     }
-    if (type.startsWith('(') && type.contains('->')) return;
     if (type.startsWith('(') && type.endsWith(')')) {
       final inner = type.substring(1, type.length - 1);
       if (inner.isEmpty) return;
@@ -1419,17 +1449,29 @@ class Analyzer {
 
   void analyzeFunction(FunctionDeclaration function) {
     final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
     _typeNames.addAll(function.typeParameters.map((item) => item.name));
+    for (final parameter in function.typeParameters) {
+      if (parameter.bound != null) {
+        _typeBounds[parameter.name] = parameter.bound!;
+      }
+    }
     if (_checked.contains(function)) {
       _typeNames
         ..clear()
         ..addAll(savedTypes);
+      _typeBounds
+        ..clear()
+        ..addAll(savedBounds);
       return;
     }
     if (!_checking.add(function)) {
       _typeNames
         ..clear()
         ..addAll(savedTypes);
+      _typeBounds
+        ..clear()
+        ..addAll(savedBounds);
       if (model.declarations[function]!.type == '<infer>')
         fail('Recursive expression functions require a return annotation',
             function);
@@ -1506,6 +1548,9 @@ class Analyzer {
     _typeNames
       ..clear()
       ..addAll(savedTypes);
+    _typeBounds
+      ..clear()
+      ..addAll(savedBounds);
   }
 
   bool returns(List<Statement> body) {
@@ -1926,8 +1971,12 @@ class Analyzer {
         if (_function == null || !_function!.isAsync) {
           error('E803', 'task group is only valid inside async', node);
         }
-        for (final spawn in node.spawns) {
-          expression(spawn);
+        for (final child in node.children) {
+          if (child is TaskGroupStatement) {
+            check(child);
+          } else {
+            expression(child as Expression);
+          }
         }
       case AnnotationDeclaration():
       case ConfigDeclaration():
@@ -2533,8 +2582,8 @@ class Analyzer {
     final buffer = StringBuffer();
     var depth = 0;
     for (final char in inner.split('')) {
-      if (char == '<') depth++;
-      if (char == '>') depth--;
+      if (char == '<' || char == '(') depth++;
+      if (char == '>' || char == ')') depth--;
       if (char == ',' && depth == 0) {
         parts.add(buffer.toString().trim());
         buffer.clear();
@@ -2584,9 +2633,25 @@ class Analyzer {
       type.endsWith('?') ? type.substring(0, type.length - 1) : type;
   bool numeric(String type) => {'int', 'double', 'num'}.contains(type);
   String lambda(Lambda node) {
-    for (final parameter in node.parameters) {
+    final expected = _expected;
+    final expectedParams = expected != null &&
+            expected.startsWith('(') &&
+            expected.contains('->') &&
+            !expected.endsWith(')?')
+        ? _splitTypes(_functionParts(expected).$1)
+        : const <String>[];
+    for (var i = 0; i < node.parameters.length; i++) {
+      final parameter = node.parameters[i];
       if (parameter.type == '<infer>') {
-        parameterType(parameter, 'int');
+        final fromExpected =
+            i < expectedParams.length ? _parameterType(expectedParams[i]) : '';
+        if (fromExpected.isNotEmpty) {
+          parameterType(parameter, fromExpected);
+        } else if (_numericUse(node, parameter.name)) {
+          parameterType(parameter, 'int');
+        } else {
+          error('E302', 'A type cannot be inferred', parameter);
+        }
       } else {
         validateType(parameter.type, parameter, allowVoid: false);
         parameterType(parameter, parameter.type);
@@ -2627,6 +2692,49 @@ class Analyzer {
     final parameters =
         node.parameters.map((p) => model.declarations[p]!.type).join(', ');
     return '($parameters) -> $type';
+  }
+
+  String _parameterType(String declared) {
+    final trimmed = declared.trim();
+    if (!trimmed.contains(':')) return trimmed;
+    return trimmed.split(':').last.trim();
+  }
+
+  bool _numericUse(Node root, String name) {
+    var found = false;
+    walkAst(root, (node) {
+      if (node is! BinaryExpression) return;
+      if (!const {'+', '-', '*', '/', '~/', '%'}.contains(node.operator)) {
+        return;
+      }
+      walkAst(node, (inner) {
+        if (inner is Identifier && inner.name == name) found = true;
+      });
+    });
+    return found;
+  }
+
+  void _checkOverride(ClassDeclaration type, FunctionDeclaration method) {
+    final parentName = type.superclass;
+    if (parentName == null) return;
+    final parent = _global.symbols[parentName]?.classDeclaration;
+    if (parent == null) return;
+    final inherited = _method(parent, method.name);
+    if (inherited == null || !sameSignature(method, inherited)) return;
+    final inheritedType = model.declarations[inherited]?.type;
+    final methodType = model.declarations[method]?.type;
+    if (inheritedType == null ||
+        methodType == null ||
+        inheritedType == '<infer>' ||
+        methodType == '<infer>') {
+      return;
+    }
+    if (!compatible(methodType, inheritedType)) {
+      error(
+          'E300',
+          'override return type $methodType is incompatible with $inheritedType',
+          method);
+    }
   }
 
   (String, String) _functionParts(String type) {
@@ -2677,8 +2785,9 @@ class Analyzer {
       return node.nullAware || type.endsWith('?') ? 'int?' : 'int';
     }
     if (base == 'dynamic') return 'dynamic';
-    if (base.contains(' & ')) {
-      for (final part in base.split(' & ')) {
+    final look = _typeBounds[base] ?? base;
+    if (look.contains(' & ')) {
+      for (final part in look.split(' & ')) {
         final found = memberType(part.trim(), node.name);
         if (found == null) continue;
         model.references[node] =
@@ -2686,8 +2795,8 @@ class Analyzer {
         return node.nullAware || type.endsWith('?') ? '$found?' : found;
       }
     }
-    final declaration = _global.symbols[_genericHead(base)]?.classDeclaration;
-    final substitution = _genericSubstitution(base, declaration);
+    final declaration = _global.symbols[_genericHead(look)]?.classDeclaration;
+    final substitution = _genericSubstitution(look, declaration);
     if (node.name == 'instance' &&
         declaration != null &&
         declaration.modifiers.contains('singleton')) {
@@ -2708,12 +2817,12 @@ class Analyzer {
             node);
       }
     }
-    final found = memberType(base, node.name);
+    final found = memberType(look, node.name);
     if (found != null) {
       if (declaration != null) _checkMember(declaration, node.name, node);
       final substituted = _substitute(found, substitution);
       model.references[node] = Symbol(
-          node.name, _dartMember(_genericHead(base), node.name), substituted);
+          node.name, _dartMember(_genericHead(look), node.name), substituted);
       if (substituted.contains('->')) return substituted;
       return node.nullAware || type.endsWith('?')
           ? '$substituted?'
@@ -3202,8 +3311,16 @@ class Analyzer {
   }
 
   String list(ListExpression node) {
-    if (node.elements.isEmpty)
-      fail('Empty lists require contextual typing (not supported yet)', node);
+    if (node.elements.isEmpty) {
+      final expected = _expected;
+      if (expected != null &&
+          expected.startsWith('List<') &&
+          expected.endsWith('>')) {
+        return expected;
+      }
+      error('E302', 'Empty lists require contextual typing (not supported yet)',
+          node);
+    }
     var type = elementTypeOf(node.elements.first, aware(node.nullAware, 0));
     for (var i = 1; i < node.elements.length; i++) {
       final next = elementTypeOf(node.elements[i], aware(node.nullAware, i));
@@ -3555,7 +3672,8 @@ class Analyzer {
           model.declarations[candidate]?.type == '<infer>') {
         analyzeFunction(candidate);
       }
-      if (argumentsMatch(node, candidate.parameters, commit: false)) {
+      if (argumentsMatch(node, candidate.parameters,
+          commit: false, function: candidate)) {
         final current = selected;
         final selectedVariadic =
             current != null && current.parameters.any((p) => p.variadic);
@@ -3825,8 +3943,19 @@ class Analyzer {
     return symbol.classDeclaration!.name;
   }
 
+  bool _accepts(String from, String to, FunctionDeclaration? function) {
+    if (compatible(from, to)) return true;
+    if (function == null) return false;
+    for (final parameter in function.typeParameters) {
+      if (parameter.name != to) continue;
+      if (parameter.bound == null) return true;
+      return compatible(from, parameter.bound!);
+    }
+    return false;
+  }
+
   bool argumentsMatch(CallExpression node, List<Parameter> parameters,
-      {required bool commit}) {
+      {required bool commit, FunctionDeclaration? function}) {
     final order = List<int>.filled(parameters.length, -1);
     var positional = 0;
     var named = false;
@@ -3859,7 +3988,7 @@ class Analyzer {
       }
       final type = expression(argument.value);
       _expected = savedExpected;
-      if (!compatible(type, parameters[target].type)) return false;
+      if (!_accepts(type, parameters[target].type, function)) return false;
       order[target] = i;
     }
     for (var i = 0; i < parameters.length; i++) {
@@ -3898,9 +4027,10 @@ class Analyzer {
         parameters.any((parameter) => parameter.defaultValue != null)) {
       analyzeFunction(function);
     }
-    if (!argumentsMatch(node, parameters, commit: true)) {
+    if (!argumentsMatch(node, parameters, commit: true, function: function)) {
       fail('No overload matches this call', node);
     }
+    final inferred = <String, String>{};
     final order = List<int>.filled(parameters.length, -1);
     final rest = <int>[];
     var positional = 0;
@@ -3944,11 +4074,12 @@ class Analyzer {
       }
       final type = expression(argument.value);
       _expected = savedExpected;
-      if (!compatible(type, parameters[target].type)) {
+      if (!_accepts(type, parameters[target].type, function)) {
         fail(
             'Argument type $type is incompatible with ${parameters[target].type}',
             argument);
       }
+      _rememberInference(function, parameters[target].type, type, inferred);
       order[target] = i;
     }
     for (var i = 0; i < parameters.length; i++) {
@@ -3970,12 +4101,28 @@ class Analyzer {
           : (model.declarations[function]?.type ??
               function.returnType ??
               'void');
-      return '($types) -> $returned';
+      return '($types) -> ${_substitute(returned, inferred)}';
     }
     if (function != null && model.declarations[function]!.type == '<infer>') {
       analyzeFunction(function);
     }
-    return function == null ? 'void' : model.declarations[function]!.type;
+    final returned =
+        function == null ? 'void' : model.declarations[function]!.type;
+    return _substitute(returned, inferred);
+  }
+
+  void _rememberInference(FunctionDeclaration? function, String parameter,
+      String argument, Map<String, String> inferred) {
+    if (function == null) return;
+    if (!function.typeParameters.any((item) => item.name == parameter)) return;
+    final previous = inferred[parameter];
+    if (previous != null &&
+        previous != argument &&
+        !compatible(argument, previous) &&
+        !compatible(previous, argument)) {
+      fail('Type argument $argument conflicts with $previous', function);
+    }
+    inferred[parameter] ??= argument;
   }
 
   static const _mutating = {

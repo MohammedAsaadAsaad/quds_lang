@@ -220,11 +220,11 @@ unchanged by the map.
 `test/language_test.dart` compiles, analyzes, and executes this slice:
 
 - Classes, value classes (`==` and `hashCode`), and `sealed type` cases.
-- Local functions, expression lambdas, and function tear-offs.
+- Local functions, expression lambdas, function tear-offs, and function types `(parameters) -> Type`.
 - Nullable types, postfix `!`, and `??`.
 - `use dart:math` for `sqrt`, `sin`, `cos`, `min`, `max`, and `pi`. Other
   `dart:`, `package:`, and `.quds` imports are emitted and do not invent names.
-- `for` over lists, sets, and ranges (`..` and `..<`), `while`, `break`,
+- `for` over lists, sets, and ranges (`..` and `..<`), including a range whose end is below its start, `while`, `break`,
   `continue`, and `label name` on a loop.
 - `map:` and `set:` literals, records, and `(a, b) = record` destructuring.
 - Default arguments, including defaults that read earlier parameters, and
@@ -322,9 +322,9 @@ unchanged by the map.
   order. The first source-order error propagates. The form requires `async`
   (`E803`). `await isolate:` lowers a top-level or static call to
   `Isolate.run`. A captured local is `E805`.
-- `task group:` / `spawn`. `spawn` outside the group is `E107`. The group
+- `task group:` / `spawn`, including a nested group. `spawn` outside the group is `E107`. The group
   requires `async` (`E803`). Child errors are collected in source order into
-  `TaskFailed`.
+  `TaskFailed`. A nested group is not entered after an earlier child has failed.
 - `noSuchMethod` on a `dynamic` receiver. A typed missing member is still
   `E300`. `symbol "name"` is `#name` when the text is an identifier.
 - `require`, `check`, and `assert`, with an optional message after a comma.

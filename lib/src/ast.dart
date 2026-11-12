@@ -720,8 +720,10 @@ class SymbolExpression extends Expression {
 }
 
 class TaskGroupStatement extends Statement {
-  const TaskGroupStatement(this.spawns, super.span);
-  final List<Expression> spawns;
+  const TaskGroupStatement(this.children, super.span);
+
+  /// Each child is a spawned expression or a nested task group, in source order.
+  final List<Node> children;
 }
 
 class AnnotationDeclaration extends Statement {

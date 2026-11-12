@@ -708,6 +708,53 @@ main():
     }
   });
 
+  test('expression comprehensions filter, nest, and build eagerly', () async {
+    await execute('''
+main():
+  var hits = 0
+  var reads = 0
+  bump() -> int:
+    hits = hits + 1
+    return hits
+  source() -> List<int>:
+    reads = reads + 1
+    return [1, 2, 3]
+  eager = [bump() for n in 1..3 if n != 2]
+  print hits
+  print eager.length
+  count() sync* -> int:
+    yield bump()
+  print hits
+  for value in count():
+    print value
+  print hits
+  picked = [n for n in source() if n > 1]
+  print reads
+  print picked.length
+  nested = [[n for n in 1..2] for row in 1..2 if row > 0]
+  print nested.length
+  print nested[0][0]
+  print nested[0][1]
+  print nested[1][1]
+  unique = set:
+    n for n in [1, 1, 2, 3] if n > 1
+  print unique.length
+''', '''
+2
+2
+2
+3
+3
+1
+2
+2
+1
+2
+2
+2
+''');
+  });
+
   test('spreads, enums, try, late, generators, and match expressions execute',
       () async {
     await execute('''
@@ -1391,6 +1438,10 @@ main():
   empty = set:
   print 1
 ''': 'E302',
+      '''
+main():
+  values = [n for n in 1..2 if n]
+''': 'E300',
       '''
 interface Named:
   name: String

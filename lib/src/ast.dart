@@ -649,10 +649,12 @@ class CollectionIf extends Expression {
 }
 
 class CollectionFor extends Expression {
-  const CollectionFor(this.name, this.iterable, this.body, super.span);
+  const CollectionFor(this.name, this.iterable, this.body, super.span,
+      {this.filter});
   final String name;
   final Expression iterable;
   final List<Expression> body;
+  final Expression? filter;
 }
 
 class MapPattern extends Pattern {

@@ -1950,8 +1950,32 @@ class Parser {
     }
     final aware = match(TokenKind.question);
     var value = expression(bare: terminated);
+    if (!aware && word('for')) {
+      return trailingComprehension(value, terminated: terminated);
+    }
     value = finishCollection(value, terminated: terminated);
     return aware ? NullAwareElement(value, value.span) : value;
+  }
+
+  /// `value for name in iterable if condition` builds one element per item.
+  Expression trailingComprehension(Expression element,
+      {required bool terminated}) {
+    take();
+    final binding = name();
+    expect(TokenKind.identifier, 'in');
+    if (tokens[index - 1].lexeme != 'in') {
+      fail('Expected in', tokens[index - 1].span);
+    }
+    final iterable = expression();
+    Expression? filter;
+    if (word('if')) {
+      take();
+      filter = expression(bare: terminated);
+    }
+    if (terminated) endLine();
+    return CollectionFor(
+        binding.lexeme, iterable, [element], extent(element.span),
+        filter: filter);
   }
 
   CollectionIf collectionIf() {
@@ -2201,7 +2225,7 @@ class Parser {
       at(TokenKind.leftBracket) ||
       at(TokenKind.leftParen) ||
       at(TokenKind.identifier) &&
-          !{'else', 'in', 'and', 'or'}.contains(current.lexeme);
+          !{'else', 'in', 'and', 'or', 'for'}.contains(current.lexeme);
   Expression prefix() {
     final token = take();
     if (token.kind == TokenKind.number) {

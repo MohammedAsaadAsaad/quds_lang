@@ -4442,6 +4442,9 @@ class Analyzer {
     final saved = _scope;
     _scope = _Scope(saved);
     _scope.symbols[node.name] = symbol;
+    if (node.filter != null && expression(node.filter!) != 'bool') {
+      fail('collection filter must be bool', node.filter!);
+    }
     final type = groupElementType(node.body);
     _scope = saved;
     return type;

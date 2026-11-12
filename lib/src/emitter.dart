@@ -2424,7 +2424,10 @@ class DartEmitter {
     }
     if (element is CollectionFor) {
       final symbol = model.declarations[element]!;
-      return 'for (final ${_dartType(symbol.type)} ${symbol.dartName} in ${expression(element.iterable)}) ...<$type>[${_pieces(element.body, type)}]';
+      final guard = element.filter == null
+          ? ''
+          : ' if (${expression(element.filter!, opaqueBool: true)})';
+      return 'for (final ${_dartType(symbol.type)} ${symbol.dartName} in ${expression(element.iterable)})$guard ...<$type>[${_pieces(element.body, type)}]';
     }
     final text = expression(element);
     return aware ? '?($text)' : text;

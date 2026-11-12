@@ -414,5 +414,10 @@ is not a top-level function or class in that file is `E200` (`Broken link:
 Name`). An example that fails to compile or run exits 65. No HTML API site
 is written.
 
+A list or set element `value for name in iterable if condition` builds that
+collection immediately. The iterable runs once. A false filter skips the
+element expression. A comprehension may contain another comprehension. A
+`sync*` generator does not run until something iterates it.
+
 The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.

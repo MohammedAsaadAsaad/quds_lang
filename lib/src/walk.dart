@@ -249,8 +249,9 @@ void walkAst(Node node, void Function(Node node) visit) {
       walkAst(condition, visit);
       _nodes(thenElements, visit);
       _nodes(elseElements, visit);
-    case CollectionFor(:final iterable, :final body):
+    case CollectionFor(:final iterable, :final body, :final filter):
       walkAst(iterable, visit);
+      if (filter != null) walkAst(filter, visit);
       _nodes(body, visit);
     case MapPattern(:final keys, :final values):
       _nodes(keys, visit);

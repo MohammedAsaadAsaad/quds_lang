@@ -240,6 +240,7 @@ class Parser {
     final span = current.span;
     final notes = takeAnnotations();
     if (topLevel && word('use')) return useImport(span);
+    if (topLevel && word('export')) return exportDirective(span);
     if (topLevel && word('part')) return partDirective(span);
     if (word('annotation')) return annotationDeclaration(span);
     if (topLevel && word('config')) return configDeclaration(span);
@@ -808,8 +809,24 @@ class Parser {
     }
     endLine();
     if (buffer.isEmpty) fail('Expected import uri', span);
-    return ImportDeclaration(buffer.toString(), prefix, extent(span),
+    return ImportDeclaration(_stripUri(buffer.toString()), prefix, extent(span),
         condition: condition);
+  }
+
+  ImportDeclaration exportDirective(SourceSpan span) {
+    take();
+    final uri = _stripUri(readUri());
+    endLine();
+    return ImportDeclaration(uri, null, extent(span), export: true);
+  }
+
+  String _stripUri(String uri) {
+    if (uri.length >= 2 &&
+        ((uri.startsWith('"') && uri.endsWith('"')) ||
+            (uri.startsWith("'") && uri.endsWith("'")))) {
+      return uri.substring(1, uri.length - 1);
+    }
+    return uri;
   }
 
   PartDirective partDirective(SourceSpan span) {

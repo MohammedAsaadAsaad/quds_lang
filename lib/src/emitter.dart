@@ -57,6 +57,7 @@ class DartEmitter {
   String emit(Program program) {
     _directives(program.statements);
     _classes = {
+      ...model.classes,
       for (final node in program.statements)
         if (node is ClassDeclaration) node.name: node
     };
@@ -80,6 +81,7 @@ class DartEmitter {
         statement(node);
       }
     }
+    _emitPublicNames(program);
     final source = _suppressUnreadConsts(_withHelpers(_out.toString()));
     if (!_useBoolHelper) return source;
     // Dart treats a const bool as unreachable in `if` and `&&`/`||`. The
@@ -186,6 +188,22 @@ class DartEmitter {
     return rewritten.join('\n');
   }
 
+  void _emitPublicNames(Program program) {
+    final counts = <String, int>{};
+    for (final node in program.statements) {
+      if (node is FunctionDeclaration) {
+        counts[node.name] = (counts[node.name] ?? 0) + 1;
+      }
+    }
+    for (final node in program.statements) {
+      if (node is! FunctionDeclaration || node.name == 'main') continue;
+      if (node.typeParameters.isNotEmpty || counts[node.name] != 1) continue;
+      final symbol = model.declarations[node];
+      if (symbol == null || symbol.dartName == node.name) continue;
+      line('final ${node.name} = ${symbol.dartName};');
+    }
+  }
+
   void _directives(List<Statement> statements) {
     for (final node in statements) {
       if (model.skipped.contains(node)) continue;
@@ -197,6 +215,10 @@ class DartEmitter {
         final uri = node.uri.endsWith('.quds')
             ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
             : node.uri;
+        if (node.export) {
+          _imports.add("export '$uri';");
+          continue;
+        }
         final prefix = node.prefix == null ? '' : ' as ${node.prefix}';
         _imports.add("import '$uri'$prefix;");
       } else if (node is PartDirective) {
@@ -825,9 +847,12 @@ class DartEmitter {
     } else if (node.constructors.isEmpty) {
       final initializers = <String>[];
       final params = <String>[
-        ...inherited
-            .where((field) => !field.isStatic)
-            .map((field) => 'required super.${field.name}'),
+        ...inherited.where((field) => !field.isStatic).map((field) {
+          final required = field.requiredField && field.initializer == null
+              ? 'required '
+              : '';
+          return '$required super.${field.name}';
+        }),
         for (final field in node.fields.where((field) => !field.isStatic))
           _constructorParameter(field, initializers),
       ];

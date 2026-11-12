@@ -15,7 +15,8 @@ class Symbol {
       this.late = false,
       this.lateOpen = false,
       this.reactive = '',
-      this.field = false});
+      this.field = false,
+      this.library = ''});
   final String name, dartName;
   String type;
   final bool mutable, constant, late, lateOpen, field;
@@ -28,6 +29,9 @@ class Symbol {
   final ClassCase? classCase;
   final List<String> parameterTypes;
   final bool readonly;
+
+  /// Empty means the compilation being checked.
+  final String library;
   FunctionDeclaration? get function =>
       overloads.length == 1 ? overloads.single : null;
 
@@ -63,6 +67,7 @@ class SemanticModel {
   final implicitThis = <Identifier>{};
   final extensions = <ExtensionDeclaration>[];
   final aliases = <String, String>{};
+  final classes = <String, ClassDeclaration>{};
 
   String resolve(String type) {
     var current = type;
@@ -91,7 +96,12 @@ class SemanticModel {
 }
 
 class Analyzer {
+  Analyzer({this.library = '<input>'});
   final model = SemanticModel();
+
+  /// File path of the library being checked. `<input>` is one unnamed library.
+  final String library;
+  Map<String, Program> _libraries = const {};
   final _global = _Scope();
   late _Scope _scope = _global;
   final _checked = <FunctionDeclaration>{};
@@ -144,7 +154,9 @@ class Analyzer {
     model.warnings.add(CompilerException(code, message, node.span));
   }
 
-  SemanticModel analyze(Program program) {
+  SemanticModel analyze(Program program,
+      {Map<String, Program> libraries = const {}}) {
+    _libraries = libraries;
     _global.symbols['print'] = Symbol('print', 'print', 'void');
     _global.symbols['missing'] =
         Symbol('missing', 'missing', 'Optional<Never>', constant: true);
@@ -328,15 +340,16 @@ class Analyzer {
     functions?.add(statement);
   }
 
-  void registerClass(ClassDeclaration statement) {
+  void registerClass(ClassDeclaration statement, {String? library}) {
     if (_global.lookup(statement.name) != null) {
       fail('Duplicate name: ${statement.name}', statement);
     }
     final symbol = Symbol(statement.name, statement.name, statement.name,
-        classDeclaration: statement);
+        classDeclaration: statement, library: library ?? this.library);
     if (statement.kind == 'enum') model.enumNames.add(statement.name);
     _global.symbols[statement.name] = symbol;
     model.declarations[statement] = symbol;
+    model.classes[statement.name] = statement;
     for (final item in statement.cases) {
       if (_global.lookup(item.name) != null) {
         fail('Duplicate case: ${item.name}', item);
@@ -831,12 +844,124 @@ class Analyzer {
       _global.symbols['pi'] = Symbol('pi', 'pi', 'double',
           constant: true, constantValue: ConstDouble(3.141592653589793));
     } else if (node.uri.startsWith('dart:') ||
-        node.uri.startsWith('package:') ||
-        node.uri.endsWith('.quds')) {
+        node.uri.startsWith('package:')) {
+      return;
+    } else if (node.uri.endsWith('.quds')) {
+      if (library == '<input>' || node.prefix != null) return;
+      final path = _resolveLibrary(library, node.uri);
+      if (path == library) return;
+      final imported = _libraries[path];
+      if (imported == null) fail('Unknown import: ${node.uri}', node);
+      if (node.export) return;
+      _importLibrary(imported, path);
       return;
     } else {
       fail('Unknown import: ${node.uri}', node);
     }
+  }
+
+  String _resolveLibrary(String from, String uri) =>
+      Uri.file(from).resolve(uri).toFilePath();
+
+  void _importLibrary(Program imported, String path, [Set<String>? seen]) {
+    final visited = seen ?? <String>{};
+    if (!visited.add(path)) return;
+    for (final statement in imported.statements) {
+      switch (statement) {
+        case ClassDeclaration():
+          final existing = _global.symbols[statement.name];
+          if (existing?.classDeclaration == statement) break;
+          if (existing != null) {
+            error('E204', 'Two imports define ${statement.name}', statement);
+          }
+          registerClass(statement, library: path);
+        case FunctionDeclaration():
+          _importFunction(statement);
+        case ImportDeclaration() when statement.export:
+          final exportedPath = _resolveLibrary(path, statement.uri);
+          final exported = _libraries[exportedPath];
+          if (exported == null) {
+            fail('Unknown import: ${statement.uri}', statement);
+          }
+          _importLibrary(exported, exportedPath, visited);
+        default:
+          break;
+      }
+    }
+  }
+
+  void _importFunction(FunctionDeclaration statement) {
+    if (statement.name == 'main') return;
+    final existing = _global.symbols[statement.name];
+    if (existing?.function == statement) return;
+    if (existing != null) {
+      error('E204', 'Two imports define ${statement.name}', statement);
+    }
+    final type =
+        statement.returnType ?? (statement.isAsync ? 'Future<void>' : 'void');
+    final effective = statement.isAsync &&
+            statement.returnType != null &&
+            !statement.returnType!.startsWith('Future<')
+        ? 'Future<${statement.returnType}>'
+        : type;
+    final symbol =
+        Symbol(statement.name, statement.name, effective, function: statement)
+            .withFunction(statement);
+    model.declarations[statement] = symbol;
+    _global.symbols[statement.name] = symbol;
+  }
+
+  void _checkMember(ClassDeclaration type, String name, Node node) {
+    final owner = _declarer(type, name);
+    if (owner == null) return;
+    final visibility = _visibility(owner, name);
+    if (visibility.isEmpty) return;
+    final home = _global.symbols[owner.name]?.library ?? '';
+    if (home.isEmpty || home == library) return;
+    if (visibility == 'private') {
+      error('E206', 'A private name is used outside its library', node);
+    }
+    if (visibility == 'protected' && !_insideSubtype(owner)) {
+      error('E207', 'A protected name is used outside a subtype or its library',
+          node);
+    }
+  }
+
+  ClassDeclaration? _declarer(ClassDeclaration type, String name) {
+    if (type.fields.any((field) => field.name == name) ||
+        type.properties.any((property) => property.name == name) ||
+        type.methods.any((method) => method.name == name)) {
+      return type;
+    }
+    final parent = type.superclass == null
+        ? null
+        : _global.symbols[type.superclass!]?.classDeclaration;
+    if (parent == null) return null;
+    return _declarer(parent, name);
+  }
+
+  String _visibility(ClassDeclaration type, String name) {
+    for (final field in type.fields) {
+      if (field.name == name) return field.visibility;
+    }
+    for (final property in type.properties) {
+      if (property.name == name) return property.visibility;
+    }
+    for (final method in type.methods) {
+      if (method.name == name) return method.visibility;
+    }
+    return '';
+  }
+
+  bool _insideSubtype(ClassDeclaration type) {
+    var name = _thisType;
+    while (name != null) {
+      if (name == type.name) return true;
+      final parent = _global.symbols[name]?.classDeclaration?.superclass;
+      if (parent == null || parent == name) return false;
+      name = parent;
+    }
+    return false;
   }
 
   void validateType(String type, Node node, {bool allowVoid = true}) {
@@ -1561,6 +1686,7 @@ class Analyzer {
       if (!compatible(value, property.type)) {
         fail('Cannot assign $value to ${property.type}', node);
       }
+      _checkMember(declaration, node.name, node);
       model.references[node] = Symbol(
           property.name, _dartMember(type, property.name), property.type);
       return;
@@ -1570,6 +1696,7 @@ class Analyzer {
     if (fields.isEmpty || !fields.first.mutable) {
       fail('Cannot assign immutable field ${node.name}', node);
     }
+    _checkMember(declaration, node.name, node);
     if (fields.first.isStatic != _isTypeReference(node.object)) {
       fail(
           fields.first.isStatic
@@ -2183,6 +2310,7 @@ class Analyzer {
     }
     final found = memberType(base, node.name);
     if (found != null) {
+      if (declaration != null) _checkMember(declaration, node.name, node);
       final substituted = _substitute(found, substitution);
       model.references[node] = Symbol(
           node.name, _dartMember(_genericHead(base), node.name), substituted);
@@ -2629,6 +2757,8 @@ class Analyzer {
       }
       final member = memberType(_thisType!, node.name);
       if (member != null) {
+        final current = _global.symbols[_thisType!]?.classDeclaration;
+        if (current != null) _checkMember(current, node.name, node);
         model.implicitThis.add(node);
         model.references[node] =
             Symbol(node.name, _dartMember(_thisType!, node.name), member);
@@ -2636,6 +2766,10 @@ class Analyzer {
       }
     }
     if (symbol == null) fail('Undefined symbol: ${node.name}', node);
+    if (symbol.field && _thisType != null) {
+      final current = _global.symbols[_thisType!]?.classDeclaration;
+      if (current != null) _checkMember(current, node.name, node);
+    }
     if (symbol.overloads.length > 1) {
       fail('Choose one overload with a call or a typed context', node);
     }
@@ -2828,6 +2962,9 @@ class Analyzer {
           }();
       if (resolved == null) {
         fail('No method ${callee.name} on $objectType', callee);
+      }
+      if (function != null && declaration != null) {
+        _checkMember(declaration, callee.name, callee);
       }
       if (resolved.isStatic != _isTypeReference(callee.object)) {
         fail(

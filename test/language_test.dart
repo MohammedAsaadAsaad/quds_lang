@@ -1200,6 +1200,86 @@ sink
 0
 ''');
   });
+
+  test('an imported library hides private members and exports the public ones',
+      () async {
+    final directory = Directory.systemTemp.createTempSync('quds-library-');
+    File('${directory.path}/math.quds').writeAsStringSync('''
+doubleIt(n: int) -> int = n * 2
+class Box:
+  value: int required
+  private secret: int = 1
+  protected shown: int = 2
+  read() -> int = secret
+  reveal() -> int = shown
+''');
+    File('${directory.path}/api.quds').writeAsStringSync('''
+export "math.quds"
+''');
+    final app = File('${directory.path}/app.quds')..writeAsStringSync('''
+use "api.quds"
+main():
+  print doubleIt(4)
+  box = Box(value: 3)
+  print box.read()
+  print box.reveal()
+''');
+    final child = File('${directory.path}/child.quds')..writeAsStringSync('''
+use "math.quds"
+class Child extends Box:
+  peek() -> int = shown
+main():
+  print Child(value: 5).peek()
+  print Child(value: 5).read()
+''');
+    expect(() => compile('''
+use "math.quds"
+main():
+  print Box(value: 1).secret
+''', file: '${directory.path}/secret.quds'),
+        throwsA(predicate((error) => '$error'.contains('E206'))));
+    expect(() => compile('''
+use "math.quds"
+main():
+  print Box(value: 1).shown
+''', file: '${directory.path}/shown.quds'),
+        throwsA(predicate((error) => '$error'.contains('E207'))));
+    expect(() => compile('''
+use "math.quds"
+class Child extends Box:
+  peek() -> int = secret
+main():
+  print 1
+''', file: '${directory.path}/child_secret.quds'),
+        throwsA(predicate((error) => '$error'.contains('E206'))));
+    for (final source in [File('${directory.path}/math.quds'), app, child]) {
+      final dartPath = source.path.replaceFirst(RegExp(r'\.quds$'), '.dart');
+      File(dartPath).writeAsStringSync(
+          compile(source.readAsStringSync(), file: source.path).dart);
+    }
+    File('${directory.path}/api.dart').writeAsStringSync(compile(
+            File('${directory.path}/api.quds').readAsStringSync(),
+            file: '${directory.path}/api.quds')
+        .dart);
+    for (final name in ['app.dart', 'child.dart']) {
+      final output = File('${directory.path}/$name');
+      final analysis = await Process.run(
+          Platform.resolvedExecutable, ['analyze', output.path]);
+      expect(analysis.exitCode, 0,
+          reason:
+              '${analysis.stdout}\n${analysis.stderr}\n${output.readAsStringSync()}');
+      final run = await Process.run(Platform.resolvedExecutable, [output.path]);
+      expect(run.exitCode, 0,
+          reason: '${run.stderr}\n${output.readAsStringSync()}');
+    }
+    final appRun = await Process.run(
+        Platform.resolvedExecutable, ['${directory.path}/app.dart']);
+    final childRun = await Process.run(
+        Platform.resolvedExecutable, ['${directory.path}/child.dart']);
+    expect(appRun.stdout, '8\n1\n2\n');
+    expect(childRun.stdout, '2\n1\n');
+    directory.deleteSync(recursive: true);
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

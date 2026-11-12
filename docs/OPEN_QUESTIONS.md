@@ -18,7 +18,7 @@ A program that can be parsed in two ways is a compiler bug or a required rejecti
 
 The language rules above are settled. `MVP_0.md` lists the slice that compiles and runs. These design rules are still rejected or only partly lowered:
 
-- Cross-file `E206` / `E207`. One compilation is one library, so `private` and `protected` are visible there. `private` still lowers to a Dart `_` name, and `protected` is emitted as a documentation comment.
+- `show` / `hide` and a prefixed `use ... as name` do not bind the imported names in the checker. An unprefixed `use "file.quds"` and `export "file.quds"` do. `private` is `E206` outside that library. `protected` is `E207` outside the library and its subtypes. A public top-level function is also emitted under its Quds name so another library can call it.
 - `await all` and `task group` start every child that has already been entered, and report the first source-order failure (`TaskFailed` for a group). A child that throws before returning requests cancellation, and later children are not entered. An already-running Dart future is not aborted.
 - `@Reflectable` emits a const map of the class name and its field names. It does not list private-field metadata separately from the declared fields, and it does not register a mirror library.
 

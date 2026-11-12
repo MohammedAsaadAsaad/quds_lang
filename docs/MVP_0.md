@@ -355,6 +355,12 @@ A value outside the signed 64-bit range is `E006`. An integer that does not
 fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
 that literal, and `test/language_test.dart` executes both results.
 
+`use "other.quds"` loads that library. Public classes and functions are
+visible. `export "other.quds"` re-exports them. A private member used from
+another library is `E206`. A protected member used outside the library and
+its subtypes is `E207`. A subtype in another library may read `protected`.
+A public function is also emitted under its Quds name.
+
 The parity table still includes forms this compiler rejects instead of
-inventing: cross-file private access, and aborting a future that has already
-started. No claim of full 115-decision conformance is made.
+inventing: `show` / `hide`, prefixed imports, and aborting a future that has
+already started. No claim of full 115-decision conformance is made.

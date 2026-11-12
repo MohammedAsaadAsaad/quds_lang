@@ -195,12 +195,16 @@ class LabelStatement extends Statement {
 }
 
 class ImportDeclaration extends Statement {
-  const ImportDeclaration(this.uri, this.prefix, super.span, {this.condition});
+  const ImportDeclaration(this.uri, this.prefix, super.span,
+      {this.condition, this.export = false});
   final String uri;
   final String? prefix;
 
   /// `use uri when condition`. The import is kept only when the condition is true.
   final Expression? condition;
+
+  /// `export uri` re-exports the library and does not import those names here.
+  final bool export;
 }
 
 class PartDirective extends Statement {

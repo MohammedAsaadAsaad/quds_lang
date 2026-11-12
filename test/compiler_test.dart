@@ -682,6 +682,146 @@ main():
     expect(release.exitCode, 0, reason: '${release.stderr}');
     expect(release.stdout, 'ok\n');
   });
+
+  test('GenerateModel emits deterministic Quds and drops a stale file',
+      () async {
+    const source = '''
+@GenerateModel
+class User:
+  name: String
+  age: int
+main():
+  print 1
+''';
+    final first = compile(source, file: 'user.quds');
+    final second = compile(source, file: 'user.quds');
+    expect(first.models, hasLength(1));
+    expect(first.models.single.fileName, 'user_model.quds');
+    expect(first.models.single.source, second.models.single.source);
+    expect(first.models.single.sourceMap, second.models.single.sourceMap);
+    expect(first.models.single.sourceMap, contains('user.quds'));
+    expect(first.models.single.source, contains('value class UserModel:'));
+    expect(first.models.single.source.indexOf('name:'),
+        lessThan(first.models.single.source.indexOf('age:')));
+    await execute('''
+${first.models.single.source}
+main():
+  print UserModel(name: "Ada", age: 36).name
+''', 'Ada\n');
+    expect(
+        () => compile('''
+class UserModel:
+  other: int
+@GenerateModel
+class User:
+  name: String
+main():
+  print 1
+'''),
+        throwsA(isA<CompilerException>()
+            .having((error) => error.code, 'code', 'E904')));
+    final directory = Directory.systemTemp.createTempSync('quds-gen-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final file = File('${directory.path}/app.quds')..writeAsStringSync(source);
+    Future<ProcessResult> cli(List<String> args) => Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args]);
+    final built = await cli(['build', file.path]);
+    expect(built.exitCode, 0, reason: '${built.stdout}\n${built.stderr}');
+    final generated = File('${directory.path}/generated/user_model.quds');
+    final bytes = generated.readAsBytesSync();
+    expect(
+        File('${generated.path}.map').readAsStringSync(), contains('app.quds'));
+    final again = await cli(['build', file.path]);
+    expect(again.exitCode, 0, reason: '${again.stderr}');
+    expect(generated.readAsBytesSync(), bytes);
+    file.writeAsStringSync('main():\n  print 1\n');
+    final dropped = await cli(['build', file.path]);
+    expect(dropped.exitCode, 0, reason: '${dropped.stderr}');
+    expect(generated.existsSync(), isFalse);
+  });
+
+  test('format wraps at 80 columns without touching comments or strings',
+      () async {
+    final directory = Directory.systemTemp.createTempSync('quds-width-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final wide = 'x' * 90;
+    final comment = 'n' * 90;
+    final numbers = [for (var i = 1; i <= 24; i++) '$i'].join(', ');
+    final source = File('${directory.path}/app.quds')..writeAsStringSync('''
+# $comment
+main():
+    text = """
+$wide
+"""
+    values = [$numbers]
+    print values.length
+    print text.length
+''');
+    Future<ProcessResult> cli(List<String> args) => Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args]);
+    final formatted = await cli(['format', source.path]);
+    expect(formatted.exitCode, 0, reason: '${formatted.stderr}');
+    final once = source.readAsStringSync();
+    final lines = once.split('\n');
+    expect(lines.where((line) => line.startsWith('#')).single.length,
+        greaterThan(80));
+    expect(lines, contains(wide));
+    for (final line in lines) {
+      if (line.startsWith('#') || line == wide) continue;
+      expect(line.length, lessThanOrEqualTo(80), reason: line);
+    }
+    await cli(['format', source.path]);
+    expect(source.readAsStringSync(), once);
+    await execute(once, '24\n92\n');
+  });
+
+  test('doc html writes the documentation page', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-html-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync('/// Returns the sum.\nmain():\n  print 1\n');
+    final page = File('${directory.path}/api.html');
+    final written = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      'bin/quds.dart',
+      'doc',
+      'html',
+      source.path,
+      page.path,
+    ]);
+    expect(written.exitCode, 0, reason: '${written.stderr}');
+    final html = page.readAsStringSync();
+    expect(html, contains('<h1>app.quds</h1>'));
+    expect(html, contains('Returns the sum.'));
+    expect(html, contains('<h2>main():</h2>'));
+  });
+
+  test('benchmark checks debug/release parity and a regression', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-bench-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync('main():\n  print 1\n');
+    Future<ProcessResult> cli(List<String> args) => Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args]);
+    final stable =
+        await cli(['benchmark', source.path, '--baseline', '600000000']);
+    expect(stable.exitCode, 0, reason: '${stable.stdout}\n${stable.stderr}');
+    expect(stable.stdout, contains('parity ok'));
+    final regressed = await cli(['benchmark', source.path, '--baseline', '0']);
+    expect(regressed.exitCode, 1);
+    expect(regressed.stderr, contains('Benchmark regression'));
+    source.writeAsStringSync('''
+ready() -> bool:
+  print "debug"
+  return true
+main():
+  assert ready()
+  print "done"
+''');
+    final drifted = await cli(['benchmark', source.path]);
+    expect(drifted.exitCode, 1);
+    expect(drifted.stderr, contains('Debug/release output differs'));
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

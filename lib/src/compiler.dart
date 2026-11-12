@@ -9,9 +9,17 @@ import 'parser.dart';
 import 'semantics.dart';
 import 'sourcemap.dart';
 
+/// One `.quds` file emitted by `@GenerateModel`.
+class GeneratedModel {
+  const GeneratedModel(this.fileName, this.source, this.sourceMap);
+  final String fileName;
+  final String source;
+  final String sourceMap;
+}
+
 class Compilation {
   const Compilation(this.program, this.semantics, this.dart,
-      {this.sourceMap, this.dependencies = const []});
+      {this.sourceMap, this.dependencies = const [], this.models = const []});
   final Program program;
   final SemanticModel semantics;
   final String dart;
@@ -19,6 +27,9 @@ class Compilation {
 
   /// Absolute paths of this source and the `.quds` files it loaded.
   final List<String> dependencies;
+
+  /// Deterministic Quds sources derived from `@GenerateModel` classes.
+  final List<GeneratedModel> models;
 }
 
 Compilation compile(String source, {String file = '<input>'}) {
@@ -50,7 +61,66 @@ Compilation compile(String source, {String file = '<input>'}) {
   final dependencies = libraries.keys.toList()..sort();
   return Compilation(program, semantics, dart,
       sourceMap: sourceMapFor(emitter, generated, file),
-      dependencies: dependencies);
+      dependencies: dependencies,
+      models: _generatedModels(program, file));
+}
+
+List<GeneratedModel> _generatedModels(Program program, String file) {
+  final names = <String>{
+    for (final statement in program.statements)
+      if (statement is ClassDeclaration) statement.name,
+  };
+  final files = <String>{};
+  final models = <GeneratedModel>[];
+  for (final statement in program.statements) {
+    if (statement is! ClassDeclaration) continue;
+    final notes = statement.annotations
+        .where((note) => note.name == 'GenerateModel')
+        .toList();
+    if (notes.isEmpty) continue;
+    if (notes.any((note) => note.arguments.isNotEmpty)) {
+      throw CompilerException(
+          'E500', 'GenerateModel takes no arguments', notes.first.span);
+    }
+    final name = '${statement.name}Model';
+    final fileName = '${_snake(name)}.quds';
+    if (names.contains(name) || !files.add(fileName)) {
+      throw CompilerException(
+          'E904', 'Generator collision: $name', statement.span);
+    }
+    names.add(name);
+    final fields = statement.fields.where((item) => !item.isStatic).toList();
+    final buffer = StringBuffer()
+      ..writeln('# Generated from ${statement.name}. Do not edit.')
+      ..writeln('value class $name:');
+    final mappings = <(int, SourceSpan)>[
+      (1, statement.span),
+      (2, statement.span),
+    ];
+    if (fields.isEmpty) {
+      buffer.writeln('  marker: int = 1');
+      mappings.add((3, statement.span));
+    } else {
+      for (var i = 0; i < fields.length; i++) {
+        buffer.writeln('  ${fields[i].name}: ${fields[i].type}');
+        mappings.add((i + 3, fields[i].span));
+      }
+    }
+    models.add(GeneratedModel(fileName, buffer.toString(),
+        encodeSourceMap(fileName, file, mappings)));
+  }
+  return models;
+}
+
+String _snake(String name) {
+  final buffer = StringBuffer();
+  for (var i = 0; i < name.length; i++) {
+    final char = name[i];
+    final upper = char.toUpperCase() == char && char.toLowerCase() != char;
+    if (i > 0 && upper) buffer.write('_');
+    buffer.write(char.toLowerCase());
+  }
+  return buffer.toString();
 }
 
 void _loadLibraries(

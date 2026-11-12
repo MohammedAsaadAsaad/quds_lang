@@ -32,6 +32,8 @@ void main(List<String> arguments) {
       _doc(arguments);
     case 'migrate':
       _migrate(arguments);
+    case 'benchmark':
+      _benchmark(arguments);
     case 'lsp':
       _serve(respondLsp);
     case 'debug':
@@ -43,7 +45,7 @@ void main(List<String> arguments) {
 
 void _usage() {
   stderr.writeln(
-      'Usage: quds <build|run|analyze|test|format|create|add|remove|get|doc|migrate> ...');
+      'Usage: quds <build|run|analyze|test|format|create|add|remove|get|doc|migrate|benchmark> ...');
   exitCode = 64;
 }
 
@@ -121,6 +123,7 @@ bool _emitGenerated(File input, Compilation result) {
     exitCode = 73;
     return false;
   }
+  _writeModels(input, result);
   final sources = _sourcesDigest(input, result);
   final outputDigest = sha256Hex(utf8.encode(result.dart));
   final cache = _cacheFile(input);
@@ -138,6 +141,7 @@ bool _emitGenerated(File input, Compilation result) {
   cache.writeAsStringSync(jsonEncode({
     'sources': sources,
     'output': outputDigest,
+    'generated': [for (final model in result.models) model.fileName],
   }));
   stdout.writeln('Built ${output.path}');
   return true;
@@ -154,6 +158,41 @@ bool _cacheFresh(File cache, String sources, String output) {
   return saved is Map &&
       saved['sources'] == sources &&
       saved['output'] == output;
+}
+
+void _writeModels(File input, Compilation result) {
+  final cache = _cacheFile(input);
+  final previous = _savedGenerated(cache);
+  final current = <String>[];
+  final directory = Directory('${input.parent.path}/generated');
+  for (final model in result.models) {
+    current.add(model.fileName);
+    final file = File('${directory.path}/${model.fileName}');
+    file.parent.createSync(recursive: true);
+    if (!file.existsSync() || file.readAsStringSync() != model.source) {
+      file.writeAsStringSync(model.source);
+    }
+    final map = File('${file.path}.map');
+    if (!map.existsSync() || map.readAsStringSync() != model.sourceMap) {
+      map.writeAsStringSync(model.sourceMap);
+    }
+  }
+  for (final name in previous) {
+    if (current.contains(name)) continue;
+    final file = File('${directory.path}/$name');
+    if (file.existsSync()) file.deleteSync();
+    final map = File('${file.path}.map');
+    if (map.existsSync()) map.deleteSync();
+  }
+}
+
+List<String> _savedGenerated(File cache) {
+  if (!cache.existsSync()) return const [];
+  final saved = jsonDecode(cache.readAsStringSync());
+  if (saved is! Map) return const [];
+  final names = saved['generated'];
+  if (names is! List) return const [];
+  return [for (final name in names) '$name'];
 }
 
 String _sourcesDigest(File input, Compilation result) {
@@ -295,9 +334,9 @@ void _format(List<String> arguments) {
   }
 }
 
-/// Two-space indents. Comments, documentation, and string contents stay.
-/// A line is not reflowed, so the production does not change. Trailing
-/// whitespace outside a string is removed, and a newline ends the file.
+/// Two-space indents and a width of 80. Comments, documentation, and string
+/// contents stay. A long line breaks after the last comma that still fits.
+/// Trailing whitespace outside a string is removed, and a newline ends the file.
 String _formatSource(String source) {
   final lines = source.split('\n');
   if (lines.isNotEmpty && lines.last.isEmpty) lines.removeLast();
@@ -331,9 +370,74 @@ String _formatSource(String source) {
     }
     final width = line.length - line.trimLeft().length;
     final depth = indents.indexOf(width);
-    rewritten.add('${'  ' * (depth < 0 ? 0 : depth)}${line.trimLeft()}');
+    final body = '${'  ' * (depth < 0 ? 0 : depth)}${line.trimLeft()}';
+    rewritten.addAll(_wrapLine(body));
   }
   return '${rewritten.join('\n')}\n';
+}
+
+List<String> _wrapLine(String line, {bool pending = false}) {
+  if (line.length <= 80) return [line];
+  final content = line.trimLeft();
+  if (content.startsWith('#') || content.startsWith('///')) return [line];
+  final indent = line.length - content.length;
+  final split = _wrapAt(content, 80 - indent, pending: pending);
+  if (split == null) return [line];
+  return [
+    '${' ' * indent}${split.left}',
+    ..._wrapLine('${' ' * indent}${split.right}', pending: split.pending),
+  ];
+}
+
+/// A comma splits only inside `()` or `[]`, and the next line keeps the same
+/// indent so the lexer does not open a block.
+_Split? _wrapAt(String text, int budget, {required bool pending}) {
+  if (budget <= 0) return null;
+  var quote = '';
+  var depth = pending ? 1 : 0;
+  var last = -1;
+  var lastDepth = 0;
+  for (var i = 0; i < text.length && i < budget; i++) {
+    if (quote.isNotEmpty) {
+      if (text.startsWith(quote, i)) {
+        i += quote.length - 1;
+        quote = '';
+      } else if (quote.length == 1 && text[i] == '\\') {
+        i++;
+      }
+      continue;
+    }
+    if (text.startsWith('"""', i) || text.startsWith("'''", i)) {
+      quote = text.substring(i, i + 3);
+      i += 2;
+      continue;
+    }
+    final char = text[i];
+    if (char == '"' || char == "'") {
+      quote = char;
+      continue;
+    }
+    if (char == '#') break;
+    if (char == '(' || char == '[') {
+      depth++;
+    } else if ((char == ')' || char == ']') && depth > 0) {
+      depth--;
+    } else if (char == ',' && depth > 0) {
+      last = i;
+      lastDepth = depth;
+    }
+  }
+  if (last < 0 || last + 1 >= text.length) return null;
+  final rest = text.substring(last + 1).trimLeft();
+  if (rest.isEmpty) return null;
+  return _Split(text.substring(0, last + 1), rest, lastDepth > 0);
+}
+
+class _Split {
+  const _Split(this.left, this.right, this.pending);
+  final String left;
+  final String right;
+  final bool pending;
 }
 
 String _advanceQuotes(String line, String open) {
@@ -410,13 +514,19 @@ void _pub(String command, List<String> arguments) {
 
 void _doc(List<String> arguments) {
   final testing = arguments.length >= 2 && arguments[1] == 'test';
-  final path = testing
-      ? (arguments.length == 3 ? arguments[2] : null)
+  final html = arguments.length >= 2 && arguments[1] == 'html';
+  final path = testing || html
+      ? (arguments.length >= 3 ? arguments[2] : null)
       : (arguments.length == 2 ? arguments[1] : null);
-  if (path == null || !path.endsWith('.quds')) {
+  final destination = html && arguments.length == 4 ? arguments[3] : null;
+  if (path == null ||
+      !path.endsWith('.quds') ||
+      (html && (destination == null || !destination.endsWith('.html')))) {
     stderr.writeln(testing
         ? 'Usage: quds doc test <input.quds>'
-        : 'Usage: quds doc <input.quds>');
+        : html
+            ? 'Usage: quds doc html <input.quds> <output.html>'
+            : 'Usage: quds doc <input.quds>');
     exitCode = 64;
     return;
   }
@@ -424,6 +534,10 @@ void _doc(List<String> arguments) {
   try {
     if (testing) {
       _docTest(input);
+      return;
+    }
+    if (html) {
+      _docHtml(input, File(destination!));
       return;
     }
     final lines = input.readAsLinesSync();
@@ -435,6 +549,103 @@ void _doc(List<String> arguments) {
       docs.add(next.isEmpty ? comment : '$next — $comment');
     }
     stdout.write(docs.isEmpty ? '' : '${docs.join('\n')}\n');
+  } on CompilerException catch (error) {
+    stderr.writeln(error);
+    exitCode = 65;
+  } on FileSystemException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 74;
+  }
+}
+
+void _docHtml(File input, File output) {
+  final lines = input.readAsLinesSync();
+  final title = _escape(input.uri.pathSegments.last);
+  final buffer = StringBuffer()
+    ..writeln('<!DOCTYPE html>')
+    ..writeln('<html><head><meta charset="utf-8"><title>$title</title></head>')
+    ..writeln('<body>')
+    ..writeln('<h1>$title</h1>');
+  for (var i = 0; i < lines.length; i++) {
+    if (!lines[i].trimLeft().startsWith('///')) continue;
+    final comment = lines[i].trimLeft().substring(3).trim();
+    final next = i + 1 < lines.length ? lines[i + 1].trim() : '';
+    if (next.isNotEmpty && !next.startsWith('///')) {
+      buffer.writeln('<h2>${_escape(next)}</h2>');
+    }
+    buffer.writeln('<p>${_escape(comment)}</p>');
+  }
+  buffer.writeln('</body></html>');
+  output.parent.createSync(recursive: true);
+  output.writeAsStringSync(buffer.toString());
+  stdout.writeln('Wrote ${output.path}');
+}
+
+String _escape(String text) => text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+
+void _benchmark(List<String> arguments) {
+  final args = [...arguments];
+  final baselineFlag = args.indexOf('--baseline');
+  int? baseline;
+  if (baselineFlag != -1) {
+    if (baselineFlag + 1 >= args.length) {
+      stderr.writeln(
+          'Usage: quds benchmark <input.quds> [--baseline <microseconds>]');
+      exitCode = 64;
+      return;
+    }
+    baseline = int.tryParse(args[baselineFlag + 1]);
+    if (baseline == null) {
+      stderr.writeln('Baseline must be an integer number of microseconds');
+      exitCode = 64;
+      return;
+    }
+    args
+      ..removeAt(baselineFlag + 1)
+      ..removeAt(baselineFlag);
+  }
+  if (args.length != 2 || !args[1].endsWith('.quds')) {
+    stderr.writeln(
+        'Usage: quds benchmark <input.quds> [--baseline <microseconds>]');
+    exitCode = 64;
+    return;
+  }
+  final input = File(args[1]);
+  final watch = Stopwatch()..start();
+  try {
+    final result = compile(input.readAsStringSync(), file: input.path);
+    final directory = Directory.systemTemp.createTempSync('quds-bench-');
+    try {
+      final dart = File('${directory.path}/bench.dart')
+        ..writeAsStringSync(result.dart);
+      final debug = Process.runSync(
+          Platform.resolvedExecutable, ['run', '--enable-asserts', dart.path]);
+      final release = Process.runSync(Platform.resolvedExecutable,
+          ['run', '--no-enable-asserts', dart.path]);
+      watch.stop();
+      if (debug.exitCode != 0 || release.exitCode != 0) {
+        stderr.write(debug.exitCode != 0 ? debug.stderr : release.stderr);
+        exitCode = debug.exitCode != 0 ? debug.exitCode : release.exitCode;
+        return;
+      }
+      if (debug.stdout != release.stdout) {
+        stderr.writeln('Debug/release output differs');
+        exitCode = 1;
+        return;
+      }
+      final elapsed = watch.elapsedMicroseconds;
+      stdout.writeln('parity ok');
+      stdout.writeln('elapsed $elapsed');
+      if (baseline != null && elapsed > baseline) {
+        stderr.writeln('Benchmark regression: $elapsed > $baseline');
+        exitCode = 1;
+      }
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
   } on CompilerException catch (error) {
     stderr.writeln(error);
     exitCode = 65;

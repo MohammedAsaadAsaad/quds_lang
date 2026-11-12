@@ -1533,6 +1533,11 @@ main():
   row[0].n = 2
 ''': 'E307',
       '''
+twice() -> int = 2
+main():
+  twice
+''': 'E110',
+      '''
 interface Named:
   name: String
 interface Identifiable:

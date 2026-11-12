@@ -1902,7 +1902,12 @@ class Analyzer {
         if (!compatible(type, _returnType!))
           fail('Return type $type is incompatible with $_returnType', node);
       case ExpressionStatement():
-        expression(node.expression);
+        final valueType = expression(node.expression);
+        if (node.expression is Identifier && valueType.contains('->')) {
+          final name = (node.expression as Identifier).name;
+          error('E110',
+              'A zero-argument call has no parentheses; write $name()', node);
+        }
         if (node.expression is! CallExpression &&
             node.expression is! WithExpression &&
             node.expression is! DoExpression &&

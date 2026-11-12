@@ -161,13 +161,22 @@ class Parser {
         if (tokens[i].kind == TokenKind.rightParen) {
           depth--;
           if (depth == 0) {
-            move(i + 1);
+            var next = i + 1;
+            if (next < end && tokens[next].kind == TokenKind.arrow) {
+              next++;
+              if (!_skipType(next, end, (moved) => next = moved)) return false;
+            }
+            if (next < end && tokens[next].kind == TokenKind.question) next++;
+            move(next);
             return true;
           }
         }
         i++;
       }
       return false;
+    }
+    if (token.kind == TokenKind.identifier && token.lexeme == 'readonly') {
+      return _skipType(start + 1, end, move);
     }
     if (token.kind != TokenKind.identifier) return false;
     var i = start + 1;

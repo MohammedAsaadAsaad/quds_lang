@@ -130,9 +130,11 @@ class ConstObject extends ConstValue {
 
 /// A const constructor invocation recorded while checking the call.
 class ConstConstructor {
-  const ConstConstructor(this.type, this.parameters);
+  const ConstConstructor(this.type, this.parameters,
+      {this.requirements = const []});
   final String type;
   final List<Parameter> parameters;
+  final List<Expression> requirements;
 }
 
 /// Dart string literal, including escaped `$` so the output is not interpolated.
@@ -190,10 +192,14 @@ class ConstantEvaluator {
   final String? Function(Expression node) typeOf;
   final ConstConstructor? Function(CallExpression node) constConstructorOf;
   final Never Function(String message, Node node) fail;
+  Map<String, ConstValue>? _bound;
+  var _ephemeral = false;
 
   ConstValue evaluate(Expression node) {
-    final existing = constants[node];
-    if (existing != null) return existing;
+    if (!_ephemeral) {
+      final existing = constants[node];
+      if (existing != null) return existing;
+    }
     final value = switch (node) {
       Literal() => _literal(node),
       Identifier() => _identifier(node),
@@ -205,7 +211,7 @@ class ConstantEvaluator {
       CallExpression() => _call(node),
       _ => fail('const requires a compile-time constant', node),
     };
-    constants[node] = value;
+    if (!_ephemeral) constants[node] = value;
     return value;
   }
 
@@ -216,6 +222,7 @@ class ConstantEvaluator {
       case Literal():
         return;
       case Identifier():
+        if (_bound != null && _bound!.containsKey(node.name)) return;
         if (constantValueOf(node) == null) {
           fail('const requires a compile-time constant', node);
         }
@@ -276,6 +283,8 @@ class ConstantEvaluator {
       };
 
   ConstValue _identifier(Identifier node) {
+    final bound = _bound?[node.name];
+    if (bound != null) return bound;
     final value = constantValueOf(node);
     if (value == null) fail('const requires a compile-time constant', node);
     return value;
@@ -406,6 +415,25 @@ class ConstantEvaluator {
       if (fallback == null)
         fail('const requires a compile-time constant', node);
       values[i] = evaluate(fallback);
+    }
+    if (info.requirements.isNotEmpty) {
+      final savedBound = _bound;
+      final savedEphemeral = _ephemeral;
+      _bound = {'value': values.first!};
+      _ephemeral = true;
+      try {
+        for (final requirement in info.requirements) {
+          final result = evaluate(requirement);
+          if (result is! ConstBool || !result.value) {
+            fail(
+                'A wrapped value fails require and is not a compile-time constant',
+                node);
+          }
+        }
+      } finally {
+        _bound = savedBound;
+        _ephemeral = savedEphemeral;
+      }
     }
     return ConstObject(info.type, [for (final value in values) value!]);
   }

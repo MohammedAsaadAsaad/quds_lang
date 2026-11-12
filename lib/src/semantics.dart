@@ -2923,11 +2923,14 @@ class Analyzer {
       }
     }
     final raw = expression(node.object);
-    if (raw.endsWith('?') && !node.nullAware) {
+    final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
+    final nullableExtension = type.endsWith('?') &&
+        !node.nullAware &&
+        _extensions(type, node.name).isNotEmpty;
+    if (type.endsWith('?') && !node.nullAware && !nullableExtension) {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
     }
-    final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
     final base = unwrap(type);
     if (node.name == 'length' &&
         (base == 'String' ||
@@ -2938,7 +2941,7 @@ class Analyzer {
       return _readonlyView(raw, lengthType);
     }
     if (base == 'dynamic') return 'dynamic';
-    final look = _typeBounds[base] ?? base;
+    final look = nullableExtension ? type : (_typeBounds[base] ?? base);
     if (look.contains(' & ')) {
       for (final part in look.split(' & ')) {
         final found = memberType(part.trim(), node.name);
@@ -3219,7 +3222,19 @@ class Analyzer {
         unify(expression(entry), expression(node.values[i]), node.values[i]);
       }
     }
-    return 'Map<$key, $value>';
+    final inferred = 'Map<$key, $value>';
+    final expected = _expected;
+    if (expected != null &&
+        expected.startsWith('Map<') &&
+        expected.endsWith('>')) {
+      final parts = _splitTypes(expected.substring(4, expected.length - 1));
+      if (parts.length == 2 &&
+          compatible(key!, parts[0]) &&
+          compatible(value!, parts[1])) {
+        return expected;
+      }
+    }
+    return inferred;
   }
 
   String mapControlType(MapComprehension node) {
@@ -3296,7 +3311,7 @@ class Analyzer {
       if (next != type)
         fail('Set elements must share a type', node.elements[i]);
     }
-    return 'Set<$type>';
+    return _widenCollection('Set<$type>', 'Set<');
   }
 
   String record(RecordExpression node) {
@@ -3667,7 +3682,21 @@ class Analyzer {
             node.elements[i]);
       }
     }
-    return 'List<$type>';
+    return _widenCollection('List<$type>', 'List<');
+  }
+
+  /// A non-empty collection keeps the expected type when every element fits it.
+  String _widenCollection(String inferred, String prefix) {
+    final expected = _expected;
+    if (expected == null ||
+        !expected.startsWith(prefix) ||
+        !expected.endsWith('>')) {
+      return inferred;
+    }
+    final wanted = expected.substring(prefix.length, expected.length - 1);
+    final got = inferred.substring(prefix.length, inferred.length - 1);
+    if (got == wanted || compatible(got, wanted)) return expected;
+    return inferred;
   }
 
   bool aware(List<bool> flags, int index) =>
@@ -3837,7 +3866,15 @@ class Analyzer {
           return declaration.name;
         }
       }
-      if (rawObject.endsWith('?') && !callee.nullAware) {
+      final objectTypeRaw = rawObject.startsWith('readonly ')
+          ? rawObject.substring(9)
+          : rawObject;
+      final nullableExtension = objectTypeRaw.endsWith('?') &&
+          !callee.nullAware &&
+          _extensions(objectTypeRaw, callee.name).isNotEmpty;
+      if (objectTypeRaw.endsWith('?') &&
+          !callee.nullAware &&
+          !nullableExtension) {
         error(
             'E308',
             'A nullable value is used where a non-null value is required',
@@ -3847,9 +3884,8 @@ class Analyzer {
           _mutating.contains(callee.name)) {
         error('E307', 'A readonly reference cannot be mutated', callee);
       }
-      final objectType = unwrap(rawObject.startsWith('readonly ')
-          ? rawObject.substring(9)
-          : rawObject);
+      final objectType =
+          nullableExtension ? objectTypeRaw : unwrap(objectTypeRaw);
       if (objectType == 'dynamic') {
         for (final argument in node.arguments) {
           expression(argument.value);
@@ -4137,10 +4173,12 @@ class Analyzer {
     }
     if (type.kind == 'extensionType') {
       final field = type.fields.single;
-      applyArguments(
-          node,
-          [Parameter(field.name, model.resolve(field.type), false, field.span)],
-          null);
+      final parameters = [
+        Parameter(field.name, model.resolve(field.type), false, field.span)
+      ];
+      applyArguments(node, parameters, null);
+      model.constCalls[node] = ConstConstructor(type.name, parameters,
+          requirements: type.requirements);
       return type.name;
     }
     if (type.constructors.isNotEmpty) {

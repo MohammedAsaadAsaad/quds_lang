@@ -43,6 +43,8 @@ class DartEmitter {
   var _useProtected = false;
   var _useLog = false;
   var _useConfig = false;
+  var _useReadonly = false;
+  String? _returnView;
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
   void line(String text) {
@@ -507,6 +509,9 @@ class DartEmitter {
     if (_useIsolate) {
       prelude.writeln("import 'dart:isolate';");
     }
+    if (_useReadonly) {
+      prelude.writeln("import 'dart:collection';");
+    }
     if (_useProtected) {
       prelude.writeln("import 'package:meta/meta.dart';");
     }
@@ -718,18 +723,25 @@ class DartEmitter {
     final title = node.isOperator ? 'operator ${node.name}' : symbol.dartName;
     final staticPrefix = node.isStatic ? 'static ' : '';
     final checks = _intersectionChecks(node);
+    final views = _readonlyParameters(node);
+    final savedReturn = _returnView;
+    _returnView = _readonlyBoundary(symbol.type);
     if (node.expressionBody case final value?) {
-      if (checks.isEmpty) {
+      final text = _wrapReturn(expression(value));
+      if (checks.isEmpty && views.isEmpty) {
         line(
-            '$staticPrefix${_dartType(symbol.type)} $title$generics($parameters) ${async}=> ${expression(value)};');
+            '$staticPrefix${_dartType(symbol.type)} $title$generics($parameters) ${async}=> $text;');
       } else {
         line(
             '$staticPrefix${_dartType(symbol.type)} $title$generics($parameters) $async{');
         _depth++;
+        for (final view in views) {
+          line(view);
+        }
         for (final check in checks) {
           line(check);
         }
-        line('return ${expression(value)};');
+        line('return $text;');
         _depth--;
         line('}');
       }
@@ -737,6 +749,9 @@ class DartEmitter {
       line(
           '$staticPrefix${_dartType(symbol.type)} $title$generics($parameters) $async{');
       _depth++;
+      for (final view in views) {
+        line(view);
+      }
       for (final check in checks) {
         line(check);
       }
@@ -765,6 +780,63 @@ class DartEmitter {
       _depth--;
       line('}');
     }
+    _returnView = savedReturn;
+  }
+
+  List<String> _readonlyParameters(FunctionDeclaration node) {
+    final lines = <String>[];
+    for (final parameter in node.parameters) {
+      final declared = model.declarations[parameter]!.type;
+      final view = _readonlyBoundary(declared);
+      if (view == null) continue;
+      _useReadonly = true;
+      final dartName = model.declarations[parameter]!.dartName;
+      lines.add('$dartName = $view($dartName);');
+    }
+    return lines;
+  }
+
+  String _wrapReturn(String value) {
+    final view = _returnView;
+    if (view == null) return value;
+    _useReadonly = true;
+    return '$view($value)';
+  }
+
+  /// A Dart signature cannot spell `readonly`, so the boundary is a view.
+  String? _readonlyBoundary(String type) {
+    if (!type.startsWith('readonly ')) return null;
+    final inner = type.substring(9);
+    if (inner.startsWith('List<') && inner.endsWith('>')) {
+      return 'UnmodifiableListView<${_dartType(inner.substring(5, inner.length - 1))}>';
+    }
+    if (inner.startsWith('Set<') && inner.endsWith('>')) {
+      return 'UnmodifiableSetView<${_dartType(inner.substring(4, inner.length - 1))}>';
+    }
+    if (inner.startsWith('Map<') && inner.endsWith('>')) {
+      final parts = _splitTypeArgs(inner.substring(4, inner.length - 1));
+      if (parts.length == 2) {
+        return 'UnmodifiableMapView<${_dartType(parts[0])}, ${_dartType(parts[1])}>';
+      }
+    }
+    return null;
+  }
+
+  List<String> _splitTypeArgs(String text) {
+    final parts = <String>[];
+    var start = 0;
+    var depth = 0;
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (char == '<' || char == '(') depth++;
+      if (char == '>' || char == ')') depth--;
+      if (char == ',' && depth == 0) {
+        parts.add(text.substring(start, i).trim());
+        start = i + 1;
+      }
+    }
+    parts.add(text.substring(start).trim());
+    return parts;
   }
 
   (String, String) _splitFunctionType(String type) {
@@ -882,9 +954,9 @@ class DartEmitter {
       final field = node.fields.single;
       final wrapped = _dartType(field.type);
       if (node.requirements.isEmpty) {
-        line('extension type ${node.name}($wrapped value) {');
+        line('extension type const ${node.name}($wrapped value) {');
       } else {
-        line('extension type ${node.name}._($wrapped value) {');
+        line('extension type const ${node.name}._($wrapped value) {');
         final checks = node.requirements
             .map((item) =>
                 'if (!(${expression(item)})) throw ArgumentError(\'require failed\');')
@@ -1418,11 +1490,11 @@ class DartEmitter {
           _useReturn = true;
           line(node.value == null
               ? 'throw _QudsReturn(null);'
-              : 'throw _QudsReturn(${expression(node.value!)});');
+              : 'throw _QudsReturn(${_wrapReturn(expression(node.value!))});');
         } else {
           line(node.value == null
               ? 'return;'
-              : 'return ${expression(node.value!)};');
+              : 'return ${_wrapReturn(expression(node.value!))};');
         }
       case ResultStatement():
         line('return ${expression(node.value)};');
@@ -1995,18 +2067,23 @@ class DartEmitter {
   }
 
   String _lambda(Lambda node) {
+    final savedReturn = _returnView;
+    _returnView = null;
     final parameters = node.parameters
         .map((p) =>
             '${model.declarations[p]!.type} ${model.declarations[p]!.dartName}')
         .join(', ');
     final async = model.asyncLambdas.contains(node) ? 'async ' : '';
     if (node.expressionBody case final value?) {
-      return '(($parameters) $async=> ${expression(value)})';
+      final text = '(($parameters) $async=> ${expression(value)})';
+      _returnView = savedReturn;
+      return text;
     }
     final savedDepth = _depth;
     _depth = 0;
     final body = _captureBlock(() => statements(node.body!));
     _depth = savedDepth;
+    _returnView = savedReturn;
     return '(($parameters) $async{\n$body})';
   }
 
@@ -2119,7 +2196,11 @@ class DartEmitter {
             ? ''
             : expression(node.arguments.first.value,
                 constantContext: constantContext);
-        return '${targetSymbol.name}($value)';
+        final checked = targetSymbol.classDeclaration!.requirements.isNotEmpty;
+        final ctor = model.constants.containsKey(node) && checked
+            ? '${targetSymbol.name}._'
+            : targetSymbol.name;
+        return '$ctor($value)';
       }
       final fields = targetSymbol.classCase?.fields ??
           [

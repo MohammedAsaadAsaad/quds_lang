@@ -664,6 +664,79 @@ main():
 ''', '7\n3\nx\nRex\n0\n1\n');
   });
 
+  test('wrapped values, nullable extensions, and readonly boundaries execute',
+      () async {
+    const source = '''
+type Percentage wraps int:
+  require value >= 0 and value <= 100
+extend String?:
+  orEmpty() -> String = this ?? ""
+expose() -> readonly List<int> = [1]
+keep(items: readonly List<int>) -> int = items.length
+add(a: int, b: int) -> int = a + b
+later(read: () -> int) async -> int:
+  return read()
+main() async:
+  items: List<num> = [1]
+  print items[0]
+  flags: Set<num> = set:
+    1
+  print flags.length
+  ages: Map<String, num> = map:
+    "Ada": 1
+  print ages["Ada"]
+  const ok = Percentage(50)
+  print ok
+  try:
+    Percentage(-1)
+    print "kept"
+  catch error:
+    print "rejected"
+  text: String? = null
+  print text.orEmpty()
+  named: String? = "ab"
+  print named.orEmpty()
+  print expose().length
+  print keep(expose())
+  var first = () -> 0
+  var second = () -> 0
+  var index = 0
+  for n in [1, 2]:
+    saved = () -> n
+    if index == 0:
+      first = saved
+    else:
+      second = saved
+    index = index + 1
+  print first()
+  print second()
+  var count = 1
+  read = () -> count
+  count = 2
+  print await later(read)
+  partial = add(a: 1, b: _)
+  print partial(4)
+''';
+    await execute(source, '''1
+1
+1
+50
+rejected
+
+ab
+1
+1
+1
+2
+2
+5
+''');
+    final dart = compile(source).dart;
+    expect(dart, contains('UnmodifiableListView<int>'));
+    expect(dart, contains('Percentage._(50)'));
+    expect(dart, isNot(contains("import 'package:quds_lang")));
+  });
+
   test('small numbers match between the VM and JavaScript', () async {
     const source = '''
 main():
@@ -1537,6 +1610,36 @@ main():
   items: readonly List<int> = [1]
   items.add(2)
 ''': 'E307',
+      '''
+main():
+  grid: readonly List<List<int>> = [[1]]
+  grid[0].add(2)
+''': 'E307',
+      '''
+take(items: List<int>):
+  print items.length
+main():
+  items: readonly List<int> = [1]
+  take(items)
+''': 'E500',
+      '''
+type Percentage wraps int:
+  require value >= 0 and value <= 100
+const bad = Percentage(-1)
+main():
+  print bad
+''': 'E401',
+      '''
+type Percentage wraps int:
+  require value >= 0 and value <= 100
+main():
+  print Percentage._(1)
+''': 'E300',
+      '''
+main():
+  items: List<int> = [1]
+  taken: List<num> = items
+''': 'E300',
       '''
 parse() -> Result<int, String> = Ok(1)
 main():

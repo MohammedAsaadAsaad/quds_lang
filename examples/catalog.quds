@@ -1,0 +1,730 @@
+# Same market-day program as examples/catalog.dart.
+
+class Product:
+  sku: String required
+  cents: int required
+  stock: int required
+  value() -> int = cents * stock
+  low() -> bool = stock < 5
+
+class CartLine:
+  units: int required
+  cents: int required
+  total() -> int = units * cents
+
+class Shift:
+  start: int required
+  end: int required
+  minutes() -> int:
+    if end >= start:
+      return end - start
+    return end + 1440 - start
+
+sumList(values: List<int>) -> int:
+  var total = 0
+  for value in values:
+    total += value
+  return total
+minList(values: List<int>) -> int:
+  var best = values[0]
+  for value in values:
+    if value < best:
+      best = value
+  return best
+maxList(values: List<int>) -> int:
+  var best = values[0]
+  for value in values:
+    if value > best:
+      best = value
+  return best
+clampInt(value: int, low: int, high: int) -> int:
+  if value < low:
+    return low
+  if value > high:
+    return high
+  return value
+factorial(n: int) -> int:
+  var running = 1
+  var cursor = 2
+  var limit = n
+  if n > 12:
+    limit = 12
+  while cursor <= limit:
+    running *= cursor
+    cursor += 1
+  return running
+fibonacci(n: int) -> int:
+  if n <= 1:
+    return n
+  var previous = 0
+  var current = 1
+  var left = n - 1
+  while left > 0:
+    next = previous + current
+    previous = current
+    current = next
+    left -= 1
+  return current
+gcd(a: int, b: int) -> int:
+  var left = a
+  var right = b
+  if left < 0:
+    left = 0 - left
+  if right < 0:
+    right = 0 - right
+  while right != 0:
+    rest = left % right
+    left = right
+    right = rest
+  return left
+lcm(a: int, b: int) -> int:
+  if a == 0 or b == 0:
+    return 0
+  return a ~/ gcd(a, b) * b
+collatzSteps(start: int) -> int:
+  var value = start
+  var steps = 0
+  if value < 1:
+    return 0
+  while value != 1 and steps < 40:
+    if value % 2 == 0:
+      value = value ~/ 2
+    else:
+      value = value * 3 + 1
+    steps += 1
+  return steps
+letterGrade(score: int) -> String:
+  if score >= 90:
+    return "A"
+  if score >= 80:
+    return "B"
+  if score >= 70:
+    return "C"
+  if score >= 60:
+    return "D"
+  return "F"
+gpaPoints(score: int) -> int:
+  if score >= 90:
+    return 4
+  if score >= 80:
+    return 3
+  if score >= 70:
+    return 2
+  if score >= 60:
+    return 1
+  return 0
+weighted(a: int, b: int, c: int) -> int = (a * 5 + b * 3 + c * 2) ~/ 10
+dayOfYear(month: int, day: int) -> int:
+  lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  var cursor = 1
+  var total = day
+  while cursor < month and cursor <= 12:
+    total += lengths[cursor - 1]
+    cursor += 1
+  return total
+daysInMonth(month: int) -> int:
+  if month == 2:
+    return 28
+  if month == 4 or month == 6 or month == 9 or month == 11:
+    return 30
+  return 31
+roundDiv(cents: int, rate: int) -> int:
+  base = cents * rate
+  whole = base ~/ 100
+  if base % 100 >= 50:
+    return whole + 1
+  return whole
+tipOf(cents: int, percent: int) -> int = roundDiv(cents, percent)
+splitBill(cents: int, people: int) -> int:
+  if people <= 0:
+    return cents
+  share = cents ~/ people
+  if cents % people == 0:
+    return share
+  return share + 1
+changeDue(paid: int, owed: int) -> int:
+  if paid <= owed:
+    return 0
+  return paid - owed
+margin(price: int, cost: int) -> int:
+  if price <= 0:
+    return 0
+  return (price - cost) * 100 ~/ price
+markup(cost: int, percent: int) -> int = cost + cost * percent ~/ 100
+reorderQty(stock: int, target: int) -> int:
+  if stock >= target:
+    return 0
+  return target - stock
+rectangleArea(width: int, height: int) -> int:
+  if width < 0 or height < 0:
+    return 0
+  return width * height
+rectanglePerimeter(width: int, height: int) -> int = (width + height) * 2
+overlapLength(a0: int, a1: int, b0: int, b1: int) -> int:
+  var start = b0
+  if a0 > b0:
+    start = a0
+  var end = b1
+  if a1 < b1:
+    end = a1
+  if end <= start:
+    return 0
+  return end - start
+distanceSquared(x0: int, y0: int, x1: int, y1: int) -> int:
+  dx = x1 - x0
+  dy = y1 - y0
+  return dx * dx + dy * dy
+simpleInterest(principal: int, rate: int, years: int) -> int:
+  if years < 0:
+    return principal
+  return principal + principal * rate * years ~/ 100
+compoundSteps(principal: int, rate: int, years: int) -> int:
+  var balance = principal
+  var left = years
+  if left < 0:
+    left = 0
+  while left > 0:
+    balance += balance * rate ~/ 100
+    left -= 1
+  return balance
+payroll(hours: int, rate: int) -> int:
+  if hours <= 40:
+    return hours * rate
+  extra = hours - 40
+  return 40 * rate + extra * rate * 3 ~/ 2
+netPay(gross: int, taxRate: int) -> int:
+  tax = gross * taxRate ~/ 100
+  if tax >= gross:
+    return 0
+  return gross - tax
+countChar(text: String, mark: String) -> int:
+  if mark.length == 0:
+    return 0
+  parts = text.split(mark)
+  return parts.length - 1
+shout(text: String) -> String = text.trim().toUpperCase()
+wordScore(text: String) -> int:
+  if text.isEmpty:
+    return 0
+  return text.trim().length + text.indexOf("a")
+boolBit(value: bool) -> int:
+  if value:
+    return 1
+  return 0
+opensWith(text: String, prefix: String) -> bool = text.startsWith(prefix)
+appleTier(units: int, cents: int) -> int:
+  if units >= 24:
+    return cents * units * 80 ~/ 100
+  if units >= 12:
+    return cents * units * 90 ~/ 100
+  return cents * units
+breadTier(units: int, cents: int) -> int:
+  if units >= 20:
+    return cents * units * 85 ~/ 100
+  if units >= 10:
+    return cents * units * 95 ~/ 100
+  return cents * units
+milkTier(units: int, cents: int) -> int:
+  if units >= 18:
+    return cents * units * 88 ~/ 100
+  if units >= 6:
+    return cents * units * 94 ~/ 100
+  return cents * units
+riceTier(units: int, cents: int) -> int:
+  if units >= 30:
+    return cents * units * 75 ~/ 100
+  if units >= 10:
+    return cents * units * 90 ~/ 100
+  return cents * units
+oilTier(units: int, cents: int) -> int:
+  if units >= 12:
+    return cents * units * 82 ~/ 100
+  if units >= 4:
+    return cents * units * 92 ~/ 100
+  return cents * units
+soapTier(units: int, cents: int) -> int:
+  if units >= 16:
+    return cents * units * 84 ~/ 100
+  if units >= 8:
+    return cents * units * 93 ~/ 100
+  return cents * units
+saltTier(units: int, cents: int) -> int:
+  if units >= 40:
+    return cents * units * 70 ~/ 100
+  if units >= 20:
+    return cents * units * 85 ~/ 100
+  return cents * units
+honeyTier(units: int, cents: int) -> int:
+  if units >= 8:
+    return cents * units * 90 ~/ 100
+  if units >= 4:
+    return cents * units * 96 ~/ 100
+  return cents * units
+teaTier(units: int, cents: int) -> int:
+  if units >= 15:
+    return cents * units * 86 ~/ 100
+  if units >= 5:
+    return cents * units * 94 ~/ 100
+  return cents * units
+coffeeTier(units: int, cents: int) -> int:
+  if units >= 10:
+    return cents * units * 83 ~/ 100
+  if units >= 4:
+    return cents * units * 91 ~/ 100
+  return cents * units
+flourTier(units: int, cents: int) -> int:
+  if units >= 25:
+    return cents * units * 78 ~/ 100
+  if units >= 10:
+    return cents * units * 90 ~/ 100
+  return cents * units
+sugarTier(units: int, cents: int) -> int:
+  if units >= 22:
+    return cents * units * 80 ~/ 100
+  if units >= 8:
+    return cents * units * 92 ~/ 100
+  return cents * units
+northShip(grams: int, zone: int) -> int:
+  var fee = 25
+  if grams >= 2000:
+    fee = 90
+  else if grams >= 800:
+    fee = 55
+  if zone > 1:
+    fee += zone * 15
+  return fee
+southShip(grams: int, zone: int) -> int:
+  var fee = 20
+  if grams >= 1800:
+    fee = 80
+  else if grams >= 700:
+    fee = 50
+  if zone > 1:
+    fee += zone * 15
+  return fee
+eastShip(grams: int, zone: int) -> int:
+  var fee = 30
+  if grams >= 2500:
+    fee = 110
+  else if grams >= 1000:
+    fee = 60
+  if zone > 1:
+    fee += zone * 15
+  return fee
+westShip(grams: int, zone: int) -> int:
+  var fee = 18
+  if grams >= 1500:
+    fee = 70
+  else if grams >= 600:
+    fee = 45
+  if zone > 1:
+    fee += zone * 15
+  return fee
+portShip(grams: int, zone: int) -> int:
+  var fee = 35
+  if grams >= 3000:
+    fee = 140
+  else if grams >= 1200:
+    fee = 75
+  if zone > 1:
+    fee += zone * 15
+  return fee
+hillShip(grams: int, zone: int) -> int:
+  var fee = 15
+  if grams >= 1200:
+    fee = 65
+  else if grams >= 500:
+    fee = 40
+  if zone > 1:
+    fee += zone * 15
+  return fee
+rentLate(days: int, due: int) -> int:
+  if days <= 3:
+    return 0
+  extra = (days - 3) * 15
+  if extra > due * 20 ~/ 100:
+    return due * 20 ~/ 100
+  return extra
+stallLate(days: int, due: int) -> int:
+  if days <= 2:
+    return 0
+  extra = (days - 2) * 10
+  if extra > due * 25 ~/ 100:
+    return due * 25 ~/ 100
+  return extra
+crateLate(days: int, due: int) -> int:
+  if days <= 5:
+    return 0
+  extra = (days - 5) * 8
+  if extra > due * 15 ~/ 100:
+    return due * 15 ~/ 100
+  return extra
+coolerLate(days: int, due: int) -> int:
+  if days <= 1:
+    return 0
+  extra = (days - 1) * 20
+  if extra > due * 30 ~/ 100:
+    return due * 30 ~/ 100
+  return extra
+licenseLate(days: int, due: int) -> int:
+  if days <= 7:
+    return 0
+  extra = (days - 7) * 12
+  if extra > due * 10 ~/ 100:
+    return due * 10 ~/ 100
+  return extra
+clerkBonus(score: int, base: int) -> int:
+  if score >= 95:
+    return base * 20 ~/ 100
+  if score >= 80:
+    return base * 10 ~/ 100
+  return 0
+bakerBonus(score: int, base: int) -> int:
+  if score >= 90:
+    return base * 15 ~/ 100
+  if score >= 75:
+    return base * 8 ~/ 100
+  return 0
+driverBonus(score: int, base: int) -> int:
+  if score >= 98:
+    return base * 25 ~/ 100
+  if score >= 85:
+    return base * 12 ~/ 100
+  return 0
+buyerBonus(score: int, base: int) -> int:
+  if score >= 88:
+    return base * 18 ~/ 100
+  if score >= 70:
+    return base * 9 ~/ 100
+  return 0
+ripeSum(values: List<int>) -> int:
+  var total = 0
+  for value in values:
+    if value > 5:
+      total += value
+  return total
+heavySum(values: List<int>) -> int:
+  var total = 0
+  for value in values:
+    if value > 20:
+      total += value
+  return total
+warmSum(values: List<int>) -> int:
+  var total = 0
+  for value in values:
+    if value > 30:
+      total += value
+  return total
+loudSum(values: List<int>) -> int:
+  var total = 0
+  for value in values:
+    if value > 2:
+      total += value
+  return total
+tallSum(values: List<int>) -> int:
+  var total = 0
+  for value in values:
+    if value > 100:
+      total += value
+  return total
+plainDigits(number: int) -> int:
+  var rest = number
+  if rest < 0:
+    rest = 0 - rest
+  var total = 0
+  while rest > 0:
+    total += (rest % 10) * 1
+    rest = rest ~/ 10
+  return total
+doubleDigits(number: int) -> int:
+  var rest = number
+  if rest < 0:
+    rest = 0 - rest
+  var total = 0
+  while rest > 0:
+    total += (rest % 10) * 2
+    rest = rest ~/ 10
+  return total
+tripleDigits(number: int) -> int:
+  var rest = number
+  if rest < 0:
+    rest = 0 - rest
+  var total = 0
+  while rest > 0:
+    total += (rest % 10) * 3
+    rest = rest ~/ 10
+  return total
+rateAppleCrate(units: int) -> int = units * 100 + 0
+rateBreadCrate(units: int) -> int = units * 101 + 1
+rateMilkCrate(units: int) -> int = units * 102 + 2
+rateRiceCrate(units: int) -> int = units * 103 + 3
+rateOilCrate(units: int) -> int = units * 104 + 4
+rateSoapCrate(units: int) -> int = units * 105 + 5
+rateSaltCrate(units: int) -> int = units * 106 + 6
+rateHoneyCrate(units: int) -> int = units * 107 + 7
+rateTeaCrate(units: int) -> int = units * 108 + 8
+rateCoffeeCrate(units: int) -> int = units * 109 + 9
+rateFlourCrate(units: int) -> int = units * 110 + 10
+rateSugarCrate(units: int) -> int = units * 111 + 11
+rateEggCrate(units: int) -> int = units * 112 + 12
+rateCheeseCrate(units: int) -> int = units * 113 + 13
+rateOatCrate(units: int) -> int = units * 114 + 14
+rateSpiceCrate(units: int) -> int = units * 115 + 15
+rateDateCrate(units: int) -> int = units * 116 + 16
+rateFigCrate(units: int) -> int = units * 117 + 17
+rateGrapeCrate(units: int) -> int = units * 118 + 18
+rateOliveCrate(units: int) -> int = units * 119 + 0
+ratePepperCrate(units: int) -> int = units * 120 + 1
+rateOnionCrate(units: int) -> int = units * 121 + 2
+rateGarlicCrate(units: int) -> int = units * 122 + 3
+rateTomatoCrate(units: int) -> int = units * 123 + 4
+ratePotatoCrate(units: int) -> int = units * 124 + 5
+rateCarrotCrate(units: int) -> int = units * 125 + 6
+rateLemonCrate(units: int) -> int = units * 126 + 7
+rateMintCrate(units: int) -> int = units * 127 + 8
+rateBasilCrate(units: int) -> int = units * 128 + 9
+rateCuminCrate(units: int) -> int = units * 129 + 10
+rateYeastCrate(units: int) -> int = units * 130 + 11
+rateButterCrate(units: int) -> int = units * 131 + 12
+rateCreamCrate(units: int) -> int = units * 132 + 13
+rateLentilCrate(units: int) -> int = units * 133 + 14
+rateBeanCrate(units: int) -> int = units * 134 + 15
+rateNutCrate(units: int) -> int = units * 135 + 16
+rateBarleyCrate(units: int) -> int = units * 136 + 17
+rateMilletCrate(units: int) -> int = units * 100 + 18
+rateSesameCrate(units: int) -> int = units * 101 + 0
+rateThymeCrate(units: int) -> int = units * 102 + 1
+rateGingerCrate(units: int) -> int = units * 103 + 2
+rateCocoaCrate(units: int) -> int = units * 104 + 3
+rateVanillaCrate(units: int) -> int = units * 105 + 4
+rateWalnutCrate(units: int) -> int = units * 106 + 5
+rateAlmondCrate(units: int) -> int = units * 107 + 6
+ratePistachioCrate(units: int) -> int = units * 108 + 7
+rateChickpeaCrate(units: int) -> int = units * 109 + 8
+rateSpinachCrate(units: int) -> int = units * 110 + 9
+rateCabbageCrate(units: int) -> int = units * 111 + 10
+rateCucumberCrate(units: int) -> int = units * 112 + 11
+rateOrangeCrate(units: int) -> int = units * 113 + 12
+rateMelonCrate(units: int) -> int = units * 114 + 13
+ratePeachCrate(units: int) -> int = units * 115 + 14
+ratePlumCrate(units: int) -> int = units * 116 + 15
+rateCherryCrate(units: int) -> int = units * 117 + 16
+rateMangoCrate(units: int) -> int = units * 118 + 17
+rateBananaCrate(units: int) -> int = units * 119 + 18
+rateYogurtCrate(units: int) -> int = units * 120 + 0
+rateLabnehCrate(units: int) -> int = units * 121 + 1
+rateHalvaCrate(units: int) -> int = units * 122 + 2
+rateTahiniCrate(units: int) -> int = units * 123 + 3
+rateAppleSack(units: int) -> int = units * 124 + 4
+rateBreadSack(units: int) -> int = units * 125 + 5
+rateMilkSack(units: int) -> int = units * 126 + 6
+rateRiceSack(units: int) -> int = units * 127 + 7
+rateOilSack(units: int) -> int = units * 128 + 8
+rateSoapSack(units: int) -> int = units * 129 + 9
+rateSaltSack(units: int) -> int = units * 130 + 10
+rateHoneySack(units: int) -> int = units * 131 + 11
+rateTeaSack(units: int) -> int = units * 132 + 12
+rateCoffeeSack(units: int) -> int = units * 133 + 13
+rateFlourSack(units: int) -> int = units * 134 + 14
+rateSugarSack(units: int) -> int = units * 135 + 15
+rateEggSack(units: int) -> int = units * 136 + 16
+rateCheeseSack(units: int) -> int = units * 100 + 17
+rateOatSack(units: int) -> int = units * 101 + 18
+rateSpiceSack(units: int) -> int = units * 102 + 0
+rateDateSack(units: int) -> int = units * 103 + 1
+rateFigSack(units: int) -> int = units * 104 + 2
+rateGrapeSack(units: int) -> int = units * 105 + 3
+rateOliveSack(units: int) -> int = units * 106 + 4
+ratePepperSack(units: int) -> int = units * 107 + 5
+rateOnionSack(units: int) -> int = units * 108 + 6
+rateGarlicSack(units: int) -> int = units * 109 + 7
+rateTomatoSack(units: int) -> int = units * 110 + 8
+ratePotatoSack(units: int) -> int = units * 111 + 9
+rateCarrotSack(units: int) -> int = units * 112 + 10
+rateLemonSack(units: int) -> int = units * 113 + 11
+rateMintSack(units: int) -> int = units * 114 + 12
+rateBasilSack(units: int) -> int = units * 115 + 13
+rateCuminSack(units: int) -> int = units * 116 + 14
+
+digest() -> int:
+  var total = 0
+  total += sumList([4, 5, 6])
+  total += minList([4, 1, 7])
+  total += maxList([4, 1, 7])
+  total += clampInt(12, 0, 9)
+  total += factorial(6)
+  total += fibonacci(10)
+  total += gcd(48, 18)
+  total += lcm(12, 18)
+  total += collatzSteps(12)
+  total += letterGrade(92).length
+  total += gpaPoints(75)
+  total += weighted(80, 90, 70)
+  total += dayOfYear(3, 1)
+  total += daysInMonth(2)
+  total += roundDiv(199, 15)
+  total += tipOf(2000, 10)
+  total += splitBill(1000, 3)
+  total += changeDue(500, 320)
+  total += margin(250, 180)
+  total += markup(180, 25)
+  total += reorderQty(4, 12)
+  total += rectangleArea(6, 4)
+  total += rectanglePerimeter(6, 4)
+  total += overlapLength(1, 5, 3, 8)
+  total += distanceSquared(1, 2, 4, 6)
+  total += simpleInterest(1000, 5, 2)
+  total += compoundSteps(1000, 10, 2)
+  total += payroll(42, 20)
+  total += netPay(800, 10)
+  total += countChar("a-b-c", "-")
+  total += shout("  ada ").length
+  total += wordScore("ada")
+  total += boolBit(true)
+  total += boolBit(opensWith("market", "mar"))
+  total += appleTier(10, 40)
+  total += breadTier(10, 40)
+  total += milkTier(10, 40)
+  total += riceTier(10, 40)
+  total += oilTier(10, 40)
+  total += soapTier(10, 40)
+  total += saltTier(10, 40)
+  total += honeyTier(10, 40)
+  total += teaTier(10, 40)
+  total += coffeeTier(10, 40)
+  total += flourTier(10, 40)
+  total += sugarTier(10, 40)
+  total += northShip(900, 2)
+  total += southShip(900, 2)
+  total += eastShip(900, 2)
+  total += westShip(900, 2)
+  total += portShip(900, 2)
+  total += hillShip(900, 2)
+  total += rentLate(12, 500)
+  total += stallLate(12, 500)
+  total += crateLate(12, 500)
+  total += coolerLate(12, 500)
+  total += licenseLate(12, 500)
+  total += clerkBonus(88, 200)
+  total += bakerBonus(88, 200)
+  total += driverBonus(88, 200)
+  total += buyerBonus(88, 200)
+  total += ripeSum([3, 8, 1, 9])
+  total += heavySum([3, 8, 1, 9])
+  total += warmSum([3, 8, 1, 9])
+  total += loudSum([3, 8, 1, 9])
+  total += tallSum([3, 8, 1, 9])
+  total += plainDigits(2468)
+  total += doubleDigits(2468)
+  total += tripleDigits(2468)
+  total += rateAppleCrate(3)
+  total += rateBreadCrate(3)
+  total += rateMilkCrate(3)
+  total += rateRiceCrate(3)
+  total += rateOilCrate(3)
+  total += rateSoapCrate(3)
+  total += rateSaltCrate(3)
+  total += rateHoneyCrate(3)
+  total += rateTeaCrate(3)
+  total += rateCoffeeCrate(3)
+  total += rateFlourCrate(3)
+  total += rateSugarCrate(3)
+  total += rateEggCrate(3)
+  total += rateCheeseCrate(3)
+  total += rateOatCrate(3)
+  total += rateSpiceCrate(3)
+  total += rateDateCrate(3)
+  total += rateFigCrate(3)
+  total += rateGrapeCrate(3)
+  total += rateOliveCrate(3)
+  total += ratePepperCrate(3)
+  total += rateOnionCrate(3)
+  total += rateGarlicCrate(3)
+  total += rateTomatoCrate(3)
+  total += ratePotatoCrate(3)
+  total += rateCarrotCrate(3)
+  total += rateLemonCrate(3)
+  total += rateMintCrate(3)
+  total += rateBasilCrate(3)
+  total += rateCuminCrate(3)
+  total += rateYeastCrate(3)
+  total += rateButterCrate(3)
+  total += rateCreamCrate(3)
+  total += rateLentilCrate(3)
+  total += rateBeanCrate(3)
+  total += rateNutCrate(3)
+  total += rateBarleyCrate(3)
+  total += rateMilletCrate(3)
+  total += rateSesameCrate(3)
+  total += rateThymeCrate(3)
+  total += rateGingerCrate(3)
+  total += rateCocoaCrate(3)
+  total += rateVanillaCrate(3)
+  total += rateWalnutCrate(3)
+  total += rateAlmondCrate(3)
+  total += ratePistachioCrate(3)
+  total += rateChickpeaCrate(3)
+  total += rateSpinachCrate(3)
+  total += rateCabbageCrate(3)
+  total += rateCucumberCrate(3)
+  total += rateOrangeCrate(3)
+  total += rateMelonCrate(3)
+  total += ratePeachCrate(3)
+  total += ratePlumCrate(3)
+  total += rateCherryCrate(3)
+  total += rateMangoCrate(3)
+  total += rateBananaCrate(3)
+  total += rateYogurtCrate(3)
+  total += rateLabnehCrate(3)
+  total += rateHalvaCrate(3)
+  total += rateTahiniCrate(3)
+  total += rateAppleSack(3)
+  total += rateBreadSack(3)
+  total += rateMilkSack(3)
+  total += rateRiceSack(3)
+  total += rateOilSack(3)
+  total += rateSoapSack(3)
+  total += rateSaltSack(3)
+  total += rateHoneySack(3)
+  total += rateTeaSack(3)
+  total += rateCoffeeSack(3)
+  total += rateFlourSack(3)
+  total += rateSugarSack(3)
+  total += rateEggSack(3)
+  total += rateCheeseSack(3)
+  total += rateOatSack(3)
+  total += rateSpiceSack(3)
+  total += rateDateSack(3)
+  total += rateFigSack(3)
+  total += rateGrapeSack(3)
+  total += rateOliveSack(3)
+  total += ratePepperSack(3)
+  total += rateOnionSack(3)
+  total += rateGarlicSack(3)
+  total += rateTomatoSack(3)
+  total += ratePotatoSack(3)
+  total += rateCarrotSack(3)
+  total += rateLemonSack(3)
+  total += rateMintSack(3)
+  total += rateBasilSack(3)
+  total += rateCuminSack(3)
+  product = Product(sku: "A1", cents: 250, stock: 4)
+  total += product.value()
+  if product.low():
+    total += 1
+  line = CartLine(units: 3, cents: 40)
+  total += line.total()
+  shift = Shift(start: 22 * 60, end: 6 * 60)
+  total += shift.minutes()
+  return total
+
+main():
+  product = Product(sku: "A1", cents: 250, stock: 4)
+  shift = Shift(start: 22 * 60, end: 6 * 60)
+  print "day"
+  print digest()
+  print product.value()
+  print product.low()
+  print shift.minutes()
+  print letterGrade(92)
+  print sumList([4, 5, 6])

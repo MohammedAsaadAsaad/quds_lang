@@ -712,6 +712,9 @@ class Parser {
       return 'readonly ${typeAtom()}';
     }
     var result = name().lexeme;
+    while (match(TokenKind.dot)) {
+      result += '.${name().lexeme}';
+    }
     if (match(TokenKind.less)) {
       result += '<${typeName()}';
       while (match(TokenKind.comma)) {
@@ -794,7 +797,11 @@ class Parser {
     take();
     final buffer = StringBuffer();
     while (!at(TokenKind.newline) && !at(TokenKind.eof)) {
-      if (word('as') || word('when')) break;
+      if (buffer.isNotEmpty &&
+          (word('as') || word('when') || word('show') || word('hide'))) {
+        break;
+      }
+      if (buffer.isEmpty && (word('as') || word('when'))) break;
       buffer.write(take().lexeme);
     }
     String? prefix;
@@ -802,6 +809,7 @@ class Parser {
       take();
       prefix = name().lexeme;
     }
+    final filters = _combinators();
     Expression? condition;
     if (word('when')) {
       take();
@@ -809,15 +817,34 @@ class Parser {
     }
     endLine();
     if (buffer.isEmpty) fail('Expected import uri', span);
-    return ImportDeclaration(_stripUri(buffer.toString()), prefix, extent(span),
-        condition: condition);
+    return ImportDeclaration(
+        _normalizeUri(_stripUri(buffer.toString())), prefix, extent(span),
+        condition: condition, show: filters.$1, hide: filters.$2);
   }
 
   ImportDeclaration exportDirective(SourceSpan span) {
     take();
-    final uri = _stripUri(readUri());
+    final uri = _normalizeUri(_stripUri(readUri()));
+    final filters = _combinators();
     endLine();
-    return ImportDeclaration(uri, null, extent(span), export: true);
+    return ImportDeclaration(uri, null, extent(span),
+        export: true, show: filters.$1, hide: filters.$2);
+  }
+
+  (List<String>, List<String>) _combinators() {
+    if (!word('show') && !word('hide')) return (const [], const []);
+    final hiding = word('hide');
+    take();
+    final names = <String>[name().lexeme];
+    while (match(TokenKind.comma)) {
+      names.add(name().lexeme);
+    }
+    return hiding ? (const <String>[], names) : (names, const <String>[]);
+  }
+
+  String _normalizeUri(String uri) {
+    if (uri.contains(':') || uri.endsWith('.quds')) return uri;
+    return '$uri.quds';
   }
 
   String _stripUri(String uri) {
@@ -844,10 +871,12 @@ class Parser {
       return token.length >= 2 ? token.substring(1, token.length - 1) : token;
     }
     final buffer = StringBuffer();
-    while (!at(TokenKind.newline) &&
-        !at(TokenKind.eof) &&
-        !word('as') &&
-        !word('when')) {
+    while (!at(TokenKind.newline) && !at(TokenKind.eof)) {
+      if (buffer.isNotEmpty &&
+          (word('as') || word('when') || word('show') || word('hide'))) {
+        break;
+      }
+      if (buffer.isEmpty && (word('as') || word('when'))) break;
       buffer.write(take().lexeme);
     }
     if (buffer.isEmpty) fail('Expected a uri');

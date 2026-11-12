@@ -1280,6 +1280,188 @@ main():
     expect(childRun.stdout, '2\n1\n');
     directory.deleteSync(recursive: true);
   });
+
+  test('show, hide, and a prefix bind only the selected names', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-show-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    File('${directory.path}/math.quds').writeAsStringSync('''
+doubleIt(n: int) -> int = n * 2
+class Box:
+  value: int required
+  private secret: int = 1
+  protected shown: int = 2
+''');
+    File('${directory.path}/api.quds').writeAsStringSync('''
+export "math.quds" show doubleIt
+''');
+    expect(() => compile('''
+use "math.quds" show missingName
+main():
+  print 1
+''', file: '${directory.path}/missing.quds'),
+        throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use "math.quds" show doubleIt
+main():
+  item = Box(value: 1)
+  print item.value
+''', file: '${directory.path}/only.quds'),
+        throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use "math.quds" hide Box
+main():
+  item = Box(value: 1)
+  print item.value
+''', file: '${directory.path}/hidden.quds'),
+        throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use "api.quds"
+main():
+  item = Box(value: 1)
+  print item.value
+''', file: '${directory.path}/exported.quds'),
+        throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:core hide Ok
+main():
+  print Ok(1)
+''', file: '${directory.path}/prelude.quds'),
+        throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use dart:math as m show sqrt
+main():
+  print m.sin(0)
+''', file: '${directory.path}/trig.quds'),
+        throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use "math.quds" as math
+main():
+  print math.Box(value: 1).secret
+''', file: '${directory.path}/prefixed_secret.quds'),
+        throwsA(predicate((error) => '$error'.contains('E206'))));
+
+    final shown = File('${directory.path}/shown.quds')..writeAsStringSync('''
+use "math.quds" show doubleIt
+use "math.quds" as math
+use dart:math as m show sqrt
+main():
+  print doubleIt(4)
+  print math.doubleIt(4)
+  item = math.Box(value: 3)
+  print item.value
+  print m.sqrt(9)
+''');
+    final apiApp = File('${directory.path}/api_app.quds')..writeAsStringSync('''
+use "api.quds"
+main():
+  print doubleIt(5)
+''');
+    for (final source in [
+      shown,
+      apiApp,
+      File('${directory.path}/math.quds'),
+      File('${directory.path}/api.quds'),
+    ]) {
+      final dartPath = source.path.replaceFirst(RegExp(r'\.quds$'), '.dart');
+      File(dartPath).writeAsStringSync(
+          compile(source.readAsStringSync(), file: source.path).dart);
+    }
+    final shownDart = File('${directory.path}/shown.dart').readAsStringSync();
+    expect(shownDart, contains("import 'math.dart' show doubleIt;"));
+    expect(shownDart, contains("import 'math.dart' as math;"));
+    expect(shownDart, contains("import 'dart:math' as m show sqrt;"));
+    expect(shownDart, contains('math.Box'));
+    expect(shownDart, contains('math.doubleIt'));
+    expect(File('${directory.path}/api.dart').readAsStringSync(),
+        contains("export 'math.dart' show doubleIt;"));
+    for (final name in ['shown.dart', 'api_app.dart']) {
+      final output = File('${directory.path}/$name');
+      final analysis = await Process.run(
+          Platform.resolvedExecutable, ['analyze', output.path]);
+      expect(analysis.exitCode, 0,
+          reason:
+              '${analysis.stdout}\n${analysis.stderr}\n${output.readAsStringSync()}');
+      final run = await Process.run(Platform.resolvedExecutable, [output.path]);
+      expect(run.exitCode, 0,
+          reason: '${run.stderr}\n${output.readAsStringSync()}');
+    }
+    final shownRun = await Process.run(
+        Platform.resolvedExecutable, ['${directory.path}/shown.dart']);
+    final apiRun = await Process.run(
+        Platform.resolvedExecutable, ['${directory.path}/api_app.dart']);
+    expect(shownRun.stdout, '8\n8\n3\n3.0\n');
+    expect(apiRun.stdout, '10\n');
+  });
+
+  test('part files share one library privacy scope', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-part-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final parent = File('${directory.path}/parent.quds')..writeAsStringSync('''
+part "detail.quds"
+class Box:
+  private secret: int = 1
+main():
+  print read(box: Box(secret: 1))
+''');
+    final detail = File('${directory.path}/detail.quds')..writeAsStringSync('''
+part of "parent.quds"
+read(box: Box) -> int = box.secret
+''');
+    expect(() => compile('''
+part "gone.quds"
+main():
+  print 1
+''', file: '${directory.path}/missing_part.quds'),
+        throwsA(predicate((error) => '$error'.contains('E900'))));
+    File('${directory.path}/bad.quds').writeAsStringSync('''
+part of "other.quds"
+read() -> int = 1
+''');
+    expect(() => compile('''
+part "bad.quds"
+main():
+  print 1
+''', file: '${directory.path}/bad_parent.quds'),
+        throwsA(predicate((error) => '$error'.contains('E903'))));
+    expect(() => compile('''
+part of "other.quds"
+read() -> int = 1
+''', file: detail.path),
+        throwsA(predicate((error) => '$error'.contains('E903'))));
+    for (final source in [parent, detail]) {
+      final dartPath = source.path.replaceFirst(RegExp(r'\.quds$'), '.dart');
+      File(dartPath).writeAsStringSync(
+          compile(source.readAsStringSync(), file: source.path).dart);
+    }
+    final parentDart = File('${directory.path}/parent.dart');
+    final detailDart = File('${directory.path}/detail.dart');
+    expect(detailDart.readAsStringSync(), contains('_secret'));
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', parentDart.path]);
+    expect(analysis.exitCode, 0,
+        reason:
+            '${analysis.stdout}\n${analysis.stderr}\n${parentDart.readAsStringSync()}\n${detailDart.readAsStringSync()}');
+    final run =
+        await Process.run(Platform.resolvedExecutable, [parentDart.path]);
+    expect(run.exitCode, 0,
+        reason:
+            '${run.stderr}\n${parentDart.readAsStringSync()}\n${detailDart.readAsStringSync()}');
+    expect(run.stdout, '1\n');
+  });
+
+  test('quds.yaml selects the language version and a comment does not', () {
+    final directory = Directory.systemTemp.createTempSync('quds-version-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync('# quds: 1.2\nmain():\n  print 1\n');
+    File('${directory.path}/quds.yaml').writeAsStringSync('language: "1.0"\n');
+    expect(() => compile(source.readAsStringSync(), file: source.path),
+        throwsA(predicate((error) => '$error'.contains('E901'))));
+    File('${directory.path}/quds.yaml').writeAsStringSync('language: "1.2"\n');
+    final built =
+        compile('# quds: 1.0\nmain():\n  print 1\n', file: source.path);
+    expect(built.dart, contains('print(1)'));
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

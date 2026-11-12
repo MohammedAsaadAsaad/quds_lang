@@ -16,10 +16,14 @@ class Symbol {
       this.lateOpen = false,
       this.reactive = '',
       this.field = false,
-      this.library = ''});
+      this.library = '',
+      this.namespace});
   final String name, dartName;
   String type;
   final bool mutable, constant, late, lateOpen, field;
+
+  /// Names brought in by `use ... as prefix`. Null for every other symbol.
+  final Map<String, Symbol>? namespace;
 
   /// Empty, `state`, or `computed`.
   final String reactive;
@@ -93,14 +97,23 @@ class SemanticModel {
   final annotations = <String>{};
   final annotationShapes = <String, AnnotationDeclaration>{};
   final reflectable = <ClassDeclaration>{};
+
+  /// Classes keyed by the declaration, so a prefixed name still finds its library.
+  final libraryOf = <ClassDeclaration, String>{};
+
+  /// Prelude types removed by `use quds:core show` or `hide`.
+  final hiddenTypes = <String>{};
 }
 
 class Analyzer {
-  Analyzer({this.library = '<input>'});
+  Analyzer({this.library = '<input>', String? file}) : _file = file ?? library;
   final model = SemanticModel();
 
-  /// File path of the library being checked. `<input>` is one unnamed library.
+  /// Privacy scope. A part file uses its parent's path.
   final String library;
+
+  /// Path of the source being checked. Imports and parts resolve from here.
+  final String _file;
   Map<String, Program> _libraries = const {};
   final _global = _Scope();
   late _Scope _scope = _global;
@@ -172,6 +185,7 @@ class Analyzer {
         model.aliases[statement.name] = statement.target;
       }
     }
+    _bindParts(program);
     final functions = <FunctionDeclaration>[];
     final tests = <TestDeclaration>[];
     for (final statement in program.statements) {
@@ -340,16 +354,25 @@ class Analyzer {
     functions?.add(statement);
   }
 
-  void registerClass(ClassDeclaration statement, {String? library}) {
-    if (_global.lookup(statement.name) != null) {
-      fail('Duplicate name: ${statement.name}', statement);
+  void registerClass(ClassDeclaration statement,
+      {String? library, String? scopeName}) {
+    final key = scopeName ?? statement.name;
+    final owner = library ?? this.library;
+    final existing = _global.symbols[key];
+    if (existing?.classDeclaration == statement) {
+      model.libraryOf[statement] = owner;
+      return;
     }
-    final symbol = Symbol(statement.name, statement.name, statement.name,
-        classDeclaration: statement, library: library ?? this.library);
-    if (statement.kind == 'enum') model.enumNames.add(statement.name);
-    _global.symbols[statement.name] = symbol;
+    if (_global.lookup(key) != null) {
+      fail('Duplicate name: $key', statement);
+    }
+    final symbol =
+        Symbol(key, key, key, classDeclaration: statement, library: owner);
+    model.libraryOf[statement] = owner;
+    if (statement.kind == 'enum') model.enumNames.add(key);
+    _global.symbols[key] = symbol;
     model.declarations[statement] = symbol;
-    model.classes[statement.name] = statement;
+    model.classes[key] = statement;
     for (final item in statement.cases) {
       if (_global.lookup(item.name) != null) {
         fail('Duplicate case: ${item.name}', item);
@@ -830,69 +853,257 @@ class Analyzer {
       }
     }
     model.imports.add(node);
-    if (node.uri == 'dart:math' && node.prefix == null) {
-      void external(String name, String type, List<String> parameters) {
-        _global.symbols[name] =
-            Symbol(name, name, type, parameterTypes: parameters);
-      }
-
-      external('sqrt', 'double', ['num']);
-      external('sin', 'double', ['num']);
-      external('cos', 'double', ['num']);
-      external('min', 'num', ['num', 'num']);
-      external('max', 'num', ['num', 'num']);
-      _global.symbols['pi'] = Symbol('pi', 'pi', 'double',
-          constant: true, constantValue: ConstDouble(3.141592653589793));
-    } else if (node.uri.startsWith('dart:') ||
-        node.uri.startsWith('package:')) {
+    if (node.uri == 'dart:math') {
+      _bindMath(node);
       return;
-    } else if (node.uri.endsWith('.quds')) {
-      if (library == '<input>' || node.prefix != null) return;
-      final path = _resolveLibrary(library, node.uri);
-      if (path == library) return;
-      final imported = _libraries[path];
-      if (imported == null) fail('Unknown import: ${node.uri}', node);
-      if (node.export) return;
-      _importLibrary(imported, path);
+    }
+    if (node.uri == 'quds:core') {
+      _bindPrelude(node);
       return;
-    } else {
+    }
+    if (node.uri.startsWith('dart:') || node.uri.startsWith('package:')) {
+      return;
+    }
+    if (!node.uri.endsWith('.quds')) {
       fail('Unknown import: ${node.uri}', node);
     }
+    if (_file == '<input>') return;
+    final path = _resolveLibrary(_file, node.uri);
+    if (path == _file) return;
+    final imported = _libraries[path];
+    if (imported == null) fail('Unknown import: ${node.uri}', node);
+    final filter = node.show.isEmpty && node.hide.isEmpty ? null : node;
+    if (node.export) {
+      _importLibrary(imported, path, filter: node, bind: false);
+      return;
+    }
+    _importLibrary(imported, path, filter: filter, qualify: node.prefix);
+  }
+
+  static const _preludeNames = [
+    'Optional',
+    'missing',
+    'present',
+    'Result',
+    'Ok',
+    'Error'
+  ];
+
+  void _bindPrelude(ImportDeclaration node) {
+    if (node.show.isNotEmpty) {
+      for (final name in node.show) {
+        if (!_preludeNames.contains(name)) {
+          error('E200', 'Name $name is not defined', node);
+        }
+      }
+    }
+    final selected = node.show.isNotEmpty
+        ? node.show.toSet()
+        : _preludeNames.where((name) => !node.hide.contains(name)).toSet();
+    if (node.prefix == null) {
+      for (final name in _preludeNames) {
+        if (selected.contains(name)) continue;
+        _global.symbols.remove(name);
+        model.hiddenTypes.add(name);
+      }
+      return;
+    }
+    final space = _space(node.prefix!, node);
+    for (final name in _preludeNames) {
+      final symbol = _global.symbols.remove(name);
+      if (!selected.contains(name)) {
+        model.hiddenTypes.add(name);
+        continue;
+      }
+      if (symbol != null) space[name] = symbol;
+    }
+  }
+
+  void _bindMath(ImportDeclaration node) {
+    final catalog = <String, Symbol>{
+      'sqrt': Symbol('sqrt', 'sqrt', 'double', parameterTypes: const ['num']),
+      'sin': Symbol('sin', 'sin', 'double', parameterTypes: const ['num']),
+      'cos': Symbol('cos', 'cos', 'double', parameterTypes: const ['num']),
+      'min': Symbol('min', 'min', 'num', parameterTypes: const ['num', 'num']),
+      'max': Symbol('max', 'max', 'num', parameterTypes: const ['num', 'num']),
+      'pi': Symbol('pi', 'pi', 'double',
+          constant: true, constantValue: ConstDouble(3.141592653589793)),
+    };
+    if (node.show.isNotEmpty) {
+      for (final name in node.show) {
+        if (!catalog.containsKey(name)) {
+          error('E200', 'Name $name is not defined', node);
+        }
+      }
+    }
+    final selected = node.show.isNotEmpty
+        ? node.show
+        : catalog.keys.where((name) => !node.hide.contains(name));
+    final target =
+        node.prefix == null ? _global.symbols : _space(node.prefix!, node);
+    for (final name in selected) {
+      target[name] = catalog[name]!;
+    }
+  }
+
+  Map<String, Symbol> _space(String prefix, Node node) {
+    final existing = _global.symbols[prefix];
+    if (existing?.namespace != null) return existing!.namespace!;
+    if (existing != null) fail('Duplicate name: $prefix', node);
+    final space = <String, Symbol>{};
+    _global.symbols[prefix] =
+        Symbol(prefix, prefix, 'prefix', namespace: space);
+    return space;
   }
 
   String _resolveLibrary(String from, String uri) =>
       Uri.file(from).resolve(uri).toFilePath();
 
-  void _importLibrary(Program imported, String path, [Set<String>? seen]) {
-    final visited = seen ?? <String>{};
-    if (!visited.add(path)) return;
-    for (final statement in imported.statements) {
+  bool _keeps(String name, ImportDeclaration? filter) {
+    if (filter == null) return true;
+    if (filter.show.isNotEmpty) return filter.show.contains(name);
+    return !filter.hide.contains(name);
+  }
+
+  bool _importable(String name, String home) =>
+      name == 'main' ? false : !name.startsWith('_') || home == library;
+
+  ImportDeclaration _restrict(
+      ImportDeclaration? outer, ImportDeclaration export) {
+    if (outer == null || (outer.show.isEmpty && outer.hide.isEmpty)) {
+      return export;
+    }
+    if (outer.show.isNotEmpty) {
+      final names = [
+        for (final name in outer.show)
+          if ((export.show.isEmpty || export.show.contains(name)) &&
+              !export.hide.contains(name))
+            name,
+      ];
+      return ImportDeclaration(export.uri, export.prefix, export.span,
+          export: true, show: names);
+    }
+    if (export.show.isNotEmpty) {
+      final names = [
+        for (final name in export.show)
+          if (!outer.hide.contains(name) && !export.hide.contains(name)) name,
+      ];
+      return ImportDeclaration(export.uri, export.prefix, export.span,
+          export: true, show: names);
+    }
+    return ImportDeclaration(export.uri, export.prefix, export.span,
+        export: true, hide: [...outer.hide, ...export.hide]);
+  }
+
+  Set<String> _publicNames(Program program, String path, Set<String> seen) {
+    if (!seen.add(path)) return {};
+    final names = <String>{};
+    for (final statement in program.statements) {
       switch (statement) {
-        case ClassDeclaration():
-          final existing = _global.symbols[statement.name];
-          if (existing?.classDeclaration == statement) break;
-          if (existing != null) {
-            error('E204', 'Two imports define ${statement.name}', statement);
-          }
-          registerClass(statement, library: path);
-        case FunctionDeclaration():
-          _importFunction(statement);
+        case ClassDeclaration() when !statement.name.startsWith('_'):
+          names.add(statement.name);
+        case FunctionDeclaration()
+            when statement.name != 'main' && !statement.name.startsWith('_'):
+          names.add(statement.name);
         case ImportDeclaration() when statement.export:
           final exportedPath = _resolveLibrary(path, statement.uri);
           final exported = _libraries[exportedPath];
           if (exported == null) {
             fail('Unknown import: ${statement.uri}', statement);
           }
-          _importLibrary(exported, exportedPath, visited);
+          names.addAll(_publicNames(exported, exportedPath, seen)
+              .where((name) => _keeps(name, statement)));
+        case PartDirective() when !statement.of:
+          final partPath = _resolveLibrary(path, statement.uri);
+          final part = _libraries[partPath];
+          if (part != null) names.addAll(_publicNames(part, partPath, seen));
+        default:
+          break;
+      }
+    }
+    return names;
+  }
+
+  void _importLibrary(Program imported, String path,
+      {Set<String>? seen,
+      ImportDeclaration? filter,
+      String? qualify,
+      String? privacy,
+      bool bind = true,
+      bool check = true}) {
+    final visited = seen ?? <String>{};
+    if (!visited.add(path)) return;
+    final home = privacy ?? path;
+    if (check && filter != null && filter.show.isNotEmpty) {
+      final available = _publicNames(imported, path, {});
+      for (final name in filter.show) {
+        if (!available.contains(name)) {
+          error('E200', 'Name $name is not defined', filter);
+        }
+      }
+    }
+    if (!bind) return;
+    for (final statement in imported.statements) {
+      switch (statement) {
+        case ClassDeclaration()
+            when _importable(statement.name, home) &&
+                _keeps(statement.name, filter):
+          _importClass(statement, home: home, qualify: qualify);
+        case FunctionDeclaration()
+            when _importable(statement.name, home) &&
+                _keeps(statement.name, filter):
+          _importFunction(statement, qualify: qualify);
+        case ImportDeclaration() when statement.export:
+          final exportedPath = _resolveLibrary(path, statement.uri);
+          final exported = _libraries[exportedPath];
+          if (exported == null) {
+            fail('Unknown import: ${statement.uri}', statement);
+          }
+          _importLibrary(exported, exportedPath,
+              seen: visited,
+              filter: _restrict(filter, statement),
+              qualify: qualify,
+              check: false);
+        case PartDirective() when !statement.of:
+          final partPath = _resolveLibrary(path, statement.uri);
+          if (partPath == _file) break;
+          final part = _libraries[partPath];
+          if (part == null) break;
+          _importLibrary(part, partPath,
+              seen: visited,
+              filter: filter,
+              qualify: qualify,
+              privacy: home,
+              check: false);
         default:
           break;
       }
     }
   }
 
-  void _importFunction(FunctionDeclaration statement) {
-    if (statement.name == 'main') return;
-    final existing = _global.symbols[statement.name];
+  void _importClass(ClassDeclaration statement,
+      {required String home, String? qualify}) {
+    final key = qualify == null ? statement.name : '$qualify.${statement.name}';
+    final existing = qualify == null
+        ? _global.symbols[statement.name]
+        : _space(qualify, statement)[statement.name];
+    if (existing?.classDeclaration == statement) {
+      model.libraryOf[statement] = home;
+      return;
+    }
+    if (existing != null) {
+      error('E204', 'Two imports define ${statement.name}', statement);
+    }
+    registerClass(statement, library: home, scopeName: key);
+    if (qualify != null) {
+      _space(qualify, statement)[statement.name] = _global.symbols[key]!;
+    }
+  }
+
+  void _importFunction(FunctionDeclaration statement, {String? qualify}) {
+    final existing = qualify == null
+        ? _global.symbols[statement.name]
+        : _space(qualify, statement)[statement.name];
     if (existing?.function == statement) return;
     if (existing != null) {
       error('E204', 'Two imports define ${statement.name}', statement);
@@ -908,7 +1119,76 @@ class Analyzer {
         Symbol(statement.name, statement.name, effective, function: statement)
             .withFunction(statement);
     model.declarations[statement] = symbol;
-    _global.symbols[statement.name] = symbol;
+    for (final parameter in statement.parameters) {
+      model.declarations[parameter] = Symbol(
+          parameter.name, parameter.name, parameter.type,
+          mutable: parameter.mutable);
+    }
+    if (qualify == null) {
+      _global.symbols[statement.name] = symbol;
+      return;
+    }
+    _space(qualify, statement)[statement.name] = symbol;
+  }
+
+  void _bindParts(Program program) {
+    if (_file == '<input>') return;
+    final directives = program.statements.whereType<PartDirective>().toList();
+    final parts = directives.where((item) => !item.of).toList();
+    final ofs = directives.where((item) => item.of).toList();
+    if (parts.isNotEmpty && ofs.isNotEmpty) return;
+    if (ofs.length > 1) {
+      error('E903', 'part of does not match the library', ofs[1]);
+    }
+    if (ofs.length == 1) _bindPartOf(ofs.single);
+    for (final part in parts) {
+      _bindPart(part);
+    }
+  }
+
+  void _bindPart(PartDirective node) {
+    final path = _resolveLibrary(_file, node.uri);
+    final program = _libraries[path];
+    if (program == null) fail('Unknown import: ${node.uri}', node);
+    final ofs = program.statements
+        .whereType<PartDirective>()
+        .where((item) => item.of)
+        .toList();
+    final nested =
+        program.statements.whereType<PartDirective>().where((item) => !item.of);
+    if (nested.isNotEmpty || ofs.length != 1) {
+      error('E903', 'part of does not match the library', node);
+    }
+    final declared = _resolveLibrary(path, ofs.single.uri);
+    if (declared != _file) {
+      error('E903', 'part of does not match the library', node);
+    }
+    _importLibrary(program, path, privacy: library, check: false);
+  }
+
+  void _bindPartOf(PartDirective node) {
+    final parent = _resolveLibrary(_file, node.uri);
+    final program = _libraries[parent];
+    if (program == null) {
+      error('E903', 'part of does not match the library', node);
+    }
+    final listed = program.statements
+        .whereType<PartDirective>()
+        .where((item) => !item.of)
+        .any((item) => _resolveLibrary(parent, item.uri) == _file);
+    if (!listed) {
+      error('E903', 'part of does not match the library', node);
+    }
+    _importLibrary(program, parent, privacy: library, check: false);
+    for (final sibling in program.statements
+        .whereType<PartDirective>()
+        .where((item) => !item.of)) {
+      final path = _resolveLibrary(parent, sibling.uri);
+      if (path == _file) continue;
+      final part = _libraries[path];
+      if (part == null) continue;
+      _importLibrary(part, path, privacy: library, check: false);
+    }
   }
 
   void _checkMember(ClassDeclaration type, String name, Node node) {
@@ -916,7 +1196,8 @@ class Analyzer {
     if (owner == null) return;
     final visibility = _visibility(owner, name);
     if (visibility.isEmpty) return;
-    final home = _global.symbols[owner.name]?.library ?? '';
+    final home =
+        model.libraryOf[owner] ?? _global.symbols[owner.name]?.library ?? '';
     if (home.isEmpty || home == library) return;
     if (visibility == 'private') {
       error('E206', 'A private name is used outside its library', node);
@@ -956,8 +1237,9 @@ class Analyzer {
   bool _insideSubtype(ClassDeclaration type) {
     var name = _thisType;
     while (name != null) {
-      if (name == type.name) return true;
-      final parent = _global.symbols[name]?.classDeclaration?.superclass;
+      final declaration = _global.symbols[name]?.classDeclaration;
+      if (declaration == type || name == type.name) return true;
+      final parent = declaration?.superclass;
       if (parent == null || parent == name) return false;
       name = parent;
     }
@@ -1028,10 +1310,16 @@ class Analyzer {
       return;
     }
     if (type.startsWith('Optional<') && type.endsWith('>')) {
+      if (model.hiddenTypes.contains('Optional')) {
+        fail('Name Optional is not defined', node);
+      }
       validateType(type.substring(9, type.length - 1), node, allowVoid: false);
       return;
     }
     if (type.startsWith('Result<') && type.endsWith('>')) {
+      if (model.hiddenTypes.contains('Result')) {
+        fail('Name Result is not defined', node);
+      }
       final inner = type.substring(7, type.length - 1);
       final splitAt = inner.indexOf(',');
       if (splitAt < 0) fail('Unsupported type: $type', node);
@@ -2266,6 +2554,17 @@ class Analyzer {
   }
 
   String member(MemberAccess node) {
+    if (node.object is Identifier) {
+      final owner = _scope.lookup((node.object as Identifier).name);
+      if (owner != null && owner.namespace != null) {
+        model.references[node.object] = owner;
+        model.types[node.object] = 'prefix';
+        final found = owner.namespace![node.name];
+        if (found == null) fail('Name ${node.name} is not defined', node);
+        model.references[node] = found;
+        return found.type;
+      }
+    }
     final raw = expression(node.object);
     final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
     final base = unwrap(type);
@@ -2766,6 +3065,7 @@ class Analyzer {
       }
     }
     if (symbol == null) fail('Undefined symbol: ${node.name}', node);
+    if (symbol.namespace != null) fail('A prefix is not a value', node);
     if (symbol.field && _thisType != null) {
       final current = _global.symbols[_thisType!]?.classDeclaration;
       if (current != null) _checkMember(current, node.name, node);
@@ -2875,6 +3175,52 @@ class Analyzer {
     return null;
   }
 
+  String _qualifyType(String dartName, String returned, String className) {
+    if (!dartName.contains('.')) return returned;
+    if (returned == className) return dartName;
+    if (returned.startsWith('$className<')) {
+      return '$dartName${returned.substring(className.length)}';
+    }
+    return returned;
+  }
+
+  String _callPrefixed(CallExpression node, MemberAccess callee, Symbol owner) {
+    final id = callee.object as Identifier;
+    model.references[id] = owner;
+    model.types[id] = 'prefix';
+    final found = owner.namespace![callee.name];
+    if (found == null) fail('Name ${callee.name} is not defined', callee);
+    if (found.classDeclaration != null) {
+      final declaration = found.classDeclaration!;
+      final returned = constructClass(node, declaration);
+      final qualified =
+          _qualifyType(found.dartName, returned, declaration.name);
+      final previous = model.references[node.callee]!;
+      if (previous.classDeclaration != null) {
+        model.references[node.callee] = Symbol(
+            found.dartName, found.dartName, qualified,
+            classDeclaration: previous.classDeclaration);
+      } else {
+        final rebuilt = Symbol(declaration.name, declaration.name, qualified);
+        if (previous.function != null) rebuilt.withFunction(previous.function);
+        model.references[node.callee] = rebuilt;
+      }
+      return qualified;
+    }
+    if (found.function != null) {
+      final type =
+          applyArguments(node, found.function!.parameters, found.function);
+      model.references[callee] =
+          Symbol(found.name, found.dartName, type).withFunction(found.function);
+      return type;
+    }
+    if (found.parameterTypes.isNotEmpty) {
+      model.references[callee] = found;
+      return externalCall(node, found);
+    }
+    fail('${callee.name} is not callable', callee);
+  }
+
   String call(CallExpression node) {
     if (node.callee is TypeApplication) {
       return callApplied(node, node.callee as TypeApplication);
@@ -2882,6 +3228,9 @@ class Analyzer {
     final callee = node.callee;
     if (callee is MemberAccess && callee.object is Identifier) {
       final owner = _scope.lookup((callee.object as Identifier).name);
+      if (owner?.namespace != null) {
+        return _callPrefixed(node, callee, owner!);
+      }
       final type = owner?.classDeclaration;
       final named = type?.constructors
           .where((constructor) => constructor.name == callee.name)

@@ -215,12 +215,17 @@ class DartEmitter {
         final uri = node.uri.endsWith('.quds')
             ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
             : node.uri;
+        final combinator = node.show.isNotEmpty
+            ? ' show ${node.show.join(', ')}'
+            : node.hide.isNotEmpty
+                ? ' hide ${node.hide.join(', ')}'
+                : '';
         if (node.export) {
-          _imports.add("export '$uri';");
+          _imports.add("export '$uri'$combinator;");
           continue;
         }
         final prefix = node.prefix == null ? '' : ' as ${node.prefix}';
-        _imports.add("import '$uri'$prefix;");
+        _imports.add("import '$uri'$prefix$combinator;");
       } else if (node is PartDirective) {
         final uri = node.uri.endsWith('.quds')
             ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
@@ -1954,8 +1959,11 @@ class DartEmitter {
             ..._inherited(targetSymbol.classDeclaration!),
             ...targetSymbol.classDeclaration!.fields
           ];
-      final ctor =
-          targetSymbol.classCase?.name ?? targetSymbol.classDeclaration!.name;
+      final declared = targetSymbol.classDeclaration!.name;
+      final ctor = targetSymbol.classCase?.name ??
+          (targetSymbol.dartName.contains('.')
+              ? targetSymbol.dartName
+              : declared);
       final order = model.argumentOrder[node] ?? const <int>[];
       final parts = <String>[];
       for (var i = 0; i < fields.length && i < order.length; i++) {

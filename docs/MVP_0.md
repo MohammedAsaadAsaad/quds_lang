@@ -356,11 +356,18 @@ fit in a JavaScript number stays exact on the VM. Dart's web compiler rejects
 that literal, and `test/language_test.dart` executes both results.
 
 `use "other.quds"` loads that library. Public classes and functions are
-visible. `export "other.quds"` re-exports them. A private member used from
-another library is `E206`. A protected member used outside the library and
-its subtypes is `E207`. A subtype in another library may read `protected`.
-A public function is also emitted under its Quds name.
+visible. `show` keeps only the named ones, and `hide` drops them. A `show`
+name that is not in the library is `E200`. `use "other.quds" as math` binds
+`math.Box` and `math.doubleIt`. `export "other.quds" show doubleIt`
+re-exports that name. A private member used from another library is `E206`.
+A protected member used outside the library and its subtypes is `E207`. A
+subtype in another library may read `protected`. A public function is also
+emitted under its Quds name. `part "detail.quds"` and `part of "parent.quds"`
+share that privacy scope. A missing part is `E900`, and a mismatched
+`part of` is `E903`.
 
-The parity table still includes forms this compiler rejects instead of
-inventing: `show` / `hide`, prefixed imports, and aborting a future that has
-already started. No claim of full 115-decision conformance is made.
+`quds.yaml` beside the source may set `language: "1.2"`. Any other declared
+version is `E901`. A `# quds:` comment does not select a version.
+
+The parity table still includes aborting a future that has already started.
+No claim of full 115-decision conformance is made.

@@ -196,7 +196,10 @@ class LabelStatement extends Statement {
 
 class ImportDeclaration extends Statement {
   const ImportDeclaration(this.uri, this.prefix, super.span,
-      {this.condition, this.export = false});
+      {this.condition,
+      this.export = false,
+      this.show = const [],
+      this.hide = const []});
   final String uri;
   final String? prefix;
 
@@ -205,6 +208,12 @@ class ImportDeclaration extends Statement {
 
   /// `export uri` re-exports the library and does not import those names here.
   final bool export;
+
+  /// `show a, b` keeps only these names. Empty means every public name.
+  final List<String> show;
+
+  /// `hide a, b` drops these names. Ignored when [show] is not empty.
+  final List<String> hide;
 }
 
 class PartDirective extends Statement {

@@ -19,14 +19,22 @@ class Compilation {
 Compilation compile(String source, {String file = '<input>'}) {
   final parsed = Parser(Lexer().tokenize(source, file: file)).parse();
   final program = expandMacros(parsed);
-  final library = file == '<input>' ? file : File(file).absolute.path;
+  final sourcePath = file == '<input>' ? file : File(file).absolute.path;
+  if (sourcePath != '<input>') _checkLanguage(sourcePath);
   final libraries = <String, Program>{};
-  if (library != '<input>') {
-    libraries[library] = program;
-    _loadLibraries(program, library, libraries);
+  var library = sourcePath;
+  if (sourcePath != '<input>') {
+    libraries[sourcePath] = program;
+    _loadLibraries(program, sourcePath, libraries);
+    final parts = program.statements.whereType<PartDirective>().toList();
+    final ofs = parts.where((item) => item.of).toList();
+    final owned = parts.where((item) => !item.of).toList();
+    if (ofs.length == 1 && owned.isEmpty) {
+      library = Uri.file(sourcePath).resolve(ofs.single.uri).toFilePath();
+    }
   }
-  final semantics =
-      Analyzer(library: library).analyze(program, libraries: libraries);
+  final semantics = Analyzer(library: library, file: sourcePath)
+      .analyze(program, libraries: libraries);
   final emitter = DartEmitter(semantics);
   final dart = emitter.emit(program);
   final generated = file.endsWith('.quds')
@@ -39,10 +47,13 @@ Compilation compile(String source, {String file = '<input>'}) {
 void _loadLibraries(
     Program program, String from, Map<String, Program> libraries) {
   for (final statement in program.statements) {
-    if (statement is! ImportDeclaration || !statement.uri.endsWith('.quds')) {
-      continue;
-    }
-    final path = Uri.file(from).resolve(statement.uri).toFilePath();
+    final uri = switch (statement) {
+      ImportDeclaration() when statement.uri.endsWith('.quds') => statement.uri,
+      PartDirective() when statement.uri.endsWith('.quds') => statement.uri,
+      _ => null,
+    };
+    if (uri == null) continue;
+    final path = Uri.file(from).resolve(uri).toFilePath();
     if (libraries.containsKey(path)) continue;
     final file = File(path);
     if (!file.existsSync()) continue;
@@ -52,4 +63,18 @@ void _loadLibraries(
     libraries[path] = loaded;
     _loadLibraries(loaded, path, libraries);
   }
+}
+
+/// A comment does not select a version. Only `language:` in `quds.yaml`
+/// beside the source does, and a value other than 1.2 is E901.
+void _checkLanguage(String file) {
+  final yaml = File('${File(file).parent.path}/quds.yaml');
+  if (!yaml.existsSync()) return;
+  final match = RegExp(r'^[ \t]*language:[ \t]*"?([^"\s#]+)"?', multiLine: true)
+      .firstMatch(yaml.readAsStringSync());
+  if (match == null || match.group(1) == '1.2') return;
+  throw CompilerException(
+      'E901',
+      'The declared language version is not supported',
+      SourceSpan(1, 1, 0, file: file));
 }

@@ -270,7 +270,11 @@ unchanged by the map.
   signature wins over a variadic one. A variadic parameter that is not last is
   `E503`.
 - `mixin`, `class ... with`, `interface`, and `extend Type`. A failed mixin
-  `on` constraint is `E702`. Two extensions for one member are `E205`.
+  `on` constraint is `E702`. A mixin member that does not override the previous
+  signature is `E300`. Two extensions for one member are `E205`.
+- `singleton class` builds one instance per isolate. An initialization cycle is
+  `E707`. Empty `map:` and `set:` use the expected type. A repeated map key
+  keeps the later value.
 - Lambdas: `x -> expr`, nested arrows, an indented body with `return`, and `await` inside the lambda. A closure sees a later assignment to a mutable binding.
 - `state`, `computed`, and `watch`. A computed cycle warns `W007`. A cycle found while a computed value is already evaluating throws `CycleError`. `watch` drops its subscription when its scope exits. `batch` holds notifications until the suite exits, including an exceptional exit, then flushes once.
 - Transparent aliases `type Name = Type` and extension types `type Name wraps Type`.

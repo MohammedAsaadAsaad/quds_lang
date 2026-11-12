@@ -57,13 +57,28 @@ export PATH="/workspace/toolchains/dart/bin:/workspace/.pub-cache/bin:$PATH"
 export PUB_CACHE=/workspace/.pub-cache
 ```
 
+## Install on Linux
+
+From this checkout:
+
+```sh
+bash install.sh
+```
+
+The script installs Dart 3.13 or newer from Google's signed apt repository
+when the system copy is missing or older, accepting the package install
+without a license prompt. Package signatures stay enabled. It then activates
+the `quds` command, adds `$HOME/.pub-cache/bin` to `~/.bashrc` and
+`~/.profile`, and installs the editor extension into VS Code and Cursor when
+their commands are on `PATH`. Otherwise it copies the extension into
+`~/.vscode/extensions` and `~/.cursor/extensions`. Open a new terminal and
+reload the editor afterward.
+
 ## Editor
 
-[`editors/vscode`](editors/vscode) is a VS Code extension for `.quds` files.
-It highlights the source, formats the open buffer with `quds format`, and
-shows diagnostics from that buffer. Install it with **Developer: Install
-Extension from Location** and choose `editors/vscode`. In this package it
-starts `dart run bin/quds.dart lsp`. Elsewhere it starts `quds lsp`.
+[`editors/vscode`](editors/vscode) highlights `.quds` files, formats the open
+buffer with `quds format`, and shows diagnostics from that buffer. In this
+package it starts `dart run bin/quds.dart lsp`. Elsewhere it starts `quds lsp`.
 `quds.serverCommand` replaces that command.
 
 See [supported grammar and limitations](docs/MVP_0.md),

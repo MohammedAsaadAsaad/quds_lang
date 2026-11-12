@@ -690,6 +690,32 @@ main():
         (closed.notifications.single['params'] as Map)['diagnostics'], isEmpty);
   });
 
+  test('linux installer stages the editor extension without prompts', () {
+    final syntax = Process.runSync('bash', ['-n', 'install.sh']);
+    expect(syntax.exitCode, 0, reason: '${syntax.stdout}\n${syntax.stderr}');
+    final home = Directory.systemTemp.createTempSync('quds-install-');
+    addTearDown(() => home.deleteSync(recursive: true));
+    final installed = Process.runSync(
+      'bash',
+      ['install.sh', '--skip-dart', '--skip-cli'],
+      environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin'},
+    );
+    expect(installed.exitCode, 0,
+        reason: '${installed.stdout}\n${installed.stderr}');
+    final extension = File(
+        '${home.path}/.vscode/extensions/quds-lang.quds-0.0.1/package.json');
+    expect(extension.existsSync(), isTrue);
+    expect(extension.readAsStringSync(), contains('"name": "quds"'));
+    expect(
+        File('${home.path}/.cursor/extensions/quds-lang.quds-0.0.1/extension.js')
+            .existsSync(),
+        isTrue);
+    expect(
+        File('${home.path}/.vscode/extensions/quds-lang.quds-0.0.1/syntaxes/quds.tmLanguage.json')
+            .existsSync(),
+        isTrue);
+  });
+
   test('format keeps comments, documentation, and multiline strings', () async {
     final directory = Directory.systemTemp.createTempSync('quds-format-');
     addTearDown(() => directory.deleteSync(recursive: true));

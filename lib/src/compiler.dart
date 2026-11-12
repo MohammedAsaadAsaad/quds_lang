@@ -9,11 +9,15 @@ import 'semantics.dart';
 import 'sourcemap.dart';
 
 class Compilation {
-  const Compilation(this.program, this.semantics, this.dart, {this.sourceMap});
+  const Compilation(this.program, this.semantics, this.dart,
+      {this.sourceMap, this.dependencies = const []});
   final Program program;
   final SemanticModel semantics;
   final String dart;
   final String? sourceMap;
+
+  /// Absolute paths of this source and the `.quds` files it loaded.
+  final List<String> dependencies;
 }
 
 Compilation compile(String source, {String file = '<input>'}) {
@@ -40,8 +44,10 @@ Compilation compile(String source, {String file = '<input>'}) {
   final generated = file.endsWith('.quds')
       ? '${file.substring(0, file.length - 5)}.dart'
       : 'out.dart';
+  final dependencies = libraries.keys.toList()..sort();
   return Compilation(program, semantics, dart,
-      sourceMap: sourceMapFor(emitter, generated, file));
+      sourceMap: sourceMapFor(emitter, generated, file),
+      dependencies: dependencies);
 }
 
 void _loadLibraries(

@@ -369,5 +369,18 @@ share that privacy scope. A missing part is `E900`, and a mismatched
 `quds.yaml` beside the source may set `language: "1.2"`. Any other declared
 version is `E901`. A `# quds:` comment does not select a version.
 
+`@Reflectable` emits `qudsReflectName` with the public fields, a separate
+`private` list, and `typeParameters`. `qudsReflectable` lists those const
+maps. A class without the annotation is absent from the list.
+
+`quds build` writes `.dart_tool/quds/cache/` with a hash of the source and
+the `.quds` files it loads. A second build of the same bytes prints
+`Unchanged` and does not rewrite the output. Changing an imported library,
+or a macro in the same file, rebuilds the generated Dart. `quds build
+--watch` repeats that build when one of those files changes.
+
+The generated `.dart` has no import of the Quds package. `dart analyze` and
+`dart run` execute it on their own.
+
 The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.

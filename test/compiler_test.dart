@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+
 import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
@@ -92,6 +94,117 @@ main():
     expect((await cli([])).exitCode, 64);
     expect(
         (await cli(['build', '${directory.path}/missing.quds'])).exitCode, 74);
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('sha256 matches the empty and abc vectors', () {
+    expect(sha256Hex(const []),
+        'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+    expect(sha256Hex(utf8.encode('abc')),
+        'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+  });
+
+  test('build caches unchanged sources and rebuilds a changed import',
+      () async {
+    final directory = Directory.systemTemp.createTempSync('quds-cache-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final math = File('${directory.path}/math.quds')
+      ..writeAsStringSync('doubleIt(n: int) -> int = n * 2\n');
+    final app = File('${directory.path}/app.quds')
+      ..writeAsStringSync('use "math.quds"\nmain():\n  print doubleIt(4)\n');
+    Future<ProcessResult> cli(List<String> args) => Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args]);
+    final first = await cli(['build', app.path]);
+    expect(first.exitCode, 0, reason: '${first.stdout}\n${first.stderr}');
+    expect(first.stdout, contains('Built'));
+    expect(Directory('${directory.path}/.dart_tool/quds/cache').existsSync(),
+        isTrue);
+    final run = await Process.run(
+        Platform.resolvedExecutable, ['${directory.path}/app.dart']);
+    expect(run.stdout, '8\n', reason: '${run.stderr}');
+    final again = await cli(['build', app.path]);
+    expect(again.exitCode, 0, reason: '${again.stderr}');
+    expect(again.stdout, contains('Unchanged'));
+    expect(again.stdout.contains('Built'), isFalse);
+    math.writeAsStringSync('doubleIt(n: int) -> int = n * 3\n');
+    final rebuilt = await cli(['build', app.path]);
+    expect(rebuilt.exitCode, 0, reason: '${rebuilt.stdout}\n${rebuilt.stderr}');
+    expect(rebuilt.stdout, contains('Built'));
+    final after = await Process.run(
+        Platform.resolvedExecutable, ['${directory.path}/app.dart']);
+    expect(after.stdout, '12\n', reason: '${after.stderr}');
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('build rebuilds when a macro in the same source changes', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-macro-cache-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')..writeAsStringSync('''
+@macro
+class Greetings:
+  hello(who: String) -> String = "Hi {who}"
+  define(builder: Builder):
+    builder.addMethod(hello)
+@Greetings
+class Person:
+  name: String
+main():
+  print Person(name: "Ada").hello("Ada")
+''');
+    Future<ProcessResult> cli(List<String> args) => Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args]);
+    final first = await cli(['build', source.path]);
+    expect(first.exitCode, 0, reason: '${first.stdout}\n${first.stderr}');
+    expect(
+        File('${directory.path}/app.dart').readAsStringSync(), contains('Hi'));
+    final again = await cli(['build', source.path]);
+    expect(again.stdout, contains('Unchanged'));
+    source.writeAsStringSync(source.readAsStringSync().replaceAll('Hi', 'Yo'));
+    final rebuilt = await cli(['build', source.path]);
+    expect(rebuilt.exitCode, 0, reason: '${rebuilt.stdout}\n${rebuilt.stderr}');
+    expect(rebuilt.stdout, contains('Built'));
+    expect(
+        File('${directory.path}/app.dart').readAsStringSync(), contains('Yo'));
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('quds build --watch rebuilds after the source changes', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-watch-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync('main():\n  print 1\n');
+    final process = await Process.start(Platform.resolvedExecutable, [
+      'run',
+      'bin/quds.dart',
+      'build',
+      '--watch',
+      source.path,
+    ]);
+    addTearDown(() => process.kill());
+    final output = StringBuffer();
+    process.stdout.transform(utf8.decoder).listen(output.write);
+    final errors = StringBuffer();
+    process.stderr.transform(utf8.decoder).listen(errors.write);
+    Future<void> waitFor(String text) async {
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      while (!output.toString().contains(text)) {
+        if (DateTime.now().isAfter(deadline)) {
+          fail('Timed out waiting for $text\n$output\n$errors');
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+
+    await waitFor('Built');
+    source.writeAsStringSync('main():\n  print 2\n');
+    final built = output.toString().split('Built').length;
+    final deadline = DateTime.now().add(const Duration(seconds: 30));
+    while (output.toString().split('Built').length <= built) {
+      if (DateTime.now().isAfter(deadline)) {
+        fail('Timed out waiting for a second build\n$output\n$errors');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(File('${directory.path}/app.dart').readAsStringSync(),
+        contains('print(2)'));
+    process.kill();
   }, timeout: const Timeout(Duration(minutes: 2)));
 }
 

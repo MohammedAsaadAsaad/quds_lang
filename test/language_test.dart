@@ -1462,6 +1462,50 @@ read() -> int = 1
         compile('# quds: 1.0\nmain():\n  print 1\n', file: source.path);
     expect(built.dart, contains('print(1)'));
   });
+
+  test('reflectable metadata lists private fields and type parameters',
+      () async {
+    final source = '''
+@Reflectable
+class Box<T>:
+  value: T required
+  private secret: int = 1
+  read() -> int = secret
+class Other:
+  name: String = "a"
+main():
+  print Box<int>(value: 1, secret: 2).read()
+''';
+    final dart = compile(source).dart;
+    expect(dart, contains("'fields': <String>['value']"));
+    expect(dart, contains("'private': <String>['secret']"));
+    expect(dart, contains("'typeParameters': <String>['T']"));
+    expect(
+        dart, contains('const qudsReflectable = <Object?>[qudsReflectBox];'));
+    expect(dart.contains('qudsReflectOther'), isFalse);
+    final directory = Directory.systemTemp.createTempSync('quds-reflect-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final output = File('${directory.path}/app.dart')..writeAsStringSync(dart);
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', output.path]);
+    expect(analysis.exitCode, 0,
+        reason: '${analysis.stdout}\n${analysis.stderr}\n$dart');
+  });
+
+  test('generated Dart runs without the Quds package', () async {
+    final dart = compile('main():\n  print 7\n').dart;
+    expect(dart.contains('package:quds_lang'), isFalse);
+    final directory = Directory.systemTemp.createTempSync('quds-consumer-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final output = File('${directory.path}/app.dart')..writeAsStringSync(dart);
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', output.path]);
+    expect(analysis.exitCode, 0,
+        reason: '${analysis.stdout}\n${analysis.stderr}\n$dart');
+    final run = await Process.run(Platform.resolvedExecutable, [output.path]);
+    expect(run.exitCode, 0, reason: '${run.stderr}\n$dart');
+    expect(run.stdout, '7\n');
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

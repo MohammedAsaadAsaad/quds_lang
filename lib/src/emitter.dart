@@ -68,6 +68,7 @@ class DartEmitter {
       if (node is ClassDeclaration) emitClass(node);
       if (node is ExtensionDeclaration) emitExtension(node);
     }
+    _emitReflectableRegistry(program);
     for (final node in program.statements) {
       _out.writeln();
       if (node is FunctionDeclaration) {
@@ -934,10 +935,30 @@ class DartEmitter {
     _depth--;
     line('}');
     if (model.reflectable.contains(node)) {
-      final names = node.fields.map((field) => "'${field.name}'").join(', ');
+      final fields = node.fields
+          .where((field) => field.visibility != 'private')
+          .map((field) => "'${field.name}'")
+          .join(', ');
+      final private = node.fields
+          .where((field) => field.visibility == 'private')
+          .map((field) => "'${field.name}'")
+          .join(', ');
+      final parameters = node.typeParameters
+          .map((parameter) => "'${parameter.name}'")
+          .join(', ');
       line(
-          'const qudsReflect${node.name} = <String, Object?>{\'name\': \'${node.name}\', \'fields\': <String>[$names]};');
+          'const qudsReflect${node.name} = <String, Object?>{\'name\': \'${node.name}\', \'fields\': <String>[$fields], \'private\': <String>[$private], \'typeParameters\': <String>[$parameters]};');
     }
+  }
+
+  void _emitReflectableRegistry(Program program) {
+    final nodes = [
+      for (final node in program.statements)
+        if (node is ClassDeclaration && model.reflectable.contains(node)) node
+    ];
+    if (nodes.isEmpty) return;
+    final names = nodes.map((node) => 'qudsReflect${node.name}').join(', ');
+    line('const qudsReflectable = <Object?>[$names];');
   }
 
   String _typeParameters(List<TypeParameter> parameters,

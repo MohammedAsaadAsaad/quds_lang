@@ -11,6 +11,7 @@ export 'src/constants.dart'
         ConstNull,
         ConstList;
 export 'src/compiler.dart';
+export 'src/hash.dart' show sha256Hex;
 export 'src/emitter.dart';
 export 'src/lexer.dart';
 export 'src/parser.dart';

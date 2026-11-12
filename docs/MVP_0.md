@@ -382,5 +382,14 @@ or a macro in the same file, rebuilds the generated Dart. `quds build
 The generated `.dart` has no import of the Quds package. `dart analyze` and
 `dart run` execute it on their own.
 
+`use package:name` loads `lib/name.quds` beside `pubspec.yaml` and emits
+`import 'package:name/name.dart'`. `use package:name/src/util` loads
+`lib/src/util.quds`. A missing file is `E900`. `use generated:user_models`
+loads `lib/generated/user_models.quds`. A macro cycle is `E904`. Source text
+and a forbidden capability are `E905`. Depth past 8, and more than 1000
+declarations from one annotation, are `E906`. `mapStack` rewrites a stack
+frame that hits the source map. `definitionAt`, `renameAt`, and
+`breakpointAt` answer a source position. They are not a language server.
+
 The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.

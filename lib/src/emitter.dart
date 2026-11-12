@@ -213,9 +213,10 @@ class DartEmitter {
         continue;
       }
       if (node is ImportDeclaration) {
-        final uri = node.uri.endsWith('.quds')
-            ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
-            : node.uri;
+        final uri = model.resolvedImports[node] ??
+            (node.uri.endsWith('.quds')
+                ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
+                : node.uri);
         final combinator = node.show.isNotEmpty
             ? ' show ${node.show.join(', ')}'
             : node.hide.isNotEmpty

@@ -1,5 +1,6 @@
 import 'ast.dart';
 import 'constants.dart';
+import 'libraries.dart';
 import 'source.dart';
 
 class Symbol {
@@ -103,6 +104,9 @@ class SemanticModel {
 
   /// Prelude types removed by `use quds:core show` or `hide`.
   final hiddenTypes = <String>{};
+
+  /// Dart import URI for a `package:` or `generated:` library that was loaded.
+  final resolvedImports = <ImportDeclaration, String>{};
 }
 
 class Analyzer {
@@ -861,7 +865,9 @@ class Analyzer {
       _bindPrelude(node);
       return;
     }
-    if (node.uri.startsWith('dart:') || node.uri.startsWith('package:')) {
+    if (node.uri.startsWith('dart:')) return;
+    if (node.uri.startsWith('package:') || node.uri.startsWith('generated:')) {
+      _bindPackage(node);
       return;
     }
     if (!node.uri.endsWith('.quds')) {
@@ -956,8 +962,38 @@ class Analyzer {
     return space;
   }
 
-  String _resolveLibrary(String from, String uri) =>
-      Uri.file(from).resolve(uri).toFilePath();
+  void _bindPackage(ImportDeclaration node) {
+    if (_file == '<input>') {
+      if (node.uri.startsWith('generated:')) {
+        fail('Unknown import: ${node.uri}', node);
+      }
+      return;
+    }
+    final path = resolveLibraryPath(_file, node.uri);
+    if (path == null) {
+      if (node.uri.startsWith('package:')) return;
+      fail('Unknown import: ${node.uri}', node);
+    }
+    final imported = _libraries[path];
+    if (imported == null) fail('Unknown import: ${node.uri}', node);
+    final dartUri = dartLibraryUri(_file, node.uri);
+    if (dartUri != null) model.resolvedImports[node] = dartUri;
+    if (path == _file) return;
+    final filter = node.show.isEmpty && node.hide.isEmpty ? null : node;
+    if (node.export) {
+      _importLibrary(imported, path, filter: node, bind: false);
+      return;
+    }
+    _importLibrary(imported, path, filter: filter, qualify: node.prefix);
+  }
+
+  String _resolveLibrary(String from, String uri) {
+    final resolved = resolveLibraryPath(from, uri);
+    if (resolved != null) return resolved;
+    final target = Uri.file(from).resolve(uri);
+    if (target.scheme != 'file' && target.scheme.isNotEmpty) return uri;
+    return target.toFilePath();
+  }
 
   bool _keeps(String name, ImportDeclaration? filter) {
     if (filter == null) return true;

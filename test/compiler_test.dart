@@ -206,6 +206,226 @@ main():
         contains('print(2)'));
     process.kill();
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('a macro that expands itself or its peer is E904', () {
+    expect(() => compile('''
+@A
+@macro
+class A:
+  hello() -> int = 1
+  define(builder: Builder):
+    builder.addMethod(hello)
+@A
+class User:
+  name: String = "a"
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E904'))));
+    expect(() => compile('''
+@B
+@macro
+class A:
+  hello() -> int = 1
+  define(builder: Builder):
+    builder.addMethod(hello)
+@A
+@macro
+class B:
+  hello() -> int = 2
+  define(builder: Builder):
+    builder.addMethod(hello)
+@A
+class User:
+  name: String = "a"
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E904'))));
+  });
+
+  test('macro source text and a forbidden capability are E905', () {
+    expect(
+        () => compile('''
+@macro
+class Text:
+  hello() -> int = 1
+  define(builder: Builder):
+    builder.addMethod("class Extra:")
+@Text
+class User:
+  name: String = "a"
+main():
+  print 1
+'''),
+        throwsA(predicate((error) =>
+            '$error'.contains('E905') && '$error'.contains('source text'))));
+    expect(() => compile('''
+@macro
+class Clock:
+  hello() -> int = 1
+  define(builder: Builder):
+    now = DateTime.now()
+    builder.addMethod(hello)
+@Clock
+class User:
+  name: String = "a"
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E905'))));
+  });
+
+  test('macro depth past 8 and more than 1000 declarations are E906', () {
+    final chain = StringBuffer();
+    for (var i = 9; i >= 1; i--) {
+      if (i < 9) chain.writeln('@M${i + 1}');
+      chain.writeln('@macro');
+      chain.writeln('class M$i:');
+      chain.writeln('  hello() -> int = $i');
+      chain.writeln('  define(builder: Builder):');
+      chain.writeln('    builder.addMethod(hello)');
+    }
+    chain
+      ..writeln('@M1')
+      ..writeln('class User:')
+      ..writeln('  name: String = "a"')
+      ..writeln('main():')
+      ..writeln('  print 1');
+    expect(() => compile(chain.toString()),
+        throwsA(predicate((error) => '$error'.contains('E906'))));
+    final calls = List.filled(1001, '    builder.addMethod(hello)').join('\n');
+    expect(() => compile('''
+@macro
+class Big:
+  hello() -> int = 1
+  define(builder: Builder):
+$calls
+@Big
+class User:
+  name: String = "a"
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E906'))));
+  });
+
+  test('mapStack rewrites a hitting frame and leaves the other frame', () {
+    final compiled = compile('main():\n  print 1\n', file: 'app.quds');
+    final map = compiled.sourceMap!;
+    final data = jsonDecode(map) as Map<String, Object?>;
+    final sections = (data['mappings'] as String).split(';');
+    var line = 1;
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].isNotEmpty) {
+        line = i + 1;
+        break;
+      }
+    }
+    final stack = '#0      main (file:///tmp/app.dart:$line:1)\n'
+        '#1      other (file:///tmp/other.dart:4:2)\n'
+        '#2      missed (file:///tmp/app.dart:99:1)';
+    final mapped = mapStack(stack, map);
+    expect(mapped, contains('app.quds:'));
+    expect(mapped, contains('other.dart:4:2'));
+    expect(mapped, contains('app.dart:99:1'));
+    final script = encodeSourceMap(
+        'app.dart.js', 'app.dart', [(1, const SourceSpan(3, 1, 1))]);
+    final quds = encodeSourceMap(
+        'app.dart', 'app.quds', [(3, const SourceSpan(2, 4, 1))]);
+    final once = mapStack('#0      main (file:///tmp/app.dart.js:1:1)', script);
+    expect(once, contains('app.dart:3:1'));
+    expect(mapStack(once, quds), contains('app.quds:2:4'));
+  });
+
+  test('definition, rename, and breakpoint use the source span', () {
+    const source = 'doubleIt(n: int) -> int = n * 2\n'
+        'main():\n'
+        '  value = 1\n'
+        '  print value\n'
+        '  print doubleIt(value)\n';
+    final compiled = compile(source);
+    final lines = source.split('\n');
+    final valueColumn = lines[3].indexOf('value') + 1;
+    final defined = definitionAt(compiled, 4, valueColumn);
+    expect(defined?.line, 3);
+    final callColumn = lines[4].indexOf('doubleIt') + 1;
+    expect(definitionAt(compiled, 5, callColumn)?.line, 1);
+    final renamed = renameAt(compiled, source, 4, valueColumn, 'total');
+    expect(
+        renamed,
+        'doubleIt(n: int) -> int = n * 2\n'
+        'main():\n'
+        '  total = 1\n'
+        '  print total\n'
+        '  print doubleIt(total)\n');
+    expect(compile(renamed).dart, contains('print('));
+    final printColumn = lines[3].indexOf('print') + 1;
+    expect(breakpointAt(compiled, 4, printColumn)?.line, 4);
+    expect(breakpointAt(compiled, 4, 1), isNull);
+  });
+
+  test('package and generated libraries resolve from the package root',
+      () async {
+    final root = Directory.systemTemp.createTempSync('quds-package-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+''');
+    Directory('${root.path}/lib/src').createSync(recursive: true);
+    Directory('${root.path}/lib/generated').createSync(recursive: true);
+    Directory('${root.path}/bin').createSync(recursive: true);
+    File('${root.path}/lib/demo.quds').writeAsStringSync('''
+doubleIt(n: int) -> int = n * 2
+''');
+    File('${root.path}/lib/src/util.quds').writeAsStringSync('''
+triple(n: int) -> int = n * 3
+''');
+    File('${root.path}/lib/generated/user_models.quds').writeAsStringSync('''
+class User:
+  name: String
+''');
+    final app = '''
+use package:demo
+use package:demo/src/util
+use generated:user_models
+main():
+  print doubleIt(4)
+  print triple(4)
+  print User(name: "Ada").name
+''';
+    final compiled = compile(app, file: '${root.path}/bin/app.quds');
+    expect(compiled.dart, contains("import 'package:demo/demo.dart';"));
+    expect(compiled.dart, contains("import 'package:demo/src/util.dart';"));
+    expect(compiled.dart,
+        contains("import 'package:demo/generated/user_models.dart';"));
+    File('${root.path}/lib/demo.dart').writeAsStringSync(compile(
+            File('${root.path}/lib/demo.quds').readAsStringSync(),
+            file: '${root.path}/lib/demo.quds')
+        .dart);
+    File('${root.path}/lib/src/util.dart').writeAsStringSync(compile(
+            File('${root.path}/lib/src/util.quds').readAsStringSync(),
+            file: '${root.path}/lib/src/util.quds')
+        .dart);
+    File('${root.path}/lib/generated/user_models.dart').writeAsStringSync(
+        compile(
+                File('${root.path}/lib/generated/user_models.quds')
+                    .readAsStringSync(),
+                file: '${root.path}/lib/generated/user_models.quds')
+            .dart);
+    File('${root.path}/bin/app.dart').writeAsStringSync(compiled.dart);
+    final run = await Process.run(
+        Platform.resolvedExecutable, ['run', 'bin/app.dart'],
+        workingDirectory: root.path);
+    expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
+    expect(run.stdout, '8\n12\nAda\n');
+    expect(() => compile('''
+use package:other
+main():
+  print 1
+''', file: '${root.path}/bin/missing.quds'),
+        throwsA(predicate((error) => '$error'.contains('E900'))));
+    final loose = compile('use package:example\nmain():\n  print 1\n');
+    expect(loose.dart, contains("import 'package:example';"));
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

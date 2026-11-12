@@ -3,6 +3,7 @@ import 'dart:io';
 import 'ast.dart';
 import 'emitter.dart';
 import 'lexer.dart';
+import 'libraries.dart';
 import 'macros.dart';
 import 'parser.dart';
 import 'semantics.dart';
@@ -54,13 +55,17 @@ void _loadLibraries(
     Program program, String from, Map<String, Program> libraries) {
   for (final statement in program.statements) {
     final uri = switch (statement) {
-      ImportDeclaration() when statement.uri.endsWith('.quds') => statement.uri,
+      ImportDeclaration()
+          when statement.uri.endsWith('.quds') ||
+              statement.uri.startsWith('package:') ||
+              statement.uri.startsWith('generated:') =>
+        statement.uri,
       PartDirective() when statement.uri.endsWith('.quds') => statement.uri,
       _ => null,
     };
     if (uri == null) continue;
-    final path = Uri.file(from).resolve(uri).toFilePath();
-    if (libraries.containsKey(path)) continue;
+    final path = resolveLibraryPath(from, uri);
+    if (path == null || libraries.containsKey(path)) continue;
     final file = File(path);
     if (!file.existsSync()) continue;
     final parsed =

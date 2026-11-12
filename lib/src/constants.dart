@@ -15,6 +15,20 @@ sealed class ConstValue {
         ConstNull() => 'null',
         ConstList(:final elementType, :final elements) =>
           'const <$elementType>[${elements.map((e) => e.dartSource).join(', ')}]',
+        ConstMap(
+          :final keyType,
+          :final valueType,
+          :final keys,
+          :final values
+        ) =>
+          'const <$keyType, $valueType>{${[
+            for (var i = 0; i < keys.length; i++)
+              '${keys[i].dartSource}: ${values[i].dartSource}'
+          ].join(', ')}}',
+        ConstSet(:final elementType, :final elements) =>
+          'const <$elementType>{${elements.map((e) => e.dartSource).join(', ')}}',
+        ConstObject(:final type, :final fields) =>
+          'const $type(${fields.map((e) => e.dartSource).join(', ')})',
       };
 
   @override
@@ -27,6 +41,15 @@ sealed class ConstValue {
         (ConstList a, ConstList b) => a.elementType == b.elementType &&
             a.elements.length == b.elements.length &&
             _sameList(a.elements, b.elements),
+        (ConstMap a, ConstMap b) => a.keyType == b.keyType &&
+            a.valueType == b.valueType &&
+            _sameList(a.keys, b.keys) &&
+            _sameList(a.values, b.values),
+        (ConstSet a, ConstSet b) => a.elementType == b.elementType &&
+            a.elements.length == b.elements.length &&
+            _sameList(a.elements, b.elements),
+        (ConstObject a, ConstObject b) =>
+          a.type == b.type && _sameList(a.fields, b.fields),
         _ => false,
       };
 
@@ -39,6 +62,18 @@ sealed class ConstValue {
         ConstNull() => 4,
         ConstList(:final elementType, :final elements) =>
           Object.hash(5, elementType, Object.hashAll(elements)),
+        ConstMap(
+          :final keyType,
+          :final valueType,
+          :final keys,
+          :final values
+        ) =>
+          Object.hash(6, keyType, valueType, Object.hashAll(keys),
+              Object.hashAll(values)),
+        ConstSet(:final elementType, :final elements) =>
+          Object.hash(7, elementType, Object.hashAll(elements)),
+        ConstObject(:final type, :final fields) =>
+          Object.hash(8, type, Object.hashAll(fields)),
       };
 
   @override
@@ -73,6 +108,31 @@ class ConstList extends ConstValue {
   ConstList(this.elementType, this.elements);
   final String elementType;
   final List<ConstValue> elements;
+}
+
+class ConstMap extends ConstValue {
+  ConstMap(this.keyType, this.valueType, this.keys, this.values);
+  final String keyType, valueType;
+  final List<ConstValue> keys, values;
+}
+
+class ConstSet extends ConstValue {
+  ConstSet(this.elementType, this.elements);
+  final String elementType;
+  final List<ConstValue> elements;
+}
+
+class ConstObject extends ConstValue {
+  ConstObject(this.type, this.fields);
+  final String type;
+  final List<ConstValue> fields;
+}
+
+/// A const constructor invocation recorded while checking the call.
+class ConstConstructor {
+  const ConstConstructor(this.type, this.parameters);
+  final String type;
+  final List<Parameter> parameters;
 }
 
 /// Dart string literal, including escaped `$` so the output is not interpolated.
@@ -121,12 +181,14 @@ class ConstantEvaluator {
     required this.constants,
     required this.constantValueOf,
     required this.typeOf,
+    required this.constConstructorOf,
     required this.fail,
   });
 
   final Map<Expression, ConstValue> constants;
   final ConstValue? Function(Identifier node) constantValueOf;
   final String? Function(Expression node) typeOf;
+  final ConstConstructor? Function(CallExpression node) constConstructorOf;
   final Never Function(String message, Node node) fail;
 
   ConstValue evaluate(Expression node) {
@@ -138,6 +200,9 @@ class ConstantEvaluator {
       UnaryExpression() => _unary(node),
       BinaryExpression() => _binary(node),
       ListExpression() => _list(node),
+      MapExpression() => _map(node),
+      SetExpression() => _set(node),
+      CallExpression() => _call(node),
       _ => fail('const requires a compile-time constant', node),
     };
     constants[node] = value;
@@ -162,6 +227,39 @@ class ConstantEvaluator {
       case ListExpression(:final elements):
         for (final element in elements) {
           ensureConstant(element);
+        }
+      case MapExpression(:final keys, :final values):
+        for (var i = 0; i < keys.length; i++) {
+          ensureConstant(keys[i]);
+          ensureConstant(values[i]);
+        }
+      case SetExpression(:final elements):
+        for (final element in elements) {
+          ensureConstant(element);
+        }
+      case CallExpression(:final arguments):
+        final info = constConstructorOf(node);
+        if (info == null) fail('const requires a compile-time constant', node);
+        final supplied = <String>{};
+        var positional = 0;
+        for (final argument in arguments) {
+          ensureConstant(argument.value);
+          if (argument.name == null) {
+            if (positional < info.parameters.length) {
+              supplied.add(info.parameters[positional].name);
+            }
+            positional++;
+          } else {
+            supplied.add(argument.name!);
+          }
+        }
+        for (final parameter in info.parameters) {
+          if (supplied.contains(parameter.name)) continue;
+          final fallback = parameter.defaultValue;
+          if (fallback == null) {
+            fail('const requires a compile-time constant', node);
+          }
+          ensureConstant(fallback);
         }
       default:
         fail('const requires a compile-time constant', node);
@@ -257,6 +355,61 @@ class ConstantEvaluator {
     );
   }
 
+  ConstValue _map(MapExpression node) {
+    final type = typeOf(node);
+    if (type == null || !type.startsWith('Map<') || !type.endsWith('>')) {
+      throw StateError('Missing map type for a const map');
+    }
+    final pair = _splitPair(type.substring(4, type.length - 1));
+    final keys = <ConstValue>[];
+    final values = <ConstValue>[];
+    for (var i = 0; i < node.keys.length; i++) {
+      keys.add(evaluate(node.keys[i]));
+      values.add(evaluate(node.values[i]));
+    }
+    return ConstMap(pair.$1, pair.$2, keys, values);
+  }
+
+  ConstValue _set(SetExpression node) {
+    final type = typeOf(node);
+    if (type == null || !type.startsWith('Set<') || !type.endsWith('>')) {
+      throw StateError('Missing set type for a const set');
+    }
+    return ConstSet(
+      type.substring(4, type.length - 1),
+      [for (final element in node.elements) evaluate(element)],
+    );
+  }
+
+  ConstValue _call(CallExpression node) {
+    final info = constConstructorOf(node);
+    if (info == null) fail('const requires a compile-time constant', node);
+    final values = List<ConstValue?>.filled(info.parameters.length, null);
+    var positional = 0;
+    for (final argument in node.arguments) {
+      final value = evaluate(argument.value);
+      if (argument.name == null) {
+        if (positional >= values.length) {
+          fail('const requires a compile-time constant', argument);
+        }
+        values[positional++] = value;
+      } else {
+        final index =
+            info.parameters.indexWhere((item) => item.name == argument.name);
+        if (index < 0) fail('const requires a compile-time constant', argument);
+        values[index] = value;
+      }
+    }
+    for (var i = 0; i < info.parameters.length; i++) {
+      if (values[i] != null) continue;
+      final fallback = info.parameters[i].defaultValue;
+      if (fallback == null)
+        fail('const requires a compile-time constant', node);
+      values[i] = evaluate(fallback);
+    }
+    return ConstObject(info.type, [for (final value in values) value!]);
+  }
+
   ConstValue _numeric(
       ConstValue left, String op, ConstValue right, Expression node) {
     final l = _num(left);
@@ -296,8 +449,15 @@ class ConstantEvaluator {
 }
 
 bool _languageEqual(ConstValue left, ConstValue right) {
-  if (left is ConstList || right is ConstList) {
-    return left is ConstList && right is ConstList && _canonical(left, right);
+  if (left is ConstList ||
+      right is ConstList ||
+      left is ConstMap ||
+      right is ConstMap ||
+      left is ConstSet ||
+      right is ConstSet ||
+      left is ConstObject ||
+      right is ConstObject) {
+    return _canonical(left, right);
   }
   return switch ((left, right)) {
     (ConstInt a, ConstInt b) => a.value == b.value,
@@ -322,6 +482,39 @@ bool _canonical(ConstValue left, ConstValue right) {
     }
     for (var i = 0; i < left.elements.length; i++) {
       if (!_canonical(left.elements[i], right.elements[i])) return false;
+    }
+    return true;
+  }
+  if (left is ConstMap && right is ConstMap) {
+    if (left.keyType != right.keyType ||
+        left.valueType != right.valueType ||
+        left.keys.length != right.keys.length) {
+      return false;
+    }
+    for (var i = 0; i < left.keys.length; i++) {
+      if (!_canonical(left.keys[i], right.keys[i]) ||
+          !_canonical(left.values[i], right.values[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (left is ConstSet && right is ConstSet) {
+    if (left.elementType != right.elementType ||
+        left.elements.length != right.elements.length) {
+      return false;
+    }
+    for (var i = 0; i < left.elements.length; i++) {
+      if (!_canonical(left.elements[i], right.elements[i])) return false;
+    }
+    return true;
+  }
+  if (left is ConstObject && right is ConstObject) {
+    if (left.type != right.type || left.fields.length != right.fields.length) {
+      return false;
+    }
+    for (var i = 0; i < left.fields.length; i++) {
+      if (!_canonical(left.fields[i], right.fields[i])) return false;
     }
     return true;
   }
@@ -352,25 +545,61 @@ void checkConstShape(String type, ConstValue value) {
     case 'Null':
       if (value is! ConstNull) _badConstShape(type, value);
     default:
-      if (!type.startsWith('List<') ||
-          !type.endsWith('>') ||
-          value is! ConstList) {
-        _badConstShape(type, value);
-      }
-      final element = type.substring(5, type.length - 1);
-      if (value.elementType != element) _badConstShape(type, value);
-      if (element == 'num') {
-        for (final item in value.elements) {
-          if (item is! ConstInt && item is! ConstDouble) {
-            _badConstShape(element, item);
+      if (value is ConstList &&
+          type.startsWith('List<') &&
+          type.endsWith('>')) {
+        final element = type.substring(5, type.length - 1);
+        if (value.elementType != element) _badConstShape(type, value);
+        if (element == 'num') {
+          for (final item in value.elements) {
+            if (item is! ConstInt && item is! ConstDouble) {
+              _badConstShape(element, item);
+            }
+          }
+        } else {
+          for (final item in value.elements) {
+            checkConstShape(element, item);
           }
         }
-      } else {
+        return;
+      }
+      if (value is ConstMap && type.startsWith('Map<') && type.endsWith('>')) {
+        final pair = _splitPair(type.substring(4, type.length - 1));
+        if (value.keyType != pair.$1 || value.valueType != pair.$2) {
+          _badConstShape(type, value);
+        }
+        for (final key in value.keys) {
+          checkConstShape(pair.$1, key);
+        }
+        for (final item in value.values) {
+          checkConstShape(pair.$2, item);
+        }
+        return;
+      }
+      if (value is ConstSet && type.startsWith('Set<') && type.endsWith('>')) {
+        final element = type.substring(4, type.length - 1);
+        if (value.elementType != element) _badConstShape(type, value);
         for (final item in value.elements) {
           checkConstShape(element, item);
         }
+        return;
       }
+      if (value is ConstObject && value.type == type) return;
+      _badConstShape(type, value);
   }
+}
+
+(String, String) _splitPair(String inner) {
+  var depth = 0;
+  for (var i = 0; i < inner.length; i++) {
+    final char = inner[i];
+    if (char == '<' || char == '(') depth++;
+    if (char == '>' || char == ')') depth--;
+    if (char == ',' && depth == 0) {
+      return (inner.substring(0, i).trim(), inner.substring(i + 1).trim());
+    }
+  }
+  throw StateError('Missing comma in $inner');
 }
 
 Never _badConstShape(String type, ConstValue value) =>

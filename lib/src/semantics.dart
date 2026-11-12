@@ -64,6 +64,9 @@ class SemanticModel {
 
   /// Const expressions that were evaluated. Short-circuited operands are absent.
   final constants = <Expression, ConstValue>{};
+
+  /// Const constructor calls. The value is the instantiated parameter list.
+  final constCalls = <CallExpression, ConstConstructor>{};
   final imports = <ImportDeclaration>[];
   final warnings = <CompilerException>[];
   final enumNames = <String>{};
@@ -134,6 +137,7 @@ class Analyzer {
     constants: model.constants,
     constantValueOf: (node) => model.references[node]?.constantValue,
     typeOf: (node) => model.types[node],
+    constConstructorOf: (node) => model.constCalls[node],
     fail: fail,
   );
   Never fail(String message, Node node) =>
@@ -611,6 +615,9 @@ class Analyzer {
 
   void analyzeConstructor(
       ClassDeclaration type, ConstructorDeclaration constructor) {
+    if (constructor.constant && constructor.body != null) {
+      error('E401', 'A const constructor cannot have a body', constructor);
+    }
     final saved = _scope;
     final savedThis = _thisType;
     _scope = _Scope(_global);
@@ -3298,6 +3305,7 @@ class Analyzer {
         model.references[callee.object as Identifier] = owner!;
         final parameters = _ctorParameters(type, named.first);
         applyArguments(node, parameters, null);
+        _rememberConstCall(node, named.first, parameters, type.name);
         model.references[callee] = Symbol(callee.name, callee.name, type.name,
             function: FunctionDeclaration(callee.name, parameters, type.name,
                 null, null, named.first.span));
@@ -3642,18 +3650,22 @@ class Analyzer {
       }
       final constructor = unnamed.first;
       final parameters = _ctorParameters(type, constructor);
-      return _finishConstruct(node, type, parameters, explicit);
+      return _finishConstruct(node, type, parameters, explicit, constructor);
     }
     final parameters = <Parameter>[
       for (final field in _fieldsOf(type).where((field) => !field.isStatic))
         Parameter(field.name, field.type, false, field.span,
             defaultValue: field.requiredField ? null : field.initializer)
     ];
-    return _finishConstruct(node, type, parameters, explicit);
+    return _finishConstruct(node, type, parameters, explicit, null);
   }
 
-  String _finishConstruct(CallExpression node, ClassDeclaration type,
-      List<Parameter> parameters, List<String> explicit) {
+  String _finishConstruct(
+      CallExpression node,
+      ClassDeclaration type,
+      List<Parameter> parameters,
+      List<String> explicit,
+      ConstructorDeclaration? constructor) {
     final substitution =
         _constructorSubstitution(node, type, parameters, explicit);
     final instantiated = [
@@ -3670,11 +3682,41 @@ class Analyzer {
         : Symbol(type.name, type.name, type.name,
             function: FunctionDeclaration(
                 type.name, instantiated, type.name, null, null, type.span));
-    if (type.typeParameters.isEmpty) return type.name;
-    final args = type.typeParameters
-        .map((parameter) => substitution[parameter.name]!)
-        .join(', ');
-    return '${type.name}<$args>';
+    final returned = type.typeParameters.isEmpty
+        ? type.name
+        : '${type.name}<${type.typeParameters.map((parameter) => substitution[parameter.name]!).join(', ')}>';
+    if (constructor != null) {
+      _rememberConstCall(node, constructor, instantiated, returned);
+    }
+    return returned;
+  }
+
+  void _rememberConstCall(
+      CallExpression node,
+      ConstructorDeclaration constructor,
+      List<Parameter> parameters,
+      String type) {
+    if (!constructor.constant ||
+        constructor.factory ||
+        constructor.body != null ||
+        constructor.expressionBody != null ||
+        parameters.any((parameter) => parameter.variadic)) {
+      return;
+    }
+    model.constCalls[node] = ConstConstructor(
+      type,
+      [
+        for (final parameter in parameters)
+          Parameter(
+              parameter.name, parameter.type, parameter.mutable, parameter.span,
+              defaultValue: constructor.parameters
+                  .where((item) => item.name == parameter.name)
+                  .firstOrNull
+                  ?.defaultValue,
+              variadic: parameter.variadic,
+              initializing: parameter.initializing)
+      ],
+    );
   }
 
   Map<String, String> _constructorSubstitution(

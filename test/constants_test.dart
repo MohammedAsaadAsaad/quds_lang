@@ -297,6 +297,29 @@ void main() {
       message: 'const requires a compile-time constant',
       code: 'E401',
     ),
+    'a non-const constructor is not a constant': (
+      source:
+          'class Box:\n  n: int required\n  init(this.n):\n    print n\nconst bad = Box(n: 1)\nmain():\n  print bad.n\n',
+      line: 5,
+      column: 13,
+      message: 'const requires a compile-time constant',
+      code: 'E401',
+    ),
+    'a const constructor cannot have a body': (
+      source:
+          'class Box:\n  n: int required\n  const init(this.n):\n    print n\nmain():\n  print 1\n',
+      line: 3,
+      column: 3,
+      message: 'A const constructor cannot have a body',
+      code: 'E401',
+    ),
+    'a mutable list is not implicitly const': (
+      source: 'main():\n  colors = ["red"]\n  const bad = [colors]\n',
+      line: 3,
+      column: 16,
+      message: 'const requires a compile-time constant',
+      code: 'E401',
+    ),
     'module scope rejects a mutable binding': (
       source: 'var a = 1\nmain():\n  print a\n',
       line: 1,
@@ -523,6 +546,63 @@ main():
   print base
 const base = 4
 ''', '4\n');
+  });
+
+  test('implicit const stays inside a constant context', () async {
+    final source = '''
+class Point:
+  x: int required
+  y: int required
+  const init(this.x, this.y)
+const palette = ["red", "blue"]
+const again = ["red", "blue"]
+const samePalette = palette == again
+const ages = map:
+  "Ada": 36
+const agesAgain = map:
+  "Ada": 36
+const sameAges = ages == agesAgain
+const flags = set:
+  1
+  2
+const origin = Point(x: 0, y: 0)
+const shifted = Point(x: 1, y: 2)
+const sameOrigin = Point(x: 0, y: 0)
+main():
+  colors = ["red", "blue"]
+  other = ["red", "blue"]
+  fresh = Point(x: 1, y: 2)
+  print samePalette
+  print sameAges
+  print flags.length
+  print origin.y
+  print shifted.y
+  print origin == sameOrigin
+  print origin == fresh
+  print colors.length
+  print other[0]
+  print ages["Ada"]
+  print palette[0]
+''';
+    final result = compile(source);
+    final colors = dartName(result, 'colors');
+    expect(result.dart, contains('final List<String> $colors = <String>['));
+    expect(result.dart, isNot(contains('final List<String> $colors = const')));
+    expect(result.dart,
+        contains('const List<String> ${dartName(result, 'palette')} ='));
+    await execute(
+        source,
+        'true\n'
+        'true\n'
+        '2\n'
+        '0\n'
+        '2\n'
+        'true\n'
+        'false\n'
+        '2\n'
+        'red\n'
+        '36\n'
+        'red\n');
   });
 
   test('a top-level const is not reassigned or implicitly shadowed', () {

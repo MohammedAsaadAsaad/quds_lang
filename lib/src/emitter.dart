@@ -2084,6 +2084,22 @@ class DartEmitter {
     if (simple) {
       return '$target(${node.arguments.map((a) => expression(a.value, constantContext: constantContext)).join(', ')})';
     }
+    if (constantContext && holes == 0) {
+      final values = <String>[];
+      final arranged = order ?? List.generate(parameters.length, (i) => i);
+      for (var i = 0; i < arranged.length; i++) {
+        final index = arranged[i];
+        if (index >= 0) {
+          values.add(
+              expression(node.arguments[index].value, constantContext: true));
+        } else if (i < parameters.length &&
+            parameters[i].defaultValue != null) {
+          values.add(
+              expression(parameters[i].defaultValue!, constantContext: true));
+        }
+      }
+      return '$target(${values.join(', ')})';
+    }
     // Evaluate written arguments exactly once, left to right, before arranging
     // them in declaration order for Dart's positional ABI.
     final declarations = <String>[];

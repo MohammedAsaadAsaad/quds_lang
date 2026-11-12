@@ -184,7 +184,10 @@ and `-0.0 == 0.0`.
 
 A `const` list is a Dart constant list. A final or `var` list remains a
 mutable object; the binding's immutability does not freeze it. The same rules
-apply to a top-level `const`. Inferred const is not implemented. An
+apply to a top-level `const`. Inside a `const` binding, a list, map, set,
+or const constructor call is constant without another `const` keyword. The
+same list in an ordinary binding stays mutable. A constructor that is not
+`const`, and a `const` constructor with a body, are rejected. An
 interpolation whose parts are all literals is already a string literal
 (`"hi {1}"` is `"hi 1"`). Any other interpolation is not a constant. Dart has
 no prefix `+`, so Quds unary `+` is lowered as numeric identity, including the

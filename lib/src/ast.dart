@@ -145,6 +145,14 @@ class BinaryExpression extends Expression {
   final String operator;
 }
 
+/// `operand is Type`, `operand is! Type`, or `operand as Type`.
+class TypeTestExpression extends Expression {
+  const TypeTestExpression(this.operand, this.operator, this.type, super.span);
+  final Expression operand;
+  final String operator;
+  final String type;
+}
+
 class ListExpression extends Expression {
   const ListExpression(this.elements, super.span, {this.nullAware = const []});
   final List<Expression> elements;

@@ -520,6 +520,11 @@ class Analyzer {
         (parent.modifiers.contains('final') || parent.kind == 'final')) {
       error('E720', 'A final class cannot be extended', type);
     }
+    if (parent != null) _rejectSealedOutside(type, parent);
+    for (final name in type.interfaces) {
+      final face = _global.symbols[name]?.classDeclaration;
+      if (face != null) _rejectSealedOutside(type, face);
+    }
     if (parent != null && parent.modifiers.contains('base')) {
       final allowed = type.modifiers.contains('base') ||
           type.modifiers.contains('final') ||
@@ -1499,11 +1504,10 @@ class Analyzer {
       return;
     }
     if (type.startsWith('Map<') && type.endsWith('>')) {
-      final inner = type.substring(4, type.length - 1);
-      final splitAt = inner.indexOf(',');
-      if (splitAt < 0) fail('Unsupported type: $type', node);
-      validateType(inner.substring(0, splitAt).trim(), node, allowVoid: false);
-      validateType(inner.substring(splitAt + 1).trim(), node, allowVoid: false);
+      final parts = _splitTypes(type.substring(4, type.length - 1));
+      if (parts.length != 2) fail('Unsupported type: $type', node);
+      validateType(parts[0], node, allowVoid: false);
+      validateType(parts[1], node, allowVoid: false);
       return;
     }
     if (type.startsWith('Optional<') && type.endsWith('>')) {
@@ -1517,11 +1521,10 @@ class Analyzer {
       if (model.hiddenTypes.contains('Result')) {
         fail('Name Result is not defined', node);
       }
-      final inner = type.substring(7, type.length - 1);
-      final splitAt = inner.indexOf(',');
-      if (splitAt < 0) fail('Unsupported type: $type', node);
-      validateType(inner.substring(0, splitAt).trim(), node, allowVoid: false);
-      validateType(inner.substring(splitAt + 1).trim(), node, allowVoid: false);
+      final parts = _splitTypes(type.substring(7, type.length - 1));
+      if (parts.length != 2) fail('Unsupported type: $type', node);
+      validateType(parts[0], node, allowVoid: false);
+      validateType(parts[1], node, allowVoid: false);
       return;
     }
     if (type.startsWith('Future<') && type.endsWith('>')) {
@@ -2187,8 +2190,32 @@ class Analyzer {
         return _capturesLocal(node.object);
       case Literal():
         return false;
+      case ListExpression():
+        return node.elements.any(_capturesLocal);
+      case SetExpression():
+        return node.elements.any(_capturesLocal);
+      case MapExpression():
+        return node.keys.any(_capturesLocal) || node.values.any(_capturesLocal);
+      case RecordExpression():
+        return node.fields.any(_capturesLocal);
+      case UnaryExpression():
+        return _capturesLocal(node.operand);
+      case BinaryExpression():
+        return _capturesLocal(node.left) || _capturesLocal(node.right);
+      case InterpolatedString():
+        return node.parts.any(_capturesLocal);
       default:
         return true;
+    }
+  }
+
+  void _rejectSealedOutside(ClassDeclaration type, ClassDeclaration other) {
+    final sealed = other.kind == 'sealed' || other.modifiers.contains('sealed');
+    if (!sealed || other.kind == 'sealedType') return;
+    final home = model.libraryOf[other] ?? '';
+    final here = model.libraryOf[type] ?? library;
+    if (home.isNotEmpty && home != here) {
+      error('E703', 'A sealed type is extended outside its library', type);
     }
   }
 
@@ -2362,6 +2389,23 @@ class Analyzer {
               declare: declare);
         }
       case ConstructorPattern():
+        if (pattern.typeName == 'Ok' || pattern.typeName == 'Error') {
+          if (!type.startsWith('Result<') || !type.endsWith('>')) {
+            fail('${pattern.typeName} matches a Result', pattern);
+          }
+          final parts = _splitTypes(type.substring(7, type.length - 1));
+          if (parts.length != 2) {
+            fail('Result needs two type arguments', pattern);
+          }
+          final fieldType = pattern.typeName == 'Ok' ? parts[0] : parts[1];
+          if (pattern.fields.length > 1) {
+            fail('${pattern.typeName} has one field', pattern);
+          }
+          if (pattern.fields.length == 1) {
+            bindPattern(pattern.fields.single, fieldType, declare: declare);
+          }
+          return;
+        }
         if (pattern.typeName.isEmpty &&
             type.startsWith('(') &&
             type.endsWith(')')) {
@@ -2526,11 +2570,10 @@ class Analyzer {
             'Optional'
           }.contains(head);
           if (head == 'Map' || head == 'Result') {
-            final splitAt = inner.indexOf(',');
-            if (splitAt > 0) {
-              visit(inner.substring(0, splitAt), 0);
-              visit(inner.substring(splitAt + 1),
-                  covariant ? polarity : polarity);
+            final parts = _splitTypes(inner);
+            if (parts.length == 2) {
+              visit(parts[0], 0);
+              visit(parts[1], polarity);
             }
           } else {
             visit(inner, covariant ? polarity : 0);
@@ -3344,16 +3387,17 @@ class Analyzer {
   String propagate(PropagateExpression node) {
     final type = expression(node.operand);
     if (!type.startsWith('Result<')) fail('? expects a Result', node);
-    final inner = type.substring(7, type.length - 1);
-    final splitAt = inner.indexOf(',');
-    final value = inner.substring(0, splitAt).trim();
-    final failure = inner.substring(splitAt + 1).trim();
+    final parts = _splitTypes(type.substring(7, type.length - 1));
+    if (parts.length != 2) fail('? expects a Result', node);
+    final value = parts[0];
+    final failure = parts[1];
     final returned = _resultReturn(_returnType ?? '');
     if (returned == null) {
       error('E600', 'Postfix ? has no compatible Result function', node);
     }
-    final expected = returned.substring(7, returned.length - 1);
-    final expectedError = expected.substring(expected.indexOf(',') + 1).trim();
+    final expectedParts =
+        _splitTypes(returned.substring(7, returned.length - 1));
+    final expectedError = expectedParts.length == 2 ? expectedParts[1] : '';
     if (expectedError != failure &&
         expectedError != 'Object' &&
         !compatible(failure, expectedError)) {
@@ -3502,6 +3546,14 @@ class Analyzer {
     return memberType;
   }
 
+  String typeTest(TypeTestExpression node) {
+    final value = expression(node.operand);
+    if (value == 'void') fail('Void expressions cannot be operands', node);
+    validateType(node.type, node, allowVoid: false);
+    if (node.operator == 'as') return node.type;
+    return 'bool';
+  }
+
   String binary(BinaryExpression node) {
     if (node.operator == 'and' || node.operator == 'or') {
       final left = expression(node.left);
@@ -3567,6 +3619,7 @@ class Analyzer {
       Identifier() => identifier(node),
       UnaryExpression() => unary(node),
       BinaryExpression() => binary(node),
+      TypeTestExpression() => typeTest(node),
       ListExpression() => list(node),
       CallExpression() => call(node),
       InterpolatedString() => interpolation(node),
@@ -4898,14 +4951,18 @@ class Analyzer {
   void checkExhaustive(Node node, String matched, Iterable<Pattern> patterns,
       Iterable<Expression?> guards,
       {bool expression = false}) {
-    final declaration = _global.symbols[matched]?.classDeclaration;
+    final declaration =
+        _global.symbols[_genericHead(matched)]?.classDeclaration;
     final finite = declaration != null &&
         (declaration.kind == 'sealedType' || declaration.kind == 'enum');
+    final result = matched.startsWith('Result<') && matched.endsWith('>');
     final universe = matched.contains(' | ')
         ? matched.split(' | ').map((part) => part.trim()).toSet()
-        : finite
-            ? declaration.cases.map((item) => item.name).toSet()
-            : null;
+        : result
+            ? {'Ok', 'Error'}
+            : finite
+                ? declaration.cases.map((item) => item.name).toSet()
+                : _sealedSubtypes(declaration);
     if (universe == null || universe.isEmpty) return;
     final covered = <String>{};
     var closed = false;
@@ -4980,6 +5037,22 @@ class Analyzer {
     if (left == '$right?') return left;
     if (right == '$left?') return right;
     fail('Branches must share a type', node);
+  }
+
+  Set<String>? _sealedSubtypes(ClassDeclaration? declaration) {
+    if (declaration == null) return null;
+    final sealed = declaration.kind == 'sealed' ||
+        declaration.modifiers.contains('sealed');
+    if (!sealed || declaration.kind == 'sealedType') return null;
+    final home = model.libraryOf[declaration] ?? '';
+    final names = <String>{};
+    for (final type in model.classes.values) {
+      if (type.superclass != declaration.name) continue;
+      final here = model.libraryOf[type] ?? '';
+      if (home.isNotEmpty && here != home) continue;
+      names.add(type.name);
+    }
+    return names;
   }
 
   Set<String>? _covered(Pattern pattern, Set<String> universe) {

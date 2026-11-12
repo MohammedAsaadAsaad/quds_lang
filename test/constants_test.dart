@@ -737,7 +737,8 @@ List<BinaryExpression> operators(Expression node, String op) {
         walk(end);
       case AwaitExpression(:final operand) ||
             PropagateExpression(:final operand) ||
-            ConversionExpression(:final operand):
+            ConversionExpression(:final operand) ||
+            TypeTestExpression(:final operand):
         walk(operand);
       case DoExpression() ||
             CaptureExpression() ||

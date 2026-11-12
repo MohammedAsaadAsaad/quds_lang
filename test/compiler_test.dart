@@ -339,6 +339,8 @@ main():
     final once = mapStack('#0      main (file:///tmp/app.dart.js:1:1)', script);
     expect(once, contains('app.dart:3:1'));
     expect(mapStack(once, quds), contains('app.quds:2:4'));
+    expect(mapStack('#0      a (file:///tmp/app.dart.js:1:1)', script),
+        contains('app.dart:3:1'));
   });
 
   test('definition, rename, and breakpoint use the source span', () {
@@ -866,6 +868,43 @@ void main() {
         workingDirectory: directory.path);
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
     expect(run.stdout, '5\n');
+  });
+
+  test('a Dart caller passes null and matches Result', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-null-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')..writeAsStringSync('''
+greet(name: String?) -> String:
+  if name == null:
+    return "hi"
+  else:
+    return name
+parse() -> Result<int, String> = Ok(4)
+''');
+    final result = compile(source.readAsStringSync(), file: source.path);
+    expect(result.dart, contains('String?'));
+    expect(result.dart, contains('final greet ='));
+    expect(result.dart, isNot(contains('quds_lang')));
+    File('${directory.path}/app.dart').writeAsStringSync(result.dart);
+    File('${directory.path}/main.dart').writeAsStringSync('''
+import 'app.dart';
+void main() {
+  print(greet(null));
+  print(greet('Ada'));
+  switch (parse()) {
+    case Ok(value: final n):
+      print(n);
+    case Error():
+      print('no');
+  }
+}
+''');
+    final run = await Process.run(
+        Platform.resolvedExecutable, ['run', 'main.dart'],
+        workingDirectory: directory.path);
+    expect(run.exitCode, 0,
+        reason: '${run.stdout}\n${run.stderr}\n${result.dart}');
+    expect(run.stdout, 'hi\nAda\n4\n');
   });
 
   test('quds get writes a lockfile and reports a version conflict', () async {

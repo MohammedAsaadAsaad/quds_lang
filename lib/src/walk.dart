@@ -52,6 +52,8 @@ void walkAst(Node node, void Function(Node node) visit) {
     case BinaryExpression(:final left, :final right):
       walkAst(left, visit);
       walkAst(right, visit);
+    case TypeTestExpression(:final operand):
+      walkAst(operand, visit);
     case ListExpression(:final elements):
       _nodes(elements, visit);
     case Argument(:final value):

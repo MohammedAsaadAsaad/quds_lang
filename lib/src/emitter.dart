@@ -20,6 +20,7 @@ class DartEmitter {
   var _useNumRange = false;
   var _useOptional = false;
   var _useResult = false;
+  var _usePropagate = false;
   var _useConversion = false;
   var _useReturn = false;
   var _inDo = false;
@@ -323,11 +324,13 @@ class DartEmitter {
           'class Error<T, E> extends Result<T, E> {\n'
           '  final E error;\n'
           '  const Error(this.error);\n'
-          '}\n'
-          'class _QudsPropagate implements Exception {\n'
-          '  final Result<Object?, Object?> result;\n'
-          '  _QudsPropagate(this.result);\n'
           '}');
+      if (_usePropagate) {
+        helpers.writeln('class _QudsPropagate implements Exception {\n'
+            '  final Result<Object?, Object?> result;\n'
+            '  _QudsPropagate(this.result);\n'
+            '}');
+      }
     }
     if (_useConversion) {
       helpers.writeln('class ConversionError implements Exception {\n'
@@ -509,6 +512,11 @@ class DartEmitter {
     if (_useIsolate) {
       prelude.writeln("import 'dart:isolate';");
     }
+    if (_useAwaitAll) {
+      prelude
+        ..writeln("import 'dart:core';")
+        ..writeln("import 'dart:core' as _quds_core;");
+    }
     if (_useReadonly) {
       prelude.writeln("import 'dart:collection';");
     }
@@ -662,7 +670,7 @@ class DartEmitter {
           '      }),\n'
           '  ]);\n'
           '  if (index >= 0) {\n'
-          '    Error.throwWithStackTrace(first!, StackTrace.current);\n'
+          '    _quds_core.Error.throwWithStackTrace(first!, StackTrace.current);\n'
           '  }\n'
           '  return values;\n'
           '}');
@@ -868,6 +876,13 @@ class DartEmitter {
     if (type.contains(' | ')) return _unionClass(type);
     if (type.startsWith('(') && type.endsWith(')?')) {
       return '${_dartType(type.substring(1, type.length - 2))}?';
+    }
+    if (type.startsWith('(') &&
+        type.endsWith(')') &&
+        !type.contains('->') &&
+        !type.substring(1, type.length - 1).contains(',')) {
+      final inner = type.substring(1, type.length - 1).trim();
+      if (inner.isNotEmpty) return '(${_dartType(inner)},)';
     }
     if (type.startsWith('(') && type.contains('->')) {
       final (parameters, returns) = _splitFunctionType(type);
@@ -1834,10 +1849,21 @@ class DartEmitter {
           : '${pattern.typeName}(${[
               for (var i = 0; i < pattern.fields.length; i++)
                 pattern.names[i] == null
-                    ? _pattern(pattern.fields[i])
+                    ? _resultField(pattern, i)
                     : '${pattern.names[i]}: ${_pattern(pattern.fields[i])}'
             ].join(', ')})',
     };
+  }
+
+  String _resultField(ConstructorPattern pattern, int index) {
+    final inner = _pattern(pattern.fields[index]);
+    final field = pattern.typeName == 'Ok'
+        ? 'value'
+        : pattern.typeName == 'Error'
+            ? 'error'
+            : null;
+    if (field == null) return inner;
+    return '$field: $inner';
   }
 
   void _destructure(Pattern pattern, String source, int position) {
@@ -1952,6 +1978,8 @@ class DartEmitter {
           'or' => '||',
           _ => node.operator
         }} ${expression(node.right, constantContext: constantContext, opaqueBool: childOpaque)})',
+      TypeTestExpression() =>
+        '(${expression(node.operand, constantContext: constantContext)} ${node.operator} ${_dartType(node.type)})',
       ListExpression() => _list(node),
       CallExpression() => call(node, constantContext: constantContext),
       InterpolatedString() =>
@@ -2157,6 +2185,7 @@ class DartEmitter {
 
   String _propagate(PropagateExpression node) {
     _useResult = true;
+    _usePropagate = true;
     final temp = '_qr${_temps++}';
     final value = expression(node.operand);
     return '(() { final $temp = $value; if ($temp is Error) throw _QudsPropagate($temp); return ($temp as Ok).value; })()';

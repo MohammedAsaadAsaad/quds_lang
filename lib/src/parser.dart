@@ -5,6 +5,7 @@ import 'lexer.dart';
 class Parser {
   Parser(this.tokens);
   final List<Token> tokens;
+  final errors = <CompilerException>[];
   int index = 0;
   Token get current => tokens[index];
   Token peek([int n = 1]) => tokens[(index + n).clamp(0, tokens.length - 1)];
@@ -19,7 +20,7 @@ class Parser {
   }
 
   Never fail(String message, [SourceSpan? span]) =>
-      throw CompilerException('Q100', message, span ?? current.span);
+      throw CompilerException('E100', message, span ?? current.span);
   Token expect(TokenKind kind, String description) {
     if (!at(kind)) fail('Expected $description, found ${current.kind.name}');
     return take();
@@ -71,9 +72,34 @@ class Parser {
     final span = current.span;
     final statements = <Statement>[];
     while (!at(TokenKind.eof)) {
-      statements.add(statement(topLevel: true));
+      try {
+        statements.add(statement(topLevel: true));
+      } on CompilerException catch (error) {
+        _record(error);
+      }
     }
+    _finish();
     return Program(statements, extent(span));
+  }
+
+  /// A parse error ends the current line. Later lines are still parsed, and
+  /// every recorded error is reported. The line skip is the recovery point
+  /// this version defines; missing tokens are not invented.
+  void _record(CompilerException error) {
+    errors.add(error);
+    if (at(TokenKind.dedent) || at(TokenKind.eof)) return;
+    while (!at(TokenKind.eof) && !at(TokenKind.dedent)) {
+      final newline = at(TokenKind.newline);
+      take();
+      if (newline) return;
+    }
+  }
+
+  void _finish() {
+    if (errors.isEmpty) return;
+    if (errors.length == 1) throw errors.single;
+    throw CompilerException(errors.first.code,
+        errors.map((error) => '$error').join('\n'), errors.first.span);
   }
 
   bool functionAhead() {
@@ -680,7 +706,7 @@ class Parser {
     if (match(TokenKind.colon)) {
       if (at(TokenKind.newline)) {
         endLine();
-        if (at(TokenKind.indent)) block();
+        if (at(TokenKind.indent)) block(colonTaken: true);
       }
     } else {
       endLine();
@@ -1868,7 +1894,7 @@ class Parser {
       return IfLetStatement(
           bound.lexeme, value, body, otherwise, extent(token.span));
     }
-    final condition = expression();
+    final condition = expression(typeTest: false);
     if (word('is')) {
       take();
       final pattern = patternLiteral();
@@ -1893,7 +1919,11 @@ class Parser {
     expect(TokenKind.indent, 'indented block');
     final body = <Statement>[];
     while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
-      body.add(statement());
+      try {
+        body.add(statement());
+      } on CompilerException catch (error) {
+        _record(error);
+      }
     }
     expect(TokenKind.dedent, 'end of block');
     return body;
@@ -2178,7 +2208,8 @@ class Parser {
     };
   }
 
-  Expression expression({int minimum = -1, bool bare = false}) {
+  Expression expression(
+      {int minimum = -1, bool bare = false, bool typeTest = true}) {
     var left = prefix();
     while (true) {
       if (left is Identifier && _typeArgumentsAhead()) {
@@ -2228,6 +2259,13 @@ class Parser {
         take();
         final type = typeName();
         left = ConversionExpression(left, type, safe, extent(left.span));
+        continue;
+      }
+      if (typeTest && (word('is') || word('as')) && 4 >= minimum) {
+        var operator = take().lexeme;
+        if (operator == 'is' && match(TokenKind.bang)) operator = 'is!';
+        final type = typeName();
+        left = TypeTestExpression(left, operator, type, extent(left.span));
         continue;
       }
       final power = precedence(current);

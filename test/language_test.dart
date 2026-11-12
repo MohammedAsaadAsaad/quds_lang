@@ -1657,6 +1657,28 @@ main():
   print 1
 ''': 'E910',
       '''
+main():
+  +
+''': 'E100',
+      '''
+annotation Tag:
+main():
+  @Tag
+  print 1
+''': 'E100',
+      '''
+show<T: num>(value: T) -> T = value
+main():
+  print show("x")
+''': 'E500',
+      '''
+main():
+  value = Ok(1)
+  print match value:
+    Ok(n):
+      n
+''': 'E314',
+      '''
 twice() -> int = 2
 main():
   twice
@@ -2140,6 +2162,7 @@ main():
     expect(
         dart, contains('const qudsReflectable = <Object?>[qudsReflectBox];'));
     expect(dart.contains('qudsReflectOther'), isFalse);
+    expect(dart.contains('dart:mirrors'), isFalse);
     final directory = Directory.systemTemp.createTempSync('quds-reflect-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final output = File('${directory.path}/app.dart')..writeAsStringSync(dart);
@@ -2147,6 +2170,181 @@ main():
         Platform.resolvedExecutable, ['analyze', output.path]);
     expect(analysis.exitCode, 0,
         reason: '${analysis.stdout}\n${analysis.stderr}\n$dart');
+  });
+
+  test('parallel failures, sealed cases, and named blocks execute', () async {
+    const source = '''
+annotation Mark(caption: String = "go"):
+@Mark(caption: "go")
+class Note:
+  text: String = "noted"
+sealed class State:
+  kind() -> String = "state"
+class Idle extends State:
+  kind() -> String = "idle"
+class Done extends State:
+  kind() -> String = "done"
+class Text:
+  value: String required
+class Column:
+  spacing: int required
+  children: List<Text> required
+class Widget:
+  title: String = "w"
+make(item: Widget) -> String = item.title
+map(items: int) -> int = items
+showNum<T: num>(value: T) -> T = value
+boom(message: String) async -> int:
+  if message.length > 0:
+    throw message
+  return 0
+total(values: List<int>) -> int:
+  var sum = 0
+  for n in values:
+    sum = sum + n
+  return sum
+eight() -> Result<int, String> = Ok(8)
+failed() -> Result<int, String> = Error("no")
+inner() -> Result<int, String> = Ok(5)
+nestedResult() -> Result<Result<int, String>, String> = Ok(inner())
+describe(value: Result<int, String>) -> String = match value:
+  Ok(n):
+    "{n}"
+  Error(message):
+    message
+main() async:
+  value: Object = 1
+  print value is int
+  print value is String
+  print value as int
+  print showNum(4)
+  print Note().text
+  current: State = Done()
+  match current:
+    Idle():
+      print "idle"
+    Done():
+      print "done"
+  view = Column:
+    spacing: 12
+    children:
+      Text "Hello"
+  print view.spacing
+  print view.children[0].value
+  made = make:
+    item: Widget()
+  print made
+  shown = map 3
+  print shown
+  print describe(eight())
+  print describe(failed())
+  nested = nestedResult()
+  match nested:
+    Ok(inner):
+      match inner:
+        Ok(n):
+          print n
+        Error(_):
+          print "inner"
+    Error(_):
+      print "bad"
+  try:
+    waited = await all:
+      boom("first")
+      boom("second")
+    print waited
+    print "kept"
+  catch error:
+    print error
+  print await isolate:
+    total([1, 2])
+  var n = 1
+  seen = await all:
+    n
+    n
+  n = 9
+  later = await all:
+    n
+  print seen
+  print later
+''';
+    await execute(source, '''
+true
+false
+1
+4
+noted
+done
+12
+Hello
+w
+3
+8
+no
+5
+first
+3
+(1, 1)
+(9)
+''');
+    final dart = compile(source).dart;
+    expect(dart, contains('@Mark(caption: "go")'));
+
+    final directory = Directory.systemTemp.createTempSync('quds-rest-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    File('${directory.path}/left.quds')
+        .writeAsStringSync('value() -> int = 1\n');
+    File('${directory.path}/right.quds')
+        .writeAsStringSync('value() -> int = 2\n');
+    expect(() => compile('''
+use "left.quds"
+use "right.quds"
+main():
+  print value()
+''', file: '${directory.path}/clash.quds'),
+        throwsA(predicate((error) => '$error'.contains('E204'))));
+    final twice = compile('''
+use "left.quds"
+use "left.quds"
+main():
+  print value()
+''', file: '${directory.path}/twice.quds');
+    expect(twice.dart, contains('value()'));
+    File('${directory.path}/state.quds').writeAsStringSync('''
+sealed class State:
+  kind() -> String = "state"
+''');
+    expect(() => compile('''
+use "state.quds"
+class Idle extends State:
+  kind() -> String = "idle"
+main():
+  print 1
+''', file: '${directory.path}/outside.quds'),
+        throwsA(predicate((error) => '$error'.contains('E703'))));
+    expect(() => compile('''
+use "state.quds"
+class Idle implements State:
+  kind() -> String = "idle"
+main():
+  print 1
+''', file: '${directory.path}/implemented.quds'),
+        throwsA(predicate((error) => '$error'.contains('E703'))));
+    expect(() => compile('''
+main() async:
+  items = [1, 2]
+  print await isolate:
+    total(items)
+total(values: List<int>) -> int = values.length
+''', file: '${directory.path}/capture.quds'),
+        throwsA(predicate((error) => '$error'.contains('E805'))));
+    expect(() => compile('main():\n  +\n  print 1\n  +\n'),
+        throwsA(predicate((error) {
+      final text = '$error';
+      return text.contains('E100') &&
+          text.contains(':2:') &&
+          text.contains(':4:');
+    })));
   });
 
   test('generated Dart runs without the Quds package', () async {

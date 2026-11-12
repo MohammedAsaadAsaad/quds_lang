@@ -12,7 +12,9 @@ export 'src/constants.dart'
         ConstList;
 export 'src/compiler.dart';
 export 'src/hash.dart' show sha256Hex;
-export 'src/navigate.dart' show breakpointAt, definitionAt, renameAt;
+export 'src/navigate.dart'
+    show breakpointAt, breakpointOnLine, definitionAt, renameAt;
+export 'src/protocol.dart' show encodeFrame, respondDebug, respondLsp;
 export 'src/sourcemap.dart' show encodeSourceMap, mapStack, sourceMapFor;
 export 'src/emitter.dart';
 export 'src/lexer.dart';

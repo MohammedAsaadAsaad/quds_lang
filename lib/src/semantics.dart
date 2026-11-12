@@ -107,6 +107,9 @@ class SemanticModel {
 
   /// Dart import URI for a `package:` or `generated:` library that was loaded.
   final resolvedImports = <ImportDeclaration, String>{};
+
+  /// Emit `@protected` because this package depends on `package:meta`.
+  var protectWithMeta = false;
 }
 
 class Analyzer {
@@ -2460,6 +2463,26 @@ class Analyzer {
     return child;
   }
 
+  FunctionDeclaration? _instanceCall(Symbol symbol) {
+    if (symbol.function != null || symbol.classDeclaration != null) {
+      return null;
+    }
+    final declaration = model.classes[_classKey(symbol.type)];
+    if (declaration == null) return null;
+    final methods = declaration.methods
+        .where((method) => method.name == 'call' && !method.isStatic)
+        .toList();
+    if (methods.length != 1) return null;
+    return methods.single;
+  }
+
+  String _classKey(String type) {
+    var name = type.startsWith('readonly ') ? type.substring(9) : type;
+    if (name.endsWith('?')) name = name.substring(0, name.length - 1);
+    final open = name.indexOf('<');
+    return open < 0 ? name : name.substring(0, open);
+  }
+
   String _substitute(String type, Map<String, String> substitution) {
     var result = type;
     for (final entry in substitution.entries) {
@@ -3461,6 +3484,25 @@ class Analyzer {
       }
       model.argumentOrder[node] = List.generate(expected.length, (i) => i);
       return returns;
+    }
+    final invoked = _instanceCall(symbol);
+    if (invoked != null) {
+      final declaration = model.classes[_classKey(symbol.type)];
+      final substitution = _genericSubstitution(symbol.type, declaration);
+      final parameters = [
+        for (final parameter in invoked.parameters)
+          Parameter(parameter.name, _substitute(parameter.type, substitution),
+              parameter.mutable, parameter.span,
+              defaultValue: parameter.defaultValue,
+              variadic: parameter.variadic,
+              initializing: parameter.initializing)
+      ];
+      if (invoked.returnType == null &&
+          model.declarations[invoked]?.type == '<infer>') {
+        analyzeFunction(invoked);
+      }
+      return _substitute(
+          applyArguments(node, parameters, invoked), substitution);
     }
     final candidates = symbol.overloads.isEmpty && symbol.function != null
         ? [symbol.function!]

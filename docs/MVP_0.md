@@ -385,11 +385,18 @@ The generated `.dart` has no import of the Quds package. `dart analyze` and
 `use package:name` loads `lib/name.quds` beside `pubspec.yaml` and emits
 `import 'package:name/name.dart'`. `use package:name/src/util` loads
 `lib/src/util.quds`. A missing file is `E900`. `use generated:user_models`
-loads `lib/generated/user_models.quds`. A macro cycle is `E904`. Source text
-and a forbidden capability are `E905`. Depth past 8, and more than 1000
-declarations from one annotation, are `E906`. `mapStack` rewrites a stack
-frame that hits the source map. `definitionAt`, `renameAt`, and
-`breakpointAt` answer a source position. They are not a language server.
+loads `lib/generated/user_models.quds`. `declare` copies a method to a
+top-level function. `define` copies methods, fields, properties, and
+constructors. A macro cycle is `E904`. Source text and a forbidden
+capability are `E905`. Depth past 8, and more than 1000 declarations from
+one annotation, are `E906`. A class `call` method is invoked by calling the
+instance, including a generic class and named arguments. `protected` is
+emitted as `@protected` when the package depends on `package:meta`, and as
+a documentation comment otherwise. `quds migrate` leaves a `quds.yaml`
+pinned to a version other than 1.2 unchanged. `quds lsp` answers definition
+and rename. `quds debug` binds a breakpoint to the `.quds` statement on a
+line. Neither command launches a program. `mapStack` rewrites a stack frame
+that hits the source map.
 
 The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.

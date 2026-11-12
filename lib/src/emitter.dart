@@ -38,6 +38,7 @@ class DartEmitter {
   var _useIsolate = false;
   var _useTask = false;
   var _useAwaitAll = false;
+  var _useProtected = false;
   var _useLog = false;
   var _useConfig = false;
   var _skipBindings = <Binding>{};
@@ -432,6 +433,9 @@ class DartEmitter {
     if (_useIsolate) {
       prelude.writeln("import 'dart:isolate';");
     }
+    if (_useProtected) {
+      prelude.writeln("import 'package:meta/meta.dart';");
+    }
     if (_useConfig) {
       prelude.writeln("import 'dart:io';");
       helpers.writeln('String? _qConfigRaw(String envName, String path) {\n'
@@ -592,6 +596,16 @@ class DartEmitter {
     );
   }
 
+  void _markProtected(String visibility) {
+    if (visibility != 'protected') return;
+    if (model.protectWithMeta) {
+      _useProtected = true;
+      line('@protected');
+    } else {
+      line('/// protected');
+    }
+  }
+
   void emitFunction(FunctionDeclaration node) {
     _span = node.span;
     final symbol = model.declarations[node]!;
@@ -620,7 +634,7 @@ class DartEmitter {
     for (final note in node.annotations) {
       _emitMetadata(note);
     }
-    if (node.visibility == 'protected') line('/// protected');
+    _markProtected(node.visibility);
     final title = node.isOperator ? 'operator ${node.name}' : symbol.dartName;
     final staticPrefix = node.isStatic ? 'static ' : '';
     final checks = _intersectionChecks(node);
@@ -887,7 +901,7 @@ class DartEmitter {
         line('$kind ${_dartType(declared)} ${field.name}$initial;');
         continue;
       }
-      if (field.visibility == 'protected') line('/// protected');
+      _markProtected(field.visibility);
       final modifier = field.mutable ? '' : 'final ';
       final initializedByConstructor = node.constructors.isEmpty ||
           node.constructors.any((constructor) => constructor.parameters.any(
@@ -1091,7 +1105,7 @@ class DartEmitter {
     final dart = node.visibility == 'private' && !node.name.startsWith('_')
         ? '_${node.name}'
         : node.name;
-    if (node.visibility == 'protected') line('/// protected');
+    _markProtected(node.visibility);
     if (node.getter != null) {
       line('${_dartType(node.type)} get $dart => ${expression(node.getter!)};');
     } else if (node.getterBody != null) {

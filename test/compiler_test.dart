@@ -426,6 +426,171 @@ main():
     final loose = compile('use package:example\nmain():\n  print 1\n');
     expect(loose.dart, contains("import 'package:example';"));
   });
+
+  test('declare adds a function and define adds a field', () async {
+    await execute('''
+@macro
+class Helpers:
+  greet(name: String) -> String = "Hi {name}"
+  declare(library: Library, builder: Builder):
+    builder.addFunction(greet)
+@macro
+class Extra:
+  tag: String = "ok"
+  define(builder: Builder):
+    builder.addField(tag)
+@Helpers
+@Extra
+class Box:
+  value: int = 1
+main():
+  print greet("Ada")
+  print Box().tag
+''', 'Hi Ada\nok\n');
+  });
+
+  test('define copies a property and a constructor', () async {
+    await execute('''
+@macro
+class Labels:
+  property title: String:
+    get = "Ada"
+  define(builder: Builder):
+    builder.addProperty(title)
+@macro
+class Marked:
+  init():
+    print "made"
+  define(builder: Builder):
+    builder.addConstructor(init)
+@Labels
+@Marked
+class Box:
+  noop() -> int = 1
+main():
+  item = Box()
+  print item.title
+''', 'made\nAda\n');
+  });
+
+  test('a generic call method accepts named arguments', () async {
+    await execute('''
+class Adder<T>:
+  call(a: T, b: T) -> T = a
+main():
+  add = Adder<int>()
+  print add(b: 2, a: 1)
+''', '1\n');
+  });
+
+  test('protected uses the meta annotation when that package is a dependency',
+      () {
+    final root = Directory.systemTemp.createTempSync('quds-meta-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  meta: ^1.0.0
+''');
+    final source = '''
+class Box:
+  protected shown: int = 1
+main():
+  print Box().shown
+''';
+    File('${root.path}/box.quds').writeAsStringSync(source);
+    final marked = compile(source, file: '${root.path}/box.quds').dart;
+    expect(marked, contains('@protected'));
+    expect(marked, contains("import 'package:meta/meta.dart';"));
+    final plain = compile(source).dart;
+    expect(plain, contains('/// protected'));
+  });
+
+  test('migrate leaves a project pinned to an older language', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-migrate-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final yaml = File('${directory.path}/quds.yaml')
+      ..writeAsStringSync('language: "1.0"\n');
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync('main():\n  print 1\n');
+    final migrated = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      'bin/quds.dart',
+      'migrate',
+      yaml.path,
+    ]);
+    expect(migrated.exitCode, 0,
+        reason: '${migrated.stdout}\n${migrated.stderr}');
+    expect(yaml.readAsStringSync(), 'language: "1.0"\n');
+    expect(source.readAsStringSync(), 'main():\n  print 1\n');
+    expect(migrated.stdout, contains('1.0'));
+  });
+
+  test('lsp and debug answer definition, rename, and breakpoints', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-lsp-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    const source = 'main():\n  value = 1\n  print value\n';
+    final file = File('${directory.path}/app.quds')..writeAsStringSync(source);
+    final uri = Uri.file(file.path).toString();
+    final line = source.split('\n')[2];
+    final character = line.indexOf('value');
+    final definition = respondLsp({
+      'jsonrpc': '2.0',
+      'id': 2,
+      'method': 'textDocument/definition',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {'line': 2, 'character': character},
+      },
+    });
+    final range = (definition!['result'] as Map)['range'] as Map;
+    expect((range['start'] as Map)['line'], 1);
+    final renamed = respondLsp({
+      'jsonrpc': '2.0',
+      'id': 3,
+      'method': 'textDocument/rename',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {'line': 2, 'character': character},
+        'newName': 'total',
+      },
+    });
+    final changes =
+        ((renamed!['result'] as Map)['changes'] as Map)[uri] as List;
+    expect((changes.single as Map)['newText'], contains('total = 1'));
+    expect((changes.single as Map)['newText'], contains('print total'));
+    final stopped = respondDebug({
+      'jsonrpc': '2.0',
+      'id': 4,
+      'method': 'setBreakpoints',
+      'params': {
+        'source': {'path': file.path},
+        'breakpoints': [
+          {'line': 3}
+        ],
+      },
+    });
+    final breakpoints = (stopped!['result'] as Map)['breakpoints'] as List;
+    expect((breakpoints.single as Map)['verified'], isTrue);
+    expect((breakpoints.single as Map)['line'], 3);
+    final process = await Process.start(Platform.resolvedExecutable, [
+      'run',
+      'bin/quds.dart',
+      'lsp',
+    ]);
+    addTearDown(() => process.kill());
+    process.stdin.write(encodeFrame({
+      'jsonrpc': '2.0',
+      'id': 1,
+      'method': 'initialize',
+      'params': <String, Object?>{},
+    }));
+    await process.stdin.close();
+    final output = await process.stdout.transform(utf8.decoder).join();
+    expect(output, contains('definitionProvider'));
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

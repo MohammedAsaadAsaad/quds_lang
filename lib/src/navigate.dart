@@ -53,6 +53,20 @@ String renameAt(
   return result;
 }
 
+/// The smallest statement that starts on [line].
+SourceSpan? breakpointOnLine(Compilation compilation, int line) {
+  Statement? hit;
+  var best = 1 << 30;
+  walkAst(compilation.program, (node) {
+    if (node is! Statement || node.span.line != line) return;
+    if (node.span.length < best) {
+      best = node.span.length;
+      hit = node;
+    }
+  });
+  return hit?.span;
+}
+
 /// The statement span that contains [line] and [column].
 SourceSpan? breakpointAt(Compilation compilation, int line, int column) {
   Statement? hit;

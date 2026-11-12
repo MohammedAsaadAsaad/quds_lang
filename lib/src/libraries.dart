@@ -74,6 +74,16 @@ String? dartLibraryUri(String from, String uri) {
   return null;
 }
 
+/// True when the package that contains [file] depends on `package:meta`.
+bool packageDependsOnMeta(String file) {
+  final root = packageRoot(file);
+  if (root == null) return false;
+  final spec = File(_join(root.directory, 'pubspec.yaml'));
+  if (!spec.existsSync()) return false;
+  return RegExp(r'^[ \t]*meta[ \t]*:', multiLine: true)
+      .hasMatch(spec.readAsStringSync());
+}
+
 String _join(String root, String relative) {
   final separator = Platform.pathSeparator;
   final tail = relative.replaceAll('/', separator);

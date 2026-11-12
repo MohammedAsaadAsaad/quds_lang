@@ -40,6 +40,8 @@ Compilation compile(String source, {String file = '<input>'}) {
   }
   final semantics = Analyzer(library: library, file: sourcePath)
       .analyze(program, libraries: libraries);
+  semantics.protectWithMeta =
+      sourcePath != '<input>' && packageDependsOnMeta(sourcePath);
   final emitter = DartEmitter(semantics);
   final dart = emitter.emit(program);
   final generated = file.endsWith('.quds')

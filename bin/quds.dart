@@ -32,6 +32,10 @@ void main(List<String> arguments) {
       _doc(arguments);
     case 'migrate':
       _migrate(arguments);
+    case 'lsp':
+      _serve(respondLsp);
+    case 'debug':
+      _serve(respondDebug);
     default:
       _usage();
   }
@@ -375,14 +379,63 @@ void _migrate(List<String> arguments) {
   final file = File(path);
   if (!file.existsSync()) {
     file.writeAsStringSync('language: 1.2\n');
-  } else {
-    final source = file.readAsStringSync();
-    if (source.contains(RegExp(r'^language:', multiLine: true))) {
-      file.writeAsStringSync(source.replaceFirst(
-          RegExp(r'^language:.*$', multiLine: true), 'language: 1.2'));
-    } else {
-      file.writeAsStringSync('language: 1.2\n$source');
-    }
+    stdout.writeln('Migrated $path to language 1.2');
+    return;
+  }
+  final source = file.readAsStringSync();
+  final declared =
+      RegExp(r'^[ \t]*language:[ \t]*"?([^"\s#]+)"?', multiLine: true)
+          .firstMatch(source)
+          ?.group(1);
+  if (declared != null && declared != '1.2') {
+    stdout.writeln('Left $path on language $declared');
+    return;
+  }
+  if (declared == null) {
+    file.writeAsStringSync('language: 1.2\n$source');
   }
   stdout.writeln('Migrated $path to language 1.2');
+}
+
+Future<void> _serve(Map<String, dynamic>? Function(Map message) respond) async {
+  final buffer = <int>[];
+  await for (final chunk in stdin) {
+    buffer.addAll(chunk);
+    while (true) {
+      final headerEnd = _headerEnd(buffer);
+      if (headerEnd < 0) break;
+      final header = utf8.decode(buffer.sublist(0, headerEnd));
+      final match = RegExp(r'Content-Length: (\d+)').firstMatch(header);
+      if (match == null) {
+        stderr.writeln('Expected a Content-Length header');
+        exitCode = 64;
+        return;
+      }
+      final length = int.parse(match.group(1)!);
+      final start = headerEnd + 4;
+      if (buffer.length < start + length) break;
+      final body = utf8.decode(buffer.sublist(start, start + length));
+      buffer.removeRange(0, start + length);
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) continue;
+      final message = decoded
+          .map((key, value) => MapEntry(key.toString(), value as dynamic));
+      final response = respond(message);
+      if (response == null) continue;
+      stdout.write(encodeFrame(response));
+      await stdout.flush();
+    }
+  }
+}
+
+int _headerEnd(List<int> buffer) {
+  for (var i = 0; i + 3 < buffer.length; i++) {
+    if (buffer[i] == 13 &&
+        buffer[i + 1] == 10 &&
+        buffer[i + 2] == 13 &&
+        buffer[i + 3] == 10) {
+      return i;
+    }
+  }
+  return -1;
 }

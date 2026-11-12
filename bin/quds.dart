@@ -498,9 +498,7 @@ void _create(List<String> arguments) {
 }
 
 void _pub(String command, List<String> arguments) {
-  final args = command == 'get'
-      ? ['pub', 'get']
-      : ['pub', command, ...arguments.skip(1)];
+  final args = ['pub', command, ...arguments.skip(1)];
   if (command != 'get' && arguments.length < 2) {
     stderr.writeln('Usage: quds $command <package>');
     exitCode = 64;

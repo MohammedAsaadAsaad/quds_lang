@@ -1533,6 +1533,27 @@ main():
   row[0].n = 2
 ''': 'E307',
       '''
+main():
+  items: readonly List<int> = [1]
+  items.add(2)
+''': 'E307',
+      '''
+parse() -> Result<int, String> = Ok(1)
+main():
+  print parse()?
+''': 'E600',
+      '''
+parse() -> Result<int, String> = Ok(1)
+main() -> Result<int, int>:
+  value = parse()?
+  return Ok(value)
+''': 'E601',
+      '''
+read(p: Pointer<Int32>) -> int = 1
+main():
+  print 1
+''': 'E910',
+      '''
 twice() -> int = 2
 main():
   twice
@@ -1597,6 +1618,66 @@ main():
         return '$error'.contains(code);
       })), reason: source);
     });
+  });
+
+  test('collection methods mutate through an alias and Result ? nests',
+      () async {
+    await execute(
+        '''
+parse() -> Result<int, String> = Ok(3)
+addOne(n: int) -> int = n + 1
+calculate() -> Result<int, String>:
+  return Ok(addOne(parse()?))
+later() async -> Result<int, String>:
+  value = parse()?
+  return Ok(value)
+main() async:
+  var items = [1]
+  other = items
+  other.add(2)
+  print items.length
+  print items[1]
+  print items.contains(2)
+  print items.isEmpty
+  print "Ab".toUpperCase()
+  ages = map:
+    "Ada": 1
+  print ages.containsKey("Ada")
+  flags = set:
+    1
+  kept = flags.add(1)
+  added = flags.add(2)
+  print kept
+  print added
+  print flags.length
+  var last = 0
+  for n in [1, 2]:
+    read = () -> n
+    last = read()
+  print last
+  print calculate()
+  print await later()
+''',
+        '2\n2\ntrue\nfalse\nAB\ntrue\nfalse\ntrue\n2\n2\n'
+            "Instance of 'Ok<int, String>'\n"
+            "Instance of 'Ok<int, String>'\n");
+  });
+
+  test('fix-its name shadow and parentheses', () {
+    expect(
+        () => compile('''
+main():
+  found = "outer"
+  name: String? = "Ada"
+  if let found = name:
+    print found
+'''),
+        throwsA(predicate((error) =>
+            '$error'.contains('E203') && '$error'.contains('shadow'))));
+    expect(
+        () => compile('twice() -> int = 2\nmain():\n  twice\n'),
+        throwsA(predicate((error) =>
+            '$error'.contains('E110') && '$error'.contains('twice()'))));
   });
 
   test('logs filter and redact, and a task group skips an unentered child',

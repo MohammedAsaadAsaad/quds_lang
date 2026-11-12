@@ -178,6 +178,7 @@ class Analyzer {
   final _promoted = <String, String>{};
   final _fieldSymbols = <Symbol>{};
   var _readonlyMethod = false;
+  var _ffi = false;
   String? _doType;
   int _doDepth = 0;
   Never error(String code, String message, Node node) =>
@@ -1003,6 +1004,7 @@ class Analyzer {
       _bindPrelude(node);
       return;
     }
+    if (node.uri == 'dart:ffi') _ffi = true;
     if (node.uri.startsWith('dart:')) return;
     if (node.uri.startsWith('package:') || node.uri.startsWith('generated:')) {
       _bindPackage(node);
@@ -1479,6 +1481,11 @@ class Analyzer {
       return;
     }
     if (allowVoid && type == 'void') return;
+    if (_ffi && _ffiNative.contains(type)) return;
+    if (_ffi && type.startsWith('Pointer<') && type.endsWith('>')) {
+      validateType(type.substring(8, type.length - 1), node, allowVoid: false);
+      return;
+    }
     if (type.endsWith('?')) {
       validateType(type.substring(0, type.length - 1), node, allowVoid: false);
       return;
@@ -2417,6 +2424,7 @@ class Analyzer {
     from = model.resolve(from);
     to = model.resolve(to);
     if (from == to || from == '*' || to == 'dynamic') return true;
+    if (to == 'Object' && from != 'void') return true;
     if (to.contains(' & ')) {
       return to.split(' & ').every((part) => compatible(from, part.trim()));
     }
@@ -2975,6 +2983,13 @@ class Analyzer {
           node.nullAware || type.endsWith('?') ? '$substituted?' : substituted;
       return _readonlyView(raw, foundType);
     }
+    final builtin = _collectionGetter(base, node.name);
+    if (builtin != null) {
+      model.references[node] = Symbol(node.name, node.name, builtin);
+      final foundType =
+          node.nullAware || type.endsWith('?') ? '$builtin?' : builtin;
+      return _readonlyView(raw, foundType);
+    }
     fail('No member ${node.name} on $type', node);
   }
 
@@ -3317,21 +3332,27 @@ class Analyzer {
     final inner = type.substring(7, type.length - 1);
     final splitAt = inner.indexOf(',');
     final value = inner.substring(0, splitAt).trim();
-    final error = inner.substring(splitAt + 1).trim();
-    final returned = _returnType ?? '';
-    if (!returned.startsWith('Result<') &&
-        !returned.startsWith('Future<Result<')) {
-      fail('? requires the enclosing function to return Result', node);
+    final failure = inner.substring(splitAt + 1).trim();
+    final returned = _resultReturn(_returnType ?? '');
+    if (returned == null) {
+      error('E600', 'Postfix ? has no compatible Result function', node);
     }
-    if (returned.startsWith('Result<')) {
-      final expected = returned.substring(7, returned.length - 1);
-      final expectedError =
-          expected.substring(expected.indexOf(',') + 1).trim();
-      if (expectedError != error && expectedError != 'Object') {
-        fail('Result error $error is incompatible with $expectedError', node);
-      }
+    final expected = returned.substring(7, returned.length - 1);
+    final expectedError = expected.substring(expected.indexOf(',') + 1).trim();
+    if (expectedError != failure &&
+        expectedError != 'Object' &&
+        !compatible(failure, expectedError)) {
+      error('E601', 'A Result error type does not fit the function', node);
     }
     return value;
+  }
+
+  String? _resultReturn(String type) {
+    if (type.startsWith('Result<') && type.endsWith('>')) return type;
+    if (type.startsWith('Future<Result<') && type.endsWith('>')) {
+      return type.substring(7, type.length - 1);
+    }
+    return null;
   }
 
   void _requireBool(Expression condition, String message) {
@@ -3459,6 +3480,7 @@ class Analyzer {
     if (memberType.startsWith('List<') ||
         memberType.startsWith('Map<') ||
         memberType.startsWith('Set<') ||
+        memberType.startsWith('Iterable<') ||
         _global.symbols[_genericHead(memberType)]?.classDeclaration != null) {
       return 'readonly $memberType';
     }
@@ -3851,6 +3873,8 @@ class Analyzer {
             return found.isEmpty ? null : found.single;
           }();
       if (resolved == null) {
+        final builtin = _collectionCall(objectType, callee.name, node);
+        if (builtin != null) return builtin;
         fail('No method ${callee.name} on $objectType', callee);
       }
       if (function != null && declaration != null) {
@@ -4449,6 +4473,159 @@ class Analyzer {
       fail('Type argument $argument conflicts with $previous', function);
     }
     inferred[parameter] ??= argument;
+  }
+
+  static const _ffiNative = {
+    'Int8',
+    'Int16',
+    'Int32',
+    'Int64',
+    'Uint8',
+    'Uint16',
+    'Uint32',
+    'Uint64',
+    'Float',
+    'Double',
+    'Void',
+    'Abi',
+    'Pointer',
+  };
+
+  (String, Map<String, String>)? _collectionVars(String type) {
+    if (type.startsWith('List<') && type.endsWith('>')) {
+      return ('List', {'T': type.substring(5, type.length - 1)});
+    }
+    if (type.startsWith('Set<') && type.endsWith('>')) {
+      return ('Set', {'T': type.substring(4, type.length - 1)});
+    }
+    if (type.startsWith('Iterable<') && type.endsWith('>')) {
+      return ('Iterable', {'T': type.substring(9, type.length - 1)});
+    }
+    if (type.startsWith('Map<') && type.endsWith('>')) {
+      final parts = _splitTypes(type.substring(4, type.length - 1));
+      if (parts.length != 2) return null;
+      return ('Map', {'K': parts[0], 'V': parts[1]});
+    }
+    if (type == 'String') return ('String', const {});
+    return null;
+  }
+
+  String _subst(String pattern, Map<String, String> vars) {
+    final buffer = StringBuffer();
+    final name = RegExp(r'[A-Za-z_][A-Za-z0-9_]*');
+    var start = 0;
+    for (final match in name.allMatches(pattern)) {
+      buffer.write(pattern.substring(start, match.start));
+      final word = match.group(0)!;
+      buffer.write(vars[word] ?? word);
+      start = match.end;
+    }
+    buffer.write(pattern.substring(start));
+    return buffer.toString();
+  }
+
+  (List<(String, String)>, String)? _methodShape(String family, String name) {
+    return switch ((family, name)) {
+      ('List', 'add') => ([('value', 'T')], 'void'),
+      ('List', 'addAll') => ([('values', 'Iterable<T>')], 'void'),
+      ('List', 'insert') => ([('index', 'int'), ('value', 'T')], 'void'),
+      ('List', 'insertAll') => (
+          [('index', 'int'), ('values', 'Iterable<T>')],
+          'void'
+        ),
+      ('List', 'removeAt') => ([('index', 'int')], 'T'),
+      ('List', 'removeLast') => (<(String, String)>[], 'T'),
+      ('List', 'sort') => (<(String, String)>[], 'void'),
+      ('List', 'sublist') => ([('start', 'int')], 'List<T>'),
+      ('List', 'getRange') => (
+          [('start', 'int'), ('end', 'int')],
+          'Iterable<T>'
+        ),
+      ('List', 'indexOf') => ([('value', 'Object')], 'int'),
+      ('Set', 'add') => ([('value', 'T')], 'bool'),
+      ('Set', 'addAll') => ([('values', 'Iterable<T>')], 'void'),
+      ('Set' || 'List', 'remove') => ([('value', 'Object')], 'bool'),
+      ('Set' || 'List', 'clear') => (<(String, String)>[], 'void'),
+      ('Iterable', 'contains') => ([('value', 'Object')], 'bool'),
+      ('Iterable', 'elementAt') => ([('index', 'int')], 'T'),
+      ('Iterable', 'join') => (<(String, String)>[], 'String'),
+      ('Iterable', 'toList') => (<(String, String)>[], 'List<T>'),
+      ('Iterable', 'any' || 'every' || 'where') => (
+          [('test', '(T) -> bool')],
+          name == 'where' ? 'Iterable<T>' : 'bool'
+        ),
+      ('Iterable', 'forEach') => ([('action', '(T) -> void')], 'void'),
+      ('Map', 'containsKey') => ([('key', 'Object')], 'bool'),
+      ('Map', 'remove') => ([('key', 'Object')], 'V?'),
+      ('Map', 'clear') => (<(String, String)>[], 'void'),
+      ('Map', 'addAll') => ([('other', 'Map<K, V>')], 'void'),
+      ('Map', 'putIfAbsent') => ([('key', 'K'), ('ifAbsent', '() -> V')], 'V'),
+      ('Map', 'forEach') => ([('action', '(K, V) -> void')], 'void'),
+      ('String', 'contains' || 'startsWith' || 'endsWith') => (
+          [('other', 'String')],
+          'bool'
+        ),
+      ('String', 'substring') => ([('start', 'int')], 'String'),
+      ('String', 'toUpperCase' || 'toLowerCase' || 'trim') => (
+          <(String, String)>[],
+          'String'
+        ),
+      ('String', 'split') => ([('pattern', 'String')], 'List<String>'),
+      ('String', 'indexOf') => ([('pattern', 'String')], 'int'),
+      ('String', 'replaceAll') => (
+          [('from', 'String'), ('to', 'String')],
+          'String'
+        ),
+      _ => null,
+    };
+  }
+
+  String? _getterShape(String family, String name) {
+    return switch ((family, name)) {
+      ('Iterable' || 'List' || 'Set' || 'Map' || 'String', 'isEmpty') => 'bool',
+      ('Iterable' || 'List' || 'Set' || 'Map' || 'String', 'isNotEmpty') =>
+        'bool',
+      ('Iterable' || 'List' || 'Set', 'first' || 'last') => 'T',
+      ('List', 'reversed') => 'Iterable<T>',
+      ('Map', 'keys') => 'Iterable<K>',
+      ('Map', 'values') => 'Iterable<V>',
+      _ => null,
+    };
+  }
+
+  String? _collectionGetter(String type, String name) {
+    final found = _collectionVars(type);
+    if (found == null) return null;
+    final (family, vars) = found;
+    final shape = _getterShape(family, name) ??
+        ((family == 'List' || family == 'Set')
+            ? _getterShape('Iterable', name)
+            : null);
+    if (shape == null) return null;
+    return _subst(shape, vars);
+  }
+
+  String? _collectionCall(String type, String name, CallExpression node) {
+    final found = _collectionVars(type);
+    if (found == null) return null;
+    final (family, vars) = found;
+    final shape = _methodShape(family, name) ??
+        ((family == 'List' || family == 'Set')
+            ? _methodShape('Iterable', name)
+            : null);
+    if (shape == null) return null;
+    final parameters = [
+      for (final (parameter, parameterType) in shape.$1)
+        Parameter(parameter, _subst(parameterType, vars), false, node.span),
+    ];
+    final returns = _subst(shape.$2, vars);
+    final function =
+        FunctionDeclaration(name, parameters, returns, null, null, node.span);
+    final symbol = Symbol(name, name, returns).withFunction(function);
+    model.declarations[function] = symbol;
+    model.references[node.callee] = symbol;
+    applyArguments(node, parameters, function);
+    return returns;
   }
 
   static const _mutating = {

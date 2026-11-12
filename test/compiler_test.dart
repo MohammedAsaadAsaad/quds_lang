@@ -325,6 +325,13 @@ main():
     expect(mapped, contains('app.quds:'));
     expect(mapped, contains('other.dart:4:2'));
     expect(mapped, contains('app.dart:99:1'));
+    final asyncStack = '#0      main (file:///tmp/app.dart:$line:1)\n'
+        '<asynchronous suspension>\n'
+        '#1      _startIsolate.<anonymous closure> (file:///tmp/app.dart:$line:1)\n';
+    final asyncMapped = mapStack(asyncStack, map);
+    expect(asyncMapped, contains('app.quds:'));
+    expect(asyncMapped, contains('<asynchronous suspension>'));
+    expect(asyncMapped.split('app.quds:').length, 3);
     final script = encodeSourceMap(
         'app.dart.js', 'app.dart', [(1, const SourceSpan(3, 1, 1))]);
     final quds = encodeSourceMap(
@@ -821,6 +828,71 @@ main():
     final drifted = await cli(['benchmark', source.path]);
     expect(drifted.exitCode, 1);
     expect(drifted.stderr, contains('Debug/release output differs'));
+  });
+
+  test('dart:ffi types compile on the VM and stay off the web branch', () {
+    final native = compile('''
+use dart:ffi
+read(p: Pointer<Int32>) -> int = 1
+main():
+  print 1
+''');
+    expect(native.dart, contains("import 'dart:ffi';"));
+    expect(native.dart, contains('Pointer<Int32>'));
+    final web = compile('''
+use dart:ffi when platform == "web"
+main():
+  print 1
+''');
+    expect(web.dart, isNot(contains('dart:ffi')));
+  });
+
+  test('a Dart program calls generated Quds without the compiler', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-dart-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync('add(a: int, b: int) -> int = a + b\n');
+    final result = compile(source.readAsStringSync(), file: source.path);
+    expect(result.dart, isNot(contains('quds_lang')));
+    File('${directory.path}/app.dart').writeAsStringSync(result.dart);
+    File('${directory.path}/main.dart').writeAsStringSync('''
+import 'app.dart';
+void main() {
+  print(add(2, 3));
+}
+''');
+    final run = await Process.run(
+        Platform.resolvedExecutable, ['run', 'main.dart'],
+        workingDirectory: directory.path);
+    expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
+    expect(run.stdout, '5\n');
+  });
+
+  test('quds get writes a lockfile and reports a version conflict', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-pub-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    File('${directory.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+''');
+    final quds = File('bin/quds.dart').absolute.path;
+    Future<ProcessResult> cli(List<String> args) =>
+        Process.run(Platform.resolvedExecutable, ['run', quds, ...args],
+            workingDirectory: directory.path);
+    final got = await cli(['get']);
+    expect(got.exitCode, 0, reason: '${got.stdout}\n${got.stderr}');
+    expect(File('${directory.path}/pubspec.lock').existsSync(), isTrue);
+    File('${directory.path}/pubspec.yaml').writeAsStringSync('''
+name: demo
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  meta: '>=99.0.0 <99.0.0'
+''');
+    final conflict = await cli(['get', '--offline']);
+    expect(conflict.exitCode, isNot(0));
+    expect('${conflict.stdout}\n${conflict.stderr}', contains('meta'));
   });
 }
 

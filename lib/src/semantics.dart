@@ -58,6 +58,7 @@ class SemanticModel {
   final references = <Node, Symbol>{};
   final declarations = <Node, Symbol>{};
   final assignments = <Binding>{};
+  final rebinding = <Pattern>{};
   final types = <Expression, String>{};
 
   /// Parameter order expressed as indices into source-order arguments.
@@ -132,6 +133,7 @@ class Analyzer {
   final _checked = <FunctionDeclaration>{};
   final _checking = <FunctionDeclaration>{};
   final _typeNames = <String>{};
+  final _pendingClasses = <String>{};
   final _typeBounds = <String, String>{};
   FunctionDeclaration? _function;
   String? _returnType;
@@ -200,6 +202,7 @@ class Analyzer {
       if (statement is AliasDeclaration) {
         model.aliases[statement.name] = statement.target;
       }
+      if (statement is ClassDeclaration) _pendingClasses.add(statement.name);
     }
     _bindParts(program);
     final functions = <FunctionDeclaration>[];
@@ -299,6 +302,7 @@ class Analyzer {
       final mismatched = model.parts.firstWhere((part) => part.of);
       error('E903', 'part of does not match the library', mismatched);
     }
+    _checkSingletonCycles();
     final main = _global.symbols['main']?.function;
     if (main != null &&
         (main.parameters.isNotEmpty ||
@@ -547,6 +551,111 @@ class Analyzer {
       if (onType != null && !_satisfiesOn(type, onType)) {
         error('E702', 'mixin $name requires $onType', type);
       }
+    }
+    _checkMixinChain(type);
+  }
+
+  void _checkMixinChain(ClassDeclaration type) {
+    if (type.mixins.isEmpty) return;
+    final members = <String, (List<String>, String, String)>{};
+    void add(String owner, String name, List<String> parameters, String returns,
+        bool fromMixin) {
+      final previous = members[name];
+      if (fromMixin &&
+          previous != null &&
+          !_overrideFits(previous.$1, previous.$2, parameters, returns)) {
+        error('E300', '$owner.$name does not override ${previous.$3}.$name',
+            type);
+      }
+      members[name] = (parameters, returns, owner);
+    }
+
+    void take(ClassDeclaration source, bool fromMixin) {
+      for (final field in source.fields) {
+        if (field.isStatic) continue;
+        add(source.name, field.name, const [], field.type, fromMixin);
+      }
+      for (final method in source.methods) {
+        if (method.isStatic || method.isOperator) continue;
+        final returns =
+            model.declarations[method]?.type ?? method.returnType ?? 'void';
+        add(
+            source.name,
+            method.name,
+            [for (final parameter in method.parameters) parameter.type],
+            returns,
+            fromMixin);
+      }
+    }
+
+    var parentName = type.superclass;
+    final parents = <ClassDeclaration>[];
+    while (parentName != null) {
+      final parent = _global.symbols[parentName]?.classDeclaration;
+      if (parent == null) break;
+      parents.add(parent);
+      parentName = parent.superclass;
+    }
+    for (final parent in parents.reversed) {
+      take(parent, false);
+    }
+    for (final name in type.mixins) {
+      final mixin = _global.symbols[name]?.classDeclaration;
+      if (mixin != null) take(mixin, true);
+    }
+  }
+
+  bool _overrideFits(List<String> baseParameters, String baseReturns,
+      List<String> nextParameters, String nextReturns) {
+    if (baseParameters.length != nextParameters.length) return false;
+    if (baseReturns == '<infer>' || nextReturns == '<infer>') return true;
+    if (baseReturns == 'void' || nextReturns == 'void') {
+      if (baseReturns != nextReturns) return false;
+    } else if (!compatible(nextReturns, baseReturns)) {
+      return false;
+    }
+    for (var i = 0; i < baseParameters.length; i++) {
+      if (!compatible(baseParameters[i], nextParameters[i])) return false;
+    }
+    return true;
+  }
+
+  void _checkSingletonCycles() {
+    final nodes = <String, ClassDeclaration>{};
+    final edges = <String, Set<String>>{};
+    for (final type in model.classes.values) {
+      if (!type.modifiers.contains('singleton')) continue;
+      nodes[type.name] = type;
+      final refs = <String>{};
+      for (final field in type.fields) {
+        final initial = field.initializer;
+        if (initial == null) continue;
+        walkAst(initial, (node) {
+          if (node is MemberAccess &&
+              node.name == 'instance' &&
+              node.object is Identifier) {
+            refs.add((node.object as Identifier).name);
+          }
+        });
+      }
+      edges[type.name] = refs;
+    }
+    final state = <String, int>{};
+    void visit(String name) {
+      final mark = state[name] ?? 0;
+      if (mark == 1) {
+        error('E707', 'Singleton initialization cycles', nodes[name]!);
+      }
+      if (mark != 0) return;
+      state[name] = 1;
+      for (final next in edges[name] ?? const <String>{}) {
+        if (nodes.containsKey(next)) visit(next);
+      }
+      state[name] = 2;
+    }
+
+    for (final name in nodes.keys) {
+      visit(name);
     }
   }
 
@@ -1430,7 +1539,8 @@ class Analyzer {
       return;
     }
     if (_global.symbols[type]?.classDeclaration != null ||
-        _global.symbols[type]?.classCase != null) {
+        _global.symbols[type]?.classCase != null ||
+        _pendingClasses.contains(type)) {
       return;
     }
     final open = type.indexOf('<');
@@ -2192,21 +2302,26 @@ class Analyzer {
           model.references[pattern] = existing!;
           return;
         }
-        if (declare) {
-          if (_scope.lookup(pattern.name) != null &&
-              !_scope.symbols.containsKey(pattern.name)) {
-            fail(
-                'Binding would shadow ${pattern.name}; use shadow in an inner scope',
-                pattern);
+        if (declare &&
+            existing != null &&
+            _scope.symbols.containsKey(pattern.name)) {
+          if (existing.readonly || !existing.mutable) {
+            error('E202', 'An immutable binding is assigned', pattern);
           }
-          final symbol = create(pattern.name, type);
-          _scope.symbols[pattern.name] = symbol;
-          model.declarations[pattern] = symbol;
-        } else {
-          final symbol = create(pattern.name, type);
-          _scope.symbols[pattern.name] = symbol;
-          model.declarations[pattern] = symbol;
+          model.declarations[pattern] = existing;
+          model.rebinding.add(pattern);
+          return;
         }
+        if (declare &&
+            existing != null &&
+            !_scope.symbols.containsKey(pattern.name)) {
+          fail(
+              'Binding would shadow ${pattern.name}; use shadow in an inner scope',
+              pattern);
+        }
+        final symbol = create(pattern.name, type);
+        _scope.symbols[pattern.name] = symbol;
+        model.declarations[pattern] = symbol;
       case LiteralPattern():
         expression(pattern.literal);
       case ListPattern():
@@ -2219,11 +2334,7 @@ class Analyzer {
         if (pattern.typeName.isEmpty &&
             type.startsWith('(') &&
             type.endsWith(')')) {
-          final parts = type
-              .substring(1, type.length - 1)
-              .split(',')
-              .map((part) => part.trim())
-              .toList();
+          final parts = _splitTypes(type.substring(1, type.length - 1));
           for (var i = 0; i < pattern.fields.length; i++) {
             bindPattern(pattern.fields[i], i < parts.length ? parts[i] : type,
                 declare: declare);
@@ -3007,7 +3118,15 @@ class Analyzer {
   }
 
   String mapLiteral(MapExpression node) {
-    if (node.keys.isEmpty) fail('Empty maps require a type annotation', node);
+    if (node.keys.isEmpty) {
+      final expected = _expected;
+      if (expected != null &&
+          expected.startsWith('Map<') &&
+          expected.endsWith('>')) {
+        return expected;
+      }
+      error('E302', 'Empty maps require a type annotation', node);
+    }
     String? key;
     String? value;
     void unify(String nextKey, String nextValue, Node at) {
@@ -3107,8 +3226,15 @@ class Analyzer {
   }
 
   String setLiteral(SetExpression node) {
-    if (node.elements.isEmpty)
-      fail('Empty sets require a type annotation', node);
+    if (node.elements.isEmpty) {
+      final expected = _expected;
+      if (expected != null &&
+          expected.startsWith('Set<') &&
+          expected.endsWith('>')) {
+        return expected;
+      }
+      error('E302', 'Empty sets require a type annotation', node);
+    }
     var type = elementTypeOf(node.elements.first, aware(node.nullAware, 0));
     for (var i = 1; i < node.elements.length; i++) {
       final next = elementTypeOf(node.elements[i], aware(node.nullAware, i));

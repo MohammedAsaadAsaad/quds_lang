@@ -491,6 +491,111 @@ main() async:
 ''', '321\n32\n0\n3\ntrue\n5\nAda\nBea\n4\n2\n0\n');
   });
 
+  test('mixins, singletons, empty collections, and generators execute',
+      () async {
+    await execute('''
+mixin A:
+  name() -> String = "a"
+mixin B:
+  name() -> String = "b"
+class Chosen with A, B:
+  ready: int = 1
+singleton class Cache:
+  var hits: int = 0
+  add() -> int:
+    hits = hits + 1
+    return hits
+read() -> int = Cache.instance.hits
+tick(note: String) -> int:
+  print note
+  return 1
+call(a: int, b: int = a + tick("d")) -> int = b
+count() sync* -> int:
+  try:
+    yield 1
+  finally:
+    yield 2
+more() sync* -> int:
+  yield* count()
+boom() async* -> int:
+  yield 7
+  var ready = true
+  if ready:
+    throw "bad"
+  yield 0
+main() async:
+  print Chosen(ready: 1).name()
+  print Cache.instance.add()
+  print Cache.instance.add()
+  print await isolate:
+    read()
+  emptyMap: Map<String, int> = map:
+  print emptyMap.length
+  emptySet: Set<int> = set:
+  print emptySet.length
+  key = "a"
+  ages = map:
+    key: 1
+    key: 2
+  print ages[key]
+  var text = ""
+  for n in more():
+    text = text + "{n}"
+  print text
+  try:
+    await for n in boom():
+      print n
+  catch error:
+    print error
+  print call(2)
+  print call(a: tick("a"), b: tick("b"))
+  var left = 1
+  var right = 2
+  (left, right) = (right, left)
+  print left
+  print right
+  var n = 0
+  next() -> int:
+    n = n + 1
+    return n
+  var x = 0
+  var y = 0
+  (x, y) = (next(), next())
+  print x
+  print y
+  var p = 0
+  var q = 0
+  var r = 0
+  (p, (q, r)) = (1, (2, 3))
+  print p
+  print q
+  print r
+''', '''
+b
+1
+2
+0
+0
+0
+2
+12
+7
+bad
+d
+3
+a
+b
+1
+2
+1
+1
+2
+1
+2
+3
+''');
+  });
+
   test('batch, watch disposal, and computed cycles execute', () async {
     await execute('''
 main():
@@ -1143,6 +1248,24 @@ class Cat with Walkable:
 main():
   print "no"
 ''': 'E702',
+      '''
+mixin A:
+  name() -> String = "a"
+mixin B:
+  name() -> int = 1
+class C with A, B:
+  ready: int = 1
+main():
+  print 1
+''': 'E300',
+      '''
+singleton class A:
+  other: B = B.instance
+singleton class B:
+  other: A = A.instance
+main():
+  print 1
+''': 'E707',
       'bad(...values: int, extra: int) -> int = extra\nmain():\n  print bad(1)\n':
           'E503',
       '''
@@ -1257,6 +1380,16 @@ main():
       '''
 main():
   items = []
+''': 'E302',
+      '''
+main():
+  empty = map:
+  print 1
+''': 'E302',
+      '''
+main():
+  empty = set:
+  print 1
 ''': 'E302',
       '''
 interface Named:

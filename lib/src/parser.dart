@@ -516,6 +516,11 @@ class Parser {
   Expression collectionLiteral(String kind, SourceSpan span) {
     expect(TokenKind.colon, ':');
     endLine();
+    if (!at(TokenKind.indent)) {
+      return kind == 'set'
+          ? SetExpression(const [], extent(span))
+          : MapExpression(const [], const [], extent(span));
+    }
     expect(TokenKind.indent, 'collection literal');
     if (kind == 'set') {
       final elements = <Expression>[];

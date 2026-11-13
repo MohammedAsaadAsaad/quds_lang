@@ -250,8 +250,13 @@ unchanged by the map.
 - `async` / `await`. An async `main` returns `Future<void>`.
 - `@macro` classes whose `define` body only calls `builder.addMethod`.
 - `quds run`, `analyze`, `test`, `format`, `create`, `add`, `remove`, `get`,
-  `doc`, and `migrate`, in addition to `build`. A thrown error from `quds run`
-  is printed on the `.quds` line. The generated `.dart` line is not shown.
+  `doc`, `migrate`, `help`, `doctor`, and `install`, in addition to `build`.
+  `quds help` lists the commands. `quds doctor` checks Dart, Flutter, and the
+  editors it finds. `quds install` activates the command and prepares VS Code
+  and its relatives, JetBrains highlighting including Android Studio, and
+  Claude Code when that program is present. A thrown error from `quds run`
+  is printed on the `.quds` line. The
+  generated `.dart` line is not shown.
 - `do` / `result`. `result` finishes the `do`. `return` inside `do` leaves the
   function. `E106` outside `do`, `E109` when a value `do` has no `result`.
 - `readonly` on one reference. Assignment and a mutating method name are

@@ -88,6 +88,24 @@ their commands are on `PATH`. Otherwise it copies the extension into
 `~/.vscode/extensions` and `~/.cursor/extensions`. Open a new terminal and
 reload the editor afterward.
 
+Once `quds` itself is on `PATH`, the same editor step on Linux, macOS, and
+Windows is:
+
+```sh
+quds install
+quds doctor
+quds help
+```
+
+`quds install` activates the `quds` command and adds its bin directory to
+the user `PATH`. It then installs the extension into VS Code, Cursor, and
+other editors from that family that are present, including VSCodium, Windsurf,
+Positron, Trae, Kiro, and Antigravity IDE. Android Studio and the other
+JetBrains IDEs receive the Quds grammar for highlighting. Claude Code receives
+a user skill and a language-server plugin when it is installed. A directory
+the user cannot write prompts for administrator permission. `quds doctor`
+reports Dart, Flutter, and those editors. `quds help` lists every command.
+
 ## Editor
 
 [`editors/vscode`](editors/vscode) highlights `.quds` files, formats the open

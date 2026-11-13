@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:quds_lang/quds_lang.dart';
 import 'package:quds_lang/src/flutter_project.dart';
+import 'package:quds_lang/src/toolchain.dart';
 
 Future<void> main(List<String> arguments) async {
   if (arguments.isEmpty) {
@@ -35,6 +37,14 @@ Future<void> main(List<String> arguments) async {
       _migrate(arguments);
     case 'benchmark':
       _benchmark(arguments);
+    case 'help':
+    case '--help':
+    case '-h':
+      _help(arguments);
+    case 'doctor':
+      await _doctor(arguments);
+    case 'install':
+      await _install(arguments);
     case 'lsp':
       final session = LspSession();
       _serve(session.handle);
@@ -63,10 +73,337 @@ String _atQuds(Object? text, String? sourceMap, String generatedName) {
 }
 
 void _usage() {
-  stderr.writeln(
-      'Usage: quds <build|run|analyze|test|format|create|add|remove|get|doc|migrate|benchmark> ...');
-  stderr.writeln('       quds create flutter <name>');
+  stderr.writeln('Usage: quds <command> ...');
+  stderr.writeln('Run `quds help` for the command list.');
   exitCode = 64;
+}
+
+void _help(List<String> arguments) {
+  if ((arguments.first == 'help' && arguments.length > 2) ||
+      (arguments.first != 'help' && arguments.length != 1)) {
+    stderr.writeln('Usage: quds help [command]');
+    exitCode = 64;
+    return;
+  }
+  final topic =
+      arguments.first == 'help' && arguments.length == 2 ? arguments[1] : null;
+  final text = _helpText(topic);
+  if (text == null) {
+    stderr.writeln('Unknown command: $topic');
+    stderr.writeln('Run `quds help` for the command list.');
+    exitCode = 64;
+    return;
+  }
+  stdout.write(text);
+}
+
+String? _helpText(String? topic) {
+  const entries = <String, String>{
+    'build': 'quds build [--watch] <input.quds>\n'
+        '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n',
+    'run': 'quds run <input.quds>\n'
+        '    Compile and run. A Flutter package is launched with flutter run.\n',
+    'analyze': 'quds analyze <input.quds>\n'
+        '    Compile and run dart analyze on the generated Dart.\n',
+    'test': 'quds test <input.quds>\n'
+        '    Run the test declarations in the file.\n',
+    'format': 'quds format <input.quds>\n'
+        '    Rewrite the file with the Quds formatter.\n',
+    'create': 'quds create <name>\n'
+        '    Create a directory containing a Quds program.\n'
+        'quds create flutter <name>\n'
+        '    Create a Flutter app whose program is lib/main.quds.\n',
+    'add': 'quds add <package>\n    Forward to dart pub add.\n',
+    'remove': 'quds remove <package>\n    Forward to dart pub remove.\n',
+    'get': 'quds get\n    Forward to dart pub get.\n',
+    'doc': 'quds doc <input.quds>\n'
+        '    Print /// documentation.\n'
+        'quds doc test <input.quds>\n'
+        '    Check documentation examples.\n'
+        'quds doc html <input.quds> <output.html>\n'
+        '    Write the documentation as HTML.\n',
+    'migrate': 'quds migrate [quds.yaml]\n'
+        '    Write language: 1.2. A file that names another version is left unchanged.\n',
+    'benchmark': 'quds benchmark <input.quds> [--baseline <microseconds>]\n'
+        '    Run debug and release, require the same output, and print the elapsed time.\n',
+    'lsp': 'quds lsp\n'
+        '    Serve the language protocol on standard input and output.\n',
+    'debug': 'quds debug <input.quds>\n'
+        '    Proxy the debug adapter. A Flutter package uses flutter debug-adapter.\n',
+    'help': 'quds help [command]\n'
+        '    Show every command, or the usage of one command.\n',
+    'doctor': 'quds doctor\n'
+        '    Check Dart, the quds command, Flutter, and the editors on this machine.\n',
+    'install': 'quds install\n'
+        '    Activate the quds command and prepare it for the editors on this machine.\n',
+  };
+  if (topic == null) {
+    final buffer = StringBuffer('Quds commands\n\n');
+    for (final entry in entries.values) {
+      buffer.writeln(entry.trimRight());
+      buffer.writeln();
+    }
+    return buffer.toString();
+  }
+  return entries[topic];
+}
+
+Future<void> _doctor(List<String> arguments) async {
+  if (arguments.length != 1) {
+    stderr.writeln('Usage: quds doctor');
+    exitCode = 64;
+    return;
+  }
+  final root = await _compilerRoot();
+  final version = root == null ? '' : _pubspecVersion(root);
+  stdout.writeln(version.isEmpty ? 'Quds CLI' : 'Quds CLI $version');
+  final lines = <String>[_dartCheck()];
+  final quds = commandOnPath('quds');
+  if (quds == null) {
+    lines.add(
+        '[note] quds is not on PATH. Add ${pubBin(homeDirectory())} to PATH.');
+  } else {
+    lines.add('[ok] quds ($quds)');
+  }
+  final flutter = commandOnPath('flutter');
+  lines.add(flutter == null
+      ? '[note] Flutter was not found. Flutter apps need Flutter.'
+      : _flutterLine(flutter));
+  lines.addAll(editorReport());
+  for (final line in lines) {
+    stdout.writeln(line);
+  }
+  if (lines.any((line) => line.startsWith('[missing]'))) exitCode = 1;
+}
+
+String _dartCheck() {
+  final executable = Platform.resolvedExecutable;
+  try {
+    final reported = Process.runSync(executable, ['--version']);
+    final raw = '${reported.stdout}${reported.stderr}';
+    final match = RegExp(r'(\d+)\.(\d+)\.(\d+)').firstMatch(raw);
+    if (match == null) {
+      return '[missing] Dart version was not recognized ($executable).';
+    }
+    final major = int.parse(match.group(1)!);
+    final minor = int.parse(match.group(2)!);
+    final patch = int.parse(match.group(3)!);
+    final supported = major == 3 && (minor > 3 || (minor == 3 && patch >= 0));
+    if (!supported) {
+      return '[missing] Dart ${match.group(0)} is outside >=3.3.0 <4.0.0.';
+    }
+    return '[ok] Dart ${match.group(0)} ($executable)';
+  } on ProcessException catch (error) {
+    return '[missing] Dart did not run: ${error.message}';
+  }
+}
+
+String _flutterLine(String executable) {
+  try {
+    final result = Process.runSync(executable, ['--version']);
+    final text = '${result.stdout}'.trim();
+    final line = (text.isEmpty ? '${result.stderr}' : text).trim();
+    final first = line.split('\n').first.trim();
+    if (result.exitCode != 0 || first.isEmpty) {
+      return '[note] Flutter at $executable did not report a version.';
+    }
+    return '[ok] $first ($executable)';
+  } on ProcessException catch (error) {
+    return '[note] Flutter at $executable did not run: ${error.message}';
+  }
+}
+
+Future<void> _install(List<String> arguments) async {
+  if (arguments.length != 1) {
+    stderr.writeln('Usage: quds install');
+    exitCode = 64;
+    return;
+  }
+  final root = await _compilerRoot();
+  if (root == null) {
+    stderr.writeln('The quds_lang package root was not found.');
+    exitCode = 1;
+    return;
+  }
+  final source = Directory(
+      '${root.path}${Platform.pathSeparator}editors${Platform.pathSeparator}vscode');
+  for (final name in _extensionFiles) {
+    if (!_extensionFile(source, name).existsSync()) {
+      stderr.writeln('The editor extension is missing ${name}.');
+      exitCode = 1;
+      return;
+    }
+  }
+  final package =
+      jsonDecode(_extensionFile(source, 'package.json').readAsStringSync());
+  if (package is! Map) {
+    stderr.writeln('editors/vscode/package.json is not an object.');
+    exitCode = 1;
+    return;
+  }
+  final id = '${package['publisher']}.${package['name']}-${package['version']}';
+  exitCode = await installToolchain(
+    packageRoot: root,
+    extensionSource: source,
+    extensionId: id,
+    extensionFiles: _extensionFiles,
+    vsixBytes: () => _vsixBytes(source, package),
+  );
+}
+
+const _extensionFiles = [
+  'package.json',
+  'extension.js',
+  'language-configuration.json',
+  'README.md',
+  'syntaxes/quds.tmLanguage.json',
+  'icons/quds.png',
+];
+
+Future<Directory?> _compilerRoot() async {
+  final uri = await Isolate.resolvePackageUri(
+      Uri.parse('package:quds_lang/quds_lang.dart'));
+  if (uri == null) return null;
+  return File.fromUri(uri).parent.parent;
+}
+
+String _pubspecVersion(Directory root) {
+  final pubspec = File('${root.path}${Platform.pathSeparator}pubspec.yaml');
+  if (!pubspec.existsSync()) return '';
+  return RegExp(r'^version:\s*(\S+)', multiLine: true)
+          .firstMatch(pubspec.readAsStringSync())
+          ?.group(1) ??
+      '';
+}
+
+File _extensionFile(Directory source, String name) {
+  return File([source.path, ...name.split('/')].join(Platform.pathSeparator));
+}
+
+List<int> _vsixBytes(Directory source, Map<dynamic, dynamic> package) {
+  String xml(Object? value) => '$value'
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;');
+  final manifest = '''
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011">
+  <Metadata>
+    <Identity Language="en-US" Id="${xml(package['name'])}" Version="${xml(package['version'])}" Publisher="${xml(package['publisher'])}"/>
+    <DisplayName>${xml(package['displayName'])}</DisplayName>
+    <Description xml:space="preserve">${xml(package['description'])}</Description>
+  </Metadata>
+  <Installation>
+    <InstallationTarget Id="Microsoft.VisualStudio.Code"/>
+  </Installation>
+  <Dependencies/>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/>
+  </Assets>
+</PackageManifest>
+''';
+  const types = '''
+<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension=".json" ContentType="application/json"/>
+  <Default Extension=".js" ContentType="application/javascript"/>
+  <Default Extension=".md" ContentType="text/markdown"/>
+  <Default Extension=".png" ContentType="image/png"/>
+  <Default Extension=".vsixmanifest" ContentType="text/xml"/>
+</Types>
+''';
+  final files = <String, List<int>>{
+    '[Content_Types].xml': utf8.encode(types),
+    'extension.vsixmanifest': utf8.encode(manifest),
+    for (final name in _extensionFiles)
+      'extension/$name': _extensionFile(source, name).readAsBytesSync(),
+  };
+  return _storeZip(files);
+}
+
+List<int> _storeZip(Map<String, List<int>> files) {
+  final local = BytesBuilder();
+  final central = BytesBuilder();
+  var offset = 0;
+  for (final entry in files.entries) {
+    final name = utf8.encode(entry.key.replaceAll('\\', '/'));
+    final data = entry.value;
+    final crc = _crc32(data);
+    final header = BytesBuilder();
+    _add32(header, 0x04034b50);
+    _add16(header, 20);
+    _add16(header, 0);
+    _add16(header, 0);
+    _add16(header, 0);
+    _add16(header, 0);
+    _add32(header, crc);
+    _add32(header, data.length);
+    _add32(header, data.length);
+    _add16(header, name.length);
+    _add16(header, 0);
+    header.add(name);
+    final headerBytes = header.toBytes();
+    local.add(headerBytes);
+    local.add(data);
+    final directory = BytesBuilder();
+    _add32(directory, 0x02014b50);
+    _add16(directory, 20);
+    _add16(directory, 20);
+    _add16(directory, 0);
+    _add16(directory, 0);
+    _add16(directory, 0);
+    _add16(directory, 0);
+    _add32(directory, crc);
+    _add32(directory, data.length);
+    _add32(directory, data.length);
+    _add16(directory, name.length);
+    _add16(directory, 0);
+    _add16(directory, 0);
+    _add16(directory, 0);
+    _add16(directory, 0);
+    _add32(directory, 0);
+    _add32(directory, offset);
+    directory.add(name);
+    central.add(directory.toBytes());
+    offset += headerBytes.length + data.length;
+  }
+  final localBytes = local.toBytes();
+  final centralBytes = central.toBytes();
+  final end = BytesBuilder();
+  _add32(end, 0x06054b50);
+  _add16(end, 0);
+  _add16(end, 0);
+  _add16(end, files.length);
+  _add16(end, files.length);
+  _add32(end, centralBytes.length);
+  _add32(end, localBytes.length);
+  _add16(end, 0);
+  return [...localBytes, ...centralBytes, ...end.toBytes()];
+}
+
+int _crc32(List<int> bytes) {
+  var crc = 0xffffffff;
+  for (final byte in bytes) {
+    crc ^= byte;
+    for (var bit = 0; bit < 8; bit++) {
+      final mix = (crc & 1) == 1 ? 0xedb88320 : 0;
+      crc = (crc >> 1) ^ mix;
+    }
+  }
+  return (crc ^ 0xffffffff) & 0xffffffff;
+}
+
+void _add16(BytesBuilder out, int value) {
+  out.addByte(value & 0xff);
+  out.addByte((value >> 8) & 0xff);
+}
+
+void _add32(BytesBuilder out, int value) {
+  out.addByte(value & 0xff);
+  out.addByte((value >> 8) & 0xff);
+  out.addByte((value >> 16) & 0xff);
+  out.addByte((value >> 24) & 0xff);
 }
 
 void _requireQuds(List<String> arguments) {

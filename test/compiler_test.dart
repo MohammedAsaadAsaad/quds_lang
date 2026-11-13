@@ -1986,6 +1986,136 @@ main():
         isTrue);
   });
 
+  test('quds help, doctor, and install cover the toolchain', () async {
+    Future<ProcessResult> cli(List<String> args, {Map<String, String>? env}) {
+      return Process.run(
+          Platform.resolvedExecutable, ['run', 'bin/quds.dart', ...args],
+          environment: env);
+    }
+
+    final help = await cli(['help']);
+    expect(help.exitCode, 0, reason: '${help.stderr}');
+    for (final command in [
+      'build',
+      'run',
+      'analyze',
+      'test',
+      'format',
+      'create',
+      'add',
+      'remove',
+      'get',
+      'doc',
+      'migrate',
+      'benchmark',
+      'lsp',
+      'debug',
+      'help',
+      'doctor',
+      'install',
+    ]) {
+      expect(help.stdout, contains('quds $command'));
+    }
+    expect(help.stdout, contains('quds create flutter <name>'));
+    expect((await cli(['help', 'build'])).stdout,
+        contains('quds build [--watch] <input.quds>'));
+    expect((await cli(['--help'])).exitCode, 0);
+    expect((await cli(['help', 'nope'])).exitCode, 64);
+    final bare = await cli([]);
+    expect(bare.exitCode, 64);
+    expect(bare.stderr, contains('quds help'));
+
+    final home = Directory.systemTemp.createTempSync('quds-doctor-');
+    final bin = Directory.systemTemp.createTempSync('quds-editor-bin-');
+    addTearDown(() => home.deleteSync(recursive: true));
+    addTearDown(() => bin.deleteSync(recursive: true));
+    final root = Directory.systemTemp.createTempSync('quds-root-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final env = {
+      'HOME': home.path,
+      'USERPROFILE': home.path,
+      'PATH': bin.path,
+      'LANG': Platform.environment['LANG'] ?? 'C.UTF-8',
+      'QUDS_INSTALL_OFFLINE': '1',
+      'QUDS_INSTALL_ROOT': root.path,
+    };
+    final doctor = await cli(['doctor'], env: env);
+    expect(doctor.exitCode, 0, reason: '${doctor.stdout}\n${doctor.stderr}');
+    expect(doctor.stdout, contains('Quds CLI'));
+    expect(doctor.stdout, contains('[ok] Dart'));
+    expect(doctor.stdout, contains('quds is not on PATH'));
+    expect(doctor.stdout, contains('Flutter was not found'));
+    expect(doctor.stdout, contains('VS Code extension was not found'));
+    expect(doctor.stdout, contains('Cursor extension was not found'));
+    expect((await cli(['doctor', 'extra'], env: env)).exitCode, 64);
+    Directory('${home.path}/.config/Google/AndroidStudio2025.1.1')
+        .createSync(recursive: true);
+    Directory('${home.path}/.claude').createSync(recursive: true);
+    Directory('${home.path}/.windsurf').createSync(recursive: true);
+
+    final copied = await cli(['install'], env: env);
+    expect(copied.exitCode, 0, reason: '${copied.stdout}\n${copied.stderr}');
+    final package =
+        jsonDecode(File('editors/vscode/package.json').readAsStringSync())
+            as Map<String, Object?>;
+    final id =
+        '${package['publisher']}.${package['name']}-${package['version']}';
+    final extension = File('${home.path}/.vscode/extensions/$id/package.json');
+    expect(extension.existsSync(), isTrue);
+    expect(
+        File('${home.path}/.cursor/extensions/$id/extension.js').existsSync(),
+        isTrue);
+    expect(copied.stdout, contains('Extension id: $id'));
+    expect(File('${home.path}/.bashrc').readAsStringSync(),
+        contains('# Quds language CLI'));
+    expect(
+        File('${home.path}/.windsurf/extensions/$id/package.json').existsSync(),
+        isTrue);
+    final textmate = File(
+        '${home.path}/.config/Google/AndroidStudio2025.1.1/options/textmate.xml');
+    expect(textmate.readAsStringSync(),
+        contains('.quds${Platform.pathSeparator}editor'));
+    expect(textmate.readAsStringSync(), contains('"enabled":true'));
+    expect(File('${home.path}/.claude/skills/quds/SKILL.md').readAsStringSync(),
+        contains('quds build'));
+    expect(
+        File('${home.path}/.quds/claude-marketplace/plugins/quds/.lsp.json')
+            .readAsStringSync(),
+        contains('lsp'));
+    final after = await cli(['doctor'], env: env);
+    expect(after.exitCode, 0, reason: '${after.stdout}\n${after.stderr}');
+    expect(after.stdout, contains('[ok] VS Code extension $id'));
+    expect(after.stdout, contains('[ok] Cursor extension $id'));
+
+    final code = File('${bin.path}/code')..writeAsStringSync('''#!/bin/sh
+printf '%s\\n' "\$@" > "\$HOME/code-args"
+for arg in "\$@"; do
+  case "\$arg" in
+    *.vsix) /bin/cp "\$arg" "\$HOME/ext.vsix" ;;
+  esac
+done
+exit 0
+''');
+    final chmod = Process.runSync('chmod', ['+x', code.path]);
+    expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+    final installed = await cli(['install'], env: env);
+    expect(installed.exitCode, 0,
+        reason: '${installed.stdout}\n${installed.stderr}');
+    expect(
+        installed.stdout, contains('Installed the Quds extension with code.'));
+    final args = File('${home.path}/code-args').readAsStringSync();
+    expect(args, contains('--install-extension'));
+    expect(args, contains('--force'));
+    final listing = Process.runSync('python3', [
+      '-c',
+      'import sys, zipfile; print(zipfile.ZipFile(sys.argv[1]).read("extension/package.json").decode())',
+      '${home.path}/ext.vsix',
+    ]);
+    expect(listing.exitCode, 0, reason: '${listing.stdout}\n${listing.stderr}');
+    expect(listing.stdout, contains('"name": "quds"'));
+    expect((await cli(['install', 'extra'], env: env)).exitCode, 64);
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
   test('format keeps comments, documentation, and multiline strings', () async {
     final directory = Directory.systemTemp.createTempSync('quds-format-');
     addTearDown(() => directory.deleteSync(recursive: true));

@@ -101,7 +101,13 @@ function activate(context) {
         if (!spec) {
           throw new Error('Quds could not find dart or the quds command.');
         }
-        return new vscode.DebugAdapterExecutable(spec.command[0], spec.command.slice(1), {
+        const windowsScript = process.platform === 'win32' &&
+          /\.(bat|cmd)$/i.test(spec.command[0]);
+        const executable = windowsScript ? 'cmd.exe' : spec.command[0];
+        const args = windowsScript
+          ? ['/c', ...spec.command]
+          : spec.command.slice(1);
+        return new vscode.DebugAdapterExecutable(executable, args, {
           cwd: spec.cwd,
           env: spec.env,
         });
@@ -173,36 +179,73 @@ function serverCommand(documentPath) {
   return { command: [quds || 'quds', 'lsp'], cwd: undefined, env: process.env };
 }
 
-function resolveDart() {
-  const home = process.env.HOME || '';
-  const flutterRoot = process.env.FLUTTER_ROOT || '';
-  const candidates = [];
-  for (const dir of (process.env.PATH || '').split(':')) {
-    if (dir) candidates.push(path.join(dir, 'dart'));
+function pathSeparator() {
+  return process.platform === 'win32' ? ';' : ':';
+}
+
+function pathDirs() {
+  return (process.env.PATH || '').split(pathSeparator()).filter(Boolean);
+}
+
+function homeDir() {
+  if (process.platform === 'win32') {
+    return process.env.USERPROFILE || process.env.HOME || '';
   }
-  candidates.push(
-    flutterRoot ? path.join(flutterRoot, 'bin', 'dart') : '',
-    path.join(home, 'development', 'flutter', 'bin', 'dart'),
-    path.join(home, 'flutter', 'bin', 'dart'),
-    path.join(home, 'snap', 'flutter', 'common', 'flutter', 'bin', 'dart'),
-    '/usr/lib/dart/bin/dart',
-    '/usr/bin/dart',
-  );
-  for (const candidate of candidates) {
-    if (candidate && fs.existsSync(candidate)) return candidate;
+  return process.env.HOME || process.env.USERPROFILE || '';
+}
+
+function pubCacheBin() {
+  if (process.env.PUB_CACHE) return path.join(process.env.PUB_CACHE, 'bin');
+  if (process.platform === 'win32') {
+    const local = process.env.LOCALAPPDATA ||
+      (homeDir() ? path.join(homeDir(), 'AppData', 'Local') : '');
+    return local ? path.join(local, 'Pub', 'Cache', 'bin') : '';
+  }
+  const home = homeDir();
+  return home ? path.join(home, '.pub-cache', 'bin') : '';
+}
+
+function namedExecutable(dir, name) {
+  const names = process.platform === 'win32'
+    ? [`${name}.exe`, `${name}.bat`, `${name}.cmd`, name]
+    : [name];
+  for (const file of names) {
+    const candidate = path.join(dir, file);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function resolveDart() {
+  for (const dir of pathDirs()) {
+    const found = namedExecutable(dir, 'dart');
+    if (found) return found;
+  }
+  const home = homeDir();
+  const flutterRoot = process.env.FLUTTER_ROOT || '';
+  const extras = [
+    flutterRoot ? path.join(flutterRoot, 'bin') : '',
+    home ? path.join(home, 'development', 'flutter', 'bin') : '',
+    home ? path.join(home, 'flutter', 'bin') : '',
+    home ? path.join(home, 'snap', 'flutter', 'common', 'flutter', 'bin') : '',
+    '/usr/lib/dart/bin',
+    '/usr/bin',
+  ];
+  for (const dir of extras) {
+    if (!dir) continue;
+    const found = namedExecutable(dir, 'dart');
+    if (found) return found;
   }
   return null;
 }
 
 function resolveQuds() {
-  for (const dir of (process.env.PATH || '').split(':')) {
-    if (!dir) continue;
-    const candidate = path.join(dir, 'quds');
-    if (fs.existsSync(candidate)) return candidate;
+  for (const dir of pathDirs()) {
+    const found = namedExecutable(dir, 'quds');
+    if (found) return found;
   }
-  const home = process.env.HOME || '';
-  const pub = path.join(home, '.pub-cache', 'bin', 'quds');
-  return fs.existsSync(pub) ? pub : null;
+  const pub = pubCacheBin();
+  return pub ? namedExecutable(pub, 'quds') : null;
 }
 
 function packageRoot(start) {
@@ -224,11 +267,15 @@ function packageRoot(start) {
 }
 
 function toolEnv(dart) {
-  const home = process.env.HOME || '';
-  const prefix = [path.dirname(dart), path.join(home, '.pub-cache', 'bin')]
-    .filter(Boolean)
-    .join(':');
-  return { ...process.env, PATH: `${prefix}:${process.env.PATH || ''}` };
+  const sep = pathSeparator();
+  const prefix = [path.dirname(dart), pubCacheBin()].filter(Boolean).join(sep);
+  const current = process.env.PATH || '';
+  return { ...process.env, PATH: current ? `${prefix}${sep}${current}` : prefix };
+}
+
+function spawnCommand(command, options) {
+  const script = process.platform === 'win32' && /\.(bat|cmd)$/i.test(command[0]);
+  return spawn(command[0], command.slice(1), script ? { ...options, shell: true } : options);
 }
 
 function quote(value) {
@@ -254,7 +301,7 @@ function launchSpec(file, verb) {
 
 function execSpec(spec) {
   return new Promise((resolve) => {
-    const child = spawn(spec.command[0], spec.command.slice(1), {
+    const child = spawnCommand(spec.command, {
       cwd: spec.cwd,
       env: spec.env,
     });
@@ -414,7 +461,7 @@ class QudsClient {
     const { command, cwd, env } = serverCommand(sample && sample.uri.fsPath);
     this.output.appendLine(`Starting ${command.join(' ')}`);
     this.buffer = Buffer.alloc(0);
-    const child = spawn(command[0], command.slice(1), {
+    const child = spawnCommand(command, {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

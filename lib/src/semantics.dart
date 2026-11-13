@@ -87,6 +87,12 @@ class _Scope {
   Symbol? lookup(String name) => symbols[name] ?? parent?.lookup(name);
 }
 
+class _LoopFrame {
+  _LoopFrame(this.value);
+  final bool value;
+  String? breakType;
+}
+
 class SemanticModel {
   final references = <Node, Symbol>{};
   final declarations = <Node, Symbol>{};
@@ -1970,9 +1976,57 @@ class Analyzer {
   bool returns(List<Statement> body) {
     for (final statement in body) {
       if (statement is ReturnStatement) return true;
+      if (statement is GuardedStatement &&
+          statement.alternate != null &&
+          statement.statement is ReturnStatement) {
+        return true;
+      }
       if (statement is IfStatement &&
           returns(statement.thenBody) &&
-          returns(statement.elseBody)) return true;
+          returns(statement.elseBody)) {
+        return true;
+      }
+      if (statement is ForStatement &&
+          !_mentionsBreak(statement.body) &&
+          returns(statement.elseBody)) {
+        return true;
+      }
+      if (statement is WhileStatement &&
+          !_mentionsBreak(statement.body) &&
+          returns(statement.elseBody)) {
+        return true;
+      }
+      if (statement is RepeatStatement &&
+          !_mentionsBreak(statement.body) &&
+          returns(statement.elseBody)) {
+        return true;
+      }
+      if (statement is CForStatement &&
+          !_mentionsBreak(statement.body) &&
+          returns(statement.elseBody)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _mentionsBreak(List<Statement> body) {
+    for (final statement in body) {
+      switch (statement) {
+        case BreakStatement():
+          return true;
+        case IfStatement():
+          if (_mentionsBreak(statement.thenBody) ||
+              _mentionsBreak(statement.elseBody)) {
+            return true;
+          }
+        case GuardedStatement():
+          if (statement.statement is BreakStatement) return true;
+        case LabelStatement():
+          if (_mentionsBreak([statement.statement])) return true;
+        default:
+          break;
+      }
     }
     return false;
   }
@@ -2124,6 +2178,8 @@ class Analyzer {
         _withPromotions(_promotions(node.condition, whenTrue: false),
             () => statements(node.elseBody, nested: true));
       case ForStatement():
+        final asValue = _armValueLoop;
+        _armValueLoop = false;
         final type = expression(node.iterable);
         if (node.step != null) {
           if (!_rangeIterable(node.iterable)) {
@@ -2170,16 +2226,109 @@ class Analyzer {
           _scope.symbols[node.index!] = index;
           if (pair != null) model.loopPairs.add(node);
         }
+        final frame = _LoopFrame(asValue);
+        _loops.add(frame);
         _loopDepth++;
         statements(node.body);
         _loopDepth--;
+        _loops.removeLast();
+        if (asValue) _valueBreakType = frame.breakType;
         _scope = saved;
+        if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
       case WhileStatement():
+        final asValue = _armValueLoop;
+        _armValueLoop = false;
+        if (node.letName != null) {
+          final frame = _LoopFrame(asValue);
+          _loops.add(frame);
+          _loopDepth++;
+          _withLet(node.letName!, node.condition, node, () {
+            statements(node.body, nested: true);
+          });
+          _loopDepth--;
+          _loops.removeLast();
+          if (asValue) _valueBreakType = frame.breakType;
+          if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
+          break;
+        }
+        if (node.pattern != null) {
+          final frame = _LoopFrame(asValue);
+          _loops.add(frame);
+          _loopDepth++;
+          _withPattern(node.condition, node.pattern!, () {
+            statements(node.body, nested: true);
+          });
+          _loopDepth--;
+          _loops.removeLast();
+          if (asValue) _valueBreakType = frame.breakType;
+          if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
+          break;
+        }
         _requireBool(node.condition, 'while condition must be bool');
+        final frame = _LoopFrame(asValue);
+        _loops.add(frame);
         _loopDepth++;
         _withPromotions(_promotions(node.condition, whenTrue: true),
             () => statements(node.body, nested: true));
         _loopDepth--;
+        _loops.removeLast();
+        if (asValue) _valueBreakType = frame.breakType;
+        if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
+      case GuardedStatement():
+        final elseType =
+            node.alternate == null ? null : expression(node.alternate!);
+        if (node.alternate != null && _slot(node.statement) == null) {
+          fail('else needs a value', node.alternate!);
+        }
+        final outer = _scope;
+        if (node.letName != null) {
+          _withLet(node.letName!, node.condition, node, () {
+            check(node.statement);
+            if (node.alternate != null) _liftExcept(outer, {node.letName!});
+          });
+        } else if (node.pattern != null) {
+          _withPattern(node.condition, node.pattern!, () {
+            check(node.statement);
+            if (node.alternate != null) {
+              _liftExcept(outer, _patternNames(node.pattern!));
+            }
+          });
+        } else {
+          _requireBool(node.condition, 'if condition must be bool');
+          _withPromotions(_promotions(node.condition, whenTrue: true),
+              () => check(node.statement));
+        }
+        if (elseType != null) _joinGuarded(node, elseType);
+      case ParallelAssignment():
+        if (node.targets.isEmpty)
+          fail('Parallel assignment needs a name', node);
+        if (node.values.length == 1) {
+          final type = expression(node.values.single);
+          if (!type.startsWith('(') ||
+              !type.endsWith(')') ||
+              type.contains('->')) {
+            fail('Parallel assignment needs a record', node.values.single);
+          }
+          final parts = _splitTypes(type.substring(1, type.length - 1));
+          if (parts.length != node.targets.length) {
+            fail('Record has ${parts.length} fields', node.values.single);
+          }
+          _assignPattern = true;
+          for (var i = 0; i < node.targets.length; i++) {
+            bindPattern(node.targets[i], parts[i], declare: true);
+          }
+          _assignPattern = false;
+          break;
+        }
+        if (node.values.length != node.targets.length) {
+          fail('Parallel assignment needs ${node.targets.length} values', node);
+        }
+        final types = [for (final value in node.values) expression(value)];
+        _assignPattern = true;
+        for (var i = 0; i < node.targets.length; i++) {
+          bindPattern(node.targets[i], types[i], declare: true);
+        }
+        _assignPattern = false;
       case BreakStatement():
       case ContinueStatement():
         final label = node is BreakStatement
@@ -2192,6 +2341,22 @@ class Analyzer {
         }
         if (label != null && !_labels.contains(label)) {
           fail('Unknown label: $label', node);
+        }
+        if (node is BreakStatement && node.value != null) {
+          if (_loops.isEmpty || !_loops.last.value) {
+            fail('break has a value outside a value loop', node);
+          }
+          final type = expression(node.value!);
+          if (type == 'void') fail('break needs a value', node.value!);
+          final frame = _loops.last;
+          frame.breakType = frame.breakType == null
+              ? type
+              : joinTypes(frame.breakType!, type, node.value!);
+        } else if (node is BreakStatement &&
+            label == null &&
+            _loops.isNotEmpty &&
+            _loops.last.value) {
+          fail('A value loop needs a break value', node);
         }
       case LabelStatement():
         if (node.statement is! ForStatement &&
@@ -2220,7 +2385,12 @@ class Analyzer {
             node.arms.map((arm) => arm.guard));
       case DestructureStatement():
         final type = expression(node.value);
+        if (_refutable(node.pattern)) {
+          error('E100', 'A refutable pattern cannot be assigned', node.pattern);
+        }
+        _assignPattern = true;
         bindPattern(node.pattern, type, declare: true);
+        _assignPattern = false;
       case ReturnStatement():
         if (_function == null && _returnType != '<infer>') {
           fail('return is only valid inside a function', node);
@@ -2255,6 +2425,8 @@ class Analyzer {
         }
         _doType = type;
       case CForStatement():
+        final asValue = _armValueLoop;
+        _armValueLoop = false;
         final savedFor = _scope;
         _scope = _Scope(savedFor);
         check(node.init);
@@ -2267,10 +2439,15 @@ class Analyzer {
           }
           expression(step);
         }
+        final frame = _LoopFrame(asValue);
+        _loops.add(frame);
         _loopDepth++;
         statements(node.body);
         _loopDepth--;
+        _loops.removeLast();
+        if (asValue) _valueBreakType = frame.breakType;
         _scope = savedFor;
+        if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
       case TryStatement():
         statements(node.body, nested: true);
         for (final clause in node.catches) {
@@ -2303,6 +2480,9 @@ class Analyzer {
           error('E107', 'rethrow is only valid inside catch', node);
         }
       case YieldStatement():
+        if (_loops.any((frame) => frame.value)) {
+          fail('yield is not valid in a value loop', node);
+        }
         if (_function == null || _function!.generator.isEmpty) {
           error('E804', 'yield is only valid inside a generator', node);
         }
@@ -2327,22 +2507,34 @@ class Analyzer {
           fail('yield type $yielded is incompatible with $_returnType', node);
         }
       case RepeatStatement():
+        final asValue = _armValueLoop;
+        _armValueLoop = false;
         if (node.body.isEmpty) fail('repeat needs a body', node);
         if (node.count != null) {
           if (expression(node.count!) != 'int') {
             fail('repeat count must be int', node.count!);
           }
+          final frame = _LoopFrame(asValue);
+          _loops.add(frame);
           _loopDepth++;
           statements(node.body, nested: true);
           _loopDepth--;
+          _loops.removeLast();
+          if (asValue) _valueBreakType = frame.breakType;
+          if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
           break;
         }
+        final frame = _LoopFrame(asValue);
+        _loops.add(frame);
         _loopDepth++;
         statements(node.body, nested: true);
         _loopDepth--;
+        _loops.removeLast();
+        if (asValue) _valueBreakType = frame.breakType;
         if (expression(node.condition!) != 'bool') {
           fail('repeat condition must be bool', node.condition!);
         }
+        if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
       case TestDeclaration():
         model.declarations[node] = create(node.title, 'void');
         statements(node.body, nested: true);
@@ -2661,7 +2853,17 @@ class Analyzer {
 
   final _labels = <String>[];
   var _loopDepth = 0;
+
+  /// True for the next loop, which is the body of a [LoopExpression].
+  var _armValueLoop = false;
+
+  /// The break type of the value loop that just finished.
+  String? _valueBreakType;
+  final _loops = <_LoopFrame>[];
   var _catchDepth = 0;
+
+  /// True while a pattern on the left of `=` is binding its names.
+  var _assignPattern = false;
 
   String elementType(String type, Node node) {
     if (type.startsWith('List<') && type.endsWith('>')) {
@@ -2683,45 +2885,121 @@ class Analyzer {
     fail('for-in requires a List, Set, range, iterable, or String', node);
   }
 
+  void _bindPatternName(String name, String type, Pattern node,
+      {required bool declare, required bool shadow}) {
+    final existing = _scope.lookup(name);
+    if (shadow) {
+      if (existing == null || _scope.symbols.containsKey(name)) {
+        fail('shadow requires a binding in an outer scope', node);
+      }
+    } else if (declare &&
+        existing != null &&
+        (_scope.symbols.containsKey(name) || _assignPattern)) {
+      if (existing.readonly || !existing.mutable) {
+        error('E202', 'An immutable binding is assigned', node);
+      }
+      if (!compatible(type, existing.type)) {
+        fail('Cannot assign $type to ${existing.type}', node);
+      }
+      model.declarations[node] = existing;
+      model.rebinding.add(node);
+      return;
+    } else if (declare && existing != null) {
+      fail('Binding would shadow $name; use shadow in an inner scope', node);
+    }
+    final symbol = create(name, type);
+    _scope.symbols[name] = symbol;
+    model.declarations[node] = symbol;
+  }
+
+  bool _refutable(Pattern pattern) => switch (pattern) {
+        WildcardPattern() || BindingPattern() || RestPattern() => false,
+        LiteralPattern() ||
+        RelationalPattern() ||
+        TypedPattern() ||
+        OrPattern() ||
+        NullCheckPattern() ||
+        NullAssertPattern() =>
+          true,
+        AndPattern(:final left, :final right) =>
+          _refutable(left) || _refutable(right),
+        CastPattern(:final inner) => _refutable(inner),
+        ListPattern(:final elements) => elements.any(_refutable),
+        MapPattern(:final values) => values.any(_refutable),
+        ConstructorPattern(:final typeName, :final fields) =>
+          typeName.isNotEmpty || fields.any(_refutable),
+      };
+
+  void _withLet(
+      String name, Expression value, Node owner, void Function() body) {
+    if (_scope.lookup(name) != null) {
+      fail('Binding would shadow $name; use shadow in an inner scope', owner);
+    }
+    final raw = expression(value);
+    if (!raw.endsWith('?') && raw != 'Null') {
+      fail('let requires a nullable value', value);
+    }
+    final saved = _scope;
+    _scope = _Scope(saved);
+    final bound = create(name, unwrap(raw));
+    _scope.symbols[name] = bound;
+    model.declarations[owner] = bound;
+    body();
+    _scope = saved;
+  }
+
+  void _withPattern(
+      Expression scrutinee, Pattern pattern, void Function() body) {
+    final matched = expression(scrutinee);
+    final saved = _scope;
+    _scope = _Scope(saved);
+    bindPattern(pattern, matched, declare: true);
+    final facts = <String, String>{};
+    if (scrutinee is Identifier && pattern is TypedPattern) {
+      facts[scrutinee.name] = pattern.type;
+    }
+    _withPromotions(facts, body);
+    _scope = saved;
+  }
+
   void bindPattern(Pattern pattern, String type, {bool declare = false}) {
     switch (pattern) {
       case WildcardPattern():
         return;
       case TypedPattern():
         if (pattern.name != null) {
-          final symbol = create(pattern.name!, pattern.type);
-          _scope.symbols[pattern.name!] = symbol;
-          model.declarations[pattern] = symbol;
+          if (declare) {
+            _bindPatternName(pattern.name!, pattern.type, pattern,
+                declare: true, shadow: pattern.shadow);
+          } else {
+            final symbol = create(pattern.name!, pattern.type);
+            _scope.symbols[pattern.name!] = symbol;
+            model.declarations[pattern] = symbol;
+          }
         }
       case BindingPattern():
         final existing = _scope.lookup(pattern.name);
-        if (existing?.classCase != null) {
+        if (existing?.classCase != null ||
+            (existing != null &&
+                (existing.name == 'Ok' || existing.name == 'Error') &&
+                existing.parameterTypes.isNotEmpty &&
+                !pattern.shadow)) {
           model.references[pattern] = existing!;
           return;
         }
-        if (declare &&
-            existing != null &&
-            _scope.symbols.containsKey(pattern.name)) {
-          if (existing.readonly || !existing.mutable) {
-            error('E202', 'An immutable binding is assigned', pattern);
-          }
-          model.declarations[pattern] = existing;
-          model.rebinding.add(pattern);
-          return;
-        }
-        if (declare &&
-            existing != null &&
-            !_scope.symbols.containsKey(pattern.name)) {
-          fail(
-              'Binding would shadow ${pattern.name}; use shadow in an inner scope',
-              pattern);
-        }
-        final symbol = create(pattern.name, type);
-        _scope.symbols[pattern.name] = symbol;
-        model.declarations[pattern] = symbol;
+        _bindPatternName(pattern.name, type, pattern,
+            declare: declare, shadow: pattern.shadow);
       case LiteralPattern():
         expression(pattern.literal);
       case ListPattern():
+        if (_assignPattern) {
+          if (!type.startsWith('List<') || !type.endsWith('>')) {
+            fail('A list pattern requires a List', pattern);
+          }
+          if (pattern.elements.whereType<RestPattern>().length > 1) {
+            fail('A list pattern has one rest', pattern);
+          }
+        }
         final element = elementType(type, pattern);
         for (final item in pattern.elements) {
           bindPattern(item, item is RestPattern ? type : element,
@@ -2777,9 +3055,8 @@ class Analyzer {
         }
       case RestPattern():
         if (pattern.name != null) {
-          final symbol = create(pattern.name!, type);
-          _scope.symbols[pattern.name!] = symbol;
-          model.declarations[pattern] = symbol;
+          _bindPatternName(pattern.name!, type, pattern,
+              declare: declare, shadow: pattern.shadow);
         }
       case OrPattern():
         bindPattern(pattern.left, type, declare: declare);
@@ -4158,6 +4435,8 @@ class Analyzer {
       IfExpression() => ifExpression(node),
       MatchExpression() => matchExpression(node),
       TryExpression() => tryExpression(node),
+      LoopExpression() => loopExpression(node),
+      WhereExpression() => whereExpression(node),
       ThisExpression() => thisExpression(node),
       TypeApplication() => typeApplication(node),
       AwaitAllExpression() => awaitAll(node),
@@ -6236,6 +6515,133 @@ class Analyzer {
       }
       warn('W001', 'match does not cover every case', node);
     }
+  }
+
+  Expression? _slot(Statement statement) => switch (statement) {
+        ReturnStatement(:final value) => value,
+        Binding(:final value) => value,
+        MemberAssignment(:final value) => value,
+        ThrowStatement(:final value) => value,
+        YieldStatement(:final value) => value,
+        ResultStatement(:final value) => value,
+        ExpressionStatement(:final expression) => _callSlot(expression),
+        _ => null,
+      };
+
+  Expression? _callSlot(Expression expression) {
+    if (expression is! CallExpression || expression.arguments.length != 1) {
+      return null;
+    }
+    final argument = expression.arguments.single;
+    if (argument.name != null || argument.value is SpreadElement) return null;
+    return argument.value;
+  }
+
+  void _liftExcept(_Scope outer, Set<String> local) {
+    for (final entry in _scope.symbols.entries) {
+      if (local.contains(entry.key)) continue;
+      outer.symbols[entry.key] = entry.value;
+    }
+  }
+
+  Set<String> _patternNames(Pattern pattern) {
+    final names = <String>{};
+    void walk(Pattern node) {
+      switch (node) {
+        case BindingPattern():
+          names.add(node.name);
+        case TypedPattern():
+          if (node.name != null) names.add(node.name!);
+        case RestPattern():
+          if (node.name != null) names.add(node.name!);
+        case ListPattern():
+          for (final element in node.elements) {
+            walk(element);
+          }
+        case ConstructorPattern():
+          for (final field in node.fields) {
+            walk(field);
+          }
+        case MapPattern():
+          for (final value in node.values) {
+            walk(value);
+          }
+        case OrPattern():
+          walk(node.left);
+          walk(node.right);
+        case AndPattern():
+          walk(node.left);
+          walk(node.right);
+        case CastPattern(:final inner):
+        case NullCheckPattern(:final inner):
+        case NullAssertPattern(:final inner):
+          walk(inner);
+        default:
+          break;
+      }
+    }
+
+    walk(pattern);
+    return names;
+  }
+
+  void _joinGuarded(GuardedStatement node, String elseType) {
+    final slot = _slot(node.statement);
+    final slotType = slot == null ? null : model.types[slot];
+    if (slot == null || slotType == null) {
+      fail('else needs a value', node.alternate!);
+    }
+    final joined = joinTypes(slotType, elseType, node.alternate!);
+    if (node.statement case Binding binding) {
+      if (binding.mode == BindingMode.constant) {
+        fail('A const binding cannot use else', node.alternate!);
+      }
+      final declared = model.declarations[binding];
+      if (declared != null) declared.type = joined;
+      final existing = model.references[binding];
+      if (existing != null && !compatible(elseType, existing.type)) {
+        fail('Cannot assign $elseType to ${existing.type}', node.alternate!);
+      }
+    }
+    if (node.statement is ReturnStatement &&
+        _returnType != null &&
+        _returnType != '<infer>' &&
+        !compatible(elseType, _returnType!)) {
+      fail('Return type $elseType is incompatible with $_returnType',
+          node.alternate!);
+    }
+  }
+
+  String _nullable(String type) {
+    if (type == 'Null' || type.endsWith('?')) return type;
+    return '$type?';
+  }
+
+  String loopExpression(LoopExpression node) {
+    _armValueLoop = true;
+    _valueBreakType = null;
+    check(node.loop);
+    final breakType = _valueBreakType;
+    if (breakType == null) fail('A value loop needs a break value', node);
+    final fallback = node.fallback;
+    if (fallback == null) return _nullable(breakType);
+    final elseType = expression(fallback);
+    if (elseType == 'Null') return _nullable(breakType);
+    if (elseType == breakType || elseType == '$breakType?') return elseType;
+    if (breakType == '$elseType?') return breakType;
+    return joinTypes(breakType, elseType, fallback);
+  }
+
+  String whereExpression(WhereExpression node) {
+    if (node.bindings.isEmpty) fail('where needs a binding', node);
+    final saved = _scope;
+    _scope = _Scope(saved);
+    for (final binding in node.bindings) {
+      check(binding);
+    }
+    final type = expression(node.value);
+    _scope = saved;
+    return type;
   }
 
   String ifExpression(IfExpression node) {

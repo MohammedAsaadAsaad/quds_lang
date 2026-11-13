@@ -8,6 +8,13 @@ class _ConfigGroup {
   ConfigDeclaration? leaf;
 }
 
+class _LoopEmit {
+  _LoopEmit(this.hit, this.label, this.braced);
+  final String? hit;
+  final String? label;
+  final bool braced;
+}
+
 class DartEmitter {
   DartEmitter(this.model);
   final SemanticModel model;
@@ -17,6 +24,7 @@ class DartEmitter {
   final _topLevelConsts = <String>{};
   final _usedNames = <String>{};
   var _useBoolHelper = false;
+  var _usePresent = false;
   var _useRange = false;
   var _useNumRange = false;
   var _useAt = false;
@@ -29,6 +37,10 @@ class DartEmitter {
   var _useConversion = false;
   var _useReturn = false;
   var _inDo = false;
+  final _emitLoops = <_LoopEmit>[];
+  String? _pendingLabel;
+  Expression? _replace;
+  Expression? _replaceWith;
   String? _matched;
   StringBuffer? _redirect;
   final _unions = <String>{};
@@ -731,6 +743,10 @@ class DartEmitter {
       // leaving the generated condition a runtime value.
       helpers.writeln('bool _qBool(bool value) => value;');
     }
+    if (_usePresent) {
+      helpers.writeln('bool _qPresent(Object? value) => value != null;\n'
+          'T _qSome<T>(Object? value) => value as T;');
+    }
     if (helpers.isNotEmpty) prelude.writeln(helpers.toString());
     if (prelude.isEmpty) return source;
     return source.replaceFirst(
@@ -964,8 +980,15 @@ class DartEmitter {
         ExpressionStatement() => _expressionPropagates(node.expression),
         IfStatement() => _containsPropagate(node.thenBody) ||
             _containsPropagate(node.elseBody),
-        ForStatement() => _containsPropagate(node.body),
-        WhileStatement() => _containsPropagate(node.body),
+        ForStatement() =>
+          _containsPropagate(node.body) || _containsPropagate(node.elseBody),
+        WhileStatement() => _containsPropagate(node.body) ||
+            _containsPropagate(node.elseBody) ||
+            _expressionPropagates(node.condition),
+        GuardedStatement() => _statementPropagates(node.statement) ||
+            _expressionPropagates(node.condition) ||
+            (node.alternate != null && _expressionPropagates(node.alternate!)),
+        ParallelAssignment() => node.values.any(_expressionPropagates),
         IfCaseStatement() => _containsPropagate(node.body),
         IfLetStatement() => _containsPropagate(node.thenBody) ||
             _containsPropagate(node.elseBody),
@@ -1405,9 +1428,13 @@ class DartEmitter {
         return _bodyAssigns(node.thenBody, name) ||
             _bodyAssigns(node.elseBody, name);
       case ForStatement():
-        return _bodyAssigns(node.body, name);
+        return _bodyAssigns(node.body, name) ||
+            _bodyAssigns(node.elseBody, name);
       case WhileStatement():
-        return _bodyAssigns(node.body, name);
+        return _bodyAssigns(node.body, name) ||
+            _bodyAssigns(node.elseBody, name);
+      case GuardedStatement():
+        return _statementAssigns(node.statement, name);
       case UsingStatement():
         return _bodyAssigns(node.body, name);
       case LabelStatement():
@@ -1572,6 +1599,7 @@ class DartEmitter {
       case ResultStatement():
         line('return ${expression(node.value)};');
       case CForStatement():
+        _beginLoop(node.elseBody);
         final init = node.init as Binding;
         final symbol = model.declarations[init]!;
         final step = node.step == null ? '' : _runtimeStep(node.step!);
@@ -1582,6 +1610,7 @@ class DartEmitter {
         statements(node.body);
         _depth--;
         line('}');
+        _endLoop(node.elseBody);
       case TryStatement():
         line('try {');
         _depth++;
@@ -1632,6 +1661,7 @@ class DartEmitter {
         _depth--;
         line('});');
       case RepeatStatement():
+        _beginLoop(node.elseBody);
         if (node.count != null) {
           final count = '_qn${_temps++}';
           final index = '_qi${_temps++}';
@@ -1647,6 +1677,7 @@ class DartEmitter {
           line('}');
           _depth--;
           line('}');
+          _endLoop(node.elseBody);
           break;
         }
         line('do {');
@@ -1654,6 +1685,7 @@ class DartEmitter {
         statements(node.body);
         _depth--;
         line('} while (${expression(node.condition!)});');
+        _endLoop(node.elseBody);
       case TestDeclaration():
         final tested = model.declarations[node]!;
         line('void ${tested.dartName}() {');
@@ -1681,6 +1713,7 @@ class DartEmitter {
         }
         line('}');
       case ForStatement():
+        _beginLoop(node.elseBody);
         final symbol = model.declarations[node]!;
         final indexSymbol = model.loopIndexes[node];
         var iterable = _iterated(node);
@@ -1699,6 +1732,7 @@ class DartEmitter {
           statements(node.body);
           _depth--;
           line('}');
+          _endLoop(node.elseBody);
           break;
         }
         if (indexSymbol == null) {
@@ -1707,6 +1741,7 @@ class DartEmitter {
           statements(node.body);
           _depth--;
           line('}');
+          _endLoop(node.elseBody);
           break;
         }
         final counter = '_qi${_temps++}';
@@ -1721,19 +1756,86 @@ class DartEmitter {
         line('}');
         _depth--;
         line('}');
+        _endLoop(node.elseBody);
       case WhileStatement():
+        _beginLoop(node.elseBody);
+        if (node.letName != null) {
+          final bound = model.declarations[node]!;
+          final temp = '_qn${_temps++}';
+          line('while (true) {');
+          _depth++;
+          _usePresent = true;
+          line('final $temp = ${expression(node.condition)};');
+          line('if (!_qPresent($temp)) break;');
+          line(
+              'final ${_dartType(bound.type)} ${bound.dartName} = _qSome<${_dartType(bound.type)}>($temp);');
+          statements(node.body);
+          _depth--;
+          line('}');
+          _endLoop(node.elseBody);
+          break;
+        }
+        if (node.pattern != null) {
+          line('while (true) {');
+          _depth++;
+          _openPattern('if', node.condition, node.pattern!);
+          _depth++;
+          statements(node.body);
+          _depth--;
+          line('} else {');
+          line('  break;');
+          line('}');
+          _depth--;
+          line('}');
+          _endLoop(node.elseBody);
+          break;
+        }
         line('while (${expression(node.condition, opaqueBool: true)}) {');
         _depth++;
         statements(node.body);
         _depth--;
         line('}');
+        _endLoop(node.elseBody);
+      case GuardedStatement():
+        _emitGuarded(node);
+      case ParallelAssignment():
+        if (node.values.length == 1) {
+          final temp = '_qt${_temps++}';
+          line('final $temp = ${expression(node.values.single)};');
+          for (var i = 0; i < node.targets.length; i++) {
+            _writeTarget(node.targets[i], '$temp.\$${i + 1}');
+          }
+          break;
+        }
+        final temps = <String>[];
+        for (final value in node.values) {
+          final temp = '_qt${_temps++}';
+          temps.add(temp);
+          line('final $temp = ${expression(value)};');
+        }
+        for (var i = 0; i < node.targets.length; i++) {
+          _writeTarget(node.targets[i], temps[i]);
+        }
       case BreakStatement():
+        if (node.value != null) {
+          line('return ${expression(node.value!)};');
+          break;
+        }
+        _markBreak(node.label);
         line(node.label == null ? 'break;' : 'break ${node.label};');
       case ContinueStatement():
         line(node.label == null ? 'continue;' : 'continue ${node.label};');
       case LabelStatement():
-        line('${node.name}:');
-        statement(node.statement);
+        if (node.statement is ForStatement ||
+            node.statement is WhileStatement ||
+            node.statement is RepeatStatement ||
+            node.statement is CForStatement) {
+          _pendingLabel = node.name;
+          statement(node.statement);
+        } else {
+          line('${node.name}:');
+          statement(node.statement);
+        }
       case MatchStatement():
         _matched = model.types[node.value];
         if (_matched != null && _matched!.contains(' | '))
@@ -1960,13 +2062,8 @@ class DartEmitter {
           ? _unionPattern(matched, pattern)
           : pattern.name == null
               ? pattern.type
-              : 'final ${model.declarations[pattern]!.dartName}',
-      BindingPattern() => model.references[pattern]?.classCase != null
-          ? (model.enumNames
-                  .contains(model.references[pattern]!.classDeclaration!.name)
-              ? model.references[pattern]!.dartName
-              : '${model.references[pattern]!.dartName}()')
-          : 'final ${model.declarations[pattern]!.dartName}',
+              : '${pattern.type} ${model.declarations[pattern]!.dartName}',
+      BindingPattern() => _bindingPattern(pattern),
       LiteralPattern() => expression(pattern.literal),
       ListPattern() => '[${pattern.elements.map(_pattern).join(', ')}]',
       MapPattern() => '{${[
@@ -2007,6 +2104,84 @@ class DartEmitter {
     return '$field: $inner';
   }
 
+  void _openPattern(String keyword, Expression scrutinee, Pattern pattern) {
+    final text = expression(scrutinee);
+    final matched = model.types[scrutinee];
+    final saved = _matched;
+    if (matched != null && matched.contains(' | ')) _matched = matched;
+    final typed = pattern is TypedPattern ? pattern : null;
+    if (typed != null &&
+        typed.name == null &&
+        (_matched == null || !_matched!.contains(' | '))) {
+      line('$keyword ($text is ${typed.type}) {');
+    } else {
+      line('$keyword ($text case ${_pattern(pattern)}) {');
+    }
+    _matched = saved;
+  }
+
+  String _bindingPattern(BindingPattern pattern) {
+    final symbol = model.references[pattern];
+    if (symbol != null &&
+        (symbol.name == 'Ok' || symbol.name == 'Error') &&
+        symbol.classCase == null) {
+      _useResult = true;
+      final field = symbol.name == 'Ok' ? 'value' : 'error';
+      return '${symbol.name}($field: _)';
+    }
+    if (symbol?.classCase != null) {
+      final owner = symbol!.classDeclaration!.name;
+      if (model.enumNames.contains(owner)) return symbol.dartName;
+      final fields = symbol.classCase!.fields;
+      if (fields.isEmpty) return '${symbol.dartName}()';
+      return '${symbol.dartName}(${fields.map((field) => '${field.name}: _').join(', ')})';
+    }
+    return 'final ${model.declarations[pattern]!.dartName}';
+  }
+
+  void _writeTarget(Pattern pattern, String source) {
+    final String? name = switch (pattern) {
+      BindingPattern(:final name) => name,
+      RestPattern(:final name) => name,
+      _ => null,
+    };
+    if (name == null) return;
+    final declared = model.declarations[pattern];
+    if (declared == null) return;
+    if (model.rebinding.contains(pattern)) {
+      line('${declared.dartName} = $source;');
+      return;
+    }
+    line('final ${_dartType(declared.type)} ${declared.dartName} = $source;');
+  }
+
+  void _assignList(ListPattern pattern, String source) {
+    final elements = pattern.elements;
+    var restAt = -1;
+    for (var i = 0; i < elements.length; i++) {
+      if (elements[i] is RestPattern) restAt = i;
+    }
+    final prefix = restAt < 0 ? elements.length : restAt;
+    final suffix = restAt < 0 ? 0 : elements.length - restAt - 1;
+    if (restAt < 0) {
+      line(
+          'if ($source.length != ${elements.length}) throw StateError(\'Pattern did not match\');');
+    } else {
+      line(
+          'if ($source.length < ${prefix + suffix}) throw StateError(\'Pattern did not match\');');
+    }
+    for (var i = 0; i < prefix; i++) {
+      _destructure(elements[i], '$source[$i]', 1);
+    }
+    if (restAt < 0) return;
+    final end = suffix == 0 ? '$source.length' : '$source.length - $suffix';
+    _destructure(elements[restAt], '$source.sublist($prefix, $end)', 1);
+    for (var j = 0; j < suffix; j++) {
+      _destructure(elements[restAt + 1 + j],
+          '$source[($source.length - $suffix) + $j]', 1);
+    }
+  }
+
   void _destructure(Pattern pattern, String source, int position) {
     switch (pattern) {
       case WildcardPattern():
@@ -2029,19 +2204,14 @@ class DartEmitter {
           }
         }
       case ListPattern():
-        for (var i = 0; i < pattern.elements.length; i++) {
-          _destructure(pattern.elements[i], '$source[$i]', position);
-        }
+        _assignList(pattern, source);
       case MapPattern():
         for (var i = 0; i < pattern.values.length; i++) {
           _destructure(pattern.values[i],
               '$source[${expression(pattern.keys[i])}]', position);
         }
       case RestPattern():
-        if (pattern.name != null) {
-          final declared = model.declarations[pattern]!;
-          line('final ${declared.type} ${declared.dartName} = $source;');
-        }
+        _writeTarget(pattern, source);
       case OrPattern():
       case AndPattern():
         _destructure(
@@ -2071,6 +2241,13 @@ class DartEmitter {
   String quote(String value) => quoteDartString(value);
   String expression(Expression node,
       {bool constantContext = false, bool opaqueBool = false}) {
+    if (identical(node, _replace) && _replaceWith != null) {
+      final replacement = _replaceWith!;
+      _replace = null;
+      _replaceWith = null;
+      return expression(replacement,
+          constantContext: constantContext, opaqueBool: opaqueBool);
+    }
     // Folding only logical const operators avoids Dart's dead_code warning
     // while leaving other const operations for Dart to evaluate again.
     if (constantContext &&
@@ -2148,6 +2325,8 @@ class DartEmitter {
       MatchExpression() => _match(node),
       TryExpression() =>
         '(() { try { return ${expression(node.operand)}; } catch (error) { return ${expression(node.fallback)}; } })()',
+      LoopExpression() => _loopValue(node),
+      WhereExpression() => _where(node),
       MapComprehension() => _mapEntry(node, node, 'Object', 'Object'),
       NullAwareElement() => '?(${expression(node.value)})',
       CollectionIf() => _piece(node, 'Object', false),
@@ -2860,34 +3039,223 @@ class DartEmitter {
   bool _doReturns(Statement node) => switch (node) {
         IfStatement() =>
           node.thenBody.any(_doReturns) || node.elseBody.any(_doReturns),
-        ForStatement() => node.body.any(_doReturns),
-        WhileStatement() => node.body.any(_doReturns),
+        ForStatement() =>
+          node.body.any(_doReturns) || node.elseBody.any(_doReturns),
+        WhileStatement() =>
+          node.body.any(_doReturns) || node.elseBody.any(_doReturns),
+        GuardedStatement() => _doReturns(node.statement),
         IfCaseStatement() => node.body.any(_doReturns),
         IfLetStatement() =>
           node.thenBody.any(_doReturns) || node.elseBody.any(_doReturns),
         WhenStatement() => node.body.any(_doReturns),
         UsingStatement() => node.body.any(_doReturns),
-        RepeatStatement() => node.body.any(_doReturns),
-        CForStatement() => node.body.any(_doReturns),
+        RepeatStatement() =>
+          node.body.any(_doReturns) || node.elseBody.any(_doReturns),
+        CForStatement() =>
+          node.body.any(_doReturns) || node.elseBody.any(_doReturns),
         LabelStatement() => _doReturns(node.statement),
         MatchStatement() => node.arms.any((arm) => arm.body.any(_doReturns)),
-        ExpressionStatement() => node.expression is DoExpression &&
-            _containsFunctionReturn((node.expression as DoExpression).body),
-        Binding() => node.value is DoExpression &&
-            _containsFunctionReturn((node.value as DoExpression).body),
+        ExpressionStatement() => _exprReturns(node.expression),
+        Binding() => _exprReturns(node.value),
+        ReturnStatement() => node.value != null && _exprReturns(node.value!),
         _ => false,
       };
 
-  bool _containsFunctionReturn(List<Statement> body) {
-    for (final statement in body) {
-      if (statement is ReturnStatement) return true;
-      if (statement is IfStatement &&
-          (_containsFunctionReturn(statement.thenBody) ||
-              _containsFunctionReturn(statement.elseBody))) {
-        return true;
-      }
-    }
+  bool _exprReturns(Expression node) {
+    if (node is DoExpression) return _containsFunctionReturn(node.body);
+    if (node is LoopExpression) return _loopReturns(node.loop);
+    if (node is WhereExpression) return _exprReturns(node.value);
     return false;
+  }
+
+  bool _loopReturns(Statement node) {
+    final body = switch (node) {
+      ForStatement() => node.body,
+      WhileStatement() => node.body,
+      RepeatStatement() => node.body,
+      CForStatement() => node.body,
+      _ => const <Statement>[],
+    };
+    return _containsFunctionReturn(body);
+  }
+
+  bool _containsFunctionReturn(List<Statement> body) =>
+      body.any(_functionReturns);
+
+  bool _functionReturns(Statement node) => switch (node) {
+        ReturnStatement() => true,
+        IfStatement() => node.thenBody.any(_functionReturns) ||
+            node.elseBody.any(_functionReturns),
+        ForStatement() => node.body.any(_functionReturns) ||
+            node.elseBody.any(_functionReturns),
+        WhileStatement() => node.body.any(_functionReturns) ||
+            node.elseBody.any(_functionReturns),
+        RepeatStatement() => node.body.any(_functionReturns),
+        CForStatement() => node.body.any(_functionReturns),
+        GuardedStatement() => _functionReturns(node.statement),
+        LabelStatement() => _functionReturns(node.statement),
+        MatchStatement() =>
+          node.arms.any((arm) => arm.body.any(_functionReturns)),
+        _ => false,
+      };
+
+  void _beginLoop(List<Statement> elseBody) {
+    final label = _pendingLabel;
+    _pendingLabel = null;
+    final braced = label != null && elseBody.isNotEmpty;
+    if (braced) {
+      line('$label: {');
+      _depth++;
+    } else if (label != null) {
+      line('$label:');
+    }
+    String? hit;
+    if (elseBody.isNotEmpty) {
+      hit = '_qHit${_temps++}';
+      line('var $hit = false;');
+    }
+    _emitLoops.add(_LoopEmit(hit, label, braced));
+  }
+
+  void _endLoop(List<Statement> elseBody) {
+    final frame = _emitLoops.removeLast();
+    if (elseBody.isNotEmpty) {
+      line('if (!${frame.hit}) {');
+      _depth++;
+      statements(elseBody);
+      _depth--;
+      line('}');
+    }
+    if (frame.braced) {
+      _depth--;
+      line('}');
+    }
+  }
+
+  void _markBreak(String? label) {
+    if (label == null) {
+      if (_emitLoops.isNotEmpty && _emitLoops.last.hit != null) {
+        line('${_emitLoops.last.hit} = true;');
+      }
+      return;
+    }
+    for (var i = _emitLoops.length - 1; i >= 0; i--) {
+      final frame = _emitLoops[i];
+      if (frame.label != label) continue;
+      if (frame.hit != null) line('${frame.hit} = true;');
+      return;
+    }
+  }
+
+  void _emitGuarded(GuardedStatement node) {
+    final binding =
+        node.statement is Binding ? node.statement as Binding : null;
+    final hoisted = binding != null &&
+        node.alternate != null &&
+        !model.assignments.contains(binding);
+    if (hoisted) {
+      final symbol = model.declarations[binding]!;
+      final modifier = symbol.mutable ? '' : 'final ';
+      line('$modifier${_dartType(symbol.type)} ${symbol.dartName};');
+    }
+    void emitChosen(Expression? replacement) {
+      if (hoisted) {
+        final symbol = model.declarations[binding]!;
+        final target = symbol.field ? 'this.${symbol.dartName}' : _cell(symbol);
+        final value = replacement ?? binding.value;
+        line('$target ${binding.operator} ${expression(value)};');
+        return;
+      }
+      if (replacement != null) {
+        _replace = _slot(node.statement);
+        _replaceWith = replacement;
+      }
+      statement(node.statement);
+      _replace = null;
+      _replaceWith = null;
+    }
+
+    void emitBody() {
+      emitChosen(null);
+      if (node.alternate == null) return;
+      _depth--;
+      line('} else {');
+      _depth++;
+      emitChosen(node.alternate);
+    }
+
+    if (node.letName != null) {
+      final bound = model.declarations[node]!;
+      final temp = '_qn${_temps++}';
+      _usePresent = true;
+      line('final $temp = ${expression(node.condition)};');
+      line('if (_qPresent($temp)) {');
+      _depth++;
+      line(
+          'final ${_dartType(bound.type)} ${bound.dartName} = _qSome<${_dartType(bound.type)}>($temp);');
+      emitBody();
+      _depth--;
+      line('}');
+      return;
+    }
+    if (node.pattern != null) {
+      _openPattern('if', node.condition, node.pattern!);
+      _depth++;
+      emitBody();
+      _depth--;
+      line('}');
+      return;
+    }
+    line('if (${expression(node.condition, opaqueBool: true)}) {');
+    _depth++;
+    emitBody();
+    _depth--;
+    line('}');
+  }
+
+  Expression? _slot(Statement statement) => switch (statement) {
+        ReturnStatement(:final value) => value,
+        Binding(:final value) => value,
+        MemberAssignment(:final value) => value,
+        ThrowStatement(:final value) => value,
+        YieldStatement(:final value) => value,
+        ResultStatement(:final value) => value,
+        ExpressionStatement(:final expression) => _callSlot(expression),
+        _ => null,
+      };
+
+  Expression? _callSlot(Expression expression) {
+    if (expression is! CallExpression || expression.arguments.length != 1) {
+      return null;
+    }
+    final argument = expression.arguments.single;
+    if (argument.name != null || argument.value is SpreadElement) return null;
+    return argument.value;
+  }
+
+  String _loopValue(LoopExpression node) {
+    final saved = _inDo;
+    _inDo = true;
+    final body = _captureBlock(() {
+      statement(node.loop);
+      if (node.fallback != null) {
+        line('return ${expression(node.fallback!)};');
+      } else {
+        line('return null;');
+      }
+    });
+    _inDo = saved;
+    return '(() {\n$body})()';
+  }
+
+  String _where(WhereExpression node) {
+    final body = _captureBlock(() {
+      for (final binding in node.bindings) {
+        statement(binding);
+      }
+      line('return ${expression(node.value)};');
+    });
+    return '(() {\n$body})()';
   }
 
   String _captureBlock(void Function() emit) {

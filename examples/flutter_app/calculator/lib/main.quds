@@ -6,8 +6,7 @@ main():
   runApp(CalculatorApp())
 
 digitValue(piece: String) -> double:
-  if piece.length != 1 or piece not in "0123456789": return 0.0
-  return "0123456789".indexOf(piece) to double
+  return 0.0 if piece.length != 1 or piece not in "0123456789" else "0123456789".indexOf(piece) to double
 
 number(text: String) -> double:
   var negative = false, source = text
@@ -23,8 +22,7 @@ number(text: String) -> double:
       fraction = fraction + digitValue(piece) / scale
     else: whole = whole * 10.0 + digitValue(piece)
   value = whole + fraction
-  if negative: return -value
-  return value
+  return -value if negative else value
 
 pretty(value: double) -> String:
   var text = value.plain
@@ -69,9 +67,8 @@ class CalculatorState extends State<CalculatorPage>:
     failed = false
 
   backspace():
-    if failed:
-      clear()
-      return
+    clear() if failed
+    return if failed
     if fresh: return
     if entry.length <= 1:
       entry = "0"
@@ -85,8 +82,7 @@ class CalculatorState extends State<CalculatorPage>:
   toggleSign():
     if failed: return
     if entry == "0": return
-    if entry.startsWith("-"): entry = entry[1..]
-    else: entry = "-" + entry
+    entry = entry[1..] if entry.startsWith("-") else "-" + entry
     fresh = false
 
   percent():
@@ -146,8 +142,7 @@ class CalculatorState extends State<CalculatorPage>:
   typeDigit(mark: String):
     if failed: clear()
     if fresh:
-      if mark == ".": entry = "0."
-      else: entry = mark
+      entry = "0." if mark == "." else mark
       fresh = false
       return
     if mark == "." and "." in entry: return
@@ -171,14 +166,10 @@ class CalculatorState extends State<CalculatorPage>:
     else: typeDigit(mark)
 
   readout() -> Widget:
-    var caption = expression
-    if caption == "": caption = " "
-    var size = 56.0, ink = Color(0xFFF7F8FB)
-    if failed:
-      size = 34.0
-      ink = Color(0xFFFF8D7A)
-    var card = Color(0xFF171B22)
-    if failed: card = Color(0xFF2A1718)
+    caption = expression if expression != "" else " "
+    size = 34.0 if failed else 56.0
+    ink = Color(0xFFFF8D7A) if failed else Color(0xFFF7F8FB)
+    card = Color(0xFF2A1718) if failed else Color(0xFF171B22)
     brand = TextStyle:
       color: Color(0xFFE8A317)
       fontSize: 13.0
@@ -227,9 +218,8 @@ class CalculatorState extends State<CalculatorPage>:
   button(mark: String, tone: String) -> Widget:
     var fill = Color(0xFF262B36), ink = Color(0xFFF4F7FB), size = 28.0
     if tone == "op":
-      fill = Color(0xFFE6A23C)
+      fill = Color(0xFFFFD78A) if pending == mark else Color(0xFFE6A23C)
       ink = Color(0xFF1A1204)
-      if pending == mark: fill = Color(0xFFFFD78A)
     else if tone == "fn":
       fill = Color(0xFF343A48)
       ink = Color(0xFFD5DBE6)

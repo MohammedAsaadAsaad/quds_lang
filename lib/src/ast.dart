@@ -102,7 +102,7 @@ class IfStatement extends Statement {
 
 class ForStatement extends Statement {
   const ForStatement(this.name, this.iterable, this.body, super.span,
-      {this.awaiting = false, this.index, this.step});
+      {this.awaiting = false, this.index, this.step, this.elseBody = const []});
   final String name;
 
   /// The index in `for index, name in`, or the first field of a pair.
@@ -113,6 +113,9 @@ class ForStatement extends Statement {
 
   /// The stride in `for name in range step value`.
   final Expression? step;
+
+  /// Runs only when the loop finishes without `break`.
+  final List<Statement> elseBody;
 }
 
 class ReturnStatement extends Statement {
@@ -187,14 +190,67 @@ class InterpolatedString extends Expression {
 }
 
 class WhileStatement extends Statement {
-  const WhileStatement(this.condition, this.body, super.span);
+  const WhileStatement(this.condition, this.body, super.span,
+      {this.letName, this.pattern, this.elseBody = const []});
   final Expression condition;
   final List<Statement> body;
+
+  /// Set when the condition is `let name = expr`. [condition] is that expr.
+  final String? letName;
+
+  /// Set when the condition is `expr is pattern`. [condition] is that expr.
+  final Pattern? pattern;
+
+  /// Runs only when the loop finishes without `break`.
+  final List<Statement> elseBody;
+}
+
+/// A single statement guarded by a trailing `if`. The condition runs first.
+class GuardedStatement extends Statement {
+  const GuardedStatement(this.statement, this.condition, super.span,
+      {this.letName, this.pattern, this.alternate});
+  final Statement statement;
+  final Expression condition;
+  final String? letName;
+  final Pattern? pattern;
+
+  /// The value used when the condition does not hold. It fills the same slot.
+  final Expression? alternate;
+}
+
+/// A `for`, `while`, or `repeat` used as a value. `break expr` supplies it.
+class LoopExpression extends Expression {
+  const LoopExpression(this.loop, this.fallback, super.span);
+  final Statement loop;
+
+  /// The value when the loop finishes without `break`. Null means a null result.
+  final Expression? fallback;
+}
+
+/// Names bound once, left to right, before [value]. They do not escape.
+class WhereExpression extends Expression {
+  const WhereExpression(this.value, this.bindings, super.span,
+      {this.block = false});
+  final Expression value;
+  final List<Binding> bindings;
+
+  /// True when the bindings occupy an indented block.
+  final bool block;
+}
+
+/// `a, b = b, a` or `name, age = person`. Every right-hand value runs first.
+class ParallelAssignment extends Statement {
+  const ParallelAssignment(this.targets, this.values, super.span);
+  final List<Pattern> targets;
+  final List<Expression> values;
 }
 
 class BreakStatement extends Statement {
-  const BreakStatement(this.label, super.span);
+  const BreakStatement(this.label, super.span, {this.value});
   final String? label;
+
+  /// The value of `break expr` inside a loop that is itself an expression.
+  final Expression? value;
 }
 
 class ContinueStatement extends Statement {
@@ -487,8 +543,9 @@ class WildcardPattern extends Pattern {
 }
 
 class BindingPattern extends Pattern {
-  const BindingPattern(this.name, super.span);
+  const BindingPattern(this.name, super.span, {this.shadow = false});
   final String name;
+  final bool shadow;
 }
 
 class LiteralPattern extends Pattern {
@@ -516,9 +573,10 @@ class MatchArm extends Node {
 }
 
 class TypedPattern extends Pattern {
-  const TypedPattern(this.type, this.name, super.span);
+  const TypedPattern(this.type, this.name, super.span, {this.shadow = false});
   final String type;
   final String? name;
+  final bool shadow;
 }
 
 class DoExpression extends Expression {
@@ -575,15 +633,20 @@ class TestDeclaration extends Statement {
 
 class CForStatement extends Statement {
   const CForStatement(
-      this.init, this.condition, this.step, this.body, super.span);
+      this.init, this.condition, this.step, this.body, super.span,
+      {this.elseBody = const []});
   final Statement init;
   final Expression condition;
   final Expression? step;
   final List<Statement> body;
+
+  /// Runs only when the loop finishes without `break`.
+  final List<Statement> elseBody;
 }
 
 class RepeatStatement extends Statement {
-  const RepeatStatement(this.body, this.condition, super.span, {this.count});
+  const RepeatStatement(this.body, this.condition, super.span,
+      {this.count, this.elseBody = const []});
   final List<Statement> body;
 
   /// The condition of `repeat: ... while condition`.
@@ -591,6 +654,9 @@ class RepeatStatement extends Statement {
 
   /// The count of `repeat count:`.
   final Expression? count;
+
+  /// Runs only when the loop finishes without `break`.
+  final List<Statement> elseBody;
 }
 
 class MatchStatement extends Statement {
@@ -705,8 +771,9 @@ class MapPattern extends Pattern {
 }
 
 class RestPattern extends Pattern {
-  const RestPattern(this.name, super.span);
+  const RestPattern(this.name, super.span, {this.shadow = false});
   final String? name;
+  final bool shadow;
 }
 
 class OrPattern extends Pattern {

@@ -7,6 +7,12 @@ class Parser {
   final List<Token> tokens;
   final errors = <CompilerException>[];
   final _pending = <Statement>[];
+
+  /// True when [finishBlockValue] left a trailing `if` on the same line.
+  var _suffixIf = false;
+
+  /// Labels whose statements are still being parsed.
+  final _openLabels = <String>[];
   int index = 0;
   Token get current => tokens[index];
   Token peek([int n = 1]) => tokens[(index + n).clamp(0, tokens.length - 1)];
@@ -277,6 +283,7 @@ class Parser {
   }
 
   Statement statement({bool topLevel = false, bool member = false}) {
+    _suffixIf = false;
     if (_pending.isNotEmpty) return _pending.removeAt(0);
     final span = current.span;
     final notes = takeAnnotations();
@@ -347,9 +354,8 @@ class Parser {
       final condition = expression(bare: true);
       Expression? message;
       if (match(TokenKind.comma)) message = expression(bare: true);
-      endLine();
-      return RequireStatement(condition, extent(span),
-          message: message, kind: kind);
+      return finishLine(RequireStatement(condition, extent(span),
+          message: message, kind: kind));
     }
     if (word('task') && peek().lexeme == 'group') {
       return taskGroup(span);
@@ -361,33 +367,25 @@ class Parser {
     if (word('throw')) {
       take();
       final value = expression(bare: true);
-      endLine();
-      return ThrowStatement(value, extent(span));
+      return finishLine(ThrowStatement(value, extent(span)));
     }
     if (word('rethrow')) {
       take();
-      endLine();
-      return RethrowStatement(extent(span));
+      return finishLine(RethrowStatement(extent(span)));
     }
     if (word('yield')) {
       take();
       final star = match(TokenKind.star);
       final value = expression(bare: true);
-      endLine();
-      return YieldStatement(value, star, extent(span));
+      return finishLine(YieldStatement(value, star, extent(span)));
     }
     if (word('repeat')) return repeatStatement(span);
     if (word('result')) {
       take();
       final value = expression(bare: true);
-      endLine();
-      return ResultStatement(value, extent(span));
+      return finishLine(ResultStatement(value, extent(span)));
     }
-    if (word('while')) {
-      take();
-      final condition = expression();
-      return WhileStatement(condition, block(), extent(span));
-    }
+    if (word('while')) return whileStatement(span);
     if (word('when') && !assignments.contains(peek().kind)) {
       take();
       final condition = expression();
@@ -397,40 +395,58 @@ class Parser {
     if (word('defer') && !assignments.contains(peek().kind)) {
       take();
       final value = expression(bare: true);
-      endLine();
-      return DeferStatement(value, extent(span));
+      return finishLine(DeferStatement(value, extent(span)));
     }
     if (word('break') || word('continue')) {
       final keyword = take().lexeme;
       String? label;
-      if (at(TokenKind.identifier)) label = name().lexeme;
-      endLine();
-      return keyword == 'break'
-          ? BreakStatement(label, extent(span))
-          : ContinueStatement(label, extent(span));
+      Expression? value;
+      final labeled = at(TokenKind.identifier) &&
+          !word('if') &&
+          _openLabels.contains(current.lexeme) &&
+          !_continuesBreakValue();
+      if (labeled) {
+        label = name().lexeme;
+      } else if (keyword == 'break' && startsExpression()) {
+        value = expression(bare: true);
+      } else if (at(TokenKind.identifier) && !word('if')) {
+        label = name().lexeme;
+      }
+      return finishLine(keyword == 'break'
+          ? BreakStatement(label, extent(span), value: value)
+          : ContinueStatement(label, extent(span)));
     }
     if (word('label')) {
       take();
       final label = name().lexeme;
       endLine();
-      return LabelStatement(label, statement(), extent(span));
+      _openLabels.add(label);
+      final child = statement();
+      _openLabels.removeLast();
+      return LabelStatement(label, child, extent(span));
     }
     if (word('match') || word('switch')) return matchStatement(span);
-    if (at(TokenKind.leftParen) && destructureAhead()) {
-      return destructure(span);
+    if ((at(TokenKind.leftParen) || at(TokenKind.leftBracket)) &&
+        destructureAhead()) {
+      return finishLine(destructure(span));
     }
+    if (commaAssignAhead()) return finishLine(parallelAssign(span));
     if (word('return')) {
       take();
+      if (word('if')) return finishLine(ReturnStatement(null, extent(span)));
       final value = at(TokenKind.newline) ? null : expression(bare: true);
-      if (value is! DoExpression &&
-          value is! WithExpression &&
-          value is! MatchExpression &&
-          value is! AwaitAllExpression &&
-          value is! AwaitIsolateExpression &&
-          !(value is IfExpression && !at(TokenKind.newline))) {
-        endLine();
+      final returned = ReturnStatement(value, extent(span));
+      if (value is DoExpression ||
+          value is WithExpression ||
+          value is MatchExpression ||
+          value is AwaitAllExpression ||
+          value is AwaitIsolateExpression ||
+          value is LoopExpression ||
+          value is WhereExpression && value.block ||
+          (value is IfExpression && !at(TokenKind.newline))) {
+        return returned;
       }
-      return ReturnStatement(value, extent(span));
+      return finishLine(returned);
     }
     var mode = BindingMode.inferred;
     if (word('state')) {
@@ -470,6 +486,12 @@ class Parser {
     if (bindingAhead || mode != BindingMode.inferred) {
       final bindings = _bindingLine(span, mode);
       _pending.addAll(bindings.skip(1));
+      if (_suffixIf && word('if')) {
+        if (bindings.length != 1) {
+          fail('A trailing condition follows one statement');
+        }
+        return finishLine(bindings.first);
+      }
       return bindings.first;
     }
     if (at(TokenKind.identifier) &&
@@ -481,9 +503,8 @@ class Parser {
       final member = name();
       final operator = take().lexeme;
       final value = expression(bare: true);
-      endLine();
-      return MemberAssignment(Identifier(object.lexeme, object.span),
-          member.lexeme, operator, value, extent(span));
+      return finishLine(MemberAssignment(Identifier(object.lexeme, object.span),
+          member.lexeme, operator, value, extent(span)));
     }
     if (word('this') &&
         peek().kind == TokenKind.dot &&
@@ -494,21 +515,21 @@ class Parser {
       final member = name();
       final operator = take().lexeme;
       final value = expression(bare: true);
-      endLine();
-      return MemberAssignment(ThisExpression(token.span), member.lexeme,
-          operator, value, extent(span));
+      return finishLine(MemberAssignment(ThisExpression(token.span),
+          member.lexeme, operator, value, extent(span)));
     }
     var value = expression(bare: true);
     if (value is MemberAccess && assignments.contains(current.kind)) {
       if (value.nullAware) fail('Cannot assign through ?.');
       final operator = take().lexeme;
       final written = expression(bare: true);
-      endLine();
-      return MemberAssignment(
-          value.object, value.name, operator, written, extent(span));
+      return finishLine(MemberAssignment(
+          value.object, value.name, operator, written, extent(span)));
     }
     value = finishBlockValue(value);
-    return ExpressionStatement(value, extent(span));
+    final written = ExpressionStatement(value, extent(span));
+    if (_suffixIf && word('if')) return finishLine(written);
+    return written;
   }
 
   /// `var whole = 0.0, fraction = 0.0` is two bindings. The keyword applies to
@@ -551,6 +572,8 @@ class Parser {
         value is MatchExpression ||
         value is AwaitAllExpression ||
         value is AwaitIsolateExpression ||
+        value is LoopExpression ||
+        value is WhereExpression && value.block ||
         value is MapExpression ||
         value is SetExpression ||
         value is Lambda && value.body != null) {
@@ -578,6 +601,11 @@ class Parser {
       return value;
     }
     if (value is IfExpression && !at(TokenKind.newline)) return value;
+    if (word('if')) {
+      _suffixIf = true;
+      return value;
+    }
+    _suffixIf = false;
     endLine();
     return value;
   }
@@ -890,8 +918,11 @@ class Parser {
         kind, parsed.value as String, async, block(), extent(span));
   }
 
-  Statement forStatement(SourceSpan span, {bool awaiting = false}) {
-    take();
+  Statement forStatement(SourceSpan span,
+      {bool awaiting = false,
+      bool keywordTaken = false,
+      bool asValue = false}) {
+    if (!keywordTaken) take();
     if (at(TokenKind.identifier) &&
         (peek().lexeme == 'in' || peek().kind == TokenKind.comma)) {
       final first = name();
@@ -910,7 +941,10 @@ class Parser {
         step = expression();
       }
       return ForStatement(item, iterable, block(), extent(span),
-          awaiting: awaiting, index: index, step: step);
+          awaiting: awaiting,
+          index: index,
+          step: step,
+          elseBody: asValue ? const [] : _statementElse());
     }
     if (awaiting) fail('await for expects one name');
     final initSpan = current.span;
@@ -934,7 +968,8 @@ class Parser {
       take();
       step = stepExpression();
     }
-    return CForStatement(init, condition, step, block(), extent(span));
+    return CForStatement(init, condition, step, block(), extent(span),
+        elseBody: asValue ? const [] : _statementElse());
   }
 
   Expression stepExpression() {
@@ -947,18 +982,21 @@ class Parser {
     return expression();
   }
 
-  Statement repeatStatement(SourceSpan span) {
-    take();
+  Statement repeatStatement(SourceSpan span,
+      {bool keywordTaken = false, bool asValue = false}) {
+    if (!keywordTaken) take();
     if (at(TokenKind.colon)) {
       final body = block();
       if (!word('while')) fail('Expected while');
       take();
       final condition = expression();
       endLine();
-      return RepeatStatement(body, condition, extent(span));
+      return RepeatStatement(body, condition, extent(span),
+          elseBody: asValue ? const [] : _statementElse());
     }
     final count = expression();
-    return RepeatStatement(suite(), null, extent(span), count: count);
+    return RepeatStatement(suite(), null, extent(span),
+        count: count, elseBody: asValue ? const [] : _statementElse());
   }
 
   ImportDeclaration useImport(SourceSpan span) {
@@ -1560,6 +1598,168 @@ class Parser {
     return (fields, methods);
   }
 
+  Statement whileStatement(SourceSpan span,
+      {bool keywordTaken = false, bool asValue = false}) {
+    if (!keywordTaken) take();
+    if (word('let') &&
+        peek().kind == TokenKind.identifier &&
+        peek(2).kind == TokenKind.equals) {
+      take();
+      final bound = name();
+      expect(TokenKind.equals, '=');
+      final value = expression();
+      return WhileStatement(value, block(), extent(span),
+          letName: bound.lexeme,
+          elseBody: asValue ? const [] : _statementElse());
+    }
+    final condition = expression(typeTest: false);
+    if (word('is')) {
+      take();
+      final pattern = patternLiteral();
+      return WhileStatement(condition, block(), extent(span),
+          pattern: pattern, elseBody: asValue ? const [] : _statementElse());
+    }
+    return WhileStatement(condition, block(), extent(span),
+        elseBody: asValue ? const [] : _statementElse());
+  }
+
+  /// `else:` after a loop statement. `else if` stays an if-statement form.
+  List<Statement> _statementElse() {
+    if (!word('else')) return const [];
+    take();
+    if (word('if')) fail('A loop else is a block');
+    return suite();
+  }
+
+  /// `else:` after a loop expression. One expression, indented or on the line.
+  Expression? _valueElse() {
+    if (!word('else')) return null;
+    take();
+    final value = suiteExpression();
+    if (at(TokenKind.newline)) endLine();
+    return value;
+  }
+
+  Expression _loopValue(Token token) {
+    final Statement loop;
+    if (token.lexeme == 'for') {
+      loop = forStatement(token.span, keywordTaken: true, asValue: true);
+    } else if (token.lexeme == 'while') {
+      loop = whileStatement(token.span, keywordTaken: true, asValue: true);
+    } else {
+      loop = repeatStatement(token.span, keywordTaken: true, asValue: true);
+    }
+    return LoopExpression(loop, _valueElse(), extent(token.span));
+  }
+
+  /// An active label followed by more expression syntax is a value, not a label.
+  bool _continuesBreakValue() {
+    final next = peek();
+    return next.kind != TokenKind.newline &&
+        next.kind != TokenKind.dedent &&
+        next.kind != TokenKind.eof &&
+        next.kind != TokenKind.comma &&
+        next.lexeme != 'if' &&
+        next.lexeme != 'else';
+  }
+
+  /// A trailing `if` guards [node]. The condition, including `let` and `is`,
+  /// is parsed before the newline.
+  Statement finishLine(Statement node) {
+    _suffixIf = false;
+    if (!word('if')) {
+      endLine();
+      return node;
+    }
+    take();
+    if (word('let') &&
+        peek().kind == TokenKind.identifier &&
+        peek(2).kind == TokenKind.equals) {
+      take();
+      final bound = name();
+      expect(TokenKind.equals, '=');
+      final value = expression(bare: true);
+      final alternate = _guardElse();
+      endLine();
+      return GuardedStatement(node, value, extent(node.span),
+          letName: bound.lexeme, alternate: alternate);
+    }
+    final condition = expression(typeTest: false);
+    if (word('is')) {
+      take();
+      final pattern = patternLiteral();
+      final alternate = _guardElse();
+      endLine();
+      return GuardedStatement(node, condition, extent(node.span),
+          pattern: pattern, alternate: alternate);
+    }
+    final alternate = _guardElse();
+    endLine();
+    return GuardedStatement(node, condition, extent(node.span),
+        alternate: alternate);
+  }
+
+  /// The expression after a same-line `else` on a trailing condition.
+  Expression? _guardElse() {
+    if (!word('else')) return null;
+    take();
+    return expression(bare: true);
+  }
+
+  bool commaAssignAhead() {
+    if (word('var') ||
+        word('const') ||
+        word('late') ||
+        word('state') ||
+        word('computed')) {
+      return false;
+    }
+    if (!at(TokenKind.identifier) && !word('shadow')) return false;
+    var depth = 0;
+    var comma = false;
+    for (var j = index; j < tokens.length; j++) {
+      final kind = tokens[j].kind;
+      if (kind == TokenKind.leftParen ||
+          kind == TokenKind.leftBracket ||
+          kind == TokenKind.less) {
+        depth++;
+      }
+      if (kind == TokenKind.rightParen ||
+          kind == TokenKind.rightBracket ||
+          kind == TokenKind.greater) {
+        depth--;
+      }
+      if (depth == 0 && kind == TokenKind.comma) comma = true;
+      if (depth == 0 && kind == TokenKind.equals) return comma;
+      if (depth == 0 && kind == TokenKind.newline) return false;
+      if (depth < 0) return false;
+    }
+    return false;
+  }
+
+  ParallelAssignment parallelAssign(SourceSpan span) {
+    final targets = <Pattern>[];
+    while (true) {
+      if (word('shadow')) {
+        take();
+        final bound = name();
+        targets.add(BindingPattern(bound.lexeme, bound.span, shadow: true));
+      } else if (at(TokenKind.identifier) && current.lexeme == '_') {
+        targets.add(WildcardPattern(take().span));
+      } else {
+        final bound = name();
+        targets.add(BindingPattern(bound.lexeme, bound.span));
+      }
+      if (!match(TokenKind.comma) || at(TokenKind.equals)) break;
+    }
+    expect(TokenKind.equals, '=');
+    final values = <Expression>[expression(bare: true)];
+    while (match(TokenKind.comma) && !at(TokenKind.newline)) {
+      values.add(expression(bare: true));
+    }
+    return ParallelAssignment(targets, values, extent(span));
+  }
+
   bool destructureAhead() {
     var depth = 0;
     for (var j = index; j < tokens.length; j++) {
@@ -1580,7 +1780,6 @@ class Parser {
     final pattern = patternLiteral();
     expect(TokenKind.equals, '=');
     final value = expression(bare: true);
-    endLine();
     return DestructureStatement(pattern, value, extent(span));
   }
 
@@ -1668,10 +1867,17 @@ class Parser {
     const typeWords = {'int', 'double', 'num', 'bool', 'String', 'Null'};
     if (at(TokenKind.identifier) && typeWords.contains(current.lexeme)) {
       final type = take().lexeme;
+      final shadowed = word('shadow');
+      if (shadowed) take();
       final name = at(TokenKind.identifier) && current.lexeme != 'when'
           ? this.name().lexeme
           : null;
-      return TypedPattern(type, name, span);
+      return TypedPattern(type, name, span, shadow: shadowed);
+    }
+    if (word('shadow')) {
+      take();
+      final bound = name();
+      return BindingPattern(bound.lexeme, bound.span, shadow: true);
     }
     if (at(TokenKind.identifier) && current.lexeme == '_') {
       take();
@@ -1724,13 +1930,15 @@ class Parser {
         while (true) {
           if (at(TokenKind.spread)) {
             final rest = take();
+            final shadowed = word('shadow');
+            if (shadowed) take();
             String? bound;
             if (at(TokenKind.identifier) &&
                 current.lexeme != '_' &&
                 current.lexeme != 'when') {
               bound = name().lexeme;
             }
-            elements.add(RestPattern(bound, rest.span));
+            elements.add(RestPattern(bound, rest.span, shadow: shadowed));
           } else {
             elements.add(patternLiteral());
           }
@@ -2432,7 +2640,40 @@ class Parser {
       } while (match(TokenKind.comma));
       left = CallExpression(left, arguments, extent(left.span));
     }
+    if (minimum < 0 && word('where')) left = _where(left);
     return left;
+  }
+
+  /// `expr where name = value, other = value` or an indented `where:` block.
+  Expression _where(Expression value) {
+    final span = value.span;
+    take();
+    final bindings = <Binding>[];
+    if (at(TokenKind.colon)) {
+      take();
+      endLine();
+      expect(TokenKind.indent, 'indented block');
+      while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+        bindings.add(_whereBinding());
+        endLine();
+      }
+      expect(TokenKind.dedent, 'end of block');
+      return WhereExpression(value, bindings, extent(span), block: true);
+    }
+    bindings.add(_whereBinding());
+    while (match(TokenKind.comma)) {
+      bindings.add(_whereBinding());
+    }
+    return WhereExpression(value, bindings, extent(span));
+  }
+
+  Binding _whereBinding() {
+    final start = current.span;
+    final bindingName = name();
+    expect(TokenKind.equals, '=');
+    final init = expression();
+    return Binding(bindingName.lexeme, BindingMode.inferred, null, '=', init,
+        extent(start));
   }
 
   /// `items[1]`, `text[1..]`, `text[..<n]`, and `items[1..3]`.
@@ -2484,13 +2725,36 @@ class Parser {
     return Argument(label, value, span);
   }
 
+  /// `if` without a `:` on this line is a trailing condition, not an argument.
+  bool _ifExpressionAhead() {
+    var depth = 0;
+    for (var j = index + 1; j < tokens.length; j++) {
+      final kind = tokens[j].kind;
+      if (kind == TokenKind.leftParen || kind == TokenKind.leftBracket) {
+        depth++;
+      }
+      if (kind == TokenKind.rightParen || kind == TokenKind.rightBracket) {
+        depth--;
+      }
+      if (depth == 0 && kind == TokenKind.colon) return true;
+      if (depth == 0 &&
+          (kind == TokenKind.newline || kind == TokenKind.equals)) {
+        return false;
+      }
+      if (depth < 0) return false;
+    }
+    return false;
+  }
+
   bool startsExpression() =>
       at(TokenKind.number) ||
       at(TokenKind.string) ||
       at(TokenKind.leftBracket) ||
       at(TokenKind.leftParen) ||
       at(TokenKind.identifier) &&
-          !{'else', 'in', 'and', 'or', 'for'}.contains(current.lexeme);
+          !{'else', 'in', 'and', 'or', 'for', 'where'}
+              .contains(current.lexeme) &&
+          !(word('if') && !_ifExpressionAhead());
   Expression prefix() {
     final token = take();
     if (token.kind == TokenKind.number) {
@@ -2555,6 +2819,11 @@ class Parser {
       return SymbolExpression(parsed.value as String, extent(token.span));
     }
     if (token.lexeme == 'if') return ifExpression(token);
+    if (token.lexeme == 'for' ||
+        token.lexeme == 'while' ||
+        token.lexeme == 'repeat') {
+      return _loopValue(token);
+    }
     if (token.lexeme == 'match' || token.lexeme == 'switch') {
       return matchExpression(token);
     }

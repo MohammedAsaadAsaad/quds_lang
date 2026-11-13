@@ -148,6 +148,8 @@ List<Map<String, Object>> _qudsLocals(
     final lambdas = <Lambda>{};
     final blocks = <DoExpression>{};
     final loops = <CollectionFor>{};
+    final valueLoops = <LoopExpression>{};
+    final wheres = <WhereExpression>{};
     walkAst(node, (child) {
       if (child is CollectionFor && loops.add(child)) {
         final loopEnd = endLine(child.span);
@@ -165,6 +167,18 @@ List<Map<String, Object>> _qudsLocals(
       }
       if (child is DoExpression && blocks.add(child)) {
         visitStatements(child.body, endLine(child.span));
+      }
+      if (child is LoopExpression && valueLoops.add(child)) {
+        visitStatement(child.loop, endLine(child.span));
+        visitExpression(child.fallback, end);
+      }
+      if (child is WhereExpression && wheres.add(child)) {
+        final whereEnd = endLine(child.span);
+        for (final binding in child.bindings) {
+          add(model.declarations[binding], binding.span, whereEnd);
+          visitExpression(binding.value, whereEnd);
+        }
+        visitExpression(child.value, whereEnd);
       }
     });
   }
@@ -200,22 +214,60 @@ List<Map<String, Object>> _qudsLocals(
         visitExpression(condition, end);
         visitStatements(thenBody, _bodyEnd(thenBody, node.span, endLine));
         visitStatements(elseBody, _bodyEnd(elseBody, node.span, endLine));
-      case ForStatement(:final iterable, :final body, :final step):
+      case ForStatement(
+          :final iterable,
+          :final body,
+          :final step,
+          :final elseBody
+        ):
         final loopEnd = endLine(node.span);
         visitExpression(iterable, end);
         visitExpression(step, end);
         add(model.declarations[node], node.span, loopEnd);
         add(model.loopIndexes[node], node.span, loopEnd);
         visitStatements(body, loopEnd);
-      case WhileStatement(:final condition, :final body):
+        visitStatements(elseBody, loopEnd);
+      case WhileStatement(
+          :final condition,
+          :final body,
+          :final pattern,
+          :final elseBody
+        ):
         final loopEnd = endLine(node.span);
         visitExpression(condition, end);
+        if (pattern != null) patterns(pattern, loopEnd);
+        add(model.declarations[node], node.span, loopEnd);
         visitStatements(body, loopEnd);
-      case RepeatStatement(:final body, :final condition, :final count):
+        visitStatements(elseBody, loopEnd);
+      case GuardedStatement(
+          :final statement,
+          :final condition,
+          :final pattern,
+          :final alternate
+        ):
+        visitExpression(condition, end);
+        if (pattern != null) patterns(pattern, end);
+        add(model.declarations[node], node.span, end);
+        visitStatement(statement, end);
+        visitExpression(alternate, end);
+      case ParallelAssignment(:final targets, :final values):
+        for (final target in targets) {
+          patterns(target, end);
+        }
+        for (final value in values) {
+          visitExpression(value, end);
+        }
+      case RepeatStatement(
+          :final body,
+          :final condition,
+          :final count,
+          :final elseBody
+        ):
         final loopEnd = endLine(node.span);
         visitExpression(count, end);
         visitStatements(body, loopEnd);
         visitExpression(condition, end);
+        visitStatements(elseBody, loopEnd);
       case CForStatement(
           :final init,
           :final condition,
@@ -227,6 +279,7 @@ List<Map<String, Object>> _qudsLocals(
         visitExpression(condition, loopEnd);
         visitExpression(step, loopEnd);
         visitStatements(body, loopEnd);
+        visitStatements(node.elseBody, loopEnd);
       case IfLetStatement(:final value, :final thenBody, :final elseBody):
         final thenEnd = _bodyEnd(thenBody, node.span, endLine);
         add(model.declarations[node], node.span, thenEnd);
@@ -326,7 +379,8 @@ List<Map<String, Object>> _qudsLocals(
         visitExpression(value, end);
       case ImportDeclaration(:final condition):
         visitExpression(condition, end);
-      case BreakStatement():
+      case BreakStatement(:final value):
+        visitExpression(value, end);
       case ContinueStatement():
       case RethrowStatement():
       case PartDirective():

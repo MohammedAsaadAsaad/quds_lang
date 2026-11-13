@@ -1378,8 +1378,13 @@ sum(...values: int) = values.fold(0, (a,b) -> a+b)
 ```quds
 var a = 1
 var b = 2
+a, b = b, a
 (a, b) = (b, a)
+[first, ...rest] = items
+name, age = person
 ```
+
+`a, b = b, a` reads both values before either name changes. `name, age = person` reads one positional record. `[first, ...rest] = items` binds the head and the remaining list. A list that is too short throws at run time. A new name is immutable. A visible mutable name is assigned. A visible immutable name is `E202`. `shadow name` is the new binding that hides an outer name.
 
 **Compiler / runtime requirements.** Use temporaries; validate target mutability and arity.
 
@@ -2103,7 +2108,7 @@ A statement that starts with an identifier, or with a contextual keyword whose k
 2. A name, optional `: type`, then `=`, is a binding when no binding of that name is visible. It is an assignment when a mutable binding is visible. It is `E202` when an immutable binding is visible.
 3. In statement or member position, a name followed by a parameter list and then `->`, `:`, `=`, `async`, or `sync` is a function declaration. A parameter list is a parenthesized group whose every item is a parameter. In expression position those parentheses are a call.
 4. `test` or `group`, followed by a string literal and `:`, is a test declaration. `test` or `group`, followed by a string, `async`, and `:`, is an async test declaration.
-5. A list, map, record, or object pattern followed by `=` is destructuring. Each name in that pattern follows the binding rule: an invisible name is declared immutable, a visible mutable name is assigned, and a visible immutable name is `E202`. `var` before the pattern declares every new name mutable. A refutable pattern on the left of `=` is `E100`.
+5. A list, map, record, or object pattern followed by `=` is destructuring. Names separated by commas are the same assignment: `a, b = b, a` reads every right-hand value, and `name, age = person` reads one record. The right-hand side runs completely before any name is written. Each name follows the binding rule: an invisible name is declared immutable, a visible mutable name is assigned, and a visible immutable name is `E202`. `shadow` before a name declares a new immutable binding that hides an outer one. `var` before the pattern declares every new name mutable. A list pattern of names is assigned, and a list with too few elements throws at run time. A pattern that tests a value — a literal, a relation, an alternative, a type test, or an object case — is `E100`.
 6. Otherwise a name followed by an argument is a call statement. A name alone is an expression statement, which is a tear-off or a value. A zero-argument call is `name()`. A bare name is never a call (`E110`).
 
 ```
@@ -2145,7 +2150,7 @@ statement     = binding | computedDecl | function | testDecl | configDecl
               | "result" , expression
               | "yield" , expression | "yield" "*" , expression
               | "throw" , expression | "rethrow"
-              | "break" , [ name ] | "continue" , [ name ]
+              | "break" , [ name | expression ] | "continue" , [ name ]
               | "assert" , expression , [ "," , expression ]
               | "require" , expression , [ "," , expression ]
               | "check" , expression , [ "," , expression ]
@@ -2158,12 +2163,13 @@ statement     = binding | computedDecl | function | testDecl | configDecl
               | tryStatement
               | expression
 ifStatement   = "if" , condition , suite , { "else" "if" , condition , suite } , [ "else" , suite ]
-condition     = expression | expression , "is" , pattern
-loop          = "for" , pattern , "in" , expression , suite
-              | "await" "for" , pattern , "in" , expression , suite
-              | "for" , forInit , "while" , expression , [ "step" , expression ] , suite
-              | "while" , condition , suite
-              | "repeat" , suite , "while" , expression
+condition     = expression | expression , "is" , pattern | "let" , name , "=" , expression
+loop          = "for" , pattern , "in" , expression , suite , [ "else" , suite ]
+              | "await" "for" , pattern , "in" , expression , suite , [ "else" , suite ]
+              | "for" , forInit , "while" , expression , [ "step" , expression ] , suite , [ "else" , suite ]
+              | "while" , condition , suite , [ "else" , suite ]
+              | "repeat" , suite , "while" , expression , [ "else" , suite ]
+              | "repeat" , expression , suite , [ "else" , suite ]
 forInit       = binding | expression
 tryStatement  = "try" , suite , { catchClause } , [ "finally" , suite ]
               | "try" , expression , "else" , expression
@@ -2178,6 +2184,39 @@ matchStatement= ( "match" | "switch" ) , expression , matchArms
 `result` outside `do:` is `E106`. `return` and `yield` outside the function or generator that can accept them are `E107` and `E804`. `break` and `continue` outside a loop, or with an unknown label, are `E105` and `E800`. `await` outside `async` is `E803`. `spawn` outside `task group` is `E107`. `rethrow` outside `catch` is `E107`.
 
 An `if` statement may omit `else`. Its branches are suites. A suite that is a single statement may share the `if`, `else if`, or `else` line. An `if` in expression position is not this statement.
+
+A single-line statement may end with `if` and a condition. The condition runs first. When it is false, a `let` value is null, or an `is` pattern does not match, the statement does not run. `return text if text.isNotEmpty` and `continue if name in seen` are that form. A `let` or `is` name is visible only to that statement, and it is immutable. `while let name = expr` binds the same way and stops when the value is null. `while expr is pattern` uses the pattern grammar and binds in the body only. The expression runs once per test.
+
+The same line may end with `else` and one expression. That expression fills the statement's value: the returned value, the assigned value, or the single argument of a call. The side that is not chosen does not run. The two expressions share a type. A `let` or `is` name is not visible in the `else` expression. `return text if text.isNotEmpty else "empty"` returns one string or the other. `caption = line if let line = read() else "فارغ"` assigns one of those values.
+
+`else:` after `for`, `while`, or `repeat` runs only when that loop finishes without `break`. `continue` does not open it. `return` and `throw` leave before it is considered. The `else` lines up with the loop, so an `else` inside the body still belongs to an `if`.
+
+```
+for user in users:
+  if user.id == id:
+    print user.name
+    break
+else:
+  print "غير موجود"
+```
+
+A loop in expression position produces a value. `break expr` supplies that value and is evaluated once. `else:` on that loop is one expression, used when the loop does not break. Without `else`, the type is nullable and the value is null. A `break` without a value inside such a loop is rejected. A `break` with a value outside such a loop is rejected. `yield` is not valid inside it.
+
+```
+found = for user in users:
+  if user.id == id: break user
+else:
+  null
+```
+
+`where` binds immutable names before an expression, from left to right, each once. A later name sees an earlier one. The names do not escape. A comma list stays on the line. A colon introduces an indented list.
+
+```
+print total / count where total = items.sum(), count = items.length
+title = "{name} ({age})" where:
+  name = user.name
+  age = user.age
+```
 
 `label name` applies to the next statement, which must be a loop (`E800` otherwise). The name lives in the label namespace and does not hide a variable.
 
@@ -2195,8 +2234,13 @@ From tightest to loosest:
 primary       = literal | list | "map" suite | "set" suite
               | identifier | dotShorthand | "(" , expression , ")"
               | record | "do" suite | ifExpression | matchExpression
-              | lambda | captureLambda | withExpression
+              | loopExpression | lambda | captureLambda | withExpression
               | "await" "all" suite | "await" "isolate" suite
+loopExpression= "for" , pattern , "in" , expression , suite , [ "else" , suiteOfExpression ]
+              | "while" , condition , suite , [ "else" , suiteOfExpression ]
+              | "repeat" , suite , "while" , expression , [ "else" , suiteOfExpression ]
+whereClause   = "where" , name , "=" , expression , { "," , name , "=" , expression }
+              | "where" , suiteOfBindings
 dotShorthand  = "." , ( identifier | "new" ) , [ arguments ]
 record        = "(" , ")"
               | "(" , expression , "," , [ recordField , { "," , recordField } ] , [ "," ] , ")"

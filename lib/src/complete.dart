@@ -424,6 +424,11 @@ _Here? _enter(
     case ClassDeclaration():
       return _class(compilation, source, bytes, statement, outer, regionEnd);
     case ForStatement():
+      if (statement.elseBody.isNotEmpty &&
+          bytes >= statement.elseBody.first.span.offset) {
+        return _blocks(compilation, source, bytes, statement.elseBody, outer,
+            regionEnd, owner);
+      }
       if (!_past(bytes, statement.iterable.span)) return null;
       final names = Map<String, Symbol>.of(outer);
       final symbol = compilation.semantics.declarations[statement];
@@ -438,9 +443,28 @@ _Here? _enter(
           _branch(compilation, source, bytes, statement.elseBody, const [],
               outer, regionEnd, owner);
     case WhileStatement():
+      if (statement.elseBody.isNotEmpty &&
+          bytes >= statement.elseBody.first.span.offset) {
+        return _blocks(compilation, source, bytes, statement.elseBody, outer,
+            regionEnd, owner);
+      }
       if (!_past(bytes, statement.condition.span)) return null;
+      final names = Map<String, Symbol>.of(outer);
+      final symbol = compilation.semantics.declarations[statement];
+      if (symbol != null && statement.letName != null) {
+        names[symbol.name] = symbol;
+      }
       return _blocks(
-          compilation, source, bytes, statement.body, outer, regionEnd, owner);
+          compilation, source, bytes, statement.body, names, regionEnd, owner);
+    case GuardedStatement():
+      final names = Map<String, Symbol>.of(outer);
+      final symbol = compilation.semantics.declarations[statement];
+      if (symbol != null && statement.letName != null) {
+        names[symbol.name] = symbol;
+      }
+      return _enter(compilation, source, bytes, statement.statement, names,
+              regionEnd, owner) ??
+          _Here(names, owner);
     case IfLetStatement():
       if (statement.thenBody.isEmpty ||
           bytes < statement.thenBody.first.span.offset) {

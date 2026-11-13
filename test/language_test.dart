@@ -402,6 +402,209 @@ main():
             (error) => error.message, 'message', 'Undefined symbol: cap')));
   });
 
+  test('trailing conditions and parallel assignment execute', () async {
+    await execute(
+        '''
+read(values: List<String?>, index: int) -> String?:
+  if index >= values.length: return null
+  return values[index]
+show(text: String) -> String:
+  return text if text.isNotEmpty
+  return "empty"
+main():
+  print show("Ada")
+  print show("")
+  var kept = ""
+  for name in ["a", "", "b"]:
+    continue if name == ""
+    kept = kept + name
+  print kept
+  loaded = Ok("Ada")
+  print "yes" if loaded is Ok
+  failed = Error("no")
+  print "no" if failed is Error
+  var value: String? = "Ada"
+  print line if let line = value
+  value = null
+  var caption = "skip"
+  caption = line if let line = value
+  print caption
+  firstLine: String? = "a"
+  secondLine: String? = "b"
+  thirdLine: String? = null
+  values = [firstLine, secondLine, thirdLine]
+  var i = 0
+  var shown = ""
+  while let line = read(values, i):
+    shown = shown + line
+    i = i + 1
+  print shown
+  first: Object = "a"
+  second: Object = "b"
+  third: Object = 1
+  items = [first, second, third]
+  i = 0
+  var texts = ""
+  while items[i] is String text:
+    texts = texts + text
+    i = i + 1
+  print texts
+  letters = ["a", "b", "c", "d"]
+  [head, ...middle, tail] = letters
+  print head
+  print middle
+  print tail
+  person = ("Ada", 36)
+  name, age = person
+  print name
+  print age
+  var a = 1
+  var b = 2
+  var n = 0
+  bump(mark: int) -> int:
+    n = n + 1
+    print mark
+    return mark
+  a, b = bump(b), bump(a)
+  print a
+  print b
+  print n
+  outer = "outer"
+  if true:
+    shadow outer, extra = person
+    print outer
+    print extra
+  print outer
+''',
+        'Ada\n'
+            'empty\n'
+            'ab\n'
+            'yes\n'
+            'no\n'
+            'Ada\n'
+            'skip\n'
+            'ab\n'
+            'ab\n'
+            'a\n'
+            '[b, c]\n'
+            'd\n'
+            'Ada\n'
+            '36\n'
+            '2\n'
+            '1\n'
+            '2\n'
+            '1\n'
+            '2\n'
+            'Ada\n'
+            '36\n'
+            'outer\n');
+    final directory = Directory.systemTemp.createTempSync('quds-pattern-');
+    try {
+      final short = compile('''
+main():
+  [first, second] = ["only"]
+  print first
+''').dart;
+      final file = File('${directory.path}/short.dart')
+        ..writeAsStringSync(short);
+      final run = await Process.run(Platform.resolvedExecutable, [file.path]);
+      expect(run.exitCode, isNot(0), reason: '${run.stdout}');
+      expect('${run.stderr}', contains('Pattern did not match'));
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
+
+  test('loop else, value loops, and where execute', () async {
+    await execute(
+        '''
+main():
+  show(text: String) -> String:
+    return text if text.isNotEmpty else "empty"
+  print show("Ada")
+  print show("")
+  var caption = "x"
+  read() -> String?:
+    return null
+  caption = line if let line = read() else "فارغ"
+  print caption
+  var number: Object = 1
+  print text if number is String text else "ليس نصاً"
+  objectText() -> Object:
+    return "Ada"
+  word: Object = objectText()
+  print text if word is String text else "ليس نصاً"
+  names = ["Ada", "Bea"]
+  ids = [1, 2]
+  var found = ""
+  for i, name in names:
+    if ids[i] == 2:
+      found = name
+      break
+  else:
+    found = "غير موجود"
+  print found
+  found = ""
+  for i, name in names:
+    if ids[i] == 9:
+      found = name
+      break
+  else:
+    found = "غير موجود"
+  print found
+  picked = for i, name in names:
+    if ids[i] == 2: break name
+  else:
+    null
+  print picked
+  absent = for i, name in names:
+    if ids[i] == 9: break name
+  else:
+    "none"
+  print absent
+  var seen = ""
+  for name in ["a", "", "b"]:
+    continue if name == ""
+    seen = seen + name
+  else:
+    seen = seen + "!"
+  print seen
+  var n = 0
+  while n < 2:
+    n = n + 1
+  else:
+    n = n + 10
+  print n
+  var hit = 0
+  while hit < 5:
+    hit = hit + 1
+    if hit == 1: break
+  else:
+    hit = 100
+  print hit
+  items = [1, 2, 3]
+  print total / count where total = items.sum(), count = items.length
+  title = "{name} ({age})" where:
+    name = "Ada"
+    age = 36
+  print title
+''',
+        'Ada\n'
+            'empty\n'
+            'فارغ\n'
+            'ليس نصاً\n'
+            'Ada\n'
+            'Bea\n'
+            'غير موجود\n'
+            'Bea\n'
+            'none\n'
+            'ab!\n'
+            '12\n'
+            '1\n'
+            '2.0\n'
+            'Ada (36)\n');
+  });
+
   test('classes, lambdas, nullability, and tear-offs execute', () async {
     await execute('''
 class User:
@@ -1776,6 +1979,51 @@ main():
 
   test('new diagnostics reject the programs they name', () {
     final rejected = {
+      '''
+main():
+  a = 1
+  b = 2
+  a, b = b, a
+''': 'E202',
+      '''
+main():
+  items = [1, 2]
+  [1, second] = items
+''': 'E100',
+      '''
+main():
+  text = "x"
+  value: Object = "Ada"
+  while value is String text:
+    print text
+''': 'E203',
+      '''
+main():
+  a, b = 1
+''': 'E300',
+      '''
+main():
+  line = "Ada"
+  print line if let line = line
+''': 'E203',
+      '''
+main():
+  read() -> String?:
+    return "Ada"
+  caption = bound if let bound = read() else bound
+''': 'E200',
+      '''
+main():
+  names = ["a"]
+  found = for name in names:
+    break
+''': 'E300',
+      '''
+main():
+  names = ["a"]
+  for name in names:
+    break name
+''': 'E300',
       'main():\n  result 1\n': 'E106',
       'main():\n  value = do:\n    print 1\n  print value\n': 'E109',
       'main():\n  for var i = 0 while i < 3 step i += 0:\n    print i\n':

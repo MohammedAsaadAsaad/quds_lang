@@ -28,18 +28,25 @@ void walkAst(Node node, void Function(Node node) visit) {
       walkAst(condition, visit);
       _nodes(thenBody, visit);
       _nodes(elseBody, visit);
-    case ForStatement(:final iterable, :final body, :final step):
+    case ForStatement(
+        :final iterable,
+        :final body,
+        :final step,
+        :final elseBody
+      ):
       walkAst(iterable, visit);
       if (step != null) walkAst(step, visit);
       _nodes(body, visit);
+      _nodes(elseBody, visit);
     case ReturnStatement(:final value):
+      _optional(value, visit);
+    case BreakStatement(:final value):
       _optional(value, visit);
     case ExpressionStatement(:final expression):
       walkAst(expression, visit);
     case Literal():
     case Identifier():
     case ThisExpression():
-    case BreakStatement():
     case ContinueStatement():
     case RethrowStatement():
     case WildcardPattern():
@@ -64,9 +71,35 @@ void walkAst(Node node, void Function(Node node) visit) {
       _nodes(arguments, visit);
     case InterpolatedString(:final parts):
       _nodes(parts, visit);
-    case WhileStatement(:final condition, :final body):
+    case WhileStatement(
+        :final condition,
+        :final body,
+        :final pattern,
+        :final elseBody
+      ):
       walkAst(condition, visit);
+      if (pattern != null) walkAst(pattern, visit);
       _nodes(body, visit);
+      _nodes(elseBody, visit);
+    case GuardedStatement(
+        :final statement,
+        :final condition,
+        :final pattern,
+        :final alternate
+      ):
+      walkAst(condition, visit);
+      if (pattern != null) walkAst(pattern, visit);
+      walkAst(statement, visit);
+      _optional(alternate, visit);
+    case LoopExpression(:final loop, :final fallback):
+      walkAst(loop, visit);
+      _optional(fallback, visit);
+    case WhereExpression(:final value, :final bindings):
+      _nodes(bindings, visit);
+      walkAst(value, visit);
+    case ParallelAssignment(:final targets, :final values):
+      _nodes(targets, visit);
+      _nodes(values, visit);
     case LabelStatement(:final statement):
       walkAst(statement, visit);
     case ImportDeclaration(:final condition):
@@ -206,15 +239,28 @@ void walkAst(Node node, void Function(Node node) visit) {
       walkAst(value, visit);
     case TestDeclaration(:final body):
       _nodes(body, visit);
-    case CForStatement(:final init, :final condition, :final step, :final body):
+    case CForStatement(
+        :final init,
+        :final condition,
+        :final step,
+        :final body,
+        :final elseBody
+      ):
       walkAst(init, visit);
       walkAst(condition, visit);
       _optional(step, visit);
       _nodes(body, visit);
-    case RepeatStatement(:final body, :final condition, :final count):
+      _nodes(elseBody, visit);
+    case RepeatStatement(
+        :final body,
+        :final condition,
+        :final count,
+        :final elseBody
+      ):
       _nodes(body, visit);
       _optional(condition, visit);
       _optional(count, visit);
+      _nodes(elseBody, visit);
     case MatchStatement(:final value, :final arms):
       walkAst(value, visit);
       _nodes(arms, visit);

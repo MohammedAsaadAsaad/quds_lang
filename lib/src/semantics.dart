@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'ast.dart';
 import 'constants.dart';
+import 'dart_api.dart';
 import 'libraries.dart';
 import 'source.dart';
 import 'walk.dart';
@@ -20,13 +23,39 @@ class Symbol {
       this.field = false,
       this.library = '',
       this.namespace,
-      this.external = false});
+      this.external = false,
+      this.callable = false,
+      this.optionalParameters = 0,
+      this.documentation,
+      this.signature,
+      this.originFile,
+      this.originLine = 0,
+      this.originColumn = 0,
+      this.originOffset = 0});
   final String name, dartName;
   String type;
   final bool mutable, constant, late, lateOpen, field;
 
   /// A name that comes from a Dart library. Calls keep the written arguments.
   final bool external;
+
+  /// A Dart function or unnamed constructor read from an SDK source.
+  final bool callable;
+
+  /// How many trailing [parameterTypes] may be omitted.
+  final int optionalParameters;
+
+  /// Documentation comments from a Dart SDK source, or a builtin.
+  final String? documentation;
+
+  /// Signature shown when the pointer rests on this name.
+  final String? signature;
+
+  /// Absolute path of the Dart source that declares this name.
+  final String? originFile;
+  final int originLine;
+  final int originColumn;
+  final int originOffset;
 
   /// Names brought in by `use ... as prefix`. Null for every other symbol.
   final Map<String, Symbol>? namespace;
@@ -80,6 +109,12 @@ class SemanticModel {
   final asyncLambdas = <Lambda>{};
   final variadicArguments = <CallExpression, List<int>>{};
   final implicitThis = <Identifier>{};
+
+  /// The index binding of `for index, name in`, or the first field of a pair.
+  final loopIndexes = <Node, Symbol>{};
+
+  /// `for a, b in` walks a pair instead of an index.
+  final loopPairs = <Node>{};
   final extensions = <ExtensionDeclaration>[];
   final aliases = <String, String>{};
   final classes = <String, ClassDeclaration>{};
@@ -118,12 +153,189 @@ class SemanticModel {
   /// Module scope after a successful analysis, including imports and prelude.
   final moduleSymbols = <String, Symbol>{};
 
+  /// Public members of Dart SDK classes read from the SDK sources.
+  final dartShapes = <String, DartShape>{};
+
   /// Dart import URI for a `package:` or `generated:` library that was loaded.
   final resolvedImports = <ImportDeclaration, String>{};
 
   /// Emit `@protected` because this package depends on `package:meta`.
   var protectWithMeta = false;
 }
+
+/// A symbol for one name read from a Dart SDK library.
+Symbol symbolForDart(DartTop top, [DartShape? shape]) {
+  if (top.isType) {
+    final namespace = <String, Symbol>{};
+    final constructors = shape?.constructors ?? const <String, DartMember>{};
+    for (final entry in constructors.entries) {
+      if (entry.key.isEmpty) continue;
+      namespace[entry.key] = _dartMemberSymbol(entry.value, top.name);
+    }
+    final statics = shape?.statics ?? const <String, DartMember>{};
+    for (final entry in statics.entries) {
+      namespace.putIfAbsent(
+          entry.key, () => _dartMemberSymbol(entry.value, entry.value.type));
+    }
+    final unnamed = constructors[''];
+    return Symbol(
+      top.name,
+      top.name,
+      top.name,
+      external: true,
+      callable: unnamed != null,
+      parameterTypes: unnamed == null
+          ? const []
+          : [for (final parameter in unnamed.parameters) parameter.$2],
+      optionalParameters: unnamed?.optional ?? 0,
+      namespace: namespace.isEmpty ? null : namespace,
+      documentation: top.documentation,
+      signature: dartTopHead(top),
+      originFile: top.file.isEmpty ? null : top.file,
+      originLine: top.line,
+      originColumn: top.column,
+      originOffset: top.offset,
+    );
+  }
+  ConstValue? value;
+  if (top.number != null) value = ConstDouble(top.number!);
+  if (top.integer != null) value = ConstInt(top.integer!);
+  return Symbol(
+    top.name,
+    top.name,
+    top.type,
+    external: top.callable,
+    callable: top.callable,
+    constant: top.constant,
+    constantValue: value,
+    parameterTypes: [for (final parameter in top.parameters) parameter.$2],
+    optionalParameters: top.optional,
+    documentation: top.documentation,
+    signature: dartTopHead(top),
+    originFile: top.file.isEmpty ? null : top.file,
+    originLine: top.line,
+    originColumn: top.column,
+    originOffset: top.offset,
+  );
+}
+
+Symbol _dartMemberSymbol(DartMember member, String type) {
+  return Symbol(
+    member.name,
+    member.name,
+    member.getter ? member.type : type,
+    external: true,
+    callable: !member.getter,
+    parameterTypes: [for (final parameter in member.parameters) parameter.$2],
+    optionalParameters: member.optional,
+    documentation: member.documentation,
+    signature: dartMemberHead(member),
+    originFile: member.file.isEmpty ? null : member.file,
+    originLine: member.line,
+    originColumn: member.column,
+    originOffset: member.offset,
+  );
+}
+
+const _stringMembers = [
+  'length',
+  'isEmpty',
+  'isNotEmpty',
+  'chars',
+  'lines',
+  'contains',
+  'startsWith',
+  'endsWith',
+  'substring',
+  'toUpperCase',
+  'toLowerCase',
+  'trim',
+  'split',
+  'indexOf',
+  'replaceAll',
+  'take',
+  'drop',
+  'takeLast',
+  'dropLast',
+  'padStart',
+  'padEnd',
+];
+
+const _iterableMembers = [
+  'length',
+  'isEmpty',
+  'isNotEmpty',
+  'first',
+  'last',
+  'contains',
+  'elementAt',
+  'join',
+  'toList',
+  'toSet',
+  'map',
+  'fold',
+  'reduce',
+  'sum',
+  'min',
+  'max',
+  'count',
+  'find',
+  'findLast',
+  'take',
+  'zip',
+  'drop',
+  'takeLast',
+  'dropLast',
+  'skip',
+  'sorted',
+  'unique',
+  'flat',
+  'group',
+  'where',
+  'any',
+  'every',
+  'forEach',
+];
+
+const _listMembers = [
+  'add',
+  'addAll',
+  'insert',
+  'removeAt',
+  'removeLast',
+  'remove',
+  'clear',
+  'sort',
+  'sublist',
+  'indexOf',
+  'reversed',
+];
+
+const _setMembers = ['add', 'addAll', 'remove', 'clear'];
+
+const _mapMembers = [
+  'length',
+  'isEmpty',
+  'isNotEmpty',
+  'keys',
+  'values',
+  'containsKey',
+  'remove',
+  'clear',
+  'addAll',
+  'putIfAbsent',
+  'forEach',
+];
+
+const _numberMembers = [
+  'abs',
+  'round',
+  'floor',
+  'ceil',
+  'plain',
+  'clamp',
+  'fixed',
+];
 
 class Analyzer {
   Analyzer({this.library = '<input>', String? file}) : _file = file ?? library;
@@ -201,6 +413,27 @@ class Analyzer {
       {Map<String, Program> libraries = const {}}) {
     _libraries = libraries;
     _global.symbols['print'] = Symbol('print', 'print', 'void');
+    _global.symbols['range'] = Symbol(
+      'range',
+      'range',
+      'Range<num>',
+      callable: true,
+      signature: 'range(start: num, end: num) -> Range<num>',
+      documentation:
+          'Integers from start through end, including both ends. range(end) is range(0, end).',
+    );
+    for (final name in ['min', 'max']) {
+      _global.symbols[name] = Symbol(
+        name,
+        name,
+        'num',
+        callable: true,
+        signature: '$name(a: num, b: num) -> num',
+        documentation: name == 'min'
+            ? 'The smaller of two numbers of the same type.'
+            : 'The larger of two numbers of the same type.',
+      );
+    }
     _global.symbols['missing'] =
         Symbol('missing', 'missing', 'Optional<Never>', constant: true);
     _global.symbols['present'] =
@@ -1012,18 +1245,31 @@ class Analyzer {
       }
     }
     model.imports.add(node);
-    if (node.uri == 'dart:math') {
-      _bindMath(node);
-      return;
-    }
     if (node.uri == 'quds:core') {
       _bindPrelude(node);
       return;
     }
     if (node.uri == 'dart:ffi') _ffi = true;
-    if (node.uri.startsWith('dart:')) return;
+    if (node.uri.startsWith('dart:')) {
+      _bindDart(node);
+      return;
+    }
     if (node.uri.startsWith('package:') && node.uri.endsWith('.dart')) {
+      final quds = resolveLibraryPath(_file, node.uri);
+      if (quds != null && File(quds).existsSync()) {
+        _bindPackage(node);
+        return;
+      }
       _externalDart = true;
+      final library = packageDartFile(_file, node.uri);
+      if (library != null) {
+        try {
+          final surface = readDartFile(library);
+          if (surface != null) _bindSurface(node, surface);
+        } catch (_) {
+          // The file stays an external library. Unknown names remain dynamic.
+        }
+      }
       if (node.prefix != null) {
         final space = _space(node.prefix!, node);
         final current = _global.symbols[node.prefix!]!;
@@ -1094,30 +1340,36 @@ class Analyzer {
     }
   }
 
-  void _bindMath(ImportDeclaration node) {
-    final catalog = <String, Symbol>{
-      'sqrt': Symbol('sqrt', 'sqrt', 'double', parameterTypes: const ['num']),
-      'sin': Symbol('sin', 'sin', 'double', parameterTypes: const ['num']),
-      'cos': Symbol('cos', 'cos', 'double', parameterTypes: const ['num']),
-      'min': Symbol('min', 'min', 'num', parameterTypes: const ['num', 'num']),
-      'max': Symbol('max', 'max', 'num', parameterTypes: const ['num', 'num']),
-      'pi': Symbol('pi', 'pi', 'double',
-          constant: true, constantValue: ConstDouble(3.141592653589793)),
-    };
+  void _bindDart(ImportDeclaration node) {
+    DartSurface? surface;
+    try {
+      surface = readDartLibrary(node.uri);
+    } catch (_) {
+      surface = null;
+    }
+    if (surface == null) return;
+    _bindSurface(node, surface);
+  }
+
+  void _bindSurface(ImportDeclaration node, DartSurface surface) {
+    model.dartShapes.addAll(surface.types);
     if (node.show.isNotEmpty) {
       for (final name in node.show) {
-        if (!catalog.containsKey(name)) {
+        if (!surface.names.containsKey(name)) {
           error('E200', 'Name $name is not defined', node);
         }
       }
     }
     final selected = node.show.isNotEmpty
         ? node.show
-        : catalog.keys.where((name) => !node.hide.contains(name));
+        : surface.names.keys.where((name) => !node.hide.contains(name));
     final target =
         node.prefix == null ? _global.symbols : _space(node.prefix!, node);
     for (final name in selected) {
-      target[name] = catalog[name]!;
+      if (node.prefix == null && target.containsKey(name)) continue;
+      final top = surface.names[name];
+      if (top == null) continue;
+      target[name] = symbolForDart(top, surface.types[name]);
     }
   }
 
@@ -1873,6 +2125,21 @@ class Analyzer {
             () => statements(node.elseBody, nested: true));
       case ForStatement():
         final type = expression(node.iterable);
+        if (node.step != null) {
+          if (!_rangeIterable(node.iterable)) {
+            fail('step follows a range', node.step!);
+          }
+          final stepType = expression(node.step!);
+          final integer = model.types[node.iterable] == 'Range<int>';
+          if (integer) {
+            if (stepType != 'int') fail('step must be int', node.step!);
+          } else if (!numeric(stepType)) {
+            fail('step must be numeric', node.step!);
+          }
+          if (_zeroStep(node.step!)) {
+            error('E801', 'A loop step cannot be zero', node.step!);
+          }
+        }
         if (node.awaiting && (_function == null || !_function!.isAsync)) {
           error('E803', 'await for is only valid inside async', node);
         }
@@ -1883,11 +2150,26 @@ class Analyzer {
             : elementType(type, node.iterable);
         if (_scope.lookup(node.name) != null)
           fail('Loop binding would shadow ${node.name}', node);
-        final symbol = create(node.name, element);
+        if (node.index != null) {
+          if (node.index == node.name) {
+            fail('Loop bindings must have different names', node);
+          }
+          if (_scope.lookup(node.index!) != null) {
+            fail('Loop binding would shadow ${node.index}', node);
+          }
+        }
+        final pair = node.index == null ? null : _pairFields(element);
+        final symbol = create(node.name, pair == null ? element : pair[1]);
         model.declarations[node] = symbol;
         final saved = _scope;
         _scope = _Scope(saved);
         _scope.symbols[node.name] = symbol;
+        if (node.index != null) {
+          final index = create(node.index!, pair == null ? 'int' : pair[0]);
+          model.loopIndexes[node] = index;
+          _scope.symbols[node.index!] = index;
+          if (pair != null) model.loopPairs.add(node);
+        }
         _loopDepth++;
         statements(node.body);
         _loopDepth--;
@@ -2046,11 +2328,20 @@ class Analyzer {
         }
       case RepeatStatement():
         if (node.body.isEmpty) fail('repeat needs a body', node);
+        if (node.count != null) {
+          if (expression(node.count!) != 'int') {
+            fail('repeat count must be int', node.count!);
+          }
+          _loopDepth++;
+          statements(node.body, nested: true);
+          _loopDepth--;
+          break;
+        }
         _loopDepth++;
         statements(node.body, nested: true);
         _loopDepth--;
-        if (expression(node.condition) != 'bool') {
-          fail('repeat condition must be bool', node.condition);
+        if (expression(node.condition!) != 'bool') {
+          fail('repeat condition must be bool', node.condition!);
         }
       case TestDeclaration():
         model.declarations[node] = create(node.title, 'void');
@@ -2238,6 +2529,12 @@ class Analyzer {
         return _capturesLocal(node.operand);
       case BinaryExpression():
         return _capturesLocal(node.left) || _capturesLocal(node.right);
+      case SliceExpression():
+        return _capturesLocal(node.object) ||
+            (node.start != null && _capturesLocal(node.start!)) ||
+            (node.end != null && _capturesLocal(node.end!));
+      case ChainComparison():
+        return node.operands.any(_capturesLocal);
       case InterpolatedString():
         return node.parts.any(_capturesLocal);
       default:
@@ -2266,7 +2563,12 @@ class Analyzer {
     }
     final type = unwrap(raw);
     final declaration = _global.symbols[type]?.classDeclaration;
-    if (declaration == null) fail('No member ${node.name} on $raw', node);
+    if (declaration == null) {
+      fail(
+          _hinted('No member ${node.name} on $raw', node.name,
+              _memberCandidates(raw)),
+          node);
+    }
     final properties =
         _propertiesOf(declaration).where((item) => item.name == node.name);
     if (properties.isNotEmpty) {
@@ -2377,7 +2679,8 @@ class Analyzer {
     if (type.startsWith('Stream<') && type.endsWith('>')) {
       return type.substring(7, type.length - 1);
     }
-    fail('for-in requires a List, Set, range, or iterable', node);
+    if (type == 'String') return 'String';
+    fail('for-in requires a List, Set, range, iterable, or String', node);
   }
 
   void bindPattern(Pattern pattern, String type, {bool declare = false}) {
@@ -2528,6 +2831,29 @@ class Analyzer {
     if (to.endsWith('?')) {
       final inner = to.substring(0, to.length - 1);
       return from == 'Null' || compatible(from, inner);
+    }
+    if (from.startsWith('(') &&
+        to.startsWith('(') &&
+        from.contains('->') &&
+        to.contains('->')) {
+      final (fromParams, fromReturn) = _functionParts(from);
+      final (toParams, toReturn) = _functionParts(to);
+      final fromList = _splitTypes(fromParams);
+      final toList = _splitTypes(toParams);
+      if (fromList.length == toList.length) {
+        var paramsOk = true;
+        for (var i = 0; i < fromList.length; i++) {
+          if (!compatible(
+              _parameterType(toList[i]), _parameterType(fromList[i]))) {
+            paramsOk = false;
+            break;
+          }
+        }
+        if (paramsOk &&
+            (toReturn == 'void' || compatible(fromReturn, toReturn))) {
+          return true;
+        }
+      }
     }
     return false;
   }
@@ -2855,6 +3181,51 @@ class Analyzer {
   String unwrap(String type) =>
       type.endsWith('?') ? type.substring(0, type.length - 1) : type;
   bool numeric(String type) => {'int', 'double', 'num'}.contains(type);
+
+  /// [element] `in` [collection]. A map matches its keys.
+  bool _membership(String element, String collection) {
+    var type = collection.startsWith('readonly ')
+        ? collection.substring(9)
+        : collection;
+    if (type.endsWith('?')) return false;
+    type = unwrap(type);
+    if (type == 'String') return element == 'String';
+    if (type.startsWith('Map<') && type.endsWith('>')) {
+      final parts = _splitTypes(type.substring(4, type.length - 1));
+      return parts.length == 2 && compatible(element, parts[0]);
+    }
+    final inner = _sequenceElement(type);
+    return inner != null && compatible(element, inner);
+  }
+
+  /// The two positional fields of a record, when [type] is one.
+  List<String>? _pairFields(String type) {
+    if (!type.startsWith('(') || !type.endsWith(')') || type.contains('->')) {
+      return null;
+    }
+    final parts = _splitTypes(type.substring(1, type.length - 1));
+    if (parts.length != 2 || parts.any((part) => part.contains(':'))) {
+      return null;
+    }
+    return parts;
+  }
+
+  String? _sequenceElement(String type) {
+    if (type.startsWith('List<') && type.endsWith('>')) {
+      return type.substring(5, type.length - 1);
+    }
+    if (type.startsWith('Set<') && type.endsWith('>')) {
+      return type.substring(4, type.length - 1);
+    }
+    if (type.startsWith('Iterable<') && type.endsWith('>')) {
+      return type.substring(9, type.length - 1);
+    }
+    if (type.startsWith('Range<') && type.endsWith('>')) {
+      return type.substring(6, type.length - 1);
+    }
+    return null;
+  }
+
   String lambda(Lambda node) {
     final expected = _expected;
     final expectedParams = expected != null &&
@@ -2998,7 +3369,15 @@ class Analyzer {
         model.types[node.object] = 'prefix';
         final found = owner.namespace![node.name];
         if (found == null) {
-          if (!owner.external) fail('Name ${node.name} is not defined', node);
+          if (!owner.external) {
+            fail(
+                _hinted(
+                    'Name ${node.name} is not defined',
+                    node.name,
+                    owner.namespace!.keys
+                        .where((name) => !name.startsWith('_'))),
+                node);
+          }
           final created =
               Symbol(node.name, node.name, 'dynamic', external: true);
           owner.namespace![node.name] = created;
@@ -3010,6 +3389,12 @@ class Analyzer {
       }
     }
     final raw = expression(node.object);
+    final nested = model.references[node.object]?.namespace?[node.name];
+    final owner = model.references[node.object];
+    if (nested != null && owner?.type != 'prefix') {
+      model.references[node] = nested;
+      return nested.type;
+    }
     final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
     final nullableExtension = type.endsWith('?') &&
         !node.nullAware &&
@@ -3073,6 +3458,14 @@ class Analyzer {
           node.nullAware || type.endsWith('?') ? '$substituted?' : substituted;
       return _readonlyView(raw, foundType);
     }
+    final numberGetter = _numberGetter(base, node.name);
+    if (numberGetter != null) {
+      model.references[node] = Symbol(node.name, node.name, numberGetter);
+      final foundType = node.nullAware || type.endsWith('?')
+          ? '$numberGetter?'
+          : numberGetter;
+      return _readonlyView(raw, foundType);
+    }
     final builtin = _collectionGetter(base, node.name);
     if (builtin != null) {
       model.references[node] = Symbol(node.name, node.name, builtin);
@@ -3080,7 +3473,18 @@ class Analyzer {
           node.nullAware || type.endsWith('?') ? '$builtin?' : builtin;
       return _readonlyView(raw, foundType);
     }
-    fail('No member ${node.name} on $type', node);
+    final sdk = _sdkMember(base, node.name);
+    if (sdk != null && sdk.getter) {
+      model.references[node] = _dartMemberSymbol(sdk, sdk.type);
+      final dartGetter = sdk.type;
+      final foundType =
+          node.nullAware || type.endsWith('?') ? '$dartGetter?' : dartGetter;
+      return _readonlyView(raw, foundType);
+    }
+    fail(
+        _hinted('No member ${node.name} on $type', node.name,
+            _memberCandidates(type)),
+        node);
   }
 
   bool _isTypeReference(Expression node) {
@@ -3100,6 +3504,10 @@ class Analyzer {
         CallExpression() => _containsAwait(node.callee) ||
             node.arguments.any((argument) => _containsAwait(argument.value)),
         MemberAccess() => _containsAwait(node.object),
+        SliceExpression() => _containsAwait(node.object) ||
+            (node.start != null && _containsAwait(node.start!)) ||
+            (node.end != null && _containsAwait(node.end!)),
+        ChainComparison() => node.operands.any(_containsAwait),
         _ => false,
       };
 
@@ -3222,6 +3630,12 @@ class Analyzer {
           return walk(node.operand, stack);
         case BinaryExpression():
           return walk(node.left, stack) || walk(node.right, stack);
+        case SliceExpression():
+          return walk(node.object, stack) ||
+              (node.start != null && walk(node.start!, stack)) ||
+              (node.end != null && walk(node.end!, stack));
+        case ChainComparison():
+          return node.operands.any((operand) => walk(operand, stack));
         case CallExpression():
           return walk(node.callee, stack) ||
               node.arguments.any((argument) => walk(argument.value, stack));
@@ -3260,6 +3674,44 @@ class Analyzer {
       return 'String';
     }
     fail('Cannot index $type', node);
+  }
+
+  String slice(SliceExpression node) {
+    final raw = expression(node.object);
+    if (raw.endsWith('?')) {
+      error('E308',
+          'A nullable value is used where a non-null value is required', node);
+    }
+    final type = unwrap(raw.startsWith('readonly ') ? raw.substring(9) : raw);
+    void bound(Expression? value) {
+      if (value == null) return;
+      final boundType = expression(value);
+      if (!compatible(boundType, 'int')) fail('Slice bound must be int', value);
+    }
+
+    bound(node.start);
+    bound(node.end);
+    if (type == 'String') return 'String';
+    if (type.startsWith('List<') && type.endsWith('>')) return type;
+    fail('Cannot slice $type', node);
+  }
+
+  String chain(ChainComparison node) {
+    final types = [for (final operand in node.operands) expression(operand)];
+    final first = types.first;
+    if (first == 'String') {
+      if (types.any((type) => type != 'String')) {
+        fail('A chained comparison needs strings', node);
+      }
+      return 'bool';
+    }
+    if (!types.every(numeric)) {
+      fail('A chained comparison needs numbers or strings', node);
+    }
+    if (types.contains('int') && types.contains('double')) {
+      fail('A chained comparison needs one numeric type', node);
+    }
+    return 'bool';
   }
 
   String mapLiteral(MapExpression node) {
@@ -3618,6 +4070,12 @@ class Analyzer {
       if (compatible(right, left)) return left;
     }
     if (op == '==' || op == '!=') return 'bool';
+    if (op == 'in' || op == 'not in') {
+      if (!_membership(left, right)) {
+        fail('Operator $op is incompatible with $left and $right', node);
+      }
+      return 'bool';
+    }
     if (op == 'and' || op == 'or') {
       if (left == 'bool?' || right == 'bool?') {
         error(
@@ -3628,11 +4086,19 @@ class Analyzer {
       if (left == 'bool' && right == 'bool') return 'bool';
     } else if (op == '+' && left == 'String' && right == 'String') {
       return 'String';
+    } else if (op == '*' &&
+        (left == 'String' && right == 'int' ||
+            left == 'int' && right == 'String')) {
+      return 'String';
     } else if (numeric(left) && numeric(right)) {
       if ({'<', '<=', '>', '>='}.contains(op)) return 'bool';
       if (op == '/') return 'double';
       if (left == 'num' || right == 'num') return 'num';
       return left == 'double' || right == 'double' ? 'double' : 'int';
+    }
+    if (op == '+') {
+      final joined = _joinedCollection(left, right);
+      if (joined != null) return joined;
     }
     final owner = _global.symbols[unwrap(left)]?.classDeclaration;
     final method = owner == null ? null : _method(owner, op);
@@ -3670,6 +4136,8 @@ class Analyzer {
       Lambda() => lambda(node),
       MemberAccess() => member(node),
       IndexExpression() => index(node),
+      SliceExpression() => slice(node),
+      ChainComparison() => chain(node),
       MapExpression() => mapLiteral(node),
       SetExpression() => setLiteral(node),
       RecordExpression() => record(node),
@@ -3700,6 +4168,133 @@ class Analyzer {
     return type;
   }
 
+  String _hinted(String message, String name, Iterable<String> candidates) {
+    final suggestion = _nearestName(name, candidates);
+    if (suggestion == null) return message;
+    return '$message. Did you mean $suggestion?';
+  }
+
+  String? _nearestName(String name, Iterable<String> candidates) {
+    final limit = name.length <= 3 ? 1 : 2;
+    String? best;
+    var ties = 0;
+    var bestDistance = limit + 1;
+    final seen = <String>{};
+    for (final candidate in candidates) {
+      if (candidate == name || candidate.isEmpty || !seen.add(candidate)) {
+        continue;
+      }
+      final distance = _editDistance(name, candidate);
+      if (distance == 0 || distance > limit) continue;
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+        ties = 1;
+      } else if (distance == bestDistance) {
+        ties++;
+      }
+    }
+    if (ties != 1) return null;
+    return best;
+  }
+
+  int _editDistance(String left, String right) {
+    if (left == right) return 0;
+    if (left.toLowerCase() == right.toLowerCase()) return 1;
+    final rows = left.length + 1;
+    final cols = right.length + 1;
+    var previous = List<int>.generate(cols, (index) => index);
+    var current = List<int>.filled(cols, 0);
+    for (var i = 1; i < rows; i++) {
+      current[0] = i;
+      for (var j = 1; j < cols; j++) {
+        final cost = left[i - 1] == right[j - 1] ? 0 : 1;
+        final insert = current[j - 1] + 1;
+        final delete = previous[j] + 1;
+        final replace = previous[j - 1] + cost;
+        var best = insert < delete ? insert : delete;
+        if (replace < best) best = replace;
+        current[j] = best;
+      }
+      final swap = previous;
+      previous = current;
+      current = swap;
+    }
+    return previous[cols - 1];
+  }
+
+  Iterable<String> _visibleNames() sync* {
+    final seen = <String>{};
+    _Scope? scope = _scope;
+    while (scope != null) {
+      for (final entry in scope.symbols.entries) {
+        if (!seen.add(entry.key)) continue;
+        if (entry.key.startsWith('_') && entry.value.library.isNotEmpty) {
+          continue;
+        }
+        yield entry.key;
+      }
+      scope = scope.parent;
+    }
+  }
+
+  Iterable<String> _memberCandidates(String type) sync* {
+    var bare = type.startsWith('readonly ') ? type.substring(9) : type;
+    bare = unwrap(bare);
+    final head = _genericHead(bare);
+    final declaration = _global.symbols[head]?.classDeclaration;
+    if (declaration != null) yield* _classMembers(declaration, <String>{});
+    if (head == 'String') yield* _stringMembers;
+    if (head == 'List') yield* _listMembers;
+    if (head == 'Set') yield* _setMembers;
+    if (head == 'Map') yield* _mapMembers;
+    if (head == 'Iterable' || head == 'List' || head == 'Set') {
+      yield* _iterableMembers;
+    }
+    if (head == 'int') yield 'pad';
+    if (head == 'int' || head == 'double' || head == 'num') {
+      yield* _numberMembers;
+    }
+    for (final extension in model.extensions) {
+      if (_extensionMatch(extension, bare) == null &&
+          _extensionMatch(extension, head) == null) {
+        continue;
+      }
+      for (final method in extension.methods) {
+        yield method.name;
+      }
+    }
+  }
+
+  Iterable<String> _classMembers(
+      ClassDeclaration type, Set<String> seen) sync* {
+    if (!seen.add(type.name)) return;
+    final owner = model.libraryOf[type] ?? '';
+    bool visible(String name) =>
+        !name.startsWith('_') || owner.isEmpty || owner == library;
+    for (final field in type.fields) {
+      if (visible(field.name)) yield field.name;
+    }
+    for (final property in type.properties) {
+      if (visible(property.name)) yield property.name;
+    }
+    for (final method in type.methods) {
+      if (visible(method.name)) yield method.name;
+    }
+    for (final item in type.cases) {
+      if (visible(item.name)) yield item.name;
+    }
+    for (final mixin in type.mixins) {
+      final parent = _global.symbols[mixin]?.classDeclaration;
+      if (parent != null) yield* _classMembers(parent, seen);
+    }
+    final superName = type.superclass;
+    if (superName != null) {
+      final parent = _global.symbols[superName]?.classDeclaration;
+      if (parent != null) yield* _classMembers(parent, seen);
+    }
+  }
+
   String identifier(Identifier node) {
     final symbol = _scope.lookup(node.name);
     if (symbol == null && _thisType != null) {
@@ -3724,7 +4319,12 @@ class Analyzer {
       }
     }
     if (symbol == null) {
-      if (!_externalDart) fail('Undefined symbol: ${node.name}', node);
+      if (!_externalDart) {
+        fail(
+            _hinted(
+                'Undefined symbol: ${node.name}', node.name, _visibleNames()),
+            node);
+      }
       model.references[node] =
           Symbol(node.name, node.name, 'dynamic', external: true);
       return 'dynamic';
@@ -3763,6 +4363,40 @@ class Analyzer {
     fail('Invalid unary operator ${node.operator} for $type', node);
   }
 
+  /// A Dart library type this file did not declare. Different ones can share a list.
+  bool _externalNominal(String type) {
+    if (type == 'dynamic') return true;
+    if (type.endsWith('?')) return _externalNominal(unwrap(type));
+    const known = {
+      'int',
+      'double',
+      'num',
+      'String',
+      'bool',
+      'Null',
+      'Object',
+      'Never',
+      'void',
+    };
+    if (known.contains(type)) return false;
+    if (type.startsWith('List<') ||
+        type.startsWith('Set<') ||
+        type.startsWith('Map<') ||
+        type.startsWith('Iterable<') ||
+        type.startsWith('Future<') ||
+        type.startsWith('Stream<') ||
+        type.startsWith('Range<') ||
+        type.startsWith('Optional<') ||
+        type.startsWith('Result<') ||
+        type.contains('->') ||
+        type.startsWith('(')) {
+      return false;
+    }
+    final head = _genericHead(type);
+    if (_global.symbols[head]?.classDeclaration != null) return false;
+    return RegExp(r'^[A-Za-z_]').hasMatch(head);
+  }
+
   String list(ListExpression node) {
     if (node.elements.isEmpty) {
       final expected = _expected;
@@ -3779,6 +4413,10 @@ class Analyzer {
       final next = elementTypeOf(node.elements[i], aware(node.nullAware, i));
       if (numeric(type) && numeric(next) && type != next) {
         type = 'num';
+      } else if (type != next &&
+          _externalNominal(type) &&
+          _externalNominal(next)) {
+        type = 'dynamic';
       } else if (type != next) {
         fail('List elements must have a common supported static type',
             node.elements[i]);
@@ -3886,7 +4524,12 @@ class Analyzer {
     model.types[id] = 'prefix';
     final found = owner.namespace![callee.name];
     if (found == null) {
-      if (!owner.external) fail('Name ${callee.name} is not defined', callee);
+      if (!owner.external) {
+        fail(
+            _hinted('Name ${callee.name} is not defined', callee.name,
+                owner.namespace!.keys.where((name) => !name.startsWith('_'))),
+            callee);
+      }
       return _passExternal(
           node, Symbol(callee.name, callee.name, 'dynamic', external: true));
     }
@@ -3914,7 +4557,7 @@ class Analyzer {
           Symbol(found.name, found.dartName, type).withFunction(found.function);
       return type;
     }
-    if (found.parameterTypes.isNotEmpty) {
+    if (found.parameterTypes.isNotEmpty || found.callable) {
       model.references[callee] = found;
       return externalCall(node, found);
     }
@@ -3948,6 +4591,14 @@ class Analyzer {
     }
     if (callee is MemberAccess) {
       final rawObject = expression(callee.object);
+      final nested = model.references[callee.object]?.namespace?[callee.name];
+      final owner = model.references[callee.object];
+      if (nested != null && owner?.type != 'prefix') {
+        model.references[callee] = nested;
+        if (nested.parameterTypes.isNotEmpty || nested.callable) {
+          return externalCall(node, nested);
+        }
+      }
       if (callee.name == 'copyWith') {
         final objectType = unwrap(rawObject.startsWith('readonly ')
             ? rawObject.substring(9)
@@ -4023,7 +4674,14 @@ class Analyzer {
       if (resolved == null) {
         final builtin = _collectionCall(objectType, callee.name, node);
         if (builtin != null) return builtin;
-        fail('No method ${callee.name} on $objectType', callee);
+        final number = _numberCall(objectType, callee.name, node);
+        if (number != null) return number;
+        final dartCall = _dartCall(objectType, callee.name, node);
+        if (dartCall != null) return dartCall;
+        fail(
+            _hinted('No method ${callee.name} on $objectType', callee.name,
+                _memberCandidates(objectType)),
+            callee);
       }
       if (function != null && declaration != null) {
         _checkMember(declaration, callee.name, callee);
@@ -4104,7 +4762,12 @@ class Analyzer {
       return _passExternal(
           node, Symbol(callee.name, callee.name, 'dynamic', external: true));
     }
-    if (symbol == null) fail('Undefined function: ${callee.name}', callee);
+    if (symbol == null) {
+      fail(
+          _hinted('Undefined function: ${callee.name}', callee.name,
+              _visibleNames()),
+          callee);
+    }
     model.references[callee] = symbol;
     final args = node.arguments;
     if (symbol.dartName == 'print') {
@@ -4115,6 +4778,34 @@ class Analyzer {
         fail('Cannot print a void expression', node);
       }
       return 'void';
+    }
+    if ((symbol.dartName == 'min' || symbol.dartName == 'max') &&
+        !symbol.external &&
+        symbol.function == null) {
+      if (args.length != 2 || args.any((argument) => argument.name != null)) {
+        fail('${symbol.name} expects two positional arguments', node);
+      }
+      final left = expression(args[0].value);
+      final right = expression(args[1].value);
+      if (!numeric(left) || !numeric(right)) {
+        fail('${symbol.name} expects numbers', node);
+      }
+      if (left != right && left != 'num' && right != 'num') {
+        fail('${symbol.name} needs a single numeric type', node);
+      }
+      return left == 'num' || right == 'num' ? 'num' : left;
+    }
+    if (symbol.dartName == 'range' && !symbol.external) {
+      if (args.isEmpty ||
+          args.length > 2 ||
+          args.any((argument) => argument.name != null)) {
+        fail('range expects one or two positional arguments', node);
+      }
+      final types = [for (final argument in args) expression(argument.value)];
+      if (types.any((type) => !numeric(type))) {
+        fail('range bounds must be numbers', node);
+      }
+      return types.every((type) => type == 'int') ? 'Range<int>' : 'Range<num>';
     }
     if (symbol.classCase != null) {
       return constructCase(node, symbol);
@@ -4217,11 +4908,25 @@ class Analyzer {
           ? 'Result<$type, Object>'
           : 'Result<Object, $type>';
     }
-    if (node.arguments.length != symbol.parameterTypes.length) {
-      fail('${symbol.name} expects ${symbol.parameterTypes.length} arguments',
+    if (symbol.external &&
+        node.arguments.any((argument) => argument.name != null)) {
+      for (final argument in node.arguments) {
+        expression(argument.value);
+      }
+      model.argumentOrder[node] =
+          List.generate(node.arguments.length, (index) => index);
+      return symbol.type;
+    }
+    final max = symbol.parameterTypes.length;
+    final min = (max - symbol.optionalParameters).clamp(0, max);
+    if (node.arguments.length < min || node.arguments.length > max) {
+      fail(
+          min == max
+              ? '${symbol.name} expects $max arguments'
+              : '${symbol.name} expects $min to $max arguments',
           node);
     }
-    for (var i = 0; i < symbol.parameterTypes.length; i++) {
+    for (var i = 0; i < node.arguments.length; i++) {
       final type = expression(node.arguments[i].value);
       final expected = symbol.parameterTypes[i];
       if (expected != '*' && !compatible(type, expected)) {
@@ -4239,7 +4944,9 @@ class Analyzer {
     }
     final name = (applied.callee as Identifier).name;
     final symbol = _scope.lookup(name);
-    if (symbol == null) fail('Undefined function: $name', node);
+    if (symbol == null) {
+      fail(_hinted('Undefined function: $name', name, _visibleNames()), node);
+    }
     model.references[applied.callee as Identifier] = symbol;
     model.references[node.callee] = symbol;
     if (symbol.classDeclaration != null && symbol.classCase == null) {
@@ -4516,6 +5223,14 @@ class Analyzer {
       case BinaryExpression():
         restrictDefault(node.left, earlier, all);
         restrictDefault(node.right, earlier, all);
+      case SliceExpression():
+        restrictDefault(node.object, earlier, all);
+        if (node.start != null) restrictDefault(node.start!, earlier, all);
+        if (node.end != null) restrictDefault(node.end!, earlier, all);
+      case ChainComparison():
+        for (final operand in node.operands) {
+          restrictDefault(operand, earlier, all);
+        }
       case CallExpression():
         restrictDefault(node.callee, earlier, all);
         for (final argument in node.arguments) {
@@ -4656,6 +5371,9 @@ class Analyzer {
     if (type.startsWith('Iterable<') && type.endsWith('>')) {
       return ('Iterable', {'T': type.substring(9, type.length - 1)});
     }
+    if (type.startsWith('Range<') && type.endsWith('>')) {
+      return ('Iterable', {'T': type.substring(6, type.length - 1)});
+    }
     if (type.startsWith('Map<') && type.endsWith('>')) {
       final parts = _splitTypes(type.substring(4, type.length - 1));
       if (parts.length != 2) return null;
@@ -4703,8 +5421,8 @@ class Analyzer {
       ('Set' || 'List', 'clear') => (<(String, String)>[], 'void'),
       ('Iterable', 'contains') => ([('value', 'Object')], 'bool'),
       ('Iterable', 'elementAt') => ([('index', 'int')], 'T'),
-      ('Iterable', 'join') => (<(String, String)>[], 'String'),
       ('Iterable', 'toList') => (<(String, String)>[], 'List<T>'),
+      ('Iterable', 'toSet') => (<(String, String)>[], 'Set<T>'),
       ('Iterable', 'any' || 'every' || 'where') => (
           [('test', '(T) -> bool')],
           name == 'where' ? 'Iterable<T>' : 'bool'
@@ -4737,15 +5455,35 @@ class Analyzer {
 
   String? _getterShape(String family, String name) {
     return switch ((family, name)) {
+      ('String', 'chars' || 'lines') => 'List<String>',
       ('Iterable' || 'List' || 'Set' || 'Map' || 'String', 'isEmpty') => 'bool',
       ('Iterable' || 'List' || 'Set' || 'Map' || 'String', 'isNotEmpty') =>
         'bool',
+      ('Iterable', 'length') => 'int',
       ('Iterable' || 'List' || 'Set', 'first' || 'last') => 'T',
       ('List', 'reversed') => 'Iterable<T>',
       ('Map', 'keys') => 'Iterable<K>',
       ('Map', 'values') => 'Iterable<V>',
       _ => null,
     };
+  }
+
+  String _dartHead(String type) {
+    var bare = type.startsWith('readonly ') ? type.substring(9) : type;
+    if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+    return _genericHead(bare);
+  }
+
+  DartMember? _sdkMember(String type, String name) {
+    return model.dartShapes[_dartHead(type)]?.members[name];
+  }
+
+  String? _dartCall(String type, String name, CallExpression node) {
+    final member = _sdkMember(type, name);
+    if (member == null || member.getter) return null;
+    final symbol = _dartMemberSymbol(member, member.type);
+    model.references[node.callee] = symbol;
+    return externalCall(node, symbol);
   }
 
   String? _collectionGetter(String type, String name) {
@@ -4764,6 +5502,16 @@ class Analyzer {
     final found = _collectionVars(type);
     if (found == null) return null;
     final (family, vars) = found;
+    if (family == 'String') {
+      final text = _textCall(name, node);
+      if (text != null) return text;
+    }
+    final element = vars['T'];
+    if (element != null &&
+        (family == 'List' || family == 'Set' || family == 'Iterable')) {
+      final eager = _eagerCollection(element, name, node);
+      if (eager != null) return eager;
+    }
     final shape = _methodShape(family, name) ??
         ((family == 'List' || family == 'Set')
             ? _methodShape('Iterable', name)
@@ -4781,6 +5529,362 @@ class Analyzer {
     model.references[node.callee] = symbol;
     applyArguments(node, parameters, function);
     return returns;
+  }
+
+  static const _collectionDocs = {
+    'map': 'Builds a new list by applying transform to each element.',
+    'fold': 'Combines every element into one value, starting from initial.',
+    'reduce':
+        'Combines every element into one value. An empty collection fails.',
+    'sum': 'Adds numeric elements. An empty collection sums to zero.',
+    'min': 'The smallest number, or null when the collection is empty.',
+    'max': 'The largest number, or null when the collection is empty.',
+    'count': 'How many elements there are, or how many match test.',
+    'find': 'The first matching element, or null.',
+    'findLast': 'The last matching element, or null.',
+    'take': 'A new list of the first count elements.',
+    'drop': 'Everything after the first count elements.',
+    'takeLast': 'The last count elements.',
+    'dropLast': 'Everything except the last count elements.',
+    'skip': 'A new list without the first count elements.',
+    'pad':
+        'The number written with zeros on the left until it is width characters. A minus sign stays in front of the zeros.',
+    'padStart':
+        'The text with fill on the left until it is width characters. The fill defaults to a space.',
+    'padEnd':
+        'The text with fill on the right until it is width characters. The fill defaults to a space.',
+    'zip':
+        'Pairs each element with the element at the same position. Stops at the shorter collection.',
+    'lines':
+        'The text split into lines. Line endings are removed and empty lines stay.',
+    'clamp': 'The number limited to the inclusive bounds.',
+    'sorted':
+        'A new list in order. Numbers and strings compare themselves. Anything else needs a comparison.',
+    'unique': 'A new list keeping the first occurrence of each element.',
+    'flat': 'A new list of the elements inside each nested collection.',
+    'group': 'A map from each key to the elements that produced it.',
+    'join': 'Joins the elements. The separator defaults to empty.',
+    'substring': 'The slice from start, through the character before end.',
+  };
+
+  String? _eagerCollection(String element, String name, CallExpression node) {
+    final span = node.span;
+    Parameter param(String parameterName, String type) =>
+        Parameter(parameterName, type, false, span);
+    switch (name) {
+      case 'map':
+        final transform = _argumentValue(node, 'transform', 0);
+        if (node.arguments.length != 1 || transform == null) {
+          fail('map expects one argument', node);
+        }
+        final saved = _expected;
+        _expected = '($element) -> Object';
+        final callback = expression(transform);
+        _expected = saved;
+        if (!compatible(callback, '($element) -> Object')) {
+          fail(
+              'Argument type $callback is incompatible with ($element) -> Object',
+              node);
+        }
+        final result = _functionParts(callback).$2;
+        if (result == 'void') fail('map transform must not be void', node);
+        return _bindCollection(
+            name,
+            '_qmap',
+            [param('transform', '($element) -> Object')],
+            'List<$result>',
+            node,
+            'map(transform: $callback) -> List<$result>');
+      case 'fold':
+        final initial = _argumentValue(node, 'initial', 0);
+        final combine = _argumentValue(node, 'combine', 1);
+        if (node.arguments.length != 2 || initial == null || combine == null) {
+          fail('fold expects two arguments', node);
+        }
+        final seed = expression(initial);
+        if (seed == 'void') fail('fold initial must not be void', node);
+        return _bindCollection(
+            name,
+            '_qfold',
+            [
+              param('initial', seed),
+              param('combine', '($seed, $element) -> $seed'),
+            ],
+            seed,
+            node,
+            'fold(initial: $seed, combine: ($seed, $element) -> $seed) -> $seed');
+      case 'reduce':
+        return _bindCollection(
+            name,
+            '_qreduce',
+            [param('combine', '($element, $element) -> $element')],
+            element,
+            node,
+            'reduce(combine: ($element, $element) -> $element) -> $element');
+      case 'sum':
+        if (node.arguments.isNotEmpty) fail('sum expects no arguments', node);
+        if (element != 'int' && element != 'double' && element != 'num') {
+          fail('sum must be numeric', node);
+        }
+        return _bindCollection(
+            name, '_qsum', const [], element, node, 'sum() -> $element');
+      case 'min' || 'max':
+        if (node.arguments.isNotEmpty) {
+          fail('$name expects no arguments', node);
+        }
+        if (element != 'int' && element != 'double' && element != 'num') {
+          fail('$name must be numeric', node);
+        }
+        return _bindCollection(name, name == 'min' ? '_qmin' : '_qmax',
+            const [], '$element?', node, '$name() -> $element?');
+      case 'count':
+        if (node.arguments.isEmpty) {
+          return _bindCollection(
+              name, '_qcount', const [], 'int', node, 'count() -> int');
+        }
+        return _bindCollection(
+            name,
+            '_qcountWhere',
+            [param('test', '($element) -> bool')],
+            'int',
+            node,
+            'count(test: ($element) -> bool) -> int');
+      case 'find' || 'findLast':
+        final dart = name == 'find' ? '_qfind' : '_qfindLast';
+        return _bindCollection(
+            name,
+            dart,
+            [param('test', '($element) -> bool')],
+            '$element?',
+            node,
+            '$name(test: ($element) -> bool) -> $element?');
+      case 'zip':
+        final other = _argumentValue(node, 'other', 0);
+        if (node.arguments.length != 1 || other == null) {
+          fail('zip expects one argument', node);
+        }
+        final otherType = expression(other);
+        var stored = otherType.startsWith('readonly ')
+            ? otherType.substring(9)
+            : otherType;
+        if (stored.endsWith('?')) fail('zip expects an iterable', other);
+        stored = unwrap(stored);
+        final otherElement = _sequenceElement(stored);
+        if (otherElement == null) fail('zip expects an iterable', other);
+        return _bindCollection(
+            name,
+            '_qzip',
+            [param('other', stored)],
+            'List<($element, $otherElement)>',
+            node,
+            'zip(other: $stored) -> List<($element, $otherElement)>');
+      case 'take' || 'skip' || 'drop':
+        final dart = switch (name) {
+          'take' => '_qtake',
+          'drop' => '_qdrop',
+          _ => '_qskip',
+        };
+        return _bindCollection(name, dart, [param('count', 'int')],
+            'List<$element>', node, '$name(count: int) -> List<$element>');
+      case 'takeLast' || 'dropLast':
+        return _bindCollection(
+            name,
+            name == 'takeLast' ? '_qtakeLast' : '_qdropLast',
+            [param('count', 'int')],
+            'List<$element>',
+            node,
+            '$name(count: int) -> List<$element>');
+      case 'sorted':
+        if (node.arguments.isEmpty) {
+          if (element != 'int' &&
+              element != 'double' &&
+              element != 'num' &&
+              element != 'String') {
+            fail(
+                'sorted must be numeric or String, or pass a comparison', node);
+          }
+          return _bindCollection(name, '_qsorted', const [], 'List<$element>',
+              node, 'sorted() -> List<$element>');
+        }
+        return _bindCollection(
+            name,
+            '_qsortedBy',
+            [param('compare', '($element, $element) -> int')],
+            'List<$element>',
+            node,
+            'sorted(compare: ($element, $element) -> int) -> List<$element>');
+      case 'unique':
+        if (node.arguments.isNotEmpty) {
+          fail('unique expects no arguments', node);
+        }
+        return _bindCollection(name, '_qunique', const [], 'List<$element>',
+            node, 'unique() -> List<$element>');
+      case 'flat':
+        if (node.arguments.isNotEmpty) fail('flat expects no arguments', node);
+        final inner = _collectionElement(element);
+        if (inner == null)
+          fail('flat must be a collection of collections', node);
+        return _bindCollection(name, '_qflat', const [], 'List<$inner>', node,
+            'flat() -> List<$inner>');
+      case 'group':
+        final keyOf = _argumentValue(node, 'key', 0);
+        if (node.arguments.length != 1 || keyOf == null) {
+          fail('group expects one argument', node);
+        }
+        final saved = _expected;
+        _expected = '($element) -> Object';
+        final callback = expression(keyOf);
+        _expected = saved;
+        if (!compatible(callback, '($element) -> Object')) {
+          fail(
+              'Argument type $callback is incompatible with ($element) -> Object',
+              node);
+        }
+        final key = _functionParts(callback).$2;
+        if (key == 'void') fail('group key must not be void', node);
+        return _bindCollection(
+            name,
+            '_qgroup',
+            [param('key', '($element) -> $key')],
+            'Map<$key, List<$element>>',
+            node,
+            'group(key: $callback) -> Map<$key, List<$element>>');
+      case 'join':
+        if (node.arguments.isEmpty) {
+          return _bindCollection(
+              name, '_qjoin', const [], 'String', node, 'join() -> String');
+        }
+        return _bindCollection(
+            name,
+            '_qjoinSep',
+            [param('separator', 'String')],
+            'String',
+            node,
+            'join(separator: String) -> String');
+      default:
+        return null;
+    }
+  }
+
+  String? _textCall(String name, CallExpression node) {
+    switch (name) {
+      case 'substring':
+        return _substringCall(node);
+      case 'take' || 'drop' || 'takeLast' || 'dropLast':
+        return _bindCollection(
+            name,
+            '_q${name}Text',
+            [Parameter('count', 'int', false, node.span)],
+            'String',
+            node,
+            '$name(count: int) -> String');
+      case 'padStart' || 'padEnd':
+        final width = _argumentValue(node, 'width', 0);
+        final fill = _argumentValue(node, 'fill', 1);
+        if (width == null || (fill == null && node.arguments.length != 1)) {
+          fail('$name expects a width and an optional fill', node);
+        }
+        final parameters = [
+          Parameter('width', 'int', false, node.span),
+          if (fill != null) Parameter('fill', 'String', false, node.span),
+        ];
+        return _bindCollection(name, '_q$name', parameters, 'String', node,
+            '$name(width: int, fill: String) -> String');
+      default:
+        return null;
+    }
+  }
+
+  String? _numberCall(String type, String name, CallExpression node) {
+    if (!numeric(type)) return null;
+    if (name == 'clamp') {
+      final bound = type == 'num' ? 'num' : type;
+      return _bindCollection(
+          name,
+          '_qclamp',
+          [
+            Parameter('lower', bound, false, node.span),
+            Parameter('upper', bound, false, node.span),
+          ],
+          type,
+          node,
+          'clamp(lower: $bound, upper: $bound) -> $type');
+    }
+    if (name == 'pad' && type == 'int') {
+      return _bindCollection(
+          name,
+          '_qpad',
+          [Parameter('width', 'int', false, node.span)],
+          'String',
+          node,
+          'pad(width: int) -> String');
+    }
+    if (name == 'fixed') {
+      return _bindCollection(
+          name,
+          '_qfixed',
+          [Parameter('digits', 'int', false, node.span)],
+          'String',
+          node,
+          'fixed(digits: int) -> String');
+    }
+    return null;
+  }
+
+  String? _numberGetter(String type, String name) {
+    if (!numeric(type)) return null;
+    return switch (name) {
+      'abs' => type,
+      'round' || 'floor' || 'ceil' => 'int',
+      'plain' => 'String',
+      _ => null,
+    };
+  }
+
+  String? _substringCall(CallExpression node) {
+    if (node.arguments.isEmpty || node.arguments.length > 2) {
+      fail('substring expects one or two arguments', node);
+    }
+    final parameters = [
+      Parameter('start', 'int', false, node.span),
+      if (node.arguments.length == 2) Parameter('end', 'int', false, node.span),
+    ];
+    final signature = node.arguments.length == 1
+        ? 'substring(start: int) -> String'
+        : 'substring(start: int, end: int) -> String';
+    return _bindCollection(
+        'substring', '_qsubstring', parameters, 'String', node, signature);
+  }
+
+  String _bindCollection(
+    String name,
+    String dartName,
+    List<Parameter> parameters,
+    String returns,
+    CallExpression node,
+    String signature,
+  ) {
+    final function =
+        FunctionDeclaration(name, parameters, returns, null, null, node.span);
+    final symbol = Symbol(name, dartName, returns,
+            documentation: _collectionDocs[name], signature: signature)
+        .withFunction(function);
+    model.declarations[function] = symbol;
+    model.references[node.callee] = symbol;
+    applyArguments(node, parameters, function);
+    return returns;
+  }
+
+  Expression? _argumentValue(CallExpression node, String name, int index) {
+    for (final argument in node.arguments) {
+      if (argument.name == name) return argument.value;
+    }
+    final positional = [
+      for (final argument in node.arguments)
+        if (argument.name == null) argument,
+    ];
+    if (index < positional.length) return positional[index].value;
+    return null;
   }
 
   static const _mutating = {
@@ -4825,7 +5929,9 @@ class Analyzer {
     final copies = <(Symbol, Symbol)>[];
     for (final name in node.names) {
       final outer = saved.lookup(name);
-      if (outer == null) fail('Undefined symbol: $name', node);
+      if (outer == null) {
+        fail(_hinted('Undefined symbol: $name', name, _visibleNames()), node);
+      }
       final copy = create(name, outer.type);
       _scope.symbols[name] = copy;
       copies.add((outer, copy));
@@ -4929,7 +6035,11 @@ class Analyzer {
 
   String assignExpression(AssignExpression node) {
     final symbol = _scope.lookup(node.name);
-    if (symbol == null) fail('Undefined symbol: ${node.name}', node);
+    if (symbol == null) {
+      fail(
+          _hinted('Undefined symbol: ${node.name}', node.name, _visibleNames()),
+          node);
+    }
     if (symbol.readonly) {
       error('E307', 'A readonly reference cannot be mutated', node);
     }
@@ -4973,18 +6083,90 @@ class Analyzer {
     if (_scope.lookup(node.name) != null) {
       fail('Loop binding would shadow ${node.name}', node);
     }
+    if (node.index != null) {
+      if (node.index == node.name) {
+        fail('Loop bindings must have different names', node);
+      }
+      if (_scope.lookup(node.index!) != null) {
+        fail('Loop binding would shadow ${node.index}', node);
+      }
+    }
     if (node.body.isEmpty) fail('collection for needs an element', node);
-    final symbol = create(node.name, element);
+    final pair = node.index == null ? null : _pairFields(element);
+    final symbol = create(node.name, pair == null ? element : pair[1]);
     model.declarations[node] = symbol;
     final saved = _scope;
     _scope = _Scope(saved);
     _scope.symbols[node.name] = symbol;
+    if (node.index != null) {
+      final index = create(node.index!, pair == null ? 'int' : pair[0]);
+      model.loopIndexes[node] = index;
+      _scope.symbols[node.index!] = index;
+      if (pair != null) model.loopPairs.add(node);
+    }
     if (node.filter != null && expression(node.filter!) != 'bool') {
       fail('collection filter must be bool', node.filter!);
     }
     final type = groupElementType(node.body);
     _scope = saved;
     return type;
+  }
+
+  bool _rangeIterable(Expression node) {
+    if (node is RangeExpression) return true;
+    if (node is! CallExpression || node.callee is! Identifier) return false;
+    final symbol = model.references[node.callee];
+    return symbol != null &&
+        symbol.name == 'range' &&
+        symbol.function == null &&
+        !symbol.external;
+  }
+
+  String? _joinedCollection(String left, String right) {
+    final a = _plainCollection(left);
+    final b = _plainCollection(right);
+    if (a == null || b == null) return null;
+    if (a.startsWith('List<') && b.startsWith('List<')) {
+      final element = _joinTypes(
+          a.substring(5, a.length - 1), b.substring(5, b.length - 1));
+      if (element == null) return null;
+      return 'List<$element>';
+    }
+    if (a.startsWith('Map<') && b.startsWith('Map<')) {
+      final leftParts = _mapArgs(a);
+      final rightParts = _mapArgs(b);
+      if (leftParts == null || rightParts == null) return null;
+      final keys = leftParts.$1 == rightParts.$1 ||
+          (compatible(leftParts.$1, rightParts.$1) &&
+              compatible(rightParts.$1, leftParts.$1));
+      if (!keys) return null;
+      final value = _joinTypes(leftParts.$2, rightParts.$2);
+      if (value == null) return null;
+      return 'Map<${leftParts.$1}, $value>';
+    }
+    return null;
+  }
+
+  String? _plainCollection(String type) {
+    final bare = type.startsWith('readonly ') ? type.substring(9) : type;
+    if (bare.endsWith('?')) return null;
+    if (bare.startsWith('List<') && bare.endsWith('>')) return bare;
+    if (bare.startsWith('Map<') && bare.endsWith('>')) return bare;
+    return null;
+  }
+
+  (String, String)? _mapArgs(String type) {
+    final parts = _splitTypes(type.substring(4, type.length - 1));
+    if (parts.length != 2) return null;
+    return (parts[0], parts[1]);
+  }
+
+  String? _joinTypes(String left, String right) {
+    if (left == right) return left;
+    if (numeric(left) && numeric(right)) return 'num';
+    if (compatible(left, right)) return right;
+    if (compatible(right, left)) return left;
+    return null;
   }
 
   String groupElementType(List<Expression> elements) {
@@ -5002,7 +6184,7 @@ class Analyzer {
   }
 
   bool _zeroStep(Expression step) {
-    if (step is Literal && step.value == 0) return true;
+    if (step is Literal && (step.value == 0 || step.value == 0.0)) return true;
     if (step is AssignExpression &&
         (step.operator == '+=' || step.operator == '-=') &&
         step.value is Literal &&

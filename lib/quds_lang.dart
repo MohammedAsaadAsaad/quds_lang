@@ -17,9 +17,10 @@ export 'src/navigate.dart'
 export 'src/format.dart' show formatQuds;
 export 'src/protocol.dart'
     show encodeFrame, respondDebug, respondLsp, LspExchange, LspSession;
-export 'src/debug.dart' show DebugAction, DebugBinary, DebugTranslator;
+export 'src/debug.dart'
+    show DebugAction, DebugBinary, DebugTranslator, desktopLaunchEnvironment;
 export 'src/sourcemap.dart'
-    show encodeSourceMap, mapStack, sourceMapFor, SourcePositions;
+    show encodeSourceMap, mapStack, sourceMapFor, QudsLocal, SourcePositions;
 export 'src/emitter.dart';
 export 'src/lexer.dart';
 export 'src/parser.dart';

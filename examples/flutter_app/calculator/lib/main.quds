@@ -1,0 +1,309 @@
+use package:flutter.material
+use package:flutter.cupertino
+use dart:async as asy
+
+main():
+  runApp(CalculatorApp())
+
+digitValue(piece: String) -> double:
+  if piece.length != 1 or piece not in "0123456789": return 0.0
+  return "0123456789".indexOf(piece) to double
+
+number(text: String) -> double:
+  var negative = false, source = text
+  if source.startsWith("-"):
+    negative = true
+    source = source[1..]
+  var whole = 0.0, fraction = 0.0
+  var scale = 1.0, dot = false
+  for piece in source:
+    if piece == ".": dot = true
+    else if dot:
+      scale = scale * 10.0
+      fraction = fraction + digitValue(piece) / scale
+    else: whole = whole * 10.0 + digitValue(piece)
+  value = whole + fraction
+  if negative: return -value
+  return value
+
+pretty(value: double) -> String:
+  var text = value.plain
+  while text.length > 12 and "." in text:
+    text = text.dropLast(1)
+  return text
+
+class CalculatorApp extends StatelessWidget:
+  build(context: BuildContext) -> Widget:
+    theme = ThemeData:
+      brightness: Brightness.dark
+      scaffoldBackgroundColor: Color(0xFF0C0E13)
+    app = MaterialApp:
+      title: "حاسبة"
+      debugShowCheckedModeBanner: false
+      theme: theme
+      home: CalculatorPage()
+    return app
+
+class CalculatorPage extends StatefulWidget:
+  createState() -> State<CalculatorPage>:
+    return CalculatorState()
+
+class CalculatorState extends State<CalculatorPage>:
+  var entry: String = "0"
+  var expression: String = ""
+  var acc: double = 0.0
+  var pending: String = ""
+  var repeatOp: String = ""
+  var repeatValue: double = 0.0
+  var fresh: bool = true
+  var failed: bool = false
+
+  clear():
+    entry = "0"
+    expression = ""
+    acc = 0.0
+    pending = ""
+    repeatOp = ""
+    repeatValue = 0.0
+    fresh = true
+    failed = false
+
+  backspace():
+    if failed:
+      clear()
+      return
+    if fresh: return
+    if entry.length <= 1:
+      entry = "0"
+      fresh = true
+      return
+    entry = entry.dropLast(1)
+    if entry in ["", "-", "-0"]:
+      entry = "0"
+      fresh = true
+
+  toggleSign():
+    if failed: return
+    if entry == "0": return
+    if entry.startsWith("-"): entry = entry[1..]
+    else: entry = "-" + entry
+    fresh = false
+
+  percent():
+    if failed: return
+    entry = pretty(number(entry) / 100.0)
+    fresh = true
+
+  apply(left: double, op: String, right: double) -> double:
+    if op == "+": return left + right
+    if op == "−": return left - right
+    if op == "×": return left * right
+    if right == 0.0:
+      failed = true
+      entry = "غير معرّف"
+      expression = ""
+      pending = ""
+      fresh = true
+      return 0.0
+    return left / right
+
+  operate(op: String):
+    if failed: return
+    current = number(entry)
+    if pending != "" and not fresh:
+      acc = apply(acc, pending, current)
+      if failed: return
+    else if pending == "": acc = current
+    pending = op
+    repeatOp = ""
+    expression = "{pretty(acc)} {op}"
+    entry = pretty(acc)
+    fresh = true
+
+  equals():
+    if failed: return
+    if pending == "":
+      if repeatOp == "": return
+      before = acc
+      acc = apply(acc, repeatOp, repeatValue)
+      if failed: return
+      expression = "{pretty(before)} {repeatOp} {pretty(repeatValue)} ="
+      entry = pretty(acc)
+      fresh = true
+      return
+    current = number(entry)
+    before = acc
+    op = pending
+    acc = apply(acc, op, current)
+    if failed: return
+    repeatOp = op
+    repeatValue = current
+    expression = "{pretty(before)} {op} {entry} ="
+    entry = pretty(acc)
+    pending = ""
+    fresh = true
+
+  typeDigit(mark: String):
+    if failed: clear()
+    if fresh:
+      if mark == ".": entry = "0."
+      else: entry = mark
+      fresh = false
+      return
+    if mark == "." and "." in entry: return
+    if entry == "0" and mark != ".":
+      entry = mark
+      return
+    if entry == "-0" and mark != ".":
+      entry = "-" + mark
+      return
+    if entry.length >= 14: return
+    entry = entry + mark
+
+  input(mark: String):
+    if mark == "AC": clear()
+    else if mark == "⌫": backspace()
+    else if mark == "±": toggleSign()
+    else if mark == "%": percent()
+    else if mark == "=": equals()
+    else if mark in "+−×÷":
+      operate(mark)
+    else: typeDigit(mark)
+
+  readout() -> Widget:
+    var caption = expression
+    if caption == "": caption = " "
+    var size = 56.0, ink = Color(0xFFF7F8FB)
+    if failed:
+      size = 34.0
+      ink = Color(0xFFFF8D7A)
+    var card = Color(0xFF171B22)
+    if failed: card = Color(0xFF2A1718)
+    brand = TextStyle:
+      color: Color(0xFFE8A317)
+      fontSize: 13.0
+      fontWeight: FontWeight.w600
+    muted = TextStyle:
+      color: Color(0xFF8B95A7)
+      fontSize: 20.0
+      fontWeight: FontWeight.w400
+    strong = TextStyle:
+      color: ink
+      fontSize: size
+      fontWeight: FontWeight.w300
+    title = Text("آلة حاسبة", style: brand)
+    history = AnimatedSwitcher:
+      duration: Duration(milliseconds: 180)
+      child: Text(caption, key: ValueKey(caption), style: muted, maxLines: 1,
+      overflow: TextOverflow.ellipsis)
+    value = AnimatedSwitcher:
+      duration: Duration(milliseconds: 220)
+      switchInCurve: Curves.easeOutCubic
+      switchOutCurve: Curves.easeInCubic
+      child: Text(entry, key: ValueKey("{entry}{failed}"), style: strong,
+      maxLines: 1, overflow: TextOverflow.ellipsis)
+    numbers = Column:
+      mainAxisAlignment: MainAxisAlignment.end
+      crossAxisAlignment: CrossAxisAlignment.end
+      children:
+        title
+        SizedBox(height: 18.0)
+        history
+        SizedBox(height: 8.0)
+        value
+    shape = BoxDecoration:
+      color: card
+      borderRadius: BorderRadius.circular(28.0)
+      border: Border.all(color: Color(0x14FFFFFF), width: 1.0)
+    plate = AnimatedContainer:
+      duration: Duration(milliseconds: 240)
+      curve: Curves.easeOut
+      alignment: Alignment.bottomRight
+      padding: EdgeInsets.fromLTRB(24.0, 20.0, 24.0, 22.0)
+      decoration: shape
+      child: numbers
+    return plate
+
+  button(mark: String, tone: String) -> Widget:
+    var fill = Color(0xFF262B36), ink = Color(0xFFF4F7FB), size = 28.0
+    if tone == "op":
+      fill = Color(0xFFE6A23C)
+      ink = Color(0xFF1A1204)
+      if pending == mark: fill = Color(0xFFFFD78A)
+    else if tone == "fn":
+      fill = Color(0xFF343A48)
+      ink = Color(0xFFD5DBE6)
+      size = 22.0
+    else if tone == "eq":
+      fill = Color(0xFFF3F5F8)
+      ink = Color(0xFF14161C)
+    look = TextStyle:
+      color: ink
+      fontSize: size
+      fontWeight: FontWeight.w500
+    tap = () -> :
+      update = () -> :
+        input(mark)
+      setState(update)
+    glyph = Text(mark, style: look)
+    middle = Center:
+      child: glyph
+    well = InkWell:
+      onTap: tap
+      borderRadius: BorderRadius.circular(20.0)
+      child: middle
+    face = Material:
+      color: fill
+      borderRadius: BorderRadius.circular(20.0)
+      child: well
+    padded = Padding:
+      padding: EdgeInsets.all(5.0)
+      child: face
+    return padded
+
+  keys() -> Widget:
+    first = buttonRow(["AC", "±", "%", "÷"], ["fn", "fn", "fn", "op"])
+    second = buttonRow(["7", "8", "9", "×"], ["num", "num", "num", "op"])
+    third = buttonRow(["4", "5", "6", "−"], ["num", "num", "num", "op"])
+    fourth = buttonRow(["1", "2", "3", "+"], ["num", "num", "num", "op"])
+    fifth = buttonRow(["0", ".", "⌫", "="], ["num", "num", "fn", "eq"])
+    pad = Column:
+      mainAxisSize: MainAxisSize.min
+      children:
+        first
+        second
+        third
+        fourth
+        fifth
+    return pad
+
+  buttonRow(marks: List<String>, tones: List<String>) -> Widget:
+    cells = Row:
+      crossAxisAlignment: CrossAxisAlignment.stretch
+      children:
+        for mark, tone in marks.zip(tones):
+          Expanded(child: button(mark, tone))
+    line = SizedBox:
+      height: 76.0
+      child: cells
+    return line
+
+  build(context: BuildContext) -> Widget:
+    column = Column:
+      children:
+        Expanded(child: readout())
+        SizedBox(height: 8.0)
+        keys()
+    inset = Padding:
+      padding: EdgeInsets.fromLTRB(14.0, 12.0, 14.0, 16.0)
+      child: column
+    frame = ConstrainedBox:
+      constraints: BoxConstraints(maxWidth: 440.0)
+      child: inset
+    centered = Center(child: frame)
+    safe = SafeArea:
+      child: centered
+    page = Scaffold:
+      backgroundColor: Color(0xFF0C0E13)
+      body: safe
+    return page

@@ -39,7 +39,7 @@ Future<void> main(List<String> arguments) async {
       final session = LspSession();
       _serve(session.handle);
     case 'debug':
-      _debug();
+      await _debug(arguments);
     default:
       _usage();
   }
@@ -151,8 +151,9 @@ bool _writeTree(File input, Set<String> seen) {
   }
 }
 
-bool _emitGenerated(File input, Compilation result, {bool announce = true}) {
-  final output = _outputFile(input);
+bool _emitGenerated(File input, Compilation result,
+    {bool announce = true, File? destination}) {
+  final output = destination ?? _outputFile(input);
   final existing = output.existsSync() ? output.readAsStringSync() : null;
   if (existing != null && !existing.startsWith(_generatedHeader)) {
     stderr.writeln('Refusing to overwrite non-generated file: ${output.path}');
@@ -514,6 +515,8 @@ Future<void> _runFlutter(File input, Compilation result) async {
     flutter,
     ['run', '-t', relative],
     workingDirectory: root.path,
+    environment: desktopLaunchEnvironment(Platform.environment),
+    includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
   );
   exitCode = await process.exitCode;
@@ -823,11 +826,23 @@ void _migrate(List<String> arguments) {
 ///
 /// A `.quds` program is built first. Breakpoints and stopped frames use the
 /// `.quds` line. The Dart adapter debugs the generated file.
-Future<void> _debug() async {
+Future<void> _debug(List<String> arguments) async {
   final translator = DebugTranslator(build: _debugBuild);
+  final target = arguments.length >= 2 ? arguments[1] : null;
+  final flutter = target != null && _flutterPackage(File(target));
+  final executable =
+      flutter ? _flutterExecutable() : Platform.resolvedExecutable;
+  if (executable == null) {
+    stderr.writeln('Flutter was not found. Install Flutter and retry.');
+    exitCode = 1;
+    return;
+  }
   final child = await Process.start(
-    Platform.resolvedExecutable,
-    ['debug_adapter'],
+    executable,
+    [flutter ? 'debug-adapter' : 'debug_adapter'],
+    environment:
+        flutter ? desktopLaunchEnvironment(Platform.environment) : null,
+    includeParentEnvironment: !flutter,
     mode: ProcessStartMode.normal,
   );
   child.stderr.listen(stderr.add);
@@ -870,13 +885,19 @@ DebugBinary? _debugBuild(String qudsPath, void Function(String message) fail) {
   try {
     final result = compile(input.readAsStringSync(), file: absolute);
     final saved = exitCode;
-    if (!_emitGenerated(input, result, announce: false)) {
+    final flutter = _flutterPackage(input);
+    final root = _packageRoot(File(absolute).parent);
+    final generated =
+        flutter ? _flutterGenerated(input, root) : _outputFile(input);
+    if (!_emitGenerated(input, result,
+        announce: false, destination: generated)) {
       fail('Quds could not write the generated Dart for $absolute');
       return null;
     }
     exitCode = saved;
     final map = result.sourceMap ?? '';
-    return DebugBinary(absolute, _outputFile(input).path, map);
+    return DebugBinary(absolute, generated.path, map,
+        cwd: flutter ? root.path : null);
   } on CompilerException catch (error) {
     fail('$error');
     return null;

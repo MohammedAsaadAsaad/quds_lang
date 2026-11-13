@@ -1,7 +1,12 @@
-/// Two-space indents and a width of 80. Comments, documentation, and string
-/// contents stay. A long line breaks after the last comma that still fits.
-/// Trailing whitespace outside a string is removed, and a newline ends the file.
-String formatQuds(String source) {
+/// [indent] spaces per level and a maximum [width]. Comments, documentation,
+/// and string contents stay. A long line breaks after the last comma that
+/// still fits. A condition whose body is one statement can share its header
+/// line when [singleLineIf] is set and the result fits. Trailing whitespace
+/// outside a string is removed, and a newline ends the file.
+String formatQuds(String source,
+    {int indent = 2, int width = 80, bool singleLineIf = true}) {
+  final step = indent < 1 ? 2 : indent;
+  final limit = width < 20 ? 20 : width;
   final lines = source.split('\n');
   if (lines.isNotEmpty && lines.last.isEmpty) lines.removeLast();
   final inside = <bool>[];
@@ -32,25 +37,121 @@ String formatQuds(String source) {
       rewritten.add('');
       continue;
     }
-    final width = line.length - line.trimLeft().length;
-    final depth = indents.indexOf(width);
-    final body = '${'  ' * (depth < 0 ? 0 : depth)}${line.trimLeft()}';
-    rewritten.addAll(_wrapLine(body));
+    final spaces = line.length - line.trimLeft().length;
+    final depth = indents.indexOf(spaces);
+    final body = '${' ' * step * (depth < 0 ? 0 : depth)}${line.trimLeft()}';
+    rewritten.addAll(_wrapLine(body, limit));
   }
-  return '${rewritten.join('\n')}\n';
+  final collapsed =
+      singleLineIf ? _collapseIfs(rewritten, step, limit) : rewritten;
+  return '${collapsed.join('\n')}\n';
 }
 
-List<String> _wrapLine(String line, {bool pending = false}) {
-  if (line.length <= 80) return [line];
+List<String> _wrapLine(String line, int width, {bool pending = false}) {
+  if (line.length <= width) return [line];
   final content = line.trimLeft();
   if (content.startsWith('#') || content.startsWith('///')) return [line];
   final indent = line.length - content.length;
-  final split = _wrapAt(content, 80 - indent, pending: pending);
+  final split = _wrapAt(content, width - indent, pending: pending);
   if (split == null) return [line];
   return [
     '${' ' * indent}${split.left}',
-    ..._wrapLine('${' ' * indent}${split.right}', pending: split.pending),
+    ..._wrapLine('${' ' * indent}${split.right}', width,
+        pending: split.pending),
   ];
+}
+
+List<String> _collapseIfs(List<String> lines, int indent, int width) {
+  var current = lines;
+  var changed = true;
+  while (changed) {
+    changed = false;
+    final next = <String>[];
+    var open = '';
+    var i = 0;
+    while (i < current.length) {
+      final line = current[i];
+      if (open.isNotEmpty) {
+        next.add(line);
+        open = _advanceQuotes(line, open);
+        i++;
+        continue;
+      }
+      final body = i + 1 < current.length ? current[i + 1] : null;
+      final after = i + 2 < current.length ? current[i + 2] : null;
+      if (body != null &&
+          open.isEmpty &&
+          _advanceQuotes(line, '') == '' &&
+          _canJoinIf(line, body, after, indent, width)) {
+        next.add('${line.trimRight()} ${body.trimLeft()}');
+        open = _advanceQuotes(body, '');
+        changed = true;
+        i += 2;
+        continue;
+      }
+      next.add(line);
+      open = _advanceQuotes(line, '');
+      i++;
+    }
+    current = next;
+  }
+  return current;
+}
+
+bool _canJoinIf(
+    String header, String body, String? after, int indent, int width) {
+  final head = header.trimLeft();
+  if (!head.endsWith(':')) return false;
+  if (!head.startsWith('if ') &&
+      !head.startsWith('else if ') &&
+      head != 'else:') {
+    return false;
+  }
+  final statement = body.trimLeft();
+  if (statement.isEmpty || statement.startsWith('#')) return false;
+  if (statement.endsWith(':')) return false;
+  final headerIndent = header.length - head.length;
+  final bodyIndent = body.length - statement.length;
+  if (bodyIndent != headerIndent + indent) return false;
+  if (_unclosed(body)) return false;
+  if (after != null && after.trim().isNotEmpty) {
+    final afterIndent = after.length - after.trimLeft().length;
+    if (afterIndent > headerIndent) return false;
+  }
+  return '${header.trimRight()} ${statement}'.length <= width;
+}
+
+bool _unclosed(String text) {
+  var quote = '';
+  var depth = 0;
+  for (var i = 0; i < text.length; i++) {
+    if (quote.isNotEmpty) {
+      if (text.startsWith(quote, i)) {
+        i += quote.length - 1;
+        quote = '';
+      } else if (quote.length == 1 && text[i] == '\\') {
+        i++;
+      }
+      continue;
+    }
+    if (text.startsWith('"""', i) || text.startsWith("'''", i)) {
+      quote = text.substring(i, i + 3);
+      i += 2;
+      continue;
+    }
+    final char = text[i];
+    if (char == '"' || char == "'") {
+      quote = char;
+      continue;
+    }
+    if (char == '#') break;
+    if (char == '(' || char == '[') {
+      depth++;
+    } else if ((char == ')' || char == ']') && depth > 0) {
+      depth--;
+    }
+  }
+  return depth > 0 || quote.isNotEmpty;
 }
 
 /// A comma splits only inside `()` or `[]`, and the next line keeps the same

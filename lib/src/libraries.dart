@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 class PackageRoot {
@@ -38,7 +39,9 @@ String? resolveLibraryPath(String from, String uri) {
   final root = packageRoot(from);
   if (root == null) return null;
   if (uri.startsWith('package:')) {
-    final rest = uri.substring('package:'.length);
+    var rest = uri.substring('package:'.length);
+    if (rest.endsWith('.dart')) rest = rest.substring(0, rest.length - 5);
+    if (rest.endsWith('.quds')) rest = rest.substring(0, rest.length - 5);
     if (rest.isEmpty || rest.endsWith('/')) return null;
     final slash = rest.indexOf('/');
     final relative =
@@ -61,6 +64,9 @@ String? dartLibraryUri(String from, String uri) {
   if (uri.startsWith('package:')) {
     final rest = uri.substring('package:'.length);
     if (rest.isEmpty || rest.endsWith('/')) return null;
+    if (rest.endsWith('.dart')) return uri;
+    if (rest.endsWith('.quds'))
+      return '${uri.substring(0, uri.length - 5)}.dart';
     if (rest.contains('/')) return '$uri.dart';
     return 'package:$rest/$rest.dart';
   }
@@ -70,6 +76,79 @@ String? dartLibraryUri(String from, String uri) {
     final package = packageRoot(from)?.name;
     if (package == null) return 'generated/$name.dart';
     return 'package:$package/generated/$name.dart';
+  }
+  return null;
+}
+
+class PackageLibrary {
+  const PackageLibrary(this.name, this.libDirectory);
+  final String name;
+
+  /// Absolute directory of this package's `lib` folder.
+  final String libDirectory;
+}
+
+final _packageLists = <String, (String, List<PackageLibrary>)>{};
+
+/// Packages named by the nearest `.dart_tool/package_config.json`.
+List<PackageLibrary> packageLibraries(String file) {
+  final root = packageRoot(file);
+  if (root == null) return const [];
+  final config = File(_join(root.directory, '.dart_tool/package_config.json'));
+  if (!config.existsSync()) return const [];
+  final stat = config.statSync();
+  final stamp = '${stat.modified.microsecondsSinceEpoch}:${stat.size}';
+  final cached = _packageLists[config.path];
+  if (cached != null && cached.$1 == stamp) return cached.$2;
+  final libraries = <PackageLibrary>[];
+  try {
+    final decoded = jsonDecode(config.readAsStringSync());
+    if (decoded is Map && decoded['packages'] is List) {
+      for (final entry in decoded['packages'] as List) {
+        if (entry is! Map) continue;
+        final name = entry['name'];
+        final rootUri = entry['rootUri'];
+        if (name is! String || name.isEmpty || rootUri is! String) continue;
+        final packageUri = entry['packageUri'];
+        var resolved = config.uri.resolve(rootUri);
+        if (!resolved.path.endsWith('/')) {
+          resolved = resolved.replace(path: '${resolved.path}/');
+        }
+        final lib = resolved.resolve(
+            packageUri is String && packageUri.isNotEmpty
+                ? packageUri
+                : 'lib/');
+        libraries.add(PackageLibrary(name, lib.toFilePath()));
+      }
+    }
+  } on FormatException {
+    return const [];
+  }
+  libraries.sort((a, b) => a.name.compareTo(b.name));
+  _packageLists[config.path] = (stamp, libraries);
+  return libraries;
+}
+
+/// The file named by a `package:` URI that already ends in `.dart`.
+File? packageDartFile(String from, String uri) {
+  if (!uri.startsWith('package:') || !uri.endsWith('.dart')) return null;
+  final rest = uri.substring('package:'.length);
+  final slash = rest.indexOf('/');
+  if (slash <= 0 || slash == rest.length - 1) return null;
+  final name = rest.substring(0, slash);
+  final relative = rest.substring(slash + 1);
+  if (relative.contains('\\') || relative.split('/').contains('..')) {
+    return null;
+  }
+  for (final library in packageLibraries(from)) {
+    if (library.name != name) continue;
+    var base = Directory(library.libDirectory).uri;
+    if (!base.path.endsWith('/')) {
+      base = base.replace(path: '${base.path}/');
+    }
+    final file = File(base.resolve(relative).toFilePath());
+    if (!file.existsSync()) return null;
+    return file;
   }
   return null;
 }

@@ -1,11 +1,50 @@
 import 'sourcemap.dart';
 
+/// Environment for a Flutter desktop process started from the editor.
+///
+/// A VS Code snap prepends its own data directories and schema directory.
+/// On Ubuntu 26.04 GTK then reads a schema that no longer has `antialiasing`
+/// and aborts. The app keeps the desktop directories the snap saved, and
+/// drops the snap schema directory.
+///
+/// Pass the result with `includeParentEnvironment: false`. Otherwise Dart
+/// keeps the editor value.
+Map<String, String> desktopLaunchEnvironment(Map<String, String> source) {
+  final environment = Map<String, String>.from(source);
+  final schemas = environment['GSETTINGS_SCHEMA_DIR'];
+  if (schemas != null && _underSnap(schemas)) {
+    environment.remove('GSETTINGS_SCHEMA_DIR');
+  }
+  final saved = environment['XDG_DATA_DIRS_VSCODE_SNAP_ORIG'];
+  if (saved != null && saved.isNotEmpty) {
+    environment['XDG_DATA_DIRS'] = saved;
+    return environment;
+  }
+  final data = environment['XDG_DATA_DIRS'];
+  if (data == null) return environment;
+  final kept = data
+      .split(':')
+      .where((part) => part.isNotEmpty && !_underSnap(part))
+      .join(':');
+  if (kept.isEmpty) {
+    environment.remove('XDG_DATA_DIRS');
+  } else if (kept != data) {
+    environment['XDG_DATA_DIRS'] = kept;
+  }
+  return environment;
+}
+
+bool _underSnap(String path) => path.replaceAll('\\', '/').contains('/snap/');
+
 /// The generated Dart file and source map for one `.quds` file.
 class DebugBinary {
-  const DebugBinary(this.qudsPath, this.dartPath, this.sourceMap);
+  const DebugBinary(this.qudsPath, this.dartPath, this.sourceMap, {this.cwd});
   final String qudsPath;
   final String dartPath;
   final String sourceMap;
+
+  /// Working directory for the debug adapter. Flutter uses the package root.
+  final String? cwd;
 }
 
 /// What the proxy should do with one DAP message from the editor.
@@ -36,6 +75,11 @@ class DebugTranslator {
   String? buildError;
   final _files = <String, _BoundFile>{};
   final _pending = <int, List<_PlannedBreakpoint>>{};
+  final _frameFile = <int, String>{};
+  final _frameLine = <int, int>{};
+  final _scopeFrame = <int, int>{};
+  final _refFile = <int, String>{};
+  final _variablesRef = <int, int>{};
   var _sequence = 1;
 
   void bind(DebugBinary binary) {
@@ -46,6 +90,9 @@ class DebugTranslator {
       binary.qudsPath,
       binary.dartPath,
       positions,
+      cwd: binary.cwd,
+      names: positions?.names ?? const {},
+      locals: positions?.locals ?? const [],
     );
   }
 
@@ -54,6 +101,9 @@ class DebugTranslator {
     final command = message['command'];
     if (command == 'launch') return _launch(message);
     if (command == 'setBreakpoints') return _setBreakpoints(message);
+    if (command == 'scopes') _rememberScope(message);
+    if (command == 'variables') _rememberVariables(message);
+    if (command == 'evaluate') return _evaluate(message);
     return DebugAction.forward(message);
   }
 
@@ -65,6 +115,12 @@ class DebugTranslator {
     if (type == 'response' && message['command'] == 'stackTrace') {
       final body = message['body'];
       if (body is Map) _rewriteFrames(body['stackFrames']);
+    }
+    if (type == 'response' && message['command'] == 'scopes') {
+      _bindScopes(message);
+    }
+    if (type == 'response' && message['command'] == 'variables') {
+      _renameVariables(message);
     }
     if (type == 'event' && message['event'] == 'breakpoint') {
       final body = message['body'];
@@ -91,7 +147,12 @@ class DebugTranslator {
       ));
     }
     arguments['program'] = binary.dartPath;
-    arguments.putIfAbsent('cwd', () => _directory(binary.qudsPath));
+    if (binary.cwd != null) {
+      arguments['cwd'] = binary.cwd;
+      _selectDevice(arguments);
+    } else {
+      arguments.putIfAbsent('cwd', () => _directory(binary.qudsPath));
+    }
     message['arguments'] = arguments;
     return DebugAction.forward(message);
   }
@@ -196,6 +257,71 @@ class DebugTranslator {
       frame['source'] = _moved(source, hit);
       frame['line'] = hit.$2;
       frame['column'] = hit.$3;
+      final id = (frame['id'] as num?)?.toInt();
+      if (id != null) {
+        _frameFile[id] = _key(hit.$1);
+        _frameLine[id] = hit.$2;
+      }
+    }
+  }
+
+  void _rememberScope(Map<String, dynamic> message) {
+    final id = (message['seq'] as num?)?.toInt();
+    final frame = (_map(message['arguments'])['frameId'] as num?)?.toInt();
+    if (id != null && frame != null) _scopeFrame[id] = frame;
+  }
+
+  void _rememberVariables(Map<String, dynamic> message) {
+    final id = (message['seq'] as num?)?.toInt();
+    final reference =
+        (_map(message['arguments'])['variablesReference'] as num?)?.toInt();
+    if (id != null && reference != null) _variablesRef[id] = reference;
+  }
+
+  void _bindScopes(Map<String, dynamic> message) {
+    final id = (message['request_seq'] as num?)?.toInt();
+    final frame = id == null ? null : _scopeFrame.remove(id);
+    final file = frame == null ? null : _frameFile[frame];
+    if (file == null) return;
+    final scopes = _map(message['body'])['scopes'];
+    if (scopes is! List) return;
+    for (final scope in scopes) {
+      if (scope is! Map) continue;
+      final reference = (scope['variablesReference'] as num?)?.toInt();
+      if (reference != null && reference != 0) _refFile[reference] = file;
+    }
+  }
+
+  DebugAction _evaluate(Map<String, dynamic> message) {
+    final arguments = _map(message['arguments']);
+    final expression = arguments['expression'];
+    final frame = (arguments['frameId'] as num?)?.toInt();
+    final file = frame == null ? null : _frameFile[frame];
+    final line = frame == null ? null : _frameLine[frame];
+    final locals = file == null ? null : _files[file]?.locals;
+    if (expression is! String || line == null || locals == null) {
+      return DebugAction.forward(message);
+    }
+    final rewritten = _debugExpression(expression, locals, line);
+    if (rewritten == expression) return DebugAction.forward(message);
+    arguments['expression'] = rewritten;
+    message['arguments'] = arguments;
+    return DebugAction.forward(message);
+  }
+
+  void _renameVariables(Map<String, dynamic> message) {
+    final id = (message['request_seq'] as num?)?.toInt();
+    final reference = id == null ? null : _variablesRef.remove(id);
+    final file = reference == null ? null : _refFile[reference];
+    final names = file == null ? null : _files[file]?.names;
+    if (names == null || names.isEmpty) return;
+    final variables = _map(message['body'])['variables'];
+    if (variables is! List) return;
+    for (final variable in variables) {
+      if (variable is! Map) continue;
+      final name = variable['name'];
+      final source = name is String ? names[name] : null;
+      if (source != null) variable['name'] = source;
     }
   }
 
@@ -269,6 +395,7 @@ class DebugTranslator {
         existing.qudsPath,
         existing.dartPath,
         '',
+        cwd: existing.cwd,
       );
     }
     String? failed;
@@ -279,9 +406,11 @@ class DebugTranslator {
       }
       return null;
     }
-    bind(DebugBinary(qudsPath, built.dartPath, built.sourceMap));
+    bind(
+        DebugBinary(qudsPath, built.dartPath, built.sourceMap, cwd: built.cwd));
     final bound = _files[_key(qudsPath)]!;
-    return DebugBinary(bound.qudsPath, bound.dartPath, built.sourceMap);
+    return DebugBinary(bound.qudsPath, bound.dartPath, built.sourceMap,
+        cwd: bound.cwd);
   }
 
   Map<String, dynamic> _failure(Map<String, dynamic> message, String error) {
@@ -302,6 +431,24 @@ class DebugTranslator {
     return value;
   }
 
+  static void _selectDevice(Map<String, dynamic> arguments) {
+    final device = arguments['deviceId'];
+    if (device is String && device.isNotEmpty) {
+      final current = arguments['toolArgs'];
+      final args = current is List ? [...current] : <Object?>[];
+      if (!args.contains('-d') && !args.contains('--device-id')) {
+        args.addAll(['-d', device]);
+        arguments['toolArgs'] = args;
+      }
+    }
+    final env = arguments['env'];
+    if (env is Map) {
+      arguments['env'] = desktopLaunchEnvironment(env.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      ));
+    }
+  }
+
   static String _directory(String path) {
     final slash = path.lastIndexOf('/');
     return slash < 0 ? path : path.substring(0, slash);
@@ -319,10 +466,76 @@ class DebugTranslator {
 }
 
 class _BoundFile {
-  _BoundFile(this.qudsPath, this.dartPath, this.positions);
+  _BoundFile(this.qudsPath, this.dartPath, this.positions,
+      {this.cwd, this.names = const {}, this.locals = const []});
   final String qudsPath;
   final String dartPath;
   final SourcePositions? positions;
+  final String? cwd;
+  final Map<String, String> names;
+  final List<QudsLocal> locals;
+}
+
+/// Rewrites source names in [expression] to the generated names in scope at
+/// [line]. Text inside quotes stays as written.
+String _debugExpression(String expression, List<QudsLocal> locals, int line) {
+  final out = StringBuffer();
+  var index = 0;
+  while (index < expression.length) {
+    final unit = expression.codeUnitAt(index);
+    if (unit == 34 || unit == 39) {
+      final quote = expression[index];
+      final triple = expression.startsWith(quote * 3, index);
+      final width = triple ? 3 : 1;
+      var cursor = index + width;
+      while (cursor < expression.length) {
+        if (expression[cursor] == '\\') {
+          cursor += cursor + 1 < expression.length ? 2 : 1;
+          continue;
+        }
+        if (expression.startsWith(quote * width, cursor)) {
+          cursor += width;
+          break;
+        }
+        cursor++;
+      }
+      out.write(expression.substring(index, cursor));
+      index = cursor;
+      continue;
+    }
+    if (_identStart(unit)) {
+      final start = index;
+      index++;
+      while (index < expression.length &&
+          _identPart(expression.codeUnitAt(index))) {
+        index++;
+      }
+      final name = expression.substring(start, index);
+      out.write(_dartInScope(locals, name, line) ?? name);
+      continue;
+    }
+    out.writeCharCode(unit);
+    index++;
+  }
+  return out.toString();
+}
+
+bool _identStart(int unit) =>
+    unit == 95 || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122);
+
+bool _identPart(int unit) => _identStart(unit) || (unit >= 48 && unit <= 57);
+
+String? _dartInScope(List<QudsLocal> locals, String name, int line) {
+  QudsLocal? best;
+  for (final local in locals) {
+    if (local.name != name || line < local.line || line > local.end) continue;
+    if (best == null ||
+        local.line > best.line ||
+        (local.line == best.line && local.end < best.end)) {
+      best = local;
+    }
+  }
+  return best?.dartName;
 }
 
 class _PlannedBreakpoint {

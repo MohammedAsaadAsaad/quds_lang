@@ -60,7 +60,8 @@ Compilation compile(String source, {String file = '<input>'}) {
       : 'out.dart';
   final dependencies = libraries.keys.toList()..sort();
   return Compilation(program, semantics, dart,
-      sourceMap: sourceMapFor(emitter, generated, file),
+      sourceMap: sourceMapFor(emitter, generated, file,
+          program: program, source: source),
       dependencies: dependencies,
       models: _generatedModels(program, file));
 }

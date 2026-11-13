@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'ast.dart';
 import 'compiler.dart';
+import 'dart_api.dart';
+import 'libraries.dart';
 import 'semantics.dart';
 import 'source.dart';
 import 'walk.dart';
@@ -17,11 +20,14 @@ List<Map<String, Object?>> completeAt({
   required String source,
   required int line,
   required int character,
+  String? file,
   Compilation? stable,
   required Compilation? Function(String source) compileSource,
 }) {
   final cursor = _stringIndexAt(source, line, character);
   if (!_inCode(source, cursor)) return const [];
+  final imports = _importCompletion(source, cursor, file);
+  if (imports != null) return imports;
   final word = _word(source, cursor);
   final prefix = word.read(source);
   if (prefix.isNotEmpty && _digit(prefix.codeUnitAt(0))) return const [];
@@ -50,7 +56,10 @@ List<Map<String, Object?>> completeAt({
     final compilation = name != null && !_chained(source, dot)
         ? (resolved ?? _recover(source, word, dot, compile))
         : _recover(source, word, dot, compile);
-    if (compilation == null) return const [];
+    if (compilation == null) {
+      _uncompiledDart(source, dot, range, add);
+      return items.values.toList();
+    }
     final scope = _scopeAt(compilation, source, cursor);
     _members(
       compilation,
@@ -318,15 +327,32 @@ _Here _scopeAt(Compilation compilation, String source, int cursor) {
     1 << 30,
     null,
   );
-  final lambda = _lambda(compilation, bytes);
-  if (lambda == null) return scope;
   final names = Map<String, Symbol>.of(scope.names);
+  _collectionNames(compilation, bytes, names);
+  final lambda = _lambda(compilation, bytes);
+  if (lambda == null) return _Here(names, scope.owner);
   for (final parameter in lambda.parameters) {
     final symbol = compilation.semantics.declarations[parameter] ??
         Symbol(parameter.name, parameter.name, parameter.type);
     if (parameter.name != '_') names[parameter.name] = symbol;
   }
   return _Here(names, scope.owner);
+}
+
+void _collectionNames(
+    Compilation compilation, int bytes, Map<String, Symbol> names) {
+  bool inside(SourceSpan span) =>
+      bytes >= span.offset && bytes < span.offset + span.length;
+  walkAst(compilation.program, (node) {
+    if (node is! CollectionFor) return;
+    final inBody = node.body.any((element) => inside(element.span));
+    final inFilter = node.filter != null && inside(node.filter!.span);
+    if (!inBody && !inFilter) return;
+    final symbol = compilation.semantics.declarations[node];
+    if (symbol != null) names[symbol.name] = symbol;
+    final index = compilation.semantics.loopIndexes[node];
+    if (index != null) names[index.name] = index;
+  });
 }
 
 Lambda? _lambda(Compilation compilation, int bytes) {
@@ -402,6 +428,8 @@ _Here? _enter(
       final names = Map<String, Symbol>.of(outer);
       final symbol = compilation.semantics.declarations[statement];
       if (symbol != null && statement.name != '_') names[symbol.name] = symbol;
+      final index = compilation.semantics.loopIndexes[statement];
+      if (index != null) names[index.name] = index;
       return _blocks(
           compilation, source, bytes, statement.body, names, regionEnd, owner);
     case IfStatement():
@@ -703,13 +731,24 @@ void _members(
     return;
   }
   final symbol = name == null ? null : scope.names[name];
-  if (symbol != null && symbol.namespace != null) {
+  if (symbol != null && symbol.namespace != null && symbol.type == 'prefix') {
     for (final entry in symbol.namespace!.entries) {
       for (final item in _symbolItems(compilation, entry.value, range)) {
         add(item);
       }
     }
     return;
+  }
+  final referenced = _bestSymbol(compilation, source, dot);
+  if (referenced != null &&
+      referenced.namespace != null &&
+      referenced.type != 'prefix') {
+    for (final entry in referenced.namespace!.entries) {
+      for (final item in _symbolItems(compilation, entry.value, range)) {
+        add(item);
+      }
+    }
+    if (referenced.external && referenced.type == referenced.name) return;
   }
   final onType = symbol != null &&
       symbol.classDeclaration != null &&
@@ -746,6 +785,29 @@ String? _expressionType(Compilation compilation, String source, int dot) {
     if (symbol != null) return symbol.type;
   }
   return compilation.semantics.types[node];
+}
+
+Symbol? _bestSymbol(Compilation compilation, String source, int dot) {
+  final end = _bytes(source, dot);
+  Expression? best;
+  var size = 1 << 30;
+  walkAst(compilation.program, (node) {
+    if (node is! Expression) return;
+    final stop = node.span.offset + node.span.length;
+    if (stop > end) return;
+    final gap = source.substring(
+        _stringIndexForByte(source, stop), _stringIndexForByte(source, end));
+    if (!RegExp(r'^[)\s]*$').hasMatch(gap)) return;
+    if (end - stop > size) return;
+    if (end - stop < size ||
+        node.span.length < (best?.span.length ?? 1 << 30)) {
+      size = end - stop;
+      best = node;
+    }
+  });
+  final node = best;
+  if (node == null) return null;
+  return compilation.semantics.references[node];
 }
 
 void _typeMembers(
@@ -805,6 +867,123 @@ void _typeMembers(
     }
   }
   _builtinMembers(bare, onType, range, add);
+  _sdkMembers(compilation, bare, onType, range, add);
+}
+
+void _sdkMembers(
+  Compilation compilation,
+  String type,
+  bool onType,
+  Map<String, Object> range,
+  void Function(Map<String, Object?>) add,
+) {
+  if (onType) return;
+  var bare = type;
+  if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+  final shape = compilation.semantics.dartShapes[_head(bare)];
+  if (shape == null) return;
+  for (final member in shape.members.values) {
+    if (member.getter) {
+      add(_plain(member.name, 10, member.type, range, sort: '0'));
+      continue;
+    }
+    final parameters = [
+      for (final parameter in member.parameters)
+        '${parameter.$1}: ${parameter.$2}'
+    ].join(', ');
+    add(_plain(member.name, 2, '($parameters) -> ${member.type}', range,
+        sort: '1'));
+  }
+}
+
+void _uncompiledDart(
+  String source,
+  int dot,
+  Map<String, Object> range,
+  void Function(Map<String, Object?>) add,
+) {
+  final name = _receiverName(source, dot);
+  if (name == null) return;
+  final imported = _dartImport(source, name);
+  if (imported != null) {
+    final surface = imported.$1;
+    for (final top in imported.$2) {
+      for (final item in _symbolItems(
+          null, symbolForDart(top, surface.types[top.name]), range)) {
+        add(item);
+      }
+    }
+    return;
+  }
+  final start = _receiverStart(source, dot);
+  if (start <= 0 || source[start - 1] != '.') return;
+  final owner = _receiverName(source, start - 1);
+  if (owner == null) return;
+  final library = _dartImport(source, owner);
+  if (library == null) return;
+  final shape = library.$1.types[name];
+  if (shape == null) return;
+  for (final member in [
+    ...shape.constructors.values.where((item) => item.name != name),
+    ...shape.statics.values,
+  ]) {
+    if (member.getter) {
+      add(_plain(member.name, 10, member.type, range, sort: '0'));
+      continue;
+    }
+    final parameters = [
+      for (final parameter in member.parameters)
+        '${parameter.$1}: ${parameter.$2}'
+    ].join(', ');
+    add(_plain(member.name, member.name == name ? 4 : 2,
+        '($parameters) -> ${member.type}', range,
+        sort: '1'));
+  }
+}
+
+int _receiverStart(String source, int dot) {
+  var index = dot;
+  if (index > 0 && source.codeUnitAt(index - 1) == 63) index--;
+  while (index > 0 && _space(source.codeUnitAt(index - 1))) {
+    index--;
+  }
+  final end = index;
+  while (index > 0 && _ident(source.codeUnitAt(index - 1))) {
+    index--;
+  }
+  return index == end ? -1 : index;
+}
+
+(DartSurface, List<DartTop>)? _dartImport(String source, String prefix) {
+  final match = RegExp(
+    '^\\s*use\\s+(dart:[A-Za-z0-9_]+)\\s+as\\s+$prefix\\b([^\\n]*)',
+    multiLine: true,
+  ).firstMatch(source);
+  if (match == null) return null;
+  final surface = readDartLibrary(match.group(1)!);
+  if (surface == null) return null;
+  final clause = match.group(2)!.split(RegExp(r'\bwhen\b')).first;
+  final show = RegExp(r'\bshow\s+([A-Za-z0-9_,\s]+)').firstMatch(clause);
+  final hide = RegExp(r'\bhide\s+([A-Za-z0-9_,\s]+)').firstMatch(clause);
+  Iterable<DartTop> names = surface.names.values;
+  if (show != null) {
+    final wanted = show
+        .group(1)!
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    names = names.where((item) => wanted.contains(item.name));
+  } else if (hide != null) {
+    final hidden = hide
+        .group(1)!
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toSet();
+    names = names.where((item) => !hidden.contains(item.name));
+  }
+  return (surface, names.toList());
 }
 
 void _builtinMembers(
@@ -838,6 +1017,9 @@ void _builtinMembers(
 
 (String, Map<String, String>)? _family(String type) {
   if (type == 'String') return ('String', const {});
+  if (type == 'int' || type == 'double' || type == 'num') {
+    return (type, const {});
+  }
   if (type.startsWith('List<') && type.endsWith('>')) {
     return ('List', {'T': type.substring(5, type.length - 1)});
   }
@@ -846,6 +1028,9 @@ void _builtinMembers(
   }
   if (type.startsWith('Iterable<') && type.endsWith('>')) {
     return ('Iterable', {'T': type.substring(9, type.length - 1)});
+  }
+  if (type.startsWith('Range<') && type.endsWith('>')) {
+    return ('Iterable', {'T': type.substring(6, type.length - 1)});
   }
   if (type.startsWith('Map<') && type.endsWith('>')) {
     final parts = _split(type.substring(4, type.length - 1));
@@ -872,6 +1057,7 @@ const _getters = {
     'last': 'T',
   },
   'Iterable': {
+    'length': 'int',
     'isEmpty': 'bool',
     'isNotEmpty': 'bool',
     'first': 'T',
@@ -888,6 +1074,29 @@ const _getters = {
     'length': 'int',
     'isEmpty': 'bool',
     'isNotEmpty': 'bool',
+    'chars': 'List<String>',
+    'lines': 'List<String>',
+  },
+  'int': {
+    'abs': 'int',
+    'round': 'int',
+    'floor': 'int',
+    'ceil': 'int',
+    'plain': 'String',
+  },
+  'double': {
+    'abs': 'double',
+    'round': 'int',
+    'floor': 'int',
+    'ceil': 'int',
+    'plain': 'String',
+  },
+  'num': {
+    'abs': 'num',
+    'round': 'int',
+    'floor': 'int',
+    'ceil': 'int',
+    'plain': 'String',
   },
 };
 
@@ -913,8 +1122,28 @@ const _methods = {
   'Iterable': {
     'contains': ([('value', 'Object')], 'bool'),
     'elementAt': ([('index', 'int')], 'T'),
-    'join': (<(String, String)>[], 'String'),
+    'join': ([('separator', 'String')], 'String'),
     'toList': (<(String, String)>[], 'List<T>'),
+    'toSet': (<(String, String)>[], 'Set<T>'),
+    'map': ([('transform', '(T) -> R')], 'List<R>'),
+    'fold': ([('initial', 'R'), ('combine', '(R, T) -> R')], 'R'),
+    'reduce': ([('combine', '(T, T) -> T')], 'T'),
+    'sum': (<(String, String)>[], 'T'),
+    'min': (<(String, String)>[], 'T?'),
+    'max': (<(String, String)>[], 'T?'),
+    'count': ([('test', '(T) -> bool')], 'int'),
+    'find': ([('test', '(T) -> bool')], 'T?'),
+    'findLast': ([('test', '(T) -> bool')], 'T?'),
+    'take': ([('count', 'int')], 'List<T>'),
+    'zip': ([('other', 'Iterable<U>')], 'List<(T, U)>'),
+    'drop': ([('count', 'int')], 'List<T>'),
+    'takeLast': ([('count', 'int')], 'List<T>'),
+    'dropLast': ([('count', 'int')], 'List<T>'),
+    'skip': ([('count', 'int')], 'List<T>'),
+    'sorted': ([('compare', '(T, T) -> int')], 'List<T>'),
+    'unique': (<(String, String)>[], 'List<T>'),
+    'flat': (<(String, String)>[], 'List<E>'),
+    'group': ([('key', '(T) -> K')], 'Map<K, List<T>>'),
     'where': ([('test', '(T) -> bool')], 'Iterable<T>'),
     'any': ([('test', '(T) -> bool')], 'bool'),
     'every': ([('test', '(T) -> bool')], 'bool'),
@@ -932,13 +1161,32 @@ const _methods = {
     'contains': ([('other', 'String')], 'bool'),
     'startsWith': ([('other', 'String')], 'bool'),
     'endsWith': ([('other', 'String')], 'bool'),
-    'substring': ([('start', 'int')], 'String'),
+    'substring': ([('start', 'int'), ('end', 'int')], 'String'),
     'toUpperCase': (<(String, String)>[], 'String'),
     'toLowerCase': (<(String, String)>[], 'String'),
     'trim': (<(String, String)>[], 'String'),
     'split': ([('pattern', 'String')], 'List<String>'),
     'indexOf': ([('pattern', 'String')], 'int'),
     'replaceAll': ([('from', 'String'), ('to', 'String')], 'String'),
+    'take': ([('count', 'int')], 'String'),
+    'drop': ([('count', 'int')], 'String'),
+    'takeLast': ([('count', 'int')], 'String'),
+    'dropLast': ([('count', 'int')], 'String'),
+    'padStart': ([('width', 'int'), ('fill', 'String')], 'String'),
+    'padEnd': ([('width', 'int'), ('fill', 'String')], 'String'),
+  },
+  'int': {
+    'clamp': ([('lower', 'int'), ('upper', 'int')], 'int'),
+    'pad': ([('width', 'int')], 'String'),
+    'fixed': ([('digits', 'int')], 'String'),
+  },
+  'double': {
+    'clamp': ([('lower', 'double'), ('upper', 'double')], 'double'),
+    'fixed': ([('digits', 'int')], 'String'),
+  },
+  'num': {
+    'clamp': ([('lower', 'num'), ('upper', 'num')], 'num'),
+    'fixed': ([('digits', 'int')], 'String'),
   },
 };
 
@@ -1129,8 +1377,35 @@ String _signature(Compilation compilation, FunctionDeclaration function) {
 
 List<Map<String, Object?>> _symbolItems(
     Compilation? compilation, Symbol symbol, Map<String, Object> range) {
-  if (symbol.namespace != null) {
+  if (symbol.namespace != null && symbol.type == 'prefix') {
     return [_plain(symbol.name, 9, 'prefix', range, sort: '1')];
+  }
+  if (symbol.external &&
+      symbol.type == symbol.name &&
+      symbol.classDeclaration == null &&
+      symbol.classCase == null) {
+    return [_plain(symbol.name, 7, 'class ${symbol.name}', range, sort: '0')];
+  }
+  if (symbol.signature != null &&
+      symbol.function == null &&
+      symbol.overloads.isEmpty &&
+      symbol.classCase == null &&
+      symbol.classDeclaration == null) {
+    final kind = symbol.constant
+        ? 21
+        : (symbol.callable || symbol.parameterTypes.isNotEmpty)
+            ? 3
+            : 6;
+    return [_plain(symbol.name, kind, symbol.signature!, range, sort: '1')];
+  }
+  if ((symbol.callable || symbol.parameterTypes.isNotEmpty) &&
+      symbol.function == null &&
+      symbol.overloads.isEmpty) {
+    final parameters = symbol.parameterTypes.join(', ');
+    return [
+      _plain(symbol.name, 3, '($parameters) -> ${symbol.type}', range,
+          sort: '1')
+    ];
   }
   if (symbol.classCase != null) {
     return [
@@ -1396,6 +1671,347 @@ int _stringIndexAt(String source, int line, int character) {
 
 int _bytes(String source, int index) =>
     utf8.encode(source.substring(0, index)).length;
+
+const _retrigger = {
+  'command': 'editor.action.triggerSuggest',
+  'title': 'Suggest',
+};
+
+/// Completion for the URI of a `use` or `export` line, or null outside one.
+List<Map<String, Object?>>? _importCompletion(
+    String source, int cursor, String? file) {
+  final lineStart = cursor == 0 ? 0 : source.lastIndexOf('\n', cursor - 1) + 1;
+  final line = source.substring(lineStart, cursor);
+  final trimmed = line.trimLeft();
+  final keyword = trimmed.startsWith('export')
+      ? 'export'
+      : trimmed.startsWith('use')
+          ? 'use'
+          : null;
+  if (keyword == null) return null;
+  if (trimmed.length > keyword.length &&
+      _ident(trimmed.codeUnitAt(keyword.length))) {
+    return null;
+  }
+  var index = lineStart + (line.length - trimmed.length) + keyword.length;
+  while (index < cursor && _space(source.codeUnitAt(index))) {
+    index++;
+  }
+  final uri = source.substring(index, cursor);
+  if (RegExp(r'\s+(?:as|show|hide|when)\b').hasMatch(uri)) return null;
+  if (uri.isEmpty) {
+    return [
+      _importItem(source, cursor, cursor, 'dart:', 'dart:', 'scheme', 9,
+          retrigger: true),
+      _importItem(source, cursor, cursor, 'package:', 'package:', 'scheme', 9,
+          retrigger: true),
+      ..._relativeEntries(source, cursor, cursor, '', const [], file),
+    ];
+  }
+  if (uri.startsWith('dart:')) {
+    final partial = uri.substring(5);
+    if (partial.contains('/') ||
+        partial.contains('.') ||
+        partial.contains(':')) {
+      return const [];
+    }
+    final start = cursor - partial.length;
+    return [
+      for (final name in dartLibraryNames())
+        if (name.startsWith(partial))
+          _importItem(source, start, cursor, name, name, 'dart:$name', 9),
+    ];
+  }
+  if (uri.startsWith('package:')) {
+    return _packageCompletion(source, cursor, uri.substring(8), file);
+  }
+  return _relativeCompletion(source, cursor, index, uri, file);
+}
+
+List<Map<String, Object?>> _packageCompletion(
+    String source, int cursor, String rest, String? file) {
+  final libraries = file == null || file == '<input>'
+      ? const <PackageLibrary>[]
+      : packageLibraries(file);
+  final current =
+      file == null || file == '<input>' ? null : packageRoot(file)?.name;
+  final slash = rest.indexOf('/');
+  if (slash < 0 && rest.contains('.')) {
+    return _dottedPackage(source, cursor, rest, libraries, current, file);
+  }
+  if (slash < 0) {
+    final start = cursor - rest.length;
+    final items = <Map<String, Object?>>[];
+    for (final library in libraries) {
+      if (!library.name.startsWith(rest)) continue;
+      items.add(_importItem(source, start, cursor, library.name, library.name,
+          'package:${library.name}', 9));
+    }
+    final lib = current == null || file == null
+        ? null
+        : Directory(
+            '${packageRoot(file)!.directory}${Platform.pathSeparator}lib');
+    items.addAll(_namedFiles(source, start, cursor, rest, lib, quds: true));
+    return items;
+  }
+  final name = rest.substring(0, slash);
+  final path = rest.substring(slash + 1);
+  final library = _libraryNamed(libraries, name);
+  final separator = path.lastIndexOf('/');
+  final parent = separator < 0 ? '' : path.substring(0, separator);
+  final partial = separator < 0 ? path : path.substring(separator + 1);
+  final dot = partial.lastIndexOf('.');
+  final directory = _packageDirectory(library, current, name, file, parent);
+  if (dot >= 0 && partial.endsWith('.') == false) {
+    final folder = partial.substring(0, dot);
+    final nested = Directory(_joinImport(directory?.path ?? '', folder));
+    if (directory != null && nested.existsSync()) {
+      final at = cursor - (partial.length - dot);
+      return _directoryEntries(source, at, cursor, partial.substring(dot + 1),
+          nested, _packageFile(current, name));
+    }
+  }
+  if (partial.endsWith('.')) {
+    final folder = partial.substring(0, partial.length - 1);
+    final nested = folder.isEmpty
+        ? directory
+        : Directory(_joinImport(directory?.path ?? '', folder));
+    return _directoryEntries(
+        source, cursor - 1, cursor, '', nested, _packageFile(current, name));
+  }
+  final start = cursor - partial.length;
+  return _directoryEntries(
+      source, start, cursor, partial, directory, _packageFile(current, name));
+}
+
+List<Map<String, Object?>> _dottedPackage(
+  String source,
+  int cursor,
+  String rest,
+  List<PackageLibrary> libraries,
+  String? current,
+  String? file,
+) {
+  final parts = rest.split('.');
+  if (parts.isEmpty || parts.first.isEmpty) return const [];
+  if (parts.take(parts.length - 1).any((part) => part.isEmpty)) {
+    return const [];
+  }
+  final package = parts.first;
+  final partial = parts.last;
+  final folders = parts.sublist(1, parts.length - 1);
+  final root = _packageDirectory(
+      _libraryNamed(libraries, package), current, package, file, '');
+  if (root == null || !root.existsSync()) return const [];
+  var directory = root;
+  for (final folder in folders) {
+    directory = Directory(_joinImport(directory.path, folder));
+    if (!directory.existsSync()) return const [];
+  }
+  final start = cursor - partial.length;
+  final items = <Map<String, Object?>>[];
+  for (final entity in _children(directory)) {
+    final name = entity.path.split(Platform.pathSeparator).last;
+    if (name.startsWith('.') || name.startsWith('_')) continue;
+    if (entity is Directory) {
+      if (!name.startsWith(partial)) continue;
+      items.add(_importItem(
+          source, start, cursor, name, '$name.', 'directory', 19,
+          retrigger: true));
+    } else if (entity is File &&
+        (name.endsWith('.dart') || name.endsWith('.quds'))) {
+      final stem = name.substring(0, name.length - 5);
+      if (stem.isEmpty || stem.startsWith('_') || !stem.startsWith(partial)) {
+        continue;
+      }
+      items.add(_importItem(source, start, cursor, stem, stem, name, 17));
+    }
+  }
+  items.sort((a, b) => (a['label'] as String).compareTo(b['label'] as String));
+  return items;
+}
+
+bool _packageFile(String? current, String name) => current != name;
+
+PackageLibrary? _libraryNamed(List<PackageLibrary> libraries, String name) {
+  for (final library in libraries) {
+    if (library.name == name) return library;
+  }
+  return null;
+}
+
+Directory? _packageDirectory(PackageLibrary? library, String? current,
+    String name, String? file, String parent) {
+  String? root;
+  if (library != null && (current == null || name != current)) {
+    root = library.libDirectory;
+  } else if (current != null && name == current && file != null) {
+    root = '${packageRoot(file)!.directory}${Platform.pathSeparator}lib';
+  }
+  if (root == null) return null;
+  if (parent.isEmpty) return Directory(root);
+  return Directory(_joinImport(root, parent));
+}
+
+List<Map<String, Object?>> _relativeCompletion(
+    String source, int cursor, int uriStart, String uri, String? file) {
+  var body = uri;
+  var from = uriStart;
+  if (body.startsWith('.')) {
+    body = body.substring(1);
+    from = uriStart;
+  } else {
+    from = cursor;
+  }
+  if (body.contains('/') || body.contains(':')) return const [];
+  final parts = body.split('.');
+  final partial = parts.removeLast();
+  if (parts.any((part) => part.isEmpty)) return const [];
+  if (!uri.startsWith('.')) from = cursor - partial.length;
+  final directory = _relativeDirectory(file, parts);
+  final items = _relativeEntries(source, from, cursor, partial, parts, file,
+      directory: directory);
+  if (parts.isEmpty && !uri.startsWith('.') && !uri.contains('^')) {
+    if ('dart:'.startsWith(uri)) {
+      items.insert(
+          0,
+          _importItem(source, from, cursor, 'dart:', 'dart:', 'scheme', 9,
+              retrigger: true));
+    }
+    if ('package:'.startsWith(uri)) {
+      items.insert(
+          0,
+          _importItem(source, from, cursor, 'package:', 'package:', 'scheme', 9,
+              retrigger: true));
+    }
+  }
+  return items;
+}
+
+Directory? _relativeDirectory(String? file, List<String> parts) {
+  if (file == null || file == '<input>') return null;
+  var directory = File(file).absolute.parent;
+  for (final part in parts) {
+    if (RegExp(r'^\^+$').hasMatch(part)) {
+      for (var count = 0; count < part.length; count++) {
+        directory = directory.parent;
+      }
+      continue;
+    }
+    if (part.contains('^')) return null;
+    directory = Directory(_joinImport(directory.path, part));
+  }
+  return directory;
+}
+
+List<Map<String, Object?>> _relativeEntries(String source, int start, int end,
+    String partial, List<String> parts, String? file,
+    {Directory? directory}) {
+  final dir = directory ?? _relativeDirectory(file, parts);
+  if (dir == null || !dir.existsSync()) return const [];
+  final items = <Map<String, Object?>>[];
+  for (final entity in _children(dir)) {
+    final name = entity.path.split(Platform.pathSeparator).last;
+    if (name.startsWith('.') || !name.startsWith(partial)) continue;
+    if (entity is Directory) {
+      items.add(_importItem(source, start, end, name, '$name.', 'directory', 19,
+          retrigger: true,
+          filter: _importFilter(source, start, end, partial, name)));
+    } else if (entity is File && name.endsWith('.quds')) {
+      final stem = name.substring(0, name.length - 5);
+      if (stem.isEmpty || !stem.startsWith(partial)) continue;
+      items.add(_importItem(source, start, end, stem, stem, name, 17,
+          filter: _importFilter(source, start, end, partial, stem)));
+    }
+  }
+  items.sort((a, b) => (a['label'] as String).compareTo(b['label'] as String));
+  return items;
+}
+
+List<Map<String, Object?>> _namedFiles(
+    String source, int start, int end, String partial, Directory? directory,
+    {required bool quds}) {
+  if (directory == null || !directory.existsSync()) return const [];
+  final suffix = quds ? '.quds' : '.dart';
+  final items = <Map<String, Object?>>[];
+  for (final entity in _children(directory)) {
+    if (entity is! File) continue;
+    final name = entity.path.split(Platform.pathSeparator).last;
+    if (!name.endsWith(suffix)) continue;
+    final stem = name.substring(0, name.length - suffix.length);
+    if (stem.isEmpty || !stem.startsWith(partial)) continue;
+    items.add(_importItem(source, start, end, stem, stem, name, 17));
+  }
+  return items;
+}
+
+List<Map<String, Object?>> _directoryEntries(String source, int start, int end,
+    String partial, Directory? directory, bool dartFiles) {
+  if (directory == null || !directory.existsSync()) return const [];
+  final items = <Map<String, Object?>>[];
+  for (final entity in _children(directory)) {
+    final name = entity.path.split(Platform.pathSeparator).last;
+    if (name.startsWith('.')) continue;
+    if (entity is Directory) {
+      if (!name.startsWith(partial)) continue;
+      final replacingDot = start < end && source.codeUnitAt(start) == 46;
+      final text = replacingDot ? '/$name/' : '$name/';
+      items.add(_importItem(source, start, end, name, text, 'directory', 19,
+          retrigger: true, filter: replacingDot ? '.$name/' : name));
+    } else if (entity is File) {
+      final shown = dartFiles
+          ? (name.endsWith('.dart') ? name : null)
+          : (name.endsWith('.quds')
+              ? name.substring(0, name.length - 5)
+              : null);
+      if (shown == null || !shown.startsWith(partial)) continue;
+      final replacingDot = start < end && source.codeUnitAt(start) == 46;
+      final text = replacingDot ? '/$shown' : shown;
+      items.add(_importItem(source, start, end, shown, text, name, 17,
+          filter: replacingDot ? '.$shown' : shown));
+    }
+  }
+  items.sort((a, b) => (a['label'] as String).compareTo(b['label'] as String));
+  return items;
+}
+
+Map<String, Object?> _importItem(String source, int start, int end,
+    String label, String text, String detail, int kind,
+    {bool retrigger = false, String? filter}) {
+  return {
+    'label': label,
+    'kind': kind,
+    'detail': detail,
+    'filterText': filter ?? label,
+    'sortText': '0$label',
+    'textEdit': {..._range(source, start, end), 'newText': text},
+    if (retrigger) 'command': _retrigger,
+  };
+}
+
+List<FileSystemEntity> _children(Directory directory) {
+  try {
+    return directory.listSync(followLinks: true);
+  } on FileSystemException {
+    return const [];
+  }
+}
+
+String _importFilter(
+    String source, int start, int end, String partial, String label) {
+  final replaced = source.substring(start, end);
+  if (replaced.isEmpty || label.startsWith(replaced)) return label;
+  final keep = replaced.length - partial.length;
+  final separator = keep > 0 ? replaced.substring(0, keep) : '';
+  return '$separator$label';
+}
+
+String _joinImport(String root, String relative) {
+  final separator = Platform.pathSeparator;
+  final tail = relative.replaceAll('/', separator);
+  if (root.endsWith(separator)) return '$root$tail';
+  return '$root$separator$tail';
+}
 
 int _stringIndexForByte(String source, int byteOffset) {
   var bytes = 0;

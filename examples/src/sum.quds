@@ -1,0 +1,26 @@
+use dart:math as m
+use ^.catalog as cat
+
+
+
+#region Sum Functions
+sum(a: int, b: int) -> int:
+  return a + b
+
+sum(a: String, b: String) -> String:
+  return "{a} {b}"
+
+sum(a: List<int>) = a[0] + a[1]
+sum(a: List<String>) = "{a[0]} {a[1]}".length * m.pi
+#end region
+
+
+
+
+main():
+  print 1
+  for i in [0..10]:
+    print i
+
+random()->int:
+  return m.Random().nextInt(100)

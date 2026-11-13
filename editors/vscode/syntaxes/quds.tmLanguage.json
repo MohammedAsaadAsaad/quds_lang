@@ -4,6 +4,7 @@
   "patterns": [
     { "include": "#comment" },
     { "include": "#string" },
+    { "include": "#directive" },
     { "include": "#keyword" },
     { "include": "#number" },
     { "include": "#function" }
@@ -75,6 +76,29 @@
             "0": { "name": "punctuation.definition.interpolation.end.quds" }
           },
           "patterns": [{ "include": "$self" }]
+        }
+      ]
+    },
+    "directive": {
+      "patterns": [
+        {
+          "begin": "\\b(use|export|part)\\b",
+          "beginCaptures": {
+            "1": { "name": "keyword.other.quds" }
+          },
+          "end": "$",
+          "patterns": [
+            { "include": "#comment" },
+            { "include": "#string" },
+            {
+              "name": "keyword.other.quds",
+              "match": "\\b(?:as|show|hide|when|of)\\b"
+            },
+            {
+              "name": "entity.name.namespace.quds",
+              "match": "(?:dart:|package:|generated:)[\\w./\\\\^-]+|\\^+(?:\\.[A-Za-z_]\\w*)+|(?:[A-Za-z_]\\w*\\.)+[A-Za-z_]\\w*"
+            }
+          ]
         }
       ]
     },

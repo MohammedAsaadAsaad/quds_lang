@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'ast.dart';
 import 'compiler.dart';
+import 'dart_api.dart';
 import 'semantics.dart';
 import 'source.dart';
 import 'walk.dart';
@@ -14,7 +15,9 @@ import 'walk.dart';
 SourceSpan? definitionAt(Compilation compilation, int line, int column,
     {String? Function(String file)? sourceOf}) {
   final node = _definitionNode(compilation, line, column);
-  if (node == null) return null;
+  if (node == null) {
+    return _originSpan(_symbolAt(compilation, line, column));
+  }
   final name = _declaredName(node);
   final text = name == null ? null : sourceOf?.call(node.span.file);
   if (name == null || text == null) return node.span;
@@ -190,6 +193,17 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           _bits(declaration: true, readonly: symbol?.mutable != true),
         );
         if (token != null) tokens.add(token);
+        final index = node.index;
+        if (index != null) {
+          final indexToken = _nameToken(
+            source,
+            node.span,
+            index,
+            _variable,
+            _bits(declaration: true, readonly: true),
+          );
+          if (indexToken != null) tokens.add(indexToken);
+        }
       case Identifier():
         final kind = _identifierKind(compilation, node, methods, parameters);
         if (kind == null) break;
@@ -317,6 +331,9 @@ Node? _nodeForSymbol(Compilation compilation, Symbol? symbol) {
   for (final entry in compilation.semantics.declarations.entries) {
     if (identical(entry.value, symbol)) return entry.key;
   }
+  for (final entry in compilation.semantics.loopIndexes.entries) {
+    if (identical(entry.value, symbol)) return entry.key;
+  }
   final function = symbol.function;
   if (function != null) return function;
   if (symbol.overloads.length == 1) return symbol.overloads.single;
@@ -385,11 +402,7 @@ String? _hoverText(
         mutable: node.mutable,
       ),
     Binding() => _bindingHover(model, node),
-    ForStatement() => _valueHover(
-        node.name,
-        model.declarations[node]?.type,
-        mutable: model.declarations[node]?.mutable ?? false,
-      ),
+    ForStatement() => _forHover(model, source, node, offset),
     FieldDeclaration() => _valueHover(
         node.name,
         node.type == '<infer>' ? model.declarations[node]?.type : node.type,
@@ -401,8 +414,55 @@ String? _hoverText(
   };
 }
 
+String? _libraryHover(Symbol? symbol) {
+  final signature = symbol?.signature;
+  final documentation = symbol?.documentation?.trim();
+  if (signature == null && (documentation == null || documentation.isEmpty)) {
+    return null;
+  }
+  if (signature == null) return documentation;
+  if (documentation == null || documentation.isEmpty) return signature;
+  return '$signature\n\n$documentation';
+}
+
+SourceSpan? _originSpan(Symbol? symbol) {
+  final file = symbol?.originFile;
+  if (symbol == null || file == null || file.isEmpty || symbol.originLine < 1) {
+    return null;
+  }
+  return SourceSpan(
+    symbol.originLine,
+    symbol.originColumn < 1 ? 1 : symbol.originColumn,
+    symbol.name.length,
+    file: file,
+    offset: symbol.originOffset,
+  );
+}
+
+Symbol? _symbolAt(Compilation compilation, int line, int column) {
+  final node = _smallestNode(compilation, line, column);
+  if (node == null) return null;
+  return _symbolOf(compilation, node, line, column);
+}
+
+Symbol? _symbolOf(Compilation compilation, Node node, int line, int column) {
+  if (node is MemberAccess) {
+    if (!_onMemberName(node, line, column)) {
+      return _symbolOf(compilation, node.object, line, column);
+    }
+    return compilation.semantics.references[node];
+  }
+  if (node is Identifier) return compilation.semantics.references[node];
+  if (node is CallExpression) {
+    return _symbolOf(compilation, node.callee, line, column);
+  }
+  return null;
+}
+
 String? _identifierHover(SemanticModel model, Identifier node) {
   final symbol = model.references[node];
+  final library = _libraryHover(symbol);
+  if (library != null) return library;
   final function = symbol?.function;
   if (function != null) return _signature(function, model);
   if (symbol?.classDeclaration != null) return 'class ${node.name}';
@@ -411,6 +471,8 @@ String? _identifierHover(SemanticModel model, Identifier node) {
 }
 
 String? _memberHover(SemanticModel model, MemberAccess node) {
+  final library = _libraryHover(model.references[node]);
+  if (library != null) return library;
   final found = _findMember(model, node);
   if (found is _PropertyFound) return _propertyHover(found.declaration);
   if (found is _FieldFound) {
@@ -618,12 +680,33 @@ class _MethodFound extends _Found {
 }
 
 bool _onName(String source, Node node, int offset) {
-  final name = _declaredName(node);
-  if (name == null) return false;
-  final local = _nameSpan(source, node.span, name);
+  final names = <String>[
+    if (node is ForStatement && node.index != null) node.index!,
+    if (_declaredName(node) != null) _declaredName(node)!,
+  ];
+  for (final name in names) {
+    if (_nameCovers(source, node.span, name, offset)) return true;
+  }
+  return false;
+}
+
+bool _nameCovers(String source, SourceSpan span, String name, int offset) {
+  final local = _nameSpan(source, span, name);
   if (local == null) return false;
   final bytes = utf8.encode(name).length;
   return offset >= local.offset && offset < local.offset + bytes;
+}
+
+String? _forHover(
+    SemanticModel model, String source, ForStatement node, int offset) {
+  final index = node.index;
+  if (index != null && _nameCovers(source, node.span, index, offset)) {
+    final symbol = model.loopIndexes[node];
+    return _valueHover(index, symbol?.type ?? 'int', mutable: false);
+  }
+  final symbol = model.declarations[node];
+  return _valueHover(node.name, symbol?.type,
+      mutable: symbol?.mutable ?? false);
 }
 
 /// One-based [line] and UTF-16 [column], matching [SourceSpan].
@@ -651,6 +734,214 @@ int _byteOffsetAt(String source, int line, int column) {
     currentColumn++;
   }
   return utf8.encode(source.substring(0, index)).length;
+}
+
+/// Where a Dart SDK name sits, including when the Quds file does not compile.
+class DartPlace {
+  const DartPlace({
+    required this.text,
+    required this.file,
+    required this.line,
+    required this.column,
+    required this.offset,
+    required this.length,
+  });
+
+  final String text;
+  final String file;
+  final int line;
+  final int column;
+  final int offset;
+  final int length;
+}
+
+/// The Dart declaration under [line] and [column] in a buffer that may not compile.
+DartPlace? dartPlaceAt(String source, int line, int column) {
+  final index = _indexAt(source, line, column);
+  if (index < 0 || index > source.length) return null;
+  var end = index < source.length && _word(source.codeUnitAt(index))
+      ? index
+      : index - 1;
+  if (end < 0 || !_word(source.codeUnitAt(end))) return null;
+  var start = end;
+  while (start > 0 && _word(source.codeUnitAt(start - 1))) {
+    start--;
+  }
+  while (end + 1 < source.length && _word(source.codeUnitAt(end + 1))) {
+    end++;
+  }
+  final name = source.substring(start, end + 1);
+  var cursor = start - 1;
+  while (cursor >= 0 && _gap(source.codeUnitAt(cursor))) {
+    cursor--;
+  }
+  if (cursor < 0 || source.codeUnitAt(cursor) != 46) return null;
+  cursor--;
+  while (cursor >= 0 && _gap(source.codeUnitAt(cursor))) {
+    cursor--;
+  }
+  if (cursor >= 0 && source.codeUnitAt(cursor) == 41) {
+    var depth = 0;
+    while (cursor >= 0) {
+      final unit = source.codeUnitAt(cursor);
+      if (unit == 41) {
+        depth++;
+      } else if (unit == 40) {
+        depth--;
+        if (depth == 0) break;
+      }
+      cursor--;
+    }
+    cursor--;
+    while (cursor >= 0 && _gap(source.codeUnitAt(cursor))) {
+      cursor--;
+    }
+    final called = _wordBefore(source, cursor);
+    if (called == null) return null;
+    var owner = called;
+    cursor = called.start - 1;
+    while (cursor >= 0 && _gap(source.codeUnitAt(cursor))) {
+      cursor--;
+    }
+    if (cursor >= 0 && source.codeUnitAt(cursor) == 46) {
+      cursor--;
+      while (cursor >= 0 && _gap(source.codeUnitAt(cursor))) {
+        cursor--;
+      }
+      final previous = _wordBefore(source, cursor);
+      if (previous != null) {
+        final imported = _dartPrefix(source, previous.text);
+        if (imported != null && _visible(imported, called.text)) {
+          owner = called;
+        } else if (previous.text.isNotEmpty) {
+          final prefix = _prefixBefore(source, previous.start - 1);
+          final library = prefix == null ? null : _dartPrefix(source, prefix);
+          if (library != null && _visible(library, previous.text)) {
+            final shape = readDartLibrary(library.uri)?.types[previous.text];
+            final member = shape?.members[name];
+            if (member == null || member.file.isEmpty) return null;
+            return _place(describeDartMember(member), member.file, member.line,
+                member.column, member.offset, name.length);
+          }
+        }
+      }
+    }
+    final prefix = _prefixBefore(source, owner.start - 1);
+    final library = prefix == null ? null : _dartPrefix(source, prefix);
+    if (library == null || !_visible(library, owner.text)) return null;
+    final member =
+        readDartLibrary(library.uri)?.types[owner.text]?.members[name];
+    if (member == null || member.file.isEmpty) return null;
+    return _place(describeDartMember(member), member.file, member.line,
+        member.column, member.offset, name.length);
+  }
+  final prefix = _wordBefore(source, cursor);
+  if (prefix == null) return null;
+  final library = _dartPrefix(source, prefix.text);
+  if (library == null || !_visible(library, name)) return null;
+  final top = readDartLibrary(library.uri)?.names[name];
+  if (top == null || top.file.isEmpty) return null;
+  return _place(describeDartTop(top), top.file, top.line, top.column,
+      top.offset, name.length);
+}
+
+DartPlace _place(
+    String text, String file, int line, int column, int offset, int length) {
+  return DartPlace(
+    text: text,
+    file: file,
+    line: line,
+    column: column,
+    offset: offset,
+    length: length,
+  );
+}
+
+bool _word(int unit) =>
+    unit == 95 ||
+    (unit >= 65 && unit <= 90) ||
+    (unit >= 97 && unit <= 122) ||
+    (unit >= 48 && unit <= 57);
+
+bool _gap(int unit) => unit == 32 || unit == 9;
+
+({int start, String text})? _wordBefore(String source, int end) {
+  if (end < 0 || end >= source.length || !_word(source.codeUnitAt(end))) {
+    return null;
+  }
+  var start = end;
+  while (start > 0 && _word(source.codeUnitAt(start - 1))) {
+    start--;
+  }
+  return (start: start, text: source.substring(start, end + 1));
+}
+
+String? _prefixBefore(String source, int end) {
+  while (end >= 0 && _gap(source.codeUnitAt(end))) {
+    end--;
+  }
+  if (end < 0 || source.codeUnitAt(end) != 46) return null;
+  end--;
+  while (end >= 0 && _gap(source.codeUnitAt(end))) {
+    end--;
+  }
+  return _wordBefore(source, end)?.text;
+}
+
+({String uri, List<String>? show, List<String>? hide})? _dartPrefix(
+    String source, String prefix) {
+  final pattern = RegExp(
+      'use\\s+(dart:[A-Za-z0-9_]+)\\s+as\\s+${RegExp.escape(prefix)}\\b');
+  final match = pattern.firstMatch(source);
+  if (match == null) return null;
+  final lineEnd = source.indexOf('\n', match.end);
+  final tail =
+      source.substring(match.end, lineEnd < 0 ? source.length : lineEnd);
+  List<String>? names(String keyword) {
+    final found = RegExp('$keyword\\s+([A-Za-z0-9_,\\s]+)').firstMatch(tail);
+    if (found == null) return null;
+    return found
+        .group(1)!
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  return (uri: match.group(1)!, show: names('show'), hide: names('hide'));
+}
+
+bool _visible(({String uri, List<String>? show, List<String>? hide}) library,
+    String name) {
+  if (library.show != null && !library.show!.contains(name)) return false;
+  if (library.hide != null && library.hide!.contains(name)) return false;
+  return true;
+}
+
+int _indexAt(String source, int line, int column) {
+  var index = 0;
+  var currentLine = 1;
+  while (index < source.length && currentLine < line) {
+    final unit = source.codeUnitAt(index);
+    if (unit == 13) {
+      index++;
+      if (index < source.length && source.codeUnitAt(index) == 10) index++;
+      currentLine++;
+    } else if (unit == 10) {
+      index++;
+      currentLine++;
+    } else {
+      index++;
+    }
+  }
+  var currentColumn = 1;
+  while (index < source.length && currentColumn < column) {
+    final unit = source.codeUnitAt(index);
+    if (unit == 10 || unit == 13) break;
+    index++;
+    currentColumn++;
+  }
+  return index;
 }
 
 int _stringIndex(String source, int byteOffset) {

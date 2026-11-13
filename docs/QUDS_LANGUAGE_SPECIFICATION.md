@@ -81,9 +81,10 @@ if ready:
 name = "Quds"
 var count = 0
 const maxItems = 10
+var whole = 0.0, fraction = 0.0
 ```
 
-**Compiler / runtime requirements.** Symbol table tracks declaration kind; reject reassignment to immutable names.
+**Compiler / runtime requirements.** Symbol table tracks declaration kind; reject reassignment to immutable names. A comma on the same line declares another binding. The leading `var`, `const`, `late`, `shadow`, `state`, or `computed` applies to every name on that line. Each name may carry its own type. Initializers run from left to right, so a later one may read an earlier name. A value that opens a block ends the line.
 
 **Required conformance coverage.** Reassignment, initialization, inference, const expression validity.
 
@@ -114,7 +115,9 @@ if active and not blocked:
   print "OK"
 ```
 
-**Compiler / runtime requirements.** Lower boolean words to Dart operators without changing evaluation order.
+A comparison may continue: `0 <= index < items.length` and `"0" <= piece <= "9"`. Every operand runs once, from left to right, including when an earlier comparison is false. The operators are `<`, `<=`, `>`, and `>=`. `==` and `!=` do not chain. `and` still separates two comparisons. All operands are strings, or they share one numeric type. `int` and `double` are not mixed. `"-" * 12` repeats a string. `3 * "ab"` does the same after the count is evaluated. `piece in "0123456789"` and `name not in seen` test membership. A string asks whether it contains the text. A list, set, or range asks whether it contains the element. A map asks whether it contains the key. The left value runs, then the collection, each once. `not in` is one operator. Prefix `not` still binds tighter, so `not name in seen` tests the negated name. `items + more` builds a new list. `ages + extra` builds a new map, and a key on the right replaces the same key on the left. Each side runs once, from left to right. A `readonly` collection still joins into an ordinary list or map.
+
+**Compiler / runtime requirements.** Lower boolean words to Dart operators without changing evaluation order. A chained comparison evaluates every operand before combining the results.
 
 **Required conformance coverage.** Precedence, short circuit, nullable operands, invalid types.
 
@@ -129,7 +132,11 @@ if score >= 50:
   print "Pass"
 else:
   print "Fail"
+
+if text.startsWith("0"): return "0"
 ```
+
+A branch that is one statement may sit on the header line. An indented suite remains available, and `else` stays on its own line.
 
 **Compiler / runtime requirements.** AST distinguishes conditional statement and conditional expression.
 
@@ -137,14 +144,22 @@ else:
 
 ### QUDS-006 — Loops and ranges
 
-**Approved decision.** Support `for x in iterable`, inclusive range `a..b`, exclusive range `a..<b` (`..<` is one token), `for` with `while` and `step` (the C-style loop), `while`, `repeat` / `while` (the do-while loop), `break`, `continue`, labeled breaks, and `await for`. `..` is never a cascade. A zero step is a compile-time error when the step is a constant, and a runtime error otherwise. `1..5` contains 1, 2, 3, 4, and 5. `1..<5` contains 1, 2, 3, and 4. A negative step walks downward and still honors the inclusive or exclusive end.
+**Approved decision.** Support `for x in iterable`, inclusive range `a..b`, exclusive range `a..<b` (`..<` is one token), `for` with `while` and `step` (the C-style loop), `while`, `repeat` / `while` (the do-while loop), `break`, `continue`, labeled breaks, and `await for`. `..` is never a cascade. A zero step is a compile-time error when the step is a constant, and a runtime error otherwise. `1..5` contains 1, 2, 3, 4, and 5. `1..<5` contains 1, 2, 3, and 4. A negative step walks downward and still honors the inclusive or exclusive end. `range(start, end)` is the call form of the inclusive range `start..end`, and `range(end)` is `0..end`.
 
 **Quds syntax illustration** (may be a fragment):
 
 ```quds
 for i in 1..5:
   print i
+
+for piece in "ab":
+  print piece
+
+for i, item in items:
+  print "{i}: {item}"
 ```
+
+`for piece in text` yields each character as a string of one UTF-16 code unit. `for i, item in items` binds `i` to the position, starting at 0, and `item` to the element. Both bindings are immutable. `for i, n in 1..3` gives positions 0, 1, 2 and values 1, 2, 3. When the elements are positional pairs, `for name, score in pairs` binds the two fields instead of a position. The same two names work as a collection element: `for mark, tone in marks.zip(tones)`. `names.zip(scores)` builds those pairs and stops at the shorter collection. `for i in 0..10 step 2` walks 0, 2, 4, 6, 8, and 10. `10..0 step -2` walks downward and includes the end. `10..<0 step -2` stops before the end. The step runs once, after the start and the end. A constant step of 0 is rejected. A step that cannot move from the start toward the end yields nothing. `step` follows a range, so `for x in items step 2` is rejected. `for i in 10..0` without a step still walks downward. `repeat 3:` runs the body three times. The count is an `int`, runs once, and a negative count fails at run time. `repeat 0:` does not enter the body. `repeat:` followed by `while` is still the do-while loop. The counted `for name = ... while` form is unchanged.
 
 **Compiler / runtime requirements.** Define range direction, endpoint, step-zero errors, iteration binding semantics.
 
@@ -325,7 +340,11 @@ class Dog extends Animal with Walker:
 
 ```quds
 squares = [x * x for x in 1..5]
+total = [1, 2, 3].sum()
+doubled = items.map(n -> n * 2)
 ```
+
+`map`, `take`, `skip`, `drop`, `takeLast`, `dropLast`, `sorted`, `unique`, and `flat` return a new list. `drop` is `skip`. `where` stays a view and becomes a list with `toList`. `sum` of an empty numeric collection is zero. `min` and `max` on a collection are null when it is empty. `min(a, b)` and `max(a, b)` choose between two numbers of the same type. `find` and `findLast` are null when nothing matches. `reduce` on an empty collection fails at run time. `sorted` without a comparison accepts numbers and strings. A string index is one character: `"ab"[0]` is `"a"`. A negative index counts from the end, so `text[-1]` is the last character and `items[-1]` is the last element. The same count applies to a slice: `items[-2..]` is the last two elements, and `text[..<-1]` stops before the last character. A negative bound is `length + bound`. An inclusive end then adds one. A missing start is 0 and a missing end is the length. A map key of `-1` stays the key `-1`. `substring(start, end)` stops before `end`. `text[1..]`, `text[..<n]`, and `items[1..3]` slice a string or a list. `..` includes the end and `..<` stops before it. The receiver, the start, and the end each run once. `text.chars` is the characters as `List<String>`. `text.lines` splits on line endings, drops the endings, and keeps empty lines. `take`, `drop`, `takeLast`, and `dropLast` also work on a string and return a string. A negative count fails at run time. A count past the end keeps what remains. `title.padStart(8, "0")` and `title.padEnd(12)` widen text. The fill defaults to one space, and text that is already wider is not shortened. `names.zip(scores)` pairs positions and stops at the shorter side. `n.abs`, `n.round`, `n.floor`, and `n.ceil` are written without parentheses. On an `int`, `round`, `floor`, and `ceil` are the same number. On a `double` they return `int`. `n.clamp(lower, upper)` keeps `n`'s numeric type. `n.pad(4)` is an `int` written with zeros on the left. A minus sign stays in front of the zeros, and a number that is already wider is not shortened. `n.fixed(2)` writes the number with that many digits after the decimal. `n.plain` writes it without trailing zeros, and a scientific value stays as it is. `plain` does not limit the length. A negative digit count fails at run time.
 
 **Compiler / runtime requirements.** Desugar to efficient Dart collection constructs.
 
@@ -355,7 +374,13 @@ squares = [x * x for x in 1..5]
 
 ```quds
 message = "Hello {user.name}"
+letter = """
+  Hello
+  {name}
+  """
 ```
+
+A triple-quoted string that closes on its own line uses that line's leading spaces as the margin. Those spaces are removed from every content line. A blank line stays blank. A line with less indentation than the closing quotes is an error. Only U+0020 spaces count. The newline that only introduces the closing quotes is not part of the value. A triple string on one line is unchanged.
 
 **Compiler / runtime requirements.** Parse interpolation expressions as AST, not text substitution.
 
@@ -1939,6 +1964,7 @@ Call order:
 
 - Bare `name = expr` declares an immutable binding if no visible binding exists. If a mutable binding is visible, it assigns that binding. If an immutable binding is visible, it is an error. A new same-name local is `shadow name = expr` and is immutable. A mutable shadow is `shadow var name = expr`.
 - `var` is mutable. `const` is a compile-time constant. `late` is immutable and assigned once. `late var` is mutable and may be read only after assignment.
+- `var whole = 0.0, fraction = 0.0` declares both names in one line, left to right. The same form works for a bare binding, `const`, `late`, `shadow`, `state`, and `computed`. A trailing comma is an error.
 - Implicit const applies only inside a constant context. `colors = ["red", "blue"]` is a mutable list. `const palette = ["red", "blue"]` is a constant list. Inference must not take mutability or identity away.
 - `state name = expr` is mutable storage with notifications. It is not an immutable binding.
 
@@ -2033,7 +2059,7 @@ An identifier is a letter or `_` or `$`, then letters, digits, `_`, or `$`. The 
 
 Every other word in this grammar is contextual. It is a keyword only when the production that uses it matches. Otherwise it is an identifier. `map` and `set` are keywords only when the next token is `:`.
 
-Strings use `'` , `"`, `'''`, and `"""`, with an optional raw prefix `r`. Raw strings have no backslash escapes and no interpolation. Non-raw strings use Dart's backslash escapes. `$` never starts interpolation. `{` starts an interpolation and `}` ends it. `{{` and `}}` are literal braces. The interpolated text is one expression. A `}` inside that expression is the end of the interpolation, so a nested string is the way to include one. Adjacent string literals, with only whitespace or comments between them, concatenate. Their interpolations stay in order and run left to right when the combined string is evaluated.
+Strings use `'` , `"`, `'''`, and `"""`, with an optional raw prefix `r`. Raw strings have no backslash escapes and no interpolation. Non-raw strings use Dart's backslash escapes. `$` never starts interpolation. `{` starts an interpolation and `}` ends it. A triple-quoted string that closes on its own line drops the leading spaces of that closing line from every content line, and drops the newline that only introduces the closing quotes. `{{` and `}}` are literal braces. The interpolated text is one expression. A `}` inside that expression is the end of the interpolation, so a nested string is the way to include one. Adjacent string literals, with only whitespace or comments between them, concatenate. Their interpolations stay in order and run left to right when the combined string is evaluated.
 
 ### Indentation and continuation
 
@@ -2041,7 +2067,7 @@ A blank line, or a line whose only tokens are comments, does not change the inde
 
 A newline does not end an expression while parentheses or brackets are open, while a string is unclosed, or when the last token is a comma, an infix operator, `|>`, or `->`. The following line continues that expression. A continuation may be indented more than the current statement without opening a block. It must not be indented less than the line where the expression started.
 
-A header colon is not a continuation. A match arm and a named-argument row may put their expression on the same line. A `suite` never does.
+A header colon is not a continuation. A match arm and a named-argument row may put their expression on the same line. A statement suite may be a colon and one statement on that same line; otherwise it is an indented block.
 
 ### Compilation unit
 
@@ -2151,7 +2177,7 @@ matchStatement= ( "match" | "switch" ) , expression , matchArms
 
 `result` outside `do:` is `E106`. `return` and `yield` outside the function or generator that can accept them are `E107` and `E804`. `break` and `continue` outside a loop, or with an unknown label, are `E105` and `E800`. `await` outside `async` is `E803`. `spawn` outside `task group` is `E107`. `rethrow` outside `catch` is `E107`.
 
-An `if` statement may omit `else`. Its branches are suites. An `if` in expression position is not this statement.
+An `if` statement may omit `else`. Its branches are suites. A suite that is a single statement may share the `if`, `else if`, or `else` line. An `if` in expression position is not this statement.
 
 `label name` applies to the next statement, which must be a loop (`E800` otherwise). The name lives in the label namespace and does not hide a variable.
 
@@ -2439,7 +2465,7 @@ test/<name>_test.quds
 
 `quds.yaml` holds `language: "1.2"` and any `config:` map. The language version is this field. A comment does not select a version. `pubspec.yaml` holds the package name and the Dart SDK constraint. Published packages commit the generated `.dart` next to each `.quds` file so a Dart consumer needs no Quds compiler. `.dart_tool/quds/cache/` is the incremental cache and is not published.
 
-`use package:name` is `lib/name.quds`. `use package:name/src/util` is `lib/src/util.quds`. `use dart:math` is that Dart library. `use util` is `util.quds` beside the current file. The generated import uses the `.dart` path. `use generated:user_models` is the generated library of that name in the same package.
+`use package:name` is `lib/name.quds`. `use package:name/src/util` is `lib/src/util.quds`. `use package:flutter.material` is `package:flutter/material.dart`: the first segment is the package, and each later dot is a directory. A `.quds` file at that path is the Quds library. Otherwise the `.dart` file is read, including a Flutter library. `use dart:math` is that Dart library. Its public names are read from the library sources in the Dart SDK, including `part` files, and a change to those files is visible on the next analysis. `use util` is `util.quds` beside the current file. `use src.sum` is `src/sum.quds` relative to that file, and each `^` climbs one directory: `use ^^^.sum` is `../../../sum.quds`. The generated import uses the `.dart` path. `use generated:user_models` is the generated library of that name in the same package.
 
 One library is one `.quds` file plus its `part` files. Library privacy is that set. The emitter writes a generated-file header. `quds build` refuses to overwrite a `.dart` file that lacks the header.
 

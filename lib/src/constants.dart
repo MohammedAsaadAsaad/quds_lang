@@ -331,6 +331,18 @@ class ConstantEvaluator {
           return ConstString(left.value + right.value);
         }
         return _numeric(left, '+', right, node);
+      case '*':
+        final left = evaluate(node.left);
+        final right = evaluate(node.right);
+        if (left is ConstString && right is ConstInt) {
+          if (right.value < 0) fail('A repeat count cannot be negative', node);
+          return ConstString(left.value * right.value);
+        }
+        if (left is ConstInt && right is ConstString) {
+          if (left.value < 0) fail('A repeat count cannot be negative', node);
+          return ConstString(right.value * left.value);
+        }
+        return _numeric(left, '*', right, node);
       default:
         final left = evaluate(node.left);
         final right = evaluate(node.right);

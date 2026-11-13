@@ -133,6 +133,7 @@ main():
 existing mutable binding. `var` explicitly declares a mutable binding; `const`
 requires a compile-time constant initializer, which Quds evaluates before
 emission. Typed declarations use `name: Type = value`.
+`var whole = 0.0, fraction = 0.0` declares every name on that line. The leading keyword applies to each of them, and a later initializer can read an earlier name.
 Compound assignment requires an existing mutable binding. `shadow` requires an
 outer binding and creates a new final local binding after resolving its initializer
 against the outer scope. It cannot redeclare a name in the same scope. `var` or
@@ -224,13 +225,23 @@ unchanged by the map.
 - Classes, value classes (`==` and `hashCode`), and `sealed type` cases.
 - Local functions, expression lambdas, function tear-offs, and function types `(parameters) -> Type`.
 - Nullable types, postfix `!`, and `??`.
-- `use dart:math` for `sqrt`, `sin`, `cos`, `min`, `max`, and `pi`. Other
-  `dart:`, `package:`, and `.quds` imports are emitted and do not invent names.
+- `use dart:math` reads that library from the Dart SDK sources, including
+  its `part` files, so the names stay in step with those files. A `dart:`
+  library whose sources are not in the SDK is emitted and does not invent
+  names. `package:` and `.quds` imports are unchanged.
+  `use src.sum` imports `src/sum.quds` beside the file. Each `^` climbs one
+  directory, so `use ^^^.sum` imports `../../../sum.quds`. In a `use` line,
+  `.` completes from the files and directories beside that file, `dart:`
+  completes from the SDK libraries on disk, and `package:` completes from
+  `package_config.json` and this package's `lib` files.
   A `package:` URI that already ends in `.dart` is emitted unchanged, and its
-  names are passed through to Dart. `quds create flutter <name>` creates a
+  names are read from that package's sources the same way as a `dart:` library.
+  `use package:flutter.material` is that same library: dots after the package
+  name are directories. `Column` is the class `Column`. A name the sources do
+  not declare is still passed through to Dart. `quds create flutter <name>` creates a
   Flutter app whose program is `lib/main.quds`. `quds run` on that file
   compiles it under `lib/quds_gen/` and launches `flutter run`.
-- `for` over lists, sets, and ranges (`..` and `..<`), including a range whose end is below its start, `while`, `break`,
+- `for` over lists, sets, ranges (`..` and `..<`), and strings, including a range whose end is below its start. `for piece in text` yields each character. `for i, item in items` binds the position and the element. `range(start, end)` is `start..end`, and `range(end)` is `0..end`. Lists, sets, and ranges share `map`, `fold`, `reduce`, `sum`, `min`, `max`, `count`, `find`, `findLast`, `take`, `drop`, `takeLast`, `dropLast`, `skip`, `sorted`, `unique`, `flat`, `group`, and `join`. `map` returns a new list. `sum` of nothing is zero. Collection `min` and `max` are null when empty. `min(a, b)` and `max(a, b)` choose between two numbers. `"ab"[0]` is `"a"`. `text[1..]`, `text[..<n]`, and `items[1..3]` slice a string or a list. `substring` takes an optional end. `text.chars` is the characters. A string also has `take`, `drop`, `takeLast`, and `dropLast`. Numbers have `abs`, `round`, `floor`, `ceil`, and `clamp`. `n.pad(4)` writes an `int` with leading zeros. `"-" * 12` repeats text. `0 <= index < items.length` compares in a chain, and every operand runs once. `piece in digits` and `name not in seen` test membership. `text[-1]` and `items[-2..]` count from the end. `text.lines` splits lines. `title.padEnd(12)` and `title.padStart(8, "0")` widen text. `repeat 3:` runs a body a counted number of times. `for name, score in names.zip(scores)` pairs two collections and stops at the shorter one. A collection element uses the same pair: `for mark, tone in marks.zip(tones)`. `for i in 0..10 step 2` steps through a range, and a range with no step still walks downward when the end is below the start. `items + more` builds a new list and `ages + extra` builds a new map where the right-hand key wins. `n.fixed(2)` and `n.plain` write a number as text. A triple-quoted block drops the indent of its closing line. A misspelled name can suggest the nearest visible spelling. `while`, `break`,
   `continue`, and `label name` on a loop.
 - `map:` and `set:` literals, records, and `(a, b) = record` destructuring.
 - Default arguments, including defaults that read earlier parameters, and
@@ -414,7 +425,11 @@ hover, code lenses on `main`, rename, formatting, and diagnostics for an open bu
 that hits the source map. `quds format` rewrites indentation outside a
 multiline string to two spaces, keeps comments and string contents, drops
 trailing whitespace, and ends the file with a newline. A second format is
-identical. Lines are not wrapped to 80 columns. `quds doc` lists `///`
+identical. Lines wrap at 80 columns after a comma. A condition with one
+statement is written on the header line when that line fits. The editor
+formats a `.quds` file on save. Tab size, `quds.format.lineWidth`, and
+`quds.format.singleLineIf` change that formatting. `if cond: return 1` is a
+statement suite, and the indented form remains. `quds doc` lists `///`
 lines. `quds doc test` compiles and runs a fenced example. A `[Name]` that
 is not a top-level function or class in that file is `E200` (`Broken link:
 Name`). An example that fails to compile or run exits 65. No HTML API site

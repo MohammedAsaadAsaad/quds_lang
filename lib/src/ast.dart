@@ -102,11 +102,17 @@ class IfStatement extends Statement {
 
 class ForStatement extends Statement {
   const ForStatement(this.name, this.iterable, this.body, super.span,
-      {this.awaiting = false});
+      {this.awaiting = false, this.index, this.step});
   final String name;
+
+  /// The index in `for index, name in`, or the first field of a pair.
+  final String? index;
   final Expression iterable;
   final List<Statement> body;
   final bool awaiting;
+
+  /// The stride in `for name in range step value`.
+  final Expression? step;
 }
 
 class ReturnStatement extends Statement {
@@ -421,6 +427,25 @@ class IndexExpression extends Expression {
   final Expression index;
 }
 
+/// `text[1..]`, `text[..<n]`, and `items[1..3]`. A missing start is 0. A
+/// missing end runs through the last element. [inclusive] is `..`; `..<` is
+/// exclusive.
+class SliceExpression extends Expression {
+  const SliceExpression(
+      this.object, this.start, this.end, this.inclusive, super.span);
+  final Expression object;
+  final Expression? start;
+  final Expression? end;
+  final bool inclusive;
+}
+
+/// `a <= b < c`. Every operand runs once, from left to right.
+class ChainComparison extends Expression {
+  const ChainComparison(this.operands, this.operators, super.span);
+  final List<Expression> operands;
+  final List<String> operators;
+}
+
 class MapExpression extends Expression {
   const MapExpression(this.keys, this.values, super.span);
   final List<Expression> keys, values;
@@ -558,9 +583,14 @@ class CForStatement extends Statement {
 }
 
 class RepeatStatement extends Statement {
-  const RepeatStatement(this.body, this.condition, super.span);
+  const RepeatStatement(this.body, this.condition, super.span, {this.count});
   final List<Statement> body;
-  final Expression condition;
+
+  /// The condition of `repeat: ... while condition`.
+  final Expression? condition;
+
+  /// The count of `repeat count:`.
+  final Expression? count;
 }
 
 class MatchStatement extends Statement {
@@ -658,8 +688,11 @@ class CollectionIf extends Expression {
 
 class CollectionFor extends Expression {
   const CollectionFor(this.name, this.iterable, this.body, super.span,
-      {this.filter});
+      {this.filter, this.index});
   final String name;
+
+  /// The index in `for index, name in`, or the first field of a pair.
+  final String? index;
   final Expression iterable;
   final List<Expression> body;
   final Expression? filter;

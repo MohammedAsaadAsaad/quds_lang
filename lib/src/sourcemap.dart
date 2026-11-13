@@ -1,7 +1,10 @@
 import 'dart:convert';
 
+import 'ast.dart';
 import 'emitter.dart';
+import 'semantics.dart';
 import 'source.dart';
+import 'walk.dart';
 
 /// Source Map Revision 3, one mapping per generated line.
 String encodeSourceMap(
@@ -55,17 +58,307 @@ String _vlq(int value) {
 }
 
 String? sourceMapFor(
-    DartEmitter emitter, String generatedFile, String sourceFile) {
+    DartEmitter emitter, String generatedFile, String sourceFile,
+    {Program? program, String? source}) {
   if (emitter.mappings.isEmpty) return null;
-  return encodeSourceMap(generatedFile, sourceFile, emitter.mappings);
+  final encoded = encodeSourceMap(generatedFile, sourceFile, emitter.mappings);
+  final names = _qudsNames(emitter.model);
+  final locals = program == null || source == null
+      ? const <Map<String, Object>>[]
+      : _qudsLocals(emitter.model, program, source);
+  if (names.isEmpty && locals.isEmpty) return encoded;
+  final data = jsonDecode(encoded) as Map<String, Object?>;
+  if (names.isNotEmpty) data['x_qudsNames'] = names;
+  if (locals.isNotEmpty) data['x_qudsLocals'] = locals;
+  return jsonEncode(data);
+}
+
+/// Generated Dart name to the name written in the `.quds` source.
+Map<String, String> _qudsNames(SemanticModel model) {
+  final names = <String, String>{};
+  void take(Symbol symbol) {
+    if (symbol.dartName.isEmpty || symbol.name.isEmpty) return;
+    if (symbol.dartName == symbol.name) return;
+    names.putIfAbsent(symbol.dartName, () => symbol.name);
+  }
+
+  for (final symbol in model.declarations.values) {
+    take(symbol);
+  }
+  for (final symbol in model.loopIndexes.values) {
+    take(symbol);
+  }
+  return names;
+}
+
+/// A local whose generated name differs from the name written in the source.
+///
+/// [line] and [end] are the lines where that binding is in scope.
+class QudsLocal {
+  const QudsLocal(this.dartName, this.name, this.line, this.end);
+  final String dartName;
+  final String name;
+  final int line;
+  final int end;
+}
+
+List<Map<String, Object>> _qudsLocals(
+    SemanticModel model, Program program, String source) {
+  final bytes = utf8.encode(source);
+  int endLine(SourceSpan span) {
+    final start = span.offset.clamp(0, bytes.length);
+    final stop = (span.offset + span.length).clamp(0, bytes.length);
+    var line = span.line;
+    for (var i = start; i < stop; i++) {
+      if (bytes[i] == 10) line++;
+    }
+    return line;
+  }
+
+  final locals = <Map<String, Object>>[];
+  final seen = <String>{};
+  void add(Symbol? symbol, SourceSpan span, int end) {
+    if (symbol == null || symbol.dartName.isEmpty) return;
+    if (symbol.dartName == symbol.name || !seen.add(symbol.dartName)) return;
+    locals.add({
+      'dart': symbol.dartName,
+      'name': symbol.name,
+      'line': span.line,
+      'end': end < span.line ? span.line : end,
+    });
+  }
+
+  late void Function(Statement node, int end) visitStatement;
+
+  void visitStatements(List<Statement>? body, int end) {
+    if (body == null) return;
+    for (final node in body) {
+      visitStatement(node, end);
+    }
+  }
+
+  void patterns(Pattern pattern, int end) {
+    walkAst(pattern, (node) {
+      if (node is Pattern) add(model.declarations[node], node.span, end);
+    });
+  }
+
+  void visitExpression(Expression? node, int end) {
+    if (node == null) return;
+    final lambdas = <Lambda>{};
+    final blocks = <DoExpression>{};
+    final loops = <CollectionFor>{};
+    walkAst(node, (child) {
+      if (child is CollectionFor && loops.add(child)) {
+        final loopEnd = endLine(child.span);
+        add(model.declarations[child], child.span, loopEnd);
+        add(model.loopIndexes[child], child.span, loopEnd);
+      }
+      if (child is Lambda && lambdas.add(child)) {
+        final lambdaEnd = endLine(child.span);
+        for (final parameter in child.parameters) {
+          add(model.declarations[parameter], parameter.span, lambdaEnd);
+          visitExpression(parameter.defaultValue, lambdaEnd);
+        }
+        visitStatements(child.body, lambdaEnd);
+        visitExpression(child.expressionBody, lambdaEnd);
+      }
+      if (child is DoExpression && blocks.add(child)) {
+        visitStatements(child.body, endLine(child.span));
+      }
+    });
+  }
+
+  void function(FunctionDeclaration node) {
+    final functionEnd = endLine(node.span);
+    for (final parameter in node.parameters) {
+      add(model.declarations[parameter], parameter.span, functionEnd);
+      visitExpression(parameter.defaultValue, functionEnd);
+    }
+    visitStatements(node.body, functionEnd);
+    visitExpression(node.expressionBody, functionEnd);
+  }
+
+  void constructor(ConstructorDeclaration node) {
+    final functionEnd = endLine(node.span);
+    for (final parameter in node.parameters) {
+      add(model.declarations[parameter], parameter.span, functionEnd);
+      visitExpression(parameter.defaultValue, functionEnd);
+    }
+    visitStatements(node.body, functionEnd);
+    visitExpression(node.expressionBody, functionEnd);
+  }
+
+  visitStatement = (Statement node, int end) {
+    switch (node) {
+      case Binding(:final value):
+        add(model.declarations[node], node.span, end);
+        visitExpression(value, end);
+      case FunctionDeclaration():
+        function(node);
+      case IfStatement(:final condition, :final thenBody, :final elseBody):
+        visitExpression(condition, end);
+        visitStatements(thenBody, _bodyEnd(thenBody, node.span, endLine));
+        visitStatements(elseBody, _bodyEnd(elseBody, node.span, endLine));
+      case ForStatement(:final iterable, :final body, :final step):
+        final loopEnd = endLine(node.span);
+        visitExpression(iterable, end);
+        visitExpression(step, end);
+        add(model.declarations[node], node.span, loopEnd);
+        add(model.loopIndexes[node], node.span, loopEnd);
+        visitStatements(body, loopEnd);
+      case WhileStatement(:final condition, :final body):
+        final loopEnd = endLine(node.span);
+        visitExpression(condition, end);
+        visitStatements(body, loopEnd);
+      case RepeatStatement(:final body, :final condition, :final count):
+        final loopEnd = endLine(node.span);
+        visitExpression(count, end);
+        visitStatements(body, loopEnd);
+        visitExpression(condition, end);
+      case CForStatement(
+          :final init,
+          :final condition,
+          :final step,
+          :final body
+        ):
+        final loopEnd = endLine(node.span);
+        visitStatement(init, loopEnd);
+        visitExpression(condition, loopEnd);
+        visitExpression(step, loopEnd);
+        visitStatements(body, loopEnd);
+      case IfLetStatement(:final value, :final thenBody, :final elseBody):
+        final thenEnd = _bodyEnd(thenBody, node.span, endLine);
+        add(model.declarations[node], node.span, thenEnd);
+        visitExpression(value, end);
+        visitStatements(thenBody, thenEnd);
+        visitStatements(elseBody, _bodyEnd(elseBody, node.span, endLine));
+      case IfCaseStatement(:final scrutinee, :final pattern, :final body):
+        final armEnd = endLine(node.span);
+        visitExpression(scrutinee, end);
+        patterns(pattern, armEnd);
+        visitStatements(body, armEnd);
+      case UsingStatement(:final value, :final body):
+        final usedEnd = endLine(node.span);
+        visitExpression(value, end);
+        add(model.declarations[node], node.span, usedEnd);
+        visitStatements(body, usedEnd);
+      case WatchStatement(:final value, :final body):
+        visitExpression(value, end);
+        visitStatements(body, endLine(node.span));
+      case BatchStatement(:final body):
+        visitStatements(body, endLine(node.span));
+      case WhenStatement(:final condition, :final body):
+        visitExpression(condition, end);
+        visitStatements(body, endLine(node.span));
+      case TestDeclaration(:final body):
+        visitStatements(body, endLine(node.span));
+      case MatchStatement(:final value, :final arms):
+        visitExpression(value, end);
+        for (final arm in arms) {
+          final armEnd = endLine(arm.span);
+          patterns(arm.pattern, armEnd);
+          visitExpression(arm.guard, armEnd);
+          visitStatements(arm.body, armEnd);
+        }
+      case TryStatement(:final body, :final catches, :final finallyBody):
+        visitStatements(body, endLine(node.span));
+        for (final clause in catches) {
+          final catchEnd = endLine(clause.span);
+          add(model.declarations[clause], clause.span, catchEnd);
+          add(model.traces[clause], clause.span, catchEnd);
+          visitStatements(clause.body, catchEnd);
+        }
+        visitStatements(finallyBody, endLine(node.span));
+      case DestructureStatement(:final pattern, :final value):
+        patterns(pattern, end);
+        visitExpression(value, end);
+      case LabelStatement():
+        visitStatement(node.statement, end);
+      case ClassDeclaration(
+          :final fields,
+          :final methods,
+          :final constructors,
+          :final properties,
+        ):
+        for (final field in fields) {
+          visitExpression(field.initializer, endLine(node.span));
+        }
+        for (final method in methods) {
+          function(method);
+        }
+        for (final ctor in constructors) {
+          constructor(ctor);
+        }
+        for (final property in properties) {
+          final propertyEnd = endLine(property.span);
+          visitExpression(property.getter, propertyEnd);
+          visitStatements(property.getterBody, propertyEnd);
+          visitStatements(property.setterBody, propertyEnd);
+        }
+      case ExtensionDeclaration(:final methods):
+        for (final method in methods) {
+          function(method);
+        }
+      case TaskGroupStatement(:final children):
+        final groupEnd = endLine(node.span);
+        for (final child in children) {
+          if (child is Statement) visitStatement(child, groupEnd);
+          if (child is Expression) visitExpression(child, groupEnd);
+        }
+      case ReturnStatement(:final value):
+        visitExpression(value, end);
+      case YieldStatement(:final value):
+      case ThrowStatement(:final value):
+      case ResultStatement(:final value):
+        visitExpression(value, end);
+      case ExpressionStatement():
+        visitExpression(node.expression, end);
+      case DeferStatement():
+        visitExpression(node.expression, end);
+      case RequireStatement(:final condition, :final message):
+        visitExpression(condition, end);
+        visitExpression(message, end);
+      case MemberAssignment(:final object, :final value):
+        visitExpression(object, end);
+        visitExpression(value, end);
+      case ConfigDeclaration(:final value):
+        visitExpression(value, end);
+      case ImportDeclaration(:final condition):
+        visitExpression(condition, end);
+      case BreakStatement():
+      case ContinueStatement():
+      case RethrowStatement():
+      case PartDirective():
+      case AliasDeclaration():
+      case AnnotationDeclaration():
+        break;
+    }
+  };
+
+  visitStatements(program.statements, endLine(program.span));
+  return locals;
+}
+
+int _bodyEnd(List<Statement> body, SourceSpan span,
+    int Function(SourceSpan span) endLine) {
+  if (body.isEmpty) return endLine(span);
+  return endLine(body.last.span);
 }
 
 /// One original position for each generated line that has a mapping.
 class SourcePositions {
-  SourcePositions(this.byGeneratedLine);
+  SourcePositions(this.byGeneratedLine,
+      {this.names = const {}, this.locals = const []});
 
   /// Generated line, one-based, to source path, source line, and column.
   final Map<int, (String, int, int)> byGeneratedLine;
+
+  /// Generated local name to the name written in the source.
+  final Map<String, String> names;
+
+  /// Locals whose generated names differ from the source, with their scope.
+  final List<QudsLocal> locals;
 
   static SourcePositions parse(String sourceMap) {
     final data = jsonDecode(sourceMap) as Map<String, Object?>;
@@ -94,7 +387,24 @@ class SourcePositions {
         );
       }
     }
-    return SourcePositions(byLine);
+    final rawNames = data['x_qudsNames'];
+    final names = rawNames is Map
+        ? rawNames.map((key, value) => MapEntry('$key', '$value'))
+        : const <String, String>{};
+    final rawLocals = data['x_qudsLocals'];
+    final locals = <QudsLocal>[];
+    if (rawLocals is List) {
+      for (final item in rawLocals) {
+        if (item is! Map) continue;
+        locals.add(QudsLocal(
+          '${item['dart']}',
+          '${item['name']}',
+          (item['line'] as num?)?.toInt() ?? 1,
+          (item['end'] as num?)?.toInt() ?? 1,
+        ));
+      }
+    }
+    return SourcePositions(byLine, names: names, locals: locals);
   }
 
   (String, int, int)? original(int generatedLine) =>

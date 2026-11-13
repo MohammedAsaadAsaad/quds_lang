@@ -28,8 +28,9 @@ void walkAst(Node node, void Function(Node node) visit) {
       walkAst(condition, visit);
       _nodes(thenBody, visit);
       _nodes(elseBody, visit);
-    case ForStatement(:final iterable, :final body):
+    case ForStatement(:final iterable, :final body, :final step):
       walkAst(iterable, visit);
+      if (step != null) walkAst(step, visit);
       _nodes(body, visit);
     case ReturnStatement(:final value):
       _optional(value, visit);
@@ -147,6 +148,12 @@ void walkAst(Node node, void Function(Node node) visit) {
     case IndexExpression(:final object, :final index):
       walkAst(object, visit);
       walkAst(index, visit);
+    case SliceExpression(:final object, :final start, :final end):
+      walkAst(object, visit);
+      _optional(start, visit);
+      _optional(end, visit);
+    case ChainComparison(:final operands):
+      _nodes(operands, visit);
     case MapExpression(:final keys, :final values):
       _nodes(keys, visit);
       _nodes(values, visit);
@@ -204,9 +211,10 @@ void walkAst(Node node, void Function(Node node) visit) {
       walkAst(condition, visit);
       _optional(step, visit);
       _nodes(body, visit);
-    case RepeatStatement(:final body, :final condition):
+    case RepeatStatement(:final body, :final condition, :final count):
       _nodes(body, visit);
-      walkAst(condition, visit);
+      _optional(condition, visit);
+      _optional(count, visit);
     case MatchStatement(:final value, :final arms):
       walkAst(value, visit);
       _nodes(arms, visit);

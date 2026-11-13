@@ -6,6 +6,7 @@ class Parser {
   Parser(this.tokens);
   final List<Token> tokens;
   final errors = <CompilerException>[];
+  final _pending = <Statement>[];
   int index = 0;
   Token get current => tokens[index];
   Token peek([int n = 1]) => tokens[(index + n).clamp(0, tokens.length - 1)];
@@ -71,7 +72,7 @@ class Parser {
   Program parse() {
     final span = current.span;
     final statements = <Statement>[];
-    while (!at(TokenKind.eof)) {
+    while (_pending.isNotEmpty || !at(TokenKind.eof)) {
       try {
         statements.add(statement(topLevel: true));
       } on CompilerException catch (error) {
@@ -276,6 +277,7 @@ class Parser {
   }
 
   Statement statement({bool topLevel = false, bool member = false}) {
+    if (_pending.isNotEmpty) return _pending.removeAt(0);
     final span = current.span;
     final notes = takeAnnotations();
     if (topLevel && word('use')) return useImport(span);
@@ -466,23 +468,9 @@ class Parser {
                 (peek(2).kind == TokenKind.identifier ||
                     peek(2).kind == TokenKind.leftParen));
     if (bindingAhead || mode != BindingMode.inferred) {
-      final bindingName = name();
-      String? type;
-      if (match(TokenKind.colon)) type = typeName();
-      if (!assignments.contains(current.kind)) {
-        if (mode == BindingMode.lateFinal || mode == BindingMode.lateMutable) {
-          endLine();
-          return Binding(bindingName.lexeme, mode, type, '=',
-              Literal(null, bindingName.span), extent(span),
-              open: true);
-        }
-        fail('Expected binding initializer or assignment');
-      }
-      final operator = take().lexeme;
-      var value = expression(bare: true);
-      value = finishBlockValue(value);
-      return Binding(
-          bindingName.lexeme, mode, type, operator, value, extent(span));
+      final bindings = _bindingLine(span, mode);
+      _pending.addAll(bindings.skip(1));
+      return bindings.first;
     }
     if (at(TokenKind.identifier) &&
         peek().kind == TokenKind.dot &&
@@ -521,6 +509,40 @@ class Parser {
     }
     value = finishBlockValue(value);
     return ExpressionStatement(value, extent(span));
+  }
+
+  /// `var whole = 0.0, fraction = 0.0` is two bindings. The keyword applies to
+  /// every name. A block value ends the line, and a trailing comma is an error.
+  List<Binding> _bindingLine(SourceSpan span, BindingMode mode) {
+    final bindings = <Binding>[];
+    while (true) {
+      final start = bindings.isEmpty ? span : current.span;
+      final bindingName = name();
+      String? type;
+      if (match(TokenKind.colon)) type = typeName();
+      if (!assignments.contains(current.kind)) {
+        if (mode == BindingMode.lateFinal || mode == BindingMode.lateMutable) {
+          bindings.add(Binding(bindingName.lexeme, mode, type, '=',
+              Literal(null, bindingName.span), extent(start),
+              open: true));
+          if (match(TokenKind.comma)) continue;
+          endLine();
+          return bindings;
+        }
+        fail('Expected binding initializer or assignment');
+      }
+      final operator = take().lexeme;
+      var value = expression(bare: true);
+      if (!_ownsLine(value) && match(TokenKind.comma)) {
+        bindings.add(Binding(
+            bindingName.lexeme, mode, type, operator, value, extent(start)));
+        continue;
+      }
+      value = finishBlockValue(value);
+      bindings.add(Binding(
+          bindingName.lexeme, mode, type, operator, value, extent(start)));
+      return bindings;
+    }
   }
 
   bool _ownsLine(Expression value) {
@@ -870,12 +892,25 @@ class Parser {
 
   Statement forStatement(SourceSpan span, {bool awaiting = false}) {
     take();
-    if (at(TokenKind.identifier) && peek().lexeme == 'in') {
-      final variable = name();
+    if (at(TokenKind.identifier) &&
+        (peek().lexeme == 'in' || peek().kind == TokenKind.comma)) {
+      final first = name();
+      String? index;
+      var item = first.lexeme;
+      if (match(TokenKind.comma)) {
+        index = first.lexeme;
+        item = name().lexeme;
+      }
+      if (!word('in')) fail('Expected in');
       take();
       final iterable = expression();
-      return ForStatement(variable.lexeme, iterable, block(), extent(span),
-          awaiting: awaiting);
+      Expression? step;
+      if (word('step')) {
+        take();
+        step = expression();
+      }
+      return ForStatement(item, iterable, block(), extent(span),
+          awaiting: awaiting, index: index, step: step);
     }
     if (awaiting) fail('await for expects one name');
     final initSpan = current.span;
@@ -914,12 +949,16 @@ class Parser {
 
   Statement repeatStatement(SourceSpan span) {
     take();
-    final body = block();
-    if (!word('while')) fail('Expected while');
-    take();
-    final condition = expression();
-    endLine();
-    return RepeatStatement(body, condition, extent(span));
+    if (at(TokenKind.colon)) {
+      final body = block();
+      if (!word('while')) fail('Expected while');
+      take();
+      final condition = expression();
+      endLine();
+      return RepeatStatement(body, condition, extent(span));
+    }
+    final count = expression();
+    return RepeatStatement(suite(), null, extent(span), count: count);
   }
 
   ImportDeclaration useImport(SourceSpan span) {
@@ -972,8 +1011,63 @@ class Parser {
   }
 
   String _normalizeUri(String uri) {
-    if (uri.contains(':') || uri.endsWith('.quds')) return uri;
+    final package = _packageDots(uri);
+    if (package != null) return package;
+    if (uri.contains(':') || uri.contains('/') || uri.contains('\\')) {
+      return uri;
+    }
+    final dotted = _dotPath(uri);
+    if (dotted != null) return dotted;
+    if (uri.endsWith('.quds')) return uri;
     return '$uri.quds';
+  }
+
+  /// `package:flutter.material` is `package:flutter/material.dart`.
+  ///
+  /// The first segment is the package name. Each later dot is a directory.
+  /// A trailing `.dart` or `.quds` is the file extension, not another directory.
+  String? _packageDots(String uri) {
+    if (!uri.startsWith('package:')) return null;
+    var rest = uri.substring('package:'.length);
+    if (rest.isEmpty ||
+        rest.contains('/') ||
+        rest.contains('\\') ||
+        !rest.contains('.')) {
+      return null;
+    }
+    if (rest.endsWith('.dart')) {
+      rest = rest.substring(0, rest.length - 5);
+    } else if (rest.endsWith('.quds')) {
+      rest = rest.substring(0, rest.length - 5);
+    }
+    if (rest.isEmpty || !rest.contains('.')) return null;
+    final parts = rest.split('.');
+    if (parts.length < 2 || parts.any((part) => part.isEmpty)) return null;
+    return 'package:${parts.first}/${parts.skip(1).join('/')}.dart';
+  }
+
+  /// `src.sum` is `src/sum.quds` beside the importer. A segment of only `^`
+  /// climbs that many directories: `^^^.sum` is `../../../sum.quds`.
+  String? _dotPath(String uri) {
+    if (!uri.contains('.') && !uri.startsWith('^')) return null;
+    var body = uri;
+    if (body.endsWith('.quds')) body = body.substring(0, body.length - 5);
+    if (body.isEmpty || body.startsWith('.') || body.endsWith('.')) return null;
+    final parts = body.split('.');
+    if (parts.any((part) => part.isEmpty)) return null;
+    final segments = <String>[];
+    var named = false;
+    for (final part in parts) {
+      if (RegExp(r'^\^+$').hasMatch(part)) {
+        segments.addAll(List.filled(part.length, '..'));
+        continue;
+      }
+      if (part.contains('^')) return null;
+      named = true;
+      segments.add(part);
+    }
+    if (!named) return null;
+    return '${segments.join('/')}.quds';
   }
 
   String _stripUri(String uri) {
@@ -1881,14 +1975,14 @@ class Parser {
       final bound = name();
       expect(TokenKind.equals, '=');
       final value = expression();
-      final body = block();
+      final body = suite();
       final otherwise = <Statement>[];
       if (word('else')) {
         take();
         if (word('if')) {
           otherwise.add(ifStatement());
         } else {
-          otherwise.addAll(block());
+          otherwise.addAll(suite());
         }
       }
       return IfLetStatement(
@@ -1898,19 +1992,31 @@ class Parser {
     if (word('is')) {
       take();
       final pattern = patternLiteral();
-      return IfCaseStatement(condition, pattern, block(), extent(token.span));
+      return IfCaseStatement(condition, pattern, suite(), extent(token.span));
     }
-    final body = block();
+    final body = suite();
     final otherwise = <Statement>[];
     if (word('else')) {
       take();
       if (word('if')) {
         otherwise.add(ifStatement());
       } else {
-        otherwise.addAll(block());
+        otherwise.addAll(suite());
       }
     }
     return IfStatement(condition, body, otherwise, extent(token.span));
+  }
+
+  /// A colon and either one statement on that line, or an indented block.
+  List<Statement> suite() {
+    expect(TokenKind.colon, ':');
+    if (at(TokenKind.newline) || at(TokenKind.dedent) || at(TokenKind.eof)) {
+      return block(colonTaken: true);
+    }
+    final line = <Statement>[statement()];
+    line.addAll(_pending);
+    _pending.clear();
+    return line;
   }
 
   List<Statement> block({bool colonTaken = false}) {
@@ -1918,7 +2024,8 @@ class Parser {
     endLine();
     expect(TokenKind.indent, 'indented block');
     final body = <Statement>[];
-    while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+    while (
+        _pending.isNotEmpty || (!at(TokenKind.dedent) && !at(TokenKind.eof))) {
       try {
         body.add(statement());
       } on CompilerException catch (error) {
@@ -2052,7 +2159,7 @@ class Parser {
   Expression trailingComprehension(Expression element,
       {required bool terminated}) {
     take();
-    final binding = name();
+    final names = loopNames();
     expect(TokenKind.identifier, 'in');
     if (tokens[index - 1].lexeme != 'in') {
       fail('Expected in', tokens[index - 1].span);
@@ -2064,9 +2171,8 @@ class Parser {
       filter = expression(bare: terminated);
     }
     if (terminated) endLine();
-    return CollectionFor(
-        binding.lexeme, iterable, [element], extent(element.span),
-        filter: filter);
+    return CollectionFor(names.$1, iterable, [element], extent(element.span),
+        filter: filter, index: names.$2);
   }
 
   CollectionIf collectionIf() {
@@ -2088,14 +2194,21 @@ class Parser {
 
   CollectionFor collectionFor() {
     final token = take();
-    final binding = name();
+    final names = loopNames();
     expect(TokenKind.identifier, 'in');
     if (tokens[index - 1].lexeme != 'in') {
       fail('Expected in', tokens[index - 1].span);
     }
     final iterable = expression();
-    return CollectionFor(
-        binding.lexeme, iterable, elementBlock(), extent(token.span));
+    return CollectionFor(names.$1, iterable, elementBlock(), extent(token.span),
+        index: names.$2);
+  }
+
+  /// `name` or `index, name` before `in`.
+  (String, String?) loopNames() {
+    final first = name();
+    if (!match(TokenKind.comma)) return (first.lexeme, null);
+    return (name().lexeme, first.lexeme);
   }
 
   Expression ifExpression(Token token) {
@@ -2190,11 +2303,11 @@ class Parser {
     fail('Pipeline target must be a function', right.span);
   }
 
-  int precedence(Token token) {
+  int precedence(Token token, {bool range = true}) {
     if (token.kind == TokenKind.pipeGreater) return -1;
     if (token.kind == TokenKind.questionQuestion) return 0;
     if (token.kind == TokenKind.dotDot || token.kind == TokenKind.dotDotLess) {
-      return 5;
+      return range ? 5 : -2;
     }
     if (token.kind == TokenKind.tildeSlash) return 7;
     return switch (token.lexeme) {
@@ -2209,7 +2322,10 @@ class Parser {
   }
 
   Expression expression(
-      {int minimum = -1, bool bare = false, bool typeTest = true}) {
+      {int minimum = -1,
+      bool bare = false,
+      bool typeTest = true,
+      bool range = true}) {
     var left = prefix();
     while (true) {
       if (left is Identifier && _typeArgumentsAhead()) {
@@ -2228,9 +2344,7 @@ class Parser {
       }
       if (at(TokenKind.leftBracket)) {
         take();
-        final index = expression();
-        expect(TokenKind.rightBracket, ']');
-        left = IndexExpression(left, index, extent(left.span));
+        left = finishIndex(left);
         continue;
       }
       if (at(TokenKind.dot) || at(TokenKind.questionDot)) {
@@ -2268,10 +2382,20 @@ class Parser {
         left = TypeTestExpression(left, operator, type, extent(left.span));
         continue;
       }
-      final power = precedence(current);
+      if ((word('in') || (word('not') && peek().lexeme == 'in')) &&
+          4 >= minimum) {
+        final negative = word('not');
+        if (negative) take();
+        take();
+        final right = expression(minimum: 5, range: range);
+        left = BinaryExpression(
+            left, negative ? 'not in' : 'in', right, extent(left.span));
+        continue;
+      }
+      final power = precedence(current, range: range);
       if (power < minimum) break;
       final operator = take();
-      final right = expression(minimum: power + 1);
+      final right = expression(minimum: power + 1, range: range);
       if (operator.kind == TokenKind.dotDot ||
           operator.kind == TokenKind.dotDotLess) {
         left = RangeExpression(
@@ -2281,6 +2405,19 @@ class Parser {
       } else {
         left =
             BinaryExpression(left, operator.lexeme, right, extent(left.span));
+      }
+      if (left is BinaryExpression && _comparison(left.operator)) {
+        final operands = <Expression>[left.left, left.right];
+        final operators = <String>[left.operator];
+        while (_comparison(current.lexeme) &&
+            precedence(current, range: range) >= minimum) {
+          operators.add(take().lexeme);
+          operands.add(expression(minimum: 5, range: range));
+        }
+        if (operators.length > 1) {
+          left =
+              ChainComparison(operands, operators, extent(operands.first.span));
+        }
       }
     }
     if (bare && left is Identifier && startsExpression()) {
@@ -2297,6 +2434,35 @@ class Parser {
     }
     return left;
   }
+
+  /// `items[1]`, `text[1..]`, `text[..<n]`, and `items[1..3]`.
+  ///
+  /// A bound stops before `..`, so the range is the slice rather than a value
+  /// used as an index. Comparisons inside the brackets stay part of a bound.
+  Expression finishIndex(Expression object) {
+    final span = object.span;
+    if (at(TokenKind.dotDot) || at(TokenKind.dotDotLess)) {
+      final inclusive = take().kind == TokenKind.dotDot;
+      final end = at(TokenKind.rightBracket) ? null : expression(range: false);
+      expect(TokenKind.rightBracket, ']');
+      return SliceExpression(object, null, end, inclusive, extent(span));
+    }
+    final start = expression(range: false);
+    if (at(TokenKind.dotDot) || at(TokenKind.dotDotLess)) {
+      final inclusive = take().kind == TokenKind.dotDot;
+      final end = at(TokenKind.rightBracket) ? null : expression(range: false);
+      expect(TokenKind.rightBracket, ']');
+      return SliceExpression(object, start, end, inclusive, extent(span));
+    }
+    expect(TokenKind.rightBracket, ']');
+    return IndexExpression(object, start, extent(span));
+  }
+
+  bool _comparison(String operator) =>
+      operator == '<' ||
+      operator == '<=' ||
+      operator == '>' ||
+      operator == '>=';
 
   /// `log.info "Loaded", data: map:` is a call. `map:` and `set:` stay collections.
   Argument _juxtaposedArgument() {
@@ -2573,6 +2739,57 @@ class Parser {
     return CallExpression(callee, arguments, extent(callee.span));
   }
 
+  /// Spaces removed from a triple-quoted block, using the closing line as the margin.
+  Set<int>? _closingDedent(String content, SourceSpan span) {
+    final lastNl = content.lastIndexOf('\n');
+    if (lastNl < 0) return null;
+    var suffix = content.substring(lastNl + 1);
+    if (suffix.endsWith('\r')) suffix = suffix.substring(0, suffix.length - 1);
+    if (suffix.codeUnits.any((unit) => unit != 0x20)) return null;
+    final margin = suffix.length;
+    final skips = <int>{};
+    var index = 0;
+    if (content.startsWith('\r\n')) {
+      skips.add(0);
+      skips.add(1);
+      index = 2;
+    } else if (content.startsWith('\n')) {
+      skips.add(0);
+      index = 1;
+    }
+    while (index < lastNl) {
+      final start = index;
+      while (index < lastNl && content[index] != '\n') {
+        index++;
+      }
+      var end = index;
+      if (end > start && content[end - 1] == '\r') end--;
+      final line = content.substring(start, end);
+      var spaces = 0;
+      while (spaces < line.length && line.codeUnitAt(spaces) == 0x20) {
+        spaces++;
+      }
+      final whitespace =
+          line.codeUnits.every((unit) => unit == 0x20 || unit == 0x09);
+      if (whitespace && spaces < margin) {
+        for (var cursor = start; cursor < end; cursor++) {
+          skips.add(cursor);
+        }
+      } else if (spaces < margin) {
+        fail('A line is less indented than the closing quotes', span);
+      } else {
+        for (var cursor = 0; cursor < margin; cursor++) {
+          skips.add(start + cursor);
+        }
+      }
+      if (index < lastNl && content[index] == '\n') index++;
+    }
+    for (var cursor = lastNl; cursor < content.length; cursor++) {
+      skips.add(cursor);
+    }
+    return skips;
+  }
+
   Expression string(Token token) {
     final text = token.lexeme;
     final width = text.startsWith(text[0] * 3) ? 3 : 1;
@@ -2586,7 +2803,9 @@ class Parser {
       }
     }
 
+    final skips = width == 3 ? _closingDedent(content, token.span) : null;
     for (var i = 0; i < content.length; i++) {
+      if (skips != null && skips.contains(i)) continue;
       final ch = content[i];
       if (ch == '\\') {
         i++;

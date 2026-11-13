@@ -14,8 +14,8 @@ function activate(context) {
     output,
     client,
     vscode.languages.registerDocumentFormattingEditProvider(languageId, {
-      provideDocumentFormattingEdits(document) {
-        return client.format(document);
+      provideDocumentFormattingEdits(document, options) {
+        return client.format(document, options);
       },
     }),
     vscode.languages.registerHoverProvider(languageId, {
@@ -36,6 +36,8 @@ function activate(context) {
         },
       },
       '.',
+      ':',
+      '/',
     ),
     vscode.languages.registerCodeLensProvider(languageId, {
       provideCodeLenses(document) {
@@ -68,6 +70,27 @@ function activate(context) {
       client.close(document),
     ),
     vscode.commands.registerCommand('quds.restartServer', () => client.restart()),
+    vscode.debug.registerDebugConfigurationProvider('quds', {
+      async resolveDebugConfiguration(_folder, config) {
+        const empty = !config.type && !config.request && !config.name;
+        const editor = vscode.window.activeTextEditor;
+        const open =
+          editor && editor.document.languageId === languageId
+            ? editor.document.uri.fsPath
+            : '';
+        if (empty) {
+          if (!open) return undefined;
+          config.type = 'quds';
+          config.name = 'Debug Quds';
+          config.request = 'launch';
+          config.program = open;
+        }
+        if (!config.program && open) config.program = open;
+        if (config.program && !config.cwd) config.cwd = path.dirname(config.program);
+        await applySelectedDevice(config);
+        return config;
+      },
+    }),
     vscode.debug.registerDebugAdapterDescriptorFactory('quds', {
       createDebugAdapterDescriptor(session) {
         const program = session.configuration.program;
@@ -78,7 +101,7 @@ function activate(context) {
         if (!spec) {
           throw new Error('Quds could not find dart or the quds command.');
         }
-        return new vscode.DebugAdapterExecutable(spec.command[0], spec.command.slice(1, -1), {
+        return new vscode.DebugAdapterExecutable(spec.command[0], spec.command.slice(1), {
           cwd: spec.cwd,
           env: spec.env,
         });
@@ -98,6 +121,14 @@ function completionItem(entry) {
   if (entry.filterText) item.filterText = entry.filterText;
   if (entry.sortText) item.sortText = entry.sortText;
   if (entry.commitCharacters) item.commitCharacters = entry.commitCharacters;
+  const command = entry.command;
+  if (command && command.command) {
+    item.command = {
+      command: String(command.command),
+      title: String(command.title || ''),
+      arguments: command.arguments,
+    };
+  }
   const edit = entry.textEdit;
   if (edit && edit.range) {
     item.range = new vscode.Range(
@@ -265,21 +296,40 @@ async function debugProgram(uriArgument) {
   if (document.isDirty) await document.save();
   const file = uri.fsPath;
   const folder = vscode.workspace.getWorkspaceFolder(uri);
+  const config = {
+    type: 'quds',
+    name: 'Debug Quds',
+    request: 'launch',
+    program: file,
+    cwd: path.dirname(file),
+  };
+  await applySelectedDevice(config);
   let started = false;
   try {
-    started = await vscode.debug.startDebugging(folder, {
-      type: 'quds',
-      name: 'Debug Quds',
-      request: 'launch',
-      program: file,
-      cwd: path.dirname(file),
-    });
+    started = await vscode.debug.startDebugging(folder, config);
   } catch (error) {
     started = false;
   }
   if (!started) {
     vscode.window.showErrorMessage('Quds could not start the debugger.');
   }
+}
+
+async function applySelectedDevice(config) {
+  if (config.deviceId) return;
+  let deviceId = null;
+  try {
+    deviceId = await vscode.commands.executeCommand('flutter.getSelectedDeviceId');
+  } catch (error) {
+    deviceId = null;
+  }
+  if (typeof deviceId !== 'string' || !deviceId) return;
+  config.deviceId = deviceId;
+  const args = Array.isArray(config.toolArgs) ? config.toolArgs.map(String) : [];
+  if (!args.includes('-d') && !args.includes('--device-id')) {
+    args.push('-d', deviceId);
+  }
+  config.toolArgs = args;
 }
 
 function packageRootOf(file) {
@@ -363,20 +413,28 @@ class QudsClient {
     const sample = [...this.documents.values()][0];
     const { command, cwd, env } = serverCommand(sample && sample.uri.fsPath);
     this.output.appendLine(`Starting ${command.join(' ')}`);
-    this.child = spawn(command[0], command.slice(1), {
+    this.buffer = Buffer.alloc(0);
+    const child = spawn(command[0], command.slice(1), {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    this.child.stdout.on('data', (chunk) => this.onData(chunk));
-    this.child.stderr.on('data', (chunk) => this.output.append(chunk.toString()));
-    this.child.on('error', (error) => {
+    this.child = child;
+    child.stdout.on('data', (chunk) => {
+      if (this.child !== child) return;
+      this.onData(chunk);
+    });
+    child.stderr.on('data', (chunk) => this.output.append(chunk.toString()));
+    child.on('error', (error) => {
+      if (this.child !== child) return;
       this.output.appendLine(error.message);
       vscode.window.showErrorMessage(`Quds language server failed to start: ${error.message}`);
     });
-    this.child.on('exit', (code) => {
-      this.output.appendLine(`Language server exited (${code})`);
-      this.failPending(`Language server exited (${code})`);
+    child.on('exit', (code, signal) => {
+      if (this.child !== child) return;
+      const detail = code === null ? signal || 'null' : code;
+      this.output.appendLine(`Language server exited (${detail})`);
+      this.failPending(`Language server exited (${detail})`);
       this.child = null;
       this.ready = false;
       this.starting = null;
@@ -400,6 +458,7 @@ class QudsClient {
         for (const document of this.documents.values()) this.sendOpen(document);
       })
       .catch((error) => {
+        if (child.qudsReplaced) return;
         vscode.window.showErrorMessage(`Quds language server failed to start: ${error.message}`);
         throw error;
       });
@@ -417,7 +476,11 @@ class QudsClient {
     this.ready = false;
     this.starting = null;
     this.failPending('Language server stopped');
-    if (child) child.kill();
+    if (child) {
+      child.qudsReplaced = true;
+      child.removeAllListeners('exit');
+      child.kill();
+    }
   }
 
   dispose() {
@@ -584,12 +647,22 @@ class QudsClient {
     this.sendChange(document);
   }
 
-  async format(document) {
+  async format(document, options) {
+    const config = vscode.workspace.getConfiguration(languageId);
+    const tabSize =
+      options && Number.isInteger(options.tabSize) ? options.tabSize : 2;
+    const lineWidth = Number(config.get('format.lineWidth'));
+    const singleLineIf = config.get('format.singleLineIf') !== false;
     try {
       await this.sync(document);
       const edits = await this.request('textDocument/formatting', {
         textDocument: { uri: document.uri.toString() },
-        options: { tabSize: 2, insertSpaces: true },
+        options: {
+          tabSize,
+          insertSpaces: true,
+          lineWidth: Number.isInteger(lineWidth) ? lineWidth : 80,
+          singleLineIf,
+        },
       });
       if (!Array.isArray(edits)) return [];
       return edits.map(

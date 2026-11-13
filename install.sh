@@ -122,11 +122,12 @@ stage_extension() {
   id="$(extension_id)"
   dest="$1/$id"
   rm -rf "$dest"
-  mkdir -p "$dest/syntaxes"
+  mkdir -p "$dest/syntaxes" "$dest/icons"
   cp "$extension_dir/package.json" "$extension_dir/extension.js" \
     "$extension_dir/language-configuration.json" "$extension_dir/README.md" \
     "$dest/"
   cp "$extension_dir/syntaxes/quds.tmLanguage.json" "$dest/syntaxes/"
+  cp "$extension_dir/icons/quds.png" "$dest/icons/"
   say "رُكّبت الإضافة في $dest"
 }
 
@@ -160,6 +161,7 @@ types = """<?xml version="1.0" encoding="utf-8"?>
   <Default Extension=".json" ContentType="application/json"/>
   <Default Extension=".js" ContentType="application/javascript"/>
   <Default Extension=".md" ContentType="text/markdown"/>
+  <Default Extension=".png" ContentType="image/png"/>
   <Default Extension=".vsixmanifest" ContentType="text/xml"/>
 </Types>
 """
@@ -169,6 +171,7 @@ files = [
     "language-configuration.json",
     "README.md",
     "syntaxes/quds.tmLanguage.json",
+    "icons/quds.png",
 ]
 with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     archive.writestr("[Content_Types].xml", types)

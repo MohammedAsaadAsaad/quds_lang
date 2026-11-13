@@ -1,0 +1,5 @@
+use dart:async
+
+main():
+  print "Hi world!"
+

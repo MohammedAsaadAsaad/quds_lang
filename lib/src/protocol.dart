@@ -51,7 +51,7 @@ class LspSession {
           'definitionProvider': true,
           'hoverProvider': true,
           'completionProvider': {
-            'triggerCharacters': ['.'],
+            'triggerCharacters': ['.', ':', '/'],
             'resolveProvider': false,
           },
           'codeLensProvider': {'resolveProvider': false},
@@ -156,8 +156,18 @@ class LspSession {
     } on CompilerException catch (error) {
       return LspExchange(_error(id, -32603, error.message), [_publish(opened)]);
     }
-    return LspExchange(
-        _result(id, _edits(opened.text, formatQuds(opened.text))));
+    final options = _map(params['options']);
+    final indent = (options['tabSize'] as num?)?.toInt() ?? 2;
+    final width = (options['lineWidth'] as num?)?.toInt() ?? 80;
+    final singleLineIf = options['singleLineIf'] is bool
+        ? options['singleLineIf'] as bool
+        : true;
+    return LspExchange(_result(
+        id,
+        _edits(
+            opened.text,
+            formatQuds(opened.text,
+                indent: indent, width: width, singleLineIf: singleLineIf))));
   }
 
   Map<String, Object?> _completion(Map<String, dynamic> params) {
@@ -174,6 +184,7 @@ class LspSession {
           character: character,
           stable: opened.stableFor(line),
           compileSource: opened.analyze,
+          file: opened.file,
         ),
       };
     }
@@ -194,6 +205,7 @@ class LspSession {
         source: text,
         line: line,
         character: character,
+        file: path,
         compileSource: (source) {
           try {
             return compile(source, file: path);
@@ -206,15 +218,24 @@ class LspSession {
   }
 
   Object? _hover(Map<String, dynamic> params) {
-    final located = _tryCompile(params);
-    if (located == null) return null;
     final position = _map(params['position']);
     final line = (position['line'] as num?)?.toInt() ?? 0;
     final character = (position['character'] as num?)?.toInt() ?? 0;
-    final text = hoverAt(located.$1, located.$3, line + 1, character + 1);
-    if (text == null) return null;
+    final located = _tryCompile(params);
+    if (located != null) {
+      final text = hoverAt(located.$1, located.$3, line + 1, character + 1);
+      if (text != null) {
+        return {
+          'contents': {'kind': 'plaintext', 'value': text},
+        };
+      }
+    }
+    final opened = _document(params);
+    if (opened == null) return null;
+    final place = dartPlaceAt(opened.text, line + 1, character + 1);
+    if (place == null) return null;
     return {
-      'contents': {'kind': 'plaintext', 'value': text},
+      'contents': {'kind': 'plaintext', 'value': place.text},
     };
   }
 
@@ -249,21 +270,36 @@ class LspSession {
   }
 
   Map<String, dynamic> _definition(Map<String, dynamic> params) {
-    final located = _compile(params);
-    if (located == null) return const {};
     final position = _map(params['position']);
     final line = (position['line'] as num?)?.toInt() ?? 0;
     final character = (position['character'] as num?)?.toInt() ?? 0;
-    final span = definitionAt(
-      located.$1,
-      line + 1,
-      character + 1,
-      sourceOf: (file) => _textFor(file, located.$2, located.$3),
-    );
-    if (span == null) return const {};
-    final text = _textFor(span.file, located.$2, located.$3);
+    final located = _tryCompile(params);
+    if (located != null) {
+      final span = definitionAt(
+        located.$1,
+        line + 1,
+        character + 1,
+        sourceOf: (file) => _textFor(file, located.$2, located.$3),
+      );
+      if (span != null) {
+        final text = _textFor(span.file, located.$2, located.$3);
+        return {
+          'uri': _uriFor(span.file, located.$2),
+          'range': text == null ? _spanRange(span) : _range(text, span),
+        };
+      }
+    }
+    final opened = _document(params);
+    if (opened == null) return const {};
+    final place = dartPlaceAt(opened.text, line + 1, character + 1);
+    if (place == null || place.file.isEmpty) return const {};
+    final span = SourceSpan(place.line, place.column, place.length,
+        file: place.file, offset: place.offset);
+    final text = File(place.file).existsSync()
+        ? File(place.file).readAsStringSync()
+        : null;
     return {
-      'uri': _uriFor(span.file, located.$2),
+      'uri': Uri.file(File(place.file).absolute.path).toString(),
       'range': text == null ? _spanRange(span) : _range(text, span),
     };
   }

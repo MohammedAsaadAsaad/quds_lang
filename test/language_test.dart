@@ -4,6 +4,404 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('several bindings can share one line', () async {
+    compile('''
+main():
+  if true: var shown = 1, extra = shown + 1
+''');
+    await execute('''
+const left = 2, right = 3
+main():
+  var whole = 0.0, fraction = 0.0
+  var scale = 1.0, dot = false
+  var piece = "ab", amount = whole + scale
+  var items = [left, right], count = 2
+  if true:
+    var shown = 1, extra = shown + 1
+    print extra
+  print whole
+  print fraction
+  print amount
+  print dot
+  print piece
+  print items.length
+  print count
+  print left + right
+''', '2\n0.0\n0.0\n1.0\nfalse\nab\n2\n2\n5\n');
+  });
+
+  test('slices, characters, numbers, and chained comparisons execute',
+      () async {
+    await execute(
+        '''
+main():
+  text = "ab cd"
+  print text[1..]
+  print text[..<4]
+  print text[1..<3]
+  items = [0, 1, 2, 3, 4]
+  print items[1..3]
+  print items[2..]
+  print text.drop(1)
+  print text.dropLast(1)
+  print text.take(2)
+  print text.takeLast(2)
+  print items.drop(1)
+  print items.dropLast(1)
+  print items.take(2)
+  print items.takeLast(2)
+  var letters = ""
+  for piece in text:
+    if piece != " ": letters = letters + piece
+  print letters
+  print text.chars.where(piece -> piece != " ").toList()
+  n = -3
+  print n.abs
+  print 4.round
+  print 1.6.round
+  print 1.2.floor
+  print 1.8.ceil
+  print 4.clamp(0, 3)
+  print min(4, 2)
+  print max(4, 2)
+  piece = "5"
+  if "0" <= piece <= "9": print piece
+  index = 1
+  if 0 <= index < items.length: print items[index]
+  var shown = ""
+  for i, item in items.take(3):
+    shown = shown + "{i}{item}"
+  print shown
+  var marked = ""
+  for i, letter in "ab":
+    marked = marked + "{i}{letter}"
+  print marked
+  print "-" * 4
+  print 2 * "ab"
+  print 7.pad(3)
+  negative = (-3).pad(4)
+  print negative
+  var steps = 0
+  step() -> int:
+    steps = steps + 1
+    return steps
+  print step() > step() < step()
+  print steps
+''',
+        'b cd\n'
+            'ab c\n'
+            'b \n'
+            '[1, 2, 3]\n'
+            '[2, 3, 4]\n'
+            'b cd\n'
+            'ab c\n'
+            'ab\n'
+            'cd\n'
+            '[1, 2, 3, 4]\n'
+            '[0, 1, 2, 3]\n'
+            '[0, 1]\n'
+            '[3, 4]\n'
+            'abcd\n'
+            '[a, b, c, d]\n'
+            '3\n'
+            '4\n'
+            '2\n'
+            '1\n'
+            '2\n'
+            '3\n'
+            '2\n'
+            '4\n'
+            '5\n'
+            '1\n'
+            '001122\n'
+            '0a1b\n'
+            '----\n'
+            'abab\n'
+            '007\n'
+            '-003\n'
+            'false\n'
+            '3\n');
+  });
+
+  test('negative indexes, membership, counted repeat, and zip execute',
+      () async {
+    await execute(
+        r'''
+main():
+  text = "abcd"
+  print text[-1]
+  items = [0, 1, 2, 3, 4]
+  print items[-1]
+  print items[-2..]
+  print text[..<-1]
+  print text[-3..-1]
+  if "2" in "012": print "yes"
+  if "12" in "0123": print "12"
+  if "a" not in "012": print "no"
+  seen = ["a", "b"]
+  if "b" in seen: print "b"
+  if "c" not in seen: print "c"
+  ages = map:
+    "Ada": 1
+  if "Ada" in ages: print "Ada"
+  keys = map:
+    -1: "end"
+  print keys[-1]
+  var n = 0
+  repeat 3:
+    n = n + 1
+  print n
+  repeat 0:
+    n = n + 1
+  print n
+  names = ["Ada", "Bea"]
+  scores = [1, 2, 3]
+  var shown = ""
+  for name, score in names.zip(scores):
+    shown = shown + "{name}{score}"
+  print shown
+  var marked = ""
+  for i, item in scores.take(2):
+    marked = marked + "{i}{item}"
+  print marked
+  lines = "a\n\nb"
+  print lines.lines
+  print "hi".padEnd(4)
+  print "hi".padStart(4, "0")
+  print "hello".padEnd(3)
+  var reads = 0
+  left() -> List<String>:
+    reads = reads + 1
+    return ["A"]
+  right() -> List<int>:
+    reads = reads + 1
+    return [1, 2]
+  for name, score in left().zip(right()):
+    print "{name}{score}"
+  print reads
+''',
+        'd\n'
+            '4\n'
+            '[3, 4]\n'
+            'abc\n'
+            'bcd\n'
+            'yes\n'
+            '12\n'
+            'no\n'
+            'b\n'
+            'c\n'
+            'Ada\n'
+            'end\n'
+            '3\n'
+            '3\n'
+            'Ada1Bea2\n'
+            '0112\n'
+            '[a, , b]\n'
+            'hi  \n'
+            '00hi\n'
+            'hello\n'
+            'A1\n'
+            '2\n');
+  });
+
+  test(
+      'pairs, dedent, number text, range steps, and joined collections execute',
+      () async {
+    await execute(
+        '''
+main():
+  marks = ["AC", "+"]
+  tones = ["fn", "op"]
+  row = [
+    for mark, tone in marks.zip(tones):
+      "{mark}{tone}"
+  ]
+  print row
+  letters = ["a", "b"]
+  indexed = [
+    for i, letter in letters:
+      "{i}{letter}"
+  ]
+  print indexed
+  name = "Ada"
+  message = """
+  Hello
+  {name}
+  """
+  print message
+  block = """
+  a
+
+  b
+  """
+  print block
+  fixed = (1.5).fixed(2)
+  negative = (-1.2).fixed(2)
+  whole = (10).fixed(1)
+  trimmed = (10.0).plain
+  one = (1.0).plain
+  huge = (1e21).plain
+  print fixed
+  print negative
+  print whole
+  print trimmed
+  print one
+  print huge
+  var up = ""
+  for i in 0..10 step 2:
+    up = up + "{i}"
+  print up
+  var down = ""
+  for i in 10..0 step -2:
+    down = down + "{i}"
+  print down
+  var cut = ""
+  for i in 10..<0 step -2:
+    cut = cut + "{i}"
+  print cut
+  var stalled = ""
+  for i in 0..10 step -2:
+    stalled = stalled + "{i}"
+  print stalled
+  var called = ""
+  for i in range(0, 4) step 2:
+    called = called + "{i}"
+  print called
+  var legacy = ""
+  for i in 4..2:
+    legacy = legacy + "{i}"
+  print legacy
+  left = [1]
+  right = [2, 3]
+  mixed = [1.5]
+  print left + right
+  print left + mixed
+  kept: readonly List<int> = [1]
+  print kept + right
+  ages = map:
+    "a": 1
+  extra = map:
+    "a": 2
+    "b": 3
+  print ages + extra
+  var reads = 0
+  mark(note: String, value: int) -> int:
+    print note
+    return value
+  for i in mark("a", 0)..mark("b", 4) step mark("c", 2):
+    print i
+  listLeft() -> List<int>:
+    reads = reads + 1
+    return [1]
+  listRight() -> List<int>:
+    reads = reads + 1
+    return [2]
+  print listLeft() + listRight()
+  print reads
+''',
+        '[ACfn, +op]\n'
+            '[0a, 1b]\n'
+            'Hello\n'
+            'Ada\n'
+            'a\n'
+            '\n'
+            'b\n'
+            '1.50\n'
+            '-1.20\n'
+            '10.0\n'
+            '10\n'
+            '1\n'
+            '1e+21\n'
+            '0246810\n'
+            '1086420\n'
+            '108642\n'
+            '\n'
+            '024\n'
+            '432\n'
+            '[1, 2, 3]\n'
+            '[1, 1.5]\n'
+            '[1, 2, 3]\n'
+            '{a: 2, b: 3}\n'
+            'a\n'
+            'b\n'
+            'c\n'
+            '0\n'
+            '2\n'
+            '4\n'
+            '[1, 2]\n'
+            '2\n');
+    final zero = compile('''
+main():
+  var n = 0
+  for i in 0..2 step n:
+    print i
+''').dart;
+    final negative = compile('''
+main():
+  shown = (1.5).fixed(-1)
+  print shown
+''').dart;
+    final directory = Directory.systemTemp.createTempSync('quds-step-');
+    try {
+      final stepFile = File('${directory.path}/step.dart')
+        ..writeAsStringSync(zero);
+      final fixedFile = File('${directory.path}/fixed.dart')
+        ..writeAsStringSync(negative);
+      final step =
+          await Process.run(Platform.resolvedExecutable, [stepFile.path]);
+      final digits =
+          await Process.run(Platform.resolvedExecutable, [fixedFile.path]);
+      expect(step.exitCode, isNot(0), reason: '${step.stdout}');
+      expect('${step.stderr}', contains('RangeError'));
+      expect(digits.exitCode, isNot(0), reason: '${digits.stdout}');
+      expect('${digits.stderr}', contains('RangeError'));
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
+  });
+
+  test('a misspelled name suggests the nearest spelling', () {
+    expect(
+        () => compile('''
+dropLast(text: String) -> String = text
+main():
+  print dropLas
+'''),
+        throwsA(isA<CompilerException>().having((error) => error.message,
+            'message', 'Undefined symbol: dropLas. Did you mean dropLast?')));
+    expect(
+        () => compile('''
+main():
+  print "hi".dropLas()
+'''),
+        throwsA(isA<CompilerException>().having((error) => error.message,
+            'message', 'No method dropLas on String. Did you mean dropLast?')));
+    expect(
+        () => compile('''
+main():
+  print "hi".lenght
+'''),
+        throwsA(isA<CompilerException>().having((error) => error.message,
+            'message', 'No member lenght on String. Did you mean length?')));
+    expect(
+        () => compile('''
+main():
+  dropLast = 1
+  print droplast
+'''),
+        throwsA(isA<CompilerException>().having((error) => error.message,
+            'message', 'Undefined symbol: droplast. Did you mean dropLast?')));
+    expect(
+        () => compile('''
+main():
+  cat = 1
+  car = 2
+  print cap
+'''),
+        throwsA(isA<CompilerException>().having(
+            (error) => error.message, 'message', 'Undefined symbol: cap')));
+  });
+
   test('classes, lambdas, nullability, and tear-offs execute', () async {
     await execute('''
 class User:
@@ -101,7 +499,7 @@ main():
   test('async, sealed match, imports, value classes, and macros execute',
       () async {
     await execute('''
-use dart:math
+use dart:math show sqrt
 sealed type Color:
   Red
   Named(name: String)
@@ -1739,12 +2137,139 @@ main():
 main():
   log.minimum = "verbose"
 ''': 'E300',
+      '''
+class Box:
+  n: int = 1
+main():
+  print [Box()].sorted()
+''': 'E300',
+      '''
+main():
+  print ["a"].sum()
+''': 'E300',
+      'main():\n  var a = 1, a = 2\n': 'E203',
+      'main():\n  print min(1, 1.0)\n': 'E300',
+      'main():\n  print true[0..1]\n': 'E300',
+      'main():\n  print 1 < 2 < "a"\n': 'E300',
+      'main():\n  repeat 1.5:\n    print 1\n': 'E300',
+      'main():\n  print 1 in "ab"\n': 'E300',
+      '''
+main():
+  items = [1, 2]
+  for x in items step 2:
+    print x
+''': 'E300',
+      '''
+main():
+  items = 0..4
+  for i in items step 2:
+    print i
+''': 'E300',
+      '''
+main():
+  for i in 0..4 step 0:
+    print i
+''': 'E801',
+      'main():\n  print "a".fixed(2)\n': 'E300',
+      '''
+main():
+  items = [1]
+  ages = map:
+    "a": 1
+  print items + ages
+''': 'E200',
+      '''
+main():
+  text = """
+  Hello
+ Hello
+  """
+  print text
+''': 'E100',
     };
     rejected.forEach((source, code) {
       expect(() => compile(source), throwsA(predicate((error) {
         return '$error'.contains(code);
       })), reason: source);
     });
+  });
+
+  test('collection methods build new lists and numbers without a loop',
+      () async {
+    await execute('''
+main():
+  items = [1, 2, 3, 4]
+  words = ["a", "bb"]
+  mixed = [3, 1, 2]
+  descending = [1, 2, 3]
+  repeated = [1, 1, 2, 2]
+  nested = [[1, 2], [3]]
+  parts = [1, 2, 3]
+  pair = [1, 2]
+  halves = [1.5, 2.5]
+  print items.map(n -> n * n)[0]
+  print items.map(n -> n * n).length
+  print words.map(s -> s.length)[1]
+  print items.where(n -> n > 2).toList().length
+  print items.sum()
+  print items.min()
+  print items.max()
+  print items.count()
+  print items.count(n -> n > 2)
+  print items.find(n -> n > 2)
+  print items.find(n -> n > 9) == null
+  print items.findLast(n -> n < 3)
+  print items.take(2)[1]
+  print items.skip(3)[0]
+  print mixed.sorted()[0]
+  print descending.sorted((a, b) -> b - a)[0]
+  print repeated.unique().length
+  print nested.flat().length
+  grouped = items.group(n -> n % 2)
+  print grouped[0]
+  print items.fold(0, (a, n) -> a + n)
+  print items.reduce((a, n) -> a + n)
+  print range(1, 3).sum()
+  print range(1, 3).length
+  print parts.join("-")
+  print pair.join()
+  print "abcd".substring(1, 3)
+  print "abcd"[1]
+  empty: List<int> = []
+  print empty.sum()
+  print empty.min() == null
+  print halves.sum()
+''', '''1
+4
+2
+2
+10
+1
+4
+4
+2
+3
+true
+2
+2
+4
+1
+3
+2
+3
+[2, 4]
+10
+10
+6
+3
+1-2-3
+12
+bc
+b
+0
+true
+4.0
+''');
   });
 
   test('collection methods mutate through an alias and Result ? nests',

@@ -8,7 +8,12 @@
     "vscode": "^1.85.0"
   },
   "categories": ["Programming Languages", "Formatters", "Linters", "Debuggers"],
-  "activationEvents": ["onLanguage:quds", "onDebugResolve:quds"],
+    "activationEvents": [
+      "onLanguage:quds",
+      "onDebugResolve:quds",
+      "onDebugInitialConfigurations",
+      "onDebugDynamicConfigurations"
+    ],
   "main": "./extension.js",
   "contributes": {
     "languages": [
@@ -16,7 +21,11 @@
         "id": "quds",
         "aliases": ["Quds", "quds"],
         "extensions": [".quds"],
-        "configuration": "./language-configuration.json"
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/quds.png",
+          "dark": "./icons/quds.png"
+        }
       }
     ],
     "grammars": [
@@ -29,6 +38,7 @@
     "configurationDefaults": {
       "[quds]": {
         "editor.defaultFormatter": "quds-lang.quds",
+        "editor.formatOnSave": true,
         "editor.tabSize": 2,
         "editor.insertSpaces": true,
         "editor.quickSuggestions": { "other": "on", "comments": "off", "strings": "off" },
@@ -46,6 +56,17 @@
           "items": { "type": "string" },
           "default": [],
           "markdownDescription": "Command that starts the language server. An empty list uses `dart run bin/quds.dart lsp` when the workspace is the `quds_lang` package, and `quds lsp` otherwise."
+        },
+        "quds.format.lineWidth": {
+          "type": "number",
+          "default": 80,
+          "minimum": 40,
+          "description": "Maximum line width. A one-line condition stays on two lines when joining would pass this width."
+        },
+        "quds.format.singleLineIf": {
+          "type": "boolean",
+          "default": true,
+          "description": "Put a condition with a single statement on one line. Indent width follows the editor tab size."
         }
       }
     },
@@ -70,6 +91,11 @@
         "command": "quds.showDart",
         "title": "Quds: Show Generated Dart",
         "icon": "$(diff)"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "quds"
       }
     ],
     "debuggers": [
@@ -103,6 +129,13 @@
             "cwd": "${fileDirname}"
           }
         ]
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "quds.debug",
+        "key": "f5",
+        "when": "editorLangId == quds && !inDebugMode"
       }
     ],
     "menus": {

@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:quds_lang/quds_lang.dart';
+import 'package:quds_lang/src/complete.dart';
+import 'package:quds_lang/src/dart_api.dart';
+import 'package:quds_lang/src/navigate.dart';
 import 'package:quds_lang/src/flutter_project.dart';
 import 'package:test/test.dart';
 
@@ -360,6 +363,37 @@ main():
         contains('app.dart:3:1'));
   });
 
+  test('a flutter child does not inherit an editor schema dir', () async {
+    final script = File('${Directory.systemTemp.path}/quds_schema_env.dart');
+    script.writeAsStringSync('''
+import 'dart:io';
+import 'package:quds_lang/quds_lang.dart';
+
+void main() async {
+  final child = await Process.start(
+    'printenv',
+    ['GSETTINGS_SCHEMA_DIR'],
+    environment: desktopLaunchEnvironment(Platform.environment),
+    includeParentEnvironment: false,
+  );
+  stdout.addStream(child.stdout);
+  await child.exitCode;
+}
+''');
+    final inherited = await Process.run(
+      Platform.resolvedExecutable,
+      ['--packages=.dart_tool/package_config.json', script.path],
+      environment: {
+        ...Platform.environment,
+        'GSETTINGS_SCHEMA_DIR':
+            '/home/user/snap/code/278/.local/share/glib-2.0/schemas',
+      },
+      includeParentEnvironment: false,
+    );
+    expect(inherited.stdout, isEmpty);
+    expect(inherited.stderr, isEmpty);
+  });
+
   test('debug translator maps a quds breakpoint to the generated line', () {
     const source = 'main():\n  print 1\n\n  print 2\n';
     const qudsPath = '/tmp/app.quds';
@@ -377,6 +411,44 @@ main():
     expect(launch.reply, isNull);
     expect(launch.message!['arguments']['program'], dartPath);
     expect(launch.message!['arguments']['cwd'], '/tmp');
+    final flutterTranslator = DebugTranslator()
+      ..bind(DebugBinary(qudsPath, dartPath, compiled.sourceMap!,
+          cwd: '/tmp/hello'));
+    final flutterLaunch = flutterTranslator.accept({
+      'seq': 1,
+      'type': 'request',
+      'command': 'launch',
+      'arguments': {
+        'program': qudsPath,
+        'cwd': '/tmp',
+        'deviceId': 'linux',
+      },
+    });
+    expect(flutterLaunch.message!['arguments']['cwd'], '/tmp/hello');
+    expect(flutterLaunch.message!['arguments']['toolArgs'], ['-d', 'linux']);
+    final snap = desktopLaunchEnvironment({
+      'PATH': '/usr/bin',
+      'GSETTINGS_SCHEMA_DIR':
+          '/home/user/snap/code/278/.local/share/glib-2.0/schemas',
+      'XDG_DATA_DIRS':
+          '/home/user/snap/code/278/.local/share:/snap/code/278/usr/share:/usr/share',
+      'XDG_DATA_DIRS_VSCODE_SNAP_ORIG': '/usr/share/ubuntu:/usr/share',
+    });
+    expect(snap.containsKey('GSETTINGS_SCHEMA_DIR'), isFalse);
+    expect(snap['PATH'], '/usr/bin');
+    expect(snap['XDG_DATA_DIRS'], '/usr/share/ubuntu:/usr/share');
+    expect(
+      desktopLaunchEnvironment({
+        'XDG_DATA_DIRS': '/snap/code/278/usr/share:/usr/local/share:/usr/share',
+      })['XDG_DATA_DIRS'],
+      '/usr/local/share:/usr/share',
+    );
+    expect(
+      desktopLaunchEnvironment({
+        'GSETTINGS_SCHEMA_DIR': '/usr/share/glib-2.0/schemas',
+      }).containsKey('GSETTINGS_SCHEMA_DIR'),
+      isTrue,
+    );
 
     final generated = positions.generated(qudsPath, 4);
     expect(generated, isNotNull);
@@ -449,6 +521,130 @@ main():
     expect(failed.message, isNull);
     expect(failed.reply!['success'], isFalse);
     expect(failed.reply!['message'], contains('broken'));
+
+    const named = 'main():\n  text = "ab"\n  print text\n';
+    final namedCompiled = compile(named, file: qudsPath);
+    final qudsNames =
+        ((jsonDecode(namedCompiled.sourceMap!) as Map)['x_qudsNames'] as Map)
+            .cast<String, String>();
+    final dartName =
+        qudsNames.entries.firstWhere((entry) => entry.value == 'text').key;
+    final namedPositions = SourcePositions.parse(namedCompiled.sourceMap!);
+    final namedTranslator = DebugTranslator()
+      ..bind(DebugBinary(qudsPath, dartPath, namedCompiled.sourceMap!));
+    final generatedPrint = namedPositions.generated(qudsPath, 3);
+    namedTranslator.present({
+      'type': 'response',
+      'command': 'stackTrace',
+      'body': {
+        'stackFrames': [
+          {
+            'id': 7,
+            'name': 'main',
+            'line': generatedPrint,
+            'column': 1,
+            'source': {'path': dartPath, 'name': 'app.dart'},
+          }
+        ],
+      },
+    });
+    namedTranslator.accept({
+      'seq': 4,
+      'type': 'request',
+      'command': 'scopes',
+      'arguments': {'frameId': 7},
+    });
+    namedTranslator.present({
+      'seq': 10,
+      'type': 'response',
+      'request_seq': 4,
+      'success': true,
+      'command': 'scopes',
+      'body': {
+        'scopes': [
+          {'name': 'Locals', 'variablesReference': 20, 'expensive': false}
+        ],
+      },
+    });
+    namedTranslator.accept({
+      'seq': 5,
+      'type': 'request',
+      'command': 'variables',
+      'arguments': {'variablesReference': 20},
+    });
+    final variables = namedTranslator.present({
+      'seq': 11,
+      'type': 'response',
+      'request_seq': 5,
+      'success': true,
+      'command': 'variables',
+      'body': {
+        'variables': [
+          {'name': dartName, 'value': 'ab', 'variablesReference': 0},
+          {'name': 'length', 'value': '2', 'variablesReference': 0},
+        ],
+      },
+    });
+    final shown = ((variables['body'] as Map)['variables'] as List).cast<Map>();
+    expect(shown[0]['name'], 'text');
+    expect(shown[1]['name'], 'length');
+  });
+
+  test('debug hover evaluates the name written in the source', () {
+    const qudsPath = '/tmp/app.quds';
+    const dartPath = '/tmp/out/app.dart';
+    const source = '''
+digit(piece: String) -> double:
+  if piece == "0": return 0.0
+  return 1.0
+other():
+  var piece = "x"
+  print piece
+''';
+    final compiled = compile(source, file: qudsPath);
+    final positions = SourcePositions.parse(compiled.sourceMap!);
+    final pieces =
+        positions.locals.where((local) => local.name == 'piece').toList();
+    expect(pieces, hasLength(2));
+    final translator = DebugTranslator()
+      ..bind(DebugBinary(qudsPath, dartPath, compiled.sourceMap!));
+    String? rewritten(int sourceLine, String expression) {
+      final generated = positions.generated(qudsPath, sourceLine);
+      translator.present({
+        'type': 'response',
+        'command': 'stackTrace',
+        'body': {
+          'stackFrames': [
+            {
+              'id': 4,
+              'name': 'digit',
+              'line': generated,
+              'column': 1,
+              'source': {'path': dartPath, 'name': 'app.dart'},
+            }
+          ],
+        },
+      });
+      final action = translator.accept({
+        'seq': 8,
+        'type': 'request',
+        'command': 'evaluate',
+        'arguments': {
+          'expression': expression,
+          'frameId': 4,
+          'context': 'hover',
+        },
+      });
+      return action.message?['arguments']['expression'] as String?;
+    }
+
+    final insideDigit = rewritten(2, 'piece');
+    final insideOther = rewritten(6, 'piece');
+    expect(insideDigit, pieces.first.dartName);
+    expect(insideOther, pieces.last.dartName);
+    expect(insideDigit, isNot(insideOther));
+    expect(rewritten(2, 'piece.length'), '${pieces.first.dartName}.length');
+    expect(rewritten(2, '"piece"'), '"piece"');
   });
 
   test('quds debug stops on the quds line', () async {
@@ -600,7 +796,7 @@ class User:
 ''');
     final app = '''
 use package:demo
-use package:demo/src/util
+use package:demo.src.util
 use generated:user_models
 main():
   print doubleIt(4)
@@ -644,6 +840,71 @@ main():
         throwsA(predicate((error) => '$error'.contains('Undefined'))));
   });
 
+  test('dotted names import a relative quds file', () async {
+    final root = Directory.systemTemp.createTempSync('quds-relative-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    Directory('${root.path}/src').createSync();
+    Directory('${root.path}/a/b/c').createSync(recursive: true);
+    File('${root.path}/src/sum.quds').writeAsStringSync('''
+doubleIt(n: int) -> int = n * 2
+''');
+    File('${root.path}/top.quds').writeAsStringSync('''
+answer() -> int = 7
+''');
+    final here = '''
+use src.sum
+main():
+  print doubleIt(4)
+''';
+    final hereFile = File('${root.path}/app.quds')..writeAsStringSync(here);
+    final hereDart = compile(here, file: hereFile.path);
+    expect(hereDart.dart, contains("import 'src/sum.dart';"));
+    final near = '''
+use ^.src.sum
+use ^.top
+main():
+  print doubleIt(4)
+  print answer()
+''';
+    final nearFile = File('${root.path}/nested/app.quds')
+      ..parent.createSync()
+      ..writeAsStringSync(near);
+    final nearDart = compile(near, file: nearFile.path);
+    expect(nearDart.dart, contains("import '../src/sum.dart';"));
+    expect(nearDart.dart, contains("import '../top.dart';"));
+    final deep = '''
+use ^^^.top
+use ^^^.src.sum
+main():
+  print answer()
+  print doubleIt(3)
+''';
+    final deepFile = File('${root.path}/a/b/c/app.quds')
+      ..writeAsStringSync(deep);
+    final deepDart = compile(deep, file: deepFile.path);
+    expect(deepDart.dart, contains("import '../../../top.dart';"));
+    expect(deepDart.dart, contains("import '../../../src/sum.dart';"));
+    for (final source in [
+      File('${root.path}/src/sum.quds'),
+      File('${root.path}/top.quds'),
+      hereFile,
+      nearFile,
+      deepFile,
+    ]) {
+      final dartPath = source.path.replaceFirst(RegExp(r'\.quds$'), '.dart');
+      File(dartPath).writeAsStringSync(
+          compile(source.readAsStringSync(), file: source.path).dart);
+    }
+    final run = await Process.run(Platform.resolvedExecutable,
+        [nearFile.path.replaceFirst(RegExp(r'\.quds$'), '.dart')]);
+    expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
+    expect(run.stdout, '8\n7\n');
+    expect(
+        () => compile('use missing.lib\nmain():\n  print 1\n',
+            file: '${root.path}/nested/missing.quds'),
+        throwsA(predicate((error) => '$error'.contains('E900'))));
+  });
+
   test('a package dart library passes its names through to Dart', () {
     final root = Directory.systemTemp.createTempSync('quds-flutter-app-');
     addTearDown(() => root.deleteSync(recursive: true));
@@ -664,9 +925,62 @@ dependencies:
     expect(compiled.dart, contains('extends State<Home>'));
     expect(compiled.dart, contains('Widget build(BuildContext '));
     expect(compiled.dart, contains('Text([count].join())'));
+    expect(compiled.dart, contains('final ElevatedButton '));
+    expect(compiled.dart, contains('children: ['));
+    expect(compiled.dart, isNot(contains('<dynamic>[')));
     expect(compiled.dart, contains('setState('));
     expect(compiled.dart, contains('home: Home()'));
     expect(compiled.dart, contains('onPressed: '));
+  });
+
+  test('a flutter constructor keeps the class read from the package', () {
+    final source =
+        File('examples/flutter_app/calculator/lib/main.quds').absolute;
+    final config =
+        File('examples/flutter_app/calculator/.dart_tool/package_config.json');
+    expect(config.existsSync(), isTrue, reason: config.path);
+    final compiled = compile(source.readAsStringSync(), file: source.path);
+    final column = compiled.semantics.moduleSymbols['Column'];
+    expect(column, isNotNull);
+    expect(column!.signature, 'class Column');
+    expect(column.documentation, isNotNull);
+    expect(column.type, 'Column');
+    expect(compiled.dart, contains('Column('));
+    final dotted = source.readAsStringSync().replaceFirst(
+        'use package:flutter/material.dart', 'use package:flutter.material');
+    final throughDots = compile(dotted, file: source.path);
+    expect(
+        throughDots.dart, contains("import 'package:flutter/material.dart';"));
+    expect(throughDots.semantics.moduleSymbols['Column']?.type, 'Column');
+  });
+
+  test('debugging a flutter project uses the flutter adapter', () async {
+    final source =
+        File('examples/flutter_app/hello_world/lib/main.quds').absolute;
+    final process = await Process.start(Platform.resolvedExecutable, [
+      'run',
+      'bin/quds.dart',
+      'debug',
+      source.path,
+    ]);
+    addTearDown(() => process.kill());
+    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    String args = '';
+    while (DateTime.now().isBefore(deadline)) {
+      final listed = await Process.run('ps', [
+        '-o',
+        'args=',
+        '--ppid',
+        '${process.pid}',
+      ]);
+      args = '${listed.stdout}';
+      if (args.contains('debug-adapter') || args.contains('debug_adapter')) {
+        break;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    expect(args, contains('debug-adapter'), reason: args);
+    expect(args, isNot(contains('debug_adapter')));
   });
 
   test('quds create flutter writes the app in quds', () async {
@@ -1199,7 +1513,10 @@ main():
     final mathLine = rows.indexOf('  print math.pi');
     final mathItems =
         at(mathDot, mathLine, mathDot.split('\n')[mathLine].indexOf('.') + 1);
-    expect(mathItems.map((item) => item['label']), containsAll(['pi', 'sqrt']));
+    expect(mathItems.map((item) => item['label']),
+        containsAll(['pi', 'sqrt', 'Random', 'Point']));
+    expect(mathItems.map((item) => item['label']), isNot(contains('range')));
+    expect(one(mathItems, 'Random', 'class Random')['kind'], 7);
 
     final lineDot =
         source.replaceFirst('  print line.total()', '  print line.');
@@ -1228,6 +1545,302 @@ main():
     expect(snippet['insertTextFormat'], 2);
     expect((snippet['textEdit'] as Map)['newText'],
         contains('if \${1:condition}:'));
+  });
+
+  test('dart libraries are read from their sources', () {
+    final math = readDartLibrary('dart:math');
+    expect(math, isNotNull, reason: 'Dart SDK sources were not found');
+    expect(math!.names.keys,
+        containsAll(['e', 'pi', 'sqrt', 'Random', 'Point', 'Rectangle']));
+    expect(math.names.keys, isNot(contains('range')));
+    expect(math.types['Random']!.members.keys,
+        containsAll(['nextInt', 'nextDouble', 'nextBool']));
+    expect(math.names['Random']!.documentation, contains('random'));
+    expect(math.names['Random']!.file, endsWith('random.dart'));
+    expect(math.types['Random']!.members['nextInt']!.documentation,
+        contains('uniformly'));
+    expect(math.types['Random']!.constructors.containsKey('secure'), isTrue);
+    expect(math.types['Point']!.members.containsKey('x'), isTrue);
+    expect(
+        math.types['Rectangle']!.members.containsKey('intersection'), isTrue);
+
+    final root = Directory.systemTemp.createTempSync('quds-sdk-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final library = Directory('${root.path}/lib/demo')
+      ..createSync(recursive: true);
+    File('${library.path}/demo.dart').writeAsStringSync('''
+library dart.demo;
+part 'extra.dart';
+const int answer = 4;
+class Box {
+  int size;
+  void open();
+}
+''');
+    File('${library.path}/extra.dart').writeAsStringSync('''
+part of "dart:demo";
+void extra();
+''');
+    final first = readDartLibrary('dart:demo', sdkRoot: root.path);
+    expect(first, isNotNull);
+    expect(first!.names.keys, containsAll(['answer', 'Box', 'extra']));
+    expect(first.types['Box']!.members.keys, containsAll(['size', 'open']));
+    File('${library.path}/extra.dart').writeAsStringSync('''
+part of "dart:demo";
+void extra();
+void added();
+''');
+    final second = readDartLibrary('dart:demo', sdkRoot: root.path);
+    expect(second!.names.keys, contains('added'));
+  });
+
+  test('a dart prefix completes from the sdk when the file does not compile',
+      () {
+    final directory = Directory.systemTemp.createTempSync('quds-math-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    const source = '''
+use dart:math as m
+main():
+  print m.
+  print m.missingName
+''';
+    final uri = Uri.file('${directory.path}/app.quds').toString();
+    final session = LspSession();
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': source,
+        }
+      }
+    });
+    final response = session.handle({
+      'jsonrpc': '2.0',
+      'id': 4,
+      'method': 'textDocument/completion',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {
+          'line': 2,
+          'character': source.split('\n')[2].indexOf('.') + 1
+        },
+      }
+    });
+    final result = response.response!['result'] as Map;
+    final labels = (result['items'] as List)
+        .map((item) => (item as Map)['label'])
+        .toList();
+    expect(labels, containsAll(['pi', 'sqrt', 'Random', 'Point']));
+    expect(labels, isNot(contains('range')));
+    expect(labels, isNot(contains('missingName')));
+  });
+
+  test('import completion reads files, dart libraries, and packages', () {
+    final root = Directory.systemTemp.createTempSync('quds-import-complete-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    Directory('${root.path}/src').createSync();
+    Directory('${root.path}/nested').createSync();
+    Directory('${root.path}/lib').createSync();
+    Directory('${root.path}/deps/widgets/lib/src').createSync(recursive: true);
+    Directory('${root.path}/.dart_tool').createSync();
+    File('${root.path}/helper.quds').writeAsStringSync('value = 1\n');
+    File('${root.path}/src/sum.quds').writeAsStringSync('value = 1\n');
+    File('${root.path}/note.txt').writeAsStringSync('skip\n');
+    File('${root.path}/lib/page.quds')
+        .writeAsStringSync('main():\n  print 1\n');
+    File('${root.path}/deps/widgets/lib/button.dart')
+        .writeAsStringSync('class Button {}\n');
+    File('${root.path}/deps/widgets/lib/src/icon.dart')
+        .writeAsStringSync('class Icon {}\n');
+    File('${root.path}/pubspec.yaml').writeAsStringSync('name: demo\n');
+    File('${root.path}/.dart_tool/package_config.json').writeAsStringSync('''
+{
+  "configVersion": 2,
+  "packages": [
+    {"name": "widgets", "rootUri": "../deps/widgets", "packageUri": "lib/"},
+    {"name": "demo", "rootUri": "../", "packageUri": "lib/"}
+  ]
+}
+''');
+    final app = File('${root.path}/app.quds')..writeAsStringSync('main():\n');
+    final nested = File('${root.path}/nested/app.quds')
+      ..writeAsStringSync('main():\n');
+
+    List<Map<String, Object?>> at(String line, String path) {
+      return completeAt(
+        source: line,
+        line: 0,
+        character: line.length,
+        file: path,
+        compileSource: (_) => null,
+      );
+    }
+
+    Map<String, Object?> item(List<Map<String, Object?>> items, String label) {
+      return items.firstWhere((entry) => entry['label'] == label);
+    }
+
+    final here = at('use .', app.path);
+    expect(here.map((entry) => entry['label']), containsAll(['helper', 'src']));
+    expect(here.map((entry) => entry['label']), isNot(contains('note.txt')));
+    expect(here.map((entry) => entry['label']), isNot(contains('sum')));
+    final helper = item(here, 'helper');
+    expect((helper['textEdit'] as Map)['newText'], 'helper');
+    expect(((helper['textEdit'] as Map)['range'] as Map)['start'],
+        {'line': 0, 'character': 4});
+    expect((item(here, 'src')['textEdit'] as Map)['newText'], 'src.');
+
+    final inside = at('use src.', app.path);
+    expect(inside.map((entry) => entry['label']), ['sum']);
+    expect((item(inside, 'sum')['textEdit'] as Map)['newText'], 'sum');
+
+    final parent = at('use ^.', nested.path);
+    expect(parent.map((entry) => entry['label']), contains('helper'));
+
+    final math = at('use dart:', app.path);
+    expect(math.map((entry) => entry['label']), containsAll(['core', 'math']));
+    expect(item(math, 'math')['detail'], 'dart:math');
+    expect(math.map((entry) => entry['label']),
+        isNot(anyElement(startsWith('_'))));
+
+    final typed = at('use dart:m', app.path);
+    expect(typed.map((entry) => entry['label']), contains('math'));
+    expect((item(typed, 'math')['textEdit'] as Map)['newText'], 'math');
+
+    final packages = at('use package:', app.path);
+    expect(packages.map((entry) => entry['label']),
+        containsAll(['widgets', 'page']));
+    expect(item(packages, 'widgets')['detail'], 'package:widgets');
+    expect(item(packages, 'page')['detail'], 'page.quds');
+
+    final buttons = at('use package:widgets/', app.path);
+    expect(buttons.map((entry) => entry['label']),
+        containsAll(['button.dart', 'src']));
+    final dotted = at('use package:widgets.', app.path);
+    expect(
+        dotted.map((entry) => entry['label']), containsAll(['button', 'src']));
+    expect((item(dotted, 'button')['textEdit'] as Map)['newText'], 'button');
+    expect((item(dotted, 'src')['textEdit'] as Map)['newText'], 'src.');
+    final iconsDotted = at('use package:widgets.src.', app.path);
+    expect(iconsDotted.map((entry) => entry['label']), contains('icon'));
+    expect((item(iconsDotted, 'icon')['textEdit'] as Map)['newText'], 'icon');
+    final icons = at('use package:widgets/src/', app.path);
+    expect(icons.map((entry) => entry['label']), contains('icon.dart'));
+
+    final local = at('use package:demo/', app.path);
+    expect(local.map((entry) => entry['label']), contains('page'));
+    expect((item(local, 'page')['textEdit'] as Map)['newText'], 'page');
+
+    final member = at('value = m.', app.path);
+    expect(member.map((entry) => entry['label']), isNot(contains('helper')));
+  });
+
+  test('range includes both ends', () async {
+    await execute('''
+main():
+  var total = 0
+  for i in range(0, 3):
+    total = total + i
+  print total
+  var again = 0
+  for i in range(3):
+    again = again + i
+  print again
+''', '6\n6\n');
+  });
+
+  test('hover and go to definition open the Dart source', () {
+    const source = '''
+use dart:math as m
+main():
+  print m.Random().nextInt(100)
+''';
+    final compiled = compile(source);
+    final randomColumn = source.split('\n')[2].indexOf('Random') + 1;
+    final nextColumn = source.split('\n')[2].indexOf('nextInt') + 1;
+    final randomHover = hoverAt(compiled, source, 3, randomColumn);
+    expect(randomHover, contains('class Random'));
+    expect(randomHover, contains('random'));
+    final nextHover = hoverAt(compiled, source, 3, nextColumn);
+    expect(nextHover, contains('nextInt'));
+    expect(nextHover, contains('uniformly'));
+    final randomAt = definitionAt(compiled, 3, randomColumn);
+    expect(randomAt?.file, endsWith('random.dart'));
+    final randomText = File(randomAt!.file).readAsStringSync();
+    expect(randomText.split('\n')[randomAt.line - 1], contains('class Random'));
+    final nextAt = definitionAt(compiled, 3, nextColumn);
+    expect(nextAt?.file, endsWith('random.dart'));
+    final opened = File(nextAt!.file).readAsBytesSync();
+    final start = utf8.decode(opened.sublist(0, nextAt.offset)).length;
+    final text = utf8.decode(opened);
+    expect(text.substring(start, start + 'nextInt'.length), 'nextInt');
+    expect(text.split('\n')[nextAt.line - 1], contains('int nextInt'));
+
+    const broken = '''
+use dart:math as m
+main():
+  print m.nope
+  value = m.Random().nextInt(100)
+''';
+    final brokenNext =
+        dartPlaceAt(broken, 4, broken.split('\n')[3].indexOf('nextInt') + 1);
+    expect(brokenNext?.text, contains('nextInt'));
+    expect(brokenNext?.text, contains('uniformly'));
+    expect(brokenNext?.file, endsWith('random.dart'));
+    final brokenRandom =
+        dartPlaceAt(broken, 4, broken.split('\n')[3].indexOf('Random') + 1);
+    expect(brokenRandom?.text, contains('class Random'));
+    expect(brokenRandom?.file, endsWith('random.dart'));
+
+    final directory = Directory.systemTemp.createTempSync('quds-dart-hover-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final uri = Uri.file('${directory.path}/app.quds').toString();
+    final session = LspSession();
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': broken,
+        }
+      }
+    });
+    Map<String, dynamic>? answer(String method, String token) {
+      final response = session.handle({
+        'jsonrpc': '2.0',
+        'id': 4,
+        'method': method,
+        'params': {
+          'textDocument': {'uri': uri},
+          'position': {
+            'line': 3,
+            'character': broken.split('\n')[3].indexOf(token),
+          },
+        }
+      });
+      return response.response!['result'] as Map<String, dynamic>?;
+    }
+
+    final hovered = answer('textDocument/hover', 'nextInt');
+    expect((hovered!['contents'] as Map)['value'], contains('uniformly'));
+    final defined = answer('textDocument/definition', 'Random');
+    expect(defined!['uri'], endsWith('random.dart'));
+  });
+
+  test('calls read from dart:math execute', () async {
+    await execute('''
+use dart:math as m
+main():
+  print m.sqrt(9)
+  print m.Point(3, 4).x
+  print m.Random(1).nextInt(1)
+  print m.Rectangle(0, 0, 2, 3).right
+''', '3.0\n3\n0\n2\n');
   });
 
   test('a property total is not presented as the function total()', () {
@@ -1365,6 +1978,12 @@ main():
         File('${home.path}/.vscode/extensions/quds-lang.quds-0.0.1/syntaxes/quds.tmLanguage.json')
             .existsSync(),
         isTrue);
+    expect(extension.readAsStringSync(), contains('./icons/quds.png'));
+    expect(extension.readAsStringSync(), contains('"breakpoints"'));
+    expect(
+        File('${home.path}/.vscode/extensions/quds-lang.quds-0.0.1/icons/quds.png')
+            .existsSync(),
+        isTrue);
   });
 
   test('format keeps comments, documentation, and multiline strings', () async {
@@ -1396,7 +2015,7 @@ add(a: int, b: int) -> int = a + b
     expect(once, isNot(contains(' \n')));
     await cli(['format', source.path]);
     expect(source.readAsStringSync(), once);
-    await execute(once, '\n      kept\n\n3\n');
+    await execute(once, '      kept\n3\n');
   });
 
   test('doc test reports a broken link and a failing example', () async {
@@ -1547,7 +2166,59 @@ $wide
     }
     await cli(['format', source.path]);
     expect(source.readAsStringSync(), once);
-    await execute(once, '24\n92\n');
+    await execute(once, '24\n90\n');
+  });
+
+  test('a one-statement condition can share its header line', () async {
+    await execute('''
+choose(n: int) -> String:
+  if n == 1: return "a"
+  else if n == 2: return "b"
+  else: return "c"
+main():
+  print choose(1)
+  print choose(2)
+  print choose(3)
+''', 'a\nb\nc\n');
+    const block = '''
+main():
+  if true:
+    print "yes"
+  else:
+    print "no"
+''';
+    final joined = formatQuds(block);
+    expect(joined, '''
+main():
+  if true: print "yes"
+  else: print "no"
+''');
+    expect(formatQuds(joined), joined);
+    expect(formatQuds(block, singleLineIf: false), '''
+main():
+  if true:
+    print "yes"
+  else:
+    print "no"
+''');
+    expect(formatQuds('''
+main():
+  if true:
+    print "a"
+    print "b"
+'''), '''
+main():
+  if true:
+    print "a"
+    print "b"
+''');
+    final wide = formatQuds('''
+main():
+  if "${'x' * 70}" == "y":
+    print "no"
+''');
+    expect(wide, contains('if '));
+    expect(wide, contains('\n    print "no"\n'));
   });
 
   test('doc html writes the documentation page', () async {

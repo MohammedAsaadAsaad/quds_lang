@@ -15,6 +15,7 @@ class CartLine:
 class Shift:
   start: int required
   end: int required
+
   minutes() -> int:
     if end >= start:
       return end - start
@@ -728,3 +729,6 @@ main():
   print shift.minutes()
   print letterGrade(92)
   print sumList([4, 5, 6])
+
+
+

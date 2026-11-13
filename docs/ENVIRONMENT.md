@@ -59,8 +59,8 @@ For the executable smoke check:
 
 ```sh
 quds build examples/sum.quds
-dart analyze examples/sum.dart
-dart examples/sum.dart
+dart analyze .dart_tool/quds/out/examples/sum.dart
+dart .dart_tool/quds/out/examples/sum.dart
 ```
 
 Expected output: `Total: 60` and `12`, on separate lines. Generated example output

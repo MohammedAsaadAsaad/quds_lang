@@ -7,8 +7,8 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Programming Languages", "Formatters", "Linters"],
-  "activationEvents": ["onLanguage:quds"],
+  "categories": ["Programming Languages", "Formatters", "Linters", "Debuggers"],
+  "activationEvents": ["onLanguage:quds", "onDebugResolve:quds"],
   "main": "./extension.js",
   "contributes": {
     "languages": [
@@ -30,7 +30,12 @@
       "[quds]": {
         "editor.defaultFormatter": "quds-lang.quds",
         "editor.tabSize": 2,
-        "editor.insertSpaces": true
+        "editor.insertSpaces": true,
+        "editor.quickSuggestions": { "other": "on", "comments": "off", "strings": "off" },
+        "editor.suggestOnTriggerCharacters": true,
+        "editor.acceptSuggestionOnCommitCharacter": true,
+        "editor.wordBasedSuggestions": "off",
+        "editor.snippetSuggestions": "top"
       }
     },
     "configuration": {
@@ -48,7 +53,73 @@
       {
         "command": "quds.restartServer",
         "title": "Quds: Restart Language Server"
+      },
+      {
+        "command": "quds.run",
+        "title": "Quds: Run"
+      },
+      {
+        "command": "quds.debug",
+        "title": "Quds: Debug"
+      },
+      {
+        "command": "quds.profile",
+        "title": "Quds: Profile"
+      },
+      {
+        "command": "quds.showDart",
+        "title": "Quds: Show Generated Dart",
+        "icon": "$(diff)"
       }
-    ]
+    ],
+    "debuggers": [
+      {
+        "type": "quds",
+        "label": "Quds",
+        "languages": ["quds"],
+        "configurationAttributes": {
+          "launch": {
+            "required": ["program"],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "The .quds file to debug.",
+                "default": "${file}"
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory of the program.",
+                "default": "${fileDirname}"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "quds",
+            "request": "launch",
+            "name": "Debug Quds",
+            "program": "${file}",
+            "cwd": "${fileDirname}"
+          }
+        ]
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "quds.showDart",
+          "when": "editorLangId == quds",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "quds.showDart",
+          "when": "editorLangId == quds",
+          "group": "navigation"
+        }
+      ]
+    }
   }
 }

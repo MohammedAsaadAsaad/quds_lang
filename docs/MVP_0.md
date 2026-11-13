@@ -210,8 +210,10 @@ Tests: `test/constants_test.dart` and `test/fixtures/const_eval.quds`.
 
 Emission is deterministic and uses unique Dart names for top-level functions so
 the MVP-0 golden fixtures stay stable. Classes, cases, and methods keep their
-Quds names. `quds build` still refuses to overwrite a file that does not start
-with the generated header, and it writes a sibling `.dart.map` (Source Map
+Quds names. `quds build` writes `.dart_tool/quds/out/` inside the package,
+mirroring the `.quds` path, and does not write a sibling `.dart` file. It
+still refuses to overwrite an output file that does not start with the
+generated header, and it writes a `.dart.map` beside that output (Source Map
 Revision 3, one mapping per generated line). The `.dart` text itself is
 unchanged by the map.
 
@@ -224,6 +226,10 @@ unchanged by the map.
 - Nullable types, postfix `!`, and `??`.
 - `use dart:math` for `sqrt`, `sin`, `cos`, `min`, `max`, and `pi`. Other
   `dart:`, `package:`, and `.quds` imports are emitted and do not invent names.
+  A `package:` URI that already ends in `.dart` is emitted unchanged, and its
+  names are passed through to Dart. `quds create flutter <name>` creates a
+  Flutter app whose program is `lib/main.quds`. `quds run` on that file
+  compiles it under `lib/quds_gen/` and launches `flutter run`.
 - `for` over lists, sets, and ranges (`..` and `..<`), including a range whose end is below its start, `while`, `break`,
   `continue`, and `label name` on a loop.
 - `map:` and `set:` literals, records, and `(a, b) = record` destructuring.
@@ -233,7 +239,8 @@ unchanged by the map.
 - `async` / `await`. An async `main` returns `Future<void>`.
 - `@macro` classes whose `define` body only calls `builder.addMethod`.
 - `quds run`, `analyze`, `test`, `format`, `create`, `add`, `remove`, `get`,
-  `doc`, and `migrate`, in addition to `build`.
+  `doc`, and `migrate`, in addition to `build`. A thrown error from `quds run`
+  is printed on the `.quds` line. The generated `.dart` line is not shown.
 - `do` / `result`. `result` finishes the `do`. `return` inside `do` leaves the
   function. `E106` outside `do`, `E109` when a value `do` has no `result`.
 - `readonly` on one reference. Assignment and a mutating method name are
@@ -402,9 +409,8 @@ one annotation, are `E906`. A class `call` method is invoked by calling the
 instance, including a generic class and named arguments. `protected` is
 emitted as `@protected` when the package depends on `package:meta`, and as
 a documentation comment otherwise. `quds migrate` leaves a `quds.yaml`
-pinned to a version other than 1.2 unchanged. `quds lsp` answers definition,
-rename, formatting, and diagnostics for an open buffer. `quds debug` binds a breakpoint to the `.quds` statement on a
-line. Neither command launches a program. `mapStack` rewrites a stack frame
+pinned to a version other than 1.2 unchanged. `quds lsp` answers completion, definition,
+hover, code lenses on `main`, rename, formatting, and diagnostics for an open buffer. Hover reports `var name: Type` for a mutable binding, `property name: Type` for a getter/setter, and `name() -> Type` for a function. Semantic tokens use those same three kinds, so a property is not colored as a function. The lenses are Run, Debug, and Profile. Run and Profile execute in a terminal. Debug builds the generated Dart and launches it under `quds debug`. A breakpoint in a `.quds` file is moved to the generated line, and a stop is shown on the `.quds` line. The language server itself does not launch a program. Hover reuses the analysis of the current buffer. `mapStack` rewrites a stack frame
 that hits the source map. `quds format` rewrites indentation outside a
 multiline string to two spaces, keeps comments and string contents, drops
 trailing whitespace, and ends the file with a newline. A second format is

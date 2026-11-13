@@ -2270,6 +2270,7 @@ class DartEmitter {
         node.callee is MemberAccess ? node.callee as MemberAccess : null;
     if (member != null &&
         member.name == 'copyWith' &&
+        !targetSymbol.external &&
         targetSymbol.function == null &&
         targetSymbol.classDeclaration == null) {
       _useOptional = true;
@@ -2290,6 +2291,15 @@ class DartEmitter {
                         node.callee is TypeApplication)
                 ? constructed
                 : targetSymbol.dartName;
+    if (targetSymbol.external) {
+      final parts = [
+        for (final argument in node.arguments)
+          argument.name == null
+              ? expression(argument.value, constantContext: constantContext)
+              : '${argument.name}: ${expression(argument.value, constantContext: constantContext)}'
+      ];
+      return '$target(${parts.join(', ')})';
+    }
     final parameters = targetSymbol.function?.parameters ?? const <Parameter>[];
     final variadic = parameters.indexWhere((parameter) => parameter.variadic);
     if (variadic >= 0) {

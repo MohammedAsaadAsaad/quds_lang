@@ -22,8 +22,24 @@
     ["\"", "\""],
     ["'", "'"]
   ],
+  "onEnterRules": [
+    {
+      "beforeText": ":\\s*(?:#.*|//.*)?$",
+      "action": { "indent": "indent" }
+    },
+    {
+      "beforeText": "^.*$",
+      "action": { "indent": "none" }
+    }
+  ],
   "indentationRules": {
     "increaseIndentPattern": ":\\s*(?:#.*|//.*)?$",
     "decreaseIndentPattern": "^\\s*else\\b"
+  },
+  "folding": {
+    "markers": {
+      "start": "^\\s*#\\s*region\\b",
+      "end": "^\\s*#\\s*end\\s*region\\b"
+    }
   }
 }

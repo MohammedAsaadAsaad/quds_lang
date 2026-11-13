@@ -15,8 +15,8 @@ With Dart installed:
 ```sh
 dart pub get --enforce-lockfile
 dart run bin/quds.dart build examples/sum.quds
-dart analyze examples/sum.dart
-dart examples/sum.dart
+dart analyze .dart_tool/quds/out/examples/sum.dart
+dart .dart_tool/quds/out/examples/sum.dart
 ```
 
 The example prints:
@@ -34,8 +34,22 @@ dart pub global activate --source path .
 quds build examples/sum.quds
 ```
 
-Build writes an adjacent `.dart` file. It refuses to overwrite a file without the
-Quds generated-file header, and leaves output untouched when compilation fails.
+A Flutter app whose program is Quds:
+
+```sh
+quds create flutter hello
+quds run hello/lib/main.quds
+```
+
+`lib/main.quds` is the app. Android, iOS, and the other platform folders stay
+as `flutter create` made them. `quds run` compiles the Quds file to
+`lib/quds_gen/` and launches it with `flutter run`.
+
+Build writes the generated Dart under `.dart_tool/quds/out/`, mirroring the
+source path, so a `.quds` file does not gain a sibling `.dart` file. It refuses
+to overwrite an output file without the Quds generated-file header, and leaves
+output untouched when compilation fails. In VS Code, **Quds: Show Generated Dart**
+opens that file beside the source for comparison.
 The compiler is an AST-based implementation, not text rewriting.
 
 ## Development
@@ -77,9 +91,12 @@ reload the editor afterward.
 ## Editor
 
 [`editors/vscode`](editors/vscode) highlights `.quds` files, formats the open
-buffer with `quds format`, and shows diagnostics from that buffer. In this
-package it starts `dart run bin/quds.dart lsp`. Elsewhere it starts `quds lsp`.
-`quds.serverCommand` replaces that command.
+buffer with `quds format`, and shows diagnostics from that buffer. Hover shows
+the type under the cursor, and a getter/setter is labeled `property`, not as
+a function. F12 and Ctrl+click open that name's declaration in the `.quds` file. Semantic tokens keep that distinction in the highlighting. Above `main`, Run, Debug, and Profile start
+the program, stop on a breakpoint in the `.quds` file, and benchmark it. In this package it starts
+`dart run bin/quds.dart lsp`, including when only a file from the package is
+open. Elsewhere it starts `quds lsp`. `quds.serverCommand` replaces that command.
 
 See [supported grammar and limitations](docs/MVP_0.md),
 [validation results](docs/VALIDATION.md), [environment setup](docs/ENVIRONMENT.md),

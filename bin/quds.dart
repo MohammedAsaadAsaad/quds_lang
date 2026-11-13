@@ -3,8 +3,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:quds_lang/quds_lang.dart';
+import 'package:quds_lang/src/flutter_project.dart';
 
-void main(List<String> arguments) {
+Future<void> main(List<String> arguments) async {
   if (arguments.isEmpty) {
     _usage();
     return;
@@ -13,7 +14,7 @@ void main(List<String> arguments) {
     case 'build':
       _build(arguments);
     case 'run':
-      _run(arguments);
+      await _run(arguments);
     case 'analyze':
       _analyze(arguments);
     case 'test':
@@ -38,15 +39,33 @@ void main(List<String> arguments) {
       final session = LspSession();
       _serve(session.handle);
     case 'debug':
-      _serve((message) => LspExchange(respondDebug(message)));
+      _debug();
     default:
       _usage();
   }
 }
 
+/// Prints process output with generated `.dart` frames rewritten to `.quds`.
+void _writeQuds(
+    Object? outText, Object? errText, String? sourceMap, String generatedName) {
+  stdout.write(_atQuds(outText, sourceMap, generatedName));
+  stderr.write(_atQuds(errText, sourceMap, generatedName));
+}
+
+String _atQuds(Object? text, String? sourceMap, String generatedName) {
+  final value = text is String ? text : '';
+  if (sourceMap == null || value.isEmpty) return value;
+  final decoded = jsonDecode(sourceMap);
+  if (decoded is! Map) return value;
+  final data = Map<String, Object?>.from(decoded);
+  data['file'] = generatedName;
+  return mapStack(value, jsonEncode(data));
+}
+
 void _usage() {
   stderr.writeln(
       'Usage: quds <build|run|analyze|test|format|create|add|remove|get|doc|migrate|benchmark> ...');
+  stderr.writeln('       quds create flutter <name>');
   exitCode = 64;
 }
 
@@ -132,8 +151,8 @@ bool _writeTree(File input, Set<String> seen) {
   }
 }
 
-bool _emitGenerated(File input, Compilation result) {
-  final output = File('${input.path.substring(0, input.path.length - 5)}.dart');
+bool _emitGenerated(File input, Compilation result, {bool announce = true}) {
+  final output = _outputFile(input);
   final existing = output.existsSync() ? output.readAsStringSync() : null;
   if (existing != null && !existing.startsWith(_generatedHeader)) {
     stderr.writeln('Refusing to overwrite non-generated file: ${output.path}');
@@ -147,9 +166,10 @@ bool _emitGenerated(File input, Compilation result) {
   if (existing != null &&
       existing == result.dart &&
       _cacheFresh(cache, sources, outputDigest)) {
-    stdout.writeln('Unchanged ${output.path}');
+    if (announce) stdout.writeln('Unchanged ${output.path}');
     return true;
   }
+  output.parent.createSync(recursive: true);
   output.writeAsStringSync(result.dart);
   if (result.sourceMap != null) {
     File('${output.path}.map').writeAsStringSync(result.sourceMap!);
@@ -160,8 +180,38 @@ bool _emitGenerated(File input, Compilation result) {
     'output': outputDigest,
     'generated': [for (final model in result.models) model.fileName],
   }));
-  stdout.writeln('Built ${output.path}');
+  if (announce) stdout.writeln('Built ${output.path}');
   return true;
+}
+
+/// Generated Dart lives under the package's `.dart_tool/quds/out`, mirroring
+/// the source path. A lone file with no package root uses its own directory.
+File _outputFile(File input) {
+  final absolute = input.absolute;
+  final root = _packageRoot(absolute.parent);
+  var relative = absolute.path;
+  final prefix = root.path.endsWith(Platform.pathSeparator)
+      ? root.path
+      : '${root.path}${Platform.pathSeparator}';
+  if (relative.startsWith(prefix)) relative = relative.substring(prefix.length);
+  final dartName = relative.endsWith('.quds')
+      ? '${relative.substring(0, relative.length - 5)}.dart'
+      : '$relative.dart';
+  return File(
+      '${root.path}${Platform.pathSeparator}.dart_tool${Platform.pathSeparator}quds${Platform.pathSeparator}out${Platform.pathSeparator}$dartName');
+}
+
+Directory _packageRoot(Directory start) {
+  var current = start;
+  while (true) {
+    if (File('${current.path}/pubspec.yaml').existsSync() ||
+        File('${current.path}/quds.yaml').existsSync()) {
+      return current;
+    }
+    final parent = current.parent;
+    if (parent.path == current.path) return start;
+    current = parent;
+  }
 }
 
 File _cacheFile(File input) {
@@ -247,18 +297,21 @@ String _stamp(List<String> paths) {
   return buffer.toString();
 }
 
-void _run(List<String> arguments) {
+Future<void> _run(List<String> arguments) async {
   _requireQuds(arguments);
   if (exitCode != 0) return;
   final input = File(arguments[1]);
   try {
     final result = compile(input.readAsStringSync(), file: input.path);
+    if (_flutterPackage(input)) {
+      await _runFlutter(input, result);
+      return;
+    }
     final directory = Directory.systemTemp.createTempSync('quds-run-');
     final output = File('${directory.path}/main.dart')
       ..writeAsStringSync(result.dart);
     final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
-    stdout.write(run.stdout);
-    stderr.write(run.stderr);
+    _writeQuds(run.stdout, run.stderr, result.sourceMap, 'main.dart');
     exitCode = run.exitCode;
     directory.deleteSync(recursive: true);
   } on CompilerException catch (error) {
@@ -281,8 +334,7 @@ void _analyze(List<String> arguments) {
       ..writeAsStringSync(result.dart);
     final analysis =
         Process.runSync(Platform.resolvedExecutable, ['analyze', output.path]);
-    stdout.write(analysis.stdout);
-    stderr.write(analysis.stderr);
+    _writeQuds(analysis.stdout, analysis.stderr, result.sourceMap, 'main.dart');
     exitCode = analysis.exitCode;
     directory.deleteSync(recursive: true);
   } on CompilerException catch (error) {
@@ -320,8 +372,7 @@ void _test(List<String> arguments) {
     final directory = Directory.systemTemp.createTempSync('quds-test-');
     final output = File('${directory.path}/main.dart')..writeAsStringSync(dart);
     final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
-    stdout.write(run.stdout);
-    stderr.write(run.stderr);
+    _writeQuds(run.stdout, run.stderr, result.sourceMap, 'main.dart');
     exitCode = run.exitCode;
     directory.deleteSync(recursive: true);
   } on CompilerException catch (error) {
@@ -352,8 +403,18 @@ void _format(List<String> arguments) {
 }
 
 void _create(List<String> arguments) {
+  if (arguments.length >= 2 && arguments[1] == 'flutter') {
+    if (arguments.length != 3) {
+      stderr.writeln('Usage: quds create flutter <name>');
+      exitCode = 64;
+      return;
+    }
+    _createFlutter(arguments[2]);
+    return;
+  }
   if (arguments.length != 2) {
     stderr.writeln('Usage: quds create <name>');
+    stderr.writeln('       quds create flutter <name>');
     exitCode = 64;
     return;
   }
@@ -370,6 +431,143 @@ void _create(List<String> arguments) {
       '  sdk: ">=3.3.0 <4.0.0"\n');
   File('$name/main.quds').writeAsStringSync('main():\n  print "$name"\n');
   stdout.writeln('Created $name');
+}
+
+void _createFlutter(String name) {
+  if (!RegExp(r'^[a-z][a-z0-9_]*$').hasMatch(name)) {
+    stderr.writeln(
+        'A Flutter project name must start with a letter and use only lowercase letters, digits, and underscores: $name');
+    exitCode = 64;
+    return;
+  }
+  if (Directory(name).existsSync()) {
+    stderr.writeln('Directory already exists: $name');
+    exitCode = 73;
+    return;
+  }
+  final flutter = _flutterExecutable();
+  if (flutter == null) {
+    stderr.writeln('Flutter was not found. Install Flutter and retry.');
+    exitCode = 1;
+    return;
+  }
+  final created = Process.runSync(flutter, ['create', name]);
+  stdout.write(created.stdout);
+  stderr.write(created.stderr);
+  if (created.exitCode != 0) {
+    exitCode = created.exitCode;
+    return;
+  }
+  final mainDart = File('$name/lib/main.dart');
+  if (mainDart.existsSync()) mainDart.deleteSync();
+  final widgetTest = File('$name/test/widget_test.dart');
+  if (widgetTest.existsSync()) widgetTest.deleteSync();
+  Directory('$name/lib').createSync(recursive: true);
+  File('$name/lib/main.quds').writeAsStringSync(flutterApp);
+  File('$name/quds.yaml').writeAsStringSync('language: 1.2\nname: $name\n');
+  _ignoreGenerated(name);
+  stdout.writeln('Created Flutter project $name');
+  stdout.writeln('Run it with: quds run $name/lib/main.quds');
+}
+
+void _ignoreGenerated(String name) {
+  final ignore = File('$name/.gitignore');
+  const entry = 'lib/quds_gen/';
+  if (!ignore.existsSync()) {
+    ignore.writeAsStringSync('$entry\n');
+    return;
+  }
+  final text = ignore.readAsStringSync();
+  if (text.contains(entry)) return;
+  final separator = text.isEmpty || text.endsWith('\n') ? '' : '\n';
+  ignore.writeAsStringSync('$text$separator$entry\n');
+}
+
+bool _flutterPackage(File input) {
+  final root = _packageRoot(input.absolute.parent);
+  final pubspec = File('${root.path}${Platform.pathSeparator}pubspec.yaml');
+  if (!pubspec.existsSync()) return false;
+  return RegExp(r'^\s*sdk:\s*flutter\s*(?:#.*)?$', multiLine: true)
+      .hasMatch(pubspec.readAsStringSync());
+}
+
+Future<void> _runFlutter(File input, Compilation result) async {
+  final flutter = _flutterExecutable();
+  if (flutter == null) {
+    stderr.writeln('Flutter was not found. Install Flutter and retry.');
+    exitCode = 1;
+    return;
+  }
+  final root = _packageRoot(input.absolute.parent);
+  final target = _flutterGenerated(input, root);
+  if (target.existsSync() &&
+      !target.readAsStringSync().startsWith(_generatedHeader)) {
+    stderr.writeln('Refusing to overwrite non-generated file: ${target.path}');
+    exitCode = 73;
+    return;
+  }
+  target.parent.createSync(recursive: true);
+  target.writeAsStringSync(result.dart);
+  final relative = _relativePosix(root, target);
+  stdout.writeln('Built $relative');
+  final process = await Process.start(
+    flutter,
+    ['run', '-t', relative],
+    workingDirectory: root.path,
+    mode: ProcessStartMode.inheritStdio,
+  );
+  exitCode = await process.exitCode;
+}
+
+File _flutterGenerated(File input, Directory root) {
+  var relative = _relativePosix(root, input.absolute);
+  if (relative.endsWith('.quds')) {
+    relative = '${relative.substring(0, relative.length - 5)}.dart';
+  } else {
+    relative = '$relative.dart';
+  }
+  const libPrefix = 'lib/';
+  final under = relative.startsWith(libPrefix)
+      ? 'lib/quds_gen/${relative.substring(libPrefix.length)}'
+      : 'lib/quds_gen/$relative';
+  return File(_join(root.path, under));
+}
+
+String _relativePosix(Directory root, File file) {
+  final prefix = root.path.endsWith(Platform.pathSeparator)
+      ? root.path
+      : '${root.path}${Platform.pathSeparator}';
+  final path = file.absolute.path;
+  final relative =
+      path.startsWith(prefix) ? path.substring(prefix.length) : path;
+  return relative.replaceAll(Platform.pathSeparator, '/');
+}
+
+String _join(String root, String relative) {
+  final tail = relative.replaceAll('/', Platform.pathSeparator);
+  if (root.endsWith(Platform.pathSeparator)) return '$root$tail';
+  return '$root${Platform.pathSeparator}$tail';
+}
+
+String? _flutterExecutable() {
+  final found = Process.runSync('which', ['flutter']);
+  if (found.exitCode == 0) {
+    final path = (found.stdout as String).trim();
+    if (path.isNotEmpty) return path.split('\n').first;
+  }
+  final root = Platform.environment['FLUTTER_ROOT'];
+  final home = Platform.environment['HOME'];
+  final candidates = [
+    if (root != null && root.isNotEmpty) '$root/bin/flutter',
+    if (home != null && home.isNotEmpty)
+      '$home/development/flutter/bin/flutter',
+    if (home != null && home.isNotEmpty) '$home/flutter/bin/flutter',
+    '/snap/bin/flutter',
+  ];
+  for (final path in candidates) {
+    if (File(path).existsSync()) return path;
+  }
+  return null;
 }
 
 void _pub(String command, List<String> arguments) {
@@ -500,7 +698,11 @@ void _benchmark(List<String> arguments) {
           ['run', '--no-enable-asserts', dart.path]);
       watch.stop();
       if (debug.exitCode != 0 || release.exitCode != 0) {
-        stderr.write(debug.exitCode != 0 ? debug.stderr : release.stderr);
+        stderr.write(_atQuds(
+          debug.exitCode != 0 ? debug.stderr : release.stderr,
+          result.sourceMap,
+          'bench.dart',
+        ));
         exitCode = debug.exitCode != 0 ? debug.exitCode : release.exitCode;
         return;
       }
@@ -615,6 +817,96 @@ void _migrate(List<String> arguments) {
     file.writeAsStringSync('language: 1.2\n$source');
   }
   stdout.writeln('Migrated $path to language 1.2');
+}
+
+/// Proxies the Debug Adapter Protocol to `dart debug_adapter`.
+///
+/// A `.quds` program is built first. Breakpoints and stopped frames use the
+/// `.quds` line. The Dart adapter debugs the generated file.
+Future<void> _debug() async {
+  final translator = DebugTranslator(build: _debugBuild);
+  final child = await Process.start(
+    Platform.resolvedExecutable,
+    ['debug_adapter'],
+    mode: ProcessStartMode.normal,
+  );
+  child.stderr.listen(stderr.add);
+  var outbound = Future<void>.value();
+  void write(Map<String, dynamic> message) {
+    outbound = outbound.then((_) async {
+      stdout.write(encodeFrame(message));
+      await stdout.flush();
+    });
+  }
+
+  var inbound = Future<void>.value();
+  final fromAdapter = _readFrames(child.stdout).listen((message) {
+    write(translator.present(message));
+  });
+  final fromEditor = _readFrames(stdin).listen((message) {
+    final action = translator.accept(message);
+    if (action.reply != null) write(action.reply!);
+    if (action.message != null) {
+      inbound = inbound.then((_) async {
+        child.stdin.write(encodeFrame(action.message));
+        await child.stdin.flush();
+      });
+    }
+  });
+  await fromEditor.asFuture<void>();
+  await inbound;
+  await outbound;
+  child.kill();
+  await fromAdapter.cancel();
+}
+
+DebugBinary? _debugBuild(String qudsPath, void Function(String message) fail) {
+  final input = File(qudsPath);
+  if (!input.existsSync()) {
+    fail('No such file: $qudsPath');
+    return null;
+  }
+  final absolute = input.absolute.path;
+  try {
+    final result = compile(input.readAsStringSync(), file: absolute);
+    final saved = exitCode;
+    if (!_emitGenerated(input, result, announce: false)) {
+      fail('Quds could not write the generated Dart for $absolute');
+      return null;
+    }
+    exitCode = saved;
+    final map = result.sourceMap ?? '';
+    return DebugBinary(absolute, _outputFile(input).path, map);
+  } on CompilerException catch (error) {
+    fail('$error');
+    return null;
+  }
+}
+
+Stream<Map<String, dynamic>> _readFrames(Stream<List<int>> input) async* {
+  final buffer = <int>[];
+  await for (final chunk in input) {
+    buffer.addAll(chunk);
+    while (true) {
+      final headerEnd = _headerEnd(buffer);
+      if (headerEnd < 0) break;
+      final header = utf8.decode(buffer.sublist(0, headerEnd));
+      final match = RegExp(r'Content-Length: (\d+)').firstMatch(header);
+      if (match == null) {
+        stderr.writeln('Expected a Content-Length header');
+        return;
+      }
+      final length = int.parse(match.group(1)!);
+      final start = headerEnd + 4;
+      if (buffer.length < start + length) break;
+      final body = utf8.decode(buffer.sublist(start, start + length));
+      buffer.removeRange(0, start + length);
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) continue;
+      yield decoded
+          .map((key, value) => MapEntry(key.toString(), value as dynamic));
+    }
+  }
 }
 
 Future<void> _serve(LspExchange Function(Map message) respond) async {

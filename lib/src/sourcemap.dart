@@ -60,6 +60,63 @@ String? sourceMapFor(
   return encodeSourceMap(generatedFile, sourceFile, emitter.mappings);
 }
 
+/// One original position for each generated line that has a mapping.
+class SourcePositions {
+  SourcePositions(this.byGeneratedLine);
+
+  /// Generated line, one-based, to source path, source line, and column.
+  final Map<int, (String, int, int)> byGeneratedLine;
+
+  static SourcePositions parse(String sourceMap) {
+    final data = jsonDecode(sourceMap) as Map<String, Object?>;
+    final sources = (data['sources'] as List).cast<String>();
+    final sections = (data['mappings'] as String).split(';');
+    final byLine = <int, (String, int, int)>{};
+    var sourceIndex = 0;
+    var sourceLine = 0;
+    var sourceColumn = 0;
+    for (var i = 0; i < sections.length; i++) {
+      for (final segment in sections[i].split(',')) {
+        if (segment.isEmpty) continue;
+        final cursor = [0];
+        final values = <int>[];
+        while (cursor[0] < segment.length) {
+          values.add(_readVlq(segment, cursor));
+        }
+        if (values.length < 4) continue;
+        sourceIndex += values[1];
+        sourceLine += values[2];
+        sourceColumn += values[3];
+        byLine[i + 1] = (
+          sources[sourceIndex],
+          sourceLine + 1,
+          sourceColumn + 1,
+        );
+      }
+    }
+    return SourcePositions(byLine);
+  }
+
+  (String, int, int)? original(int generatedLine) =>
+      byGeneratedLine[generatedLine];
+
+  /// The first generated line that came from [sourceLine] in [source].
+  int? generated(String source, int sourceLine) {
+    int? found;
+    for (final entry in byGeneratedLine.entries) {
+      final position = entry.value;
+      if (position.$2 != sourceLine || !_pathsMatch(position.$1, source)) {
+        continue;
+      }
+      if (found == null || entry.key < found) found = entry.key;
+    }
+    return found;
+  }
+}
+
+bool _pathsMatch(String left, String right) =>
+    left == right || left.endsWith('/$right') || right.endsWith('/$left');
+
 /// Rewrites each frame in [stack] that hits [sourceMap].
 ///
 /// A frame whose path ends with the map's `file` and whose generated line has
@@ -70,35 +127,11 @@ String? sourceMapFor(
 String mapStack(String stack, String sourceMap) {
   final data = jsonDecode(sourceMap) as Map<String, Object?>;
   final file = data['file'] as String;
-  final sources = (data['sources'] as List).cast<String>();
-  final sections = (data['mappings'] as String).split(';');
-  final byLine = <int, (String, int, int)>{};
-  var sourceIndex = 0;
-  var sourceLine = 0;
-  var sourceColumn = 0;
-  for (var i = 0; i < sections.length; i++) {
-    for (final segment in sections[i].split(',')) {
-      if (segment.isEmpty) continue;
-      final cursor = [0];
-      final values = <int>[];
-      while (cursor[0] < segment.length) {
-        values.add(_readVlq(segment, cursor));
-      }
-      if (values.length < 4) continue;
-      sourceIndex += values[1];
-      sourceLine += values[2];
-      sourceColumn += values[3];
-      byLine[i + 1] = (
-        sources[sourceIndex],
-        sourceLine + 1,
-        sourceColumn + 1,
-      );
-    }
-  }
+  final positions = SourcePositions.parse(sourceMap);
   return stack.replaceAllMapped(_frame, (match) {
     final path = match.group(1)!;
     if (!_sameFile(path, file)) return match.group(0)!;
-    final hit = byLine[int.parse(match.group(2)!)];
+    final hit = positions.original(int.parse(match.group(2)!));
     if (hit == null) return match.group(0)!;
     return '${hit.$1}:${hit.$2}:${hit.$3}';
   });

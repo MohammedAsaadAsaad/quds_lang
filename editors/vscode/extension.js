@@ -18,6 +18,48 @@ function activate(context) {
         return client.format(document);
       },
     }),
+    vscode.languages.registerHoverProvider(languageId, {
+      provideHover(document, position, token) {
+        return client.hover(document, position, token);
+      },
+    }),
+    vscode.languages.registerDefinitionProvider(languageId, {
+      provideDefinition(document, position, token) {
+        return client.definition(document, position, token);
+      },
+    }),
+    vscode.languages.registerCompletionItemProvider(
+      languageId,
+      {
+        provideCompletionItems(document, position, token) {
+          return client.complete(document, position, token);
+        },
+      },
+      '.',
+    ),
+    vscode.languages.registerCodeLensProvider(languageId, {
+      provideCodeLenses(document) {
+        return client.codeLenses(document);
+      },
+    }),
+    vscode.languages.registerDocumentSemanticTokensProvider(
+      languageId,
+      {
+        provideDocumentSemanticTokens(document) {
+          return client.semanticTokens(document);
+        },
+      },
+      new vscode.SemanticTokensLegend(
+        ['function', 'method', 'property', 'variable', 'parameter', 'class'],
+        ['declaration', 'readonly'],
+      ),
+    ),
+    vscode.commands.registerCommand('quds.run', (uri) => runTool('run', uri)),
+    vscode.commands.registerCommand('quds.debug', (uri) => debugProgram(uri)),
+    vscode.commands.registerCommand('quds.showDart', (uri) => showDart(uri)),
+    vscode.commands.registerCommand('quds.profile', (uri) =>
+      runTool('benchmark', uri),
+    ),
     vscode.workspace.onDidOpenTextDocument((document) => client.open(document)),
     vscode.workspace.onDidChangeTextDocument((event) =>
       client.change(event.document),
@@ -26,6 +68,22 @@ function activate(context) {
       client.close(document),
     ),
     vscode.commands.registerCommand('quds.restartServer', () => client.restart()),
+    vscode.debug.registerDebugAdapterDescriptorFactory('quds', {
+      createDebugAdapterDescriptor(session) {
+        const program = session.configuration.program;
+        const spec = launchSpec(
+          typeof program === 'string' && program ? program : process.cwd(),
+          'debug',
+        );
+        if (!spec) {
+          throw new Error('Quds could not find dart or the quds command.');
+        }
+        return new vscode.DebugAdapterExecutable(spec.command[0], spec.command.slice(1, -1), {
+          cwd: spec.cwd,
+          env: spec.env,
+        });
+      },
+    }),
   );
   for (const document of vscode.workspace.textDocuments) {
     client.open(document);
@@ -33,24 +91,256 @@ function activate(context) {
   client.start();
 }
 
+function completionItem(entry) {
+  const kind = Math.max(0, Number(entry.kind || 1) - 1);
+  const item = new vscode.CompletionItem(entry.label, kind);
+  if (entry.detail) item.detail = entry.detail;
+  if (entry.filterText) item.filterText = entry.filterText;
+  if (entry.sortText) item.sortText = entry.sortText;
+  if (entry.commitCharacters) item.commitCharacters = entry.commitCharacters;
+  const edit = entry.textEdit;
+  if (edit && edit.range) {
+    item.range = new vscode.Range(
+      edit.range.start.line,
+      edit.range.start.character,
+      edit.range.end.line,
+      edit.range.end.character,
+    );
+  }
+  const text = edit && edit.newText ? edit.newText : entry.insertText;
+  if (entry.insertTextFormat === 2 && text) item.insertText = new vscode.SnippetString(text);
+  else if (text) item.insertText = text;
+  return item;
+}
+
 function deactivate() {}
 
-function serverCommand() {
+function serverCommand(documentPath) {
   const configured = vscode.workspace.getConfiguration(languageId).get('serverCommand');
   if (Array.isArray(configured) && configured.length > 0) {
-    return { command: configured.map(String), cwd: undefined };
+    return { command: configured.map(String), cwd: undefined, env: process.env };
   }
+  const starts = [];
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    const root = folder.uri.fsPath;
-    const bin = path.join(root, 'bin', 'quds.dart');
-    const pubspec = path.join(root, 'pubspec.yaml');
-    if (!fs.existsSync(bin) || !fs.existsSync(pubspec)) continue;
-    const text = fs.readFileSync(pubspec, 'utf8');
-    if (/^name:\s*quds_lang\s*$/m.test(text)) {
-      return { command: ['dart', 'run', bin, 'lsp'], cwd: root };
-    }
+    starts.push(folder.uri.fsPath);
   }
-  return { command: ['quds', 'lsp'], cwd: undefined };
+  if (documentPath) starts.push(path.dirname(documentPath));
+  const dart = resolveDart();
+  for (const start of starts) {
+    const root = packageRoot(start);
+    if (!root || !dart) continue;
+    return {
+      command: [dart, 'run', path.join(root, 'bin', 'quds.dart'), 'lsp'],
+      cwd: root,
+      env: toolEnv(dart),
+    };
+  }
+  const quds = resolveQuds();
+  if (quds && dart) {
+    return { command: [quds, 'lsp'], cwd: undefined, env: toolEnv(dart) };
+  }
+  return { command: [quds || 'quds', 'lsp'], cwd: undefined, env: process.env };
+}
+
+function resolveDart() {
+  const home = process.env.HOME || '';
+  const flutterRoot = process.env.FLUTTER_ROOT || '';
+  const candidates = [];
+  for (const dir of (process.env.PATH || '').split(':')) {
+    if (dir) candidates.push(path.join(dir, 'dart'));
+  }
+  candidates.push(
+    flutterRoot ? path.join(flutterRoot, 'bin', 'dart') : '',
+    path.join(home, 'development', 'flutter', 'bin', 'dart'),
+    path.join(home, 'flutter', 'bin', 'dart'),
+    path.join(home, 'snap', 'flutter', 'common', 'flutter', 'bin', 'dart'),
+    '/usr/lib/dart/bin/dart',
+    '/usr/bin/dart',
+  );
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function resolveQuds() {
+  for (const dir of (process.env.PATH || '').split(':')) {
+    if (!dir) continue;
+    const candidate = path.join(dir, 'quds');
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  const home = process.env.HOME || '';
+  const pub = path.join(home, '.pub-cache', 'bin', 'quds');
+  return fs.existsSync(pub) ? pub : null;
+}
+
+function packageRoot(start) {
+  let dir = start;
+  const seen = new Set();
+  while (dir && !seen.has(dir)) {
+    seen.add(dir);
+    const bin = path.join(dir, 'bin', 'quds.dart');
+    const pubspec = path.join(dir, 'pubspec.yaml');
+    if (fs.existsSync(bin) && fs.existsSync(pubspec)) {
+      const text = fs.readFileSync(pubspec, 'utf8');
+      if (/^name:\s*quds_lang\s*$/m.test(text)) return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function toolEnv(dart) {
+  const home = process.env.HOME || '';
+  const prefix = [path.dirname(dart), path.join(home, '.pub-cache', 'bin')]
+    .filter(Boolean)
+    .join(':');
+  return { ...process.env, PATH: `${prefix}:${process.env.PATH || ''}` };
+}
+
+function quote(value) {
+  return `'${String(value).replaceAll("'", `'\\''`)}'`;
+}
+
+function launchSpec(file, verb) {
+  const dart = resolveDart();
+  const root = packageRoot(path.dirname(file));
+  if (root && dart) {
+    return {
+      command: [dart, 'run', path.join(root, 'bin', 'quds.dart'), verb, file],
+      cwd: root,
+      env: toolEnv(dart),
+    };
+  }
+  const quds = resolveQuds();
+  if (quds && dart) {
+    return { command: [quds, verb, file], cwd: path.dirname(file), env: toolEnv(dart) };
+  }
+  return null;
+}
+
+function execSpec(spec) {
+  return new Promise((resolve) => {
+    const child = spawn(spec.command[0], spec.command.slice(1), {
+      cwd: spec.cwd,
+      env: spec.env,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => resolve({ code: 1, stdout, stderr: error.message }));
+    child.on('exit', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+  });
+}
+
+async function runTool(verb, uriArgument) {
+  const uri = targetUri(uriArgument);
+  if (!uri || uri.scheme !== 'file') return;
+  const document = await vscode.workspace.openTextDocument(uri);
+  if (document.isDirty) await document.save();
+  const spec = launchSpec(uri.fsPath, verb);
+  if (!spec) {
+    vscode.window.showErrorMessage('Quds could not find dart or the quds command.');
+    return;
+  }
+  let terminal = vscode.window.terminals.find((item) => item.name === 'Quds');
+  if (!terminal) {
+    terminal = vscode.window.createTerminal({ name: 'Quds', cwd: spec.cwd, env: spec.env });
+  }
+  terminal.show();
+  terminal.sendText(spec.command.map(quote).join(' '));
+}
+
+async function debugProgram(uriArgument) {
+  const uri = targetUri(uriArgument);
+  if (!uri || uri.scheme !== 'file') return;
+  const document = await vscode.workspace.openTextDocument(uri);
+  if (document.isDirty) await document.save();
+  const file = uri.fsPath;
+  const folder = vscode.workspace.getWorkspaceFolder(uri);
+  let started = false;
+  try {
+    started = await vscode.debug.startDebugging(folder, {
+      type: 'quds',
+      name: 'Debug Quds',
+      request: 'launch',
+      program: file,
+      cwd: path.dirname(file),
+    });
+  } catch (error) {
+    started = false;
+  }
+  if (!started) {
+    vscode.window.showErrorMessage('Quds could not start the debugger.');
+  }
+}
+
+function packageRootOf(file) {
+  let dir = path.dirname(file);
+  const start = dir;
+  const seen = new Set();
+  while (dir && !seen.has(dir)) {
+    seen.add(dir);
+    if (
+      fs.existsSync(path.join(dir, 'pubspec.yaml')) ||
+      fs.existsSync(path.join(dir, 'quds.yaml'))
+    ) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return start;
+}
+
+function outputDart(file) {
+  const root = packageRootOf(file);
+  const relative = path.relative(root, file).replace(/\.quds$/, '.dart');
+  return path.join(root, '.dart_tool', 'quds', 'out', relative);
+}
+
+async function showDart(uriArgument) {
+  const uri = targetUri(uriArgument);
+  if (!uri || uri.scheme !== 'file') return;
+  const document = await vscode.workspace.openTextDocument(uri);
+  if (document.isDirty) await document.save();
+  const file = uri.fsPath;
+  const spec = launchSpec(file, 'build');
+  if (!spec) {
+    vscode.window.showErrorMessage('Quds could not find dart or the quds command.');
+    return;
+  }
+  const built = await execSpec(spec);
+  if (built.code !== 0) {
+    const detail = `${built.stderr}${built.stdout}`.trim();
+    vscode.window.showErrorMessage(detail || 'Quds build failed.');
+    return;
+  }
+  const dartFile = outputDart(file);
+  await vscode.commands.executeCommand(
+    'vscode.diff',
+    uri,
+    vscode.Uri.file(dartFile),
+    `${path.basename(file)} ↔ ${path.basename(dartFile)}`,
+  );
+}
+
+function targetUri(uriArgument) {
+  if (typeof uriArgument === 'string') return vscode.Uri.parse(uriArgument);
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.languageId !== languageId) {
+    vscode.window.showErrorMessage('Open a .quds file first.');
+    return null;
+  }
+  return editor.document.uri;
 }
 
 class QudsClient {
@@ -61,6 +351,7 @@ class QudsClient {
     this.nextId = 1;
     this.buffer = Buffer.alloc(0);
     this.documents = new Map();
+    this.synced = new Map();
     this.timers = new Map();
     this.child = null;
     this.ready = false;
@@ -69,9 +360,14 @@ class QudsClient {
 
   start() {
     if (this.starting) return this.starting;
-    const { command, cwd } = serverCommand();
+    const sample = [...this.documents.values()][0];
+    const { command, cwd, env } = serverCommand(sample && sample.uri.fsPath);
     this.output.appendLine(`Starting ${command.join(' ')}`);
-    this.child = spawn(command[0], command.slice(1), { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    this.child = spawn(command[0], command.slice(1), {
+      cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     this.child.stdout.on('data', (chunk) => this.onData(chunk));
     this.child.stderr.on('data', (chunk) => this.output.append(chunk.toString()));
     this.child.on('error', (error) => {
@@ -88,11 +384,14 @@ class QudsClient {
     this.starting = this.request('initialize', {
       processId: process.pid,
       capabilities: {
-        textDocument: {
-          synchronization: { dynamicRegistration: false },
-          formatting: { dynamicRegistration: false },
-          publishDiagnostics: {},
-        },
+          textDocument: {
+            synchronization: { dynamicRegistration: false },
+            formatting: { dynamicRegistration: false },
+            hover: { dynamicRegistration: false },
+            codeLens: { dynamicRegistration: false },
+            semanticTokens: { dynamicRegistration: false },
+            publishDiagnostics: {},
+          },
       },
     })
       .then(() => {
@@ -151,6 +450,7 @@ class QudsClient {
     if (document.languageId !== languageId) return;
     const uri = document.uri.toString();
     this.documents.delete(uri);
+    this.synced.delete(uri);
     const timer = this.timers.get(uri);
     if (timer) clearTimeout(timer);
     this.timers.delete(uri);
@@ -160,18 +460,135 @@ class QudsClient {
     }
   }
 
-  async format(document) {
+  async complete(document, position, token) {
+    try {
+      await this.sync(document);
+      if (token && token.isCancellationRequested) return undefined;
+      const result = await this.request('textDocument/completion', {
+        textDocument: { uri: document.uri.toString() },
+        position: { line: position.line, character: position.character },
+      });
+      if (token && token.isCancellationRequested) return undefined;
+      const raw = result && Array.isArray(result.items) ? result.items : [];
+      const items = raw.map((entry) => completionItem(entry));
+      return new vscode.CompletionList(items, !!(result && result.isIncomplete));
+    } catch (error) {
+      this.output.appendLine(error.message);
+      return undefined;
+    }
+  }
+
+  async definition(document, position, token) {
+    try {
+      await this.sync(document);
+      if (token && token.isCancellationRequested) return undefined;
+      const result = await this.request('textDocument/definition', {
+        textDocument: { uri: document.uri.toString() },
+        position: { line: position.line, character: position.character },
+      });
+      if (token && token.isCancellationRequested) return undefined;
+      const range = result && result.range;
+      if (!result || !result.uri || !range || !range.start || !range.end) {
+        return undefined;
+      }
+      return new vscode.Location(
+        vscode.Uri.parse(result.uri),
+        new vscode.Range(
+          range.start.line,
+          range.start.character,
+          range.end.line,
+          range.end.character,
+        ),
+      );
+    } catch (error) {
+      this.output.appendLine(error.message);
+      return undefined;
+    }
+  }
+
+  async hover(document, position, token) {
+    try {
+      await this.sync(document);
+      if (token && token.isCancellationRequested) return undefined;
+      const result = await this.request('textDocument/hover', {
+        textDocument: { uri: document.uri.toString() },
+        position: { line: position.line, character: position.character },
+      });
+      if (token && token.isCancellationRequested) return undefined;
+      const contents = result && result.contents;
+      const value = typeof contents === 'string' ? contents : contents && contents.value;
+      if (!value) return undefined;
+      const markdown = new vscode.MarkdownString();
+      markdown.appendCodeblock(value, 'quds');
+      return new vscode.Hover(markdown);
+    } catch (error) {
+      this.output.appendLine(error.message);
+      return undefined;
+    }
+  }
+
+  async codeLenses(document) {
+    try {
+      await this.sync(document);
+      const lenses = await this.request('textDocument/codeLens', {
+        textDocument: { uri: document.uri.toString() },
+      });
+      if (!Array.isArray(lenses)) return [];
+      return lenses.map((lens) => {
+        const command = lens.command || {};
+        return new vscode.CodeLens(
+          new vscode.Range(
+            lens.range.start.line,
+            lens.range.start.character,
+            lens.range.end.line,
+            lens.range.end.character,
+          ),
+          {
+            title: command.title,
+            command: command.command,
+            arguments: command.arguments,
+          },
+        );
+      });
+    } catch (error) {
+      this.output.appendLine(error.message);
+      return [];
+    }
+  }
+
+  async semanticTokens(document) {
+    try {
+      await this.sync(document);
+      const result = await this.request('textDocument/semanticTokens/full', {
+        textDocument: { uri: document.uri.toString() },
+      });
+      const data = result && result.data;
+      if (!Array.isArray(data)) return new vscode.SemanticTokens(new Uint32Array());
+      return new vscode.SemanticTokens(new Uint32Array(data));
+    } catch (error) {
+      this.output.appendLine(error.message);
+      return new vscode.SemanticTokens(new Uint32Array());
+    }
+  }
+
+  async sync(document) {
     const uri = document.uri.toString();
     const timer = this.timers.get(uri);
     if (timer) {
       clearTimeout(timer);
       this.timers.delete(uri);
     }
+    await this.starting;
+    if (!this.documents.has(uri)) return;
+    if (this.synced.get(uri) === document.version) return;
+    this.sendChange(document);
+  }
+
+  async format(document) {
     try {
-      await this.starting;
-      this.sendChange(document);
+      await this.sync(document);
       const edits = await this.request('textDocument/formatting', {
-        textDocument: { uri },
+        textDocument: { uri: document.uri.toString() },
         options: { tabSize: 2, insertSpaces: true },
       });
       if (!Array.isArray(edits)) return [];
@@ -194,6 +611,7 @@ class QudsClient {
   }
 
   sendOpen(document) {
+    this.synced.set(document.uri.toString(), document.version);
     this.notify('textDocument/didOpen', {
       textDocument: {
         uri: document.uri.toString(),
@@ -205,6 +623,7 @@ class QudsClient {
   }
 
   sendChange(document) {
+    this.synced.set(document.uri.toString(), document.version);
     this.notify('textDocument/didChange', {
       textDocument: { uri: document.uri.toString(), version: document.version },
       contentChanges: [{ text: document.getText() }],

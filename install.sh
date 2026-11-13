@@ -104,7 +104,7 @@ install_cli() {
   (
     cd "$check"
     quds build sum.quds
-    dart run sum.dart
+    dart run .dart_tool/quds/out/sum.dart
   )
   rm -rf "$check"
 }

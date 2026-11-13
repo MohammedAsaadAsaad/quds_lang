@@ -153,9 +153,11 @@ main():
     final cli = await Process.run(Platform.resolvedExecutable,
         ['run', 'bin/quds.dart', 'build', source.path]);
     expect(cli.exitCode, 0, reason: cli.stderr.toString());
-    final dart = File('${directory.path}/app.dart').readAsStringSync();
+    final dart = File('${directory.path}/.dart_tool/quds/out/app.dart')
+        .readAsStringSync();
     expect(dart, compile(source.readAsStringSync(), file: source.path).dart);
-    final map = File('${directory.path}/app.dart.map').readAsStringSync();
+    final map = File('${directory.path}/.dart_tool/quds/out/app.dart.map')
+        .readAsStringSync();
     expect(map, contains('"version":3'));
     expect(map, contains('app.quds'));
   });

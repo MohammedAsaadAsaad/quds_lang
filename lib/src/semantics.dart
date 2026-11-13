@@ -19,10 +19,14 @@ class Symbol {
       this.reactive = '',
       this.field = false,
       this.library = '',
-      this.namespace});
+      this.namespace,
+      this.external = false});
   final String name, dartName;
   String type;
   final bool mutable, constant, late, lateOpen, field;
+
+  /// A name that comes from a Dart library. Calls keep the written arguments.
+  final bool external;
 
   /// Names brought in by `use ... as prefix`. Null for every other symbol.
   final Map<String, Symbol>? namespace;
@@ -111,6 +115,9 @@ class SemanticModel {
   /// Prelude types removed by `use quds:core show` or `hide`.
   final hiddenTypes = <String>{};
 
+  /// Module scope after a successful analysis, including imports and prelude.
+  final moduleSymbols = <String, Symbol>{};
+
   /// Dart import URI for a `package:` or `generated:` library that was loaded.
   final resolvedImports = <ImportDeclaration, String>{};
 
@@ -179,6 +186,9 @@ class Analyzer {
   final _fieldSymbols = <Symbol>{};
   var _readonlyMethod = false;
   var _ffi = false;
+
+  /// A `package:` URI ending in `.dart` was imported. Unknown names pass to Dart.
+  var _externalDart = false;
   String? _doType;
   int _doDepth = 0;
   Never error(String code, String message, Node node) =>
@@ -305,6 +315,7 @@ class Analyzer {
       error('E903', 'part of does not match the library', mismatched);
     }
     _checkSingletonCycles();
+    model.moduleSymbols.addAll(_global.symbols);
     final main = _global.symbols['main']?.function;
     if (main != null &&
         (main.parameters.isNotEmpty ||
@@ -1011,6 +1022,19 @@ class Analyzer {
     }
     if (node.uri == 'dart:ffi') _ffi = true;
     if (node.uri.startsWith('dart:')) return;
+    if (node.uri.startsWith('package:') && node.uri.endsWith('.dart')) {
+      _externalDart = true;
+      if (node.prefix != null) {
+        final space = _space(node.prefix!, node);
+        final current = _global.symbols[node.prefix!]!;
+        if (!current.external) {
+          _global.symbols[node.prefix!] = Symbol(
+              current.name, current.dartName, current.type,
+              namespace: space, external: true);
+        }
+      }
+      return;
+    }
     if (node.uri.startsWith('package:') || node.uri.startsWith('generated:')) {
       _bindPackage(node);
       return;
@@ -1564,6 +1588,18 @@ class Analyzer {
         }
         return;
       }
+    }
+    if (_externalDart) {
+      final openExternal = type.indexOf('<');
+      if (openExternal > 0 && type.endsWith('>')) {
+        final inner = type.substring(openExternal + 1, type.length - 1);
+        if (inner.trim().isNotEmpty) {
+          for (final part in _splitTypes(inner)) {
+            validateType(part, node, allowVoid: false);
+          }
+        }
+      }
+      return;
     }
     fail('Unsupported type: $type', node);
   }
@@ -2468,6 +2504,7 @@ class Analyzer {
     from = model.resolve(from);
     to = model.resolve(to);
     if (from == to || from == '*' || to == 'dynamic') return true;
+    if (from == 'dynamic' && to != 'void') return true;
     if (to == 'Object' && from != 'void') return true;
     if (to.contains(' & ')) {
       return to.split(' & ').every((part) => compatible(from, part.trim()));
@@ -2960,7 +2997,14 @@ class Analyzer {
         model.references[node.object] = owner;
         model.types[node.object] = 'prefix';
         final found = owner.namespace![node.name];
-        if (found == null) fail('Name ${node.name} is not defined', node);
+        if (found == null) {
+          if (!owner.external) fail('Name ${node.name} is not defined', node);
+          final created =
+              Symbol(node.name, node.name, 'dynamic', external: true);
+          owner.namespace![node.name] = created;
+          model.references[node] = created;
+          return 'dynamic';
+        }
         model.references[node] = found;
         return found.type;
       }
@@ -3679,7 +3723,12 @@ class Analyzer {
         return member;
       }
     }
-    if (symbol == null) fail('Undefined symbol: ${node.name}', node);
+    if (symbol == null) {
+      if (!_externalDart) fail('Undefined symbol: ${node.name}', node);
+      model.references[node] =
+          Symbol(node.name, node.name, 'dynamic', external: true);
+      return 'dynamic';
+    }
     if (symbol.namespace != null) fail('A prefix is not a value', node);
     if (symbol.field && _thisType != null) {
       final current = _global.symbols[_thisType!]?.classDeclaration;
@@ -3822,12 +3871,25 @@ class Analyzer {
     return returned;
   }
 
+  /// A call whose target is a Dart library. Arguments stay in source order.
+  String _passExternal(CallExpression node, Symbol symbol) {
+    model.references[node.callee] = symbol;
+    for (final argument in node.arguments) {
+      expression(argument.value);
+    }
+    return 'dynamic';
+  }
+
   String _callPrefixed(CallExpression node, MemberAccess callee, Symbol owner) {
     final id = callee.object as Identifier;
     model.references[id] = owner;
     model.types[id] = 'prefix';
     final found = owner.namespace![callee.name];
-    if (found == null) fail('Name ${callee.name} is not defined', callee);
+    if (found == null) {
+      if (!owner.external) fail('Name ${callee.name} is not defined', callee);
+      return _passExternal(
+          node, Symbol(callee.name, callee.name, 'dynamic', external: true));
+    }
     if (found.classDeclaration != null) {
       final declaration = found.classDeclaration!;
       final returned = constructClass(node, declaration);
@@ -3940,11 +4002,8 @@ class Analyzer {
       final objectType =
           nullableExtension ? objectTypeRaw : unwrap(objectTypeRaw);
       if (objectType == 'dynamic') {
-        for (final argument in node.arguments) {
-          expression(argument.value);
-        }
-        model.references[callee] = Symbol(callee.name, callee.name, 'dynamic');
-        return 'dynamic';
+        return _passExternal(
+            node, Symbol(callee.name, callee.name, 'dynamic', external: true));
       }
       final declaration =
           _global.symbols[_genericHead(objectType)]?.classDeclaration;
@@ -4039,6 +4098,11 @@ class Analyzer {
         model.references[callee] = model.declarations[resolved]!;
         return applyArguments(node, resolved.parameters, resolved);
       }
+    }
+    if (symbol != null && symbol.external) return _passExternal(node, symbol);
+    if (symbol == null && _externalDart) {
+      return _passExternal(
+          node, Symbol(callee.name, callee.name, 'dynamic', external: true));
     }
     if (symbol == null) fail('Undefined function: ${callee.name}', callee);
     model.references[callee] = symbol;

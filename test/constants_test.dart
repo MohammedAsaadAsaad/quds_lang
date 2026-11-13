@@ -413,7 +413,7 @@ main():
     try {
       final source = File('${directory.path}/app.quds')
         ..writeAsStringSync('main():\n  const x = 1 % 0\n');
-      final output = File('${directory.path}/app.dart');
+      final output = File('${directory.path}/.dart_tool/quds/out/app.dart');
       final built = await Process.run(Platform.resolvedExecutable,
           ['run', 'bin/quds.dart', 'build', source.path]);
       expect(built.exitCode, 65, reason: '${built.stdout}\n${built.stderr}');

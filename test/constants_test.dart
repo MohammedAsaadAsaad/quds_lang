@@ -12,7 +12,7 @@ void main() {
     expect(valueOf(result, 'step'), ConstInt(5));
     expect(valueOf(result, 'product'), ConstInt(14));
     expect(valueOf(result, 'ratio'), ConstDouble(3.5));
-    expect(valueOf(result, 'max'), ConstInt(9223372036854775807));
+    expect(valueOf(result, 'imax'), ConstInt(9223372036854775807));
     expect(valueOf(result, 'wrapped'), ConstInt(-9223372036854775808));
     expect(valueOf(result, 'negmin'), ConstInt(-9223372036854775808));
     expect(valueOf(result, 'mod'), ConstInt(1));
@@ -762,6 +762,18 @@ List<BinaryExpression> operators(Expression node, String op) {
       case TryExpression(:final operand, :final fallback):
         walk(operand);
         walk(fallback);
+      case LoopExpression(:final fallback):
+        if (fallback != null) walk(fallback);
+      case WhereExpression(:final value):
+        walk(value);
+      case SliceExpression(:final object, :final start, :final end):
+        walk(object);
+        if (start != null) walk(start);
+        if (end != null) walk(end);
+      case ChainComparison(:final operands):
+        for (final operand in operands) {
+          walk(operand);
+        }
       case IfExpression(:final condition, :final thenValue, :final elseValue):
         walk(condition);
         walk(thenValue);

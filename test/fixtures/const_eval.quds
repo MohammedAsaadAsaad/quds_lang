@@ -3,8 +3,8 @@ main():
   const step = base - 3 - 2
   const product = 2 + 3 * 4
   const ratio = 7 / 2
-  const max = 9223372036854775807
-  const wrapped = max + 1
+  const imax = 9223372036854775807
+  const wrapped = imax + 1
   const negmin = -wrapped
   const mod = -5 % 3
   const negdiv = 5 % -3
@@ -35,7 +35,7 @@ main():
   print ratio
   print(7 / 2)
   print wrapped
-  print(max + 1)
+  print(imax + 1)
   print negmin
   print(-wrapped)
   print mod

@@ -1,0 +1,5 @@
+# Root package analysis. Flutter example apps carry their own options and
+# depend on flutter_lints, which is not a dependency of quds_lang itself.
+analyzer:
+  exclude:
+    - examples/flutter_app/**

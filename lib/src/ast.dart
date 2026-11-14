@@ -193,6 +193,13 @@ class InterpolatedString extends Expression {
   final List<Expression> parts;
 }
 
+/// `{age=}` evaluates [value] once and shows its source text beside it.
+class ShownExpression extends Expression {
+  const ShownExpression(this.value, this.text, super.span);
+  final Expression value;
+  final String text;
+}
+
 class WhileStatement extends Statement {
   const WhileStatement(this.condition, this.body, super.span,
       {this.letName, this.pattern, this.elseBody = const []});
@@ -299,17 +306,27 @@ class PartDirective extends Statement {
 class FieldDeclaration extends Node {
   const FieldDeclaration(this.name, this.type, this.mutable, this.requiredField,
       this.initializer, super.span,
-      {this.visibility = '', this.isStatic = false, this.isConst = false});
+      {this.visibility = '',
+      this.isStatic = false,
+      this.isConst = false,
+      this.isEvent = false,
+      this.lazyBody});
   final String name;
   final String type;
   final bool mutable;
   final bool requiredField;
   final Expression? initializer;
 
+  /// `name: Type by lazy:` computes this body on the first read.
+  final List<Statement>? lazyBody;
+
   /// Empty, `private`, or `protected`.
   final String visibility;
   final bool isStatic;
   final bool isConst;
+
+  /// `event name: Type`. Outsiders subscribe with `add`. The class uses `raise`.
+  final bool isEvent;
 }
 
 class PropertyDeclaration extends Node {
@@ -443,21 +460,39 @@ class AliasDeclaration extends Statement {
 
 class RequireStatement extends Statement {
   const RequireStatement(this.condition, super.span,
-      {this.message, this.kind = 'require'});
+      {this.message, this.kind = 'require', this.source});
   final Expression condition;
   final Expression? message;
 
   /// `require`, `check`, or `assert`.
   final String kind;
+
+  /// Source text of [condition], used when [message] is omitted.
+  final String? source;
+}
+
+class RaiseStatement extends Statement {
+  const RaiseStatement(this.name, this.arguments, super.span);
+  final String name;
+  final List<Argument> arguments;
+}
+
+class NameofExpression extends Expression {
+  const NameofExpression(this.target, this.text, super.span);
+  final Expression target;
+
+  /// The path as written, such as `user.name`.
+  final String text;
 }
 
 class ExtensionDeclaration extends Statement {
   const ExtensionDeclaration(this.name, this.target, this.methods, super.span,
-      {this.typeParameters = const []});
+      {this.typeParameters = const [], this.properties = const []});
   final String? name;
   final String target;
   final List<FunctionDeclaration> methods;
   final List<TypeParameter> typeParameters;
+  final List<PropertyDeclaration> properties;
 }
 
 class ThisExpression extends Expression {
@@ -472,6 +507,11 @@ class WatchStatement extends Statement {
 
 class BatchStatement extends Statement {
   const BatchStatement(this.body, super.span);
+  final List<Statement> body;
+}
+
+class OnceStatement extends Statement {
+  const OnceStatement(this.body, super.span);
   final List<Statement> body;
 }
 
@@ -718,8 +758,9 @@ class TryExpression extends Expression {
 }
 
 class TryStatement extends Statement {
-  const TryStatement(this.body, this.catches, this.finallyBody, super.span);
-  final List<Statement> body, finallyBody;
+  const TryStatement(this.body, this.catches, this.finallyBody, super.span,
+      {this.elseBody = const []});
+  final List<Statement> body, finallyBody, elseBody;
   final List<CatchClause> catches;
 }
 

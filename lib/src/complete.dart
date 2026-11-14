@@ -132,6 +132,7 @@ const _keywords = [
   'do',
   'else',
   'enum',
+  'event',
   'false',
   'for',
   'if',
@@ -139,11 +140,14 @@ const _keywords = [
   'is',
   'late',
   'match',
+  'nameof',
   'not',
   'null',
+  'once',
   'or',
   'private',
   'protected',
+  'raise',
   'readonly',
   'required',
   'return',
@@ -497,6 +501,9 @@ _Here? _enter(
         return _blocks(
             compilation, source, bytes, clause.body, names, regionEnd, owner);
       }
+      final otherwise = _insideList(compilation, source, bytes,
+          statement.elseBody, outer, regionEnd, owner);
+      if (otherwise != null) return otherwise;
       return _insideList(compilation, source, bytes, statement.finallyBody,
           outer, regionEnd, owner);
     case CForStatement():
@@ -508,6 +515,9 @@ _Here? _enter(
       }
       return _blocks(
           compilation, source, bytes, statement.body, names, regionEnd, owner);
+    case OnceStatement():
+      return _insideList(
+          compilation, source, bytes, statement.body, outer, regionEnd, owner);
     default:
       return null;
   }
@@ -622,6 +632,12 @@ _Here? _class(
             compilation, source, bytes, type, member, outer, next);
       case PropertyDeclaration():
         return _property(compilation, source, bytes, type, member, outer, next);
+      case FieldDeclaration():
+        final lazy = member.lazyBody;
+        if (lazy == null) return null;
+        final names = Map<String, Symbol>.of(outer);
+        if (!member.isStatic) _instanceMembers(compilation, type, names);
+        return _blocks(compilation, source, bytes, lazy, names, next, type);
       default:
         return null;
     }
@@ -815,6 +831,10 @@ String? _rootType(Compilation compilation, _Here scope, String name) {
 String? _memberType(Compilation compilation, String type, String name) {
   var bare = type.startsWith('readonly ') ? type.substring(9) : type;
   if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+  if (bare.startsWith('Event<') && bare.endsWith('>') && name == 'add') {
+    final payload = bare.substring(6, bare.length - 1);
+    return '($payload) -> void';
+  }
   final declaration = compilation.semantics.classes[_head(bare)];
   if (declaration != null) {
     final args = _typeArgs(declaration, bare);
@@ -843,6 +863,9 @@ String? _memberType(Compilation compilation, String type, String name) {
       if (method.name != name) continue;
       return compilation.semantics.declarations[method]?.type ??
           method.returnType;
+    }
+    for (final property in extension.properties) {
+      if (property.name == name) return property.type;
     }
   }
   final family = _family(bare);
@@ -1030,6 +1053,11 @@ void _typeMembers(
 ) {
   var bare = type.startsWith('readonly ') ? type.substring(9) : type;
   if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+  if (!onType && bare.startsWith('Event<') && bare.endsWith('>')) {
+    final payload = bare.substring(6, bare.length - 1);
+    add(_plain('add', 2, '($payload) -> void', range, sort: '1'));
+    return;
+  }
   final declaration = known ?? compilation.semantics.classes[_head(bare)];
   if (declaration != null) {
     for (final current in _lineage(compilation, declaration)) {
@@ -1074,6 +1102,10 @@ void _typeMembers(
       if (!_name(method.name)) continue;
       add(_plain(method.name, 2, _signature(compilation, method), range,
           sort: '1'));
+    }
+    for (final property in extension.properties) {
+      if (!_name(property.name)) continue;
+      add(_plain(property.name, 10, 'get ${property.type}', range, sort: '0'));
     }
   }
   _builtinMembers(bare, onType, range, add);

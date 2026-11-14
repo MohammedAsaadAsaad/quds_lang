@@ -374,6 +374,7 @@ doubled = items.map(n -> n * 2)
 
 ```quds
 message = "Hello {user.name}"
+label = "{age=}"
 letter = """
   Hello
   {name}
@@ -811,6 +812,8 @@ try:
   work()
 catch e, stack:
   log.error(e)
+else:
+  print "saved"
 ```
 
 **Compiler / runtime requirements.** Preserve original stack traces and typed dispatch.
@@ -1811,12 +1814,107 @@ Column:
 
 **Required conformance coverage.** Nested named blocks, declaration/call conflicts.
 
+### Local functions, nameof, events, numeric constraints, and deconstruct
+
+These forms are part of the implemented language.
+
+A function written inside another function is a local function. It sees the enclosing bindings, it may call itself, and `return` leaves that function. It lowers to a Dart local function.
+
+```quds
+walk(node: Node) -> int:
+  depth(current: Node, level: int) -> int:
+    if current.child == null: return level
+    return depth(current.child!, level + 1)
+  return depth(node, 0)
+```
+
+`nameof` reads a name or a member path and yields that source text. It does not evaluate the path.
+
+```quds
+label = nameof user.name
+```
+
+`require` and `check` keep their meaning. When the message is omitted, the failure text is the condition as written, for example `age >= 0`.
+
+```quds
+require age >= 0
+```
+
+`event name: Type` declares an event of a function type. Other code subscribes with `add`. A block after `add:` is a handler of type `() -> void`. Only the declaring class may `raise` the event. Raising it elsewhere is an error.
+
+```quds
+class Button:
+  event clicked: () -> void
+  press():
+    raise clicked
+
+button.clicked.add:
+  print "pressed"
+button.press()
+```
+
+`where T is Numeric` after a function signature constrains `T` to `num`. The operators are resolved from that bound when the call site knows `T`, the same way other overloads are resolved at compile time. A call that does not determine `T`, or that supplies a type outside the bound, is rejected. A plain binding is still immutable, so a total that is updated is `var`.
+
+```quds
+sum<T>(values: List<T>) -> T where T is Numeric:
+  var total = values.first
+  for value in values.skip(1):
+    total = total + value
+  return total
+```
+
+A method `deconstruct()` with no parameters and a record result is what a parallel assignment reads when the right-hand side is not already a record.
+
+```quds
+class Point:
+  x: int required
+  y: int required
+  deconstruct() -> (int, int) = (x, y)
+
+x, y = Point(x: 3, y: 4)
+```
+
+### Lazy fields, extension properties, callable values, and once
+
+`name: Type by lazy:` is a getter. The block runs on the first read, its `result` is stored, and later reads return that value. A thrown block does not store a value, so the next read tries again. A `null` result is stored. The name is not a constructor parameter, not part of `copyWith`, and not an assignment target. `var` cannot use `by lazy`. `static` uses the same form. The block sees the object's fields as they are at the first read.
+
+```quds
+class Report:
+  path: String required
+  text: String by lazy:
+    result readFile(path)
+```
+
+An extension may declare a `property`. A getter is read without parentheses.
+
+```quds
+extend String Text:
+  property shouted: String:
+    get = this.toUpperCase()
+```
+
+A method named `call` makes a value callable. `value(argument)` and `Greeter()(argument)` both invoke it. The generated Dart uses the same `call` method.
+
+```quds
+class Greeter:
+  call(name: String) -> String = "Hello {name}"
+
+print Greeter()("Ada")
+```
+
+`once:` runs its block the first time that activation of the enclosing function reaches it. A loop does not reset it. The next call of the function starts again. `once = 1` is still a binding.
+
+```quds
+tick():
+  once:
+    print "tick"
+```
 
 ## Cross-feature invariants (mandatory)
 
 - **No implicit mutation:** immutable binding, readonly reference and deeply immutable object are distinct concepts. `readonly` is transitive *through that reference* but does not freeze all aliases.
 - **No implicit shadowing:** QUDS-090 requires explicit `shadow`; assignment to an existing mutable outer binding mutates it; assignment to an existing immutable outer binding is an error.
-- **No implicit multiline return:** an expression-bodied function returns its expression. A block-bodied function returns only with `return`. A `do:` block yields only with `result`.
+- **No implicit multiline return:** an expression-bodied function returns its expression. A block-bodied function returns only with `return`. A `do:` block and a `by lazy` block yield only with `result`.
 - **No silent dynamic fallback:** inference failures produce actionable diagnostics, not untyped behavior.
 - **Omission differs from null:** `Optional<T>`, `missing`, `copyWith`, and computed defaults keep that distinction in generated Dart. The public sentinel is `quds.missing`.
 - **Exactly-once evaluation:** the right-hand side of a multi-assignment, a pipeline input, a compound-assignment receiver, each supplied argument, and each default expression run once. Supplied arguments run in source order before defaults run in declaration order.
@@ -2064,7 +2162,7 @@ An identifier is a letter or `_` or `$`, then letters, digits, `_`, or `$`. The 
 
 Every other word in this grammar is contextual. It is a keyword only when the production that uses it matches. Otherwise it is an identifier. `map` and `set` are keywords only when the next token is `:`.
 
-Strings use `'` , `"`, `'''`, and `"""`, with an optional raw prefix `r`. Raw strings have no backslash escapes and no interpolation. Non-raw strings use Dart's backslash escapes. `$` never starts interpolation. `{` starts an interpolation and `}` ends it. A triple-quoted string that closes on its own line drops the leading spaces of that closing line from every content line, and drops the newline that only introduces the closing quotes. `{{` and `}}` are literal braces. The interpolated text is one expression. A `}` inside that expression is the end of the interpolation, so a nested string is the way to include one. Adjacent string literals, with only whitespace or comments between them, concatenate. Their interpolations stay in order and run left to right when the combined string is evaluated.
+Strings use `'` , `"`, `'''`, and `"""`, with an optional raw prefix `r`. Raw strings have no backslash escapes and no interpolation. Non-raw strings use Dart's backslash escapes. `$` never starts interpolation. `{` starts an interpolation and `}` ends it. A triple-quoted string that closes on its own line drops the leading spaces of that closing line from every content line, and drops the newline that only introduces the closing quotes. `{{` and `}}` are literal braces. The interpolated text is one expression. A `}` inside that expression is the end of the interpolation, so a nested string is the way to include one. `{age=}` evaluates that expression once and writes its source text, an equals sign, and the value. A trailing `=` that belongs to `==`, `!=`, `<=`, or `>=` stays part of the expression. Adjacent string literals, with only whitespace or comments between them, concatenate. Their interpolations stay in order and run left to right when the combined string is evaluated.
 
 ### Indentation and continuation
 
@@ -2189,7 +2287,7 @@ loop          = "for" , pattern , "in" , expression , suite , [ "else" , suite ]
               | "repeat" , suite , "while" , expression , [ "else" , suite ]
               | "repeat" , expression , suite , [ "else" , suite ]
 forInit       = binding | expression
-tryStatement  = "try" , suite , { catchClause } , [ "finally" , suite ]
+tryStatement  = "try" , suite , { catchClause } , [ "else" , suite ] , [ "finally" , suite ]
               | "try" , expression , "else" , expression
 catchClause   = "catch" , name , [ ":" , type ] , [ "," , name ] , suite
 usingStatement= "using" , [ "async" ] , name , "=" , expression , suite
@@ -2207,7 +2305,7 @@ A single-line statement may end with `if` and a condition. The condition runs fi
 
 The same line may end with `else` and one expression. That expression fills the statement's value: the returned value, the assigned value, or the single argument of a call. The side that is not chosen does not run. The two expressions share a type. A `let` or `is` name is not visible in the `else` expression. `return text if text.isNotEmpty else "empty"` returns one string or the other. `caption = line if let line = read() else "فارغ"` assigns one of those values.
 
-`else:` after `for`, `while`, or `repeat` runs only when that loop finishes without `break`. `continue` does not open it. `return` and `throw` leave before it is considered. The `else` lines up with the loop, so an `else` inside the body still belongs to an `if`.
+`else:` after `for`, `while`, or `repeat` runs only when that loop finishes without `break`. `continue` does not open it. `return` and `throw` leave before it is considered. The `else` lines up with the loop, so an `else` inside the body still belongs to an `if`. `else:` after `catch` runs only when `try` finishes without entering a `catch`. It needs a `catch`. `return`, `throw`, and `rethrow` leave before it is considered. `finally` still runs afterwards.
 
 ```
 for user in users:

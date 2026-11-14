@@ -2,6 +2,7 @@ import 'ast.dart';
 import 'constants.dart';
 import 'semantics.dart';
 import 'source.dart';
+import 'walk.dart';
 
 class _ConfigGroup {
   final children = <String, _ConfigGroup>{};
@@ -36,6 +37,9 @@ class DartEmitter {
   var _usePropagate = false;
   var _useConversion = false;
   var _useReturn = false;
+  var _useEvent = false;
+  final _onceFlags = <OnceStatement, String>{};
+  var _openGenerics = <String>{};
   var _inDo = false;
   final _emitLoops = <_LoopEmit>[];
   String? _pendingLabel;
@@ -468,6 +472,12 @@ class DartEmitter {
           '  final Object? value;\n'
           '}');
     }
+    if (_useEvent) {
+      helpers.writeln('class _QudsEvent<T extends Function> {\n'
+          '  final List<T> handlers = <T>[];\n'
+          '  void add(T handler) => handlers.add(handler);\n'
+          '}');
+    }
     for (final union in _unions) {
       final name = _unionClass(union);
       final parts = union.split(' | ').map((part) => part.trim());
@@ -799,6 +809,11 @@ class DartEmitter {
 
   void emitFunction(FunctionDeclaration node) {
     _span = node.span;
+    final savedGenerics = _openGenerics;
+    _openGenerics = {
+      ...savedGenerics,
+      for (final parameter in node.typeParameters) parameter.name,
+    };
     final symbol = model.declarations[node]!;
     final bounds = <String>[];
     final parameters = node.parameters.map((p) {
@@ -865,6 +880,7 @@ class DartEmitter {
         line('try {');
         _depth++;
       }
+      _hoistOnce(node.body);
       statements(node.body!);
       if (propagate || doReturn) {
         _depth--;
@@ -887,6 +903,7 @@ class DartEmitter {
       line('}');
     }
     _returnView = savedReturn;
+    _openGenerics = savedGenerics;
   }
 
   List<String> _readonlyParameters(FunctionDeclaration node) {
@@ -1144,7 +1161,15 @@ class DartEmitter {
     line(
         '$header ${node.name}${_typeParameters(node.typeParameters)}${tail.isEmpty ? '' : ' $tail'} {');
     _depth++;
+    final savedClassGenerics = _openGenerics;
+    _openGenerics = {
+      ...savedClassGenerics,
+      for (final parameter in node.typeParameters) parameter.name,
+    };
     if (node.kind == 'mixin') {
+      for (final field in node.fields) {
+        if (field.lazyBody != null) _emitLazy(field);
+      }
       for (final property in node.properties) {
         _emitProperty(property);
       }
@@ -1153,6 +1178,7 @@ class DartEmitter {
       }
       _depth--;
       line('}');
+      _openGenerics = savedClassGenerics;
       return;
     }
     final inherited = _inherited(node);
@@ -1164,13 +1190,16 @@ class DartEmitter {
     } else if (node.constructors.isEmpty) {
       final initializers = <String>[];
       final params = <String>[
-        ...inherited.where((field) => !field.isStatic).map((field) {
+        ...inherited
+            .where((field) => !field.isStatic && field.lazyBody == null)
+            .map((field) {
           final required = field.requiredField && field.initializer == null
               ? 'required '
               : '';
           return '$required super.${field.name}';
         }),
-        for (final field in node.fields.where((field) => !field.isStatic))
+        for (final field in node.fields.where((field) =>
+            !field.isStatic && !field.isEvent && field.lazyBody == null))
           _constructorParameter(field, initializers),
       ];
       final tail = initializers.isEmpty ? '' : ' : ${initializers.join(', ')}';
@@ -1184,6 +1213,10 @@ class DartEmitter {
       }
     }
     for (final field in node.fields) {
+      if (field.lazyBody != null) {
+        _emitLazy(field);
+        continue;
+      }
       if (field.isStatic) {
         final declared = model.declarations[field]?.type ?? field.type;
         final initial = field.initializer == null
@@ -1195,6 +1228,17 @@ class DartEmitter {
                 ? 'static'
                 : 'static final';
         line('$kind ${_dartType(declared)} ${field.name}$initial;');
+        continue;
+      }
+      if (field.isEvent) {
+        _useEvent = true;
+        final payload =
+            field.type.startsWith('Event<') && field.type.endsWith('>')
+                ? field.type.substring(6, field.type.length - 1)
+                : '() -> void';
+        final dart = _dartType(payload);
+        line(
+            'final _QudsEvent<$dart> ${_fieldDart(field)} = _QudsEvent<$dart>();');
         continue;
       }
       _markProtected(field.visibility);
@@ -1224,7 +1268,10 @@ class DartEmitter {
       }
       emitFunction(method);
     }
-    final valueFields = node.fields.where((field) => !field.isStatic).toList();
+    final valueFields = node.fields
+        .where((field) =>
+            !field.isStatic && !field.isEvent && field.lazyBody == null)
+        .toList();
     if ((node.kind == 'value' || node.modifiers.contains('value')) &&
         valueFields.isNotEmpty) {
       _emitCopyWith(node, valueFields);
@@ -1260,6 +1307,7 @@ class DartEmitter {
       line(
           'const qudsReflect${node.name} = <String, Object?>{\'name\': \'${node.name}\', \'fields\': <String>[$fields], \'private\': <String>[$private], \'typeParameters\': <String>[$parameters]};');
     }
+    _openGenerics = savedClassGenerics;
   }
 
   void _emitReflectableRegistry(Program program) {
@@ -1395,6 +1443,51 @@ class DartEmitter {
       lifted.add(statement);
     }
     return lifted;
+  }
+
+  void _hoistOnce(List<Statement>? body) {
+    if (body == null) return;
+    final found = <OnceStatement>[];
+    for (final statement in body) {
+      walkAst(statement, (node) {
+        if (node is OnceStatement) found.add(node);
+      }, skipChildren: (node) => node is FunctionDeclaration || node is Lambda);
+    }
+    for (final once in found) {
+      final flag = '_qo${_temps++}';
+      _onceFlags[once] = flag;
+      line('var $flag = false;');
+    }
+  }
+
+  void _emitLazy(FieldDeclaration field) {
+    final declared = model.declarations[field]?.type ?? field.type;
+    final dartType = _dartType(declared);
+    final store = '_ql${_temps++}';
+    final ready = '_qr${_temps++}';
+    final prefix = field.isStatic ? 'static ' : '';
+    final nullable =
+        declared.endsWith('?') || declared == 'dynamic' || declared == 'Null';
+    final storeType = nullable ? dartType : '$dartType?';
+    _markProtected(field.visibility);
+    line('$prefix$storeType $store;');
+    line('${prefix}var $ready = false;');
+    line('$prefix$dartType get ${_fieldDart(field)} {');
+    _depth++;
+    line('if (!$ready) {');
+    _depth++;
+    line('$store = () {');
+    _depth++;
+    _hoistOnce(field.lazyBody);
+    statements(field.lazyBody!);
+    _depth--;
+    line('}();');
+    line('$ready = true;');
+    _depth--;
+    line('}');
+    line('return ${nullable ? store : '$store!'};');
+    _depth--;
+    line('}');
   }
 
   void _emitProperty(PropertyDeclaration node) {
@@ -1555,6 +1648,9 @@ class DartEmitter {
         : 'extension ${node.name}$generics';
     line('$title on ${node.target} {');
     _depth++;
+    for (final property in node.properties) {
+      _emitProperty(property);
+    }
     for (final method in node.methods) {
       emitFunction(method);
     }
@@ -1642,30 +1738,7 @@ class DartEmitter {
         line('}');
         _endLoop(node.elseBody);
       case TryStatement():
-        line('try {');
-        _depth++;
-        statements(node.body);
-        _depth--;
-        for (final clause in node.catches) {
-          final caught = model.declarations[clause]!;
-          final trace = model.traces[clause];
-          final names = trace == null
-              ? caught.dartName
-              : '${caught.dartName}, ${trace.dartName}';
-          line(clause.type == null
-              ? '} catch ($names) {'
-              : '} on ${clause.type} catch ($names) {');
-          _depth++;
-          statements(clause.body);
-          _depth--;
-        }
-        if (node.finallyBody.isNotEmpty) {
-          line('} finally {');
-          _depth++;
-          statements(node.finallyBody);
-          _depth--;
-        }
-        line('}');
+        _emitTry(node);
       case ThrowStatement():
         line('throw ${expression(node.value)};');
       case RethrowStatement():
@@ -1682,6 +1755,14 @@ class DartEmitter {
         statements(node.body);
         _depth--;
         line('}));');
+      case OnceStatement():
+        final flag = _onceFlags[node]!;
+        line('if (!$flag) {');
+        _depth++;
+        line('$flag = true;');
+        statements(node.body);
+        _depth--;
+        line('}');
       case BatchStatement():
         _useState = true;
         _useBatch = true;
@@ -1849,7 +1930,13 @@ class DartEmitter {
       case ParallelAssignment():
         if (node.values.length == 1) {
           final temp = '_qt${_temps++}';
-          line('final $temp = ${expression(node.values.single)};');
+          final value = expression(node.values.single);
+          final type = model.types[node.values.single] ?? '';
+          final record = type.startsWith('(') &&
+              type.endsWith(')') &&
+              !type.contains('->');
+          final read = record ? value : '$value.${_deconstructName(type)}()';
+          line('final $temp = $read;');
           for (var i = 0; i < node.targets.length; i++) {
             _writeTarget(node.targets[i], '$temp.\$${i + 1}');
           }
@@ -1978,7 +2065,7 @@ class DartEmitter {
           _ => 'ArgumentError',
         };
         final message = node.message == null
-            ? "'${node.kind} failed'"
+            ? "'${_quote(node.source ?? '${node.kind} failed')}'"
             : expression(node.message!);
         if (node.kind == 'assert') {
           line(node.message == null
@@ -1988,6 +2075,17 @@ class DartEmitter {
           line(
               'if (!(${expression(node.condition)})) throw $failure($message);');
         }
+      case RaiseStatement():
+        final symbol = model.references[node];
+        final payload = symbol?.type ?? '() -> void';
+        final dartType = _dartType(payload);
+        final field = symbol?.dartName ?? node.name;
+        final args = node.arguments
+            .map((argument) => expression(argument.value))
+            .join(', ');
+        line('for (final _qHandler in List<$dartType>.of($field.handlers)) {');
+        line('  _qHandler($args);');
+        line('}');
       case TaskGroupStatement():
         _useTask = true;
         final arms = node.children.map(_taskStep).toList();
@@ -2348,6 +2446,8 @@ class DartEmitter {
       CallExpression() => call(node, constantContext: constantContext),
       InterpolatedString() =>
         '[${node.parts.map((part) => expression(part, constantContext: constantContext)).join(', ')}].join()',
+      ShownExpression() =>
+        "('${_quote(node.text)}=' + (${expression(node.value, constantContext: constantContext)}).toString())",
       Lambda() => _lambda(node),
       MemberAccess() => _member(node, constantContext: constantContext),
       IndexExpression() => _index(node, constantContext: constantContext),
@@ -2383,6 +2483,7 @@ class DartEmitter {
       AwaitAllExpression() => _awaitAll(node),
       AwaitIsolateExpression() => _awaitIsolate(node),
       SymbolExpression() => _symbol(node.text),
+      NameofExpression() => "'${_quote(node.text)}'",
     };
   }
 
@@ -2452,7 +2553,30 @@ class DartEmitter {
       'or' => '||',
       _ => node.operator,
     };
-    return '(${expression(node.left, constantContext: constantContext, opaqueBool: childOpaque)} $op ${expression(node.right, constantContext: constantContext, opaqueBool: childOpaque)})';
+    final code =
+        '(${expression(node.left, constantContext: constantContext, opaqueBool: childOpaque)} $op ${expression(node.right, constantContext: constantContext, opaqueBool: childOpaque)})';
+    final result = model.types[node];
+    if (result != null &&
+        result == leftType &&
+        result == rightType &&
+        const {'+', '-', '*', '~/', '%'}.contains(node.operator) &&
+        _openGenerics.contains(result)) {
+      return '($code as $result)';
+    }
+    return code;
+  }
+
+  String _quote(String text) =>
+      text.replaceAll(r'\', r'\\').replaceAll("'", r"\'");
+
+  String _deconstructName(String type) {
+    var bare = type.startsWith('readonly ') ? type.substring(9) : type;
+    if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+    final declaration = model.classes[bare];
+    final method = declaration?.methods
+        .where((item) => item.name == 'deconstruct' && item.parameters.isEmpty)
+        .firstOrNull;
+    return model.declarations[method]?.dartName ?? 'deconstruct';
   }
 
   /// Every operand runs, left to right, before any comparison is combined.
@@ -2614,7 +2738,10 @@ class DartEmitter {
     }
     final savedDepth = _depth;
     _depth = 0;
-    final body = _captureBlock(() => statements(node.body!));
+    final body = _captureBlock(() {
+      _hoistOnce(node.body);
+      statements(node.body!);
+    });
     _depth = savedDepth;
     _returnView = savedReturn;
     return '(($parameters) $async{\n$body})';
@@ -2862,10 +2989,11 @@ class DartEmitter {
   String call(CallExpression node, {bool constantContext = false}) {
     if (model.references[node.callee] == null) {
       final callee = expression(node.callee, constantContext: constantContext);
-      final arguments = node.arguments
-          .map((argument) =>
-              expression(argument.value, constantContext: constantContext))
-          .join(', ');
+      final arguments = node.arguments.map((argument) {
+        final value =
+            expression(argument.value, constantContext: constantContext);
+        return argument.name == null ? value : '${argument.name}: $value';
+      }).join(', ');
       return '($callee)($arguments)';
     }
     final targetSymbol = model.references[node.callee]!;
@@ -3185,6 +3313,58 @@ class DartEmitter {
       line('var $hit = false;');
     }
     _emitLoops.add(_LoopEmit(hit, label, braced));
+  }
+
+  void _emitTry(TryStatement node) {
+    final flag = node.elseBody.isEmpty ? null : '_qe${_temps++}';
+    if (flag != null) line('var $flag = true;');
+    final wrap = flag != null && node.finallyBody.isNotEmpty;
+    if (wrap) {
+      line('try {');
+      _depth++;
+    }
+    line('try {');
+    _depth++;
+    statements(node.body);
+    _depth--;
+    for (final clause in node.catches) {
+      final caught = model.declarations[clause]!;
+      final trace = model.traces[clause];
+      final names = trace == null
+          ? caught.dartName
+          : '${caught.dartName}, ${trace.dartName}';
+      line(clause.type == null
+          ? '} catch ($names) {'
+          : '} on ${clause.type} catch ($names) {');
+      _depth++;
+      if (flag != null) line('$flag = false;');
+      statements(clause.body);
+      _depth--;
+    }
+    if (flag == null && node.finallyBody.isNotEmpty) {
+      line('} finally {');
+      _depth++;
+      statements(node.finallyBody);
+      _depth--;
+      line('}');
+      return;
+    }
+    line('}');
+    if (flag != null) {
+      line('if ($flag) {');
+      _depth++;
+      statements(node.elseBody);
+      _depth--;
+      line('}');
+    }
+    if (wrap) {
+      _depth--;
+      line('} finally {');
+      _depth++;
+      statements(node.finallyBody);
+      _depth--;
+      line('}');
+    }
   }
 
   void _endLoop(List<Statement> elseBody) {

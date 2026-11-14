@@ -470,5 +470,7 @@ collection immediately. The iterable runs once. A false filter skips the
 element expression. A comprehension may contain another comprehension. A
 `sync*` generator does not run until something iterates it.
 
+A function may contain a local function. The local function sees the enclosing bindings, may call itself, and `return` leaves that function. `nameof user.name` is the string `user.name` and does not evaluate the path. `require` and `check` put the condition text in the failure when no message is written. `event clicked: () -> void` is subscribed with `add`, including `clicked.add:` for a `() -> void` handler. `raise clicked` is valid only in the class that declares the event. `where T is Numeric` constrains a type parameter to `num` and resolves `+` from that bound at the call. `deconstruct() -> (int, int)` supplies the record read by `x, y = value`. `else:` after `catch` runs when `try` finishes without entering a `catch`, and `finally` still runs afterwards. `{age=}` writes the source text, `=`, and the value of that expression. `name: Type by lazy:` runs its block on the first read and stores the `result`, including `null`. `static` uses the same form. An extension `property` is a getter. A method named `call` makes a value callable. `once:` runs its block the first time that function activation reaches it.
+
 The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.

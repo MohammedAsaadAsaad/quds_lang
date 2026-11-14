@@ -710,6 +710,10 @@ List<BinaryExpression> operators(Expression node, String op) {
         }
       case Literal() || Identifier():
         break;
+      case ShownExpression(:final value):
+        walk(value);
+      case NameofExpression(:final target):
+        walk(target);
       case Lambda(:final expressionBody):
         if (expressionBody != null) walk(expressionBody);
       case MemberAccess(:final object):

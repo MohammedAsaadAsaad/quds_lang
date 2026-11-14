@@ -1,4 +1,5 @@
 # Same market-day program as examples/catalog.dart.
+# Rewritten with trailing if/else, collection helpers, and parallel assignment.
 
 class Product:
   sku: String required
@@ -15,446 +16,284 @@ class CartLine:
 class Shift:
   start: int required
   end: int required
-
   minutes() -> int:
-    if end >= start:
-      return end - start
-    return end + 1440 - start
+    return end - start if end >= start else end + 1440 - start
 
-sumList(values: List<int>) -> int:
-  var total = 0
-  for value in values:
-    total += value
-  return total
-minList(values: List<int>) -> int:
-  var best = values[0]
-  for value in values:
-    if value < best:
-      best = value
-  return best
-maxList(values: List<int>) -> int:
-  var best = values[0]
-  for value in values:
-    if value > best:
-      best = value
-  return best
-clampInt(value: int, low: int, high: int) -> int:
-  if value < low:
-    return low
-  if value > high:
-    return high
-  return value
+sumList(values: List<int>) -> int = values.sum()
+minList(values: List<int>) -> int = values.min()!
+maxList(values: List<int>) -> int = values.max()!
+clampInt(value: int, low: int, high: int) -> int = value.clamp(low, high)
+
 factorial(n: int) -> int:
-  var running = 1
-  var cursor = 2
-  var limit = n
-  if n > 12:
-    limit = 12
+  var running = 1, cursor = 2
+  limit = 12 if n > 12 else n
   while cursor <= limit:
     running *= cursor
     cursor += 1
   return running
+
 fibonacci(n: int) -> int:
-  if n <= 1:
-    return n
-  var previous = 0
-  var current = 1
-  var left = n - 1
+  return n if n <= 1
+  var previous = 0, current = 1, left = n - 1
   while left > 0:
-    next = previous + current
-    previous = current
-    current = next
+    previous, current = current, previous + current
     left -= 1
   return current
+
 gcd(a: int, b: int) -> int:
-  var left = a
-  var right = b
-  if left < 0:
-    left = 0 - left
-  if right < 0:
-    right = 0 - right
+  var left = a.abs, right = b.abs
   while right != 0:
-    rest = left % right
-    left = right
-    right = rest
+    left, right = right, left % right
   return left
+
 lcm(a: int, b: int) -> int:
-  if a == 0 or b == 0:
-    return 0
-  return a ~/ gcd(a, b) * b
+  return 0 if a == 0 or b == 0 else a ~/ gcd(a, b) * b
+
 collatzSteps(start: int) -> int:
-  var value = start
-  var steps = 0
-  if value < 1:
-    return 0
+  return 0 if start < 1
+  var value = start, steps = 0
   while value != 1 and steps < 40:
-    if value % 2 == 0:
-      value = value ~/ 2
-    else:
-      value = value * 3 + 1
+    value = value ~/ 2 if value % 2 == 0 else value * 3 + 1
     steps += 1
   return steps
+
 letterGrade(score: int) -> String:
-  if score >= 90:
-    return "A"
-  if score >= 80:
-    return "B"
-  if score >= 70:
-    return "C"
-  if score >= 60:
-    return "D"
+  return "A" if score >= 90
+  return "B" if score >= 80
+  return "C" if score >= 70
+  return "D" if score >= 60
   return "F"
+
 gpaPoints(score: int) -> int:
-  if score >= 90:
-    return 4
-  if score >= 80:
-    return 3
-  if score >= 70:
-    return 2
-  if score >= 60:
-    return 1
+  return 4 if score >= 90
+  return 3 if score >= 80
+  return 2 if score >= 70
+  return 1 if score >= 60
   return 0
+
 weighted(a: int, b: int, c: int) -> int = (a * 5 + b * 3 + c * 2) ~/ 10
+
 dayOfYear(month: int, day: int) -> int:
   lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-  var cursor = 1
-  var total = day
+  var cursor = 1, total = day
   while cursor < month and cursor <= 12:
     total += lengths[cursor - 1]
     cursor += 1
   return total
+
 daysInMonth(month: int) -> int:
-  if month == 2:
-    return 28
-  if month == 4 or month == 6 or month == 9 or month == 11:
-    return 30
+  return 28 if month == 2
+  return 30 if month == 4 or month == 6 or month == 9 or month == 11
   return 31
+
 roundDiv(cents: int, rate: int) -> int:
   base = cents * rate
   whole = base ~/ 100
-  if base % 100 >= 50:
-    return whole + 1
-  return whole
+  return whole + 1 if base % 100 >= 50 else whole
+
 tipOf(cents: int, percent: int) -> int = roundDiv(cents, percent)
+
 splitBill(cents: int, people: int) -> int:
-  if people <= 0:
-    return cents
+  return cents if people <= 0
   share = cents ~/ people
-  if cents % people == 0:
-    return share
-  return share + 1
+  return share if cents % people == 0 else share + 1
+
 changeDue(paid: int, owed: int) -> int:
-  if paid <= owed:
-    return 0
-  return paid - owed
+  return 0 if paid <= owed else paid - owed
+
 margin(price: int, cost: int) -> int:
-  if price <= 0:
-    return 0
-  return (price - cost) * 100 ~/ price
+  return 0 if price <= 0 else (price - cost) * 100 ~/ price
+
 markup(cost: int, percent: int) -> int = cost + cost * percent ~/ 100
+
 reorderQty(stock: int, target: int) -> int:
-  if stock >= target:
-    return 0
-  return target - stock
+  return 0 if stock >= target else target - stock
+
 rectangleArea(width: int, height: int) -> int:
-  if width < 0 or height < 0:
-    return 0
-  return width * height
+  return 0 if width < 0 or height < 0 else width * height
+
 rectanglePerimeter(width: int, height: int) -> int = (width + height) * 2
+
 overlapLength(a0: int, a1: int, b0: int, b1: int) -> int:
-  var start = b0
-  if a0 > b0:
-    start = a0
-  var end = b1
-  if a1 < b1:
-    end = a1
-  if end <= start:
-    return 0
-  return end - start
+  start = a0 if a0 > b0 else b0
+  end = a1 if a1 < b1 else b1
+  return 0 if end <= start else end - start
+
 distanceSquared(x0: int, y0: int, x1: int, y1: int) -> int:
-  dx = x1 - x0
-  dy = y1 - y0
-  return dx * dx + dy * dy
+  return dx * dx + dy * dy where dx = x1 - x0, dy = y1 - y0
+
 simpleInterest(principal: int, rate: int, years: int) -> int:
-  if years < 0:
-    return principal
-  return principal + principal * rate * years ~/ 100
+  return principal if years < 0 else principal + principal * rate * years ~/ 100
+
 compoundSteps(principal: int, rate: int, years: int) -> int:
-  var balance = principal
-  var left = years
-  if left < 0:
-    left = 0
+  var balance = principal, left = years
+  left = 0 if left < 0
   while left > 0:
     balance += balance * rate ~/ 100
     left -= 1
   return balance
+
 payroll(hours: int, rate: int) -> int:
-  if hours <= 40:
-    return hours * rate
-  extra = hours - 40
-  return 40 * rate + extra * rate * 3 ~/ 2
+  return hours * rate if hours <= 40
+  return 40 * rate + (hours - 40) * rate * 3 ~/ 2
+
 netPay(gross: int, taxRate: int) -> int:
   tax = gross * taxRate ~/ 100
-  if tax >= gross:
-    return 0
-  return gross - tax
+  return 0 if tax >= gross else gross - tax
+
 countChar(text: String, mark: String) -> int:
-  if mark.length == 0:
-    return 0
-  parts = text.split(mark)
-  return parts.length - 1
+  return 0 if mark.length == 0 else text.split(mark).length - 1
+
 shout(text: String) -> String = text.trim().toUpperCase()
+
 wordScore(text: String) -> int:
-  if text.isEmpty:
-    return 0
-  return text.trim().length + text.indexOf("a")
+  return 0 if text.isEmpty else text.trim().length + text.indexOf("a")
+
 boolBit(value: bool) -> int:
-  if value:
-    return 1
-  return 0
+  return 1 if value else 0
+
 opensWith(text: String, prefix: String) -> bool = text.startsWith(prefix)
+
 appleTier(units: int, cents: int) -> int:
-  if units >= 24:
-    return cents * units * 80 ~/ 100
-  if units >= 12:
-    return cents * units * 90 ~/ 100
+  return cents * units * 80 ~/ 100 if units >= 24
+  return cents * units * 90 ~/ 100 if units >= 12
   return cents * units
 breadTier(units: int, cents: int) -> int:
-  if units >= 20:
-    return cents * units * 85 ~/ 100
-  if units >= 10:
-    return cents * units * 95 ~/ 100
+  return cents * units * 85 ~/ 100 if units >= 20
+  return cents * units * 95 ~/ 100 if units >= 10
   return cents * units
 milkTier(units: int, cents: int) -> int:
-  if units >= 18:
-    return cents * units * 88 ~/ 100
-  if units >= 6:
-    return cents * units * 94 ~/ 100
+  return cents * units * 88 ~/ 100 if units >= 18
+  return cents * units * 94 ~/ 100 if units >= 6
   return cents * units
 riceTier(units: int, cents: int) -> int:
-  if units >= 30:
-    return cents * units * 75 ~/ 100
-  if units >= 10:
-    return cents * units * 90 ~/ 100
+  return cents * units * 75 ~/ 100 if units >= 30
+  return cents * units * 90 ~/ 100 if units >= 10
   return cents * units
 oilTier(units: int, cents: int) -> int:
-  if units >= 12:
-    return cents * units * 82 ~/ 100
-  if units >= 4:
-    return cents * units * 92 ~/ 100
+  return cents * units * 82 ~/ 100 if units >= 12
+  return cents * units * 92 ~/ 100 if units >= 4
   return cents * units
 soapTier(units: int, cents: int) -> int:
-  if units >= 16:
-    return cents * units * 84 ~/ 100
-  if units >= 8:
-    return cents * units * 93 ~/ 100
+  return cents * units * 84 ~/ 100 if units >= 16
+  return cents * units * 93 ~/ 100 if units >= 8
   return cents * units
 saltTier(units: int, cents: int) -> int:
-  if units >= 40:
-    return cents * units * 70 ~/ 100
-  if units >= 20:
-    return cents * units * 85 ~/ 100
+  return cents * units * 70 ~/ 100 if units >= 40
+  return cents * units * 85 ~/ 100 if units >= 20
   return cents * units
 honeyTier(units: int, cents: int) -> int:
-  if units >= 8:
-    return cents * units * 90 ~/ 100
-  if units >= 4:
-    return cents * units * 96 ~/ 100
+  return cents * units * 90 ~/ 100 if units >= 8
+  return cents * units * 96 ~/ 100 if units >= 4
   return cents * units
 teaTier(units: int, cents: int) -> int:
-  if units >= 15:
-    return cents * units * 86 ~/ 100
-  if units >= 5:
-    return cents * units * 94 ~/ 100
+  return cents * units * 86 ~/ 100 if units >= 15
+  return cents * units * 94 ~/ 100 if units >= 5
   return cents * units
 coffeeTier(units: int, cents: int) -> int:
-  if units >= 10:
-    return cents * units * 83 ~/ 100
-  if units >= 4:
-    return cents * units * 91 ~/ 100
+  return cents * units * 83 ~/ 100 if units >= 10
+  return cents * units * 91 ~/ 100 if units >= 4
   return cents * units
 flourTier(units: int, cents: int) -> int:
-  if units >= 25:
-    return cents * units * 78 ~/ 100
-  if units >= 10:
-    return cents * units * 90 ~/ 100
+  return cents * units * 78 ~/ 100 if units >= 25
+  return cents * units * 90 ~/ 100 if units >= 10
   return cents * units
 sugarTier(units: int, cents: int) -> int:
-  if units >= 22:
-    return cents * units * 80 ~/ 100
-  if units >= 8:
-    return cents * units * 92 ~/ 100
+  return cents * units * 80 ~/ 100 if units >= 22
+  return cents * units * 92 ~/ 100 if units >= 8
   return cents * units
+
 northShip(grams: int, zone: int) -> int:
   var fee = 25
-  if grams >= 2000:
-    fee = 90
-  else if grams >= 800:
-    fee = 55
-  if zone > 1:
-    fee += zone * 15
-  return fee
+  if grams >= 2000: fee = 90
+  else if grams >= 800: fee = 55
+  return fee + zone * 15 if zone > 1 else fee
 southShip(grams: int, zone: int) -> int:
   var fee = 20
-  if grams >= 1800:
-    fee = 80
-  else if grams >= 700:
-    fee = 50
-  if zone > 1:
-    fee += zone * 15
-  return fee
+  if grams >= 1800: fee = 80
+  else if grams >= 700: fee = 50
+  return fee + zone * 15 if zone > 1 else fee
 eastShip(grams: int, zone: int) -> int:
   var fee = 30
-  if grams >= 2500:
-    fee = 110
-  else if grams >= 1000:
-    fee = 60
-  if zone > 1:
-    fee += zone * 15
-  return fee
+  if grams >= 2500: fee = 110
+  else if grams >= 1000: fee = 60
+  return fee + zone * 15 if zone > 1 else fee
 westShip(grams: int, zone: int) -> int:
   var fee = 18
-  if grams >= 1500:
-    fee = 70
-  else if grams >= 600:
-    fee = 45
-  if zone > 1:
-    fee += zone * 15
-  return fee
+  if grams >= 1500: fee = 70
+  else if grams >= 600: fee = 45
+  return fee + zone * 15 if zone > 1 else fee
 portShip(grams: int, zone: int) -> int:
   var fee = 35
-  if grams >= 3000:
-    fee = 140
-  else if grams >= 1200:
-    fee = 75
-  if zone > 1:
-    fee += zone * 15
-  return fee
+  if grams >= 3000: fee = 140
+  else if grams >= 1200: fee = 75
+  return fee + zone * 15 if zone > 1 else fee
 hillShip(grams: int, zone: int) -> int:
   var fee = 15
-  if grams >= 1200:
-    fee = 65
-  else if grams >= 500:
-    fee = 40
-  if zone > 1:
-    fee += zone * 15
-  return fee
+  if grams >= 1200: fee = 65
+  else if grams >= 500: fee = 40
+  return fee + zone * 15 if zone > 1 else fee
+
 rentLate(days: int, due: int) -> int:
-  if days <= 3:
-    return 0
+  return 0 if days <= 3
   extra = (days - 3) * 15
-  if extra > due * 20 ~/ 100:
-    return due * 20 ~/ 100
-  return extra
+  cap = due * 20 ~/ 100
+  return cap if extra > cap else extra
 stallLate(days: int, due: int) -> int:
-  if days <= 2:
-    return 0
+  return 0 if days <= 2
   extra = (days - 2) * 10
-  if extra > due * 25 ~/ 100:
-    return due * 25 ~/ 100
-  return extra
+  cap = due * 25 ~/ 100
+  return cap if extra > cap else extra
 crateLate(days: int, due: int) -> int:
-  if days <= 5:
-    return 0
+  return 0 if days <= 5
   extra = (days - 5) * 8
-  if extra > due * 15 ~/ 100:
-    return due * 15 ~/ 100
-  return extra
+  cap = due * 15 ~/ 100
+  return cap if extra > cap else extra
 coolerLate(days: int, due: int) -> int:
-  if days <= 1:
-    return 0
+  return 0 if days <= 1
   extra = (days - 1) * 20
-  if extra > due * 30 ~/ 100:
-    return due * 30 ~/ 100
-  return extra
+  cap = due * 30 ~/ 100
+  return cap if extra > cap else extra
 licenseLate(days: int, due: int) -> int:
-  if days <= 7:
-    return 0
+  return 0 if days <= 7
   extra = (days - 7) * 12
-  if extra > due * 10 ~/ 100:
-    return due * 10 ~/ 100
-  return extra
+  cap = due * 10 ~/ 100
+  return cap if extra > cap else extra
+
 clerkBonus(score: int, base: int) -> int:
-  if score >= 95:
-    return base * 20 ~/ 100
-  if score >= 80:
-    return base * 10 ~/ 100
+  return base * 20 ~/ 100 if score >= 95
+  return base * 10 ~/ 100 if score >= 80
   return 0
 bakerBonus(score: int, base: int) -> int:
-  if score >= 90:
-    return base * 15 ~/ 100
-  if score >= 75:
-    return base * 8 ~/ 100
+  return base * 15 ~/ 100 if score >= 90
+  return base * 8 ~/ 100 if score >= 75
   return 0
 driverBonus(score: int, base: int) -> int:
-  if score >= 98:
-    return base * 25 ~/ 100
-  if score >= 85:
-    return base * 12 ~/ 100
+  return base * 25 ~/ 100 if score >= 98
+  return base * 12 ~/ 100 if score >= 85
   return 0
 buyerBonus(score: int, base: int) -> int:
-  if score >= 88:
-    return base * 18 ~/ 100
-  if score >= 70:
-    return base * 9 ~/ 100
+  return base * 18 ~/ 100 if score >= 88
+  return base * 9 ~/ 100 if score >= 70
   return 0
-ripeSum(values: List<int>) -> int:
-  var total = 0
-  for value in values:
-    if value > 5:
-      total += value
-  return total
-heavySum(values: List<int>) -> int:
-  var total = 0
-  for value in values:
-    if value > 20:
-      total += value
-  return total
-warmSum(values: List<int>) -> int:
-  var total = 0
-  for value in values:
-    if value > 30:
-      total += value
-  return total
-loudSum(values: List<int>) -> int:
-  var total = 0
-  for value in values:
-    if value > 2:
-      total += value
-  return total
-tallSum(values: List<int>) -> int:
-  var total = 0
-  for value in values:
-    if value > 100:
-      total += value
-  return total
-plainDigits(number: int) -> int:
-  var rest = number
-  if rest < 0:
-    rest = 0 - rest
-  var total = 0
+
+ripeSum(values: List<int>) -> int = values.where(v -> v > 5).toList().sum()
+heavySum(values: List<int>) -> int = values.where(v -> v > 20).toList().sum()
+warmSum(values: List<int>) -> int = values.where(v -> v > 30).toList().sum()
+loudSum(values: List<int>) -> int = values.where(v -> v > 2).toList().sum()
+tallSum(values: List<int>) -> int = values.where(v -> v > 100).toList().sum()
+
+digitSum(number: int, weight: int) -> int:
+  var rest = number.abs, total = 0
   while rest > 0:
-    total += (rest % 10) * 1
+    total += (rest % 10) * weight
     rest = rest ~/ 10
   return total
-doubleDigits(number: int) -> int:
-  var rest = number
-  if rest < 0:
-    rest = 0 - rest
-  var total = 0
-  while rest > 0:
-    total += (rest % 10) * 2
-    rest = rest ~/ 10
-  return total
-tripleDigits(number: int) -> int:
-  var rest = number
-  if rest < 0:
-    rest = 0 - rest
-  var total = 0
-  while rest > 0:
-    total += (rest % 10) * 3
-    rest = rest ~/ 10
-  return total
+
+plainDigits(number: int) -> int = digitSum(number, 1)
+doubleDigits(number: int) -> int = digitSum(number, 2)
+tripleDigits(number: int) -> int = digitSum(number, 3)
+
 rateAppleCrate(units: int) -> int = units * 100 + 0
 rateBreadCrate(units: int) -> int = units * 101 + 1
 rateMilkCrate(units: int) -> int = units * 102 + 2
@@ -548,176 +387,178 @@ rateBasilSack(units: int) -> int = units * 115 + 13
 rateCuminSack(units: int) -> int = units * 116 + 14
 
 digest() -> int:
-  var total = 0
-  total += sumList([4, 5, 6])
-  total += minList([4, 1, 7])
-  total += maxList([4, 1, 7])
-  total += clampInt(12, 0, 9)
-  total += factorial(6)
-  total += fibonacci(10)
-  total += gcd(48, 18)
-  total += lcm(12, 18)
-  total += collatzSteps(12)
-  total += letterGrade(92).length
-  total += gpaPoints(75)
-  total += weighted(80, 90, 70)
-  total += dayOfYear(3, 1)
-  total += daysInMonth(2)
-  total += roundDiv(199, 15)
-  total += tipOf(2000, 10)
-  total += splitBill(1000, 3)
-  total += changeDue(500, 320)
-  total += margin(250, 180)
-  total += markup(180, 25)
-  total += reorderQty(4, 12)
-  total += rectangleArea(6, 4)
-  total += rectanglePerimeter(6, 4)
-  total += overlapLength(1, 5, 3, 8)
-  total += distanceSquared(1, 2, 4, 6)
-  total += simpleInterest(1000, 5, 2)
-  total += compoundSteps(1000, 10, 2)
-  total += payroll(42, 20)
-  total += netPay(800, 10)
-  total += countChar("a-b-c", "-")
-  total += shout("  ada ").length
-  total += wordScore("ada")
-  total += boolBit(true)
-  total += boolBit(opensWith("market", "mar"))
-  total += appleTier(10, 40)
-  total += breadTier(10, 40)
-  total += milkTier(10, 40)
-  total += riceTier(10, 40)
-  total += oilTier(10, 40)
-  total += soapTier(10, 40)
-  total += saltTier(10, 40)
-  total += honeyTier(10, 40)
-  total += teaTier(10, 40)
-  total += coffeeTier(10, 40)
-  total += flourTier(10, 40)
-  total += sugarTier(10, 40)
-  total += northShip(900, 2)
-  total += southShip(900, 2)
-  total += eastShip(900, 2)
-  total += westShip(900, 2)
-  total += portShip(900, 2)
-  total += hillShip(900, 2)
-  total += rentLate(12, 500)
-  total += stallLate(12, 500)
-  total += crateLate(12, 500)
-  total += coolerLate(12, 500)
-  total += licenseLate(12, 500)
-  total += clerkBonus(88, 200)
-  total += bakerBonus(88, 200)
-  total += driverBonus(88, 200)
-  total += buyerBonus(88, 200)
-  total += ripeSum([3, 8, 1, 9])
-  total += heavySum([3, 8, 1, 9])
-  total += warmSum([3, 8, 1, 9])
-  total += loudSum([3, 8, 1, 9])
-  total += tallSum([3, 8, 1, 9])
-  total += plainDigits(2468)
-  total += doubleDigits(2468)
-  total += tripleDigits(2468)
-  total += rateAppleCrate(3)
-  total += rateBreadCrate(3)
-  total += rateMilkCrate(3)
-  total += rateRiceCrate(3)
-  total += rateOilCrate(3)
-  total += rateSoapCrate(3)
-  total += rateSaltCrate(3)
-  total += rateHoneyCrate(3)
-  total += rateTeaCrate(3)
-  total += rateCoffeeCrate(3)
-  total += rateFlourCrate(3)
-  total += rateSugarCrate(3)
-  total += rateEggCrate(3)
-  total += rateCheeseCrate(3)
-  total += rateOatCrate(3)
-  total += rateSpiceCrate(3)
-  total += rateDateCrate(3)
-  total += rateFigCrate(3)
-  total += rateGrapeCrate(3)
-  total += rateOliveCrate(3)
-  total += ratePepperCrate(3)
-  total += rateOnionCrate(3)
-  total += rateGarlicCrate(3)
-  total += rateTomatoCrate(3)
-  total += ratePotatoCrate(3)
-  total += rateCarrotCrate(3)
-  total += rateLemonCrate(3)
-  total += rateMintCrate(3)
-  total += rateBasilCrate(3)
-  total += rateCuminCrate(3)
-  total += rateYeastCrate(3)
-  total += rateButterCrate(3)
-  total += rateCreamCrate(3)
-  total += rateLentilCrate(3)
-  total += rateBeanCrate(3)
-  total += rateNutCrate(3)
-  total += rateBarleyCrate(3)
-  total += rateMilletCrate(3)
-  total += rateSesameCrate(3)
-  total += rateThymeCrate(3)
-  total += rateGingerCrate(3)
-  total += rateCocoaCrate(3)
-  total += rateVanillaCrate(3)
-  total += rateWalnutCrate(3)
-  total += rateAlmondCrate(3)
-  total += ratePistachioCrate(3)
-  total += rateChickpeaCrate(3)
-  total += rateSpinachCrate(3)
-  total += rateCabbageCrate(3)
-  total += rateCucumberCrate(3)
-  total += rateOrangeCrate(3)
-  total += rateMelonCrate(3)
-  total += ratePeachCrate(3)
-  total += ratePlumCrate(3)
-  total += rateCherryCrate(3)
-  total += rateMangoCrate(3)
-  total += rateBananaCrate(3)
-  total += rateYogurtCrate(3)
-  total += rateLabnehCrate(3)
-  total += rateHalvaCrate(3)
-  total += rateTahiniCrate(3)
-  total += rateAppleSack(3)
-  total += rateBreadSack(3)
-  total += rateMilkSack(3)
-  total += rateRiceSack(3)
-  total += rateOilSack(3)
-  total += rateSoapSack(3)
-  total += rateSaltSack(3)
-  total += rateHoneySack(3)
-  total += rateTeaSack(3)
-  total += rateCoffeeSack(3)
-  total += rateFlourSack(3)
-  total += rateSugarSack(3)
-  total += rateEggSack(3)
-  total += rateCheeseSack(3)
-  total += rateOatSack(3)
-  total += rateSpiceSack(3)
-  total += rateDateSack(3)
-  total += rateFigSack(3)
-  total += rateGrapeSack(3)
-  total += rateOliveSack(3)
-  total += ratePepperSack(3)
-  total += rateOnionSack(3)
-  total += rateGarlicSack(3)
-  total += rateTomatoSack(3)
-  total += ratePotatoSack(3)
-  total += rateCarrotSack(3)
-  total += rateLemonSack(3)
-  total += rateMintSack(3)
-  total += rateBasilSack(3)
-  total += rateCuminSack(3)
   product = Product(sku: "A1", cents: 250, stock: 4)
-  total += product.value()
-  if product.low():
-    total += 1
   line = CartLine(units: 3, cents: 40)
-  total += line.total()
   shift = Shift(start: 22 * 60, end: 6 * 60)
-  total += shift.minutes()
-  return total
+  lowBit = 1 if product.low() else 0
+  sample = [3, 8, 1, 9]
+  parts = [
+    sumList([4, 5, 6]),
+    minList([4, 1, 7]),
+    maxList([4, 1, 7]),
+    clampInt(12, 0, 9),
+    factorial(6),
+    fibonacci(10),
+    gcd(48, 18),
+    lcm(12, 18),
+    collatzSteps(12),
+    letterGrade(92).length,
+    gpaPoints(75),
+    weighted(80, 90, 70),
+    dayOfYear(3, 1),
+    daysInMonth(2),
+    roundDiv(199, 15),
+    tipOf(2000, 10),
+    splitBill(1000, 3),
+    changeDue(500, 320),
+    margin(250, 180),
+    markup(180, 25),
+    reorderQty(4, 12),
+    rectangleArea(6, 4),
+    rectanglePerimeter(6, 4),
+    overlapLength(1, 5, 3, 8),
+    distanceSquared(1, 2, 4, 6),
+    simpleInterest(1000, 5, 2),
+    compoundSteps(1000, 10, 2),
+    payroll(42, 20),
+    netPay(800, 10),
+    countChar("a-b-c", "-"),
+    shout("  ada ").length,
+    wordScore("ada"),
+    boolBit(true),
+    boolBit(opensWith("market", "mar")),
+    appleTier(10, 40),
+    breadTier(10, 40),
+    milkTier(10, 40),
+    riceTier(10, 40),
+    oilTier(10, 40),
+    soapTier(10, 40),
+    saltTier(10, 40),
+    honeyTier(10, 40),
+    teaTier(10, 40),
+    coffeeTier(10, 40),
+    flourTier(10, 40),
+    sugarTier(10, 40),
+    northShip(900, 2),
+    southShip(900, 2),
+    eastShip(900, 2),
+    westShip(900, 2),
+    portShip(900, 2),
+    hillShip(900, 2),
+    rentLate(12, 500),
+    stallLate(12, 500),
+    crateLate(12, 500),
+    coolerLate(12, 500),
+    licenseLate(12, 500),
+    clerkBonus(88, 200),
+    bakerBonus(88, 200),
+    driverBonus(88, 200),
+    buyerBonus(88, 200),
+    ripeSum(sample),
+    heavySum(sample),
+    warmSum(sample),
+    loudSum(sample),
+    tallSum(sample),
+    plainDigits(2468),
+    doubleDigits(2468),
+    tripleDigits(2468),
+    rateAppleCrate(3),
+    rateBreadCrate(3),
+    rateMilkCrate(3),
+    rateRiceCrate(3),
+    rateOilCrate(3),
+    rateSoapCrate(3),
+    rateSaltCrate(3),
+    rateHoneyCrate(3),
+    rateTeaCrate(3),
+    rateCoffeeCrate(3),
+    rateFlourCrate(3),
+    rateSugarCrate(3),
+    rateEggCrate(3),
+    rateCheeseCrate(3),
+    rateOatCrate(3),
+    rateSpiceCrate(3),
+    rateDateCrate(3),
+    rateFigCrate(3),
+    rateGrapeCrate(3),
+    rateOliveCrate(3),
+    ratePepperCrate(3),
+    rateOnionCrate(3),
+    rateGarlicCrate(3),
+    rateTomatoCrate(3),
+    ratePotatoCrate(3),
+    rateCarrotCrate(3),
+    rateLemonCrate(3),
+    rateMintCrate(3),
+    rateBasilCrate(3),
+    rateCuminCrate(3),
+    rateYeastCrate(3),
+    rateButterCrate(3),
+    rateCreamCrate(3),
+    rateLentilCrate(3),
+    rateBeanCrate(3),
+    rateNutCrate(3),
+    rateBarleyCrate(3),
+    rateMilletCrate(3),
+    rateSesameCrate(3),
+    rateThymeCrate(3),
+    rateGingerCrate(3),
+    rateCocoaCrate(3),
+    rateVanillaCrate(3),
+    rateWalnutCrate(3),
+    rateAlmondCrate(3),
+    ratePistachioCrate(3),
+    rateChickpeaCrate(3),
+    rateSpinachCrate(3),
+    rateCabbageCrate(3),
+    rateCucumberCrate(3),
+    rateOrangeCrate(3),
+    rateMelonCrate(3),
+    ratePeachCrate(3),
+    ratePlumCrate(3),
+    rateCherryCrate(3),
+    rateMangoCrate(3),
+    rateBananaCrate(3),
+    rateYogurtCrate(3),
+    rateLabnehCrate(3),
+    rateHalvaCrate(3),
+    rateTahiniCrate(3),
+    rateAppleSack(3),
+    rateBreadSack(3),
+    rateMilkSack(3),
+    rateRiceSack(3),
+    rateOilSack(3),
+    rateSoapSack(3),
+    rateSaltSack(3),
+    rateHoneySack(3),
+    rateTeaSack(3),
+    rateCoffeeSack(3),
+    rateFlourSack(3),
+    rateSugarSack(3),
+    rateEggSack(3),
+    rateCheeseSack(3),
+    rateOatSack(3),
+    rateSpiceSack(3),
+    rateDateSack(3),
+    rateFigSack(3),
+    rateGrapeSack(3),
+    rateOliveSack(3),
+    ratePepperSack(3),
+    rateOnionSack(3),
+    rateGarlicSack(3),
+    rateTomatoSack(3),
+    ratePotatoSack(3),
+    rateCarrotSack(3),
+    rateLemonSack(3),
+    rateMintSack(3),
+    rateBasilSack(3),
+    rateCuminSack(3),
+    product.value(),
+    lowBit,
+    line.total(),
+    shift.minutes(),
+  ]
+  return parts.sum()
 
 main():
   product = Product(sku: "A1", cents: 250, stock: 4)
@@ -729,6 +570,3 @@ main():
   print shift.minutes()
   print letterGrade(92)
   print sumList([4, 5, 6])
-
-
-

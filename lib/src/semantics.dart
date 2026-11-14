@@ -4,6 +4,7 @@ import 'ast.dart';
 import 'constants.dart';
 import 'dart_api.dart';
 import 'libraries.dart';
+import 'sdk.dart';
 import 'source.dart';
 import 'walk.dart';
 
@@ -123,7 +124,16 @@ class SemanticModel {
   final loopPairs = <Node>{};
   final extensions = <ExtensionDeclaration>[];
   final aliases = <String, String>{};
+
+  /// Alias name to the `quds:` library that declared it.
+  final sdkAliases = <String, String>{};
   final classes = <String, ClassDeclaration>{};
+
+  /// `quds:` libraries whose classes, functions, or extensions are used.
+  final usedSdk = <String>{};
+
+  /// Public Dart names of a `quds:` library. Aliases are erased, so they are absent.
+  final sdkDartNames = <String, Set<String>>{};
 
   String resolve(String type) {
     var current = type;
@@ -343,6 +353,20 @@ const _numberMembers = [
   'fixed',
 ];
 
+/// True when generated Dart should import this `quds:` library.
+///
+/// A prelude-only `use quds:core` does not. An alias is erased, so using only
+/// an alias does not either. An `export` does, because the names leave the file.
+bool emitsSdkImport(ImportDeclaration node, SemanticModel model) {
+  if (model.skipped.contains(node)) return false;
+  if (sdkLibraryName(node.uri) == null) return false;
+  final names = model.sdkDartNames[node.uri] ?? const <String>{};
+  if (names.isEmpty) return false;
+  if (node.show.isNotEmpty && !node.show.any(names.contains)) return false;
+  if (node.export) return true;
+  return model.usedSdk.contains(node.uri);
+}
+
 class Analyzer {
   Analyzer({this.library = '<input>', String? file}) : _file = file ?? library;
   final model = SemanticModel();
@@ -396,7 +420,8 @@ class Analyzer {
               late: late,
               lateOpen: lateOpen,
               reactive: reactive,
-              field: field)
+              field: field,
+              documentation: function?.documentation)
           .withFunction(function);
   String? _expected;
   String? _thisType;
@@ -404,6 +429,12 @@ class Analyzer {
   final _fieldSymbols = <Symbol>{};
   var _readonlyMethod = false;
   var _ffi = false;
+
+  /// True while binding a `quds:` library, so its own signatures are not uses.
+  var _suppressSdkUse = false;
+
+  /// Plain type name to its prefixed key while a prefixed SDK library is bound.
+  final _importedTypes = <String, String>{};
 
   /// A `package:` URI ending in `.dart` was imported. Unknown names pass to Dart.
   var _externalDart = false;
@@ -638,8 +669,10 @@ class Analyzer {
     if (_global.lookup(key) != null) {
       fail('Duplicate name: $key', statement);
     }
-    final symbol =
-        Symbol(key, key, key, classDeclaration: statement, library: owner);
+    final symbol = Symbol(key, key, key,
+        classDeclaration: statement,
+        library: owner,
+        documentation: statement.documentation);
     model.libraryOf[statement] = owner;
     if (statement.kind == 'enum') model.enumNames.add(key);
     _global.symbols[key] = symbol;
@@ -715,7 +748,8 @@ class Analyzer {
       ..addAll(savedTypes);
   }
 
-  void registerExtension(ExtensionDeclaration statement) {
+  void registerExtension(ExtensionDeclaration statement,
+      {String library = ''}) {
     model.extensions.add(statement);
     final savedTypes = {..._typeNames};
     _typeNames.addAll(statement.typeParameters.map((item) => item.name));
@@ -723,7 +757,10 @@ class Analyzer {
       final type = method.returnType ??
           (method.expressionBody == null ? 'void' : '<infer>');
       if (type != '<infer>') validateType(type, method);
-      final symbol = Symbol(method.name, method.name, type, function: method)
+      final symbol = Symbol(method.name, method.name, type,
+              function: method,
+              library: library,
+              documentation: method.documentation)
           .withFunction(method);
       model.declarations[method] = symbol;
     }
@@ -1251,8 +1288,8 @@ class Analyzer {
       }
     }
     model.imports.add(node);
-    if (node.uri == 'quds:core') {
-      _bindPrelude(node);
+    if (node.uri.startsWith('quds:')) {
+      _bindQuds(node);
       return;
     }
     if (node.uri == 'dart:ffi') _ffi = true;
@@ -1316,12 +1353,104 @@ class Analyzer {
     'Error'
   ];
 
-  void _bindPrelude(ImportDeclaration node) {
+  void _bindQuds(ImportDeclaration node) {
+    final libraryName = sdkLibraryName(node.uri);
+    final prelude = node.uri == 'quds:core';
+    final imported = libraryName == null ? null : _libraries[node.uri];
+    if (libraryName == null || (imported == null && !prelude)) {
+      fail('Unknown import: ${node.uri}', node);
+    }
+    final dartNames = imported == null ? <String>{} : _sdkDartNames(imported);
+    final aliasNames = imported == null ? <String>{} : _sdkAliasNames(imported);
     if (node.show.isNotEmpty) {
       for (final name in node.show) {
-        if (!_preludeNames.contains(name)) {
+        final inPrelude = prelude && _preludeNames.contains(name);
+        if (!inPrelude &&
+            !dartNames.contains(name) &&
+            !aliasNames.contains(name)) {
           error('E200', 'Name $name is not defined', node);
         }
+      }
+    }
+    if (prelude) _bindPrelude(node, allowOther: imported != null);
+    if (imported == null) return;
+    model.sdkDartNames[node.uri] = dartNames;
+    model.resolvedImports[node] = sdkDartFileName(libraryName);
+    if (node.show.isNotEmpty &&
+        !node.show.any(
+            (name) => dartNames.contains(name) || aliasNames.contains(name))) {
+      return;
+    }
+    final filter = _sdkFilter(node, {...dartNames, ...aliasNames});
+    final previous = _suppressSdkUse;
+    _suppressSdkUse = true;
+    if (node.prefix != null) {
+      for (final name in dartNames) {
+        _importedTypes[name] = '${node.prefix}.$name';
+      }
+    }
+    try {
+      if (node.export) {
+        _importLibrary(imported, node.uri,
+            filter: filter, bind: false, check: false);
+        return;
+      }
+      _importLibrary(imported, node.uri,
+          filter: filter, qualify: node.prefix, check: false);
+    } finally {
+      if (node.prefix != null) {
+        for (final name in dartNames) {
+          _importedTypes.remove(name);
+        }
+      }
+      _suppressSdkUse = previous;
+    }
+  }
+
+  Set<String> _sdkDartNames(Program program) {
+    final names = <String>{};
+    for (final statement in program.statements) {
+      switch (statement) {
+        case ClassDeclaration() when !statement.name.startsWith('_'):
+          names.add(statement.name);
+        case FunctionDeclaration()
+            when statement.name != 'main' && !statement.name.startsWith('_'):
+          names.add(statement.name);
+        case ExtensionDeclaration()
+            when statement.name != null && !statement.name!.startsWith('_'):
+          names.add(statement.name!);
+        default:
+          break;
+      }
+    }
+    return names;
+  }
+
+  Set<String> _sdkAliasNames(Program program) => {
+        for (final statement in program.statements)
+          if (statement is AliasDeclaration && !statement.name.startsWith('_'))
+            statement.name,
+      };
+
+  ImportDeclaration? _sdkFilter(ImportDeclaration node, Set<String> names) {
+    if (node.show.isNotEmpty) {
+      final shown = [
+        for (final name in node.show)
+          if (names.contains(name)) name,
+      ];
+      if (shown.isEmpty) return node;
+      return ImportDeclaration(node.uri, node.prefix, node.span, show: shown);
+    }
+    if (node.hide.isNotEmpty) return node;
+    return null;
+  }
+
+  void _bindPrelude(ImportDeclaration node, {bool allowOther = false}) {
+    if (node.show.isNotEmpty) {
+      for (final name in node.show) {
+        if (_preludeNames.contains(name)) continue;
+        if (allowOther) continue;
+        error('E200', 'Name $name is not defined', node);
       }
     }
     final selected = node.show.isNotEmpty
@@ -1415,6 +1544,7 @@ class Analyzer {
   }
 
   String _resolveLibrary(String from, String uri) {
+    if (uri.startsWith('quds:')) return uri;
     final resolved = resolveLibraryPath(from, uri);
     if (resolved != null) return resolved;
     final target = Uri.file(from).resolve(uri);
@@ -1468,6 +1598,11 @@ class Analyzer {
         case FunctionDeclaration()
             when statement.name != 'main' && !statement.name.startsWith('_'):
           names.add(statement.name);
+        case AliasDeclaration() when !statement.name.startsWith('_'):
+          names.add(statement.name);
+        case ExtensionDeclaration()
+            when statement.name != null && !statement.name!.startsWith('_'):
+          names.add(statement.name!);
         case ImportDeclaration() when statement.export:
           final exportedPath = _resolveLibrary(path, statement.uri);
           final exported = _libraries[exportedPath];
@@ -1516,6 +1651,15 @@ class Analyzer {
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
           _importFunction(statement, qualify: qualify);
+        case AliasDeclaration()
+            when _importable(statement.name, home) &&
+                _keeps(statement.name, filter):
+          _importAlias(statement, home: home, qualify: qualify);
+        case ExtensionDeclaration()
+            when statement.name != null &&
+                _importable(statement.name!, home) &&
+                _keeps(statement.name!, filter):
+          _importExtension(statement, home: home, qualify: qualify);
         case ImportDeclaration() when statement.export:
           final exportedPath = _resolveLibrary(path, statement.uri);
           final exported = _libraries[exportedPath];
@@ -1563,6 +1707,25 @@ class Analyzer {
     }
   }
 
+  void _importAlias(AliasDeclaration statement,
+      {required String home, String? qualify}) {
+    final key = qualify == null ? statement.name : '$qualify.${statement.name}';
+    if (model.sdkAliases[key] == home) return;
+    if (model.aliases.containsKey(key) ||
+        (qualify == null && _global.lookup(statement.name) != null)) {
+      error('E204', 'Two imports define ${statement.name}', statement);
+    }
+    model.aliases[key] = statement.target;
+    model.sdkAliases[key] = home;
+  }
+
+  void _importExtension(ExtensionDeclaration statement,
+      {required String home, String? qualify}) {
+    if (model.extensions.contains(statement)) return;
+    if (qualify != null) return;
+    registerExtension(statement, library: home);
+  }
+
   void _importFunction(FunctionDeclaration statement, {String? qualify}) {
     final existing = qualify == null
         ? _global.symbols[statement.name]
@@ -1578,9 +1741,9 @@ class Analyzer {
             !statement.returnType!.startsWith('Future<')
         ? 'Future<${statement.returnType}>'
         : type;
-    final symbol =
-        Symbol(statement.name, statement.name, effective, function: statement)
-            .withFunction(statement);
+    final symbol = Symbol(statement.name, statement.name, effective,
+            function: statement, documentation: statement.documentation)
+        .withFunction(statement);
     model.declarations[statement] = symbol;
     for (final parameter in statement.parameters) {
       model.declarations[parameter] = Symbol(
@@ -1709,7 +1872,13 @@ class Analyzer {
     return false;
   }
 
+  void _touch(Symbol symbol) {
+    if (_suppressSdkUse) return;
+    if (symbol.library.startsWith('quds:')) model.usedSdk.add(symbol.library);
+  }
+
   void validateType(String type, Node node, {bool allowVoid = true}) {
+    if (_importedTypes.containsKey(type)) return;
     final resolved = model.resolve(type);
     if (resolved != type) {
       validateType(resolved, node, allowVoid: allowVoid);
@@ -1831,9 +2000,11 @@ class Analyzer {
       }
       return;
     }
-    if (_global.symbols[type]?.classDeclaration != null ||
-        _global.symbols[type]?.classCase != null ||
+    final named = _global.symbols[type];
+    if (named?.classDeclaration != null ||
+        named?.classCase != null ||
         _pendingClasses.contains(type)) {
+      if (named != null) _touch(named);
       return;
     }
     final open = type.indexOf('<');
@@ -2060,7 +2231,7 @@ class Analyzer {
           _scope.symbols[node.name] = symbol;
           model.declarations[node] = symbol;
           final savedExpected = _expected;
-          if (node.type != null) _expected = node.type;
+          if (node.type != null) _expected = model.resolve(node.type!);
           final type = expression(node.value);
           _expected = savedExpected;
           if (type == 'void') {
@@ -2080,11 +2251,11 @@ class Analyzer {
         final existing = _scope.lookup(node.name);
         final savedExpected = _expected;
         if (node.type != null) {
-          _expected = node.type;
+          _expected = model.resolve(node.type!);
         } else if (existing != null &&
             node.mode == BindingMode.inferred &&
             node.type == null) {
-          _expected = existing.type;
+          _expected = model.resolve(existing.type);
         }
         if (node.open) {
           _expected = savedExpected;
@@ -3391,10 +3562,13 @@ class Analyzer {
     if (declaration == null || declaration.typeParameters.isEmpty) {
       return const {};
     }
-    if (!type.startsWith('${declaration.name}<') || !type.endsWith('>')) {
+    final head = _genericHead(type);
+    final named =
+        head == declaration.name || head.endsWith('.${declaration.name}');
+    if (!named || !type.startsWith('$head<') || !type.endsWith('>')) {
       return const {};
     }
-    final inner = type.substring(declaration.name.length + 1, type.length - 1);
+    final inner = type.substring(head.length + 1, type.length - 1);
     final args = _splitTypes(inner);
     if (args.length != declaration.typeParameters.length) return const {};
     return {
@@ -3662,6 +3836,7 @@ class Analyzer {
           return 'dynamic';
         }
         model.references[node] = found;
+        _touch(found);
         return found.type;
       }
     }
@@ -3728,8 +3903,21 @@ class Analyzer {
     if (found != null) {
       if (declaration != null) _checkMember(declaration, node.name, node);
       final substituted = _substitute(found, substitution);
-      model.references[node] = Symbol(
-          node.name, _dartMember(_genericHead(look), node.name), substituted);
+      final classOwns = declaration != null &&
+          (_method(declaration, node.name) != null ||
+              _fieldsOf(declaration).any((item) => item.name == node.name));
+      final extensions = classOwns
+          ? const <FunctionDeclaration>[]
+          : _extensions(look, node.name);
+      final extensionSymbol =
+          extensions.length == 1 ? model.declarations[extensions.single] : null;
+      if (extensionSymbol != null) {
+        model.references[node] = extensionSymbol;
+        _touch(extensionSymbol);
+      } else {
+        model.references[node] = Symbol(
+            node.name, _dartMember(_genericHead(look), node.name), substituted);
+      }
       if (substituted.contains('->')) return substituted;
       final foundType =
           node.nullAware || type.endsWith('?') ? '$substituted?' : substituted;
@@ -4443,8 +4631,9 @@ class Analyzer {
       AwaitIsolateExpression() => awaitIsolate(node),
       SymbolExpression() => 'Symbol',
     };
-    model.types[node] = type;
-    return type;
+    final resolved = model.resolve(type);
+    model.types[node] = resolved;
+    return resolved;
   }
 
   String _hinted(String message, String name, Iterable<String> candidates) {
@@ -4617,6 +4806,7 @@ class Analyzer {
       fail('Choose one overload with a call or a typed context', node);
     }
     model.references[node] = symbol;
+    _touch(symbol);
     if (symbol.function != null) return functionType(symbol.function!);
     if (symbol.parameterTypes.isNotEmpty) {
       return '(${symbol.parameterTypes.join(', ')}) -> ${symbol.type}';
@@ -4812,16 +5002,17 @@ class Analyzer {
       return _passExternal(
           node, Symbol(callee.name, callee.name, 'dynamic', external: true));
     }
+    _touch(found);
     if (found.classDeclaration != null) {
       final declaration = found.classDeclaration!;
       final returned = constructClass(node, declaration);
       final qualified =
           _qualifyType(found.dartName, returned, declaration.name);
-      final previous = model.references[node.callee]!;
-      if (previous.classDeclaration != null) {
+      final previous = model.references[node.callee];
+      if (previous == null || previous.classDeclaration != null) {
         model.references[node.callee] = Symbol(
             found.dartName, found.dartName, qualified,
-            classDeclaration: previous.classDeclaration);
+            classDeclaration: previous?.classDeclaration ?? declaration);
       } else {
         final rebuilt = Symbol(declaration.name, declaration.name, qualified);
         if (previous.function != null) rebuilt.withFunction(previous.function);
@@ -4974,12 +5165,20 @@ class Analyzer {
       }
       final functionResolved = resolved;
       model.references[callee] = model.declarations[functionResolved]!;
+      _touch(model.references[callee]!);
       final substitution = {
         ..._genericSubstitution(objectType, declaration),
         ..._extensionSubstitution(objectType, functionResolved)
       };
-      final returned =
-          applyArguments(node, functionResolved.parameters, functionResolved);
+      final parameters = [
+        for (final parameter in functionResolved.parameters)
+          Parameter(parameter.name, _substitute(parameter.type, substitution),
+              parameter.mutable, parameter.span,
+              defaultValue: parameter.defaultValue,
+              variadic: parameter.variadic,
+              initializing: parameter.initializing)
+      ];
+      final returned = applyArguments(node, parameters, functionResolved);
       final declared = model.declarations[functionResolved]!.type == '<infer>'
           ? returned
           : model.declarations[functionResolved]!.type;
@@ -5048,6 +5247,7 @@ class Analyzer {
           callee);
     }
     model.references[callee] = symbol;
+    _touch(symbol);
     final args = node.arguments;
     if (symbol.dartName == 'print') {
       if (args.length != 1 || args.single.name != null) {
@@ -5217,19 +5417,58 @@ class Analyzer {
     return symbol.type;
   }
 
+  Symbol _appliedSymbol(CallExpression node, TypeApplication applied) {
+    if (applied.callee is Identifier) {
+      final name = (applied.callee as Identifier).name;
+      final symbol = _scope.lookup(name);
+      if (symbol == null) {
+        fail(_hinted('Undefined function: $name', name, _visibleNames()), node);
+      }
+      model.references[applied.callee as Identifier] = symbol;
+      model.references[node.callee] = symbol;
+      _touch(symbol);
+      return symbol;
+    }
+    if (applied.callee is MemberAccess) {
+      final member = applied.callee as MemberAccess;
+      if (member.object is Identifier) {
+        final owner = _scope.lookup((member.object as Identifier).name);
+        if (owner != null && owner.namespace != null) {
+          model.references[member.object] = owner;
+          model.types[member.object] = 'prefix';
+          final found = owner.namespace![member.name];
+          if (found == null) {
+            fail(
+                _hinted(
+                    'Name ${member.name} is not defined',
+                    member.name,
+                    owner.namespace!.keys
+                        .where((item) => !item.startsWith('_'))),
+                member);
+          }
+          model.references[member] = found;
+          model.references[node.callee] = found;
+          _touch(found);
+          return found;
+        }
+      }
+    }
+    fail('Type arguments need a name', applied);
+  }
+
   String callApplied(CallExpression node, TypeApplication applied) {
-    if (applied.callee is! Identifier) {
-      fail('Type arguments need a name', applied);
-    }
-    final name = (applied.callee as Identifier).name;
-    final symbol = _scope.lookup(name);
-    if (symbol == null) {
-      fail(_hinted('Undefined function: $name', name, _visibleNames()), node);
-    }
-    model.references[applied.callee as Identifier] = symbol;
-    model.references[node.callee] = symbol;
+    final symbol = _appliedSymbol(node, applied);
+    final name = symbol.name;
     if (symbol.classDeclaration != null && symbol.classCase == null) {
-      return constructClass(node, symbol.classDeclaration!, applied.arguments);
+      final returned =
+          constructClass(node, symbol.classDeclaration!, applied.arguments);
+      if (!symbol.dartName.contains('.')) return returned;
+      final qualified = _qualifyType(
+          symbol.dartName, returned, symbol.classDeclaration!.name);
+      model.references[node.callee] = Symbol(
+          symbol.dartName, symbol.dartName, qualified,
+          classDeclaration: symbol.classDeclaration);
+      return qualified;
     }
     final candidates = symbol.overloads.isEmpty && symbol.function != null
         ? [symbol.function!]

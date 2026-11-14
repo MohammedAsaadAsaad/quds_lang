@@ -24,7 +24,8 @@ class FunctionDeclaration extends Statement {
       this.isOperator = false,
       this.readonlyMethod = false,
       this.isStatic = false,
-      this.typeParameters = const []});
+      this.typeParameters = const [],
+      this.documentation});
   final String name;
   final List<Parameter> parameters;
   final List<TypeParameter> typeParameters;
@@ -42,6 +43,9 @@ class FunctionDeclaration extends Statement {
   final bool isOperator;
   final bool readonlyMethod;
   final bool isStatic;
+
+  /// `#` or `///` lines immediately above this declaration.
+  final String? documentation;
 }
 
 class Metadata extends Node {
@@ -359,7 +363,8 @@ class ClassDeclaration extends Statement {
       this.requirements = const [],
       this.constructors = const [],
       this.properties = const [],
-      this.typeParameters = const []});
+      this.typeParameters = const [],
+      this.documentation});
   final String name;
 
   /// `class`, `value`, `sealed`, `sealedType`, `mixin`, `mixinClass`, or `interface`.
@@ -377,6 +382,9 @@ class ClassDeclaration extends Statement {
   final List<ConstructorDeclaration> constructors;
   final List<PropertyDeclaration> properties;
   final List<TypeParameter> typeParameters;
+
+  /// `#` or `///` lines immediately above this declaration.
+  final String? documentation;
 }
 
 class IfLetStatement extends Statement {
@@ -424,9 +432,13 @@ class MemberAssignment extends Statement {
 }
 
 class AliasDeclaration extends Statement {
-  const AliasDeclaration(this.name, this.target, super.span);
+  const AliasDeclaration(this.name, this.target, super.span,
+      {this.documentation});
   final String name;
   final String target;
+
+  /// `#` or `///` lines immediately above this declaration.
+  final String? documentation;
 }
 
 class RequireStatement extends Statement {

@@ -227,6 +227,32 @@ class DartEmitter {
         continue;
       }
       if (node is ImportDeclaration) {
+        if (node.uri.startsWith('quds:')) {
+          if (!emitsSdkImport(node, model)) continue;
+          final uri = model.resolvedImports[node];
+          if (uri == null) continue;
+          final names = model.sdkDartNames[node.uri] ?? const <String>{};
+          final show = [
+            for (final name in node.show)
+              if (names.contains(name)) name,
+          ];
+          final hide = [
+            for (final name in node.hide)
+              if (names.contains(name)) name,
+          ];
+          final combinator = show.isNotEmpty
+              ? ' show ${show.join(', ')}'
+              : hide.isNotEmpty
+                  ? ' hide ${hide.join(', ')}'
+                  : '';
+          if (node.export) {
+            _imports.add("export '$uri'$combinator;");
+            continue;
+          }
+          final prefix = node.prefix == null ? '' : ' as ${node.prefix}';
+          _imports.add("import '$uri'$prefix$combinator;");
+          continue;
+        }
         final uri = model.resolvedImports[node] ??
             (node.uri.endsWith('.quds')
                 ? '${node.uri.substring(0, node.uri.length - 5)}.dart'

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:quds_lang/quds_lang.dart';
+import 'package:quds_lang/src/sdk.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -3136,13 +3137,142 @@ total(values: List<int>) -> int = values.length
     expect(run.exitCode, 0, reason: '${run.stderr}\n$dart');
     expect(run.stdout, '7\n');
   });
+
+  test('quds:ext matches the embedded library and extends existing types',
+      () async {
+    expect(File('lib/sdk/ext.quds').readAsStringSync(), extSdkSource);
+    await execute('''
+use quds:ext
+main():
+  print "  ".blank()
+  print "ab".capitalized()
+  print "ab".reversed()
+  print "ababa".count("ab")
+  print "prefix-value".removePrefix("prefix-")
+  print "value-suffix".removeSuffix("-suffix")
+  numbers: List<int> = [1, 2, 3]
+  print numbers.second()
+  copy = numbers.reversedCopy()
+  print copy.first
+  print numbers.without(2).length
+  print 4.even()
+  print 5.odd()
+  negative = -2
+  print negative.signum()
+  print 3.between(1, 3)
+  ages: Map<String, int> = map:
+    "Ada": 1
+    "Bea": 1
+  print ages.keysOf(1).length
+  print "a-b".before("-")
+  print "a-b".after("-")
+  print "ab".repeated(3)
+  print "a b".words().length
+  print numbers.third()
+  print numbers.chunk(2).length
+  print 12.divisible(3)
+  print 100.digits()
+  print 4.squared()
+  print ages.missing("Cara")
+  flags: Set<int> = set:
+    1
+    2
+  print flags.without(1).length
+  print 1.5.whole()
+''', 'true\nAb\nba\n2\nvalue\nvalue\n2\n3\n2\ntrue\ntrue\n-1\ntrue\n2\na\nb\nababab\n2\n3\n2\ntrue\n3\n16\ntrue\n1\n1\n');
+  });
+
+  test('quds:core matches the embedded library and executes', () async {
+    expect(File('lib/sdk/core.quds').readAsStringSync(), coreSdkSource);
+    final result = compile('''
+use quds:core
+main():
+  stack = Stack<int>()
+  stack.push(1)
+  print stack.pop()
+''');
+    expect(result.dart, contains("import 'quds_core.dart';"));
+    expect(result.dart, isNot(contains("import 'quds:core'")));
+    expect(result.bundles, hasLength(1));
+    expect(result.bundles.single.fileName, 'quds_core.dart');
+    expect(result.bundles.single.source, contains('class Stack<'));
+    expect(compile('''
+use quds:core hide Ok
+main():
+  print 1
+''').dart, isNot(contains('quds_core')));
+    expect(() => compile('''
+main():
+  Stack<int>()
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:missing
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E900'))));
+    expect(() => compile('''
+use quds:core show Stack
+main():
+  print Ok(1)
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:core show Nope
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:core as core
+main():
+  Stack<int>()
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    await execute('''
+use quds:core
+main():
+  numbers: Array<int> = [1, 2, 3]
+  print numbers.length
+  ages: Dict<String, int> = map:
+    "Ada": 36
+  print ages["Ada"]
+  again = 1
+  seen: HashSet<int> = set:
+    again
+    again
+  print seen.length
+  stack = Stack<int>()
+  stack.push(1)
+  stack.push(2)
+  print stack.top()
+  print stack.pop()
+  print stack.size()
+  line = Queue<String>()
+  line.add("a")
+  line.add("b")
+  print line.take()
+  print line.next()
+  bag = Bag<String>()
+  bag.add("go")
+  bag.add("go")
+  print bag.count("go")
+  print bag.count("stop")
+  print bag.total()
+''', '3\n36\n1\n2\n2\n1\na\nb\n2\n0\n2\n');
+    await execute('''
+use quds:core as core
+main():
+  stack = core.Stack<int>()
+  stack.push(4)
+  print stack.pop()
+''', '4\n');
+  });
 }
 
 Future<void> execute(String source, String stdout) async {
   final directory = Directory.systemTemp.createTempSync('quds-language-');
   try {
+    final result = compile(source);
     final output = File('${directory.path}/app.dart')
-      ..writeAsStringSync(compile(source).dart);
+      ..writeAsStringSync(result.dart);
+    writeSdkBundles(directory.path, result);
     final analysis = await Process.run(
         Platform.resolvedExecutable, ['analyze', output.path]);
     expect(analysis.exitCode, 0,

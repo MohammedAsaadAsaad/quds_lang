@@ -5,6 +5,7 @@ import 'ast.dart';
 import 'compiler.dart';
 import 'dart_api.dart';
 import 'libraries.dart';
+import 'sdk.dart';
 import 'semantics.dart';
 import 'source.dart';
 import 'walk.dart';
@@ -53,14 +54,12 @@ List<Map<String, Object?>> completeAt({
       _builtinMembers(literal, false, range, add);
       return items.values.toList();
     }
-    final compilation = name != null && !_chained(source, dot)
-        ? (resolved ?? _recover(source, word, dot, compile))
-        : _recover(source, word, dot, compile);
+    final compilation = resolved ?? _recover(source, word, dot, compile);
     if (compilation == null) {
       _uncompiledDart(source, dot, range, add);
       return items.values.toList();
     }
-    final scope = _scopeAt(compilation, source, cursor);
+    final scope = _scopeAt(compilation, source, _lineStart(source, cursor));
     _members(
       compilation,
       source,
@@ -231,14 +230,6 @@ int? _dotBefore(String source, int wordStart) {
   }
   if (previous > 0 && _digit(source.codeUnitAt(previous - 1))) return null;
   return index - 1;
-}
-
-bool _chained(String source, int dot) {
-  final name = _receiverName(source, dot);
-  if (name == null) return true;
-  final start = dot - name.length;
-  if (start > 0 && source.codeUnitAt(start - 1) == 46) return true;
-  return false;
 }
 
 String? _literalType(String source, int dot) {
@@ -754,6 +745,11 @@ void _members(
         compilation, scope.owner!.superclass!, null, false, range, add);
     return;
   }
+  final chain = _chainType(compilation, source, dot, scope);
+  if (chain != null) {
+    _typeMembers(compilation, chain, null, false, range, add);
+    return;
+  }
   final symbol = name == null ? null : scope.names[name];
   if (symbol != null && symbol.namespace != null && symbol.type == 'prefix') {
     for (final entry in symbol.namespace!.entries) {
@@ -782,6 +778,196 @@ void _members(
       : symbol?.type ?? _expressionType(compilation, source, dot);
   if (type == null || type == 'prefix') return;
   _typeMembers(compilation, type, symbol?.classDeclaration, onType, range, add);
+}
+
+/// Type of `a.b.c` before [dot], using the cached analysis only.
+String? _chainType(
+    Compilation compilation, String source, int dot, _Here scope) {
+  final steps = _chain(source, dot);
+  if (steps == null || steps.length < 2) return null;
+  var type = _rootType(compilation, scope, steps.first.name);
+  if (steps.first.call) type = _returnType(type);
+  if (steps.first.index) type = _elementType(type);
+  if (type == null) return null;
+  for (final step in steps.skip(1)) {
+    final current = type;
+    if (current == null) return null;
+    if (step.name.isNotEmpty) {
+      type = _memberType(compilation, current, step.name);
+    }
+    if (step.call) type = _returnType(type);
+    if (step.index) type = _elementType(type);
+    if (type == null || type == '<infer>') return null;
+  }
+  return type;
+}
+
+String? _rootType(Compilation compilation, _Here scope, String name) {
+  final symbol = scope.names[name];
+  if (symbol != null && symbol.type.isNotEmpty && symbol.type != 'prefix') {
+    return symbol.type;
+  }
+  final owner = scope.owner;
+  if (owner == null) return null;
+  return _memberType(compilation, owner.name, name);
+}
+
+String? _memberType(Compilation compilation, String type, String name) {
+  var bare = type.startsWith('readonly ') ? type.substring(9) : type;
+  if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+  final declaration = compilation.semantics.classes[_head(bare)];
+  if (declaration != null) {
+    final args = _typeArgs(declaration, bare);
+    for (final current in _lineage(compilation, declaration)) {
+      for (final field in current.fields) {
+        if (field.name != name) continue;
+        final shown =
+            compilation.semantics.declarations[field]?.type ?? field.type;
+        return _applyArgs(shown, args);
+      }
+      for (final property in current.properties) {
+        if (property.name == name) return _applyArgs(property.type, args);
+      }
+      for (final method in current.methods) {
+        if (method.name != name || method.isOperator) continue;
+        final shown = compilation.semantics.declarations[method]?.type ??
+            method.returnType ??
+            'void';
+        return _applyArgs(shown, args);
+      }
+    }
+  }
+  for (final extension in compilation.semantics.extensions) {
+    if (extension.target != bare && extension.target != _head(bare)) continue;
+    for (final method in extension.methods) {
+      if (method.name != name) continue;
+      return compilation.semantics.declarations[method]?.type ??
+          method.returnType;
+    }
+  }
+  final family = _family(bare);
+  if (family != null) {
+    final groups = family.$1 == 'List' || family.$1 == 'Set'
+        ? [family.$1, 'Iterable']
+        : [family.$1];
+    for (final group in groups) {
+      final getter = _getters[group]?[name];
+      if (getter != null) return _subst(getter, family.$2);
+      final method = _methods[group]?[name];
+      if (method != null) return _subst(method.$2, family.$2);
+    }
+  }
+  return compilation.semantics.dartShapes[_head(bare)]?.members[name]?.type;
+}
+
+Map<String, String> _typeArgs(ClassDeclaration type, String applied) {
+  if (type.typeParameters.isEmpty || !applied.startsWith('${type.name}<')) {
+    return const {};
+  }
+  final close = applied.lastIndexOf('>');
+  if (close < 0) return const {};
+  final parts = _split(applied.substring(type.name.length + 1, close));
+  if (parts.length != type.typeParameters.length) return const {};
+  return {
+    for (var i = 0; i < parts.length; i++) type.typeParameters[i].name: parts[i]
+  };
+}
+
+String _applyArgs(String type, Map<String, String> args) {
+  if (args.isEmpty || type == '<infer>') return type;
+  return type.replaceAllMapped(RegExp(r'[A-Za-z_][A-Za-z0-9_]*'), (match) {
+    return args[match.group(0)!] ?? match.group(0)!;
+  });
+}
+
+String? _elementType(String? type) {
+  if (type == null) return null;
+  var bare = type.endsWith('?') ? type.substring(0, type.length - 1) : type;
+  if (bare == 'String') return 'String';
+  final family = _family(bare);
+  if (family == null) return null;
+  if (family.$1 == 'Map') return family.$2['V'];
+  return family.$2['T'];
+}
+
+String? _returnType(String? type) {
+  if (type == null) return null;
+  final arrow = type.lastIndexOf('->');
+  if (arrow < 0) return type;
+  return type.substring(arrow + 2).trim();
+}
+
+class _Step {
+  const _Step(this.name, {this.call = false, this.index = false});
+  final String name;
+  final bool call;
+  final bool index;
+}
+
+/// `a.b.c` or `a.b()` ending at [dot]. One name is not a chain.
+List<_Step>? _chain(String source, int dot) {
+  final steps = <_Step>[];
+  var index = dot;
+  while (true) {
+    if (index > 0 && source.codeUnitAt(index - 1) == 63) index--;
+    while (index > 0 && _space(source.codeUnitAt(index - 1))) index--;
+    if (index == 0) return null;
+    final unit = source.codeUnitAt(index - 1);
+    if (_ident(unit)) {
+      final end = index;
+      while (index > 0 && _ident(source.codeUnitAt(index - 1))) index--;
+      final text = source.substring(index, end);
+      if (_digit(text.codeUnitAt(0))) return null;
+      steps.add(_Step(text));
+    } else if (unit == 41 || unit == 93) {
+      final open = unit == 41 ? 40 : 91;
+      final start = _skipBack(source, index - 1, open, unit);
+      if (start < 0) return null;
+      index = start;
+      var called = '';
+      var cursor = index;
+      while (cursor > 0 && _space(source.codeUnitAt(cursor - 1))) cursor--;
+      if (cursor > 0 && _ident(source.codeUnitAt(cursor - 1))) {
+        final end = cursor;
+        while (cursor > 0 && _ident(source.codeUnitAt(cursor - 1))) cursor--;
+        called = source.substring(cursor, end);
+        if (_digit(called.codeUnitAt(0))) return null;
+        index = cursor;
+      }
+      steps.add(_Step(called, call: unit == 41, index: unit == 93));
+    } else {
+      return null;
+    }
+    while (index > 0 && _space(source.codeUnitAt(index - 1))) index--;
+    if (index > 1 &&
+        source.codeUnitAt(index - 1) == 46 &&
+        source.codeUnitAt(index - 2) != 46) {
+      index--;
+      continue;
+    }
+    break;
+  }
+  if (steps.length < 2) return null;
+  return steps.reversed.toList();
+}
+
+int _skipBack(String source, int close, int open, int shut) {
+  var depth = 0;
+  for (var i = close; i >= 0; i--) {
+    final unit = source.codeUnitAt(i);
+    if (unit == shut) depth++;
+    if (unit == open) {
+      depth--;
+      if (depth == 0) return i;
+    }
+  }
+  return -1;
+}
+
+int _lineStart(String source, int index) {
+  var start = index;
+  while (start > 0 && source.codeUnitAt(start - 1) != 10) start--;
+  return start;
 }
 
 String? _expressionType(Compilation compilation, String source, int dot) {
@@ -1729,6 +1915,8 @@ List<Map<String, Object?>>? _importCompletion(
           retrigger: true),
       _importItem(source, cursor, cursor, 'package:', 'package:', 'scheme', 9,
           retrigger: true),
+      _importItem(source, cursor, cursor, 'quds:', 'quds:', 'scheme', 9,
+          retrigger: true),
       ..._relativeEntries(source, cursor, cursor, '', const [], file),
     ];
   }
@@ -1748,6 +1936,20 @@ List<Map<String, Object?>>? _importCompletion(
   }
   if (uri.startsWith('package:')) {
     return _packageCompletion(source, cursor, uri.substring(8), file);
+  }
+  if (uri.startsWith('quds:')) {
+    final partial = uri.substring(5);
+    if (partial.contains('/') ||
+        partial.contains('.') ||
+        partial.contains(':')) {
+      return const [];
+    }
+    final start = cursor - partial.length;
+    return [
+      for (final name in sdkLibraryNames())
+        if (name.startsWith(partial))
+          _importItem(source, start, cursor, name, name, 'quds:$name', 9),
+    ];
   }
   return _relativeCompletion(source, cursor, index, uri, file);
 }

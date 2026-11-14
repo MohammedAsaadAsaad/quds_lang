@@ -1,5 +1,5 @@
 const vscode = require('vscode');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -118,6 +118,89 @@ function activate(context) {
     client.open(document);
   }
   client.start();
+  context.subscriptions.push(registerSdkFileSystem());
+  context.subscriptions.push(vscode.workspace.onDidOpenTextDocument((document) => {
+    if (document.uri.scheme === 'quds-sdk' && document.languageId !== 'quds') {
+      vscode.languages.setTextDocumentLanguage(document, 'quds');
+    }
+  }));
+}
+
+const sdkDocuments = new Map();
+const sdkFileEvents = new vscode.EventEmitter();
+
+function rememberSdkDocument(uri, text) {
+  const parsed = vscode.Uri.parse(uri);
+  const value = String(text ?? '');
+  sdkDocuments.set(parsed.toString(), value);
+  sdkDocuments.set(parsed.path, value);
+  const leaf = parsed.path.split('/').pop();
+  if (leaf) sdkDocuments.set(leaf, value);
+}
+
+function registerSdkFileSystem() {
+  return vscode.workspace.registerFileSystemProvider(
+    'quds-sdk',
+    {
+      onDidChangeFile: sdkFileEvents.event,
+      watch() {
+        return new vscode.Disposable(() => {});
+      },
+      stat(uri) {
+        const text = sdkText(uri);
+        if (text == null) throw vscode.FileSystemError.FileNotFound(uri);
+        return {
+          type: vscode.FileType.File,
+          ctime: 0,
+          mtime: 0,
+          size: Buffer.byteLength(text),
+          permissions: vscode.FilePermission.Readonly,
+        };
+      },
+      readFile(uri) {
+        const text = sdkText(uri);
+        if (text == null) throw vscode.FileSystemError.FileNotFound(uri);
+        return Buffer.from(text);
+      },
+      writeFile() {
+        throw vscode.FileSystemError.NoPermissions();
+      },
+      readDirectory() {
+        return [];
+      },
+      createDirectory() {
+        throw vscode.FileSystemError.NoPermissions();
+      },
+      delete() {
+        throw vscode.FileSystemError.NoPermissions();
+      },
+      rename() {
+        throw vscode.FileSystemError.NoPermissions();
+      },
+    },
+    { isReadonly: true },
+  );
+}
+
+function sdkText(uri) {
+  const leaf = uri.path.split('/').pop();
+  for (const key of [uri.toString(), uri.path, leaf]) {
+    if (key && sdkDocuments.has(key)) return sdkDocuments.get(key);
+  }
+  if (!leaf || !leaf.endsWith('.quds')) return null;
+  const folders = vscode.workspace.workspaceFolders || [];
+  for (const folder of folders) {
+    const file = vscode.Uri.joinPath(folder.uri, 'lib', 'sdk', leaf);
+    try {
+      const text = require('fs').readFileSync(file.fsPath, 'utf8');
+      sdkDocuments.set(uri.path, text);
+      sdkDocuments.set(leaf, text);
+      return text;
+    } catch (_) {
+      // The library may exist only in the compiler's embedded copy.
+    }
+  }
+  return null;
 }
 
 function completionItem(entry) {
@@ -166,10 +249,24 @@ function serverCommand(documentPath) {
   for (const start of starts) {
     const root = packageRoot(start);
     if (!root || !dart) continue;
+    const binary = cliBinary(root);
+    if (fs.existsSync(binary)) {
+      return {
+        command: [binary, 'lsp'],
+        cwd: root,
+        env: toolEnv(dart),
+        rebuild: freshCli(root) == null,
+        root,
+        dart,
+      };
+    }
     return {
       command: [dart, 'run', path.join(root, 'bin', 'quds.dart'), 'lsp'],
       cwd: root,
       env: toolEnv(dart),
+      rebuild: true,
+      root,
+      dart,
     };
   }
   const quds = resolveQuds();
@@ -177,6 +274,34 @@ function serverCommand(documentPath) {
     return { command: [quds, 'lsp'], cwd: undefined, env: toolEnv(dart) };
   }
   return { command: [quds || 'quds', 'lsp'], cwd: undefined, env: process.env };
+}
+
+function scheduleRebuild(client, root, dart) {
+  if (!root || !dart || client.rebuilding) return;
+  client.rebuilding = true;
+  const binary = cliBinary(root);
+  fs.mkdirSync(path.dirname(binary), { recursive: true });
+  client.output.appendLine('Rebuilding the Quds language server');
+  const child = spawn(
+    dart,
+    ['compile', 'exe', '-o', binary, path.join(root, 'bin', 'quds.dart')],
+    { cwd: root },
+  );
+  child.stdout.on('data', (chunk) => client.output.append(chunk.toString()));
+  child.stderr.on('data', (chunk) => client.output.append(chunk.toString()));
+  child.on('error', (error) => {
+    client.rebuilding = false;
+    client.output.appendLine(error.message);
+  });
+  child.on('exit', (code) => {
+    client.rebuilding = false;
+    if (code !== 0 || !fs.existsSync(binary)) {
+      client.output.appendLine('Quds language server rebuild failed');
+      return;
+    }
+    client.output.appendLine('Restarting the language server');
+    client.restart();
+  });
 }
 
 function pathSeparator() {
@@ -282,10 +407,74 @@ function quote(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`;
 }
 
+function cliBinary(root) {
+  return path.join(root, '.dart_tool', 'quds', 'quds');
+}
+
+function sourcesNewer(root, stamp) {
+  const pubspec = path.join(root, 'pubspec.yaml');
+  if (fs.existsSync(pubspec) && fs.statSync(pubspec).mtimeMs > stamp) return true;
+  const stack = [path.join(root, 'lib'), path.join(root, 'bin')];
+  while (stack.length) {
+    const dir = stack.pop();
+    if (!fs.existsSync(dir)) continue;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (entry.name.endsWith('.dart') && fs.statSync(full).mtimeMs > stamp) return true;
+    }
+  }
+  return false;
+}
+
+function freshCli(root) {
+  const binary = cliBinary(root);
+  if (!fs.existsSync(binary)) return null;
+  if (sourcesNewer(root, fs.statSync(binary).mtimeMs)) return null;
+  return binary;
+}
+
+function compileCli(root, dart) {
+  const binary = cliBinary(root);
+  fs.mkdirSync(path.dirname(binary), { recursive: true });
+  const built = spawnSync(
+    dart,
+    ['compile', 'exe', '-o', binary, path.join(root, 'bin', 'quds.dart')],
+    { cwd: root, encoding: 'utf8' },
+  );
+  if (built.status !== 0 || !fs.existsSync(binary)) return null;
+  return binary;
+}
+
 function launchSpec(file, verb) {
   const dart = resolveDart();
   const root = packageRoot(path.dirname(file));
   if (root && dart) {
+    let binary = freshCli(root);
+    if (!binary && verb === 'debug') binary = compileCli(root, dart);
+    if (binary) {
+      return { command: [binary, verb, file], cwd: root, env: toolEnv(dart) };
+    }
+    if (verb !== 'debug') {
+      const target = cliBinary(root);
+      const script = [
+        quote(dart),
+        'compile',
+        'exe',
+        '-o',
+        quote(target),
+        quote(path.join(root, 'bin', 'quds.dart')),
+        '&&',
+        'exec',
+        quote(target),
+        quote(verb),
+        quote(file),
+      ].join(' ');
+      return { command: ['bash', '-lc', script], cwd: root, env: toolEnv(dart) };
+    }
     return {
       command: [dart, 'run', path.join(root, 'bin', 'quds.dart'), verb, file],
       cwd: root,
@@ -453,13 +642,16 @@ class QudsClient {
     this.child = null;
     this.ready = false;
     this.starting = null;
+    this.rebuilding = false;
   }
 
   start() {
     if (this.starting) return this.starting;
     const sample = [...this.documents.values()][0];
-    const { command, cwd, env } = serverCommand(sample && sample.uri.fsPath);
+    const spec = serverCommand(sample && sample.uri.fsPath);
+    const { command, cwd, env } = spec;
     this.output.appendLine(`Starting ${command.join(' ')}`);
+    if (spec.rebuild) scheduleRebuild(this, spec.root, spec.dart);
     this.buffer = Buffer.alloc(0);
     const child = spawnCommand(command, {
       cwd,
@@ -601,6 +793,9 @@ class QudsClient {
       if (!result || !result.uri || !range || !range.start || !range.end) {
         return undefined;
       }
+      if (typeof result.sdkText === 'string') {
+        rememberSdkDocument(result.uri, result.sdkText);
+      }
       return new vscode.Location(
         vscode.Uri.parse(result.uri),
         new vscode.Range(
@@ -628,6 +823,10 @@ class QudsClient {
       const contents = result && result.contents;
       const value = typeof contents === 'string' ? contents : contents && contents.value;
       if (!value) return undefined;
+      if (contents && contents.kind === 'markdown') {
+        const markdown = new vscode.MarkdownString(value);
+        return new vscode.Hover(markdown);
+      }
       const markdown = new vscode.MarkdownString();
       markdown.appendCodeblock(value, 'quds');
       return new vscode.Hover(markdown);

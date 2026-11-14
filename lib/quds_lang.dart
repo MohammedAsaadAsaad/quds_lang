@@ -20,7 +20,13 @@ export 'src/protocol.dart'
 export 'src/debug.dart'
     show DebugAction, DebugBinary, DebugTranslator, desktopLaunchEnvironment;
 export 'src/sourcemap.dart'
-    show encodeSourceMap, mapStack, sourceMapFor, QudsLocal, SourcePositions;
+    show
+        encodeSourceMap,
+        mapStack,
+        preferQudsSnippet,
+        sourceMapFor,
+        QudsLocal,
+        SourcePositions;
 export 'src/emitter.dart';
 export 'src/lexer.dart';
 export 'src/parser.dart';

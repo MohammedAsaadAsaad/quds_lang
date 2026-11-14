@@ -6,6 +6,7 @@ import 'lexer.dart';
 import 'libraries.dart';
 import 'macros.dart';
 import 'parser.dart';
+import 'sdk.dart';
 import 'semantics.dart';
 import 'sourcemap.dart';
 
@@ -17,9 +18,19 @@ class GeneratedModel {
   final String sourceMap;
 }
 
+/// Generated Dart for one `quds:` library, written beside the caller's output.
+class SdkBundle {
+  const SdkBundle(this.fileName, this.source);
+  final String fileName;
+  final String source;
+}
+
 class Compilation {
   const Compilation(this.program, this.semantics, this.dart,
-      {this.sourceMap, this.dependencies = const [], this.models = const []});
+      {this.sourceMap,
+      this.dependencies = const [],
+      this.models = const [],
+      this.bundles = const []});
   final Program program;
   final SemanticModel semantics;
   final String dart;
@@ -30,15 +41,34 @@ class Compilation {
 
   /// Deterministic Quds sources derived from `@GenerateModel` classes.
   final List<GeneratedModel> models;
+
+  /// SDK libraries this program imports, as sibling Dart files.
+  final List<SdkBundle> bundles;
 }
 
-Compilation compile(String source, {String file = '<input>'}) {
-  final parsed = Parser(Lexer().tokenize(source, file: file)).parse();
+/// Writes [result]'s SDK libraries into [directory].
+void writeSdkBundles(String directory, Compilation result) {
+  for (final bundle in result.bundles) {
+    final file = File('$directory${Platform.pathSeparator}${bundle.fileName}');
+    if (file.existsSync() && file.readAsStringSync() == bundle.source) continue;
+    file.parent.createSync(recursive: true);
+    file.writeAsStringSync(bundle.source);
+  }
+}
+
+Compilation compile(String source,
+    {String file = '<input>', bool partial = false}) {
+  final parser = Parser(Lexer().tokenize(source, file: file));
+  final parsed = parser.parse(partial: partial);
+  if (partial && parser.errors.isNotEmpty && parsed.statements.isEmpty) {
+    throw parser.errors.first;
+  }
   final program = expandMacros(parsed);
   final sourcePath = file == '<input>' ? file : File(file).absolute.path;
   if (sourcePath != '<input>') _checkLanguage(sourcePath);
   final libraries = <String, Program>{};
   var library = sourcePath;
+  _loadSdkImports(program, libraries);
   if (sourcePath != '<input>') {
     libraries[sourcePath] = program;
     _loadLibraries(program, sourcePath, libraries);
@@ -58,12 +88,66 @@ Compilation compile(String source, {String file = '<input>'}) {
   final generated = file.endsWith('.quds')
       ? '${file.substring(0, file.length - 5)}.dart'
       : 'out.dart';
-  final dependencies = libraries.keys.toList()..sort();
+  final dependencies = [
+    for (final key in libraries.keys)
+      if (!key.startsWith('quds:')) key,
+  ]..sort();
   return Compilation(program, semantics, dart,
       sourceMap: sourceMapFor(emitter, generated, file,
           program: program, source: source),
       dependencies: dependencies,
-      models: _generatedModels(program, file));
+      models: _generatedModels(program, file),
+      bundles: _sdkBundles(semantics));
+}
+
+final _sdkDartCache = <String, String>{};
+var _compilingSdk = false;
+
+String? _sdkDart(String name) {
+  final source = readSdk(name);
+  if (source == null) return null;
+  final cached = _sdkDartCache[source];
+  if (cached != null) return cached;
+  if (_compilingSdk) return null;
+  _compilingSdk = true;
+  try {
+    final path = sdkPath(name);
+    final dart =
+        (path == null ? compile(source) : compile(source, file: path)).dart;
+    _sdkDartCache[source] = dart;
+    return dart;
+  } finally {
+    _compilingSdk = false;
+  }
+}
+
+List<SdkBundle> _sdkBundles(SemanticModel semantics) {
+  final bundles = <SdkBundle>[];
+  final seen = <String>{};
+  for (final node in semantics.imports) {
+    if (!emitsSdkImport(node, semantics)) continue;
+    final name = sdkLibraryName(node.uri);
+    if (name == null || !seen.add(name)) continue;
+    final dart = _sdkDart(name);
+    if (dart == null) continue;
+    bundles.add(SdkBundle(sdkDartFileName(name), dart));
+  }
+  return bundles;
+}
+
+void _loadSdkImports(Program program, Map<String, Program> libraries) {
+  for (final statement in program.statements) {
+    if (statement is! ImportDeclaration) continue;
+    final name = sdkLibraryName(statement.uri);
+    if (name == null || libraries.containsKey(statement.uri)) continue;
+    final source = readSdk(name);
+    if (source == null) continue;
+    final path = sdkPath(name) ?? statement.uri;
+    final parsed = Parser(Lexer().tokenize(source, file: path)).parse();
+    final loaded = expandMacros(parsed);
+    libraries[statement.uri] = loaded;
+    _loadSdkImports(loaded, libraries);
+  }
 }
 
 /// Parse and analyze [source]. Every recorded parse error is returned. A
@@ -166,6 +250,7 @@ void _loadLibraries(
         Parser(Lexer().tokenize(file.readAsStringSync(), file: path)).parse();
     final loaded = expandMacros(parsed);
     libraries[path] = loaded;
+    _loadSdkImports(loaded, libraries);
     _loadLibraries(loaded, path, libraries);
   }
 }

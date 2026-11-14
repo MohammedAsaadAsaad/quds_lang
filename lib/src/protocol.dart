@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'compiler.dart';
 import 'complete.dart';
@@ -7,6 +9,7 @@ import 'format.dart';
 import 'lexer.dart';
 import 'navigate.dart';
 import 'parser.dart';
+import 'sdk.dart';
 
 /// One LSP or DAP message with a `Content-Length` header.
 String encodeFrame(Object? message) {
@@ -25,6 +28,32 @@ class LspExchange {
 /// One language-server session. Open buffers win over the files on disk.
 class LspSession {
   final _documents = <String, _OpenDocument>{};
+
+  /// Live sessions answer completion from memory and analyze after a pause.
+  var background = false;
+
+  /// Diagnostics published after a background analysis.
+  void Function(Map<String, dynamic> message)? emit;
+  final _dirty = <_OpenDocument>{};
+  Timer? _idle;
+  ReceivePort? _replies;
+  SendPort? _worker;
+  Isolate? _isolate;
+  _AnalysisRequest? _queued;
+  var _closed = false;
+
+  void dispose() {
+    _idle?.cancel();
+    _idle = null;
+    _dirty.clear();
+    _queued = null;
+    _closed = true;
+    _isolate?.kill(priority: Isolate.immediate);
+    _isolate = null;
+    _replies?.close();
+    _replies = null;
+    _worker = null;
+  }
 
   LspExchange handle(Map message) {
     final request =
@@ -111,6 +140,10 @@ class LspSession {
     final opened =
         _OpenDocument(uri, (document['version'] as num?)?.toInt() ?? 0, text);
     _documents[uri] = opened;
+    if (background) {
+      _kick(opened, immediate: true);
+      return const LspExchange();
+    }
     return LspExchange(null, [_publish(opened)]);
   }
 
@@ -129,6 +162,10 @@ class LspSession {
       }
     }
     if (version != null) opened.version = version;
+    if (background) {
+      _kick(opened);
+      return const LspExchange();
+    }
     return LspExchange(null, [_publish(opened)]);
   }
 
@@ -136,7 +173,8 @@ class LspSession {
     final document = _map(params['textDocument']);
     final uri = document['uri'];
     if (uri is! String) return const LspExchange();
-    _documents.remove(uri);
+    final opened = _documents.remove(uri);
+    if (opened != null) _dirty.remove(opened);
     return LspExchange(null, [
       {
         'jsonrpc': '2.0',
@@ -146,6 +184,69 @@ class LspSession {
     ]);
   }
 
+  /// Remembers [document] and analyzes it after typing pauses.
+  void _kick(_OpenDocument document, {bool immediate = false}) {
+    document.live = true;
+    _dirty.add(document);
+    _idle?.cancel();
+    _idle = Timer(immediate ? Duration.zero : const Duration(milliseconds: 300),
+        _analyzeDirty);
+  }
+
+  void _analyzeDirty() {
+    _idle = null;
+    final docs = _dirty.toList();
+    _dirty.clear();
+    for (final document in docs) {
+      _sendAnalysis(document);
+    }
+  }
+
+  void _ensureWorker() {
+    if (_replies != null || _closed) return;
+    final replies = ReceivePort();
+    _replies = replies;
+    replies.listen(_onWorkerMessage);
+    Isolate.spawn(_analysisWorker, replies.sendPort).then((isolate) {
+      if (_closed) {
+        isolate.kill(priority: Isolate.immediate);
+        return;
+      }
+      _isolate = isolate;
+    });
+  }
+
+  void _sendAnalysis(_OpenDocument document) {
+    final request =
+        _AnalysisRequest(document.uri, document.text, document.file);
+    final worker = _worker;
+    if (worker == null) {
+      _queued = request;
+      _ensureWorker();
+      return;
+    }
+    worker.send(request);
+  }
+
+  void _onWorkerMessage(Object? message) {
+    if (_closed) return;
+    if (message is SendPort) {
+      _worker = message;
+      final queued = _queued;
+      _queued = null;
+      if (queued != null) message.send(queued);
+      return;
+    }
+    if (message is! _AnalysisResult) return;
+    final document = _documents[message.uri];
+    if (document == null || document.text != message.source) return;
+    document.apply(message);
+    final publish = emit;
+    if (publish != null) publish(_publish(document));
+  }
+
+  static Compilation? _cachedOnly(String source) => null;
+
   LspExchange _format(Object? id, Map<String, dynamic> params) {
     final opened = _document(params);
     if (opened == null) {
@@ -153,8 +254,9 @@ class LspSession {
     }
     try {
       Parser(Lexer().tokenize(opened.text, file: opened.file)).parse();
-    } on CompilerException catch (error) {
-      return LspExchange(_error(id, -32603, error.message), [_publish(opened)]);
+    } on CompilerException {
+      opened.rebuild();
+      return LspExchange(_result(id, const []), [_publish(opened)]);
     }
     final options = _map(params['options']);
     final indent = (options['tabSize'] as num?)?.toInt() ?? 2;
@@ -182,8 +284,8 @@ class LspSession {
           source: opened.text,
           line: line,
           character: character,
-          stable: opened.stableFor(line),
-          compileSource: opened.analyze,
+          stable: opened.live ? opened.cachedFor(line) : opened.stableFor(line),
+          compileSource: opened.live ? _cachedOnly : opened.analyze,
           file: opened.file,
         ),
       };
@@ -225,8 +327,12 @@ class LspSession {
     if (located != null) {
       final text = hoverAt(located.$1, located.$3, line + 1, character + 1);
       if (text != null) {
+        final markdown = text.startsWith('```');
         return {
-          'contents': {'kind': 'plaintext', 'value': text},
+          'contents': {
+            'kind': markdown ? 'markdown' : 'plaintext',
+            'value': text,
+          },
         };
       }
     }
@@ -273,6 +379,12 @@ class LspSession {
     final position = _map(params['position']);
     final line = (position['line'] as num?)?.toInt() ?? 0;
     final character = (position['character'] as num?)?.toInt() ?? 0;
+    final openedFirst = _document(params);
+    if (openedFirst != null) {
+      final library = libraryAt(openedFirst.text, line + 1, character + 1,
+          from: openedFirst.file);
+      if (library != null) return _libraryDefinition(library);
+    }
     final located = _tryCompile(params);
     if (located != null) {
       final span = definitionAt(
@@ -283,9 +395,12 @@ class LspSession {
       );
       if (span != null) {
         final text = _textFor(span.file, located.$2, located.$3);
+        final sdk = _isSdkFile(span.file);
         return {
-          'uri': _uriFor(span.file, located.$2),
+          'uri':
+              sdk ? _sdkDocumentUri(span.file) : _uriFor(span.file, located.$2),
           'range': text == null ? _spanRange(span) : _range(text, span),
+          if (sdk) 'sdkText': text ?? '',
         };
       }
     }
@@ -313,6 +428,44 @@ class LspSession {
     final handle = File(file);
     if (!handle.existsSync()) return null;
     return handle.readAsStringSync();
+  }
+
+  Map<String, dynamic> _libraryDefinition(LibraryPlace library) {
+    final quds =
+        sdkLibraryName(library.file) != null || _isSdkFile(library.file);
+    final text = library.text ??
+        (File(library.file).existsSync()
+            ? File(library.file).readAsStringSync()
+            : null);
+    final span = SourceSpan(1, 1, 0, file: library.file);
+    if (quds) {
+      return {
+        'uri': _sdkDocumentUri(library.file),
+        'range': text == null ? _spanRange(span) : _range(text, span),
+        'sdkText': text ?? '',
+      };
+    }
+    return {
+      'uri': Uri.file(File(library.file).absolute.path).toString(),
+      'range': text == null ? _spanRange(span) : _range(text, span),
+    };
+  }
+
+  bool _isSdkFile(String file) {
+    if (sdkLibraryName(file) != null) return true;
+    final normalized = file.replaceAll('\\', '/');
+    return normalized.contains('/lib/sdk/') && normalized.endsWith('.quds');
+  }
+
+  String _sdkDocumentUri(String file) {
+    final leaf = file.startsWith('quds:')
+        ? '${file.substring('quds:'.length)}.quds'
+        : file.split(RegExp(r'[/\\]')).last;
+    return Uri(
+      scheme: 'quds-sdk',
+      host: 'library',
+      path: '/$leaf',
+    ).toString();
   }
 
   String _uriFor(String file, String currentUri) {
@@ -401,6 +554,9 @@ class _OpenDocument {
   Compilation? _compilation;
   Compilation? _good;
   String? _goodText;
+
+  /// A live document serves completion from [_good] and analyzes off the request.
+  var live = false;
   final _recovered = <String, Compilation?>{};
   List<CompilerException> _diagnostics = const [];
 
@@ -412,23 +568,76 @@ class _OpenDocument {
 
   /// One analysis of the current buffer. Hover and tokens reuse it.
   List<CompilerException> diagnostics() {
+    if (live) return _diagnostics;
     _ensure();
     return _diagnostics;
   }
 
   Compilation? compilation() {
+    if (live) return _good;
     _ensure();
     return _compilation;
   }
 
-  /// The last successful analysis when every line above [line] is unchanged.
-  Compilation? stableFor(int line) {
-    _ensure();
+  /// The last analysis kept in memory. Lines above [line] must still match.
+  Compilation? cachedFor(int line) {
     final good = _good;
     final previous = _goodText;
     if (good == null || previous == null) return null;
     if (previous == text || _samePrefix(previous, text, line)) return good;
     return null;
+  }
+
+  /// The last successful analysis when every line above [line] is unchanged.
+  Compilation? stableFor(int line) {
+    _ensure();
+    return cachedFor(line);
+  }
+
+  /// Stores an analysis that finished off the request path.
+  void apply(_AnalysisResult result) {
+    _recovered.clear();
+    final compiled = result.compilation;
+    if (compiled != null) {
+      _compilation = compiled;
+      _good = compiled;
+      _goodText = result.source;
+    }
+    _diagnostics = [
+      for (final error in result.diagnostics)
+        CompilerException(
+          error.code,
+          error.message,
+          SourceSpan(error.line, error.column, error.length,
+              file: error.file, offset: error.offset),
+        ),
+    ];
+    _readyText = result.source;
+  }
+
+  /// Stores an analysis of the current text. A later failure keeps the previous one.
+  void rebuild() {
+    if (_readyText == text) return;
+    _recovered.clear();
+    try {
+      final compiled = compile(text, file: file);
+      _compilation = compiled;
+      _good = compiled;
+      _goodText = text;
+      _diagnostics = List<CompilerException>.of(compiled.semantics.warnings);
+    } on CompilerException {
+      _compilation = null;
+      try {
+        final partial = compile(text, file: file, partial: true);
+        _compilation = partial;
+        _good = partial;
+        _goodText = text;
+      } on CompilerException {
+        // The previous analysis still answers completion.
+      }
+      _diagnostics = diagnose(text, file: file);
+    }
+    _readyText = text;
   }
 
   /// Compiles [source] without replacing the diagnostics of the open buffer.
@@ -442,7 +651,11 @@ class _OpenDocument {
     try {
       compiled = compile(source, file: file);
     } on CompilerException {
-      compiled = null;
+      try {
+        compiled = compile(source, file: file, partial: true);
+      } on CompilerException {
+        compiled = null;
+      }
     }
     if (_recovered.length > 4) _recovered.clear();
     _recovered[source] = compiled;
@@ -659,3 +872,82 @@ Map<String, dynamic> _error(Object? id, int code, String message) => {
       'id': id,
       'error': {'code': code, 'message': message},
     };
+
+class _AnalysisRequest {
+  _AnalysisRequest(this.uri, this.source, this.file);
+  final String uri;
+  final String source;
+  final String file;
+}
+
+class _Diag {
+  _Diag(this.code, this.message, this.line, this.column, this.length,
+      this.offset, this.file);
+  final String code;
+  final String message;
+  final int line;
+  final int column;
+  final int length;
+  final int offset;
+  final String file;
+}
+
+class _AnalysisResult {
+  _AnalysisResult(this.uri, this.source, this.compilation, this.diagnostics);
+  final String uri;
+  final String source;
+  final Compilation? compilation;
+  final List<_Diag> diagnostics;
+}
+
+/// Long-lived analyzer. Completion stays on the session isolate.
+void _analysisWorker(SendPort main) {
+  final inbox = ReceivePort();
+  main.send(inbox.sendPort);
+  inbox.listen((message) {
+    if (message is! _AnalysisRequest) return;
+    main.send(_analyzeRequest(message));
+  });
+}
+
+_AnalysisResult _analyzeRequest(_AnalysisRequest request) {
+  Compilation? compiled;
+  List<CompilerException> errors;
+  try {
+    compiled = compile(request.source, file: request.file);
+    errors = compiled.semantics.warnings;
+  } on CompilerException {
+    try {
+      compiled = compile(request.source, file: request.file, partial: true);
+    } on CompilerException {
+      compiled = null;
+    }
+    errors = diagnose(request.source, file: request.file);
+  } catch (error) {
+    compiled = null;
+    errors = [
+      CompilerException(
+        'E300',
+        '$error',
+        SourceSpan(1, 1, 0, file: request.file),
+      ),
+    ];
+  }
+  return _AnalysisResult(
+    request.uri,
+    request.source,
+    compiled,
+    [
+      for (final error in errors)
+        _Diag(
+          error.code,
+          error.message,
+          error.span.line,
+          error.span.column,
+          error.span.length,
+          error.span.offset,
+          error.span.file,
+        ),
+    ],
+  );
+}

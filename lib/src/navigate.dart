@@ -1,11 +1,83 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'ast.dart';
 import 'compiler.dart';
 import 'dart_api.dart';
+import 'libraries.dart';
+import 'sdk.dart';
 import 'semantics.dart';
 import 'source.dart';
 import 'walk.dart';
+
+/// The library named by a `use`, `export`, or `part` URI under the cursor.
+///
+/// [line] and [column] are one-based. A `quds:` library carries its source in
+/// [LibraryPlace.text] so the editor can show it without a writable file.
+LibraryPlace? libraryAt(String source, int line, int column, {String? from}) {
+  final rows = source.split('\n');
+  if (line < 1 || line > rows.length) return null;
+  final row = rows[line - 1];
+  final index = column - 1;
+  if (index < 0 || index > row.length) return null;
+  final header = RegExp(r'^[ \t]*(use|export|part)\b[ \t]*').matchAsPrefix(row);
+  if (header == null) return null;
+  var start = header.end;
+  if (header.group(1) == 'part') {
+    final of = RegExp(r'of\b[ \t]*').matchAsPrefix(row, start);
+    if (of != null) start = of.end;
+  }
+  if (start >= row.length) return null;
+  var uriStart = start;
+  var uriEnd = start;
+  final quote = row[start];
+  if (quote == '"' || quote == "'") {
+    uriStart = start + 1;
+    uriEnd = row.indexOf(quote, uriStart);
+    if (uriEnd < 0) return null;
+  } else {
+    while (uriEnd < row.length && row[uriEnd] != ' ' && row[uriEnd] != '\t') {
+      uriEnd++;
+    }
+  }
+  if (index < start || index > uriEnd) return null;
+  final uri = row.substring(uriStart, uriEnd);
+  if (uri.isEmpty) return null;
+  return _libraryPlace(uri, from);
+}
+
+LibraryPlace? _libraryPlace(String uri, String? from) {
+  final sdk = sdkLibraryName(uri);
+  if (sdk != null) {
+    final text = readSdk(sdk);
+    if (text == null) return null;
+    return LibraryPlace(sdkPath(sdk) ?? 'quds:$sdk', text: text);
+  }
+  if (uri.startsWith('dart:')) {
+    final file = dartLibraryFile(uri);
+    if (file == null) return null;
+    return LibraryPlace(file.path);
+  }
+  if (from == null || from == '<input>') return null;
+  final quds = resolveLibraryPath(from, uri);
+  if (quds != null && File(quds).existsSync()) return LibraryPlace(quds);
+  final dartUri = dartLibraryUri(from, uri);
+  if (dartUri == null) return null;
+  final dart = packageDartFile(from, dartUri);
+  if (dart == null) return null;
+  return LibraryPlace(dart.path);
+}
+
+/// A library opened from an import URI.
+class LibraryPlace {
+  const LibraryPlace(this.file, {this.text});
+
+  /// Absolute path, or a `quds:` URI when the library is only embedded.
+  final String file;
+
+  /// Source of a `quds:` library. Dart and package files are read from [file].
+  final String? text;
+}
 
 /// The declaration span of the name under [line] and [column].
 ///
@@ -395,7 +467,8 @@ String? _hoverText(
   if (node is Expression) return model.types[node];
   if (!_onName(source, node, offset)) return null;
   return switch (node) {
-    FunctionDeclaration() => _signature(node, model),
+    FunctionDeclaration() =>
+      _documented(_signature(node, model), node.documentation),
     Parameter() => _valueHover(
         node.name,
         node.variadic ? 'List<${node.type}>' : node.type,
@@ -409,20 +482,76 @@ String? _hoverText(
         mutable: node.mutable,
       ),
     PropertyDeclaration() => _propertyHover(node),
-    ClassDeclaration() => 'class ${node.name}',
+    ClassDeclaration() => _documented('class ${node.name}', node.documentation),
     _ => null,
   };
 }
 
-String? _libraryHover(Symbol? symbol) {
-  final signature = symbol?.signature;
-  final documentation = symbol?.documentation?.trim();
-  if (signature == null && (documentation == null || documentation.isEmpty)) {
-    return null;
+String? _libraryHover(SemanticModel model, Symbol? symbol) {
+  if (symbol == null) return null;
+  final function = symbol.function;
+  final signature = symbol.signature ??
+      (function == null ? null : _signature(function, model)) ??
+      (symbol.classDeclaration == null
+          ? null
+          : 'class ${symbol.classDeclaration!.name}');
+  final documentation = _written(symbol.documentation) ??
+      _written(function?.documentation) ??
+      _written(symbol.classDeclaration?.documentation);
+  if (signature == null && documentation == null) return null;
+  if (documentation == null) return signature;
+  if (signature == null) return _markdownHover('', documentation, 'quds');
+  final fence = symbol.external ? 'dart' : 'quds';
+  return _markdownHover(signature, documentation, fence);
+}
+
+String? _written(String? text) {
+  final trimmed = text?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  return trimmed;
+}
+
+String _documented(String signature, String? documentation) {
+  final text = _written(documentation);
+  if (text == null) return signature;
+  return _markdownHover(signature, text, 'quds');
+}
+
+/// Signature, prose, and an `Example:` block, as editor markdown.
+String _markdownHover(String signature, String documentation, String fence) {
+  final prose = <String>[];
+  final example = <String>[];
+  var inExample = false;
+  for (final raw in documentation.split('\n')) {
+    final line = raw.trimRight();
+    final trimmed = line.trim();
+    if (!inExample && (trimmed == 'Example:' || trimmed == 'Example')) {
+      inExample = true;
+      continue;
+    }
+    if (inExample) {
+      example.add(line.startsWith('  ') ? line.substring(2) : line);
+    } else if (trimmed.isNotEmpty) {
+      prose.add(trimmed);
+    }
   }
-  if (signature == null) return documentation;
-  if (documentation == null || documentation.isEmpty) return signature;
-  return '$signature\n\n$documentation';
+  final buffer = StringBuffer();
+  if (signature.isNotEmpty) {
+    buffer.writeln('```$fence');
+    buffer.writeln(signature);
+    buffer.writeln('```');
+  }
+  if (prose.isNotEmpty) {
+    if (buffer.isNotEmpty) buffer.writeln();
+    buffer.writeln(prose.join('\n'));
+  }
+  if (example.isNotEmpty) {
+    if (buffer.isNotEmpty) buffer.writeln();
+    buffer.writeln('```quds');
+    buffer.writeln(example.join('\n').trimRight());
+    buffer.writeln('```');
+  }
+  return buffer.toString().trimRight();
 }
 
 SourceSpan? _originSpan(Symbol? symbol) {
@@ -461,7 +590,7 @@ Symbol? _symbolOf(Compilation compilation, Node node, int line, int column) {
 
 String? _identifierHover(SemanticModel model, Identifier node) {
   final symbol = model.references[node];
-  final library = _libraryHover(symbol);
+  final library = _libraryHover(model, symbol);
   if (library != null) return library;
   final function = symbol?.function;
   if (function != null) return _signature(function, model);
@@ -471,7 +600,7 @@ String? _identifierHover(SemanticModel model, Identifier node) {
 }
 
 String? _memberHover(SemanticModel model, MemberAccess node) {
-  final library = _libraryHover(model.references[node]);
+  final library = _libraryHover(model, model.references[node]);
   if (library != null) return library;
   final found = _findMember(model, node);
   if (found is _PropertyFound) return _propertyHover(found.declaration);
@@ -482,7 +611,10 @@ String? _memberHover(SemanticModel model, MemberAccess node) {
       mutable: found.declaration.mutable,
     );
   }
-  if (found is _MethodFound) return _signature(found.declaration, model);
+  if (found is _MethodFound) {
+    return _documented(
+        _signature(found.declaration, model), found.declaration.documentation);
+  }
   final type = model.types[node];
   if (type == null) return null;
   if (type.startsWith('(') && type.contains('->')) return '${node.name}: $type';

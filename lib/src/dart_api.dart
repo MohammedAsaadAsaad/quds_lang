@@ -178,11 +178,8 @@ List<String> dartLibraryNames({String? sdkRoot}) {
   return names;
 }
 
-/// Public names of [uri], read from the SDK sources.
-///
-/// The result follows those files. A later call reads them again when a
-/// library file or a `part` file has changed.
-DartSurface? readDartLibrary(String uri, {String? sdkRoot}) {
+/// The library file for a `dart:` URI, such as `dart:math`.
+File? dartLibraryFile(String uri, {String? sdkRoot}) {
   if (!uri.startsWith('dart:') || uri.startsWith('dart:_')) return null;
   final root = sdkRoot ?? dartSdkRoot();
   if (root == null) return null;
@@ -190,6 +187,17 @@ DartSurface? readDartLibrary(String uri, {String? sdkRoot}) {
   if (name.isEmpty || name.contains('/') || name.contains('\\')) return null;
   final nested = File('$root/lib/$name/$name.dart');
   final file = nested.existsSync() ? nested : File('$root/lib/$name.dart');
+  if (!file.existsSync()) return null;
+  return file;
+}
+
+/// Public names of [uri], read from the SDK sources.
+///
+/// The result follows those files. A later call reads them again when a
+/// library file or a `part` file has changed.
+DartSurface? readDartLibrary(String uri, {String? sdkRoot}) {
+  final file = dartLibraryFile(uri, sdkRoot: sdkRoot);
+  if (file == null) return null;
   return readDartFile(file);
 }
 

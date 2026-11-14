@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'sourcemap.dart';
 
 /// Environment for a Flutter desktop process started from the editor.
@@ -109,12 +111,22 @@ class DebugTranslator {
 
   Map<String, dynamic> present(Map<String, dynamic> message) {
     final type = message['type'];
+    if (type == 'response' && message['command'] == 'initialize') {
+      final body = message['body'];
+      if (body is Map) body['supportsEvaluateForHovers'] = true;
+    }
     if (type == 'response' && message['command'] == 'setBreakpoints') {
       return _presentBreakpoints(message);
     }
     if (type == 'response' && message['command'] == 'stackTrace') {
       final body = message['body'];
       if (body is Map) _rewriteFrames(body['stackFrames']);
+    }
+    if (type == 'event' && message['event'] == 'output') {
+      final body = message['body'];
+      if (body is Map && body['output'] is String) {
+        body['output'] = _rewriteText(body['output'] as String);
+      }
     }
     if (type == 'response' && message['command'] == 'scopes') {
       _bindScopes(message);
@@ -346,6 +358,9 @@ class DebugTranslator {
   }
 
   void _rewriteStopped(Map<dynamic, dynamic> body) {
+    for (final key in ['text', 'description']) {
+      if (body[key] is String) body[key] = _rewriteText(body[key] as String);
+    }
     final line = (body['line'] as num?)?.toInt();
     final source = body['source'];
     if (line == null || source is! Map) return;
@@ -354,6 +369,20 @@ class DebugTranslator {
     body['source'] = _moved(source, hit);
     body['line'] = hit.$2;
     body['column'] = hit.$3;
+  }
+
+  String _rewriteText(String text) {
+    var current = text;
+    for (final bound in _files.values) {
+      final positions = bound.positions;
+      if (positions == null) continue;
+      current = positions.rewriteStack(current, bound.dartPath);
+      final file = File(bound.qudsPath);
+      if (file.existsSync()) {
+        current = preferQudsSnippet(current, file.readAsStringSync());
+      }
+    }
+    return current;
   }
 
   Map<String, Object?> _moved(Map source, (String, int, int) hit) {

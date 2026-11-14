@@ -2094,7 +2094,25 @@ declaration   = classDecl | interfaceDecl | enumDecl | mixinDecl
 
 `uri` is a `dart:`, `package:`, or `quds:` name, or a relative path. `nameList` is names separated by commas. `suiteOfUse` is a suite whose statements are `use` directives. `constExpression` is an expression the constant rules accept.
 
-`dart:core` and `quds:core` are imported without a `use` line. `quds:core` defines `Optional`, `missing`, `present`, `Result`, `Ok`, and `Error`. A program name hides a prelude name. `hide` on an explicit `use quds:core` removes the hidden names. A missing library is `E900`. Two unprefixed imports that bring in the same name from different declarations are `E204`. The same declaration imported twice is one binding.
+`dart:core` and the prelude of `quds:core` are imported without a `use` line. That prelude is `Optional`, `missing`, `present`, `Result`, `Ok`, and `Error`. A program name hides a prelude name. `hide` on an explicit `use quds:core` removes the hidden prelude names.
+
+`use quds:name` loads the SDK library of that name from the compiler. The first library is `quds:core`. `quds:ext` adds methods on `String`, `List`, `Map`, `Set`, `int`, and `double`. An explicit `use quds:core` keeps the prelude and also brings that library's collection aliases and collection types. `show` and `hide` apply to the prelude and to those names together. A `show` name that is in neither set is `E200`. A prefix places both sets under that prefix. An extension's methods are visible when the import has no prefix and the extension's name is imported. The generated Dart imports `quds_<name>.dart`, written beside the generated file, and does not import the Quds package. A `quds:` library that does not exist is `E900`. A `#` or `///` comment placed on the lines immediately above a declaration is that declaration's documentation. A line `Example:` begins the usage example. Hover shows the signature, the prose, and the example as formatted editor text. Go to definition of an SDK declaration opens that library as a read-only document, so editing it is rejected. Go to definition on a `use`, `export`, or `part` URI opens that library: `quds:` is the read-only SDK document, and `dart:` or `package:` is the library file.
+
+```
+use quds:core
+main():
+  numbers: Array<int> = [1, 2]
+  ages: Dict<String, int> = map:
+    "Ada": 36
+  stack = Stack<int>()
+  stack.push(numbers.length)
+  print stack.pop()
+  print ages["Ada"]
+```
+
+`Array` is `List`, `Dict` is `Map`, and `HashSet` is `Set`. `Stack<T>` is a last-in list: `push`, `pop`, `top`, `size`, `empty`, and `toList`. `Queue<T>` is a first-in list: `add`, `take`, `next`, `size`, `empty`, and `toList`. `Bag<T>` counts values: `add` records one more occurrence, `count` reads it, and `total` adds the counts. `pop`, `top`, `take`, and `next` on an empty collection throw.
+
+Two unprefixed imports that bring in the same name from different declarations are `E204`. The same declaration imported twice is one binding.
 
 `part` and `part of` follow Dart: parts share one library privacy scope. A mismatched `part of` is `E903`.
 

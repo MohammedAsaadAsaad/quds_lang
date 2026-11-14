@@ -1,5 +1,7 @@
 # Same market-day program as examples/catalog.dart.
 # Rewritten with trailing if/else, collection helpers, and parallel assignment.
+use quds:ext
+use quds:core
 
 class Product:
   sku: String required
@@ -7,6 +9,7 @@ class Product:
   stock: int required
   value() -> int = cents * stock
   low() -> bool = stock < 5
+
 
 class CartLine:
   units: int required
@@ -17,6 +20,9 @@ class Shift:
   start: int required
   end: int required
   minutes() -> int:
+    stack = Stack<int>()
+    stack.push(0)
+    end.even()
     return end - start if end >= start else end + 1440 - start
 
 sumList(values: List<int>) -> int = values.sum()

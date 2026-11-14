@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:quds_lang/quds_lang.dart';
 import 'package:quds_lang/src/flutter_project.dart';
+import 'package:quds_lang/src/sdk.dart';
 import 'package:quds_lang/src/toolchain.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -46,8 +47,8 @@ Future<void> main(List<String> arguments) async {
     case 'install':
       await _install(arguments);
     case 'lsp':
-      final session = LspSession();
-      _serve(session.handle);
+      final session = LspSession()..background = true;
+      _serve(session);
     case 'debug':
       await _debug(arguments);
     default:
@@ -62,14 +63,17 @@ void _writeQuds(
   stderr.write(_atQuds(errText, sourceMap, generatedName));
 }
 
-String _atQuds(Object? text, String? sourceMap, String generatedName) {
+String _atQuds(Object? text, String? sourceMap, String generatedName,
+    {String? qudsSource}) {
   final value = text is String ? text : '';
   if (sourceMap == null || value.isEmpty) return value;
   final decoded = jsonDecode(sourceMap);
   if (decoded is! Map) return value;
   final data = Map<String, Object?>.from(decoded);
   data['file'] = generatedName;
-  return mapStack(value, jsonEncode(data));
+  final mapped = mapStack(value, jsonEncode(data));
+  if (qudsSource == null) return mapped;
+  return preferQudsSnippet(mapped, qudsSource);
 }
 
 void _usage() {
@@ -102,7 +106,7 @@ String? _helpText(String? topic) {
     'build': 'quds build [--watch] <input.quds>\n'
         '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n',
     'run': 'quds run <input.quds>\n'
-        '    Compile and run. A Flutter package is launched with flutter run.\n',
+        '    Run the program. An unchanged file reuses the previous build. A Flutter package is launched with flutter run.\n',
     'analyze': 'quds analyze <input.quds>\n'
         '    Compile and run dart analyze on the generated Dart.\n',
     'test': 'quds test <input.quds>\n'
@@ -176,8 +180,30 @@ Future<void> _doctor(List<String> arguments) async {
   if (lines.any((line) => line.startsWith('[missing]'))) exitCode = 1;
 }
 
+/// The Dart VM. An AOT `quds` binary is not itself the VM.
+String _dartExecutable() {
+  final resolved = Platform.resolvedExecutable;
+  final base = resolved.split(Platform.pathSeparator).last.toLowerCase();
+  if (base == 'dart' || base == 'dart.exe') return resolved;
+  final found = commandOnPath('dart');
+  if (found != null) return found;
+  final home = Platform.environment['HOME'];
+  final root = Platform.environment['FLUTTER_ROOT'];
+  final candidates = [
+    if (root != null && root.isNotEmpty) '$root/bin/dart',
+    if (home != null && home.isNotEmpty) '$home/development/flutter/bin/dart',
+    if (home != null && home.isNotEmpty) '$home/flutter/bin/dart',
+    '/usr/lib/dart/bin/dart',
+    '/usr/bin/dart',
+  ];
+  for (final path in candidates) {
+    if (File(path).existsSync()) return path;
+  }
+  return resolved;
+}
+
 String _dartCheck() {
-  final executable = Platform.resolvedExecutable;
+  final executable = _dartExecutable();
   try {
     final reported = Process.runSync(executable, ['--version']);
     final raw = '${reported.stdout}${reported.stderr}';
@@ -498,7 +524,9 @@ bool _emitGenerated(File input, Compilation result,
     return false;
   }
   _writeModels(input, result);
-  final sources = _sourcesDigest(input, result);
+  writeSdkBundles(output.parent.path, result);
+  final paths = {...result.dependencies, input.absolute.path}.toList()..sort();
+  final sources = _digestListed(paths, input);
   final outputDigest = sha256Hex(utf8.encode(result.dart));
   final cache = _cacheFile(input);
   if (existing != null &&
@@ -516,6 +544,7 @@ bool _emitGenerated(File input, Compilation result,
   cache.writeAsStringSync(jsonEncode({
     'sources': sources,
     'output': outputDigest,
+    'paths': paths,
     'generated': [for (final model in result.models) model.fileName],
   }));
   if (announce) stdout.writeln('Built ${output.path}');
@@ -600,8 +629,7 @@ List<String> _savedGenerated(File cache) {
   return [for (final name in names) '$name'];
 }
 
-String _sourcesDigest(File input, Compilation result) {
-  final paths = {...result.dependencies, input.absolute.path}.toList()..sort();
+String _digestListed(List<String> paths, File input) {
   final bytes = BytesBuilder();
   bytes.add(utf8.encode('language ${_languageVersion(input)}\n'));
   for (final path in paths) {
@@ -610,7 +638,37 @@ String _sourcesDigest(File input, Compilation result) {
     if (file.existsSync()) bytes.add(file.readAsBytesSync());
     bytes.add(const [0]);
   }
+  bytes.add(utf8.encode('sdk\n'));
+  bytes.add(utf8.encode(sdkDigestMaterial()));
+  bytes.add(const [0]);
   return sha256Hex(bytes.takeBytes());
+}
+
+/// True when the generated Dart still matches the sources recorded last time.
+bool _cachedOutput(File input, File output) {
+  if (!output.existsSync()) return false;
+  final cache = _cacheFile(input);
+  if (!cache.existsSync()) return false;
+  final saved = jsonDecode(cache.readAsStringSync());
+  if (saved is! Map) return false;
+  final paths = saved['paths'];
+  if (paths is! List || paths.isEmpty) return false;
+  final listed = [for (final path in paths) '$path'];
+  final digest = _digestListed(listed, input);
+  final outputDigest = sha256Hex(utf8.encode(output.readAsStringSync()));
+  return saved['sources'] == digest && saved['output'] == outputDigest;
+}
+
+File? _ensureOutput(File input) {
+  final output = _outputFile(input);
+  if (_cachedOutput(input, output) && File('${output.path}.map').existsSync()) {
+    return output;
+  }
+  final result = compile(input.readAsStringSync(), file: input.path);
+  if (!_emitGenerated(input, result, announce: false, destination: output)) {
+    return null;
+  }
+  return output;
 }
 
 String _languageVersion(File input) {
@@ -640,24 +698,56 @@ Future<void> _run(List<String> arguments) async {
   if (exitCode != 0) return;
   final input = File(arguments[1]);
   try {
-    final result = compile(input.readAsStringSync(), file: input.path);
     if (_flutterPackage(input)) {
+      final result = compile(input.readAsStringSync(), file: input.path);
       await _runFlutter(input, result);
       return;
     }
-    final directory = Directory.systemTemp.createTempSync('quds-run-');
-    final output = File('${directory.path}/main.dart')
-      ..writeAsStringSync(result.dart);
-    final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
-    _writeQuds(run.stdout, run.stderr, result.sourceMap, 'main.dart');
-    exitCode = run.exitCode;
-    directory.deleteSync(recursive: true);
+    final output = _ensureOutput(input);
+    if (output == null) return;
+    final mapFile = File('${output.path}.map');
+    final sourceMap = mapFile.existsSync() ? mapFile.readAsStringSync() : null;
+    final generatedName = output.uri.pathSegments.last;
+    final qudsSource = input.existsSync() ? input.readAsStringSync() : null;
+    final process = await Process.start(
+      _dartExecutable(),
+      [output.path],
+      workingDirectory: _packageRoot(input.absolute.parent).path,
+    );
+    final streams = Future.wait([
+      _copyMapped(process.stdout, stdout, sourceMap, generatedName,
+          qudsSource: qudsSource),
+      _copyMapped(process.stderr, stderr, sourceMap, generatedName,
+          qudsSource: qudsSource),
+    ]);
+    exitCode = await process.exitCode;
+    await streams;
   } on CompilerException catch (error) {
     stderr.writeln(error);
     exitCode = 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
     exitCode = 74;
+  }
+}
+
+Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
+    String? sourceMap, String generatedName,
+    {String? qudsSource}) async {
+  final pending = StringBuffer();
+  await for (final chunk in input.transform(utf8.decoder)) {
+    pending.write(chunk);
+    final text = pending.toString();
+    final end = text.lastIndexOf('\n');
+    if (end < 0) continue;
+    pending.clear();
+    pending.write(text.substring(end + 1));
+    output.write(_atQuds(text.substring(0, end + 1), sourceMap, generatedName,
+        qudsSource: qudsSource));
+  }
+  if (pending.isNotEmpty) {
+    output.write(_atQuds(pending.toString(), sourceMap, generatedName,
+        qudsSource: qudsSource));
   }
 }
 
@@ -670,8 +760,9 @@ void _analyze(List<String> arguments) {
     final directory = Directory.systemTemp.createTempSync('quds-analyze-');
     final output = File('${directory.path}/main.dart')
       ..writeAsStringSync(result.dart);
+    writeSdkBundles(directory.path, result);
     final analysis =
-        Process.runSync(Platform.resolvedExecutable, ['analyze', output.path]);
+        Process.runSync(_dartExecutable(), ['analyze', output.path]);
     _writeQuds(analysis.stdout, analysis.stderr, result.sourceMap, 'main.dart');
     exitCode = analysis.exitCode;
     directory.deleteSync(recursive: true);
@@ -708,8 +799,9 @@ void _test(List<String> arguments) {
       dart = '$dart\nvoid main() {\n$calls\n}\n';
     }
     final directory = Directory.systemTemp.createTempSync('quds-test-');
+    writeSdkBundles(directory.path, result);
     final output = File('${directory.path}/main.dart')..writeAsStringSync(dart);
-    final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
+    final run = Process.runSync(_dartExecutable(), [output.path]);
     _writeQuds(run.stdout, run.stderr, result.sourceMap, 'main.dart');
     exitCode = run.exitCode;
     directory.deleteSync(recursive: true);
@@ -845,8 +937,18 @@ Future<void> _runFlutter(File input, Compilation result) async {
     return;
   }
   target.parent.createSync(recursive: true);
-  target.writeAsStringSync(result.dart);
   final relative = _relativePosix(root, target);
+  final suffix = relative.contains('quds_gen/')
+      ? relative.substring(relative.indexOf('quds_gen/'))
+      : relative;
+  final guarded = result.sourceMap == null
+      ? result.dart
+      : _guardGeneratedMain(result.dart, result.sourceMap!, suffix);
+  target.writeAsStringSync(guarded);
+  writeSdkBundles(target.parent.path, result);
+  if (result.sourceMap != null) {
+    File('${target.path}.map').writeAsStringSync(result.sourceMap!);
+  }
   stdout.writeln('Built $relative');
   final process = await Process.start(
     flutter,
@@ -857,6 +959,58 @@ Future<void> _runFlutter(File input, Compilation result) async {
     mode: ProcessStartMode.inheritStdio,
   );
   exitCode = await process.exitCode;
+}
+
+/// Renames generated `main` and reports an escaped error on the Quds line.
+///
+/// The new `main` is appended, so the lines already recorded in [sourceMap]
+/// stay where they are.
+String _guardGeneratedMain(String dart, String sourceMap, String suffix) {
+  const ignore = '// ignore_for_file: type=lint\n';
+  if (!dart.contains(ignore)) return dart;
+  var renamed =
+      dart.replaceFirst('void main() async {', 'void _qMain() async {');
+  if (identical(renamed, dart)) {
+    renamed = dart.replaceFirst('void main() {', 'void _qMain() {');
+  }
+  if (identical(renamed, dart)) return dart;
+  final positions = SourcePositions.parse(sourceMap);
+  final entries = StringBuffer();
+  var first = true;
+  for (final entry in positions.byGeneratedLine.entries) {
+    if (!first) entries.write(', ');
+    first = false;
+    final hit = entry.value;
+    entries
+        .write('${entry.key}: ${jsonEncode('${hit.$1}:${hit.$2}:${hit.$3}')}');
+  }
+  final withImport = renamed.replaceFirst(
+    ignore,
+    "import 'dart:async'; // ignore_for_file: type=lint\n",
+  );
+  final flutter = withImport.contains("package:flutter/");
+  final hook = flutter
+      ? "FlutterError.onError = (details) { print(details.exceptionAsString()); print(_qMap('\${details.stack}')); }; "
+      : '';
+  return '''$withImport
+
+const _qLines = <int, String>{$entries};
+String _qMap(String stack) {
+  final pattern = RegExp(r'([\\w./:+\\-]+\\.dart):(\\d+):(\\d+)');
+  return stack.replaceAllMapped(pattern, (match) {
+    final path = match[1]!;
+    if (!path.endsWith(${jsonEncode(suffix)})) return match[0]!;
+    return _qLines[int.parse(match[2]!)] ?? match[0]!;
+  });
+}
+
+void main() {
+  $hook runZonedGuarded(_qMain, (error, stack) {
+    print(error);
+    print(_qMap('\$stack'));
+  });
+}
+''';
 }
 
 File _flutterGenerated(File input, Directory root) {
@@ -917,7 +1071,7 @@ void _pub(String command, List<String> arguments) {
     exitCode = 64;
     return;
   }
-  final result = Process.runSync(Platform.resolvedExecutable, args);
+  final result = Process.runSync(_dartExecutable(), args);
   stdout.write(result.stdout);
   stderr.write(result.stderr);
   exitCode = result.exitCode;
@@ -1030,12 +1184,13 @@ void _benchmark(List<String> arguments) {
     final result = compile(input.readAsStringSync(), file: input.path);
     final directory = Directory.systemTemp.createTempSync('quds-bench-');
     try {
+      writeSdkBundles(directory.path, result);
       final dart = File('${directory.path}/bench.dart')
         ..writeAsStringSync(result.dart);
       final debug = Process.runSync(
-          Platform.resolvedExecutable, ['run', '--enable-asserts', dart.path]);
-      final release = Process.runSync(Platform.resolvedExecutable,
-          ['run', '--no-enable-asserts', dart.path]);
+          _dartExecutable(), ['run', '--enable-asserts', dart.path]);
+      final release = Process.runSync(
+          _dartExecutable(), ['run', '--no-enable-asserts', dart.path]);
       watch.stop();
       if (debug.exitCode != 0 || release.exitCode != 0) {
         stderr.write(_atQuds(
@@ -1116,10 +1271,11 @@ void _docTest(File input) {
   for (final example in examples) {
     final directory = Directory.systemTemp.createTempSync('quds-doc-');
     try {
-      final dart = compile(example, file: input.path).dart;
+      final compiled = compile(example, file: input.path);
+      writeSdkBundles(directory.path, compiled);
       final output = File('${directory.path}/doc.dart')
-        ..writeAsStringSync(dart);
-      final run = Process.runSync(Platform.resolvedExecutable, [output.path]);
+        ..writeAsStringSync(compiled.dart);
+      final run = Process.runSync(_dartExecutable(), [output.path]);
       if (run.exitCode != 0) {
         stderr.write(run.stdout);
         stderr.write(run.stderr);
@@ -1167,8 +1323,7 @@ Future<void> _debug(List<String> arguments) async {
   final translator = DebugTranslator(build: _debugBuild);
   final target = arguments.length >= 2 ? arguments[1] : null;
   final flutter = target != null && _flutterPackage(File(target));
-  final executable =
-      flutter ? _flutterExecutable() : Platform.resolvedExecutable;
+  final executable = flutter ? _flutterExecutable() : _dartExecutable();
   if (executable == null) {
     stderr.writeln('Flutter was not found. Install Flutter and retry.');
     exitCode = 1;
@@ -1267,7 +1422,11 @@ Stream<Map<String, dynamic>> _readFrames(Stream<List<int>> input) async* {
   }
 }
 
-Future<void> _serve(LspExchange Function(Map message) respond) async {
+Future<void> _serve(LspSession session) async {
+  session.emit = (message) {
+    stdout.write(encodeFrame(message));
+    stdout.flush();
+  };
   final buffer = <int>[];
   await for (final chunk in stdin) {
     buffer.addAll(chunk);
@@ -1290,7 +1449,7 @@ Future<void> _serve(LspExchange Function(Map message) respond) async {
       if (decoded is! Map) continue;
       final message = decoded
           .map((key, value) => MapEntry(key.toString(), value as dynamic));
-      final exchange = respond(message);
+      final exchange = session.handle(message);
       final frames = [
         if (exchange.response != null) exchange.response,
         ...exchange.notifications,

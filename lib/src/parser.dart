@@ -75,7 +75,7 @@ class Parser {
         file: start.file, offset: start.offset);
   }
 
-  Program parse() {
+  Program parse({bool partial = false}) {
     final span = current.span;
     final statements = <Statement>[];
     while (_pending.isNotEmpty || !at(TokenKind.eof)) {
@@ -85,7 +85,7 @@ class Parser {
         _record(error);
       }
     }
-    _finish();
+    if (!partial) _finish();
     return Program(statements, extent(span));
   }
 
@@ -1179,6 +1179,7 @@ class Parser {
 
   ClassDeclaration typeDeclaration(SourceSpan span, List<Metadata> notes,
       {String? forced, List<String> modifiers = const []}) {
+    final documentation = current.documentation;
     _checkModifiers(modifiers, span);
     var kind = forced ?? 'class';
     if (forced == 'interface') {
@@ -1328,7 +1329,8 @@ class Parser {
         modifiers: modifiers,
         constructors: constructors,
         properties: properties,
-        typeParameters: typeParameters);
+        typeParameters: typeParameters,
+        documentation: documentation);
   }
 
   PropertyDeclaration propertyDeclaration(String visibility) {
@@ -1426,6 +1428,7 @@ class Parser {
   }
 
   Statement typeForm(SourceSpan span) {
+    final documentation = current.documentation;
     take();
     final typeNameToken = name();
     if (word('wraps')) {
@@ -1468,7 +1471,8 @@ class Parser {
     expect(TokenKind.equals, '=');
     final target = typeName();
     endLine();
-    return AliasDeclaration(typeNameToken.lexeme, target, extent(span));
+    return AliasDeclaration(typeNameToken.lexeme, target, extent(span),
+        documentation: documentation);
   }
 
   ClassDeclaration mixinDeclaration(SourceSpan span, List<Metadata> notes,
@@ -2020,6 +2024,7 @@ class Parser {
       String? operatorName,
       SourceSpan? operatorSpan,
       bool isStatic = false}) {
+    final documentation = operatorName == null ? current.documentation : null;
     final token = operatorName == null ? name() : null;
     final nameText = operatorName ?? token!.lexeme;
     final span = operatorSpan ?? token!.span;
@@ -2059,7 +2064,8 @@ class Parser {
           isOperator: operatorName != null,
           readonlyMethod: readonlyMethod,
           isStatic: isStatic,
-          typeParameters: typeParameters);
+          typeParameters: typeParameters,
+          documentation: documentation);
     }
     return FunctionDeclaration(
         nameText, parameters, returnType, block(), null, extent(span),
@@ -2070,7 +2076,8 @@ class Parser {
         isOperator: operatorName != null,
         readonlyMethod: readonlyMethod,
         isStatic: isStatic,
-        typeParameters: typeParameters);
+        typeParameters: typeParameters,
+        documentation: documentation);
   }
 
   List<Parameter> parameterList() {
@@ -2536,7 +2543,8 @@ class Parser {
       bool range = true}) {
     var left = prefix();
     while (true) {
-      if (left is Identifier && _typeArgumentsAhead()) {
+      if ((left is Identifier || left is MemberAccess) &&
+          _typeArgumentsAhead()) {
         final arguments = <String>[];
         take();
         do {

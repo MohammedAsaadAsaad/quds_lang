@@ -361,6 +361,12 @@ main():
     expect(mapStack(once, quds), contains('app.quds:2:4'));
     expect(mapStack('#0      a (file:///tmp/app.dart.js:1:1)', script),
         contains('app.dart:3:1'));
+    final snippet = preferQudsSnippet(
+      'app.quds:2:4: Error: nope\n   9 | print(1);\n     | ^^^^\n',
+      'main():\n  print 1\n',
+    );
+    expect(snippet, contains('print 1'));
+    expect(snippet, isNot(contains('print(1)')));
   });
 
   test('a flutter child does not inherit an editor schema dir', () async {
@@ -651,7 +657,7 @@ other():
     final directory = Directory.systemTemp.createTempSync('quds-debug-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final source = File('${directory.path}/app.quds')
-      ..writeAsStringSync('main():\n  print 1\n  print 2\n');
+      ..writeAsStringSync('main():\n  value = 41\n  print value\n');
     Object? lastError;
     for (var session = 0; session < 3; session++) {
       final process = await Process.start(Platform.resolvedExecutable, [
@@ -709,6 +715,30 @@ other():
             orElse: () => frames.first as Map);
         expect(frame['source']['path'], source.path);
         expect(frame['line'], 3);
+        final scopes = await client.request('scopes', {'frameId': frame['id']});
+        final scopeList =
+            ((scopes['body'] as Map)['scopes'] as List).cast<Map>();
+        final locals = scopeList.firstWhere(
+          (scope) => scope['name'] == 'Locals',
+          orElse: () => scopeList.first,
+        );
+        final vars = await client.request('variables', {
+          'variablesReference': locals['variablesReference'],
+        });
+        final shown = ((vars['body'] as Map)['variables'] as List).cast<Map>();
+        final value = shown.firstWhere(
+          (item) => item['name'] == 'value',
+          orElse: () => <String, Object?>{},
+        );
+        expect(value['name'], 'value', reason: '$shown\n${client.stderr}');
+        expect('${value['value']}', contains('41'));
+        final evaluated = await client.request('evaluate', {
+          'expression': 'value',
+          'frameId': frame['id'],
+          'context': 'hover',
+        });
+        expect(evaluated['success'], isTrue, reason: '${evaluated['message']}');
+        expect('${(evaluated['body'] as Map)['result']}', contains('41'));
         await client.request('disconnect');
         await process.stdin.close();
         return;
@@ -1079,7 +1109,11 @@ exit 0
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
     final generated = File('${root.path}/lib/quds_gen/main.dart');
     expect(generated.existsSync(), isTrue);
-    expect(generated.readAsStringSync(), contains('void main()'));
+    final generatedText = generated.readAsStringSync();
+    expect(generatedText, contains('void _qMain()'));
+    expect(generatedText, contains('void main()'));
+    expect(generatedText, contains('_qMap'));
+    expect(generatedText, contains('main.quds'));
     expect(File('${root.path}/lib/main.dart').existsSync(), isFalse);
     expect(File('${root.path}/flutter-args').readAsStringSync().trim(),
         'run -t lib/quds_gen/main.dart');
@@ -1331,7 +1365,8 @@ main():
         'textDocument': {'uri': uri},
       }
     });
-    expect(refused.response!['error'], isNotNull);
+    expect(refused.response!['error'], isNull);
+    expect(refused.response!['result'], isEmpty);
     final closed = session.handle({
       'method': 'textDocument/didClose',
       'params': {
@@ -1408,6 +1443,141 @@ main():
     );
     final range = (items.first as Map)['range'] as Map;
     expect((range['start'] as Map)['line'], 2);
+  });
+
+  test('live completion answers from memory while analysis waits', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-live-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    const source = '''
+class Box:
+  value: int required
+  items: List<int> = [1]
+  push(item: int):
+    return
+main():
+  stack = Box(value: 1)
+  print stack
+''';
+    final uri = Uri.file('${directory.path}/app.quds').toString();
+    final session = LspSession()..background = true;
+    final published = <Map<String, dynamic>>[];
+    session.emit = published.add;
+    addTearDown(session.dispose);
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': source,
+        }
+      }
+    });
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (published.isEmpty && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(published, isNotEmpty);
+    final dotted = source.replaceFirst('  print stack', '  print stack.');
+    final changed = session.handle({
+      'method': 'textDocument/didChange',
+      'params': {
+        'textDocument': {'uri': uri, 'version': 2},
+        'contentChanges': [
+          {'text': dotted}
+        ],
+      }
+    });
+    expect(changed.notifications, isEmpty);
+    final line = dotted.split('\n').indexOf('  print stack.');
+    final watch = Stopwatch()..start();
+    final response = session.handle({
+      'jsonrpc': '2.0',
+      'id': 8,
+      'method': 'textDocument/completion',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {'line': line, 'character': '  print stack.'.length},
+      }
+    });
+    expect(watch.elapsedMilliseconds, lessThan(200));
+    final items = ((response.response!['result'] as Map)['items'] as List)
+        .cast<Map<dynamic, dynamic>>();
+    expect(items.map((item) => item['label']), containsAll(['push', 'value']));
+    final nested =
+        dotted.replaceFirst('  print stack.', '  print stack.items.');
+    final nestedChange = session.handle({
+      'method': 'textDocument/didChange',
+      'params': {
+        'textDocument': {'uri': uri, 'version': 3},
+        'contentChanges': [
+          {'text': nested}
+        ],
+      }
+    });
+    expect(nestedChange.notifications, isEmpty);
+    final nestedLine = nested.split('\n').indexOf('  print stack.items.');
+    final nestedWatch = Stopwatch()..start();
+    final nestedResponse = session.handle({
+      'jsonrpc': '2.0',
+      'id': 9,
+      'method': 'textDocument/completion',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {
+          'line': nestedLine,
+          'character': '  print stack.items.'.length
+        },
+      }
+    });
+    expect(nestedWatch.elapsedMilliseconds, lessThan(200));
+    final nestedItems =
+        ((nestedResponse.response!['result'] as Map)['items'] as List)
+            .cast<Map<dynamic, dynamic>>();
+    expect(nestedItems.map((item) => item['label']),
+        containsAll(['add', 'length']));
+  });
+
+  test('completion still lists members when a later line does not parse', () {
+    final directory = Directory.systemTemp.createTempSync('quds-complete-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    const source = '''
+class Box:
+  value: int required
+  push(item: int):
+    return
+main():
+  stack = Box(value: 1)
+  stack.
+  return int = units * cents
+''';
+    final uri = Uri.file('${directory.path}/app.quds').toString();
+    final session = LspSession();
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': source,
+        }
+      }
+    });
+    final line = source.split('\n').indexOf('  stack.');
+    final response = session.handle({
+      'jsonrpc': '2.0',
+      'id': 7,
+      'method': 'textDocument/completion',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {'line': line, 'character': '  stack.'.length},
+      }
+    });
+    final items = ((response.response!['result'] as Map)['items'] as List)
+        .cast<Map<dynamic, dynamic>>();
+    expect(items.map((item) => item['label']), containsAll(['push', 'value']));
   });
 
   test('completion offers scope, members, arguments, and snippets', () {
@@ -1673,6 +1843,126 @@ main():
     expect(labels, isNot(contains('missingName')));
   });
 
+  test('sdk hover shows the documentation and an example', () {
+    const source = '''
+use quds:core
+use quds:ext
+main():
+  stack = Stack<int>()
+  stack.push(1)
+  print 4.even()
+''';
+    final compiled = compile(source);
+    String hover(String lineText, String token) {
+      final line = source.split('\n').indexOf(lineText) + 1;
+      return hoverAt(compiled, source, line, lineText.indexOf(token) + 1)!;
+    }
+
+    final pushed = hover('  stack.push(1)', 'push');
+    expect(pushed, contains('```quds'));
+    expect(pushed, contains('push(value: T) -> void'));
+    expect(pushed, contains('Puts'));
+    expect(pushed, contains('stack.push(1)'));
+    final stack = hover('  stack = Stack<int>()', 'Stack');
+    expect(stack, contains('class Stack'));
+    expect(stack, contains('last-in'));
+    expect(stack, contains('stack.push(1)'));
+    final even = hover('  print 4.even()', 'even');
+    expect(even, contains('even() -> bool'));
+    expect(even, contains('4.even()'));
+  });
+
+  test('an import opens the quds, dart, or package library', () {
+    final quds = libraryAt('use quds:core\n', 1, 6);
+    expect(quds, isNotNull);
+    expect(quds!.text, contains('class Stack'));
+    final math = libraryAt('use dart:math\n', 1, 6);
+    expect(math!.file, endsWith('math.dart'));
+    expect(File(math.file).existsSync(), isTrue);
+
+    final directory = Directory.systemTemp.createTempSync('quds-lib-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    Directory('${directory.path}/lib').createSync();
+    File('${directory.path}/pubspec.yaml').writeAsStringSync('name: demo\n');
+    File('${directory.path}/lib/util.quds')
+        .writeAsStringSync('answer() -> int = 1\n');
+    final from = '${directory.path}/app.quds';
+    final packaged = libraryAt('use package:demo/util\n', 1, 8, from: from);
+    expect(packaged!.file, endsWith('util.quds'));
+    final relative = libraryAt('use "lib/util.quds"\n', 1, 8, from: from);
+    expect(relative!.file, endsWith('util.quds'));
+
+    const source = 'use quds:core\nuse dart:math\n';
+    final uri = Uri.file(from).toString();
+    final session = LspSession();
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': source,
+        }
+      }
+    });
+    Map<String, dynamic> answer(int line) {
+      final response = session.handle({
+        'jsonrpc': '2.0',
+        'id': 12,
+        'method': 'textDocument/definition',
+        'params': {
+          'textDocument': {'uri': uri},
+          'position': {'line': line, 'character': 5},
+        }
+      });
+      return response.response!['result'] as Map<String, dynamic>;
+    }
+
+    final sdk = answer(0);
+    expect(sdk['uri'], 'quds-sdk://library/core.quds');
+    expect(sdk['sdkText'], contains('class Stack'));
+    final dart = answer(1);
+    expect(dart['uri'], endsWith('math.dart'));
+    expect(dart.containsKey('sdkText'), isFalse);
+  });
+
+  test('a quds sdk definition is a readonly sdk document', () {
+    final directory = Directory.systemTemp.createTempSync('quds-sdk-def-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    const source = '''
+use quds:ext
+main():
+  print 4.even()
+''';
+    final uri = Uri.file('${directory.path}/app.quds').toString();
+    final session = LspSession();
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': source,
+        }
+      }
+    });
+    final line = source.split('\n').indexOf('  print 4.even()');
+    final response = session.handle({
+      'jsonrpc': '2.0',
+      'id': 11,
+      'method': 'textDocument/definition',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {'line': line, 'character': '  print 4.'.length},
+      }
+    });
+    final result = response.response!['result'] as Map;
+    expect(result['uri'], 'quds-sdk://library/ext.quds');
+    expect(result['sdkText'], contains('even() -> bool'));
+  });
+
   test('import completion reads files, dart libraries, and packages', () {
     final root = Directory.systemTemp.createTempSync('quds-import-complete-');
     addTearDown(() => root.deleteSync(recursive: true));
@@ -1734,6 +2024,16 @@ main():
 
     final parent = at('use ^.', nested.path);
     expect(parent.map((entry) => entry['label']), contains('helper'));
+
+    final schemes = at('use ', app.path);
+    expect(schemes.map((entry) => entry['label']), contains('quds:'));
+
+    final sdk = at('use quds:', app.path);
+    expect(sdk.map((entry) => entry['label']), contains('core'));
+    expect(item(sdk, 'core')['detail'], 'quds:core');
+    expect((item(sdk, 'core')['textEdit'] as Map)['newText'], 'core');
+    final sdkPartial = at('use quds:c', app.path);
+    expect(sdkPartial.map((entry) => entry['label']), ['core']);
 
     final math = at('use dart:', app.path);
     expect(math.map((entry) => entry['label']), containsAll(['core', 'math']));
@@ -2554,6 +2854,7 @@ dependencies:
     expect(run.exitCode, isNot(0), reason: combined);
     expect(combined, contains('${source.path}:3:'));
     expect(combined, isNot(contains('main.dart:')));
+    expect(combined, isNot(contains('bad.dart:')));
   });
 }
 

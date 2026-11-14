@@ -416,7 +416,18 @@ The generated `.dart` has no import of the Quds package. `dart analyze` and
 
 `use package:name` loads `lib/name.quds` beside `pubspec.yaml` and emits
 `import 'package:name/name.dart'`. `use package:name/src/util` loads
-`lib/src/util.quds`. A missing file is `E900`. `use generated:user_models`
+`lib/src/util.quds`. A missing file is `E900`. `use quds:core` loads the
+compiler SDK library (`lib/sdk/core.quds`, or the copy embedded in the
+compiler) and emits `import 'quds_core.dart'`. That file is written beside
+the generated Dart. The prelude names `Optional`, `missing`, `present`,
+`Result`, `Ok`, and `Error` stay available without this import. The import
+adds the collection names `Array` (`List`), `Dict` (`Map`), and `HashSet`
+(`Set`), plus `Stack`, `Queue`, and `Bag`. `use quds:ext` loads
+`lib/sdk/ext.quds`, with methods on `String`, `List`, `Map`, `Set`, `int`, and `double`.
+Go to definition on an SDK declaration opens a read-only `quds-sdk` document.
+`show` and
+`hide` apply to the prelude and to those names. `use quds:missing` is
+`E900`. `use generated:user_models`
 loads `lib/generated/user_models.quds`. `declare` copies a method to a
 top-level function. `define` copies methods, fields, properties, and
 constructors. A macro cycle is `E904`. Source text and a forbidden

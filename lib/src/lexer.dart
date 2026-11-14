@@ -58,10 +58,13 @@ enum TokenKind {
 }
 
 class Token {
-  const Token(this.kind, this.lexeme, this.span);
+  const Token(this.kind, this.lexeme, this.span, {this.documentation});
   final TokenKind kind;
   final String lexeme;
   final SourceSpan span;
+
+  /// `#` or `///` lines immediately above this token.
+  final String? documentation;
   @override
   String toString() => '${kind.name}($lexeme)@$span';
 }
@@ -84,6 +87,8 @@ class _Scanner {
   final tokens = <Token>[];
   final indents = <int>[0];
   final brackets = <Token>[];
+  final _pendingDocs = <String>[];
+  var _docLine = 0;
 
   /// Parentheses hide newlines. Square brackets keep them so a collection
   /// `if` or `for` can use an indented suite.
@@ -123,8 +128,25 @@ class _Scanner {
   }
 
   void emit(TokenKind kind, int start, int sl, int sc) {
-    tokens.add(Token(kind, source.substring(start, i), span(start, sl, sc)));
+    tokens.add(Token(kind, source.substring(start, i), span(start, sl, sc),
+        documentation: _claimDocs(sl)));
     hasCode = true;
+  }
+
+  void _noteDoc(String text) {
+    if (_pendingDocs.isNotEmpty && line != _docLine + 1) _pendingDocs.clear();
+    _pendingDocs.add(text);
+    _docLine = line;
+  }
+
+  String? _claimDocs(int tokenLine) {
+    if (_pendingDocs.isEmpty || tokenLine != _docLine + 1) {
+      if (tokenLine > _docLine + 1) _pendingDocs.clear();
+      return null;
+    }
+    final text = _pendingDocs.join('\n');
+    _pendingDocs.clear();
+    return text;
   }
 
   void blockComment() {
@@ -190,8 +212,27 @@ class _Scanner {
         continue;
       }
       if (ch == '#' || at('///') || at('//')) {
+        final hash = ch == '#';
+        final triple = at('///');
+        final fullLine = !hasCode;
+        if (hash) {
+          advance();
+        } else if (triple) {
+          advance();
+          advance();
+          advance();
+        } else {
+          advance();
+          advance();
+        }
+        final start = i;
         while (!end && ch != '\n' && ch != '\r') {
           advance();
+        }
+        if (fullLine && (hash || triple)) {
+          var text = source.substring(start, i);
+          if (text.startsWith(' ')) text = text.substring(1);
+          _noteDoc(text);
         }
         continue;
       }
@@ -200,6 +241,9 @@ class _Scanner {
         continue;
       }
       if (ch == '\n' || ch == '\r') {
+        if (!hasCode && _pendingDocs.isNotEmpty && line != _docLine) {
+          _pendingDocs.clear();
+        }
         if (hasCode && !_insideParen) {
           tokens.add(Token(TokenKind.newline, '', here));
           hasCode = false;

@@ -464,6 +464,23 @@ class SourcePositions {
   (String, int, int)? original(int generatedLine) =>
       byGeneratedLine[generatedLine];
 
+  /// Rewrites frames whose path is [generatedPath] back to the Quds source.
+  String rewriteStack(String text, String generatedPath) {
+    final normalized = generatedPath.replaceAll('\\', '/');
+    final name = normalized.split('/').last;
+    return text.replaceAllMapped(_frame, (match) {
+      final path = match.group(1)!;
+      if (!_sameFile(path, name) &&
+          path != normalized &&
+          !path.endsWith('/$normalized')) {
+        return match.group(0)!;
+      }
+      final hit = original(int.parse(match.group(2)!));
+      if (hit == null) return match.group(0)!;
+      return '${hit.$1}:${hit.$2}:${hit.$3}';
+    });
+  }
+
   /// The first generated line that came from [sourceLine] in [source].
   int? generated(String source, int sourceLine) {
     int? found;
@@ -505,6 +522,34 @@ final _frame = RegExp(r'([\w./:+\-]+\.(?:dart|js)):(\d+):(\d+)');
 
 bool _sameFile(String path, String file) =>
     path == file || path.endsWith('/$file');
+
+/// Replaces a Dart compiler source listing that follows a `.quds` location
+/// with the Quds line itself.
+String preferQudsSnippet(String text, String source) {
+  final lines = source.split('\n');
+  final input = text.split('\n');
+  final out = <String>[];
+  final location = RegExp(r'\.quds:(\d+):\d+');
+  final numbered = RegExp(r'^\s*\d+\s*\|');
+  final gutter = RegExp(r'^\s*\|');
+  for (var i = 0; i < input.length; i++) {
+    out.add(input[i]);
+    final match = location.firstMatch(input[i]);
+    if (match == null) continue;
+    var cursor = i + 1;
+    var replaced = false;
+    while (cursor < input.length &&
+        (numbered.hasMatch(input[cursor]) || gutter.hasMatch(input[cursor]))) {
+      replaced = true;
+      cursor++;
+    }
+    if (!replaced) continue;
+    final lineNo = int.parse(match.group(1)!);
+    if (lineNo >= 1 && lineNo <= lines.length) out.add(lines[lineNo - 1]);
+    i = cursor - 1;
+  }
+  return out.join('\n');
+}
 
 int _readVlq(String data, List<int> cursor) {
   const alphabet =

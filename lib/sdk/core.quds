@@ -1,0 +1,187 @@
+# A list under another name.
+# Example:
+#   numbers: Array<int> = [1, 2, 3]
+type Array = List
+
+# A map under another name.
+# Example:
+#   ages: Dict<String, int> = map:
+#     "Ada": 36
+type Dict = Map
+
+# A set under another name.
+# Example:
+#   seen: HashSet<int> = set:
+#     1
+type HashSet = Set
+
+# Values kept in last-in, first-out order.
+# Example:
+#   stack = Stack<int>()
+#   stack.push(1)
+class Stack<T>:
+  private var items: List<T>? = null
+  # Puts [value] on top.
+  # Example:
+  #   stack.push(1)
+  push(value: T):
+    local = items
+    if local == null:
+      items = [value]
+    else:
+      local.add(value)
+  # Removes and returns the top value.
+  # Example:
+  #   stack.push(1)
+  #   print stack.pop()
+  pop() -> T:
+    local = items
+    if local == null:
+      blank: List<T> = []
+      return blank.removeLast()
+    else:
+      return local.removeLast()
+  # The top value, leaving it in place.
+  # Example:
+  #   stack.push(1)
+  #   print stack.top()
+  top() -> T:
+    local = items
+    if local == null:
+      blank: List<T> = []
+      return blank.last
+    else:
+      return local.last
+  # How many values are stored.
+  # Example:
+  #   print stack.size()
+  size() -> int:
+    local = items
+    if local == null:
+      return 0
+    else:
+      return local.length
+  # True when nothing is stored.
+  # Example:
+  #   print stack.empty()
+  empty() -> bool:
+    local = items
+    if local == null:
+      return true
+    else:
+      return local.isEmpty
+  # A list of the stored values, from bottom to top.
+  # Example:
+  #   print stack.toList()
+  toList() -> List<T>:
+    local = items
+    if local == null:
+      empty: List<T> = []
+      return empty
+    else:
+      return local.toList()
+
+# Values kept in first-in, first-out order.
+# Example:
+#   line = Queue<String>()
+#   line.add("a")
+class Queue<T>:
+  private var items: List<T>? = null
+  # Adds [value] at the end.
+  # Example:
+  #   line.add("a")
+  add(value: T):
+    local = items
+    if local == null:
+      items = [value]
+    else:
+      local.add(value)
+  # Removes and returns the earliest value.
+  # Example:
+  #   line.add("a")
+  #   print line.take()
+  take() -> T:
+    local = items
+    if local == null:
+      blank: List<T> = []
+      return blank.removeAt(0)
+    else:
+      return local.removeAt(0)
+  # The earliest value, leaving it in place.
+  # Example:
+  #   line.add("a")
+  #   print line.next()
+  next() -> T:
+    local = items
+    if local == null:
+      blank: List<T> = []
+      return blank.first
+    else:
+      return local.first
+  # How many values are waiting.
+  # Example:
+  #   print line.size()
+  size() -> int:
+    local = items
+    if local == null:
+      return 0
+    else:
+      return local.length
+  # True when nothing is waiting.
+  # Example:
+  #   print line.empty()
+  empty() -> bool:
+    local = items
+    if local == null:
+      return true
+    else:
+      return local.isEmpty
+  # A list of the waiting values, from earliest to latest.
+  # Example:
+  #   print line.toList()
+  toList() -> List<T>:
+    local = items
+    if local == null:
+      empty: List<T> = []
+      return empty
+    else:
+      return local.toList()
+
+# Counts how many times each value was added.
+# Example:
+#   bag = Bag<String>()
+#   bag.add("go")
+class Bag<T>:
+  private var counts: Map<T, int>? = null
+  # Records one more occurrence of [value].
+  # Example:
+  #   bag.add("go")
+  add(value: T):
+    local = counts
+    if local == null:
+      made: Map<T, int> = map:
+        value: 1
+      counts = made
+    else:
+      found = local[value] ?? 0
+      local.remove(value)
+      next = found + 1
+      local.putIfAbsent(value, () -> next)
+  # How many times [value] was added.
+  # Example:
+  #   print bag.count("go")
+  count(value: T) -> int:
+    local = counts
+    if local == null:
+      return 0
+    else:
+      return local[value] ?? 0
+  # The sum of every count.
+  # Example:
+  #   print bag.total()
+  total() -> int:
+    local = counts
+    if local == null:
+      return 0
+    else:
+      return local.values.sum()

@@ -3222,6 +3222,7 @@ main():
         ['run', 'bin/quds.dart', 'test', 'test/math.quds']);
     expect(math.exitCode, 0, reason: '${math.stdout}\n${math.stderr}');
     expect(math.stdout, contains('ok re-exports dart:math'));
+    expect(math.stdout, contains('ok what dart:math leaves out'));
     expect('${math.stdout}', isNot(contains('FAIL')));
     final prefixed = await Process.run(Platform.resolvedExecutable,
         ['run', 'bin/quds.dart', 'test', 'test/math_prefix.quds']);

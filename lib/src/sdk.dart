@@ -471,9 +471,9 @@ extend double Doubles:
 ''';
 
 /// Source of `quds:math`. Kept equal to `lib/sdk/math.quds`.
-const mathSdkSource = '''# Numbers, geometry, statistics, and numerical tools.
-# Every public dart:math name is re-exported: pi, e, sqrt, sin, cos,
-# Random, Point, Rectangle, and the rest.
+const mathSdkSource = '''# Mathematics that dart:math does not provide.
+# Every public dart:math name is still re-exported: pi, sqrt, sin, Random,
+# Point, and the rest. Names added here are the ones Dart leaves out.
 # log stays the logger. Natural log is ln, and a prefix still sees dart's log.
 # min and max stay the language functions for two numbers of one type.
 # Example:
@@ -1369,6 +1369,282 @@ bisect(
     i = i + 1
   return (a + b) / 2.0
 
+# Hyperbolic sine. dart:math has sin, and does not have sinh.
+# Example:
+#   print sinh(0.0)
+sinh(x: double) -> double:
+  return (math.exp(x) - math.exp(0.0 - x)) / 2.0
+
+# Hyperbolic cosine.
+# Example:
+#   print cosh(0.0)
+cosh(x: double) -> double:
+  return (math.exp(x) + math.exp(0.0 - x)) / 2.0
+
+# Hyperbolic tangent, in (-1, 1).
+# Example:
+#   print tanh(0.0)
+tanh(x: double) -> double:
+  if x > 20.0: return 1.0
+  if x < 0.0 - 20.0: return 0.0 - 1.0
+  risen = math.exp(2.0 * x)
+  return (risen - 1.0) / (risen + 1.0)
+
+# Inverse hyperbolic sine.
+# Example:
+#   print asinh(0.0)
+asinh(x: double) -> double:
+  if x < 0.0: return 0.0 - asinh(0.0 - x)
+  return math.log(x + math.sqrt(x * x + 1.0))
+
+# Inverse hyperbolic cosine. [x] must be at least 1.
+# Example:
+#   print acosh(1.0)
+acosh(x: double) -> double:
+  if x < 1.0: throw "acosh needs a value at least 1"
+  return math.log(x + math.sqrt(x * x - 1.0))
+
+# Inverse hyperbolic tangent. [x] must sit strictly between -1 and 1.
+# Example:
+#   print atanh(0.0)
+atanh(x: double) -> double:
+  if x <= 0.0 - 1.0 or x >= 1.0:
+    throw "atanh needs a value strictly between -1 and 1"
+  return 0.5 * math.log((1.0 + x) / (1.0 - x))
+
+# Real cube root, including for negative [x].
+# Example:
+#   print approximately(cbrt(8.0), 2.0, 1.0e-9)
+cbrt(x: double) -> double:
+  if x < 0.0: return 0.0 - cbrt(0.0 - x)
+  if x == 0.0: return 0.0
+  return math.exp(math.log(x) / 3.0)
+
+# ln(1 + [x]), accurate when [x] is near zero. [x] must be greater than -1.
+# Example:
+#   print log1p(0.0)
+log1p(x: double) -> double:
+  if x <= 0.0 - 1.0: throw "log1p needs a value greater than -1"
+  if x == 0.0: return 0.0
+  shifted = 1.0 + x
+  if shifted == 1.0: return x
+  return math.log(shifted) * x / (shifted - 1.0)
+
+# exp([x]) - 1, accurate when [x] is near zero.
+# Example:
+#   print expm1(0.0)
+expm1(x: double) -> double:
+  if x == 0.0: return 0.0
+  risen = math.exp(x)
+  if risen == 1.0: return x
+  return (risen - 1.0) * x / math.log(risen)
+
+# The geometric mean of positive numbers.
+# Example:
+#   print approximately(geometricMean([1.0, 4.0]), 2.0, 1.0e-9)
+geometricMean(values: List<double>) -> double:
+  if values.isEmpty: throw "geometricMean of an empty list"
+  var total = 0.0
+  for value in values:
+    if value <= 0.0: throw "geometricMean needs positive values"
+    total = total + math.log(value)
+  return math.exp(total / (values.length to double))
+
+# The harmonic mean. A zero value throws.
+# Example:
+#   print harmonicMean([1.0, 4.0])
+harmonicMean(values: List<double>) -> double:
+  if values.isEmpty: throw "harmonicMean of an empty list"
+  var total = 0.0
+  for value in values:
+    if value == 0.0: throw "harmonicMean cannot include zero"
+    total = total + 1.0 / value
+  return (values.length to double) / total
+
+# Running totals, one per input, in the same order.
+# Example:
+#   print cumsum([1.0, 2.0, 3.0])[2]
+cumsum(values: List<double>) -> List<double>:
+  made: List<double> = []
+  var total = 0.0
+  for value in values:
+    total = total + value
+    made.add(total)
+  return made
+
+# First differences. The result is one shorter than [values].
+# Example:
+#   print diff([1.0, 4.0, 6.0])[1]
+diff(values: List<double>) -> List<double>:
+  made: List<double> = []
+  var i = 1
+  while i < values.length:
+    made.add(values[i] - values[i - 1])
+    i = i + 1
+  return made
+
+# Piecewise linear value of [ys] at [x]. [xs] must increase.
+# Outside the span, the nearest end value is returned.
+# Example:
+#   print interp(1.5, [1.0, 2.0], [10.0, 20.0])
+interp(x: double, xs: List<double>, ys: List<double>) -> double:
+  if xs.length != ys.length or xs.length < 2:
+    throw "interp needs matching lists of at least two points"
+  if x <= xs[0]: return ys[0]
+  last = xs.length - 1
+  if x >= xs[last]: return ys[last]
+  var i = 1
+  while i < xs.length:
+    if x <= xs[i]:
+      span = xs[i] - xs[i - 1]
+      if span == 0.0: return ys[i]
+      t = (x - xs[i - 1]) / span
+      return ys[i - 1] + t * (ys[i] - ys[i - 1])
+    i = i + 1
+  return ys[last]
+
+# A straight line, slope * x + intercept.
+# Example:
+#   fit = lineFit([0.0, 1.0], [1.0, 3.0])
+#   print fit.slope
+value class Line:
+  slope: double
+  intercept: double
+
+# Least-squares line through the pairs ([xs], [ys]).
+# Example:
+#   print lineFit([0.0, 1.0, 2.0], [1.0, 3.0, 5.0]).slope
+lineFit(xs: List<double>, ys: List<double>) -> Line:
+  if xs.length != ys.length or xs.length < 2:
+    throw "lineFit needs matching lists of at least two points"
+  count = xs.length to double
+  var sx = 0.0
+  var sy = 0.0
+  var sxx = 0.0
+  var sxy = 0.0
+  var i = 0
+  while i < xs.length:
+    x = xs[i]
+    y = ys[i]
+    sx = sx + x
+    sy = sy + y
+    sxx = sxx + x * x
+    sxy = sxy + x * y
+    i = i + 1
+  base = count * sxx - sx * sx
+  if base == 0.0: throw "lineFit needs more than one x value"
+  slope = (count * sxy - sx * sy) / base
+  intercept = (sy - slope * sx) / count
+  return Line(slope: slope, intercept: intercept)
+
+# Rows turned into columns.
+# Example:
+#   print transpose([[1.0, 2.0]])[1][0]
+transpose(rows: List<List<double>>) -> List<List<double>>:
+  if rows.isEmpty:
+    empty: List<List<double>> = []
+    return empty
+  width = rows[0].length
+  made: List<List<double>> = []
+  var column = 0
+  while column < width:
+    across: List<double> = []
+    for row in rows:
+      if row.length != width: throw "transpose needs a rectangular matrix"
+      across.add(row[column])
+    made.add(across)
+    column = column + 1
+  return made
+
+# Matrix product. Columns of [left] must match rows of [right].
+# Example:
+#   print matmul([[1.0, 2.0]], [[3.0], [4.0]])[0][0]
+matmul(
+    left: List<List<double>>,
+    right: List<List<double>>) -> List<List<double>>:
+  if left.isEmpty or right.isEmpty: throw "matmul needs non-empty matrices"
+  shared = left[0].length
+  if right.length != shared:
+    throw "matmul columns of the left must match rows of the right"
+  outWidth = right[0].length
+  made: List<List<double>> = []
+  for row in left:
+    if row.length != shared: throw "matmul needs rectangular matrices"
+    next: List<double> = []
+    var column = 0
+    while column < outWidth:
+      var total = 0.0
+      var k = 0
+      while k < shared:
+        if right[k].length != outWidth:
+          throw "matmul needs rectangular matrices"
+        total = total + row[k] * right[k][column]
+        k = k + 1
+      next.add(total)
+      column = column + 1
+    made.add(next)
+  return made
+
+# Determinant of a square matrix.
+# Example:
+#   print determinant([[1.0, 0.0], [0.0, 1.0]])
+determinant(rows: List<List<double>>) -> double:
+  n = rows.length
+  if n == 0: throw "determinant needs a square matrix"
+  var grid = _squareCopy(rows)
+  var sign = 1.0
+  var col = 0
+  while col < n:
+    pivot = _pivotRow(grid, col)
+    if grid[pivot][col] == 0.0: return 0.0
+    if pivot != col:
+      grid = _swapRows(grid, col, pivot)
+      sign = 0.0 - sign
+    var below = col + 1
+    while below < n:
+      factor = grid[below][col] / grid[col][col]
+      cleared = _cancel(grid[below], grid[col], factor, col)
+      grid = _replaceRow(grid, below, cleared)
+      below = below + 1
+    col = col + 1
+  var diag = sign
+  var i = 0
+  while i < n:
+    diag = diag * grid[i][i]
+    i = i + 1
+  return diag
+
+# Solution of matrix * x = [values]. The matrix must be square and invertible.
+# Example:
+#   print solveLinear([[2.0, 0.0], [0.0, 3.0]], [4.0, 9.0])[0]
+solveLinear(rows: List<List<double>>, values: List<double>) -> List<double>:
+  n = rows.length
+  if n == 0 or values.length != n: throw "solveLinear needs a square system"
+  var grid = _squareCopy(rows)
+  var rhs = _copyDoubles(values)
+  var col = 0
+  while col < n:
+    pivot = _pivotRow(grid, col)
+    if grid[pivot][col] == 0.0: throw "solveLinear needs an invertible matrix"
+    if pivot != col:
+      grid = _swapRows(grid, col, pivot)
+      rhs = _swapDoubles(rhs, col, pivot)
+    var other = 0
+    while other < n:
+      if other != col:
+        factor = grid[other][col] / grid[col][col]
+        cleared = _cancel(grid[other], grid[col], factor, col)
+        grid = _replaceRow(grid, other, cleared)
+        rhs = _setAt(rhs, other, rhs[other] - factor * rhs[col])
+      other = other + 1
+    col = col + 1
+  answer: List<double> = []
+  var i = 0
+  while i < n:
+    answer.add(rhs[i] / grid[i][i])
+    i = i + 1
+  return answer
+
 extend double Reals:
   # This number of radians, written in degrees.
   # Example:
@@ -1422,6 +1698,92 @@ extend List<double> Samples:
   # Example:
   #   print numbers.maximum()
   maximum() -> double = maximum(this)
+
+# Absolute value used by elimination. Private, so it is not part of the API.
+_abs(x: double) -> double:
+  if x < 0.0: return 0.0 - x
+  return x
+
+# A square copy. A row of the wrong length throws.
+_squareCopy(rows: List<List<double>>) -> List<List<double>>:
+  n = rows.length
+  made: List<List<double>> = []
+  for row in rows:
+    if row.length != n: throw "matrix must be square"
+    made.add(_copyDoubles(row))
+  return made
+
+_copyDoubles(values: List<double>) -> List<double>:
+  made: List<double> = []
+  for value in values:
+    made.add(value)
+  return made
+
+# Row with the largest absolute value in [column], at or below [column].
+_pivotRow(grid: List<List<double>>, column: int) -> int:
+  var pivot = column
+  var row = column + 1
+  while row < grid.length:
+    if _abs(grid[row][column]) > _abs(grid[pivot][column]): pivot = row
+    row = row + 1
+  return pivot
+
+_swapRows(grid: List<List<double>>, i: int, j: int) -> List<List<double>>:
+  made: List<List<double>> = []
+  var row = 0
+  while row < grid.length:
+    if row == i: made.add(grid[j])
+    else:
+      if row == j: made.add(grid[i])
+      else: made.add(grid[row])
+    row = row + 1
+  return made
+
+_replaceRow(
+    grid: List<List<double>>,
+    index: int,
+    row: List<double>) -> List<List<double>>:
+  made: List<List<double>> = []
+  var i = 0
+  while i < grid.length:
+    if i == index: made.add(row)
+    else: made.add(grid[i])
+    i = i + 1
+  return made
+
+# [row] minus [factor] times [pivot], starting at column [from].
+_cancel(
+    row: List<double>,
+    pivot: List<double>,
+    factor: double,
+    from: int) -> List<double>:
+  made: List<double> = []
+  var k = 0
+  while k < row.length:
+    if k < from: made.add(row[k])
+    else: made.add(row[k] - factor * pivot[k])
+    k = k + 1
+  return made
+
+_swapDoubles(values: List<double>, i: int, j: int) -> List<double>:
+  made: List<double> = []
+  var index = 0
+  while index < values.length:
+    if index == i: made.add(values[j])
+    else:
+      if index == j: made.add(values[i])
+      else: made.add(values[index])
+    index = index + 1
+  return made
+
+_setAt(values: List<double>, index: int, value: double) -> List<double>:
+  made: List<double> = []
+  var i = 0
+  while i < values.length:
+    if i == index: made.add(value)
+    else: made.add(values[i])
+    i = i + 1
+  return made
 
 # Shared positive-x tail of erf and erfc.
 # [asErf] selects erf; otherwise the value is erfc.

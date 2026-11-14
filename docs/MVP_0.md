@@ -275,8 +275,9 @@ unchanged by the map.
   (`E302` otherwise).
 - Null-aware list and set elements, and collection-element blocks, including
   `if` and `for` in those blocks.
-- `test "...":` and `group "...":`. `quds test` runs them. A function whose
-  name starts with `test` still runs too.
+- `test "...":` and `group "...":`. `expect condition` checks a bool in Quds.
+  `quds test` reports `ok` or `FAIL` for each test. A function whose name
+  starts with `test` still runs too.
 - C-style `for var i = 0 while cond step i += 1:` and `repeat:` / `while`.
   A constant step of zero is `E801`. A non-constant step of zero throws when
   the update runs. `continue` runs the step.

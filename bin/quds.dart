@@ -796,7 +796,13 @@ void _test(List<String> arguments) {
         ...legacy.map((function) =>
             '  ${result.semantics.declarations[function]!.dartName}();'),
       ].join('\n');
-      dart = '$dart\nvoid main() {\n$calls\n}\n';
+      final counted = dart.contains('_qTestFailed');
+      if (counted && !dart.contains("import 'dart:io';")) {
+        dart = "import 'dart:io';\n$dart";
+      }
+      final stop =
+          counted ? '\n  if (_qTestFailed != 0) exit(_qTestFailed);' : '';
+      dart = '$dart\nvoid main() {\n$calls$stop\n}\n';
     }
     final directory = Directory.systemTemp.createTempSync('quds-test-');
     writeSdkBundles(directory.path, result);

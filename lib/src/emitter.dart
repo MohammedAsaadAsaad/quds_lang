@@ -60,6 +60,7 @@ class DartEmitter {
   var _useAwaitAll = false;
   var _useProtected = false;
   var _useLog = false;
+  var _useTests = false;
   var _useConfig = false;
   var _useReadonly = false;
   String? _returnView;
@@ -393,6 +394,9 @@ class DartEmitter {
           '  }\n'
           '  return grouped;\n'
           '}');
+    }
+    if (_useTests) {
+      helpers.writeln('var _qTestFailed = 0;');
     }
     if (_useOptional) {
       helpers.writeln('class Optional<T> {\n'
@@ -1713,8 +1717,13 @@ class DartEmitter {
         line('} while (${expression(node.condition!)});');
         _endLoop(node.elseBody);
       case TestDeclaration():
+        _useTests = true;
         final tested = model.declarations[node]!;
+        final title = quote(node.title);
         line('void ${tested.dartName}() {');
+        _depth++;
+        line('final _qBefore = _qTestFailed;');
+        line('try {');
         _depth++;
         for (final child in node.body) {
           statement(child);
@@ -1722,6 +1731,19 @@ class DartEmitter {
             line('${model.declarations[child]!.dartName}();');
           }
         }
+        _depth--;
+        line('} on StateError catch (error) {');
+        _depth++;
+        line('_qTestFailed = _qTestFailed + 1;');
+        line("print('FAIL ' + $title + ': ' + error.message);");
+        _depth--;
+        line('} catch (error) {');
+        _depth++;
+        line('_qTestFailed = _qTestFailed + 1;');
+        line("print('FAIL ' + $title + ': ' + error.toString());");
+        _depth--;
+        line('}');
+        line("if (_qTestFailed == _qBefore) print('ok ' + $title);");
         _depth--;
         line('}');
       case ExpressionStatement():
@@ -2818,6 +2840,25 @@ class DartEmitter {
     }
   }
 
+  /// `expect condition` checks the condition in Quds. A comparison reports both
+  /// sides. The values are read once.
+  String _expect(CallExpression node) {
+    _useTests = true;
+    final value = node.arguments.single.value;
+    if (value is BinaryExpression &&
+        const {'==', '!=', '<', '<=', '>', '>='}.contains(value.operator)) {
+      final left = expression(value.left);
+      final right = expression(value.right);
+      final op = value.operator;
+      final detail = op == '=='
+          ? "'expected ' + r.toString() + ', got ' + l.toString()"
+          : "'got ' + l.toString() + ', which is not $op ' + r.toString()";
+      return '(() { final l = $left; final r = $right; if (!(l $op r)) throw StateError($detail); })()';
+    }
+    final condition = expression(value);
+    return "(() { if (!($condition)) throw StateError('expectation failed'); })()";
+  }
+
   String call(CallExpression node, {bool constantContext = false}) {
     if (model.references[node.callee] == null) {
       final callee = expression(node.callee, constantContext: constantContext);
@@ -2829,6 +2870,9 @@ class DartEmitter {
     }
     final targetSymbol = model.references[node.callee]!;
     if (targetSymbol.name == 'missing') _useOptional = true;
+    if (targetSymbol.name == 'expect' && targetSymbol.function == null) {
+      return _expect(node);
+    }
     if (targetSymbol.name == 'present') {
       _useOptional = true;
       return 'Optional.present(${expression(node.arguments.single.value, constantContext: constantContext)})';

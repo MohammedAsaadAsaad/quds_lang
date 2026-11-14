@@ -1024,7 +1024,7 @@ quds build app.quds
 
 ### QUDS-064 — Testing DSL
 
-**Approved decision.** `test "description":` and `group "description":` are declarations whose indented blocks are function bodies. `expect` is a function. These declarations lower to the Dart `test` package. They are not call colon-blocks, so a test body is not reclassified as a collection. Async tests are `test "description" async:`. Flutter widget tests call the Flutter test library; the language adds no widget syntax.
+**Approved decision.** `test "description":` and `group "description":` are declarations whose indented blocks are function bodies. `expect` is a Quds function: `expect condition` stops that test when the condition is false. `quds test` runs these declarations and reports `ok` or `FAIL` for each one. A test is not sent to the Dart `test` package as source text. They are not call colon-blocks, so a test body is not reclassified as a collection. Async tests are `test "description" async:`. Flutter widget tests call the Flutter test library; the language adds no widget syntax.
 
 **Quds syntax illustration** (may be a fragment):
 
@@ -1033,7 +1033,7 @@ test "adds":
   expect add(2, 3) == 5
 ```
 
-**Compiler / runtime requirements.** Lower test declarations to Dart test framework.
+**Compiler / runtime requirements.** Run `test` and `group` with `quds test`. `expect` checks a bool in Quds and reports the two sides of a comparison.
 
 **Required conformance coverage.** Async failure, discovery, source diagnostics.
 
@@ -2508,7 +2508,7 @@ Generated Dart is a library a Dart caller can import. Quds-only values use these
 | `with` / `with?` | A temporary, then the assignments. `with?` is a null check around that temporary |
 | Partial application | A closure |
 | `do` | A local function invoked immediately, or a block in the IR that preserves `return` |
-| `test` / `group` | `package:test` declarations |
+| `test` / `group` | Quds tests. `expect` checks a condition. `quds test` reports `ok` or `FAIL` |
 | `state` / `computed` / `watch` | `quds:reactive` cells |
 
 `copyWith` defaults every parameter to `quds.missing`. A Dart caller omits the argument, passes null, or passes `missing`.

@@ -458,6 +458,14 @@ class Analyzer {
       {Map<String, Program> libraries = const {}}) {
     _libraries = libraries;
     _global.symbols['print'] = Symbol('print', 'print', 'void');
+    _global.symbols['expect'] = Symbol(
+      'expect',
+      'expect',
+      'void',
+      signature: 'expect(condition: bool) -> void',
+      documentation:
+          'Stops the current test when the condition is false. quds test reports that test as FAIL.',
+    );
     _global.symbols['range'] = Symbol(
       'range',
       'range',
@@ -5330,6 +5338,14 @@ class Analyzer {
       if (expression(args.single.value) == 'void') {
         fail('Cannot print a void expression', node);
       }
+      return 'void';
+    }
+    if (symbol.dartName == 'expect' && symbol.function == null) {
+      if (args.length != 1 || args.single.name != null) {
+        fail('expect expects one positional argument', node);
+      }
+      final type = expression(args.single.value);
+      if (type != 'bool') fail('expect needs a bool condition', node);
       return 'void';
     }
     if ((symbol.dartName == 'min' || symbol.dartName == 'max') &&

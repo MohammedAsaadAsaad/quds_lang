@@ -1,0 +1,59 @@
+# Checks for quds:math. Run with quds test.
+use quds:math
+
+group "quds:math":
+  test "re-exports dart:math":
+    expect sqrt(9.0) == 3.0
+    expect sin(0.0) == 0.0
+    expect ln(e) == 1.0
+    expect pi > 3.0
+    expect Point(3, 4).x == 3
+    expect Random(1).nextInt(1) == 0
+  test "integers":
+    expect gcd(12, 18) == 6
+    expect lcm(4, 6) == 12
+    expect factorial(5) == 120
+    expect combinations(5, 2) == 10
+    expect permutations(5, 2) == 20
+    expect isPrime(7)
+    expect isPrime(4) == false
+    expect nextPrime(14) == 17
+    expect fibonacci(10) == 55
+  test "statistics":
+    expect mean([1.0, 2.0, 3.0]) == 2.0
+    expect median([1.0, 3.0, 2.0]) == 2.0
+    expect stddev([1.0, 2.0, 3.0]) == 1.0
+    expect correlation([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == 1.0
+    expect summarize([1.0, 2.0, 3.0]).count == 3
+    expect softmax([0.0, 0.0])[0] == 0.5
+    numbers: List<double> = [1.0, 2.0, 3.0]
+    expect numbers.mean() == 2.0
+  test "numbers and geometry":
+    expect modulo(-1.0, 3.0) == 2.0
+    expect bounded(5.0, 0.0, 1.0) == 1.0
+    expect hypot(3.0, 4.0) == 5.0
+    expect sigmoid(0.0) == 0.5
+    plane = Complex(real: 3.0, imag: 4.0)
+    expect plane.abs() == 5.0
+    sum = plane + plane.conjugate()
+    expect sum.real == 6.0
+    v = Vec2(x: 3.0, y: 4.0)
+    expect v.length() == 5.0
+    expect 5.factorial() == 120
+    expect 7.prime()
+  test "scientific":
+    expect erf(0.0) < 1.0e-6
+    expect erfc(0.0) > 0.999999
+    expect approximately(normalCdf(0.0), 0.5, 1.0e-6)
+    expect approximately(gamma(5.0), 24.0, 1.0e-6)
+    expect approximately(logGamma(1.0), 0.0, 1.0e-9)
+    expect integrate((x: double) -> x, 0.0, 1.0, 2) == 0.5
+    expect bisect((x: double) -> x - 2.0, 0.0, 4.0) == 2.0
+    slope = derivative((x: double) -> x * x, 3.0)
+    expect approximately(slope, 6.0, 1.0e-6)
+    expect linspace(0.0, 1.0, 3)[2] == 1.0
+    expect approximately(degrees(pi), 180.0, 1.0e-9)
+  test "a caller binding stays outside the library":
+    z = 1.0
+    expect approximately(normalCdf(0.0), 0.5, 1.0e-6)
+    expect z == 1.0

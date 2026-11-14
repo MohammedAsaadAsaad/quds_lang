@@ -424,6 +424,9 @@ the generated Dart. The prelude names `Optional`, `missing`, `present`,
 adds the collection names `Array` (`List`), `Dict` (`Map`), and `HashSet`
 (`Set`), plus `Stack`, `Queue`, and `Bag`. `use quds:ext` loads
 `lib/sdk/ext.quds`, with methods on `String`, `List`, `Map`, `Set`, `int`, and `double`.
+`use quds:math` loads `lib/sdk/math.quds`. It re-exports `dart:math` and adds
+helpers such as `ln`, `gcd`, `mean`, `Complex`, and `Vec2`. Unprefixed `log`
+stays the logger. Unprefixed `min` and `max` stay the language functions.
 Go to definition on an SDK declaration opens a read-only `quds-sdk` document.
 `show` and
 `hide` apply to the prelude and to those names. `use quds:missing` is

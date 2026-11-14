@@ -470,9 +470,978 @@ extend double Doubles:
     return this <= high
 ''';
 
+/// Source of `quds:math`. Kept equal to `lib/sdk/math.quds`.
+const mathSdkSource = '''# Numbers, geometry, statistics, and numerical tools.
+# Every public dart:math name is re-exported: pi, e, sqrt, sin, cos,
+# Random, Point, Rectangle, and the rest.
+# log stays the logger. Natural log is ln, and a prefix still sees dart's log.
+# min and max stay the language functions for two numbers of one type.
+# Example:
+#   print sqrt(9.0)
+#   print pi
+#   print ln(e)
+#   print mean([1.0, 2.0, 3.0])
+use dart:math as math
+use dart:math
+export dart:math
+
+# Natural logarithm. log itself stays the logger.
+# Example:
+#   print ln(e)
+ln(value: double) -> double = math.log(value)
+
+# One full turn, in radians.
+# Example:
+#   print tau() > 6.0
+tau() -> double = math.pi * 2.0
+
+# The golden ratio.
+# Example:
+#   print phi() > 1.0
+phi() -> double = (1.0 + math.sqrt(5.0)) / 2.0
+
+# [value] degrees, written in radians.
+# Example:
+#   print radians(180.0)
+radians(value: double) -> double = value * math.pi / 180.0
+
+# [value] radians, written in degrees.
+# Example:
+#   print degrees(pi)
+degrees(value: double) -> double = value * 180.0 / math.pi
+
+# [angle] radians moved into the range (-pi, pi].
+# Example:
+#   print wrapRadians(tau())
+wrapRadians(angle: double) -> double:
+  turns = (angle + math.pi) / tau()
+  var shifted = turns - (turns.floor to double)
+  if shifted <= 0.0: shifted = shifted + 1.0
+  return shifted * tau() - math.pi
+
+# The point [t] of the way from [a] to [b]. [t] is not clamped.
+# Example:
+#   print lerp(0.0, 10.0, 0.5)
+lerp(a: double, b: double, t: double) -> double = a + (b - a) * t
+
+# Where [value] sits between [a] and [b], as a fraction of that span.
+# Example:
+#   print inverseLerp(0.0, 10.0, 5.0)
+inverseLerp(a: double, b: double, value: double) -> double:
+  if a == b: throw "inverseLerp needs two different ends"
+  return (value - a) / (b - a)
+
+# [value] read on one span and written on another.
+# Example:
+#   print remap(5.0, 0.0, 10.0, 0.0, 1.0)
+remap(
+    value: double,
+    inLow: double,
+    inHigh: double,
+    outLow: double,
+    outHigh: double) -> double:
+  return lerp(outLow, outHigh, inverseLerp(inLow, inHigh, value))
+
+# [value] limited to the closed span from [low] through [high].
+# Example:
+#   print bounded(5.0, 0.0, 1.0)
+bounded(value: double, low: double, high: double) -> double:
+  if low > high: throw "bounded needs low at or below high"
+  if value < low: return low
+  if value > high: return high
+  return value
+
+# True when [a] and [b] differ by at most [tolerance].
+# Example:
+#   print approximately(1.0, 1.0000001, 1.0e-6)
+approximately(a: double, b: double, tolerance: double = 1.0e-9) -> bool:
+  var gap = a - b
+  if gap < 0.0: gap = 0.0 - gap
+  return gap <= tolerance
+
+# -1, 0, or 1, from the sign of [value].
+# Example:
+#   print signOf(-2.0)
+signOf(value: double) -> int:
+  if value > 0.0: return 1
+  if value < 0.0: return -1
+  return 0
+
+# The non-negative fractional part of [value].
+# Example:
+#   print fractional(1.25)
+fractional(value: double) -> double:
+  return value - (value.floor to double)
+
+# The remainder of [value] / [modulus] shifted into [0, modulus).
+# Example:
+#   print modulo(-1.0, 3.0)
+modulo(value: double, modulus: double) -> double:
+  if modulus == 0.0: throw "modulo by zero"
+  var span = modulus
+  if span < 0.0: span = 0.0 - span
+  left = value % span
+  if left < 0.0: return left + span
+  return left
+
+# The Euclidean length of the vector ([x], [y]), without overflow.
+# Example:
+#   print hypot(3.0, 4.0)
+hypot(x: double, y: double) -> double:
+  var ax = x
+  var ay = y
+  if ax < 0.0: ax = 0.0 - ax
+  if ay < 0.0: ay = 0.0 - ay
+  if ax < ay:
+    saved = ax
+    ax = ay
+    ay = saved
+  if ax == 0.0: return 0.0
+  ratio = ay / ax
+  return ax * math.sqrt(1.0 + ratio * ratio)
+
+# Base-2 logarithm.
+# Example:
+#   print log2(8.0)
+log2(value: double) -> double = math.log(value) / math.ln2
+
+# Base-10 logarithm.
+# Example:
+#   print log10(100.0)
+log10(value: double) -> double = math.log(value) / math.ln10
+
+# 10 to the power [places], for rounding to decimal places.
+# Example:
+#   print decimalScale(2)
+decimalScale(places: int) -> double:
+  if places < 0: throw "places cannot be negative"
+  var scale = 1.0
+  var left = places
+  while left > 0:
+    scale = scale * 10.0
+    left = left - 1
+  return scale
+
+# [value] rounded to [places] digits after the decimal point.
+# Example:
+#   print roundTo(1.235, 2)
+roundTo(value: double, places: int) -> double:
+  scale = decimalScale(places)
+  return ((value * scale).round to double) / scale
+
+# [value] rounded down to [places] digits after the decimal point.
+# Example:
+#   print floorTo(1.239, 2)
+floorTo(value: double, places: int) -> double:
+  scale = decimalScale(places)
+  return ((value * scale).floor to double) / scale
+
+# [value] rounded up to [places] digits after the decimal point.
+# Example:
+#   print ceilTo(1.231, 2)
+ceilTo(value: double, places: int) -> double:
+  scale = decimalScale(places)
+  return ((value * scale).ceil to double) / scale
+
+# Smooth step from 0 at [edge0] to 1 at [edge1].
+# Example:
+#   print smoothstep(0.0, 1.0, 0.5)
+smoothstep(edge0: double, edge1: double, value: double) -> double:
+  if edge0 == edge1:
+    if value < edge0: return 0.0
+    return 1.0
+  var t = (value - edge0) / (edge1 - edge0)
+  if t < 0.0: t = 0.0
+  if t > 1.0: t = 1.0
+  return t * t * (3.0 - 2.0 * t)
+
+# Interpolation of two angles in radians, along the short way around.
+# Example:
+#   print lerpAngle(0.0, pi / 2.0, 0.5)
+lerpAngle(a: double, b: double, t: double) -> double:
+  return a + wrapRadians(b - a) * t
+
+# sin(x) / x, and 1 at zero. This is the unnormalized sinc.
+# Example:
+#   print sinc(0.0)
+sinc(x: double) -> double:
+  if x == 0.0: return 1.0
+  return math.sin(x) / x
+
+# The logistic function, in (0, 1).
+# Example:
+#   print sigmoid(0.0)
+sigmoid(x: double) -> double = 1.0 / (1.0 + math.exp(0.0 - x))
+
+# The inverse of [sigmoid]. [p] must sit strictly between 0 and 1.
+# Example:
+#   print logit(0.5)
+logit(p: double) -> double:
+  if p <= 0.0 or p >= 1.0:
+    throw "logit needs a probability strictly between 0 and 1"
+  return math.log(p / (1.0 - p))
+
+# The greatest common divisor of [a] and [b]. The result is never negative.
+# Example:
+#   print gcd(12, 18)
+gcd(a: int, b: int) -> int:
+  var x = a
+  var y = b
+  if x < 0: x = 0 - x
+  if y < 0: y = 0 - y
+  while y != 0:
+    next = x % y
+    x = y
+    y = next
+  return x
+
+# The least common multiple of [a] and [b]. Zero when either argument is zero.
+# Example:
+#   print lcm(4, 6)
+lcm(a: int, b: int) -> int:
+  if a == 0 or b == 0: return 0
+  var x = a
+  var y = b
+  if x < 0: x = 0 - x
+  if y < 0: y = 0 - y
+  return x ~/ gcd(x, y) * y
+
+# [base] raised to a non-negative integer [exponent].
+# Example:
+#   print ipow(2, 10)
+ipow(base: int, exponent: int) -> int:
+  if exponent < 0: throw "ipow needs a non-negative exponent"
+  var total = 1
+  var left = exponent
+  var factor = base
+  while left > 0:
+    if left % 2 == 1: total = total * factor
+    left = left ~/ 2
+    if left > 0: factor = factor * factor
+  return total
+
+# n! for a non-negative [n]. 0! is 1.
+# Example:
+#   print factorial(5)
+factorial(n: int) -> int:
+  if n < 0: throw "factorial of a negative"
+  var total = 1
+  var i = 2
+  while i <= n:
+    total = total * i
+    i = i + 1
+  return total
+
+# Ordered selections of [k] items from [n].
+# Example:
+#   print permutations(5, 2)
+permutations(n: int, k: int) -> int:
+  if n < 0 or k < 0: throw "permutations needs non-negative arguments"
+  if k > n: return 0
+  var total = 1
+  var i = 0
+  while i < k:
+    total = total * (n - i)
+    i = i + 1
+  return total
+
+# Unordered selections of [k] items from [n].
+# Example:
+#   print combinations(5, 2)
+combinations(n: int, k: int) -> int:
+  if n < 0 or k < 0: throw "combinations needs non-negative arguments"
+  if k > n: return 0
+  var taken = k
+  if taken > n - taken: taken = n - taken
+  var total = 1
+  var i = 0
+  while i < taken:
+    total = total * (n - i) ~/ (i + 1)
+    i = i + 1
+  return total
+
+# True when [n] is a prime number.
+# Example:
+#   print isPrime(7)
+isPrime(n: int) -> bool:
+  if n < 2: return false
+  if n % 2 == 0: return n == 2
+  if n % 3 == 0: return n == 3
+  var d = 5
+  while d <= n ~/ d:
+    if n % d == 0: return false
+    if n % (d + 2) == 0: return false
+    d = d + 6
+  return true
+
+# The least prime strictly greater than [n].
+# Example:
+#   print nextPrime(14)
+nextPrime(n: int) -> int:
+  var candidate = n + 1
+  if candidate < 2: candidate = 2
+  while not isPrime(candidate):
+    candidate = candidate + 1
+  return candidate
+
+# The [n]th Fibonacci number. fibonacci(0) is 0 and fibonacci(1) is 1.
+# Example:
+#   print fibonacci(10)
+fibonacci(n: int) -> int:
+  if n < 0: throw "fibonacci of a negative"
+  if n == 0: return 0
+  var previous = 0
+  var current = 1
+  var left = n - 1
+  while left > 0:
+    next = previous + current
+    previous = current
+    current = next
+    left = left - 1
+  return current
+
+# A complex number. Addition, subtraction, multiplication, and division use
+# the operators. Point from dart:math stays a 2D position, not a complex value.
+# Example:
+#   z = Complex(real: 3.0, imag: 4.0)
+#   print z.abs()
+value class Complex:
+  real: double required
+  imag: double required
+  # Radius and angle, in radians, written as a complex number.
+  # Example:
+  #   print Complex.polar(1.0, 0.0).real
+  static polar(radius: double, angle: double) -> Complex:
+    return Complex(real: radius * math.cos(angle),
+    imag: radius * math.sin(angle))
+  # The distance from the origin.
+  # Example:
+  #   print z.abs()
+  abs() -> double = hypot(real, imag)
+  # The angle in radians, in the range (-pi, pi].
+  # Example:
+  #   print Complex(real: 0.0, imag: 1.0).argument()
+  argument() -> double = math.atan2(imag, real)
+  # The same real part and the negated imaginary part.
+  # Example:
+  #   print z.conjugate().imag
+  conjugate() -> Complex = Complex(real: real, imag: 0.0 - imag)
+  # This number multiplied by a real [factor].
+  # Example:
+  #   print z.scale(2.0).real
+  scale(factor: double) -> Complex:
+    return Complex(real: real * factor, imag: imag * factor)
+  # 1 / this number.
+  # Example:
+  #   print Complex(real: 2.0, imag: 0.0).reciprocal().real
+  reciprocal() -> Complex:
+    den = real * real + imag * imag
+    if den == 0.0: throw "division by zero"
+    return Complex(real: real / den, imag: (0.0 - imag) / den)
+  # e raised to this number.
+  # Example:
+  #   print Complex(real: 0.0, imag: 0.0).exponential().real
+  exponential() -> Complex:
+    mag = math.exp(real)
+    return Complex(real: mag * math.cos(imag), imag: mag * math.sin(imag))
+  # Natural logarithm. The imaginary part is the argument.
+  # Example:
+  #   print Complex(real: 1.0, imag: 0.0).logarithm().real
+  logarithm() -> Complex:
+    if real == 0.0 and imag == 0.0: throw "logarithm of zero"
+    return Complex(real: math.log(abs()), imag: argument())
+  operator +(other: Complex) -> Complex:
+    return Complex(real: real + other.real, imag: imag + other.imag)
+  operator -(other: Complex) -> Complex:
+    return Complex(real: real - other.real, imag: imag - other.imag)
+  operator *(other: Complex) -> Complex:
+    nextReal = real * other.real - imag * other.imag
+    nextImag = real * other.imag + imag * other.real
+    return Complex(real: nextReal, imag: nextImag)
+  operator /(other: Complex) -> Complex:
+    den = other.real * other.real + other.imag * other.imag
+    if den == 0.0: throw "division by zero"
+    nextReal = (real * other.real + imag * other.imag) / den
+    nextImag = (imag * other.real - real * other.imag) / den
+    return Complex(real: nextReal, imag: nextImag)
+
+# A 2D vector. Point from dart:math remains available for positions.
+# Example:
+#   v = Vec2(x: 3.0, y: 4.0)
+#   print v.length()
+value class Vec2:
+  x: double required
+  y: double required
+  # The Euclidean length.
+  # Example:
+  #   print v.length()
+  length() -> double = hypot(x, y)
+  # This vector divided by its length, or the zero vector.
+  # Example:
+  #   print v.normalized().length()
+  normalized() -> Vec2:
+    len = length()
+    if len == 0.0: return Vec2(x: 0.0, y: 0.0)
+    return scale(1.0 / len)
+  # This vector multiplied by a real [factor].
+  # Example:
+  #   print v.scale(2.0).x
+  scale(factor: double) -> Vec2 = Vec2(x: x * factor, y: y * factor)
+  # The dot product.
+  # Example:
+  #   print v.dot(v)
+  dot(other: Vec2) -> double = x * other.x + y * other.y
+  # The 2D cross magnitude, x * other.y - y * other.x.
+  # Example:
+  #   print Vec2(x: 1.0, y: 0.0).cross(Vec2(x: 0.0, y: 1.0))
+  cross(other: Vec2) -> double = x * other.y - y * other.x
+  # The distance to [other].
+  # Example:
+  #   print v.distance(Vec2(x: 0.0, y: 0.0))
+  distance(other: Vec2) -> double = hypot(x - other.x, y - other.y)
+  # The point [t] of the way toward [other].
+  # Example:
+  #   print v.lerpTo(Vec2(x: 0.0, y: 0.0), 0.5).x
+  lerpTo(other: Vec2, t: double) -> Vec2:
+    return Vec2(x: lerp(x, other.x, t), y: lerp(y, other.y, t))
+  operator +(other: Vec2) -> Vec2 = Vec2(x: x + other.x, y: y + other.y)
+  operator -(other: Vec2) -> Vec2 = Vec2(x: x - other.x, y: y - other.y)
+
+# A 3D vector.
+# Example:
+#   v = Vec3(x: 1.0, y: 2.0, z: 2.0)
+#   print v.length()
+value class Vec3:
+  x: double required
+  y: double required
+  z: double required
+  # The Euclidean length.
+  # Example:
+  #   print v.length()
+  length() -> double = hypot(hypot(x, y), z)
+  # This vector divided by its length, or the zero vector.
+  # Example:
+  #   print v.normalized().x
+  normalized() -> Vec3:
+    len = length()
+    if len == 0.0: return Vec3(x: 0.0, y: 0.0, z: 0.0)
+    return scale(1.0 / len)
+  # This vector multiplied by a real [factor].
+  # Example:
+  #   print v.scale(2.0).z
+  scale(factor: double) -> Vec3:
+    return Vec3(x: x * factor, y: y * factor, z: z * factor)
+  # The dot product.
+  # Example:
+  #   print v.dot(v)
+  dot(other: Vec3) -> double = x * other.x + y * other.y + z * other.z
+  # The cross product.
+  # Example:
+  #   print Vec3(x: 1.0, y: 0.0, z: 0.0).cross(Vec3(x: 0.0, y: 1.0, z: 0.0)).z
+  cross(other: Vec3) -> Vec3:
+    return Vec3(
+        x: y * other.z - z * other.y,
+        y: z * other.x - x * other.z,
+        z: x * other.y - y * other.x)
+  # The distance to [other].
+  # Example:
+  #   print v.distance(Vec3(x: 0.0, y: 0.0, z: 0.0))
+  distance(other: Vec3) -> double:
+    return hypot(hypot(x - other.x, y - other.y), z - other.z)
+  operator +(other: Vec3) -> Vec3:
+    return Vec3(x: x + other.x, y: y + other.y, z: z + other.z)
+  operator -(other: Vec3) -> Vec3:
+    return Vec3(x: x - other.x, y: y - other.y, z: z - other.z)
+
+# A closed span of real numbers. [low] is expected to be at or below [high].
+# Example:
+#   span = Interval(low: 0.0, high: 1.0)
+#   print span.contains(0.5)
+value class Interval:
+  low: double required
+  high: double required
+  # True when the ends are in order.
+  # Example:
+  #   print span.valid()
+  valid() -> bool = low <= high
+  # high - low.
+  # Example:
+  #   print span.width()
+  width() -> double = high - low
+  # True when [value] is inside this span, including the ends.
+  # Example:
+  #   print span.contains(0.0)
+  contains(value: double) -> bool:
+    if value < low: return false
+    return value <= high
+  # True when the spans share a point.
+  # Example:
+  #   print span.overlaps(Interval(low: 1.0, high: 2.0))
+  overlaps(other: Interval) -> bool:
+    if other.high < low: return false
+    return other.low <= high
+  # [value] moved inside this span.
+  # Example:
+  #   print span.limit(2.0)
+  limit(value: double) -> double = bounded(value, low, high)
+
+# A closed span whose ends are [a] and [b], written in order.
+# Example:
+#   print interval(3.0, 1.0).low
+interval(a: double, b: double) -> Interval:
+  if a <= b: return Interval(low: a, high: b)
+  return Interval(low: b, high: a)
+
+# The sum of [values]. An empty list is 0.
+# Example:
+#   print sumOf([1.0, 2.0, 3.0])
+sumOf(values: List<double>) -> double:
+  var total = 0.0
+  for value in values:
+    total = total + value
+  return total
+
+# The product of [values]. An empty list is 1.
+# Example:
+#   print product([2.0, 3.0, 4.0])
+product(values: List<double>) -> double:
+  var total = 1.0
+  for value in values:
+    total = total * value
+  return total
+
+# The arithmetic mean. An empty list throws.
+# Example:
+#   print mean([1.0, 2.0, 3.0])
+mean(values: List<double>) -> double:
+  if values.isEmpty: throw "mean of an empty list"
+  return sumOf(values) / (values.length to double)
+
+# The middle value. An even count uses the mean of the two middle values.
+# Example:
+#   print median([1.0, 3.0, 2.0])
+median(values: List<double>) -> double:
+  if values.isEmpty: throw "median of an empty list"
+  ordered: List<double> = []
+  for value in values:
+    ordered.add(value)
+  ordered.sort()
+  mid = ordered.length ~/ 2
+  if ordered.length % 2 == 1: return ordered[mid]
+  return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+# The smallest value. An empty list throws.
+# Example:
+#   print minimum([3.0, 1.0, 2.0])
+minimum(values: List<double>) -> double:
+  if values.isEmpty: throw "minimum of an empty list"
+  var best = values[0]
+  for value in values:
+    if value < best: best = value
+  return best
+
+# The largest value. An empty list throws.
+# Example:
+#   print maximum([3.0, 1.0, 2.0])
+maximum(values: List<double>) -> double:
+  if values.isEmpty: throw "maximum of an empty list"
+  var best = values[0]
+  for value in values:
+    if value > best: best = value
+  return best
+
+# maximum(values) - minimum(values).
+# Example:
+#   print sampleRange([1.0, 4.0, 2.0])
+sampleRange(values: List<double>) -> double:
+  return maximum(values) - minimum(values)
+
+# The sample variance, divided by n - 1. Fewer than two values throws.
+# Example:
+#   print variance([1.0, 2.0, 3.0])
+variance(values: List<double>) -> double:
+  if values.length < 2: throw "variance needs at least two values"
+  center = mean(values)
+  var total = 0.0
+  for value in values:
+    delta = value - center
+    total = total + delta * delta
+  return total / ((values.length - 1) to double)
+
+# The population variance, divided by n. An empty list throws.
+# Example:
+#   print populationVariance([1.0, 2.0, 3.0])
+populationVariance(values: List<double>) -> double:
+  if values.isEmpty: throw "populationVariance of an empty list"
+  center = mean(values)
+  var total = 0.0
+  for value in values:
+    delta = value - center
+    total = total + delta * delta
+  return total / (values.length to double)
+
+# The sample standard deviation.
+# Example:
+#   print stddev([1.0, 2.0, 3.0])
+stddev(values: List<double>) -> double = math.sqrt(variance(values))
+
+# The population standard deviation.
+# Example:
+#   print populationStddev([1.0, 2.0, 3.0])
+populationStddev(values: List<double>) -> double:
+  return math.sqrt(populationVariance(values))
+
+# The value at [percent] of the way through the sorted sample.
+# [percent] runs from 0 through 100. Ties are interpolated.
+# Example:
+#   print percentile([1.0, 2.0, 3.0, 4.0], 50.0)
+percentile(values: List<double>, percent: double) -> double:
+  if values.isEmpty: throw "percentile of an empty list"
+  if percent < 0.0 or percent > 100.0:
+    throw "percent must be from 0 through 100"
+  ordered: List<double> = []
+  for value in values:
+    ordered.add(value)
+  ordered.sort()
+  if ordered.length == 1: return ordered[0]
+  rank = percent / 100.0 * ((ordered.length - 1) to double)
+  lo = rank.floor
+  hi = rank.ceil
+  if lo == hi: return ordered[lo]
+  frac = rank - (lo to double)
+  return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
+
+# [percentile] with [q] running from 0 through 1.
+# Example:
+#   print quantile([1.0, 2.0, 3.0, 4.0], 0.5)
+quantile(values: List<double>, q: double) -> double:
+  if q < 0.0 or q > 1.0: throw "quantile must be from 0 through 1"
+  return percentile(values, q * 100.0)
+
+# The sample covariance of two lists of the same length.
+# Example:
+#   print covariance([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
+covariance(xs: List<double>, ys: List<double>) -> double:
+  if xs.length != ys.length: throw "covariance needs lists of the same length"
+  if xs.length < 2: throw "covariance needs at least two pairs"
+  mx = mean(xs)
+  my = mean(ys)
+  var total = 0.0
+  var i = 0
+  while i < xs.length:
+    total = total + (xs[i] - mx) * (ys[i] - my)
+    i = i + 1
+  return total / ((xs.length - 1) to double)
+
+# The Pearson correlation, from -1 through 1.
+# Example:
+#   print correlation([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
+correlation(xs: List<double>, ys: List<double>) -> double:
+  sx = stddev(xs)
+  sy = stddev(ys)
+  if sx == 0.0 or sy == 0.0:
+    throw "correlation is undefined for a constant list"
+  return covariance(xs, ys) / (sx * sy)
+
+# Each value rewritten as a population z-score.
+# Example:
+#   print zScores([1.0, 2.0, 3.0]).length
+zScores(values: List<double>) -> List<double>:
+  center = mean(values)
+  spread = populationStddev(values)
+  if spread == 0.0: throw "z-scores need a non-zero spread"
+  made: List<double> = []
+  for value in values:
+    made.add((value - center) / spread)
+  return made
+
+# Softmax of [values], stable for large inputs. The results add up to 1.
+# Example:
+#   print softmax([0.0, 0.0]).length
+softmax(values: List<double>) -> List<double>:
+  if values.isEmpty: throw "softmax of an empty list"
+  peak = maximum(values)
+  weights: List<double> = []
+  var total = 0.0
+  for value in values:
+    weight = math.exp(value - peak)
+    weights.add(weight)
+    total = total + weight
+  made: List<double> = []
+  for weight in weights:
+    made.add(weight / total)
+  return made
+
+# A short description of a sample. [variance] is the sample variance, or 0
+# when the sample has a single value.
+# Example:
+#   report = summarize([1.0, 2.0, 3.0])
+#   print report.mean
+value class Summary:
+  count: int required
+  total: double required
+  mean: double required
+  minimum: double required
+  maximum: double required
+  variance: double required
+  # The square root of [variance].
+  # Example:
+  #   print report.stddev()
+  stddev() -> double = math.sqrt(variance)
+
+# Count, sum, mean, extremes, and sample variance of [values].
+# Example:
+#   print summarize([1.0, 2.0, 3.0]).count
+summarize(values: List<double>) -> Summary:
+  if values.isEmpty: throw "summarize of an empty list"
+  center = mean(values)
+  var spread = 0.0
+  if values.length >= 2: spread = variance(values)
+  return Summary(
+      count: values.length,
+      total: sumOf(values),
+      mean: center,
+      minimum: minimum(values),
+      maximum: maximum(values),
+      variance: spread)
+
+# The error function. The approximation is Abramowitz and Stegun 7.1.26.
+# Example:
+#   print approximately(erf(0.0), 0.0, 1.0e-6)
+erf(x: double) -> double:
+  if x < 0.0: return 0.0 - _positiveErfTail(0.0 - x, true)
+  return _positiveErfTail(x, true)
+
+# The complementary error function, 1 - erf(x), kept accurate for large x.
+# Example:
+#   print approximately(erfc(0.0), 1.0, 1.0e-6)
+erfc(x: double) -> double:
+  if x < 0.0: return 2.0 - _positiveErfTail(0.0 - x, false)
+  return _positiveErfTail(x, false)
+
+# Normal density. [center] defaults to 0 and [sigma] defaults to 1.
+# Example:
+#   print normalPdf(0.0) > 0.0
+normalPdf(x: double, center: double = 0.0, sigma: double = 1.0) -> double:
+  if sigma <= 0.0: throw "sigma must be positive"
+  z = (x - center) / sigma
+  return exp(0.0 - 0.5 * z * z) / (sigma * sqrt(2.0 * pi))
+
+# Normal cumulative probability, from the error function.
+# Example:
+#   print approximately(normalCdf(0.0), 0.5, 1.0e-6)
+normalCdf(x: double, center: double = 0.0, sigma: double = 1.0) -> double:
+  if sigma <= 0.0: throw "sigma must be positive"
+  z = (x - center) / sigma
+  return 0.5 * (1.0 + erf(z / sqrt(2.0)))
+
+# Natural log of the gamma function, using the Lanczos approximation.
+# Undefined at non-positive integers.
+# Example:
+#   print approximately(logGamma(1.0), 0.0, 1.0e-6)
+logGamma(x: double) -> double:
+  whole = x.floor to double
+  if x <= 0.0 and x == whole:
+    throw "logGamma is undefined at a non-positive integer"
+  if x < 0.5:
+    return math.log(math.pi / math.sin(math.pi * x)) - logGamma(1.0 - x)
+  z = x - 1.0
+  var sum = 0.99999999999980993
+  sum = sum + 676.5203681218851 / (z + 1.0)
+  sum = sum - 1259.1392167224028 / (z + 2.0)
+  sum = sum + 771.32342877765313 / (z + 3.0)
+  sum = sum - 176.61502916214059 / (z + 4.0)
+  sum = sum + 12.507343278686905 / (z + 5.0)
+  sum = sum - 0.13857109526572012 / (z + 6.0)
+  sum = sum + 9.9843695780195716e-6 / (z + 7.0)
+  sum = sum + 1.5056327351493116e-7 / (z + 8.0)
+  t = z + 7.5
+  return 0.5 * math.log(2.0 * math.pi) + (z + 0.5) * math.log(t) - t + math.log(sum)
+
+# The gamma function. gamma(n) is (n - 1)! for a positive integer n.
+# Example:
+#   print approximately(gamma(5.0), 24.0, 1.0e-6)
+gamma(x: double) -> double:
+  whole = x.floor to double
+  if x <= 0.0 and x == whole:
+    throw "gamma is undefined at a non-positive integer"
+  if x < 0.0: return math.pi / (math.sin(math.pi * x) * gamma(1.0 - x))
+  return math.exp(logGamma(x))
+
+# Binomial probability of [k] successes in [n] trials of chance [p].
+# Example:
+#   print binomialPmf(1, 1, 1.0)
+binomialPmf(k: int, n: int, p: double) -> double:
+  if k < 0 or n < 0 or k > n: return 0.0
+  if p < 0.0 or p > 1.0: throw "probability must be from 0 through 1"
+  ways = combinations(n, k) to double
+  return ways * (math.pow(p, k) to double) * (math.pow(1.0 - p,
+  n - k) to double)
+
+# Poisson probability of [k] events when the mean count is [lambda].
+# Example:
+#   print poissonPmf(0, 0.0)
+poissonPmf(k: int, lambda: double) -> double:
+  if k < 0: return 0.0
+  if lambda < 0.0: throw "lambda cannot be negative"
+  if lambda == 0.0:
+    if k == 0: return 1.0
+    return 0.0
+  power = math.pow(lambda, k) to double
+  return math.exp(0.0 - lambda) * power / (factorial(k) to double)
+
+# [count] evenly spaced values from [start] through [end], including both ends.
+# Example:
+#   print linspace(0.0, 1.0, 3).length
+linspace(start: double, end: double, count: int) -> List<double>:
+  if count < 2: throw "linspace needs at least two points"
+  made: List<double> = []
+  step = (end - start) / ((count - 1) to double)
+  var i = 0
+  while i < count:
+    if i == count - 1: made.add(end)
+    else: made.add(start + step * (i to double))
+    i = i + 1
+  return made
+
+# Trapezoidal integral of [samples] separated by [step].
+# Example:
+#   print trapezoid([0.0, 1.0, 0.0], 1.0)
+trapezoid(samples: List<double>, step: double) -> double:
+  if samples.length < 2: throw "trapezoid needs at least two samples"
+  if step == 0.0: throw "step cannot be zero"
+  var total = 0.0
+  var i = 0
+  while i < samples.length - 1:
+    total = total + (samples[i] + samples[i + 1]) * 0.5 * step
+    i = i + 1
+  return total
+
+# Trapezoidal integral of [f] from [start] to [end], using [steps] panels.
+# Example:
+#   print integrate((x: double) -> x, 0.0, 1.0, 2)
+integrate(
+    f: (double) -> double, start: double, end: double, steps: int) -> double:
+  if steps < 1: throw "steps must be positive"
+  width = (end - start) / (steps to double)
+  var total = 0.5 * (f(start) + f(end))
+  var i = 1
+  while i < steps:
+    total = total + f(start + width * (i to double))
+    i = i + 1
+  return total * width
+
+# The symmetric difference quotient of [f] at [x].
+# Example:
+#   print approximately(derivative((x: double) -> x, 2.0), 1.0, 1.0e-5)
+derivative(f: (double) -> double, x: double, step: double = 1.0e-6) -> double:
+  if step == 0.0: throw "step cannot be zero"
+  return (f(x + step) - f(x - step)) / (2.0 * step)
+
+# A root of [f] between [low] and [high], by bisection.
+# The ends must have opposite signs, or one of them must be a root.
+# Example:
+#   print approximately(bisect((x: double) -> x - 2.0, 0.0, 4.0), 2.0, 1.0e-6)
+bisect(
+    f: (double) -> double,
+    low: double,
+    high: double,
+    steps: int = 60) -> double:
+  if steps < 1: throw "steps must be positive"
+  var a = low
+  var b = high
+  var fa = f(a)
+  var fb = f(b)
+  if fa == 0.0: return a
+  if fb == 0.0: return b
+  if fa * fb > 0.0: throw "bisect needs a sign change"
+  var i = 0
+  while i < steps:
+    mid = (a + b) / 2.0
+    fm = f(mid)
+    if fm == 0.0: return mid
+    if fa * fm < 0.0:
+      b = mid
+      fb = fm
+    else:
+      a = mid
+      fa = fm
+    i = i + 1
+  return (a + b) / 2.0
+
+extend double Reals:
+  # This number of radians, written in degrees.
+  # Example:
+  #   print pi.toDegrees()
+  toDegrees() -> double = degrees(this)
+  # This number of degrees, written in radians.
+  # Example:
+  #   print 180.0.toRadians()
+  toRadians() -> double = radians(this)
+  # The non-negative fractional part.
+  # Example:
+  #   print 1.25.fractionalPart()
+  fractionalPart() -> double = fractional(this)
+  # True when this number is within 1e-9 of [other].
+  # Example:
+  #   print 1.0.about(1.0)
+  about(other: double) -> bool = approximately(this, other, 1.0e-9)
+
+extend int Factors:
+  # This integer's factorial. Negative values throw.
+  # Example:
+  #   print 5.factorial()
+  factorial() -> int = factorial(this)
+  # True when this integer is prime.
+  # Example:
+  #   print 7.prime()
+  prime() -> bool = isPrime(this)
+
+extend List<double> Samples:
+  # The sum of these numbers.
+  # Example:
+  #   print numbers.sumOf()
+  sumOf() -> double = sumOf(this)
+  # The arithmetic mean.
+  # Example:
+  #   print numbers.mean()
+  mean() -> double = mean(this)
+  # The middle value.
+  # Example:
+  #   print numbers.median()
+  median() -> double = median(this)
+  # The sample standard deviation.
+  # Example:
+  #   print numbers.stddev()
+  stddev() -> double = stddev(this)
+  # The smallest value.
+  # Example:
+  #   print numbers.minimum()
+  minimum() -> double = minimum(this)
+  # The largest value.
+  # Example:
+  #   print numbers.maximum()
+  maximum() -> double = maximum(this)
+
+# Shared positive-x tail of erf and erfc.
+# [asErf] selects erf; otherwise the value is erfc.
+_positiveErfTail(x: double, asErf: bool) -> double:
+  t = 1.0 / (1.0 + 0.3275911 * x)
+  var poly = 1.061405429
+  poly = poly * t - 1.453152027
+  poly = poly * t + 1.421413741
+  poly = poly * t - 0.284496736
+  poly = poly * t + 0.254829592
+  poly = poly * t
+  tail = poly * math.exp(0.0 - x * x)
+  if asErf: return 1.0 - tail
+  return tail
+''';
+
 const embeddedSdk = <String, String>{
   'core': coreSdkSource,
   'ext': extSdkSource,
+  'math': mathSdkSource,
 };
 
 List<String>? _sdkLibraryNames;

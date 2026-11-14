@@ -3182,6 +3182,134 @@ main():
 ''', 'true\nAb\nba\n2\nvalue\nvalue\n2\n3\n2\ntrue\ntrue\n-1\ntrue\n2\na\nb\nababab\n2\n3\n2\ntrue\n3\n16\ntrue\n1\n1\n');
   });
 
+  test('quds:math re-exports dart:math and runs numeric helpers', () async {
+    expect(File('lib/sdk/math.quds').readAsStringSync(), mathSdkSource);
+    final compiled = compile('''
+use quds:math
+main():
+  print sqrt(9.0)
+''');
+    expect(compiled.dart, contains("import 'quds_math.dart';"));
+    expect(compiled.bundles, hasLength(1));
+    expect(compiled.bundles.single.fileName, 'quds_math.dart');
+    expect(compiled.bundles.single.source,
+        contains("import 'dart:math' as math;"));
+    expect(compiled.bundles.single.source, contains("import 'dart:math';"));
+    expect(compiled.bundles.single.source, contains("export 'dart:math';"));
+    expect(() => compile('''
+use quds:math
+main():
+  log(1.0)
+'''), throwsA(predicate((error) => '$error'.contains('not callable'))));
+    expect(() => compile('''
+use quds:math show mean
+main():
+  print sin(0.0)
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math hide sqrt
+main():
+  print sqrt(9.0)
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    await execute('''
+use quds:math as m
+main():
+  print m.sqrt(9.0)
+  print m.log(m.e)
+  print m.mean([1.0, 2.0, 3.0])
+  print m.min(1, 2)
+''', '3.0\n1.0\n2.0\n1\n');
+    await execute(
+        '''
+use quds:math
+main():
+  print sqrt(9.0)
+  print sin(0.0)
+  print ln(e)
+  print gcd(12, 18)
+  print lcm(4, 6)
+  print factorial(5)
+  print combinations(5, 2)
+  print permutations(5, 2)
+  print isPrime(7)
+  print nextPrime(14)
+  print fibonacci(10)
+  print mean([1.0, 2.0, 3.0])
+  print median([1.0, 3.0, 2.0])
+  print stddev([1.0, 2.0, 3.0])
+  print modulo(-1.0, 3.0)
+  print bounded(5.0, 0.0, 1.0)
+  print hypot(3.0, 4.0)
+  print sigmoid(0.0)
+  z = 1.0
+  print approximately(normalCdf(0.0), 0.5, 1.0e-6)
+  plane = Complex(real: 3.0, imag: 4.0)
+  print plane.abs()
+  print((plane + plane.conjugate()).real)
+  v = Vec2(x: 3.0, y: 4.0)
+  print v.length()
+  print erf(0.0) < 1.0e-6
+  print erfc(0.0) > 0.999999
+  print approximately(gamma(5.0), 24.0, 1.0e-6)
+  print approximately(logGamma(1.0), 0.0, 1.0e-9)
+  print integrate((x: double) -> x, 0.0, 1.0, 2)
+  print bisect((x: double) -> x - 2.0, 0.0, 4.0)
+  print approximately(derivative((x: double) -> x * x, 3.0), 6.0, 1.0e-6)
+  numbers: List<double> = [1.0, 2.0, 3.0]
+  print numbers.mean()
+  print 5.factorial()
+  print 7.prime()
+  print Point(3, 4).x
+  print Random(1).nextInt(1)
+  print correlation([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
+  print summarize([1.0, 2.0, 3.0]).count
+  print softmax([0.0, 0.0])[0]
+  print linspace(0.0, 1.0, 3)[2]
+  print approximately(degrees(pi), 180.0, 1.0e-9)
+  print z
+''',
+        '3.0\n'
+            '0.0\n'
+            '1.0\n'
+            '6\n'
+            '12\n'
+            '120\n'
+            '10\n'
+            '20\n'
+            'true\n'
+            '17\n'
+            '55\n'
+            '2.0\n'
+            '2.0\n'
+            '1.0\n'
+            '2.0\n'
+            '1.0\n'
+            '5.0\n'
+            '0.5\n'
+            'true\n'
+            '5.0\n'
+            '6.0\n'
+            '5.0\n'
+            'true\n'
+            'true\n'
+            'true\n'
+            'true\n'
+            '0.5\n'
+            '2.0\n'
+            'true\n'
+            '2.0\n'
+            '120\n'
+            'true\n'
+            '3\n'
+            '0\n'
+            '1.0\n'
+            '3\n'
+            '0.5\n'
+            '1.0\n'
+            'true\n'
+            '1.0\n');
+  });
+
   test('quds:core matches the embedded library and executes', () async {
     expect(File('lib/sdk/core.quds').readAsStringSync(), coreSdkSource);
     final result = compile('''

@@ -132,7 +132,10 @@ class SemanticModel {
   /// `quds:` libraries whose classes, functions, or extensions are used.
   final usedSdk = <String>{};
 
-  /// Public Dart names of a `quds:` library. Aliases are erased, so they are absent.
+  /// Public names of a `quds:` library that exist in its generated Dart.
+  ///
+  /// Aliases are erased, so they are absent. Names re-exported from `dart:`
+  /// are included.
   final sdkDartNames = <String, Set<String>>{};
 
   String resolve(String type) {
@@ -180,7 +183,10 @@ class SemanticModel {
 }
 
 /// A symbol for one name read from a Dart SDK library.
-Symbol symbolForDart(DartTop top, [DartShape? shape]) {
+///
+/// [library] is set when the name arrives through a `quds:` re-export, so
+/// using it still loads that SDK library.
+Symbol symbolForDart(DartTop top, [DartShape? shape, String library = '']) {
   if (top.isType) {
     final namespace = <String, Symbol>{};
     final constructors = shape?.constructors ?? const <String, DartMember>{};
@@ -205,6 +211,7 @@ Symbol symbolForDart(DartTop top, [DartShape? shape]) {
           : [for (final parameter in unnamed.parameters) parameter.$2],
       optionalParameters: unnamed?.optional ?? 0,
       namespace: namespace.isEmpty ? null : namespace,
+      library: library,
       documentation: top.documentation,
       signature: dartTopHead(top),
       originFile: top.file.isEmpty ? null : top.file,
@@ -226,6 +233,7 @@ Symbol symbolForDart(DartTop top, [DartShape? shape]) {
     constantValue: value,
     parameterTypes: [for (final parameter in top.parameters) parameter.$2],
     optionalParameters: top.optional,
+    library: library,
     documentation: top.documentation,
     signature: dartTopHead(top),
     originFile: top.file.isEmpty ? null : top.file,
@@ -1419,11 +1427,48 @@ class Analyzer {
         case ExtensionDeclaration()
             when statement.name != null && !statement.name!.startsWith('_'):
           names.add(statement.name!);
+        case ImportDeclaration() when statement.export:
+          names.addAll(_exportedDartNames(statement));
         default:
           break;
       }
     }
     return names;
+  }
+
+  /// Public names of a `dart:` library re-exported by [node], or empty when
+  /// [node] exports something else.
+  Set<String> _exportedDartNames(ImportDeclaration node) {
+    if (!node.uri.startsWith('dart:')) return const {};
+    final surface = readDartLibrary(node.uri);
+    if (surface == null) fail('Unknown import: ${node.uri}', node);
+    return {
+      for (final name in surface.names.keys)
+        if (_keeps(name, node)) name,
+    };
+  }
+
+  /// Binds names from `export dart:...` into the library that imported the
+  /// exporter. A name already in scope, such as prelude `min`, stays as it is.
+  void _importDartExport(ImportDeclaration statement,
+      {required String home, ImportDeclaration? filter, String? qualify}) {
+    final surface = readDartLibrary(statement.uri);
+    if (surface == null) fail('Unknown import: ${statement.uri}', statement);
+    final restricted = _restrict(filter, statement);
+    final target =
+        qualify == null ? _global.symbols : _space(qualify, statement);
+    for (final entry in surface.names.entries) {
+      if (!_keeps(entry.key, restricted)) continue;
+      if (target.containsKey(entry.key)) {
+        if (qualify != null) {
+          error('E204', 'Two imports define ${entry.key}', statement);
+        }
+        continue;
+      }
+      final shape = surface.types[entry.key];
+      if (shape != null) model.dartShapes[entry.key] = shape;
+      target[entry.key] = symbolForDart(entry.value, shape, home);
+    }
   }
 
   Set<String> _sdkAliasNames(Program program) => {
@@ -1604,6 +1649,11 @@ class Analyzer {
             when statement.name != null && !statement.name!.startsWith('_'):
           names.add(statement.name!);
         case ImportDeclaration() when statement.export:
+          final dartNames = _exportedDartNames(statement);
+          if (statement.uri.startsWith('dart:')) {
+            names.addAll(dartNames);
+            break;
+          }
           final exportedPath = _resolveLibrary(path, statement.uri);
           final exported = _libraries[exportedPath];
           if (exported == null) {
@@ -1650,7 +1700,7 @@ class Analyzer {
         case FunctionDeclaration()
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
-          _importFunction(statement, qualify: qualify);
+          _importFunction(statement, qualify: qualify, library: home);
         case AliasDeclaration()
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
@@ -1661,6 +1711,11 @@ class Analyzer {
                 _keeps(statement.name!, filter):
           _importExtension(statement, home: home, qualify: qualify);
         case ImportDeclaration() when statement.export:
+          if (statement.uri.startsWith('dart:')) {
+            _importDartExport(statement,
+                home: home, filter: filter, qualify: qualify);
+            break;
+          }
           final exportedPath = _resolveLibrary(path, statement.uri);
           final exported = _libraries[exportedPath];
           if (exported == null) {
@@ -1726,7 +1781,8 @@ class Analyzer {
     registerExtension(statement, library: home);
   }
 
-  void _importFunction(FunctionDeclaration statement, {String? qualify}) {
+  void _importFunction(FunctionDeclaration statement,
+      {String? qualify, String library = ''}) {
     final existing = qualify == null
         ? _global.symbols[statement.name]
         : _space(qualify, statement)[statement.name];
@@ -1742,7 +1798,9 @@ class Analyzer {
         ? 'Future<${statement.returnType}>'
         : type;
     final symbol = Symbol(statement.name, statement.name, effective,
-            function: statement, documentation: statement.documentation)
+            function: statement,
+            library: library,
+            documentation: statement.documentation)
         .withFunction(statement);
     model.declarations[statement] = symbol;
     for (final parameter in statement.parameters) {
@@ -2033,6 +2091,17 @@ class Analyzer {
     fail('Unsupported type: $type', node);
   }
 
+  bool _declaredAtTopLevel(FunctionDeclaration function) {
+    bool owns(Symbol? symbol) =>
+        symbol != null && symbol.overloads.contains(function);
+    if (owns(_global.symbols[function.name])) return true;
+    for (final symbol in _global.symbols.values) {
+      final space = symbol.namespace;
+      if (space != null && owns(space[function.name])) return true;
+    }
+    return false;
+  }
+
   void analyzeFunction(FunctionDeclaration function) {
     final savedTypes = {..._typeNames};
     final savedBounds = {..._typeBounds};
@@ -2068,7 +2137,10 @@ class Analyzer {
         savedReturn = _returnType;
     final savedPromoted = Map<String, String>.from(_promoted);
     _promoted.clear();
-    _scope = _Scope(savedScope);
+    // A top-level function does not close over the caller's locals. Calls
+    // re-check a function that has defaults, and that call may sit inside
+    // another function. Parent the body at the global scope in that case.
+    _scope = _Scope(_declaredAtTopLevel(function) ? _global : savedScope);
     _function = function;
     final declared = model.declarations[function]!.type;
     _returnType = function.generator == 'sync' &&
@@ -4981,10 +5053,12 @@ class Analyzer {
   /// A call whose target is a Dart library. Arguments stay in source order.
   String _passExternal(CallExpression node, Symbol symbol) {
     model.references[node.callee] = symbol;
+    _touch(symbol);
     for (final argument in node.arguments) {
       expression(argument.value);
     }
-    return 'dynamic';
+    if (symbol.type.isEmpty || symbol.type == 'dynamic') return 'dynamic';
+    return symbol.type;
   }
 
   String _callPrefixed(CallExpression node, MemberAccess callee, Symbol owner) {

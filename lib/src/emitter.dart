@@ -3319,7 +3319,10 @@ class DartEmitter {
     final target = node.type.endsWith('?')
         ? node.type.substring(0, node.type.length - 1)
         : node.type;
-    return '_qConvert(${expression(node.operand)}, ${quote(target)}, ${node.safe}) as ${_dartType(node.safe ? (node.type.endsWith('?') ? node.type : '${node.type}?') : node.type)}';
+    final cast = node.safe
+        ? (node.type.endsWith('?') ? node.type : '${node.type}?')
+        : node.type;
+    return '(_qConvert(${expression(node.operand)}, ${quote(target)}, ${node.safe}) as ${_dartType(cast)})';
   }
 
   String _with(WithExpression node) {

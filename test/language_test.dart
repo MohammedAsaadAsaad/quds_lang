@@ -3264,6 +3264,191 @@ main():
   print stack.pop()
 ''', '4\n');
   });
+
+  test('local functions, nameof, events, numeric constraints, and deconstruct',
+      () async {
+    await execute('''
+class Node:
+  child: Node? = null
+
+class Point:
+  x: int required
+  y: int required
+  deconstruct() -> (int, int) = (x, y)
+
+class Button:
+  event clicked: () -> void
+  press():
+    raise clicked
+
+walk(node: Node) -> int:
+  depth(current: Node, level: int) -> int:
+    if current.child == null: return level
+    return depth(current.child!, level + 1)
+  return depth(node, 0)
+
+scale(value: int) -> int:
+  twice(n: int) -> int = n * value
+  return twice(3)
+
+sum<T>(values: List<T>) -> T where T is Numeric:
+  var total = values.first
+  for value in values.skip(1):
+    total = total + value
+  return total
+
+main():
+  root = Node(child: Node())
+  print walk(root)
+  print scale(2)
+  user = "Ada"
+  print nameof user
+  print user
+  spot = Point(x: 3, y: 4)
+  print nameof spot.x
+  x, y = spot
+  print x
+  print y
+  button = Button()
+  button.clicked.add:
+    print "pressed"
+  button.press()
+  print sum([1, 2, 3])
+  print sum([1.5, 2.5])
+  age = -1
+  try:
+    require age >= 0
+  catch error:
+    print "{error}".contains("age >= 0")
+''', '1\n6\nuser\nAda\nspot.x\n3\n4\npressed\n6\n4.0\ntrue\n');
+    expect(() => compile('''
+main():
+  raise clicked
+'''), throwsA(predicate((error) => '$error'.contains('raise'))));
+    expect(() => compile('''
+sum<T>(values: List<T>) -> T where T is Numeric:
+  return values.first
+main():
+  print sum(["a"])
+'''), throwsA(predicate((error) => '$error'.contains('No overload'))));
+    expect(() => compile('''
+class Bare:
+  x: int required
+main():
+  a, b = Bare(x: 1)
+'''), throwsA(predicate((error) => '$error'.contains('record'))));
+    expect(() => compile('''
+class Button:
+  event clicked: () -> void
+  press():
+    clicked()
+'''), throwsA(predicate((error) => '$error'.contains('raise'))));
+  });
+
+  test('try else runs only when nothing is caught, and {expr=} shows the text',
+      () async {
+    await execute('''
+read() -> int:
+  print "once"
+  return 4
+
+stop(value: bool):
+  if value:
+    throw "no"
+
+main():
+  try:
+    print "ran"
+  catch error:
+    print "caught"
+  else:
+    print "saved"
+  try:
+    stop(value: true)
+  catch error:
+    print "caught"
+  else:
+    print "skipped"
+  finally:
+    print "done"
+  age = -1
+  print "{age=}"
+  print "{age == 1}"
+  print "{read()=}"
+''', 'ran\nsaved\ncaught\ndone\nage=-1\nfalse\nonce\nread()=4\n');
+    expect(() => compile('''
+main():
+  try:
+    print 1
+  else:
+    print 2
+'''), throwsA(predicate((error) => '$error'.contains('catch'))));
+  });
+
+  test('lazy fields, extension properties, call, and once', () async {
+    await execute('''
+readFile(path: String) -> String:
+  print "read"
+  return path
+
+class Report:
+  path: String required
+  text: String by lazy:
+    result readFile(path)
+  note: String? by lazy:
+    print "note"
+    result null
+
+class Cache:
+  static banner: String by lazy:
+    print "static"
+    result "ready"
+
+extend String Text:
+  property shouted: String:
+    get = this.toUpperCase()
+
+class Greeter:
+  call(name: String) -> String = "Hello {name}"
+
+tick():
+  once:
+    print "tick"
+
+main():
+  once = 1
+  print once
+  report = Report(path: "a")
+  print report.text
+  print report.text
+  print report.note
+  print report.note
+  print Cache.banner
+  print Cache.banner
+  print "ab".shouted
+  print Greeter()("Ada")
+  greeter = Greeter()
+  print greeter("Bo")
+  for n in 1..3:
+    once:
+      print n
+  tick()
+  tick()
+''', '1\nread\na\na\nnote\nnull\nnull\nstatic\nready\nready\nAB\nHello Ada\nHello Bo\n1\ntick\ntick\n');
+    expect(() => compile('''
+class Box:
+  var text: String by lazy:
+    result "a"
+'''), throwsA(predicate((error) => '$error'.contains('var'))));
+    expect(() => compile('''
+class Box:
+  text: String by lazy:
+    result "a"
+main():
+  box = Box()
+  box.text = "b"
+'''), throwsA(predicate((error) => '$error'.contains('immutable'))));
+  });
 }
 
 Future<void> execute(String source, String stdout) async {

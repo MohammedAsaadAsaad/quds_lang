@@ -301,6 +301,8 @@ List<Map<String, Object>> _qudsLocals(
         visitStatements(body, endLine(node.span));
       case BatchStatement(:final body):
         visitStatements(body, endLine(node.span));
+      case OnceStatement(:final body):
+        visitStatements(body, endLine(node.span));
       case WhenStatement(:final condition, :final body):
         visitExpression(condition, end);
         visitStatements(body, endLine(node.span));
@@ -314,7 +316,12 @@ List<Map<String, Object>> _qudsLocals(
           visitExpression(arm.guard, armEnd);
           visitStatements(arm.body, armEnd);
         }
-      case TryStatement(:final body, :final catches, :final finallyBody):
+      case TryStatement(
+          :final body,
+          :final catches,
+          :final elseBody,
+          :final finallyBody
+        ):
         visitStatements(body, endLine(node.span));
         for (final clause in catches) {
           final catchEnd = endLine(clause.span);
@@ -322,6 +329,7 @@ List<Map<String, Object>> _qudsLocals(
           add(model.traces[clause], clause.span, catchEnd);
           visitStatements(clause.body, catchEnd);
         }
+        visitStatements(elseBody, endLine(node.span));
         visitStatements(finallyBody, endLine(node.span));
       case DestructureStatement(:final pattern, :final value):
         patterns(pattern, end);
@@ -336,6 +344,7 @@ List<Map<String, Object>> _qudsLocals(
         ):
         for (final field in fields) {
           visitExpression(field.initializer, endLine(node.span));
+          visitStatements(field.lazyBody, endLine(field.span));
         }
         for (final method in methods) {
           function(method);
@@ -349,9 +358,15 @@ List<Map<String, Object>> _qudsLocals(
           visitStatements(property.getterBody, propertyEnd);
           visitStatements(property.setterBody, propertyEnd);
         }
-      case ExtensionDeclaration(:final methods):
+      case ExtensionDeclaration(:final methods, :final properties):
         for (final method in methods) {
           function(method);
+        }
+        for (final property in properties) {
+          final propertyEnd = endLine(property.span);
+          visitExpression(property.getter, propertyEnd);
+          visitStatements(property.getterBody, propertyEnd);
+          visitStatements(property.setterBody, propertyEnd);
         }
       case TaskGroupStatement(:final children):
         final groupEnd = endLine(node.span);
@@ -372,6 +387,10 @@ List<Map<String, Object>> _qudsLocals(
       case RequireStatement(:final condition, :final message):
         visitExpression(condition, end);
         visitExpression(message, end);
+      case RaiseStatement(:final arguments):
+        for (final argument in arguments) {
+          visitExpression(argument.value, end);
+        }
       case MemberAssignment(:final object, :final value):
         visitExpression(object, end);
         visitExpression(value, end);

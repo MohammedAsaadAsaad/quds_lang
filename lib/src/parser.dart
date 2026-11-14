@@ -355,7 +355,7 @@ class Parser {
       Expression? message;
       if (match(TokenKind.comma)) message = expression(bare: true);
       return finishLine(RequireStatement(condition, extent(span),
-          message: message, kind: kind));
+          message: message, kind: kind, source: _snippet(condition.span)));
     }
     if (word('task') && peek().lexeme == 'group') {
       return taskGroup(span);
@@ -369,6 +369,15 @@ class Parser {
       final value = expression(bare: true);
       return finishLine(ThrowStatement(value, extent(span)));
     }
+    if (word('raise') && peek().kind == TokenKind.identifier) {
+      take();
+      final eventName = name();
+      final arguments = at(TokenKind.leftParen)
+          ? call(Identifier(eventName.lexeme, eventName.span)).arguments
+          : const <Argument>[];
+      return finishLine(
+          RaiseStatement(eventName.lexeme, arguments, extent(span)));
+    }
     if (word('rethrow')) {
       take();
       return finishLine(RethrowStatement(extent(span)));
@@ -380,6 +389,10 @@ class Parser {
       return finishLine(YieldStatement(value, star, extent(span)));
     }
     if (word('repeat')) return repeatStatement(span);
+    if (word('once') && peek().kind == TokenKind.colon) {
+      take();
+      return OnceStatement(suite(), extent(span));
+    }
     if (word('result')) {
       take();
       final value = expression(bare: true);
@@ -590,6 +603,12 @@ class Parser {
         value is Identifier &&
         (value.name == 'map' || value.name == 'set')) {
       return collectionLiteral(value.name, value.span);
+    }
+    if (at(TokenKind.colon) && value is MemberAccess && value.name == 'add') {
+      final body = suite();
+      final handler = Lambda(const [], null, body, extent(value.span));
+      return CallExpression(
+          value, [Argument(null, handler, handler.span)], extent(value.span));
     }
     if (at(TokenKind.colon)) return namedBlock(value);
     if (value is DoExpression ||
@@ -819,6 +838,46 @@ class Parser {
     return parameters;
   }
 
+  /// `where T is Numeric` sets the bound. `Numeric` means `num`.
+  void _whereClause(List<TypeParameter> parameters) {
+    if (!word('where')) return;
+    take();
+    do {
+      final parameter = name();
+      if (!word('is')) fail('Expected is');
+      take();
+      final boundName = name().lexeme;
+      final bound = boundName == 'Numeric' ? 'num' : boundName;
+      final index =
+          parameters.indexWhere((item) => item.name == parameter.lexeme);
+      if (index < 0) {
+        fail('Unknown type parameter ${parameter.lexeme}', parameter.span);
+      }
+      final current = parameters[index];
+      parameters[index] = TypeParameter(current.name, current.span,
+          variance: current.variance, bound: bound);
+    } while (match(TokenKind.comma));
+  }
+
+  /// Tokens of [span], separated by spaces. Indentation is not part of the text.
+  String _snippet(SourceSpan span) {
+    final parts = <String>[];
+    for (final token in tokens) {
+      if (token.kind == TokenKind.newline ||
+          token.kind == TokenKind.indent ||
+          token.kind == TokenKind.dedent ||
+          token.kind == TokenKind.eof) {
+        continue;
+      }
+      final start = token.span.offset;
+      if (start + token.span.length <= span.offset) continue;
+      if (start >= span.offset + span.length) break;
+      if (token.lexeme.isEmpty) continue;
+      parts.add(token.lexeme);
+    }
+    return parts.join(' ');
+  }
+
   /// `>>` and `>>>` are one token. In a type argument they close two or three
   /// argument lists, one `>` at a time.
   int _angleCloseWidth(TokenKind kind) => switch (kind) {
@@ -903,7 +962,9 @@ class Parser {
       if (!match(TokenKind.question)) return inner;
       return inner.startsWith('(') ? '($inner)?' : '$inner?';
     }
-    fail('Expected ->');
+    final record = '(${parameters.join(', ')})';
+    if (match(TokenKind.question)) return '$record?';
+    return record;
   }
 
   Statement testDeclaration(SourceSpan span) {
@@ -1301,6 +1362,18 @@ class Parser {
             isStatic: isStatic));
         continue;
       }
+      if (word('event')) {
+        if (isStatic) fail('static applies to a field, function, or const');
+        take();
+        final fieldName = name();
+        expect(TokenKind.colon, ':');
+        final payload = typeName();
+        endLine();
+        fields.add(FieldDeclaration(fieldName.lexeme, 'Event<$payload>', false,
+            false, null, fieldName.span,
+            visibility: visibility, isEvent: true));
+        continue;
+      }
       if (isStatic) fail('static applies to a field, function, or const');
       if (readonlyMethod) fail('readonly applies to a method');
       final mutable = word('var');
@@ -1308,6 +1381,15 @@ class Parser {
       final fieldName = name();
       expect(TokenKind.colon, ':');
       final fieldType = typeName();
+      if (word('by') && peek().lexeme == 'lazy') {
+        if (mutable) fail('by lazy is not var');
+        take();
+        take();
+        fields.add(FieldDeclaration(
+            fieldName.lexeme, fieldType, false, false, null, fieldName.span,
+            visibility: visibility, lazyBody: suite()));
+        continue;
+      }
       var requiredField = false;
       Expression? initializer;
       if (word('required')) {
@@ -1501,16 +1583,21 @@ class Parser {
       extensionName = name().lexeme;
     }
     final methods = <FunctionDeclaration>[];
+    final properties = <PropertyDeclaration>[];
     expect(TokenKind.colon, ':');
     endLine();
     expect(TokenKind.indent, 'indented block');
     while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+      if (word('property')) {
+        properties.add(propertyDeclaration(''));
+        continue;
+      }
       if (!functionAhead()) fail('An extension member must be a function');
       methods.add(function(notes));
     }
     expect(TokenKind.dedent, 'end of extension');
     return ExtensionDeclaration(extensionName, target, methods, extent(span),
-        typeParameters: typeParameters);
+        typeParameters: typeParameters, properties: properties);
   }
 
   List<TypeParameter> extensionParameters(String target, SourceSpan span) {
@@ -1997,6 +2084,14 @@ class Parser {
     final fieldName = name();
     var type = '<infer>';
     if (match(TokenKind.colon)) type = typeName();
+    if (word('by') && peek().lexeme == 'lazy') {
+      if (mutable) fail('by lazy is not var');
+      take();
+      take();
+      return FieldDeclaration(
+          fieldName.lexeme, type, false, false, null, fieldName.span,
+          isStatic: true, lazyBody: suite());
+    }
     expect(TokenKind.equals, '=');
     final value = expression(bare: true);
     endLine();
@@ -2028,8 +2123,9 @@ class Parser {
     final token = operatorName == null ? name() : null;
     final nameText = operatorName ?? token!.lexeme;
     final span = operatorSpan ?? token!.span;
-    final typeParameters =
-        operatorName == null ? typeParameterList() : const <TypeParameter>[];
+    final typeParameters = operatorName == null
+        ? List<TypeParameter>.of(typeParameterList())
+        : <TypeParameter>[];
     final parameters = parameterList();
     var isAsync = false;
     var generator = '';
@@ -2046,6 +2142,7 @@ class Parser {
     }
     String? returnType;
     if (match(TokenKind.arrow)) returnType = typeName();
+    _whereClause(typeParameters);
     if (match(TokenKind.equals)) {
       if (generator.isNotEmpty) fail('A generator body is a suite');
       final value = expression(bare: true);
@@ -2172,6 +2269,12 @@ class Parser {
       catches.add(
           CatchClause(caught.lexeme, type, trace, block(), extent(token.span)));
     }
+    final elseBody = <Statement>[];
+    if (word('else')) {
+      if (catches.isEmpty) fail('try else needs catch');
+      take();
+      elseBody.addAll(block());
+    }
     final finallyBody = <Statement>[];
     if (word('finally')) {
       take();
@@ -2180,7 +2283,8 @@ class Parser {
     if (catches.isEmpty && finallyBody.isEmpty) {
       fail('try needs catch or finally', span);
     }
-    return TryStatement(body, catches, finallyBody, extent(span));
+    return TryStatement(body, catches, finallyBody, extent(span),
+        elseBody: elseBody);
   }
 
   Statement ifStatement() {
@@ -2890,6 +2994,18 @@ class Parser {
     }
     if (token.kind == TokenKind.identifier) {
       if (token.lexeme == 'this') return ThisExpression(token.span);
+      if (token.lexeme == 'nameof') {
+        final first = name();
+        final parts = [first.lexeme];
+        Expression target = Identifier(first.lexeme, first.span);
+        while (match(TokenKind.dot)) {
+          final member = name();
+          parts.add(member.lexeme);
+          target =
+              MemberAccess(target, member.lexeme, false, extent(first.span));
+        }
+        return NameofExpression(target, parts.join('.'), extent(token.span));
+      }
       if (token.lexeme == 'true' ||
           token.lexeme == 'false' ||
           token.lexeme == 'null') {
@@ -3118,6 +3234,8 @@ class Parser {
           if (depth == 0) break;
         }
         if (depth != 0) fail('Unclosed interpolation', token.span);
+        final hole = content.substring(start, i);
+        final shown = _shownText(hole);
         final prefix = text.substring(0, width + start);
         final lines =
             prefix.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
@@ -3127,7 +3245,7 @@ class Parser {
             : lines.last.length + 1;
         final offset = token.span.offset + utf8.encode(prefix).length;
         final nestedTokens = Lexer()
-            .tokenize(content.substring(start, i), file: token.span.file)
+            .tokenize(shown ?? hole, file: token.span.file)
             .map((t) => Token(
                 t.kind,
                 t.lexeme,
@@ -3144,7 +3262,8 @@ class Parser {
         final value = parser.expression();
         parser.endLine();
         parser.expect(TokenKind.eof, 'end of interpolation');
-        parts.add(value);
+        parts.add(
+            shown == null ? value : ShownExpression(value, shown, value.span));
       } else if (ch == '}') {
         fail('Escape literal braces with a backslash', token.span);
       } else {
@@ -3155,5 +3274,16 @@ class Parser {
     if (parts.every((p) => p is Literal))
       return Literal(parts.map((p) => (p as Literal).value).join(), token.span);
     return InterpolatedString(parts, token.span);
+  }
+
+  /// `{age=}` keeps the expression text. `{a == b}` stays a comparison.
+  String? _shownText(String hole) {
+    final trimmed = hole.trimRight();
+    if (trimmed.length < 2 || !trimmed.endsWith('=')) return null;
+    final before = trimmed[trimmed.length - 2];
+    if (before == '=' || before == '<' || before == '>' || before == '!') {
+      return null;
+    }
+    return trimmed.substring(0, trimmed.length - 1).trim();
   }
 }

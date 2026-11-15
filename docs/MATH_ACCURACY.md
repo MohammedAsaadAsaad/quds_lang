@@ -12,23 +12,52 @@ Quds suites or the frozen reference fixture; see [the inventory](MATH_COVERAGE.m
 This does **not** mean every branch, parameter combination, platform, or possible
 user-supplied function has been proved correct.
 
+## Primary Quds tests
+
+The primary SDK checks now live in `.quds` files and run through `quds test`.
+`test/math_reference.quds` contains **1167** independently generated numerical
+references, with the same values/tolerances as the corresponding structured
+cases in the original Dart fixture. They are shared reference data, not 1167
+additional independent mathematical inputs. The explicit Quds helper preserves
+strict relative checks for tiny tails instead of substituting one loose tolerance.
+
+`test/math_graph_reference.quds` implements independent Floyd–Warshall and brute
+force coloring oracles in Quds: **151,457 assertions on 1695 graphs**, plus a
+20,000-vertex chain. `math_api.quds` closes the earlier Quds call-site gaps,
+including distribution quantiles, typed callbacks and fixed-seed samplers.
+All **300** public top-level functions now have a Quds call site. This is still
+call-site traceability, not complete branch/domain coverage.
+
+`math_quds_test.dart` only launches the Quds suites and verifies their completion
+markers. Mathematical assertions live in Quds. CI runs the direct Quds commands
+before the compiler/platform test suite. Running the launcher as
+`dart run bin/quds.dart test ...` does not make those assertions Dart tests:
+Quds source is parsed, statically checked and emitted before the Dart backend
+executes it. Dart remains the backend required by the approved language design.
+
 ## Reproduce
 
 ```sh
 dart pub get --enforce-lockfile
-dart test test/math_accuracy_test.dart --reporter expanded
 dart run bin/quds.dart test test/math.quds
 dart run bin/quds.dart test test/math_accuracy.quds
+dart run bin/quds.dart test test/math_reference.quds
+dart run bin/quds.dart test test/math_api.quds
+dart run bin/quds.dart test test/math_operators.quds
+dart run bin/quds.dart test test/math_graph.quds
+dart run bin/quds.dart test test/math_graph_reference.quds
+dart test test/math_accuracy_test.dart test/math_graph_test.dart --reporter expanded
 ```
 
-`math_accuracy_test.dart` compiles the actual Quds SDK with the Quds compiler,
+As supplemental interoperability checks, `math_accuracy_test.dart` compiles the actual Quds SDK with the Quds compiler,
 writes its bundle, and executes **2591** frozen checks against that generated
 public API. The same test file compiles a math consumer using `dart compile js`
 and runs it with Node when available. No Python or SciPy installation is needed
 to run the Dart tests. Absence of Node explicitly skips JavaScript execution;
 compilation is still checked.
 
-The frozen fixture is `test/fixtures/math_reference.dart.txt`. To deliberately
+The frozen fixtures are `test/math_reference.quds` and
+`test/fixtures/math_reference.dart.txt`. Python is needed only to deliberately
 regenerate its references and coverage inventory:
 
 ```sh

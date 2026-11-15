@@ -1,0 +1,91 @@
+# Quds call coverage for APIs formerly exercised only by the Dart oracle.
+use quds:math
+
+group "public math API through Quds":
+  test "elementary helpers":
+    expect(approximately(1.0, 1.0 + 1.0e-10), true)
+    expect(tau(), closeTo(6.283185307179586, 1.0e-14))
+    expect(phi(), closeTo(1.618033988749895, 1.0e-14))
+    expect(radians(180.0), closeTo(3.141592653589793, 1.0e-14))
+    expect(lerp(2.0, 6.0, 0.25), 3.0)
+    expect(inverseLerp(2.0, 6.0, 3.0), 0.25)
+    expect(remap(3.0, 2.0, 6.0, 10.0, 30.0), 15.0)
+    expect(signOf(-1.0), -1)
+    expect(fractional(-1.25), 0.75)
+    expect(log2(8.0), 3.0)
+    expect(log10(1000.0), closeTo(3.0, 1.0e-14))
+    expect(decimalScale(3), 1000.0)
+    expect(roundTo(1.235, 2), 1.24)
+    expect(floorTo(-1.231, 2), -1.24)
+    expect(ceilTo(-1.239, 2), -1.23)
+    expect(smoothstep(0.0, 1.0, 0.5), 0.5)
+    expect(lerpAngle(0.0, 1.0, 0.5), 0.5)
+    expect(sinc(0.0), 1.0)
+    expect(logit(0.5), 0.0)
+    expect(ipow(-2, 5), -32)
+    expect(interval(3.0, 1.0).low, 1.0)
+  test "statistics and samples":
+    expect(sumOf([1.0, 2.0, 3.0]), 6.0)
+    expect(product([2.0, 3.0, 4.0]), 24.0)
+    expect(minimum([3.0, 1.0, 2.0]), 1.0)
+    expect(maximum([3.0, 1.0, 2.0]), 3.0)
+    expect(sampleRange([3.0, 1.0, 2.0]), 2.0)
+    expect(variance([1.0, 2.0, 3.0]), 1.0)
+    expect(populationVariance([1.0, 2.0, 3.0]), closeTo(0.6666666666666666, 1.0e-14))
+    expect(populationStddev([1.0, 2.0, 3.0]), closeTo(0.816496580927726, 1.0e-14))
+    expect(percentile([1.0, 2.0, 3.0, 4.0], 25.0), 1.75)
+    expect(quantile([1.0, 2.0, 3.0, 4.0], 0.25), 1.75)
+    expect(covariance([1.0, 2.0, 3.0], [2.0, 4.0, 6.0]), 2.0)
+    expect(zScores([1.0, 2.0, 3.0])[0], closeTo(-1.224744871391589, 1.0e-14))
+    expect(trapezoid([0.0, 1.0, 2.0], 1.0), 2.0)
+    rows: List<List<double>> = [[1.0, 0.0], [1.0, 1.0], [1.0, 2.0]]
+    expect(fitResiduals(rows, [1.0, 3.0, 5.0])[0], closeTo(0.0, 1.0e-12))
+    expect(fitRSquared(rows, [1.0, 3.0, 5.0]), closeTo(1.0, 1.0e-12))
+  test "distribution quantiles against frozen independent values":
+    expect(betaQuantile(0.3, 2.0, 5.0), closeTo(0.1818034713189492, 1.0e-8))
+    expect(gammaQuantile(0.5, 3.0, 2.0), closeTo(5.348120627447118, 1.0e-8))
+    expect(exponentialQuantile(0.5, 2.0), closeTo(0.34657359027997264, 1.0e-12))
+    expect(weibullPdf(1.0, 2.0, 3.0), closeTo(0.1988531815143044, 1.0e-12))
+    expect(weibullQuantile(0.5, 2.0, 3.0), closeTo(2.497663833473093, 1.0e-12))
+    expect(lognormalQuantile(0.3, 0.2, 0.7), closeTo(0.8461316144030557, 1.0e-8))
+    expect(cauchyQuantile(0.3, 0.2, 0.7), closeTo(-0.3085797696037526, 1.0e-12))
+    expect(geometricCdf(3, 0.3), closeTo(0.7599, 1.0e-12))
+  test "windows transforms and complex algebra":
+    expect(hamming(1), [1.0])
+    expect(blackman(1), [1.0])
+    impulse: List<Complex> = [Complex(real: 1.0, imag: 0.0), Complex(real: 0.0, imag: 0.0)]
+    spectrum = fft(impulse)
+    expect(spectrum.length, 2)
+    expect(spectrum[0].real, 1.0)
+    expect(spectrum[1].real, 1.0)
+    expect(spectrum[1].imag, 0.0)
+    left: List<List<Complex>> = [[Complex(real: 1.0, imag: 2.0)]]
+    right: List<List<Complex>> = [[Complex(real: 3.0, imag: -1.0)]]
+    expect(complexMatmul(left, right)[0][0].real, 5.0)
+    expect(complexMatmul(left, right)[0][0].imag, 5.0)
+  test "adaptive ODE system through a typed Quds callback":
+    solution = rungeKuttaAdaptiveSystem((x: double, y: List<double>) -> [y[0]], 0.0, [1.0], 1.0, 1.0e-9)
+    expect(solution[0], closeTo(2.718281828459045, 1.0e-8))
+  test "previously Dart-only samplers follow theoretical moments":
+    expect(_sampleMean((r: Random) -> exponentialSample(r, 2.0)), closeTo(0.5, 0.03))
+    expect(_sampleMean((r: Random) -> weibullSample(r, 2.0, 3.0)), closeTo(2.658680776358274, 0.08))
+    expect(_sampleMean((r: Random) -> (geometricSample(r, 0.3) to double)), closeTo(2.3333333333333335, 0.16))
+    expect(_sampleMean((r: Random) -> studentSample(r, 5.0)), closeTo(0.0, 0.08))
+    expect(_sampleMean((r: Random) -> lognormalSample(r, 0.2, 0.7)), closeTo(1.5604901958326667, 0.08))
+    random = Random(19)
+    draws: List<double> = []
+    var i = 0
+    while i < 20000:
+      draws.add(cauchySample(random, 0.2, 0.7))
+      i += 1
+    draws.sort()
+    expect((draws[9999] + draws[10000]) / 2.0, closeTo(0.2, 0.08))
+
+_sampleMean(sample: (Random) -> double) -> double:
+  random = Random(17)
+  var total = 0.0
+  var i = 0
+  while i < 20000:
+    total += sample(random)
+    i += 1
+  return total / 20000.0

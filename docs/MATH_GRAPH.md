@@ -74,11 +74,17 @@ ordinary positional arguments.
 ## Verification
 
 ```sh
-dart test test/math_graph_test.dart --reporter expanded
 dart run bin/quds.dart test test/math_graph.quds
+dart run bin/quds.dart test test/math_graph_reference.quds
+dart test test/math_graph_test.dart --reporter expanded
 ```
 
-The Dart tests compile the real Quds SDK and execute its unchanged generated API.
+The primary exhaustive oracle is written in `test/math_graph_reference.quds`.
+It runs through `quds test`, with 151,457 assertions on 1695 graphs and a separate
+20,000-vertex chain test. It uses min-plus Floyd–Warshall and exhaustive coloring,
+independently of the SDK algorithms.
+
+As supplemental platform checks, the Dart tests compile the real Quds SDK and execute its unchanged generated API.
 Their separate fixture uses min-plus Floyd–Warshall for distances, boolean closure
 for connectivity, and exhaustive candidate colorings for bipartiteness. It checks:
 

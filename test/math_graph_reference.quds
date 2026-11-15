@@ -1,0 +1,248 @@
+# Independent Quds oracles: min-plus Floyd-Warshall and exhaustive colorings.
+# Run: quds test test/math_graph_reference.quds
+use quds:math
+
+class _Cell:
+  var value: int = 0
+
+class _Counts:
+  var checks: int = 0
+  var graphs: int = 0
+
+_check(counts: _Counts, condition: bool, reason: String):
+  counts.checks += 1
+  expect(condition, true, reason: reason)
+
+_equal(counts: _Counts, actual: Object?, expected: Object?, reason: String):
+  counts.checks += 1
+  expect(actual, equals(expected), reason: reason)
+
+_distanceMatrix(size: int) -> List<List<_Cell>>:
+  grid: List<List<_Cell>> = []
+  var i = 0
+  while i < size:
+    row: List<_Cell> = []
+    var j = 0
+    while j < size:
+      cell = _Cell(value: size + 1)
+      if i == j: cell.value = 0
+      row.add(cell)
+      j += 1
+    grid.add(row)
+    i += 1
+  return grid
+
+_floyd(grid: List<List<_Cell>>):
+  var k = 0
+  while k < grid.length:
+    var i = 0
+    while i < grid.length:
+      var j = 0
+      while j < grid.length:
+        candidate = grid[i][k].value + grid[k][j].value
+        if candidate < grid[i][j].value: grid[i][j].value = candidate
+        j += 1
+      i += 1
+    k += 1
+
+_components(distance: List<List<_Cell>>, mutual: bool) -> List<List<int>>:
+  used: List<int> = []
+  groups: List<List<int>> = []
+  var i = 0
+  while i < distance.length:
+    if not used.contains(i):
+      members: List<int> = []
+      var j = 0
+      while j < distance.length:
+        if distance[i][j].value <= distance.length:
+          if not mutual or distance[j][i].value <= distance.length:
+            members.add(j)
+            used.add(j)
+        j += 1
+      groups.add(members)
+    i += 1
+  return groups
+
+_verifyGraph(counts: _Counts, graph: List<List<int>>):
+  counts.graphs += 1
+  size = graph.length
+  distance = _distanceMatrix(size)
+  weak = _distanceMatrix(size)
+  reverse: List<List<int>> = []
+  snapshot: List<List<int>> = []
+  for row in graph:
+    empty: List<int> = []
+    reverse.add(empty)
+    snapshot.add(row.toList())
+  var u = 0
+  while u < size:
+    for v in graph[u]:
+      if u != v:
+        distance[u][v].value = 1
+        weak[u][v].value = 1
+        weak[v][u].value = 1
+      reverse[v].add(u)
+    u += 1
+  _floyd(distance)
+  _floyd(weak)
+  reach: List<List<bool>> = []
+  var source = 0
+  while source < size:
+    row: List<bool> = []
+    expected: List<int> = []
+    var target = 0
+    while target < size:
+      reachable = distance[source][target].value <= size
+      row.add(reachable)
+      if reachable: expected.add(distance[source][target].value)
+      else: expected.add(-1)
+      path = shortestUnweightedPath(graph, source, target)
+      if not reachable:
+        _check(counts, path.length == 0, "unreachable path")
+      else:
+        _check(counts, path.length == distance[source][target].value + 1, "shortest path length")
+        _check(counts, path.first == source and path.last == target, "path endpoints")
+        _check(counts, path.toSet().length == path.length, "simple shortest path")
+        var step = 1
+        while step < path.length:
+          _check(counts, graph[path[step - 1]].contains(path[step]), "path edge")
+          step += 1
+      target += 1
+    reach.add(row)
+    _equal(counts, bfsDistances(graph, source), expected, "BFS against Floyd")
+    source += 1
+  _equal(counts, transposeGraph(graph), reverse, "transpose")
+  _equal(counts, transitiveClosure(graph), reach, "reflexive closure")
+  _equal(counts, weaklyConnectedComponents(graph), _components(weak, false), "weak partition")
+  _equal(counts, stronglyConnectedComponents(graph), _components(distance, true), "strong partition")
+  var cyclic = false
+  u = 0
+  while u < size:
+    for v in graph[u]:
+      if distance[v][u].value <= size: cyclic = true
+    u += 1
+  if cyclic:
+    rejectCycle() -> List<int> = topologicalSort(graph)
+    counts.checks += 1
+    expect(rejectCycle, throwsA(equals("topologicalSort needs an acyclic graph")))
+  else:
+    order = topologicalSort(graph)
+    sorted = order.toList()
+    sorted.sort()
+    vertices: List<int> = []
+    u = 0
+    while u < size:
+      vertices.add(u)
+      for v in graph[u]:
+        _check(counts, order.indexOf(u) < order.indexOf(v), "topological edge order")
+      u += 1
+    _equal(counts, sorted, vertices, "topological permutation")
+    _equal(counts, topologicalSort(graph), order, "deterministic topology")
+  var colorable = false
+  var mask = 0
+  while mask < (1 << size):
+    var valid = true
+    u = 0
+    while u < size:
+      for v in graph[u]:
+        if ((mask >> u) & 1) == ((mask >> v) & 1): valid = false
+      u += 1
+    if valid:
+      colorable = true
+      break
+    mask += 1
+  if colorable:
+    colors = bipartiteColoring(graph)
+    _equal(counts, colors.length, size, "color shape")
+    for color in colors:
+      _check(counts, color == 0 or color == 1, "color domain")
+    for component in _components(weak, false):
+      _equal(counts, colors[component.first], 0, "canonical root color")
+    u = 0
+    while u < size:
+      for v in graph[u]:
+        _check(counts, colors[u] != colors[v], "color edge constraint")
+      u += 1
+  else:
+    rejectOdd() -> List<int> = bipartiteColoring(graph)
+    counts.checks += 1
+    expect(rejectOdd, throwsA(equals("bipartiteColoring needs a bipartite graph")))
+  _equal(counts, graph, snapshot, "input preservation")
+
+_emptyGraph(size: int) -> List<List<int>>:
+  graph: List<List<int>> = []
+  var i = 0
+  while i < size:
+    row: List<int> = []
+    graph.add(row)
+    i += 1
+  return graph
+
+test "exhaustive graph oracles written in Quds":
+  counts = _Counts()
+  var size = 0
+  while size <= 3:
+    var mask = 0
+    while mask < (1 << (size * size)):
+      graph = _emptyGraph(size)
+      var u = 0
+      while u < size:
+        var v = 0
+        while v < size:
+          if (mask & (1 << (u * size + v))) != 0: graph[u].add(v)
+          v += 1
+        u += 1
+      _verifyGraph(counts, graph)
+      mask += 1
+    size += 1
+  size = 0
+  while size <= 5:
+    var mask = 0
+    while mask < (1 << (size * (size - 1) ~/ 2)):
+      graph = _emptyGraph(size)
+      var bit = 0
+      var u = 0
+      while u < size:
+        var v = u + 1
+        while v < size:
+          if (mask & (1 << bit)) != 0:
+            graph[u].add(v)
+            graph[v].add(u)
+          bit += 1
+          v += 1
+        u += 1
+      _verifyGraph(counts, graph)
+      mask += 1
+    size += 1
+  random = Random(41207)
+  var trial = 0
+  while trial < 64:
+    graph = _emptyGraph(7)
+    var edge = 0
+    while edge < trial:
+      graph[random.nextInt(7)].add(random.nextInt(7))
+      edge += 1
+    _verifyGraph(counts, graph)
+    trial += 1
+  expect(counts.graphs, 1695)
+  expect(counts.checks, greaterThan(100000))
+  print "QUDS GRAPH CHECKS={counts.checks} GRAPHS={counts.graphs} FAILURES=0"
+
+test "deep iterative graph traversal in Quds":
+  size = 20000
+  graph = _emptyGraph(size)
+  vertices: List<int> = []
+  var u = 0
+  while u < size:
+    vertices.add(u)
+    if u + 1 < size: graph[u].add(u + 1)
+    u += 1
+  expect(bfsDistances(graph, 0).last, size - 1)
+  expect(shortestUnweightedPath(graph, 0, size - 1).length, size)
+  expect(topologicalSort(graph), vertices)
+  expect(weaklyConnectedComponents(graph).single.length, size)
+  strong = stronglyConnectedComponents(graph)
+  expect(strong.length, size)
+  expect(strong.first.single, 0)
+  expect(strong.last.single, size - 1)
+  expect(bipartiteColoring(graph).last, 1)

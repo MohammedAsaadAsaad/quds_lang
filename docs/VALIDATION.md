@@ -1,5 +1,69 @@
 # Compiler validation — latest 2026-11-15
 
+## Quds-first math tests and compiler corrections
+
+Mathematical behavior is now tested primarily in `.quds` suites through
+`quds test`. Dart/JavaScript numerical fixtures remain supplemental platform
+checks. This policy is recorded in `AGENTS.md`, and CI executes the direct Quds
+suites before `dart test`. The SDK still has 300 public top-level functions;
+this change adds tests and compiler fixes, not new mathematical domains.
+
+| Command/check | Observed outcome |
+| --- | --- |
+| `dart format --output=none --set-exit-if-changed .` | 39 Dart files; zero pending formatting changes |
+| `dart analyze` | No issues |
+| Final `dart test --reporter expanded` | **247 passed; zero failures; zero skips** |
+| `quds test test/math_reference.quds` | **1167 numerical reference checks**, zero failures |
+| `quds test test/math_graph_reference.quds` | **151,457 assertions on 1695 graphs**, zero failures; separate 20,000-vertex chain passed |
+| Primary math suites | All **51** test declarations passed across eight `.quds` files |
+| Quds matcher/negative fixtures | Matcher suite passed with its intentional skipped assertions; four negative files each exited 65 with the expected diagnostic |
+| Public API call inventory | **300/300** public functions have Quds call sites; generation rejects any missing Quds call |
+| Supplemental Dart numerical fixture | Original 2591 checks unchanged and passed |
+| Supplemental graph VM/JavaScript fixtures | Original 119,740 assertions on each platform passed |
+| Generation/source synchronization | Byte-identical numerical fixtures/inventory and embedded SDK on repeat |
+
+`test/math_quds_test.dart` launches seven Quds files and checks all parsed
+completion titles and the numerical/graph execution markers. The eighth primary
+file, `math_graph.quds`, is launched by the existing graph integration test.
+Assertions and independent graph oracles live in Quds, not the Dart launcher.
+
+The 1167 numerical values are the same independently generated values/tolerances
+as their corresponding structured cases in the supplemental Dart fixture;
+they are not additional independent reference inputs. Raw Dart-only expressions
+(BigInt oracles and additional matrix/sampling checks) remain clearly supplemental.
+Every API having a Quds call is traceability, not proof of every branch or domain.
+
+### Defects corrected
+
+- `quds test` no longer lets a source `main()` bypass test discovery. It uses a
+  separate driver and a collision-free bridge inside the compiled suite.
+- Files with no actual tests fail with `No tests found`; they cannot report an
+  empty successful run. Legacy zero-argument test functions remain supported and
+  asynchronous legacy tests are awaited in sequence.
+- Any counted test failure produces exit 1. The old raw count made 256 failures
+  appear successful on POSIX. Reproduction against the prior committed CLI gave
+  exit 0 for an empty file, a test file with `main`, and 256 failing tests;
+  all three regressions are now covered and fail correctly.
+- The Quds graph oracle exposed missing parsing for approved `&`, `|`, `^`,
+  `<<`, `>>`, `>>>` and `~`. Their precedence follows the existing specification;
+  integer and eager boolean operations, const evaluation, invalid operands and
+  exactly-once operand order have regressions. No new syntax was invented.
+- `isFinite`, `isInfinite`, `isNaN`, `isNegative` and collection `single` have
+  static getter shapes, mirrored in completion metadata.
+- Imported Quds functions retain their own filtered/prefixed and unprefixed Dart
+  imports even when the caller uses only `use quds:math as m show ...`.
+- A filtered/prefixed `dart:core` import no longer removes core types needed by
+  generated code. Source-level import filters remain checked by Quds semantics.
+- Cross-library underscore fields/methods now receive `E206` in the original
+  `.quds` coordinates, matching explicit `private`; same-library access remains
+  valid. `protected` and the approved accessibility syntax were not redesigned.
+
+One earlier full run found an existing negative fixture expecting `E200` for
+`List<int> + Map<String, int>`. That is a type mismatch, which the diagnostic
+specification assigns `E300`; the expected code was corrected precisely, with no
+loosening to accept arbitrary errors. The final full rerun passed all 247 tests.
+
+
 ## Math expansion: unweighted graphs
 
 Added eight graph functions to `quds:math`, bringing its top-level public

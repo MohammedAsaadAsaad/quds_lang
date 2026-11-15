@@ -273,6 +273,15 @@ class DartEmitter {
           continue;
         }
         final prefix = node.prefix == null ? '' : ' as ${node.prefix}';
+        // An explicit filtered/prefixed dart:core import disables Dart's
+        // implicit import. Quds primitive types and generated helpers still
+        // need core; source-level show/hide remains enforced by semantics.
+        if (uri == 'dart:core' &&
+            (node.prefix != null ||
+                node.show.isNotEmpty ||
+                node.hide.isNotEmpty)) {
+          _imports.add("import 'dart:core';");
+        }
         _imports.add("import '$uri'$prefix$combinator;");
       } else if (node is PartDirective) {
         final uri = node.uri.endsWith('.quds')

@@ -2009,6 +2009,7 @@ class Analyzer {
   }
 
   String _visibility(ClassDeclaration type, String name) {
+    if (name.startsWith('_')) return 'private';
     for (final field in type.fields) {
       if (field.name == name) return field.visibility;
     }
@@ -2246,9 +2247,8 @@ class Analyzer {
               registerClass(statement, library: home);
             }
           case ImportDeclaration()
-              when statement.prefix != null &&
-                  statement.uri.startsWith('dart:'):
-            _bindDartPrefix(scope, statement);
+              when !statement.export && statement.uri.startsWith('dart:'):
+            _bindDartScope(scope, statement);
           default:
             break;
         }
@@ -2259,9 +2259,9 @@ class Analyzer {
     return scope;
   }
 
-  void _bindDartPrefix(_Scope scope, ImportDeclaration node) {
+  void _bindDartScope(_Scope scope, ImportDeclaration node) {
     final prefix = node.prefix;
-    if (prefix == null || scope.symbols.containsKey(prefix)) return;
+    if (prefix != null && scope.symbols.containsKey(prefix)) return;
     DartSurface? surface;
     try {
       surface = readDartLibrary(node.uri);
@@ -2269,13 +2269,19 @@ class Analyzer {
       surface = null;
     }
     if (surface == null) return;
-    final space = <String, Symbol>{};
+    final space = prefix == null ? scope.symbols : <String, Symbol>{};
     for (final name in surface.names.keys) {
+      if (!_keeps(name, node) || space.containsKey(name)) continue;
       final top = surface.names[name];
       if (top == null) continue;
-      space[name] = symbolForDart(top, surface.types[name]);
+      final shape = surface.types[name];
+      if (shape != null) model.dartShapes[name] = shape;
+      space[name] = symbolForDart(top, shape);
     }
-    scope.symbols[prefix] = Symbol(prefix, prefix, 'prefix', namespace: space);
+    if (prefix != null) {
+      scope.symbols[prefix] =
+          Symbol(prefix, prefix, 'prefix', namespace: space);
+    }
   }
 
   void analyzeFunction(FunctionDeclaration function) {
@@ -4964,6 +4970,7 @@ class Analyzer {
   }
 
   String binaryType(String left, String op, String right, Node node) {
+    final bitwise = {'&', '|', '^', '<<', '>>', '>>>'}.contains(op);
     if (left == 'void' || right == 'void')
       fail('Void expressions cannot be operands', node);
     if (op == '??') {
@@ -4992,7 +4999,13 @@ class Analyzer {
         (left == 'String' && right == 'int' ||
             left == 'int' && right == 'String')) {
       return 'String';
-    } else if (_numericOperand(left) && _numericOperand(right)) {
+    } else if (bitwise && left == 'int' && right == 'int') {
+      return 'int';
+    } else if ({'&', '|', '^'}.contains(op) &&
+        left == 'bool' &&
+        right == 'bool') {
+      return 'bool';
+    } else if (!bitwise && _numericOperand(left) && _numericOperand(right)) {
       if ({'<', '<=', '>', '>='}.contains(op)) return 'bool';
       if (op == '/') return 'double';
       if (left == right && _typeBounds.containsKey(left)) return left;
@@ -5012,14 +5025,15 @@ class Analyzer {
       if (method.parameters.isNotEmpty) {
         final expected = method.parameters.first.type;
         if (expected != '<field>' && !compatible(right, expected)) {
-          fail('Operator $op is not defined for $left and $right', node);
+          error(
+              'E300', 'Operator $op is not defined for $left and $right', node);
         }
       }
       return model.declarations[method]?.type ??
           method.returnType ??
           owner.name;
     }
-    fail('Operator $op is not defined for $left and $right', node);
+    error('E300', 'Operator $op is not defined for $left and $right', node);
   }
 
   String expression(Expression node) {
@@ -5270,6 +5284,10 @@ class Analyzer {
 
   String unary(UnaryExpression node) {
     final type = expression(node.operand);
+    if (node.operator == '~') {
+      if (type == 'int') return 'int';
+      fail('Invalid unary operator ~ for $type', node);
+    }
     if (node.operator == '!' && type.endsWith('?')) return unwrap(type);
     if (node.operator == 'not' && type == 'bool') return 'bool';
     if (node.operator != 'not' && node.operator != '!' && numeric(type)) {
@@ -6547,7 +6565,7 @@ class Analyzer {
       ('Iterable' || 'List' || 'Set' || 'Map' || 'String', 'isNotEmpty') =>
         'bool',
       ('Iterable', 'length') => 'int',
-      ('Iterable' || 'List' || 'Set', 'first' || 'last') => 'T',
+      ('Iterable' || 'List' || 'Set', 'first' || 'last' || 'single') => 'T',
       ('List', 'reversed') => 'Iterable<T>',
       ('Map', 'keys') => 'Iterable<K>',
       ('Map', 'values') => 'Iterable<V>',
@@ -6921,6 +6939,7 @@ class Analyzer {
   String? _numberGetter(String type, String name) {
     if (!numeric(type)) return null;
     return switch (name) {
+      'isFinite' || 'isInfinite' || 'isNaN' || 'isNegative' => 'bool',
       'abs' => type,
       'round' || 'floor' || 'ceil' => 'int',
       'plain' => 'String',

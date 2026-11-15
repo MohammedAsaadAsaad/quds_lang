@@ -2628,14 +2628,18 @@ class Parser {
     if (token.kind == TokenKind.dotDot || token.kind == TokenKind.dotDotLess) {
       return range ? 5 : -2;
     }
-    if (token.kind == TokenKind.tildeSlash) return 7;
+    if (token.kind == TokenKind.tildeSlash) return 11;
     return switch (token.lexeme) {
       'or' => 1,
       'and' => 2,
       '==' || '!=' => 3,
       '<' || '<=' || '>' || '>=' => 4,
-      '+' || '-' => 6,
-      '*' || '/' || '%' => 7,
+      '|' => 6,
+      '^' => 7,
+      '&' => 8,
+      '<<' || '>>' || '>>>' => 9,
+      '+' || '-' => 10,
+      '*' || '/' || '%' => 11,
       _ => -2,
     };
   }
@@ -2892,9 +2896,10 @@ class Parser {
     if (token.kind == TokenKind.string) return string(token);
     if (token.kind == TokenKind.minus ||
         token.kind == TokenKind.plus ||
+        token.kind == TokenKind.tilde ||
         token.lexeme == 'not') {
       return UnaryExpression(
-          token.lexeme, expression(minimum: 8), extent(token.span));
+          token.lexeme, expression(minimum: 12), extent(token.span));
     }
     if (token.lexeme == 'await') {
       if (word('all') && peek().kind == TokenKind.colon) {
@@ -2920,7 +2925,7 @@ class Parser {
         expect(TokenKind.dedent, 'end of await isolate');
         return AwaitIsolateExpression(call, extent(token.span));
       }
-      return AwaitExpression(expression(minimum: 8), extent(token.span));
+      return AwaitExpression(expression(minimum: 12), extent(token.span));
     }
     if (token.lexeme == 'symbol') {
       if (!at(TokenKind.string)) fail('symbol expects a string', token.span);

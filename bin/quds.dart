@@ -801,31 +801,43 @@ void _test(List<String> arguments) {
   final input = File(arguments[1]);
   try {
     final result = compile(input.readAsStringSync(), file: input.path);
-    final tests = result.program.statements.whereType<TestDeclaration>();
+    final tests =
+        result.program.statements.whereType<TestDeclaration>().toList();
     final legacy = result.program.statements
         .whereType<FunctionDeclaration>()
         .where((function) =>
-            function.name == 'test' || function.name.startsWith('test'));
-    var dart = result.dart;
-    if (!result.program.statements
-        .whereType<FunctionDeclaration>()
-        .any((function) => function.name == 'main')) {
-      final calls = [
-        ...tests.map((test) =>
-            '  await ${result.semantics.declarations[test]!.dartName}();'),
-        ...legacy.map((function) =>
-            '  ${result.semantics.declarations[function]!.dartName}();'),
-      ].join('\n');
-      final counted = dart.contains('_qTestFailed');
-      if (counted && !dart.contains("import 'dart:io';")) {
-        dart = "import 'dart:io';\n$dart";
-      }
-      final stop =
-          counted ? '\n  if (_qTestFailed != 0) exit(_qTestFailed);' : '';
-      final header =
-          tests.isNotEmpty ? 'Future<void> main() async' : 'void main()';
-      dart = '$dart\n$header {\n$calls$stop\n}\n';
+            (function.name == 'test' || function.name.startsWith('test')) &&
+            function.parameters.isEmpty &&
+            function.generator.isEmpty)
+        .toList();
+    bool hasTest(TestDeclaration declaration) =>
+        declaration.kind == 'test' ||
+        declaration.body.whereType<TestDeclaration>().any(hasTest);
+    if (!tests.any(hasTest) && legacy.isEmpty) {
+      stderr.writeln('No tests found in ${input.path}');
+      exitCode = 1;
+      return;
     }
+    // Use a separate driver so a source main() cannot bypass test discovery.
+    // Only this appended bridge sees private generated test declarations.
+    final occupied = result.semantics.declarations.values
+        .expand((symbol) => [symbol.name, symbol.dartName])
+        .toSet();
+    var entry = 'qudsTestEntrypoint';
+    var suffix = 0;
+    while (occupied.contains(entry)) {
+      entry = 'qudsTestEntrypoint${++suffix}';
+    }
+    final calls = [
+      ...tests.map((test) =>
+          '  await ${result.semantics.declarations[test]!.dartName}();'),
+      ...legacy.map((function) => '  ${function.isAsync ? 'await ' : ''}'
+          '${result.semantics.declarations[function]!.dartName}();'),
+    ].join('\n');
+    // A raw failure count of 256 becomes a successful exit on POSIX.
+    final status = tests.isNotEmpty ? '_qTestFailed == 0 ? 0 : 1' : '0';
+    final dart = '${result.dart}\nFuture<int> $entry() async {\n'
+        '$calls\n  return $status;\n}\n';
     if (dart.contains('package:matcher/') && _packageConfigPath() == null) {
       stderr.writeln('Could not find the package config for matcher');
       exitCode = 1;
@@ -833,10 +845,15 @@ void _test(List<String> arguments) {
     }
     final directory = Directory.systemTemp.createTempSync('quds-test-');
     writeSdkBundles(directory.path, result);
-    final output = File('${directory.path}/main.dart')..writeAsStringSync(dart);
+    File('${directory.path}/suite.dart').writeAsStringSync(dart);
+    final output = File('${directory.path}/main.dart')
+      ..writeAsStringSync("import 'dart:io' as io;\n"
+          "import 'suite.dart' as suite;\n"
+          'Future<void> main() async {\n'
+          '  io.exitCode = await suite.$entry();\n}\n');
     final run =
         Process.runSync(_dartExecutable(), _withPackages([output.path]));
-    _writeQuds(run.stdout, run.stderr, result.sourceMap, 'main.dart');
+    _writeQuds(run.stdout, run.stderr, result.sourceMap, 'suite.dart');
     exitCode = run.exitCode;
     directory.deleteSync(recursive: true);
   } on CompilerException catch (error) {

@@ -1289,6 +1289,7 @@ const _getters = {
     'isNotEmpty': 'bool',
     'first': 'T',
     'last': 'T',
+    'single': 'T',
     'reversed': 'Iterable<T>',
   },
   'Set': {
@@ -1297,6 +1298,7 @@ const _getters = {
     'isNotEmpty': 'bool',
     'first': 'T',
     'last': 'T',
+    'single': 'T',
   },
   'Iterable': {
     'length': 'int',
@@ -1304,6 +1306,7 @@ const _getters = {
     'isNotEmpty': 'bool',
     'first': 'T',
     'last': 'T',
+    'single': 'T',
   },
   'Map': {
     'length': 'int',
@@ -1320,6 +1323,10 @@ const _getters = {
     'lines': 'List<String>',
   },
   'int': {
+    'isFinite': 'bool',
+    'isInfinite': 'bool',
+    'isNaN': 'bool',
+    'isNegative': 'bool',
     'abs': 'int',
     'round': 'int',
     'floor': 'int',
@@ -1327,6 +1334,10 @@ const _getters = {
     'plain': 'String',
   },
   'double': {
+    'isFinite': 'bool',
+    'isInfinite': 'bool',
+    'isNaN': 'bool',
+    'isNegative': 'bool',
     'abs': 'double',
     'round': 'int',
     'floor': 'int',
@@ -1334,6 +1345,10 @@ const _getters = {
     'plain': 'String',
   },
   'num': {
+    'isFinite': 'bool',
+    'isInfinite': 'bool',
+    'isNaN': 'bool',
+    'isNegative': 'bool',
     'abs': 'num',
     'round': 'int',
     'floor': 'int',

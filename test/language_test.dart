@@ -2438,7 +2438,7 @@ main():
   ages = map:
     "a": 1
   print items + ages
-''': 'E200',
+''': 'E300',
       '''
 main():
   text = """

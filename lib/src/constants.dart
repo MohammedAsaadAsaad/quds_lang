@@ -308,6 +308,9 @@ class ConstantEvaluator {
           ConstDouble(:final value) => ConstDouble(-value),
           _ => throw StateError('Unary - on ${value.runtimeType}'),
         };
+      case '~':
+        if (value is ConstInt) return ConstInt(~value.value);
+        throw StateError('Unary ~ on ${value.runtimeType}');
       default:
         throw StateError('Unknown unary ${node.operator}');
     }
@@ -324,6 +327,32 @@ class ConstantEvaluator {
         final right = evaluate(node.right);
         final equal = _languageEqual(left, right);
         return ConstBool(node.operator == '==' ? equal : !equal);
+      case '&' || '|' || '^' || '<<' || '>>' || '>>>':
+        final left = evaluate(node.left);
+        final right = evaluate(node.right);
+        if (left is ConstBool && right is ConstBool) {
+          return ConstBool(switch (node.operator) {
+            '&' => left.value & right.value,
+            '|' => left.value | right.value,
+            '^' => left.value ^ right.value,
+            _ => throw StateError('Shift operands must be int'),
+          });
+        }
+        if (left is! ConstInt || right is! ConstInt) {
+          throw StateError('Bitwise operands must be int');
+        }
+        if ({'<<', '>>', '>>>'}.contains(node.operator) && right.value < 0) {
+          fail('Shift count cannot be negative in a compile-time constant',
+              node);
+        }
+        return ConstInt(switch (node.operator) {
+          '&' => left.value & right.value,
+          '|' => left.value | right.value,
+          '^' => left.value ^ right.value,
+          '<<' => left.value << right.value,
+          '>>' => left.value >> right.value,
+          _ => left.value >>> right.value,
+        });
       case '+':
         final left = evaluate(node.left);
         final right = evaluate(node.right);

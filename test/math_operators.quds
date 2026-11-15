@@ -1,0 +1,47 @@
+# Approved QUDS-004 bitwise operators and precedence, tested in Quds.
+const _mask = 1 | 2 ^ 3 & 6 << 1 + 1
+const _inverted = ~1
+const _left = 1 << 3
+const _right = 16 >> 2
+const _unsigned = 16 >>> 2
+
+test "bitwise const evaluation follows approved precedence":
+  expect(_mask, 3)
+  expect(_inverted, -2)
+  expect(_left, 8)
+  expect(_right, 4)
+  expect(_unsigned, 4)
+
+test "bitwise runtime operators and range precedence":
+  value = 6
+  expect(value & 3, 2)
+  expect(value | 1, 7)
+  expect(value ^ 3, 5)
+  expect(~value, -7)
+  expect(1 << 2 + 1, 8)
+  expect(16 >> 1 + 1, 4)
+  expect(16 >>> 1 + 1, 4)
+  expect(~1 & 7, 6)
+  expect(1 | 2 ^ 3 & 1, 3)
+  var total = 0
+  for item in 0..<1 << 3:
+    total += item
+  expect(total, 28)
+
+test "bitwise operands evaluate once in written order":
+  visits: List<int> = []
+  mark(value: int) -> int:
+    visits.add(value)
+    return value
+  expect(mark(6) & mark(3), 2)
+  expect(visits, [6, 3])
+
+test "boolean bit operators evaluate both sides":
+  const combined = true ^ false
+  expect(combined, true)
+  visits: List<bool> = []
+  mark(value: bool) -> bool:
+    visits.add(value)
+    return value
+  expect(mark(false) & mark(true), false)
+  expect(visits, [false, true])

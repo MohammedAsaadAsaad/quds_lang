@@ -180,6 +180,26 @@ Future<void> _doctor(List<String> arguments) async {
   if (lines.any((line) => line.startsWith('[missing]'))) exitCode = 1;
 }
 
+/// Package config of this `quds` tool, so generated tests can import matcher.
+String? _packageConfigPath() {
+  var directory = File.fromUri(Platform.script).parent;
+  for (var hop = 0; hop < 8; hop++) {
+    final candidate = File(
+        '${directory.path}${Platform.pathSeparator}.dart_tool${Platform.pathSeparator}package_config.json');
+    if (candidate.existsSync()) return candidate.path;
+    final parent = directory.parent;
+    if (parent.path == directory.path) break;
+    directory = parent;
+  }
+  return null;
+}
+
+List<String> _withPackages(List<String> args) {
+  final config = _packageConfigPath();
+  if (config == null) return args;
+  return ['--packages=$config', ...args];
+}
+
 /// The Dart VM. An AOT `quds` binary is not itself the VM.
 String _dartExecutable() {
   final resolved = Platform.resolvedExecutable;
@@ -711,7 +731,7 @@ Future<void> _run(List<String> arguments) async {
     final qudsSource = input.existsSync() ? input.readAsStringSync() : null;
     final process = await Process.start(
       _dartExecutable(),
-      [output.path],
+      _withPackages([output.path]),
       workingDirectory: _packageRoot(input.absolute.parent).path,
     );
     final streams = Future.wait([
@@ -761,8 +781,8 @@ void _analyze(List<String> arguments) {
     final output = File('${directory.path}/main.dart')
       ..writeAsStringSync(result.dart);
     writeSdkBundles(directory.path, result);
-    final analysis =
-        Process.runSync(_dartExecutable(), ['analyze', output.path]);
+    final analysis = Process.runSync(
+        _dartExecutable(), _withPackages(['analyze', output.path]));
     _writeQuds(analysis.stdout, analysis.stderr, result.sourceMap, 'main.dart');
     exitCode = analysis.exitCode;
     directory.deleteSync(recursive: true);
@@ -791,17 +811,31 @@ void _test(List<String> arguments) {
         .whereType<FunctionDeclaration>()
         .any((function) => function.name == 'main')) {
       final calls = [
-        ...tests.map(
-            (test) => '  ${result.semantics.declarations[test]!.dartName}();'),
+        ...tests.map((test) =>
+            '  await ${result.semantics.declarations[test]!.dartName}();'),
         ...legacy.map((function) =>
             '  ${result.semantics.declarations[function]!.dartName}();'),
       ].join('\n');
-      dart = '$dart\nvoid main() {\n$calls\n}\n';
+      final counted = dart.contains('_qTestFailed');
+      if (counted && !dart.contains("import 'dart:io';")) {
+        dart = "import 'dart:io';\n$dart";
+      }
+      final stop =
+          counted ? '\n  if (_qTestFailed != 0) exit(_qTestFailed);' : '';
+      final header =
+          tests.isNotEmpty ? 'Future<void> main() async' : 'void main()';
+      dart = '$dart\n$header {\n$calls$stop\n}\n';
+    }
+    if (dart.contains('package:matcher/') && _packageConfigPath() == null) {
+      stderr.writeln('Could not find the package config for matcher');
+      exitCode = 1;
+      return;
     }
     final directory = Directory.systemTemp.createTempSync('quds-test-');
     writeSdkBundles(directory.path, result);
     final output = File('${directory.path}/main.dart')..writeAsStringSync(dart);
-    final run = Process.runSync(_dartExecutable(), [output.path]);
+    final run =
+        Process.runSync(_dartExecutable(), _withPackages([output.path]));
     _writeQuds(run.stdout, run.stderr, result.sourceMap, 'main.dart');
     exitCode = run.exitCode;
     directory.deleteSync(recursive: true);
@@ -1187,10 +1221,10 @@ void _benchmark(List<String> arguments) {
       writeSdkBundles(directory.path, result);
       final dart = File('${directory.path}/bench.dart')
         ..writeAsStringSync(result.dart);
-      final debug = Process.runSync(
-          _dartExecutable(), ['run', '--enable-asserts', dart.path]);
-      final release = Process.runSync(
-          _dartExecutable(), ['run', '--no-enable-asserts', dart.path]);
+      final debug = Process.runSync(_dartExecutable(),
+          _withPackages(['run', '--enable-asserts', dart.path]));
+      final release = Process.runSync(_dartExecutable(),
+          _withPackages(['run', '--no-enable-asserts', dart.path]));
       watch.stop();
       if (debug.exitCode != 0 || release.exitCode != 0) {
         stderr.write(_atQuds(
@@ -1275,7 +1309,8 @@ void _docTest(File input) {
       writeSdkBundles(directory.path, compiled);
       final output = File('${directory.path}/doc.dart')
         ..writeAsStringSync(compiled.dart);
-      final run = Process.runSync(_dartExecutable(), [output.path]);
+      final run =
+          Process.runSync(_dartExecutable(), _withPackages([output.path]));
       if (run.exitCode != 0) {
         stderr.write(run.stdout);
         stderr.write(run.stderr);

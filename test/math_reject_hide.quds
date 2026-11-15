@@ -1,0 +1,5 @@
+# This file must not compile. hide sqrt removes that re-exported name.
+use quds:math hide sqrt
+
+test "a hidden square root is not visible":
+  sqrt(9.0)

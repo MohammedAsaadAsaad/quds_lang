@@ -667,10 +667,10 @@ load() -> Result<int, String>:
 show() -> Result<int, String>:
   value = load()?
   return Ok(value)
-fail() -> Result<int, String>:
+reject() -> Result<int, String>:
   return Error("no")
 failed() -> Result<int, String>:
-  value = fail()?
+  value = reject()?
   return Ok(value)
 main():
   var total = 0
@@ -812,7 +812,19 @@ group "suite":
 ''');
     final suite = await cli(['test', '${directory.path}/suite.quds']);
     expect(suite.exitCode, 0, reason: '${suite.stdout}\n${suite.stderr}');
-    expect(suite.stdout, '1\n2\n');
+    expect(suite.stdout, '1\nok adds\n2\nok inner\nok suite\n');
+    File('${directory.path}/miss.quds').writeAsStringSync('''
+test "no":
+  expect(1, 2)
+test "near":
+  expect(1.0, closeTo(2.0, 0.1), reason: "needed two")
+''');
+    final missed = await cli(['test', '${directory.path}/miss.quds']);
+    expect(missed.exitCode, isNot(0), reason: '${missed.stdout}');
+    expect(missed.stdout, contains('FAIL no: Expected: <2>'));
+    expect(missed.stdout, contains('  Actual: <1>'));
+    expect(missed.stdout, contains('a numeric value within <0.1> of <2.0>'));
+    expect(missed.stdout, contains('needed two'));
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('do, capture, conversion, with, unions, and loops execute', () async {
@@ -1628,8 +1640,8 @@ main():
   print total.y
   point = Point(1, 2)
   print point.x
-  same = Point.same(3)
-  print same.y
+  made = Point.same(3)
+  print made.y
   using file = File(title: "a"):
     print file.title
   print Box().read()
@@ -1700,8 +1712,8 @@ main() async:
   print next.x
   print next.y
   print next.tag == null
-  same = pair.copyWith()
-  print same.x
+  copied = pair.copyWith()
+  print copied.x
   kept = pair.copyWith(tag: "z")
   print kept.tag
   cleared = kept.copyWith(tag: null)
@@ -3180,6 +3192,10 @@ main():
   print flags.without(1).length
   print 1.5.whole()
 ''', 'true\nAb\nba\n2\nvalue\nvalue\n2\n3\n2\ntrue\ntrue\n-1\ntrue\n2\na\nb\nababab\n2\n3\n2\ntrue\n3\n16\ntrue\n1\n1\n');
+  });
+
+  test('quds:math source matches the embedded library', () {
+    expect(File('lib/sdk/math.quds').readAsStringSync(), mathSdkSource);
   });
 
   test('quds:core matches the embedded library and executes', () async {

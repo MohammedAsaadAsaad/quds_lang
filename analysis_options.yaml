@@ -3,3 +3,4 @@
 analyzer:
   exclude:
     - examples/flutter_app/**
+    - toolchains/**

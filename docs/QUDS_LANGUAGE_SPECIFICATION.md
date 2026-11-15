@@ -1027,16 +1027,17 @@ quds build app.quds
 
 ### QUDS-064 — Testing DSL
 
-**Approved decision.** `test "description":` and `group "description":` are declarations whose indented blocks are function bodies. `expect` is a function. These declarations lower to the Dart `test` package. They are not call colon-blocks, so a test body is not reclassified as a collection. Async tests are `test "description" async:`. Flutter widget tests call the Flutter test library; the language adds no widget syntax.
+**Approved decision.** `test "description":` and `group "description":` are declarations whose indented blocks are function bodies. `expect(actual, matcher)` is the Quds form of Dart's `expect`: the second argument is a matcher, or a value compared with `equals`. `reason:` appends a line to the failure, and `skip:` (`true` or a string) skips that check. The failure text is Dart's `Expected` / `Actual` / `Which`. The checker names are the same ones `package:test` provides, including `equals`, `isTrue`, `isFalse`, `isNull`, `closeTo`, `greaterThan`, `lessThan`, `contains`, `orderedEquals`, `throwsA`, `isA<Type>`, `completion`, `prints`, and `emits`. `expectLater` is the same check and returns a future; asynchronous matchers are awaited with `await expectLater(...)`. `fail(message)` stops the test. `quds test` runs these declarations and reports `ok` or `FAIL` for each one. A test is not sent to the Dart `test` package as source text. They are not call colon-blocks, so a test body is not reclassified as a collection. Async tests are `test "description" async:`. Flutter widget tests call the Flutter test library; the language adds no widget syntax.
 
 **Quds syntax illustration** (may be a fragment):
 
 ```quds
 test "adds":
-  expect add(2, 3) == 5
+  expect(add(2, 3), 5)
+  expect(add(2, 3), greaterThan(4))
 ```
 
-**Compiler / runtime requirements.** Lower test declarations to Dart test framework.
+**Compiler / runtime requirements.** Run `test` and `group` with `quds test`. `expect` and `expectLater` use Dart's matchers and Dart's failure text. Parentheses are required: juxtaposition still parses `expect a == b` as one argument.
 
 **Required conformance coverage.** Async failure, discovery, source diagnostics.
 
@@ -2194,7 +2195,7 @@ declaration   = classDecl | interfaceDecl | enumDecl | mixinDecl
 
 `dart:core` and the prelude of `quds:core` are imported without a `use` line. That prelude is `Optional`, `missing`, `present`, `Result`, `Ok`, and `Error`. A program name hides a prelude name. `hide` on an explicit `use quds:core` removes the hidden prelude names.
 
-`use quds:name` loads the SDK library of that name from the compiler. The first library is `quds:core`. `quds:ext` adds methods on `String`, `List`, `Map`, `Set`, `int`, and `double`. An explicit `use quds:core` keeps the prelude and also brings that library's collection aliases and collection types. `show` and `hide` apply to the prelude and to those names together. A `show` name that is in neither set is `E200`. A prefix places both sets under that prefix. An extension's methods are visible when the import has no prefix and the extension's name is imported. The generated Dart imports `quds_<name>.dart`, written beside the generated file, and does not import the Quds package. A `quds:` library that does not exist is `E900`. A `#` or `///` comment placed on the lines immediately above a declaration is that declaration's documentation. A line `Example:` begins the usage example. Hover shows the signature, the prose, and the example as formatted editor text. Go to definition of an SDK declaration opens that library as a read-only document, so editing it is rejected. Go to definition on a `use`, `export`, or `part` URI opens that library: `quds:` is the read-only SDK document, and `dart:` or `package:` is the library file.
+`use quds:name` loads the SDK library of that name from the compiler. The first library is `quds:core`. `quds:ext` adds methods on `String`, `List`, `Map`, `Set`, `int`, and `double`. `quds:math` re-exports every public `dart:math` name and adds the mathematics Dart does not provide, including `ln`, `sinh`, `gcd`, `mean`, `Complex`, `Vec2`, `inverse`, `qr`, `eigenSymmetric`, `svd`, `simpson`, `rungeKutta`, `studentCdf`, `fft`, `eigenvalues`, `adaptiveIntegral`, `besselJ`, `primesUpTo`, `gmres`, `lambertW`, and `fraction`. Unprefixed `log` stays the logger, so the natural logarithm is `ln`. Unprefixed `min` and `max` stay the two-argument language functions. A prefix still sees `dart:math`'s `log`, `min`, and `max`. An explicit `use quds:core` keeps the prelude and also brings that library's collection aliases and collection types. `show` and `hide` apply to the prelude and to those names together. A `show` name that is in neither set is `E200`. A prefix places both sets under that prefix. An extension's methods are visible when the import has no prefix and the extension's name is imported. The generated Dart imports `quds_<name>.dart`, written beside the generated file, and does not import the Quds package. A `quds:` library that does not exist is `E900`. A `#` or `///` comment placed on the lines immediately above a declaration is that declaration's documentation. A line `Example:` begins the usage example. Hover shows the signature, the prose, and the example as formatted editor text. Go to definition of an SDK declaration opens that library as a read-only document, so editing it is rejected. Go to definition on a `use`, `export`, or `part` URI opens that library: `quds:` is the read-only SDK document, and `dart:` or `package:` is the library file.
 
 ```
 use quds:core
@@ -2606,7 +2607,7 @@ Generated Dart is a library a Dart caller can import. Quds-only values use these
 | `with` / `with?` | A temporary, then the assignments. `with?` is a null check around that temporary |
 | Partial application | A closure |
 | `do` | A local function invoked immediately, or a block in the IR that preserves `return` |
-| `test` / `group` | `package:test` declarations |
+| `test` / `group` | Quds tests. `expect(actual, matcher)` uses Dart's checkers. `quds test` reports `ok` or `FAIL` |
 | `state` / `computed` / `watch` | `quds:reactive` cells |
 
 `copyWith` defaults every parameter to `quds.missing`. A Dart caller omits the argument, passes null, or passes `missing`.

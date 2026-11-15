@@ -275,8 +275,9 @@ unchanged by the map.
   (`E302` otherwise).
 - Null-aware list and set elements, and collection-element blocks, including
   `if` and `for` in those blocks.
-- `test "...":` and `group "...":`. `quds test` runs them. A function whose
-  name starts with `test` still runs too.
+- `test "...":` and `group "...":`. `expect(actual, matcher)` uses Dart's checkers and failure text.
+  `quds test` reports `ok` or `FAIL` for each test. A function whose name
+  starts with `test` still runs too.
 - C-style `for var i = 0 while cond step i += 1:` and `repeat:` / `while`.
   A constant step of zero is `E801`. A non-constant step of zero throws when
   the update runs. `continue` runs the step.
@@ -424,6 +425,11 @@ the generated Dart. The prelude names `Optional`, `missing`, `present`,
 adds the collection names `Array` (`List`), `Dict` (`Map`), and `HashSet`
 (`Set`), plus `Stack`, `Queue`, and `Bag`. `use quds:ext` loads
 `lib/sdk/ext.quds`, with methods on `String`, `List`, `Map`, `Set`, `int`, and `double`.
+`use quds:math` loads `lib/sdk/math.quds`. It re-exports `dart:math` and adds
+the mathematics Dart does not provide, such as `ln`, `sinh`, `gcd`, `mean`,
+`Complex`, `Vec2`, `inverse`, `qr`, `eigenSymmetric`, `svd`, `simpson`, `rungeKutta`, `studentCdf`, `fft`, `eigenvalues`, `adaptiveIntegral`, `besselJ`, `primesUpTo`, `gmres`, `lambertW`, and `fraction`. It does not duplicate
+`sin` or `sqrt`. Unprefixed `log` stays the logger. Unprefixed `min` and `max`
+stay the language functions.
 Go to definition on an SDK declaration opens a read-only `quds-sdk` document.
 `show` and
 `hide` apply to the prelude and to those names. `use quds:missing` is

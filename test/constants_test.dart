@@ -505,9 +505,9 @@ const hidden = false
 const allowed = hidden and (1 % 0 == 0)
 const enabled = false
 const values = [base, step]
-const same = [1]
+const shared = [1]
 const copy = [1]
-const equal = same == copy
+const equal = shared == copy
 
 show(value: int) = value
 
@@ -710,6 +710,10 @@ List<BinaryExpression> operators(Expression node, String op) {
         }
       case Literal() || Identifier():
         break;
+      case ShownExpression(:final value):
+        walk(value);
+      case NameofExpression(:final target):
+        walk(target);
       case Lambda(:final expressionBody):
         if (expressionBody != null) walk(expressionBody);
       case MemberAccess(:final object):

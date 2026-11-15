@@ -92,3 +92,5 @@ See [what the compiler implements](docs/MVP_0.md), [validation results](docs/VAL
 
 The SDK math precision contract and numerical regression checks are documented in
 [math accuracy](docs/MATH_ACCURACY.md) and [the API inventory](docs/MATH_COVERAGE.md).
+The [math expansion roadmap (Arabic)](docs/MATH_EXPANSION_ROADMAP_AR.md) maps missing
+domains; its first addition is [unweighted graph algorithms](docs/MATH_GRAPH.md).

@@ -1,0 +1,10 @@
+use quds:math
+
+main():
+  noEdges: List<int> = []
+  graph: List<List<int>> = [[1, 2], [3], [3], noEdges]
+  print bfsDistances(graph, 0)
+  print shortestUnweightedPath(graph, 0, 3)
+  print topologicalSort(graph)
+  print stronglyConnectedComponents(graph)
+  print bipartiteColoring(graph)

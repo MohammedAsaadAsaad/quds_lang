@@ -1,0 +1,52 @@
+use quds:math
+use quds:math as m show bfsDistances, topologicalSort
+
+const _noEdges: List<int> = []
+
+group "discrete graph mathematics":
+  test "BFS uses outgoing edges and preserves unreachable vertices":
+    graph: List<List<int>> = [[1, 2], [3], [3], _noEdges, _noEdges]
+    expect(bfsDistances(graph, 0), [0, 1, 1, 2, -1])
+    expect(m.bfsDistances(graph, 3), [-1, -1, -1, 0, -1])
+    expect(graph, [[1, 2], [3], [3], _noEdges, _noEdges])
+  test "shortest path follows neighbor order at equal distance":
+    graph: List<List<int>> = [[2, 1], [3], [3], _noEdges, _noEdges]
+    expect(shortestUnweightedPath(graph, 0, 3), [0, 2, 3])
+    expect(shortestUnweightedPath(graph, 0, 4), isEmpty)
+    expect(shortestUnweightedPath(graph, 2, 2), [2])
+  test "transpose keeps loops, parallel edges and isolated vertices":
+    expect(transposeGraph([[1, 1], [1], _noEdges]), [_noEdges, [0, 0, 1], _noEdges])
+  test "weak components ignore direction and use canonical order":
+    expect(weaklyConnectedComponents([_noEdges, [0], [3], _noEdges, _noEdges]), [[0, 1], [2, 3], [4]])
+  test "strong components require mutual reachability":
+    expect(stronglyConnectedComponents([[1], [0, 2], [3], [2], _noEdges]), [[0, 1], [2, 3], [4]])
+  test "topological sort accounts for duplicate edges":
+    expect(m.topologicalSort([[2, 2], [2], [3], _noEdges]), [0, 1, 2, 3])
+  test "topological sort rejects a directed cycle":
+    cyclic() -> List<int> = topologicalSort([[1], [0]])
+    expect(cyclic, throwsA(equals("topologicalSort needs an acyclic graph")))
+  test "bipartite colors include incoming constraints and isolated roots":
+    expect(bipartiteColoring([_noEdges, [0], [1], _noEdges]), [0, 1, 0, 0])
+  test "bipartite colors reject an odd cycle and self loop":
+    odd() -> List<int> = bipartiteColoring([[1], [2], [0]])
+    loop() -> List<int> = bipartiteColoring([[0]])
+    expect(odd, throwsA(equals("bipartiteColoring needs a bipartite graph")))
+    expect(loop, throwsA(equals("bipartiteColoring needs a bipartite graph")))
+  test "closure includes paths of length zero":
+    expect(transitiveClosure([[1], [2], _noEdges]), [[true, true, true], [false, true, true], [false, false, true]])
+  test "algorithms without endpoints accept the empty graph":
+    empty: List<List<int>> = []
+    expect(transposeGraph(empty), isEmpty)
+    expect(weaklyConnectedComponents(empty), isEmpty)
+    expect(stronglyConnectedComponents(empty), isEmpty)
+    expect(topologicalSort(empty), isEmpty)
+    expect(bipartiteColoring(empty), isEmpty)
+    expect(transitiveClosure(empty), isEmpty)
+  test "all edges are validated including unreachable components":
+    invalid() -> List<int> = bfsDistances([_noEdges, [2]], 0)
+    expect(invalid, throwsA(equals("graph vertex out of range")))
+  test "invalid source and target have distinct errors":
+    source() -> List<int> = bfsDistances([_noEdges], -1)
+    target() -> List<int> = shortestUnweightedPath([_noEdges], 0, 1)
+    expect(source, throwsA(equals("graph source out of range")))
+    expect(target, throwsA(equals("graph target out of range")))

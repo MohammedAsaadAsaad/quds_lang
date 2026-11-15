@@ -6882,3 +6882,299 @@ _minInt() -> int:
   largest = _maxInt()
   if largest == 9007199254740991: return 0 - largest
   return 0 - largest - 1
+
+# Discrete graph algorithms. Vertices are 0..<graph.length; graph[u] lists
+# outgoing neighbors. Parallel edges and self-loops are allowed. All algorithms
+# validate even unreachable edges, preserve inputs and return fresh lists.
+
+# Reverse every directed edge, retaining isolated vertices and multiplicities.
+# Time and auxiliary space O(V+E). Result rows follow source-vertex order.
+# Example:
+#   noEdges: List<int> = []
+#   print transposeGraph([[1], [2], noEdges])
+transposeGraph(graph: List<List<int>>) -> List<List<int>>:
+  _validateGraph(graph)
+  return _transposeGraph(graph)
+
+# Directed, unweighted shortest distances; -1 means unreachable, source is 0.
+# BFS runs in O(V+E) time with O(V) auxiliary space (excluding input).
+# Example:
+#   noEdges: List<int> = []
+#   print bfsDistances([[1, 2], [3], [3], noEdges], 0)
+bfsDistances(graph: List<List<int>>, source: int) -> List<int>:
+  _validateGraph(graph)
+  _graphVertex(graph, source, "source")
+  states = _graphStates(graph.length, -1)
+  states[source].mark = 0
+  queue: List<int> = [source]
+  var head = 0
+  while head < queue.length:
+    vertex = queue[head]
+    head += 1
+    for neighbor in graph[vertex]:
+      if states[neighbor].mark == -1:
+        states[neighbor].mark = states[vertex].mark + 1
+        queue.add(neighbor)
+  output: List<int> = []
+  for cell in states:
+    output.add(cell.mark)
+  return output
+
+# One shortest directed unweighted path, including both endpoints, or [].
+# Ties follow input neighbor order. source==target returns [source].
+# Time O(V+E), auxiliary space O(V). Invalid endpoints throw, even on [].
+# Example:
+#   noEdges: List<int> = []
+#   print shortestUnweightedPath([[1, 2], [3], [3], noEdges], 0, 3)
+shortestUnweightedPath(graph: List<List<int>>, source: int, target: int) -> List<int>:
+  _validateGraph(graph)
+  _graphVertex(graph, source, "source")
+  _graphVertex(graph, target, "target")
+  states = _graphStates(graph.length, -1)
+  states[source].mark = source
+  queue: List<int> = [source]
+  var head = 0
+  while head < queue.length and states[target].mark == -1:
+    vertex = queue[head]
+    head += 1
+    for neighbor in graph[vertex]:
+      if states[neighbor].mark == -1:
+        states[neighbor].mark = vertex
+        queue.add(neighbor)
+  output: List<int> = []
+  if states[target].mark == -1: return output
+  backward: List<int> = []
+  var current = target
+  while current != source:
+    backward.add(current)
+    current = states[current].mark
+  output.add(source)
+  var index = backward.length - 1
+  while index >= 0:
+    output.add(backward[index])
+    index -= 1
+  return output
+
+# Components after ignoring edge direction. Includes isolated vertices.
+# Members and components are ordered by vertex/minimum vertex, respectively.
+# Time and auxiliary space O(V+E). Empty graph returns [].
+# Example:
+#   noEdges: List<int> = []
+#   print weaklyConnectedComponents([[1], noEdges, [3], noEdges])
+weaklyConnectedComponents(graph: List<List<int>>) -> List<List<int>>:
+  _validateGraph(graph)
+  reverse = _transposeGraph(graph)
+  states = _graphStates(graph.length, -1)
+  var count = 0
+  var root = 0
+  while root < graph.length:
+    if states[root].mark == -1:
+      states[root].mark = count
+      queue: List<int> = [root]
+      var head = 0
+      while head < queue.length:
+        vertex = queue[head]
+        head += 1
+        for neighbor in graph[vertex]:
+          if states[neighbor].mark == -1:
+            states[neighbor].mark = count
+            queue.add(neighbor)
+        for neighbor in reverse[vertex]:
+          if states[neighbor].mark == -1:
+            states[neighbor].mark = count
+            queue.add(neighbor)
+      count += 1
+    root += 1
+  return _graphGroups(states, count)
+
+# Maximal mutually reachable vertex groups (iterative Kosaraju).
+# Canonical member/component ordering matches weaklyConnectedComponents.
+# Time and auxiliary space O(V+E); no recursive DFS stack. Empty returns [].
+# Example:
+#   noEdges: List<int> = []
+#   print stronglyConnectedComponents([[1], [0, 2], noEdges])
+stronglyConnectedComponents(graph: List<List<int>>) -> List<List<int>>:
+  _validateGraph(graph)
+  states = _graphStates(graph.length, -1)
+  finished: List<int> = []
+  var root = 0
+  while root < graph.length:
+    if states[root].mark == -1:
+      states[root].mark = 0
+      stack: List<int> = [root]
+      while stack.length > 0:
+        vertex = stack.last
+        cell = states[vertex]
+        if cell.next < graph[vertex].length:
+          neighbor = graph[vertex][cell.next]
+          cell.next += 1
+          if states[neighbor].mark == -1:
+            states[neighbor].mark = 0
+            stack.add(neighbor)
+        else:
+          finished.add(stack.removeLast())
+    root += 1
+  reverse = _transposeGraph(graph)
+  labels = _graphStates(graph.length, -1)
+  var count = 0
+  var index = finished.length - 1
+  while index >= 0:
+    start = finished[index]
+    if labels[start].mark == -1:
+      labels[start].mark = count
+      stack: List<int> = [start]
+      while stack.length > 0:
+        vertex = stack.removeLast()
+        for neighbor in reverse[vertex]:
+          if labels[neighbor].mark == -1:
+            labels[neighbor].mark = count
+            stack.add(neighbor)
+      count += 1
+    index -= 1
+  return _graphGroups(labels, count)
+
+# A topological vertex order (Kahn FIFO). Throws on any directed cycle.
+# Initial zero-indegree vertices are queued in ascending order; later ties
+# follow input adjacency order. Does not promise the lexicographically least
+# order. Duplicate edges count separately. O(V+E) time, O(V) auxiliary space.
+# Example:
+#   noEdges: List<int> = []
+#   print topologicalSort([[2], [2], [3], noEdges])
+topologicalSort(graph: List<List<int>>) -> List<int>:
+  _validateGraph(graph)
+  states = _graphStates(graph.length, 0)
+  for row in graph:
+    for neighbor in row:
+      states[neighbor].mark += 1
+  queue: List<int> = []
+  var vertex = 0
+  while vertex < graph.length:
+    if states[vertex].mark == 0: queue.add(vertex)
+    vertex += 1
+  var head = 0
+  while head < queue.length:
+    current = queue[head]
+    head += 1
+    for neighbor in graph[current]:
+      states[neighbor].mark -= 1
+      if states[neighbor].mark == 0: queue.add(neighbor)
+  if queue.length != graph.length: throw "topologicalSort needs an acyclic graph"
+  return queue
+
+# Color the underlying undirected graph with 0/1. Each component's minimum
+# vertex receives 0. Throws for odd cycles (including a self-loop), returns []
+# for no vertices. O(V+E) time and auxiliary space. Input need not be symmetric.
+# Example:
+#   noEdges: List<int> = []
+#   print bipartiteColoring([[1], [2], noEdges])
+bipartiteColoring(graph: List<List<int>>) -> List<int>:
+  _validateGraph(graph)
+  reverse = _transposeGraph(graph)
+  states = _graphStates(graph.length, -1)
+  var root = 0
+  while root < graph.length:
+    if states[root].mark == -1:
+      states[root].mark = 0
+      queue: List<int> = [root]
+      var head = 0
+      while head < queue.length:
+        vertex = queue[head]
+        head += 1
+        for neighbor in graph[vertex]:
+          _graphColorNeighbor(states, queue, vertex, neighbor)
+        for neighbor in reverse[vertex]:
+          _graphColorNeighbor(states, queue, vertex, neighbor)
+    root += 1
+  output: List<int> = []
+  for cell in states:
+    output.add(cell.mark)
+  return output
+
+# Reflexive directed reachability: output[u][v] includes length-zero paths.
+# O(V*(V+E)) time, O(V^2+V) auxiliary/output space. Empty returns [].
+# Example:
+#   noEdges: List<int> = []
+#   print transitiveClosure([[1], [2], noEdges])[0]
+transitiveClosure(graph: List<List<int>>) -> List<List<bool>>:
+  _validateGraph(graph)
+  output: List<List<bool>> = []
+  var source = 0
+  while source < graph.length:
+    states = _graphStates(graph.length, -1)
+    states[source].mark = 0
+    queue: List<int> = [source]
+    var head = 0
+    while head < queue.length:
+      vertex = queue[head]
+      head += 1
+      for neighbor in graph[vertex]:
+        if states[neighbor].mark == -1:
+          states[neighbor].mark = 0
+          queue.add(neighbor)
+    row: List<bool> = []
+    for cell in states:
+      row.add(cell.mark == 0)
+    output.add(row)
+    source += 1
+  return output
+
+# Mutable work cells avoid copying an entire list per vertex-cell change.
+# They belong only to one algorithm call and never escape into public results.
+class _GraphState:
+  var mark: int = -1
+  var next: int = 0
+
+_graphStates(count: int, mark: int) -> List<_GraphState>:
+  states: List<_GraphState> = []
+  var index = 0
+  while index < count:
+    states.add(_GraphState(mark: mark))
+    index += 1
+  return states
+
+_validateGraph(graph: List<List<int>>):
+  for row in graph:
+    for vertex in row:
+      if vertex < 0 or vertex >= graph.length: throw "graph vertex out of range"
+
+_graphVertex(graph: List<List<int>>, vertex: int, role: String):
+  if vertex < 0 or vertex >= graph.length: throw "graph {role} out of range"
+
+_transposeGraph(graph: List<List<int>>) -> List<List<int>>:
+  output: List<List<int>> = []
+  for row in graph:
+    empty: List<int> = []
+    output.add(empty)
+  var vertex = 0
+  while vertex < graph.length:
+    for neighbor in graph[vertex]:
+      output[neighbor].add(vertex)
+    vertex += 1
+  return output
+
+_graphGroups(states: List<_GraphState>, count: int) -> List<List<int>>:
+  buckets: List<List<int>> = []
+  var index = 0
+  while index < count:
+    empty: List<int> = []
+    buckets.add(empty)
+    index += 1
+  var vertex = 0
+  while vertex < states.length:
+    buckets[states[vertex].mark].add(vertex)
+    vertex += 1
+  output: List<List<int>> = []
+  vertex = 0
+  while vertex < states.length:
+    bucket = buckets[states[vertex].mark]
+    if bucket[0] == vertex: output.add(bucket)
+    vertex += 1
+  return output
+
+_graphColorNeighbor(states: List<_GraphState>, queue: List<int>, vertex: int, neighbor: int):
+  if states[neighbor].mark == -1:
+    states[neighbor].mark = 1 - states[vertex].mark
+    queue.add(neighbor)
+  else:
+    if states[neighbor].mark == states[vertex].mark:
+      throw "bipartiteColoring needs a bipartite graph"

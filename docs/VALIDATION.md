@@ -1,5 +1,47 @@
 # Compiler validation — latest 2026-11-15
 
+## Math expansion: unweighted graphs
+
+Added eight graph functions to `quds:math`, bringing its top-level public
+function inventory to **300**. The broader missing-domain roadmap is in
+[MATH_EXPANSION_ROADMAP_AR.md](MATH_EXPANSION_ROADMAP_AR.md); only its first graph
+package is implemented here. Contracts, complexity, examples and limits are in
+[MATH_GRAPH.md](MATH_GRAPH.md). No language syntax or existing math API changed.
+
+Validation used Dart 3.13.7 on Linux x64 and Node for JavaScript execution.
+
+| Command/check | Observed outcome |
+| --- | --- |
+| Baseline `dart test` before additions | 228 passed; 1 existing debug test skipped |
+| `dart format --output=none --set-exit-if-changed .` | 36 Dart files; zero changes |
+| `dart analyze` | No issues |
+| Final `dart test --reporter expanded` | **232 passed; zero failures; zero skips** |
+| Isolated `dart test test/math_graph_test.dart --reporter expanded` | All 3 tests passed |
+| Independent graph fixture, Dart VM | **119,740 checks; 1695 graphs; zero failures** |
+| Same fixture, compiled JavaScript + Node | **119,740 checks; 1695 graphs; zero failures** |
+| Deep-chain graph checks | 20,000 vertices; iterative SCC, BFS, path, topology, weak components and coloring passed on VM/JS |
+| `dart run bin/quds.dart test test/math_graph.quds` | All 13 test declarations and enclosing group reported `ok` |
+| Existing math, math-accuracy, prefix and matcher Quds suites | All commands exited 0; matcher suite retains its intentional skipped assertions |
+| Four existing negative CLI fixtures | Each exited 65 and matched its intended diagnostic |
+| `dart run bin/quds.dart run examples/math_graph.quds` | Five output lines match the documented example |
+| Embedded source sync and numerical fixture/inventory regeneration | Byte-identical on repeat; original 2591 numerical reference cases unchanged |
+| `git diff --check` | Passed |
+
+The graph fixture exhausts all directed graphs with loops through 3 vertices and
+all simple undirected graphs through 5 vertices, plus 64 fixed-seed multigraphs.
+Its oracles use Floyd–Warshall and exhaustive coloring, independently of the
+SDK's BFS, Kosaraju and Kahn implementations. Invalid-edge/endpoint checks require
+the exact error strings, and the harness checks execution counts. These finite
+checks do not establish correctness for every possible input or a measured
+universal performance guarantee.
+
+An intermediate full run failed only the source/embedded equality check because
+SDK example comments were edited after that test process had loaded the older
+embedded constant. With both files synchronized and frozen, the complete rerun
+passed all 232 tests. No assertion was removed or relaxed. The baseline's debug
+skip did not recur in the final run.
+
+
 ## Math audit and compiler prerequisites
 
 Validated with Dart 3.13.7 on Linux x64. See [MATH_ACCURACY.md](MATH_ACCURACY.md)

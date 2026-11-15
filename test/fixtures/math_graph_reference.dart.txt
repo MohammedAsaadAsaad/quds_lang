@@ -1,0 +1,315 @@
+// Independent graph oracles: Floyd-Warshall and exhaustive 2-color assignments.
+// Executes against the unmodified SDK emitted by the real Quds compiler.
+import 'dart:convert';
+import 'dart:math' as math;
+import 'quds_math.dart' as m;
+
+var checks = 0;
+var graphs = 0;
+void check(bool condition, String context) {
+  checks++;
+  if (!condition) throw StateError(context);
+}
+
+void same(Object actual, Object expected, String context) => check(
+    jsonEncode(actual) == jsonEncode(expected),
+    '$context: $actual != $expected');
+void rejects(void Function() action, String message) {
+  Object? error;
+  try {
+    action();
+  } catch (caught) {
+    error = caught;
+  }
+  check(error == message, 'expected "$message", got "$error"');
+}
+
+List<List<int>> groups(List<List<bool>> relation) {
+  final used = <int>{};
+  final output = <List<int>>[];
+  for (var i = 0; i < relation.length; i++) {
+    if (used.contains(i)) continue;
+    final members = <int>[];
+    for (var j = 0; j < relation.length; j++) {
+      if (relation[i][j]) {
+        members.add(j);
+        used.add(j);
+      }
+    }
+    output.add(members);
+  }
+  return output;
+}
+
+void verify(List<List<int>> graph) {
+  graphs++;
+  final snapshot = jsonEncode(graph);
+  final n = graph.length;
+  final distances =
+      List.generate(n, (i) => List.generate(n, (j) => i == j ? 0 : n + 1));
+  final weak = List.generate(n, (i) => List.generate(n, (j) => i == j));
+  final reversed = List.generate(n, (_) => <int>[]);
+  for (var u = 0; u < n; u++) {
+    for (final v in graph[u]) {
+      if (u != v) distances[u][v] = 1;
+      weak[u][v] = weak[v][u] = true;
+      reversed[v].add(u);
+    }
+  }
+  for (var k = 0; k < n; k++) {
+    for (var i = 0; i < n; i++) {
+      for (var j = 0; j < n; j++) {
+        distances[i][j] =
+            math.min(distances[i][j], distances[i][k] + distances[k][j]);
+        weak[i][j] = weak[i][j] || (weak[i][k] && weak[k][j]);
+      }
+    }
+  }
+  final reach =
+      List.generate(n, (i) => List.generate(n, (j) => distances[i][j] <= n));
+  final mutual = List.generate(
+      n, (i) => List.generate(n, (j) => reach[i][j] && reach[j][i]));
+  same(m.transposeGraph(graph), reversed, 'transpose graph=$snapshot');
+  same(m.transitiveClosure(graph), reach, 'closure graph=$snapshot');
+  same(
+      m.weaklyConnectedComponents(graph), groups(weak), 'weak graph=$snapshot');
+  same(m.stronglyConnectedComponents(graph), groups(mutual),
+      'strong graph=$snapshot');
+  for (var source = 0; source < n; source++) {
+    same(
+        m.bfsDistances(graph, source),
+        [
+          for (final distance in distances[source])
+            distance <= n ? distance : -1
+        ],
+        'distances source=$source graph=$snapshot');
+    for (var target = 0; target < n; target++) {
+      final path = m.shortestUnweightedPath(graph, source, target);
+      if (!reach[source][target]) {
+        check(path.isEmpty, 'unreachable path graph=$snapshot');
+      } else {
+        check(
+            path.length == distances[source][target] + 1 &&
+                path.first == source &&
+                path.last == target,
+            'shortest path endpoints/length graph=$snapshot');
+        check(path.toSet().length == path.length, 'path repeats a vertex');
+        for (var i = 1; i < path.length; i++) {
+          check(graph[path[i - 1]].contains(path[i]), 'path uses missing edge');
+        }
+      }
+    }
+  }
+  var cyclic = false;
+  for (var u = 0; u < n; u++) {
+    for (final v in graph[u]) {
+      cyclic |= reach[v][u];
+    }
+  }
+  if (cyclic) {
+    rejects(() {
+      m.topologicalSort(graph);
+    }, 'topologicalSort needs an acyclic graph');
+  } else {
+    final order = m.topologicalSort(graph);
+    same(order.toList()..sort(), List.generate(n, (i) => i),
+        'topological permutation');
+    for (var u = 0; u < n; u++) {
+      for (final v in graph[u]) {
+        check(order.indexOf(u) < order.indexOf(v), 'topological edge order');
+      }
+    }
+    same(m.topologicalSort(graph), order, 'deterministic topology');
+  }
+  // This deliberately uses an independent exponential oracle on small graphs.
+  var colorable = false;
+  for (var mask = 0; mask < (1 << n); mask++) {
+    var valid = true;
+    for (var u = 0; u < n; u++) {
+      for (final v in graph[u]) {
+        if (((mask >> u) & 1) == ((mask >> v) & 1)) valid = false;
+      }
+    }
+    if (valid) {
+      colorable = true;
+      break;
+    }
+  }
+  if (colorable) {
+    final colors = m.bipartiteColoring(graph);
+    check(colors.length == n && colors.every((v) => v == 0 || v == 1),
+        'color range');
+    for (final component in groups(weak)) {
+      check(colors[component.first] == 0, 'canonical component color');
+    }
+    for (var u = 0; u < n; u++) {
+      for (final v in graph[u]) {
+        check(colors[u] != colors[v], 'color constraint');
+      }
+    }
+  } else {
+    rejects(() {
+      m.bipartiteColoring(graph);
+    }, 'bipartiteColoring needs a bipartite graph');
+  }
+  check(jsonEncode(graph) == snapshot, 'input graph was mutated');
+}
+
+void main() {
+  // Every directed graph with loops through 3 vertices (531 graphs).
+  for (var n = 0; n <= 3; n++) {
+    for (var mask = 0; mask < (1 << (n * n)); mask++) {
+      verify(List.generate(
+          n,
+          (u) => [
+                for (var v = 0; v < n; v++)
+                  if ((mask & (1 << (u * n + v))) != 0) v
+              ]));
+    }
+  }
+  // Every simple undirected graph through 5 vertices (1100 graphs).
+  for (var n = 0; n <= 5; n++) {
+    for (var mask = 0; mask < (1 << (n * (n - 1) ~/ 2)); mask++) {
+      final graph = List.generate(n, (_) => <int>[]);
+      var bit = 0;
+      for (var u = 0; u < n; u++) {
+        for (var v = u + 1; v < n; v++) {
+          if ((mask & (1 << bit)) != 0) {
+            graph[u].add(v);
+            graph[v].add(u);
+          }
+          bit++;
+        }
+      }
+      verify(graph);
+    }
+  }
+  // Larger fixed-seed directed multigraphs (loops/duplicates/disconnected).
+  final random = math.Random(41207);
+  for (var trial = 0; trial < 64; trial++) {
+    final graph = List.generate(7, (_) => <int>[]);
+    for (var edge = 0; edge < trial; edge++) {
+      graph[random.nextInt(7)].add(random.nextInt(7));
+    }
+    verify(graph);
+  }
+  same(
+      m.shortestUnweightedPath([
+        [2, 1],
+        [3],
+        [3],
+        []
+      ], 0, 3),
+      [0, 2, 3],
+      'path tie ordering');
+  same(
+      m.topologicalSort([
+        [2, 2],
+        [2],
+        [3],
+        []
+      ]),
+      [0, 1, 2, 3],
+      'Kahn FIFO ordering');
+  for (final invalid in <List<List<int>>>[
+    [
+      [-1]
+    ],
+    [
+      [],
+      [2]
+    ]
+  ]) {
+    for (final action in <void Function()>[
+      () {
+        m.transposeGraph(invalid);
+      },
+      () {
+        m.bfsDistances(invalid, 0);
+      },
+      () {
+        m.shortestUnweightedPath(invalid, 0, 0);
+      },
+      () {
+        m.weaklyConnectedComponents(invalid);
+      },
+      () {
+        m.stronglyConnectedComponents(invalid);
+      },
+      () {
+        m.topologicalSort(invalid);
+      },
+      () {
+        m.bipartiteColoring(invalid);
+      },
+      () {
+        m.transitiveClosure(invalid);
+      },
+    ]) {
+      rejects(action, 'graph vertex out of range');
+    }
+  }
+  for (final source in [-1, 1]) {
+    rejects(() {
+      m.bfsDistances([[]], source);
+    }, 'graph source out of range');
+    rejects(() {
+      m.shortestUnweightedPath([[]], source, 0);
+    }, 'graph source out of range');
+    rejects(() {
+      m.shortestUnweightedPath([[]], 0, source);
+    }, 'graph target out of range');
+  }
+  rejects(() {
+    m.bfsDistances([], 0);
+  }, 'graph source out of range');
+  rejects(() {
+    m.shortestUnweightedPath([], 0, 0);
+  }, 'graph source out of range');
+  final original = <List<int>>[
+    [1],
+    [0],
+    []
+  ];
+  final transpose = m.transposeGraph(original);
+  transpose[0].add(2);
+  same(
+      original,
+      [
+        [1],
+        [0],
+        []
+      ],
+      'transpose must not alias input');
+  final strong = m.stronglyConnectedComponents(original);
+  strong[0].add(2);
+  same(
+      original,
+      [
+        [1],
+        [0],
+        []
+      ],
+      'components must not alias input');
+  final closure = m.transitiveClosure(original);
+  closure[0][2] = true;
+  check(!closure[1][2] && closure[2][2], 'closure rows must not alias');
+  // Deep chain: linear work and iterative DFS, without calling dense closure.
+  const n = 20000;
+  final chain = List.generate(n, (u) => u + 1 < n ? [u + 1] : <int>[]);
+  check(m.bfsDistances(chain, 0).last == n - 1, 'large chain distance');
+  check(m.shortestUnweightedPath(chain, 0, n - 1).length == n,
+      'large chain path');
+  same(m.topologicalSort(chain), List.generate(n, (i) => i),
+      'large chain topology');
+  final strongChain = m.stronglyConnectedComponents(chain);
+  check(
+      strongChain.length == n &&
+          strongChain.first.single == 0 &&
+          strongChain.last.single == n - 1,
+      'large chain strongly connected components');
+  check(m.weaklyConnectedComponents(chain).single.length == n,
+      'large chain weak component');
+  check(m.bipartiteColoring(chain).last == 1, 'large chain coloring');
+  print('GRAPH CHECKS=$checks GRAPHS=$graphs FAILURES=0');
+}

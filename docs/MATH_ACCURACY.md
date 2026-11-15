@@ -1,5 +1,10 @@
 # Math numerical audit — 2026-11-15
 
+This section records the original numerical audit, before graph expansion.
+The current SDK adds eight graph functions (300 top-level functions total),
+with exact graph contracts and separate independent tests in [MATH_GRAPH.md](MATH_GRAPH.md).
+See [the expansion roadmap](MATH_EXPANSION_ROADMAP_AR.md) for further domains.
+
 The audit covers the public surface of `lib/sdk/math.quds`: 292 top-level
 functions, 20 public value classes (plus the private adaptive-step record), and
 three extensions. Every public top-level function has an executable call in the

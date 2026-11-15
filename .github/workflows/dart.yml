@@ -17,6 +17,7 @@ jobs:
           set -euo pipefail
           dart run bin/quds.dart test test/math.quds
           dart run bin/quds.dart test test/math_prefix.quds
+          dart run bin/quds.dart test test/expect.quds
           reject() {
             local file="$1"
             local needle="$2"
@@ -34,6 +35,7 @@ jobs:
               exit 1
             }
           }
+          reject test/expect_reject_arity.quds "value and the matcher"
           reject test/math_reject_log.quds "not callable"
           reject test/math_reject_show.quds "E200"
           reject test/math_reject_hide.quds "E200"

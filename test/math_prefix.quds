@@ -2,7 +2,7 @@
 use quds:math as m
 
 test "prefixed dart:math":
-  expect m.sqrt(9.0) == 3.0
-  expect m.log(m.e) == 1.0
-  expect m.mean([1.0, 2.0, 3.0]) == 2.0
-  expect m.min(1, 2) == 1
+  expect(m.sqrt(9.0), 3.0)
+  expect(m.log(m.e), 1.0)
+  expect(m.mean([1.0, 2.0, 3.0]), 2.0)
+  expect(m.min(1, 2), 1)

@@ -275,7 +275,7 @@ unchanged by the map.
   (`E302` otherwise).
 - Null-aware list and set elements, and collection-element blocks, including
   `if` and `for` in those blocks.
-- `test "...":` and `group "...":`. `expect condition` checks a bool in Quds.
+- `test "...":` and `group "...":`. `expect(actual, matcher)` uses Dart's checkers and failure text.
   `quds test` reports `ok` or `FAIL` for each test. A function whose name
   starts with `test` still runs too.
 - C-style `for var i = 0 while cond step i += 1:` and `repeat:` / `while`.

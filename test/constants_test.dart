@@ -505,9 +505,9 @@ const hidden = false
 const allowed = hidden and (1 % 0 == 0)
 const enabled = false
 const values = [base, step]
-const same = [1]
+const shared = [1]
 const copy = [1]
-const equal = same == copy
+const equal = shared == copy
 
 show(value: int) = value
 

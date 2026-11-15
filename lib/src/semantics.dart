@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'ast.dart';
+import 'checks.dart';
 import 'constants.dart';
 import 'dart_api.dart';
 import 'libraries.dart';
@@ -458,14 +459,7 @@ class Analyzer {
       {Map<String, Program> libraries = const {}}) {
     _libraries = libraries;
     _global.symbols['print'] = Symbol('print', 'print', 'void');
-    _global.symbols['expect'] = Symbol(
-      'expect',
-      'expect',
-      'void',
-      signature: 'expect(condition: bool) -> void',
-      documentation:
-          'Stops the current test when the condition is false. quds test reports that test as FAIL.',
-    );
+    _installChecks();
     _global.symbols['range'] = Symbol(
       'range',
       'range',
@@ -2755,6 +2749,7 @@ class Analyzer {
               'A zero-argument call has no parentheses; write $name()', node);
         }
         if (node.expression is! CallExpression &&
+            node.expression is! AwaitExpression &&
             node.expression is! WithExpression &&
             node.expression is! DoExpression &&
             node.expression is! TryExpression &&
@@ -2887,8 +2882,16 @@ class Analyzer {
         }
         if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
       case TestDeclaration():
-        model.declarations[node] = create(node.title, 'void');
+        model.declarations[node] =
+            create(node.title, node.isAsync ? 'Future<void>' : 'void');
+        final savedFunction = _function;
+        if (node.isAsync) {
+          _function = FunctionDeclaration(
+              node.title, const [], 'void', node.body, null, node.span,
+              isAsync: true);
+        }
         statements(node.body, nested: true);
+        _function = savedFunction;
       case FunctionDeclaration():
         registerFunction(node, _scope);
         analyzeFunction(node);
@@ -3165,6 +3168,50 @@ class Analyzer {
     }
     model.references[node] = Symbol(fields.first.name,
         _dartMember(type, fields.first.name), fields.first.type);
+  }
+
+  void _installChecks() {
+    const docs =
+        'Same checker as Dart package:test. A value that is not a matcher is compared with equals.';
+    void bind(String name, String dartName, String type,
+        {List<String> parameters = const [],
+        int optional = 0,
+        String? signature}) {
+      _global.symbols[name] = Symbol(
+        name,
+        dartName,
+        type,
+        library: 'check',
+        parameterTypes: parameters,
+        optionalParameters: optional,
+        signature: signature,
+        documentation: docs,
+      );
+    }
+
+    bind(
+      'expect',
+      '_qrun.qExpect',
+      'void',
+      signature:
+          'expect(actual: Object?, matcher: Object?, reason: String?, skip: Object?) -> void',
+    );
+    bind(
+      'expectLater',
+      '_qrun.qExpectLater',
+      'Future<void>',
+      signature:
+          'expectLater(actual: Object?, matcher: Object?, reason: String?, skip: Object?) -> Future<void>',
+    );
+    bind('fail', '_qrun.qFail', 'void',
+        parameters: const ['String'],
+        signature: 'fail(message: String) -> void');
+    for (final check in checks) {
+      bind(check.name, '_qmatch.${check.name}', 'dynamic',
+          parameters: check.parameters,
+          optional: check.optional,
+          signature: check.signature);
+    }
   }
 
   void _installLog() {
@@ -5599,13 +5646,16 @@ class Analyzer {
       }
       return 'void';
     }
-    if (symbol.dartName == 'expect' && symbol.function == null) {
-      if (args.length != 1 || args.single.name != null) {
-        fail('expect expects one positional argument', node);
-      }
-      final type = expression(args.single.value);
-      if (type != 'bool') fail('expect needs a bool condition', node);
-      return 'void';
+    if (symbol.library == 'check' &&
+        (symbol.name == 'expect' || symbol.name == 'expectLater')) {
+      return _checkExpect(node, symbol);
+    }
+    if (symbol.library == 'check' && symbol.name == 'isA') {
+      if (args.isNotEmpty) fail('isA expects no arguments', node);
+      return 'dynamic';
+    }
+    if (symbol.library == 'check' && symbol.name == 'isSorted') {
+      fail('isSorted expects one type argument', node);
     }
     if ((symbol.dartName == 'min' || symbol.dartName == 'max') &&
         !symbol.external &&
@@ -5698,6 +5748,45 @@ class Analyzer {
     return applyArguments(node, selected.parameters, selected);
   }
 
+  String _checkExpect(CallExpression node, Symbol symbol) {
+    final positional = <Argument>[];
+    for (final argument in node.arguments) {
+      final name = argument.name;
+      if (name == null) {
+        positional.add(argument);
+        continue;
+      }
+      if (name == 'reason') {
+        final type = expression(argument.value);
+        if (!compatible(type, 'String')) {
+          fail('reason must be a String', argument);
+        }
+        continue;
+      }
+      if (name == 'skip') {
+        final type = expression(argument.value);
+        if (type != 'bool' &&
+            type != 'String' &&
+            type != 'dynamic' &&
+            type != 'Object' &&
+            type != 'Object?') {
+          fail('skip must be a bool or a String', argument);
+        }
+        continue;
+      }
+      fail('${symbol.name} has no parameter $name', argument);
+    }
+    if (positional.length != 2) {
+      fail('${symbol.name} expects the value and the matcher', node);
+    }
+    for (final argument in positional) {
+      if (expression(argument.value) == 'void') {
+        fail('${symbol.name} cannot check a void expression', argument);
+      }
+    }
+    return symbol.type;
+  }
+
   String externalCall(CallExpression node, Symbol symbol) {
     if (symbol.name == 'present') {
       if (node.arguments.length != 1)
@@ -5740,8 +5829,11 @@ class Analyzer {
           node);
     }
     for (var i = 0; i < node.arguments.length; i++) {
-      final type = expression(node.arguments[i].value);
       final expected = symbol.parameterTypes[i];
+      final saved = _expected;
+      if (symbol.library == 'check' && expected != '*') _expected = expected;
+      final type = expression(node.arguments[i].value);
+      _expected = saved;
       if (expected != '*' && !compatible(type, expected)) {
         fail('Argument type $type is incompatible with $expected',
             node.arguments[i]);
@@ -5793,6 +5885,14 @@ class Analyzer {
   String callApplied(CallExpression node, TypeApplication applied) {
     final symbol = _appliedSymbol(node, applied);
     final name = symbol.name;
+    if (symbol.library == 'check' && (name == 'isA' || name == 'isSorted')) {
+      if (node.arguments.isNotEmpty) fail('$name expects no arguments', node);
+      if (applied.arguments.length != 1) {
+        fail('$name expects one type argument', node);
+      }
+      validateType(applied.arguments.single, node, allowVoid: false);
+      return 'dynamic';
+    }
     if (symbol.classDeclaration != null && symbol.classCase == null) {
       final returned =
           constructClass(node, symbol.classDeclaration!, applied.arguments);

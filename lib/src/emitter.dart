@@ -65,6 +65,7 @@ class DartEmitter {
   var _useProtected = false;
   var _useLog = false;
   var _useTests = false;
+  var _useChecks = false;
   var _useConfig = false;
   var _useReadonly = false;
   String? _returnView;
@@ -493,6 +494,12 @@ class DartEmitter {
     final prelude = StringBuffer();
     for (final item in _imports) {
       prelude.writeln(item);
+    }
+    if (_useChecks) {
+      prelude
+        ..writeln("import 'package:matcher/expect.dart' as _qmatch;")
+        ..writeln(
+            "import 'package:quds_lang/src/check_runtime.dart' as _qrun;");
     }
     if (_useState || _useWatch || _useBatch) {
       final batchFields = _useBatch
@@ -1801,7 +1808,7 @@ class DartEmitter {
         _useTests = true;
         final tested = model.declarations[node]!;
         final title = quote(node.title);
-        line('void ${tested.dartName}() {');
+        line('Future<void> ${tested.dartName}() async {');
         _depth++;
         line('final _qBefore = _qTestFailed;');
         line('try {');
@@ -1809,7 +1816,7 @@ class DartEmitter {
         for (final child in node.body) {
           statement(child);
           if (child is TestDeclaration) {
-            line('${model.declarations[child]!.dartName}();');
+            line('await ${model.declarations[child]!.dartName}();');
           }
         }
         _depth--;
@@ -2695,6 +2702,7 @@ class DartEmitter {
       return 'this.$dart';
     }
     final symbol = model.references[node];
+    if (symbol?.library == 'check') _useChecks = true;
     if (symbol?.name == 'log' && symbol?.dartName == 'log') _useLog = true;
     if (symbol?.name == 'missing') _useOptional = true;
     if (symbol != null &&
@@ -2967,23 +2975,22 @@ class DartEmitter {
     }
   }
 
-  /// `expect condition` checks the condition in Quds. A comparison reports both
-  /// sides. The values are read once.
+  /// `expect(actual, matcher)` uses Dart's matchers. Named `reason` and `skip`
+  /// stay named. Both sides are read once, in source order.
   String _expect(CallExpression node) {
-    _useTests = true;
-    final value = node.arguments.single.value;
-    if (value is BinaryExpression &&
-        const {'==', '!=', '<', '<=', '>', '>='}.contains(value.operator)) {
-      final left = expression(value.left);
-      final right = expression(value.right);
-      final op = value.operator;
-      final detail = op == '=='
-          ? "'expected ' + r.toString() + ', got ' + l.toString()"
-          : "'got ' + l.toString() + ', which is not $op ' + r.toString()";
-      return '(() { final l = $left; final r = $right; if (!(l $op r)) throw StateError($detail); })()';
+    _useChecks = true;
+    final positional = <String>[];
+    final named = <String>[];
+    for (final argument in node.arguments) {
+      final value = expression(argument.value);
+      if (argument.name == null) {
+        positional.add(value);
+      } else {
+        named.add('${argument.name}: $value');
+      }
     }
-    final condition = expression(value);
-    return "(() { if (!($condition)) throw StateError('expectation failed'); })()";
+    final helper = model.references[node.callee]?.dartName ?? '_qrun.qExpect';
+    return '$helper(${[...positional, ...named].join(', ')})';
   }
 
   String call(CallExpression node, {bool constantContext = false}) {
@@ -2997,9 +3004,18 @@ class DartEmitter {
       return '($callee)($arguments)';
     }
     final targetSymbol = model.references[node.callee]!;
+    if (targetSymbol.library == 'check') _useChecks = true;
     if (targetSymbol.name == 'missing') _useOptional = true;
-    if (targetSymbol.name == 'expect' && targetSymbol.function == null) {
+    if (targetSymbol.library == 'check' &&
+        (targetSymbol.name == 'expect' || targetSymbol.name == 'expectLater')) {
       return _expect(node);
+    }
+    if (targetSymbol.library == 'check' &&
+        (targetSymbol.name == 'isA' || targetSymbol.name == 'isSorted') &&
+        node.callee is TypeApplication) {
+      final types =
+          (node.callee as TypeApplication).arguments.map(_dartType).join(', ');
+      return '${targetSymbol.dartName}<$types>()';
     }
     if (targetSymbol.name == 'present') {
       _useOptional = true;

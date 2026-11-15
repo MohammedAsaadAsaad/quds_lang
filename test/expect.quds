@@ -1,0 +1,70 @@
+# Dart's expect(actual, matcher) and the package:test checkers.
+bad():
+  throw "nope"
+
+say() -> int:
+  print "hi"
+  return 0
+
+test "equality and order":
+  expect(2, 2)
+  expect(2, equals(2))
+  expect(1, isNot(2))
+  expect(3, greaterThan(2))
+  expect(2, greaterThanOrEqualTo(2))
+  expect(1, lessThan(2))
+  expect(2, lessThanOrEqualTo(2))
+  expect(2.0, closeTo(2.05, 0.1))
+  expect(2, inInclusiveRange(1, 3))
+  expect(0, isZero)
+  expect(1, isPositive)
+  expect(0 - 1, isNegative)
+  expect(1, isNonZero)
+  expect(1, allOf(greaterThan(0), lessThan(3)))
+  expect(1, anyOf(isNull, equals(1)))
+
+test "truth, null, text, and collections":
+  expect(true, isTrue)
+  expect(false, isFalse)
+  expect(null, isNull)
+  expect(1, isNotNull)
+  expect("", isEmpty)
+  expect("ab", isNotEmpty)
+  expect("ab", hasLength(2))
+  expect("hello", startsWith("he"))
+  expect("hello", endsWith("lo"))
+  expect("hello", contains("ell"))
+  expect("A", equalsIgnoringCase("a"))
+  expect("cat", stringContainsInOrder(["c", "t"]))
+  expect([1, 2, 3], contains(2))
+  expect([1, 2], orderedEquals([1, 2]))
+  expect([1, 2], unorderedEquals([2, 1]))
+  expect([1, 2, 3], everyElement(greaterThan(0)))
+  expect([1, 2], anyElement(equals(2)))
+  expect(1, isIn([1, 2]))
+  expect(1, predicate((v: Object?) -> v == 1, "is one"))
+  expect("hi", isA<String>())
+  expect("hi", isA<String>().having((s: String) -> s.length, "length", 2))
+  expect(1, isNot(isA<String>()))
+  shared = "x"
+  expect(shared, same(shared))
+
+test "maps, throws, and skip":
+  ages = map:
+    "Ada": 1
+  expect(ages, containsPair("Ada", 1))
+  expect(ages, containsValue(1))
+  expect(bad, throwsA(equals("nope")))
+  expect(() -> 1, returnsNormally)
+  expect(say, prints(contains("hi")))
+  expect(1, 2, skip: true)
+  expect(1, 2, skip: "not ready", reason: "later")
+
+test "completion" async:
+  await expectLater(read(), completion(2))
+  await expectLater(broken(), throwsA(equals("nope")))
+
+read() async -> int = 2
+
+broken() async -> void:
+  throw "nope"

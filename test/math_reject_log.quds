@@ -1,0 +1,5 @@
+# This file must not compile. Unprefixed log is the logger, not ln.
+use quds:math
+
+test "log is not the natural logarithm":
+  log(1.0)

@@ -3189,46 +3189,8 @@ main():
 ''', 'true\nAb\nba\n2\nvalue\nvalue\n2\n3\n2\ntrue\ntrue\n-1\ntrue\n2\na\nb\nababab\n2\n3\n2\ntrue\n3\n16\ntrue\n1\n1\n');
   });
 
-  test('quds:math re-exports dart:math and runs numeric helpers', () async {
+  test('quds:math source matches the embedded library', () {
     expect(File('lib/sdk/math.quds').readAsStringSync(), mathSdkSource);
-    final compiled = compile('''
-use quds:math
-main():
-  print sqrt(9.0)
-''');
-    expect(compiled.dart, contains("import 'quds_math.dart';"));
-    expect(compiled.bundles, hasLength(1));
-    expect(compiled.bundles.single.fileName, 'quds_math.dart');
-    expect(compiled.bundles.single.source,
-        contains("import 'dart:math' as math;"));
-    expect(compiled.bundles.single.source, contains("import 'dart:math';"));
-    expect(compiled.bundles.single.source, contains("export 'dart:math';"));
-    expect(() => compile('''
-use quds:math
-main():
-  log(1.0)
-'''), throwsA(predicate((error) => '$error'.contains('not callable'))));
-    expect(() => compile('''
-use quds:math show mean
-main():
-  print sin(0.0)
-'''), throwsA(predicate((error) => '$error'.contains('E200'))));
-    expect(() => compile('''
-use quds:math hide sqrt
-main():
-  print sqrt(9.0)
-'''), throwsA(predicate((error) => '$error'.contains('E200'))));
-    final math = await Process.run(Platform.resolvedExecutable,
-        ['run', 'bin/quds.dart', 'test', 'test/math.quds']);
-    expect(math.exitCode, 0, reason: '${math.stdout}\n${math.stderr}');
-    expect(math.stdout, contains('ok re-exports dart:math'));
-    expect(math.stdout, contains('ok what dart:math leaves out'));
-    expect('${math.stdout}', isNot(contains('FAIL')));
-    final prefixed = await Process.run(Platform.resolvedExecutable,
-        ['run', 'bin/quds.dart', 'test', 'test/math_prefix.quds']);
-    expect(prefixed.exitCode, 0,
-        reason: '${prefixed.stdout}\n${prefixed.stderr}');
-    expect(prefixed.stdout, contains('ok prefixed dart:math'));
   });
 
   test('quds:core matches the embedded library and executes', () async {

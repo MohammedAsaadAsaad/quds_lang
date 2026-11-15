@@ -12,3 +12,28 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze
       - run: dart test --reporter expanded
+      - name: Quds math tests
+        run: |
+          set -euo pipefail
+          dart run bin/quds.dart test test/math.quds
+          dart run bin/quds.dart test test/math_prefix.quds
+          reject() {
+            local file="$1"
+            local needle="$2"
+            set +e
+            out=$(dart run bin/quds.dart test "$file" 2>&1)
+            code=$?
+            set -e
+            if [ "$code" -eq 0 ]; then
+              echo "$file was expected to fail"
+              exit 1
+            fi
+            printf '%s\n' "$out" | grep -q "$needle" || {
+              echo "$file did not report $needle"
+              printf '%s\n' "$out"
+              exit 1
+            }
+          }
+          reject test/math_reject_log.quds "not callable"
+          reject test/math_reject_show.quds "E200"
+          reject test/math_reject_hide.quds "E200"

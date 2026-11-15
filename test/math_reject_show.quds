@@ -1,0 +1,5 @@
+# This file must not compile. show mean does not import sin.
+use quds:math show mean
+
+test "sin stays hidden when only mean is shown":
+  sin(0.0)

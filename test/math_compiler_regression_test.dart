@@ -4,6 +4,26 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('imported AD signatures preserve nominal identity and filters', () {
+    expect(() => compile('''
+use quds:math as m
+class Dual:
+  value: int required
+main():
+  print m.autoDerivative((x: Dual) -> x, 1.0)
+'''), throwsA(predicate((e) => '$e'.contains('E500'))));
+    expect(() => compile('''
+use quds:math as m show autoDerivative
+main():
+  print m.Dual(value: 1.0, tangent: 1.0)
+'''), throwsA(predicate((e) => '$e'.contains('E200'))));
+    expect(() => compile('''
+use quds:math show autoDerivative
+main():
+  print _qImportedType0.Dual(value: 1.0, tangent: 1.0)
+'''), throwsA(predicate((e) => '$e'.contains('E200'))));
+  });
+
   test('SDK BigInt operators retain static result and argument types', () {
     final result = compile('''
 use dart:core show BigInt

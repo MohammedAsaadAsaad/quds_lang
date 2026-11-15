@@ -1,0 +1,23 @@
+use quds:math as m
+use quds:math as selected show autoDerivative, autoJacobian, evaluateDual
+
+class Dual:
+  value: int required
+
+autoDerivative(value: int) -> int = value + 1
+
+test "prefixed AD callbacks keep their nominal types":
+  expect(m.autoDerivative((x: m.Dual) -> x * x, 3.0), 6.0)
+  expect(m.autoDerivative((x: m.Dual) -> x.sin(), 0.0), 1.0)
+  expect(m.autoGradient((point: List<m.Dual>) -> point[0] * point[1], [2.0, 3.0]), [3.0, 2.0])
+  own = Dual(value: 7)
+  expect(own.value, 7)
+  expect(autoDerivative(7), 8)
+
+test "show filters allow inferred signature types without exposing names":
+  expect(selected.autoDerivative(x -> x * x, 3.0), 6.0)
+  expect(selected.autoDerivative(x -> x.sin(), 0.0), 1.0)
+  evaluated = selected.evaluateDual(x -> x * x, 3.0)
+  expect(evaluated.tangent, 6.0)
+  expect(evaluated.copyWith(value: 2.0).value, 2.0)
+  expect(selected.autoJacobian(point -> [point[0] * point[1], point[0] + point[1]], [2.0, 3.0]), [[3.0, 2.0], [1.0, 1.0]])

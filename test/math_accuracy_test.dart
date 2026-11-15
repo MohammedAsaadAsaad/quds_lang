@@ -49,6 +49,10 @@ void main() {
   if (m.bigFibonacci(100).toString()!='354224848179261915075') throw 'exact Fibonacci';
   if (m.bigFactorial(30).toString()!='265252859812191058636308480000000') throw 'exact factorial';
   if (m.bigFraction(large,large).toString()!='1/1') throw 'exact rational';
+  if (m.autoDerivative((m.Dual x)=>x*x*x,3.0)!=27.0) throw 'forward AD';
+  final gradient=m.autoGradient((List<m.Dual> x)=>x[0]*x[1],[2.0,3.0]);
+  if (gradient[0]!=3.0 || gradient[1]!=2.0) throw 'AD gradient';
+  if (m.autoJacobian((List<m.Dual> x)=>[x[0]*x[1]],[2.0,3.0])[0][1]!=2.0) throw 'AD Jacobian';
   print('WEB MATH OK');
 }
 ''');

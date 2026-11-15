@@ -1,0 +1,9 @@
+use quds:math show autoDerivative, autoJacobian
+
+type Dual = int
+
+test "caller aliases do not rewrite imported mathematical types":
+  own: Dual = 7
+  expect(own, 7)
+  expect(autoDerivative(x -> x.sin(), 0.0), 1.0)
+  expect(autoJacobian(point -> [point[0] * point[1]], [2.0, 3.0]), [[3.0, 2.0]])

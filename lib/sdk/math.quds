@@ -7609,3 +7609,219 @@ _bigFractionAdd(left: BigFraction, right: BigFraction, subtract: bool) -> BigFra
   if subtract: top = top - right.numerator * rightScale
   else: top = top + right.numerator * rightScale
   return bigFraction(top, left.denominator * leftScale)
+
+# Forward-mode automatic differentiation: value + tangent*epsilon, epsilon^2=0.
+# All operations require finite values/tangents and reject non-finite results.
+# Use dualConstant for constants and dualVariable for a unit derivative seed.
+value class Dual:
+  value: double required
+  tangent: double required
+
+  operator +(other: Dual) -> Dual:
+    _checkDual(this)
+    _checkDual(other)
+    return _dualResult(value + other.value, tangent + other.tangent)
+
+  operator -(other: Dual) -> Dual:
+    _checkDual(this)
+    _checkDual(other)
+    return _dualResult(value - other.value, tangent - other.tangent)
+
+  operator -() -> Dual:
+    _checkDual(this)
+    return _dualResult(-value, -tangent)
+
+  operator *(other: Dual) -> Dual:
+    _checkDual(this)
+    _checkDual(other)
+    return _dualResult(value * other.value, tangent * other.value + value * other.tangent)
+
+  operator /(other: Dual) -> Dual:
+    _checkDual(this)
+    _checkDual(other)
+    if other.value == 0.0: throw "Dual division by zero"
+    quotient = value / other.value
+    slope = tangent / other.value - _dualProductOverSquare(value, other.tangent, other.value)
+    return _dualResult(quotient, slope)
+
+  exp() -> Dual:
+    _checkDual(this)
+    output = math.exp(value)
+    return _dualResult(output, output * tangent)
+
+  ln() -> Dual:
+    _checkDual(this)
+    if value <= 0.0: throw "Dual.ln needs a positive value"
+    return _dualResult(math.log(value), tangent / value)
+
+  sqrt() -> Dual:
+    _checkDual(this)
+    if value <= 0.0: throw "Dual.sqrt needs a positive value"
+    output = math.sqrt(value)
+    return _dualResult(output, tangent / (2.0 * output))
+
+  sin() -> Dual:
+    _checkDual(this)
+    return _dualResult(math.sin(value), math.cos(value) * tangent)
+
+  cos() -> Dual:
+    _checkDual(this)
+    return _dualResult(math.cos(value), -math.sin(value) * tangent)
+
+  tan() -> Dual:
+    _checkDual(this)
+    cosine = math.cos(value)
+    if cosine == 0.0: throw "Dual.tan is undefined at a pole"
+    return _dualResult(math.tan(value), (tangent / cosine) / cosine)
+
+  asin() -> Dual:
+    _checkDual(this)
+    if value <= -1.0 or value >= 1.0: throw "Dual.asin needs a value strictly between -1 and 1"
+    return _dualResult(math.asin(value), tangent / math.sqrt((1.0 - value) * (1.0 + value)))
+
+  acos() -> Dual:
+    _checkDual(this)
+    if value <= -1.0 or value >= 1.0: throw "Dual.acos needs a value strictly between -1 and 1"
+    return _dualResult(math.acos(value), -tangent / math.sqrt((1.0 - value) * (1.0 + value)))
+
+  atan() -> Dual:
+    _checkDual(this)
+    var slope = tangent / (1.0 + value * value)
+    if _abs(value) > 1.0: slope = (tangent / value) / (value + 1.0 / value)
+    return _dualResult(math.atan(value), slope)
+
+  # Constant real exponent. Negative bases require an integer exponent. At
+  # zero only nonnegative integer exponents are accepted; 0^0 follows Dart's
+  # constant-one convention, while noninteger zero-base derivatives reject.
+  pow(exponent: double) -> Dual:
+    _checkDual(this)
+    if not _finite(exponent): throw "Dual.pow needs a finite exponent"
+    if exponent == 0.0: return _dualResult(1.0, 0.0)
+    if value <= 0.0 and exponent != exponent.truncateToDouble():
+      throw "Dual.pow needs an integer exponent at a nonpositive base"
+    if value == 0.0:
+      if exponent < 0.0: throw "Dual.pow has an undefined zero-base derivative"
+      if exponent == 1.0: return _dualResult(0.0, tangent)
+      return _dualResult(0.0, 0.0)
+    output = math.pow(value, exponent) to double
+    slope = _dualPowerSlope(value, exponent, tangent)
+    return _dualResult(output, slope)
+
+# A constant's derivative seed is zero.
+dualConstant(value: double) -> Dual = _dualResult(value, 0.0)
+
+# A variable's derivative seed is one.
+dualVariable(value: double) -> Dual = _dualResult(value, 1.0)
+
+# Evaluate f exactly once at a unit seed and return both value and derivative.
+# The callback must use smooth Dual operations on the desired real domain.
+# Example:
+#   print evaluateDual((x: Dual) -> x * x, 3.0).tangent
+evaluateDual(f: (Dual) -> Dual, x: double) -> Dual:
+  output = f(dualVariable(x))
+  _checkDual(output)
+  return output
+
+# First derivative by forward AD, not finite differences. One callback call.
+# Example:
+#   print autoDerivative((x: Dual) -> x.sin(), 0.0)
+autoDerivative(f: (Dual) -> Dual, x: double) -> double:
+  return evaluateDual(f, x).tangent
+
+# Gradient in input-coordinate order. Evaluates the callback exactly n times,
+# once per unit seed, and zero times for n=0. Inputs/seeds/results are fresh.
+# A pure callback is required for a meaningful gradient across those calls.
+autoGradient(f: (List<Dual>) -> Dual, point: List<double>) -> List<double>:
+  _checkDualPoint(point)
+  output: List<double> = []
+  var column = 0
+  while column < point.length:
+    evaluated = f(_dualSeed(point, column))
+    _checkDual(evaluated)
+    output.add(evaluated.tangent)
+    column += 1
+  return output
+
+# Jacobian rows index output components; columns index input coordinates.
+# Evaluates f n times, or once when n=0 to discover the output dimension.
+# A changing output length throws. No extra callback calls estimate a value.
+autoJacobian(f: (List<Dual>) -> List<Dual>, point: List<double>) -> List<List<double>>:
+  _checkDualPoint(point)
+  output: List<List<double>> = []
+  if point.length == 0:
+    empty: List<Dual> = []
+    evaluated = f(empty)
+    for item in evaluated:
+      _checkDual(item)
+      row: List<double> = []
+      output.add(row)
+    return output
+  var column = 0
+  while column < point.length:
+    evaluated = f(_dualSeed(point, column))
+    if column != 0 and evaluated.length != output.length:
+      throw "autoJacobian output shape changed"
+    var index = 0
+    while index < evaluated.length:
+      _checkDual(evaluated[index])
+      if column == 0:
+        row: List<double> = []
+        output.add(row)
+      output[index].add(evaluated[index].tangent)
+      index += 1
+    column += 1
+  return output
+
+_checkDual(value: Dual):
+  if not _finite(value.value) or not _finite(value.tangent):
+    throw "Dual needs finite value and tangent"
+
+_dualResult(value: double, tangent: double) -> Dual:
+  if not _finite(value) or not _finite(tangent): throw "Dual result is not finite"
+  return Dual(value: value, tangent: tangent)
+
+_checkDualPoint(point: List<double>):
+  for value in point:
+    if not _finite(value): throw "automatic differentiation needs a finite point"
+
+_dualSeed(point: List<double>, column: int) -> List<Dual>:
+  seed: List<Dual> = []
+  var index = 0
+  while index < point.length:
+    var tangent = 0.0
+    if index == column: tangent = 1.0
+    seed.add(Dual(value: point[index], tangent: tangent))
+    index += 1
+  return seed
+
+# Compute a*b/c^2 without first rounding a/c to zero, or squaring c.
+_dualProductOverSquare(a: double, b: double, c: double) -> double:
+  if a == 0.0 or b == 0.0: return 0.0
+  var larger = a
+  var smaller = b
+  if _abs(larger) < _abs(smaller):
+    saved = larger
+    larger = smaller
+    smaller = saved
+  ratio = larger / c
+  if _finite(ratio):
+    otherRatio = smaller / c
+    if _abs(otherRatio) < 2.2250738585072014e-308:
+      return (ratio * smaller) / c
+    return ratio * otherRatio
+  other = smaller / c
+  if _finite(other) and _abs(other) >= 2.2250738585072014e-308:
+    return _scaleRatio(other, larger, c)
+  return ((larger * smaller) / c) / c
+
+_dualPowerSlope(value: double, exponent: double, tangent: double) -> double:
+  if tangent == 0.0: return 0.0
+  magnitude = _abs(value)
+  power = math.pow(magnitude, exponent - 1.0) to double
+  var slope = exponent * power * tangent
+  if not _finite(slope) or slope == 0.0 or power < 2.2250738585072014e-308 or _abs(exponent) > 9007199254740991.0:
+    logMagnitude = math.log(_abs(exponent)) + (exponent - 1.0) * math.log(magnitude) + math.log(_abs(tangent))
+    slope = math.exp(logMagnitude)
+    if (exponent < 0.0) != (tangent < 0.0): slope = -slope
+  if value < 0.0 and exponent % 2.0 == 0.0: slope = -slope
+  return slope

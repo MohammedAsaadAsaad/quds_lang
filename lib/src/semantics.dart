@@ -145,8 +145,9 @@ class SemanticModel {
     while (seen.add(current)) {
       var next = current;
       for (final entry in aliases.entries) {
+        if (activeAliasShadows.contains(entry.key)) continue;
         next = next.replaceAll(
-            RegExp('\\b${RegExp.escape(entry.key)}\\b'), entry.value);
+            RegExp('(?<![\\w.])${RegExp.escape(entry.key)}\\b'), entry.value);
       }
       if (next == current) return current;
       current = next;
@@ -175,6 +176,11 @@ class SemanticModel {
 
   /// Public members of Dart SDK classes read from the SDK sources.
   final dartShapes = <String, DartShape>{};
+  // Non-source-spellable nominal identities for types in imported signatures.
+  final internalTypes = <String, Symbol>{};
+  final activeAliasShadows = <String>{};
+  final backendTypes = <String, String>{};
+  final backendTypeImports = <String, String>{};
 
   /// Dart import URI for a `package:` or `generated:` library that was loaded.
   final resolvedImports = <ImportDeclaration, String>{};
@@ -392,6 +398,7 @@ class Analyzer {
   /// A call re-checks a function that has defaults. That check used to run in
   /// the importer's scope, which cannot see `_names` or `use dart:math as math`.
   final _libraryScopes = <String, _Scope>{};
+  final _libraryTypes = <String, Map<String, String>>{};
   final _global = _Scope();
   late _Scope _scope = _global;
   final _checked = <FunctionDeclaration>{};
@@ -1885,10 +1892,12 @@ class Analyzer {
   }
 
   void _importFunction(FunctionDeclaration statement,
-      {String? qualify, String library = ''}) {
-    final existing = qualify == null
-        ? _global.symbols[statement.name]
-        : _space(qualify, statement)[statement.name];
+      {String? qualify, String library = '', Map<String, Symbol>? target}) {
+    final existing = target != null
+        ? target[statement.name]
+        : qualify == null
+            ? _global.symbols[statement.name]
+            : _space(qualify, statement)[statement.name];
     if (existing?.function == statement) return;
     if (existing != null) {
       error('E204', 'Two imports define ${statement.name}', statement);
@@ -1912,7 +1921,7 @@ class Analyzer {
           mutable: parameter.mutable);
     }
     if (qualify == null) {
-      _global.symbols[statement.name] = symbol;
+      (target ?? _global.symbols)[statement.name] = symbol;
       return;
     }
     _space(qualify, statement)[statement.name] = symbol;
@@ -2166,7 +2175,7 @@ class Analyzer {
       }
       return;
     }
-    final named = _global.symbols[type] ?? _scope.lookup(type);
+    final named = _typeSymbol(type);
     if (named?.classDeclaration != null ||
         named?.classCase != null ||
         _pendingClasses.contains(type)) {
@@ -2228,7 +2237,27 @@ class Analyzer {
     _libraryScopes[home] = scope;
     final program = _libraries[home];
     if (program == null) return scope;
+    final names = <String, String>{};
+    _libraryTypes[home] = names;
+    final prefix = '_qImportedType${_libraryTypes.length - 1}';
+    final sdk = sdkLibraryName(home);
+    model.backendTypeImports[prefix] = sdk == null
+        ? Uri.file(home.replaceFirst(RegExp(r'\.quds$'), '.dart')).toString()
+        : sdkDartFileName(sdk);
+    for (final declaration
+        in program.statements.whereType<ClassDeclaration>()) {
+      scope.symbols[declaration.name] = Symbol(
+          declaration.name, declaration.name, declaration.name,
+          classDeclaration: declaration, library: home);
+      if (!declaration.name.startsWith('_')) {
+        final key = '@${_libraryTypes.length - 1}.${declaration.name}';
+        names[declaration.name] = key;
+        model.backendTypes[key] = '$prefix.${declaration.name}';
+      }
+    }
     final saved = _scope;
+    final savedAliasShadows = {...model.activeAliasShadows};
+    model.activeAliasShadows.addAll(scope.symbols.keys);
     _scope = scope;
     try {
       for (final statement in program.statements) {
@@ -2239,12 +2268,20 @@ class Analyzer {
               scope.symbols[statement.name] = known;
               continue;
             }
-            _importFunction(statement, library: home);
-            final placed = _global.symbols.remove(statement.name);
-            if (placed != null) scope.symbols[statement.name] = placed;
-          case ClassDeclaration() when statement.name.startsWith('_'):
+            _importFunction(statement, library: home, target: scope.symbols);
+          case ClassDeclaration():
             if (model.declarations[statement] == null) {
-              registerClass(statement, library: home);
+              final key = names[statement.name];
+              registerClass(statement, library: home, scopeName: key);
+              if (key != null) {
+                model.internalTypes[key] = _global.symbols.remove(key)!;
+              }
+            }
+            final key = names[statement.name];
+            if (key != null && !model.internalTypes.containsKey(key)) {
+              model.internalTypes[key] = Symbol(key, key, key,
+                  classDeclaration: statement, library: home);
+              model.classes[key] = statement;
             }
           case ImportDeclaration()
               when !statement.export && statement.uri.startsWith('dart:'):
@@ -2255,8 +2292,64 @@ class Analyzer {
       }
     } finally {
       _scope = saved;
+      model.activeAliasShadows
+        ..clear()
+        ..addAll(savedAliasShadows);
     }
     return scope;
+  }
+
+  Symbol? _typeSymbol(String name) {
+    final scoped = _scope.lookup(name);
+    if (scoped?.classDeclaration != null) return scoped;
+    return _global.symbols[name] ?? scoped ?? model.internalTypes[name];
+  }
+
+  String _libraryType(String type, String home) {
+    final names = _libraryTypes[home];
+    if (names == null) return type;
+    var output = type;
+    for (final entry in names.entries) {
+      output = output.replaceAll(
+          RegExp('(?<![\\w.])${RegExp.escape(entry.key)}\\b'), entry.value);
+    }
+    return output;
+  }
+
+  String _selfType(String type, ClassDeclaration? owner, String receiver) {
+    if (owner == null) return type;
+    return type.replaceAll(RegExp('(?<![\\w.])${RegExp.escape(owner.name)}\\b'),
+        _genericHead(receiver));
+  }
+
+  String get _activeLibrary {
+    final home =
+        _function == null ? null : model.declarations[_function]?.library;
+    return home == null || home.isEmpty ? library : home;
+  }
+
+  List<Parameter> _callParameters(
+      List<Parameter> parameters, FunctionDeclaration? function) {
+    final home =
+        function == null ? null : model.declarations[function]?.library;
+    if (home == null || home.isEmpty || home == _activeLibrary)
+      return parameters;
+    _libraryScope(home);
+    return [
+      for (final parameter in parameters)
+        Parameter(parameter.name, _libraryType(parameter.type, home),
+            parameter.mutable, parameter.span,
+            defaultValue: parameter.defaultValue,
+            variadic: parameter.variadic,
+            initializing: parameter.initializing)
+    ];
+  }
+
+  String _callResult(String type, FunctionDeclaration? function) {
+    final home =
+        function == null ? null : model.declarations[function]?.library;
+    if (home == null || home.isEmpty || home == _activeLibrary) return type;
+    return _libraryType(type, home);
   }
 
   void _bindDartScope(_Scope scope, ImportDeclaration node) {
@@ -2274,6 +2367,7 @@ class Analyzer {
       if (!_keeps(name, node) || space.containsKey(name)) continue;
       final top = surface.names[name];
       if (top == null) continue;
+      if (top.isType) model.activeAliasShadows.add(prefix ?? name);
       final shape = surface.types[name];
       if (shape != null) model.dartShapes[name] = shape;
       space[name] = symbolForDart(top, shape);
@@ -2332,6 +2426,10 @@ class Analyzer {
       parent = _global;
     } else {
       parent = savedScope;
+    }
+    final savedAliasShadows = {...model.activeAliasShadows};
+    if (home.isNotEmpty && home != library) {
+      model.activeAliasShadows.addAll(parent.symbols.keys);
     }
     _scope = _Scope(parent);
     _function = function;
@@ -2396,6 +2494,9 @@ class Analyzer {
     _scope = savedScope;
     _function = savedFunction;
     _returnType = savedReturn;
+    model.activeAliasShadows
+      ..clear()
+      ..addAll(savedAliasShadows);
     _promoted
       ..clear()
       ..addAll(savedPromoted);
@@ -3580,10 +3681,38 @@ class Analyzer {
     }
   }
 
+  bool _sameType(String from, String to) {
+    from = model.resolve(from);
+    to = model.resolve(to);
+    if (from == to) return true;
+    final source = _typeSymbol(from)?.classDeclaration;
+    final target = _typeSymbol(to)?.classDeclaration;
+    if (source != null && identical(source, target)) return true;
+    if (from.endsWith('?') && to.endsWith('?'))
+      return _sameType(unwrap(from), unwrap(to));
+    final left = _genericHead(from);
+    final right = _genericHead(to);
+    if (left == right &&
+        left != from &&
+        right != to &&
+        from.endsWith('>') &&
+        to.endsWith('>')) {
+      final a = _splitTypes(from.substring(left.length + 1, from.length - 1));
+      final b = _splitTypes(to.substring(right.length + 1, to.length - 1));
+      return a.length == b.length &&
+          List.generate(a.length, (index) => _sameType(a[index], b[index]))
+              .every((value) => value);
+    }
+    return false;
+  }
+
   bool compatible(String from, String to) {
     from = model.resolve(from);
     to = model.resolve(to);
     if (from == to || from == '*' || to == 'dynamic') return true;
+    final fromClass = _typeSymbol(from)?.classDeclaration;
+    final toClass = _typeSymbol(to)?.classDeclaration;
+    if (fromClass != null && identical(fromClass, toClass)) return true;
     if (from == 'dynamic' && to != 'void') return true;
     if (to == 'Object' && from != 'void') return true;
     if (to.contains(' & ')) {
@@ -3598,6 +3727,23 @@ class Analyzer {
       return compatible(source, to.substring(9));
     }
     if (from.startsWith('readonly ')) return false;
+    final fromHead = _genericHead(from);
+    final toHead = _genericHead(to);
+    if (fromHead == toHead &&
+        const {'List', 'Set', 'Iterable', 'Map', 'Future', 'Stream'}
+            .contains(fromHead) &&
+        from.endsWith('>') &&
+        to.endsWith('>')) {
+      final source =
+          _splitTypes(from.substring(fromHead.length + 1, from.length - 1));
+      final target =
+          _splitTypes(to.substring(toHead.length + 1, to.length - 1));
+      if (source.length == target.length) {
+        return List.generate(source.length,
+                (index) => _sameType(source[index], target[index]))
+            .every((value) => value);
+      }
+    }
     if (to.contains(' | ')) {
       return to.split(' | ').any((arm) => compatible(from, arm.trim()));
     }
@@ -3607,7 +3753,7 @@ class Analyzer {
     if (to == 'num' && (from == 'int' || from == 'double')) return true;
     if (to.endsWith('?')) {
       final inner = to.substring(0, to.length - 1);
-      return from == 'Null' || compatible(from, inner);
+      return from == 'Null' || compatible(unwrap(from), inner);
     }
     if (from.startsWith('(') &&
         to.startsWith('(') &&
@@ -4303,7 +4449,7 @@ class Analyzer {
         return _readonlyView(raw, foundType);
       }
     }
-    final declaration = _global.symbols[_genericHead(look)]?.classDeclaration;
+    final declaration = _typeSymbol(_genericHead(look))?.classDeclaration;
     final substitution = _genericSubstitution(look, declaration);
     if (node.name == 'instance' &&
         declaration != null &&
@@ -4328,7 +4474,8 @@ class Analyzer {
     final found = memberType(look, node.name);
     if (found != null) {
       if (declaration != null) _checkMember(declaration, node.name, node);
-      final substituted = _substitute(found, substitution);
+      final substituted =
+          _selfType(_substitute(found, substitution), declaration, look);
       final classOwns = declaration != null &&
           (_method(declaration, node.name) != null ||
               _fieldsOf(declaration).any((item) => item.name == node.name));
@@ -4411,7 +4558,7 @@ class Analyzer {
       };
 
   String? memberType(String type, String name) {
-    final declaration = _global.symbols[_genericHead(type)]?.classDeclaration;
+    final declaration = _typeSymbol(_genericHead(type))?.classDeclaration;
     if (declaration != null) {
       for (final field in _fieldsOf(declaration)) {
         if (field.name == name) {
@@ -4448,7 +4595,7 @@ class Analyzer {
   }
 
   String _dartMember(String type, String name) {
-    final declaration = _global.symbols[type]?.classDeclaration;
+    final declaration = _typeSymbol(type)?.classDeclaration;
     if (declaration == null) return name;
     for (final field in declaration.fields) {
       if (field.name == name) {
@@ -4486,20 +4633,22 @@ class Analyzer {
     return [...inherited, ...type.fields];
   }
 
-  FunctionDeclaration? _method(ClassDeclaration type, String name) {
+  FunctionDeclaration? _method(ClassDeclaration type, String name,
+      {int? arity}) {
     for (final method in type.methods) {
-      if (method.name == name) return method;
+      if (method.name == name &&
+          (arity == null || method.parameters.length == arity)) return method;
     }
     for (final mixin in type.mixins.reversed) {
       final declaration = _global.symbols[mixin]?.classDeclaration;
       if (declaration == null) continue;
-      final found = _method(declaration, name);
+      final found = _method(declaration, name, arity: arity);
       if (found != null) return found;
     }
     final parent = type.superclass == null
         ? null
         : _global.symbols[type.superclass!]?.classDeclaration;
-    if (parent != null) return _method(parent, name);
+    if (parent != null) return _method(parent, name, arity: arity);
     return null;
   }
 
@@ -5023,19 +5172,20 @@ class Analyzer {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
     }
-    final owner = _global.symbols[unwrap(left)]?.classDeclaration;
-    final method = owner == null ? null : _method(owner, op);
+    final owner = _typeSymbol(unwrap(left))?.classDeclaration;
+    final method = owner == null ? null : _method(owner, op, arity: 1);
     if (owner != null && method != null && method.isOperator) {
       if (method.parameters.isNotEmpty) {
-        final expected = method.parameters.first.type;
+        final expected = _qualifyType(_genericHead(unwrap(left)),
+            method.parameters.first.type, owner.name);
         if (expected != '<field>' && !compatible(right, expected)) {
           error(
               'E300', 'Operator $op is not defined for $left and $right', node);
         }
       }
-      return model.declarations[method]?.type ??
-          method.returnType ??
-          owner.name;
+      final returned =
+          model.declarations[method]?.type ?? method.returnType ?? owner.name;
+      return _qualifyType(_genericHead(unwrap(left)), returned, owner.name);
     }
     final native = _sdkMember(left, op);
     if (native != null &&
@@ -5302,6 +5452,15 @@ class Analyzer {
             'A nullable value is used where a non-null value is required',
             node);
       }
+      final owner = _typeSymbol(unwrap(type))?.classDeclaration;
+      final method =
+          owner == null ? null : _method(owner, node.operator, arity: 0);
+      if (method != null && method.isOperator) {
+        final returned = model.declarations[method]?.type ??
+            method.returnType ??
+            owner!.name;
+        return _qualifyType(_genericHead(unwrap(type)), returned, owner!.name);
+      }
       final native =
           _sdkMember(type, node.operator == '-' ? 'unary-' : node.operator);
       if (native != null && !native.getter && native.parameters.isEmpty) {
@@ -5518,8 +5677,18 @@ class Analyzer {
       return qualified;
     }
     if (found.function != null) {
+      final home = found.library;
+      if (home.isNotEmpty) _libraryScope(home);
+      final parameters = [
+        for (final parameter in found.function!.parameters)
+          Parameter(parameter.name, _libraryType(parameter.type, home),
+              parameter.mutable, parameter.span,
+              defaultValue: parameter.defaultValue,
+              variadic: parameter.variadic,
+              initializing: parameter.initializing)
+      ];
       final type =
-          applyArguments(node, found.function!.parameters, found.function);
+          _libraryType(applyArguments(node, parameters, found.function), home);
       model.references[callee] =
           Symbol(found.name, found.dartName, type).withFunction(found.function);
       return type;
@@ -5570,7 +5739,7 @@ class Analyzer {
         final objectType = unwrap(rawObject.startsWith('readonly ')
             ? rawObject.substring(9)
             : rawObject);
-        final declaration = _global.symbols[objectType]?.classDeclaration;
+        final declaration = _typeSymbol(objectType)?.classDeclaration;
         if (declaration != null &&
             (declaration.kind == 'value' ||
                 declaration.modifiers.contains('value'))) {
@@ -5596,7 +5765,7 @@ class Analyzer {
           }
           model.references[callee] =
               Symbol('copyWith', 'copyWith', declaration.name);
-          return declaration.name;
+          return objectType;
         }
       }
       final objectTypeRaw = rawObject.startsWith('readonly ')
@@ -5641,7 +5810,7 @@ class Analyzer {
             node, Symbol(callee.name, callee.name, 'dynamic', external: true));
       }
       final declaration =
-          _global.symbols[_genericHead(objectType)]?.classDeclaration;
+          _typeSymbol(_genericHead(objectType))?.classDeclaration;
       final function =
           declaration == null ? null : _method(declaration, callee.name);
       final resolved = function ??
@@ -5686,8 +5855,12 @@ class Analyzer {
       };
       final parameters = [
         for (final parameter in functionResolved.parameters)
-          Parameter(parameter.name, _substitute(parameter.type, substitution),
-              parameter.mutable, parameter.span,
+          Parameter(
+              parameter.name,
+              _selfType(_substitute(parameter.type, substitution), declaration,
+                  objectType),
+              parameter.mutable,
+              parameter.span,
               defaultValue: parameter.defaultValue,
               variadic: parameter.variadic,
               initializing: parameter.initializing)
@@ -5696,7 +5869,8 @@ class Analyzer {
       final declared = model.declarations[functionResolved]!.type == '<infer>'
           ? returned
           : model.declarations[functionResolved]!.type;
-      return _substitute(declared, substitution);
+      return _selfType(
+          _substitute(declared, substitution), declaration, objectType);
     }
     if (callee is! Identifier) {
       final type = expression(callee);
@@ -6286,6 +6460,7 @@ class Analyzer {
 
   bool argumentsMatch(CallExpression node, List<Parameter> parameters,
       {required bool commit, FunctionDeclaration? function}) {
+    parameters = _callParameters(parameters, function);
     final order = List<int>.filled(parameters.length, -1);
     var positional = 0;
     var named = false;
@@ -6361,6 +6536,7 @@ class Analyzer {
 
   String applyArguments(CallExpression node, List<Parameter> parameters,
       FunctionDeclaration? function) {
+    parameters = _callParameters(parameters, function);
     if (function != null &&
         parameters.any((parameter) => parameter.defaultValue != null)) {
       analyzeFunction(function);
@@ -6424,7 +6600,8 @@ class Analyzer {
       if (parameters[i].variadic || order[i] != -1) continue;
       final fallback = parameters[i].defaultValue;
       if (fallback == null) fail('Missing required argument', node);
-      final type = model.types[fallback] ?? expression(fallback);
+      final type =
+          _callResult(model.types[fallback] ?? expression(fallback), function);
       if (!compatible(type, parameters[i].type)) {
         fail('Default type $type is incompatible with ${parameters[i].type}',
             fallback);
@@ -6439,7 +6616,7 @@ class Analyzer {
           : (model.declarations[function]?.type ??
               function.returnType ??
               'void');
-      return '($types) -> ${_substitute(returned, inferred)}';
+      return '($types) -> ${_callResult(_substitute(returned, inferred), function)}';
     }
     if (function != null && model.declarations[function]!.type == '<infer>') {
       analyzeFunction(function);
@@ -6454,7 +6631,7 @@ class Analyzer {
         }
       }
     }
-    return _substitute(returned, inferred);
+    return _callResult(_substitute(returned, inferred), function);
   }
 
   void _rememberInference(FunctionDeclaration? function, String parameter,

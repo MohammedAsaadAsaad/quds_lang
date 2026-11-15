@@ -1000,6 +1000,13 @@ class DartEmitter {
   String _dartType(String type) {
     final resolved = model.resolve(type);
     if (resolved != type) return _dartType(resolved);
+    for (final entry in model.backendTypes.entries) {
+      final pattern = RegExp('${RegExp.escape(entry.key)}\\b');
+      if (!pattern.hasMatch(type)) continue;
+      final prefix = entry.value.split('.').first;
+      _imports.add("import '${model.backendTypeImports[prefix]}' as $prefix;");
+      type = type.replaceAll(pattern, entry.value);
+    }
     if (type.startsWith('readonly ')) return _dartType(type.substring(9));
     if (type.contains(' & ')) {
       return _dartType(type.split(' & ').first.trim());
@@ -2745,7 +2752,7 @@ class DartEmitter {
     _returnView = null;
     final parameters = node.parameters
         .map((p) =>
-            '${model.declarations[p]!.type} ${model.declarations[p]!.dartName}')
+            '${_dartType(model.declarations[p]!.type)} ${model.declarations[p]!.dartName}')
         .join(', ');
     final async = model.asyncLambdas.contains(node) ? 'async ' : '';
     if (node.expressionBody case final value?) {
@@ -2768,8 +2775,8 @@ class DartEmitter {
     final type = model.types[node]!;
     final inner = type.substring(4, type.length - 1);
     final splitAt = inner.indexOf(',');
-    final keyType = inner.substring(0, splitAt).trim();
-    final valueType = inner.substring(splitAt + 1).trim();
+    final keyType = _dartType(inner.substring(0, splitAt).trim());
+    final valueType = _dartType(inner.substring(splitAt + 1).trim());
     return '<$keyType, $valueType>{${_mapEntries(node, keyType, valueType)}}';
   }
 
@@ -3681,7 +3688,7 @@ class DartEmitter {
 
   String _set(SetExpression node) {
     final type = model.types[node]!;
-    final element = type.substring(4, type.length - 1);
+    final element = _dartType(type.substring(4, type.length - 1));
     final parts = <String>[];
     for (var i = 0; i < node.elements.length; i++) {
       final aware = i < node.nullAware.length && node.nullAware[i];

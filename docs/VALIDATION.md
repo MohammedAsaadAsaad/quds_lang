@@ -1,5 +1,46 @@
 # Compiler validation — latest 2026-11-15
 
+## Forward AD, gradients and Jacobians — C1 / first part of C2
+
+Added `Dual`, `dualConstant`, `dualVariable`, `evaluateDual`, `autoDerivative`,
+`autoGradient` and `autoJacobian`. Public math functions: **318**.
+Contracts and limitations: [MATH_AUTODIFF.md](MATH_AUTODIFF.md).
+
+| Check | Observed result |
+| --- | --- |
+| Quds analytic references | **598 cases**, each checking value and tangent against mpmath at 400 digits |
+| Hand-written Quds AD suite | Nine declarations passed: arithmetic, domains, callback counts, empty dimensions, shape failures, ownership and extreme scales |
+| Quds import/alias suites | Prefix and filtered imports passed, including inferred signature types and a distinct caller class/alias named Dual |
+| Compiler rejection tests | Distinct nominal types, hidden source names and generated private aliases reject; existing list element compatibility remains enforced |
+| `dart format --output=none --set-exit-if-changed .` | 39 Dart files; zero pending changes |
+| `dart analyze` | No issues |
+| Final `dart test --reporter expanded` | **256 passed; zero failures; zero skips** |
+| JavaScript + Node | Scalar AD, gradient and Jacobian numeric checks passed with existing smoke tests |
+| AD/numerical regeneration and embedded SDK synchronization | Byte-identical on repeat |
+| `git diff --check` | Passed |
+
+The compiler now distinguishes unary/binary operator arity and preserves nominal
+identity in imported callback signatures. Inferred types hidden by source-level
+show filters use private backend imports rather than leaking those source names.
+Imported functions/classes resolve their own library bindings and do not let a
+caller's alias redefine their mathematical types. Numeric generic widening was
+not introduced: the existing List<int>-to-List<num> rejection remains tested.
+
+An initial web smoke incorrectly compared the textual formatting of floating
+numbers; it now checks numeric gradient components, since VM and JavaScript can
+print integer-valued doubles differently. No numerical tolerance was weakened.
+
+One intermediate parallel full run reported process status 113 for the old
+1167-case numerical Quds suite after all its success markers, with empty stderr.
+This could not be reproduced in isolation, in three concurrent runs, or in the
+final complete rerun. The nonzero-status assertion remains unchanged; no retry
+was added to tests or CI, and the cause is not established. This is retained as
+an unresolved process anomaly rather than claimed as a fixed compiler defect.
+
+AD thresholds are sampled-grid checks (relative 1e-10 plus three minimum-subnormal
+units), not global error bounds. Hessians, reverse AD and tensors remain pending.
+
+
 ## Exact arithmetic foundation — delivery B3
 
 Added BigInt interop/re-export, canonical rational arithmetic and seven exact

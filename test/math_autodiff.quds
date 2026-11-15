@@ -1,0 +1,132 @@
+use quds:math
+
+class _ADCalls:
+  var count: int = 0
+
+test "forward Dual arithmetic unary and binary minus":
+  x = dualVariable(3.0)
+  expect(evaluateDual((z: Dual) -> z * z * z, 3.0), Dual(value: 27.0, tangent: 27.0))
+  expect((-x).value, -3.0)
+  expect((-x).tangent, -1.0)
+  expect((x - dualConstant(1.0)).value, 2.0)
+  expect((x - x).tangent, 0.0)
+  expect((x + dualConstant(2.0)).tangent, 1.0)
+  expect((x / x).tangent, 0.0)
+  expect(autoDerivative((z: Dual) -> z.sin() * z.exp(), 0.0), 1.0)
+  expect(autoDerivative((z: Dual) -> z.ln(), 2.0), 0.5)
+  expect(autoDerivative((z: Dual) -> z.sqrt(), 4.0), 0.25)
+
+test "AD callback evaluation count and seed order are explicit":
+  calls = _ADCalls()
+  scalar(x: Dual) -> Dual:
+    calls.count += 1
+    return x * x
+  expect(autoDerivative(scalar, 3.0), 6.0)
+  expect(calls.count, 1)
+  seeds: List<List<double>> = []
+  function(point: List<Dual>) -> Dual:
+    seeds.add([point[0].tangent, point[1].tangent])
+    point.add(dualConstant(7.0))
+    return point[0] + point[1]
+  point = [2.0, 3.0]
+  expect(autoGradient(function, point), [1.0, 1.0])
+  expect(seeds, [[1.0, 0.0], [0.0, 1.0]])
+  expect(point, [2.0, 3.0])
+
+test "gradient matches analytic partial derivatives":
+  function(point: List<Dual>) -> Dual = point[0] * point[0] + point[0] * point[1].sin()
+  gradientValue = autoGradient(function, [2.0, 0.5])
+  expect(gradientValue[0], closeTo(4.479425538604203, 1.0e-12))
+  expect(gradientValue[1], closeTo(1.7551651237807455, 1.0e-12))
+
+test "Jacobian uses output rows and input columns":
+  calls = _ADCalls()
+  function(point: List<Dual>) -> List<Dual>:
+    calls.count += 1
+    return [point[0] * point[1], point[0].sin() + point[1].pow(2.0)]
+  grid = autoJacobian(function, [2.0, 0.5])
+  expect(calls.count, 2)
+  expect(grid.length, 2)
+  expect(grid[0], [0.5, 2.0])
+  expect(grid[1][0], closeTo(-0.4161468365471424, 1.0e-12))
+  expect(grid[1][1], closeTo(1.0, 1.0e-12))
+  grid[0].add(99.0)
+  expect(grid[1].length, 2)
+
+test "empty input and output dimensions have defined callback counts":
+  empty: List<double> = []
+  calls = _ADCalls()
+  scalar(point: List<Dual>) -> Dual:
+    calls.count += 1
+    return dualConstant(1.0)
+  expect(autoGradient(scalar, empty), isEmpty)
+  expect(calls.count, 0)
+  vector(point: List<Dual>) -> List<Dual>:
+    calls.count += 1
+    return [dualConstant(1.0), dualConstant(2.0)]
+  matrix = autoJacobian(vector, empty)
+  expect(calls.count, 1)
+  expect(matrix.length, 2)
+  expect(matrix[0], isEmpty)
+  expect(matrix[1], isEmpty)
+  noOutput(point: List<Dual>) -> List<Dual>:
+    calls.count += 1
+    output: List<Dual> = []
+    return output
+  expect(autoJacobian(noOutput, [1.0, 2.0]), isEmpty)
+  expect(calls.count, 3)
+
+test "Jacobian rejects inconsistent output shape":
+  calls = _ADCalls()
+  changing(point: List<Dual>) -> List<Dual>:
+    calls.count += 1
+    if calls.count == 1: return [point[0]]
+    return [point[0], point[1]]
+  rejectShape() -> List<List<double>> = autoJacobian(changing, [1.0, 2.0])
+  expect(rejectShape, throwsA(equals("autoJacobian output shape changed")))
+  expect(calls.count, 2)
+
+test "AD validates real domains and nonfinite results":
+  logDomain() -> Dual = dualVariable(0.0).ln()
+  rootDomain() -> Dual = dualConstant(0.0).sqrt()
+  asinDomain() -> Dual = dualVariable(1.0).asin()
+  acosDomain() -> Dual = dualVariable(-1.0).acos()
+  denominator() -> Dual = dualVariable(1.0) / dualConstant(0.0)
+  fractionalPower() -> Dual = dualVariable(-1.0).pow(0.5)
+  negativePower() -> Dual = dualVariable(0.0).pow(-1.0)
+  badExponent() -> Dual = dualVariable(1.0).pow(1.0 / 0.0)
+  overflow() -> Dual = dualVariable(1000.0).exp()
+  rawInvalid() -> Dual = Dual(value: 0.0, tangent: 0.0 / 0.0).sin()
+  expect(logDomain, throwsA(equals("Dual.ln needs a positive value")))
+  expect(rootDomain, throwsA(equals("Dual.sqrt needs a positive value")))
+  expect(asinDomain, throwsA(equals("Dual.asin needs a value strictly between -1 and 1")))
+  expect(acosDomain, throwsA(equals("Dual.acos needs a value strictly between -1 and 1")))
+  expect(denominator, throwsA(equals("Dual division by zero")))
+  expect(fractionalPower, throwsA(equals("Dual.pow needs an integer exponent at a nonpositive base")))
+  expect(negativePower, throwsA(equals("Dual.pow has an undefined zero-base derivative")))
+  expect(badExponent, throwsA(equals("Dual.pow needs a finite exponent")))
+  expect(overflow, throwsA(equals("Dual result is not finite")))
+  expect(rawInvalid, throwsA(equals("Dual needs finite value and tangent")))
+  expect(dualVariable(0.0).pow(0.0), Dual(value: 1.0, tangent: 0.0))
+  expect(dualVariable(0.0).pow(1.0), Dual(value: 0.0, tangent: 1.0))
+  expect(dualVariable(0.0).pow(3.0), Dual(value: 0.0, tangent: 0.0))
+
+test "invalid point or callback results fail before acceptance":
+  calls = _ADCalls()
+  function(point: List<Dual>) -> Dual:
+    calls.count += 1
+    return point[0]
+  badPoint() -> List<double> = autoGradient(function, [0.0 / 0.0])
+  expect(badPoint, throwsA(equals("automatic differentiation needs a finite point")))
+  expect(calls.count, 0)
+  badReturn(x: Dual) -> Dual = Dual(value: 1.0 / 0.0, tangent: 0.0)
+  badValue() -> Dual = evaluateDual(badReturn, 1.0)
+  expect(badValue, throwsA(equals("Dual needs finite value and tangent")))
+
+test "large-scale derivatives are not lost to value underflow":
+  quotient = Dual(value: 1.0e-200, tangent: 0.0) / Dual(value: 1.0e200, tangent: 1.0e308)
+  expect(quotient.value, 0.0)
+  expect(quotient.tangent / -1.0e-292, closeTo(1.0, 1.0e-12))
+  reciprocal = Dual(value: 1.0e200, tangent: 1.0e308).pow(-1.0)
+  expect(reciprocal.tangent / -1.0e-92, closeTo(1.0, 1.0e-10))
+  expect(Dual(value: 1.0e200, tangent: 1.0e308).atan().tangent / 1.0e-92, closeTo(1.0, 1.0e-12))

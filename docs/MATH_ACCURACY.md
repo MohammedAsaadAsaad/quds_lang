@@ -185,3 +185,8 @@ were changed to an explicit 1e-12 tolerance after switching from normal equation
 acceptable by disabling an assertion or weakening the new reference thresholds.
 The old constant-sample Kendall assertion incorrectly expected perfect association;
 it now asserts the explicit undefined-correlation error instead.
+
+## Next work
+
+See [the detailed strengthening plan](MATH_STRENGTHENING_PLAN_AR.md) for proposed
+phases, dependencies, numerical contracts, validation gates and release criteria.

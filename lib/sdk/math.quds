@@ -5,6 +5,8 @@
 # transforms, special functions, optimization, and elementary number theory.
 # log stays the logger. Natural log is ln, and a prefix still sees dart's log.
 # min and max stay the language functions for two numbers of one type.
+# :: graph opens a section. use quds:math::graph imports that section and every
+# section named graph::something. A bare :: returns later names to the root.
 # Example:
 #   print sqrt(9.0)
 #   print pi
@@ -6885,6 +6887,8 @@ _minInt() -> int:
   if largest == 9007199254740991: return 0 - largest
   return 0 - largest - 1
 
+:: graph
+
 # Discrete graph algorithms. Vertices are 0..<graph.length; graph[u] lists
 # outgoing neighbors. Parallel edges and self-loops are allowed. All algorithms
 # validate even unreachable edges, preserve inputs and return fresh lists.
@@ -7181,6 +7185,8 @@ _graphColorNeighbor(states: List<_GraphState>, queue: List<int>, vertex: int, ne
     if states[neighbor].mark == states[vertex].mark:
       throw "bipartiteColoring needs a bipartite graph"
 
+:: graph::weighted
+
 # One finite-weight edge. Shortest-path APIs interpret it as source -> target;
 # minimumSpanningForest interprets the same pair as an undirected edge.
 value class WeightedEdge:
@@ -7402,6 +7408,8 @@ _shortestPaths(source: int, work: List<_WeightedState>) -> ShortestPaths:
     distances.add(cell.distance)
     parents.add(cell.parent)
   return ShortestPaths(source: source, distances: distances, predecessors: parents)
+
+::
 
 # Parse an arbitrary-precision integer using Dart's BigInt literal grammar.
 # Invalid text throws FormatException. No conversion through int or double.

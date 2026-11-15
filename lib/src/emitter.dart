@@ -238,14 +238,24 @@ class DartEmitter {
           final uri = model.resolvedImports[node];
           if (uri == null) continue;
           final names = model.sdkDartNames[node.uri] ?? const <String>{};
-          final show = [
-            for (final name in node.show)
-              if (names.contains(name)) name,
-          ];
-          final hide = [
-            for (final name in node.hide)
-              if (names.contains(name)) name,
-          ];
+          final sectioned =
+              node.uri.startsWith('quds:') && node.uri.contains('::');
+          final used = model.usedSdkNames[node.uri] ?? const <String>{};
+          final show = sectioned
+              ? [
+                  for (final name in names)
+                    if (used.contains(name)) name,
+                ]
+              : [
+                  for (final name in node.show)
+                    if (names.contains(name)) name,
+                ];
+          final hide = sectioned
+              ? const <String>[]
+              : [
+                  for (final name in node.hide)
+                    if (names.contains(name)) name,
+                ];
           final combinator = show.isNotEmpty
               ? ' show ${show.join(', ')}'
               : hide.isNotEmpty
@@ -2078,6 +2088,7 @@ class DartEmitter {
         line(
             '${expression(node.object)}.$dart ${node.operator} ${expression(node.value)};');
       case PartDirective():
+      case SectionDeclaration():
         break;
       case FunctionDeclaration():
         emitFunction(node);

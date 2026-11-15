@@ -1987,20 +1987,74 @@ List<Map<String, Object?>>? _importCompletion(
   }
   if (uri.startsWith('quds:')) {
     final partial = uri.substring(5);
-    if (partial.contains('/') ||
-        partial.contains('.') ||
-        partial.contains(':')) {
-      return const [];
+    if (partial.contains('/') || partial.contains('.')) return const [];
+    final marker = partial.indexOf('::');
+    if (marker < 0) {
+      if (partial.contains(':')) return const [];
+      final start = cursor - partial.length;
+      final items = <Map<String, Object?>>[];
+      for (final name in sdkLibraryNames()) {
+        if (!name.startsWith(partial)) continue;
+        items.add(
+            _importItem(source, start, cursor, name, name, 'quds:$name', 9));
+        if (sdkSectionNames(name).isNotEmpty) {
+          items.add(_importItem(
+              source, start, cursor, '$name::', '$name::', 'quds:$name::', 9,
+              retrigger: true));
+        }
+      }
+      return items;
     }
-    final start = cursor - partial.length;
-    return [
-      for (final name in sdkLibraryNames())
-        if (name.startsWith(partial))
-          _importItem(source, start, cursor, name, name, 'quds:$name', 9),
-    ];
+    return _qudsSectionCompletion(source, cursor, partial.substring(0, marker),
+        partial.substring(marker + 2));
   }
   return _relativeCompletion(source, cursor, index, uri, file);
 }
+
+/// Completions after `quds:library::`. Only the next path segment is offered.
+List<Map<String, Object?>> _qudsSectionCompletion(
+    String source, int cursor, String library, String rest) {
+  if (!sdkLibraryNames().contains(library)) return const [];
+  if (RegExp(r'(?<!:):(?!:)').hasMatch(rest)) return const [];
+  final splitAt = rest.lastIndexOf('::');
+  final parent = splitAt < 0 ? '' : rest.substring(0, splitAt);
+  final typed = splitAt < 0 ? rest : rest.substring(splitAt + 2);
+  if (parent.isNotEmpty && !_sectionHeader.hasMatch(parent)) return const [];
+  final heads = <String>{};
+  final deeper = <String>{};
+  for (final section in sdkSectionNames(library)) {
+    final String tail;
+    if (parent.isEmpty) {
+      tail = section;
+    } else if (section.startsWith('$parent::')) {
+      tail = section.substring(parent.length + 2);
+    } else {
+      continue;
+    }
+    final head = tail.split('::').first;
+    if (!head.startsWith(typed)) continue;
+    heads.add(head);
+    if (tail.contains('::')) deeper.add(head);
+  }
+  final start = cursor - typed.length;
+  final prefix = parent.isEmpty ? '' : '$parent::';
+  final items = <Map<String, Object?>>[];
+  final labels = heads.toList()..sort();
+  for (final head in labels) {
+    final path = '$prefix$head';
+    items.add(_importItem(
+        source, start, cursor, head, head, 'quds:$library::$path', 9));
+    if (deeper.contains(head)) {
+      items.add(_importItem(source, start, cursor, '$head::', '$head::',
+          'quds:$library::$path::', 9,
+          retrigger: true));
+    }
+  }
+  return items;
+}
+
+final _sectionHeader =
+    RegExp(r'^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$');
 
 List<Map<String, Object?>> _packageCompletion(
     String source, int cursor, String rest, String? file) {

@@ -2034,6 +2034,18 @@ main():
     expect((item(sdk, 'core')['textEdit'] as Map)['newText'], 'core');
     final sdkPartial = at('use quds:c', app.path);
     expect(sdkPartial.map((entry) => entry['label']), ['core']);
+    final mathSections = at('use quds:math::', app.path);
+    expect(mathSections.map((entry) => entry['label']),
+        containsAll(['graph', 'graph::']));
+    expect(item(mathSections, 'graph')['detail'], 'quds:math::graph');
+    expect((item(mathSections, 'graph::')['textEdit'] as Map)['newText'],
+        'graph::');
+    final weighted = at('use quds:math::graph::', app.path);
+    expect(weighted.map((entry) => entry['label']), ['weighted']);
+    expect(item(weighted, 'weighted')['detail'], 'quds:math::graph::weighted');
+    final graphPartial = at('use quds:math::g', app.path);
+    expect(graphPartial.map((entry) => entry['label']),
+        containsAll(['graph', 'graph::']));
 
     final math = at('use dart:', app.path);
     expect(math.map((entry) => entry['label']), containsAll(['core', 'math']));

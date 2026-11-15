@@ -303,6 +303,15 @@ class PartDirective extends Statement {
   final bool of;
 }
 
+/// A library section opened by `:: graph` or `:: graph::weighted`.
+///
+/// An empty [path] is a bare `::`, which returns later declarations to the
+/// library root. The section runs until the next header or the end of the file.
+class SectionDeclaration extends Statement {
+  const SectionDeclaration(this.path, super.span);
+  final String path;
+}
+
 class FieldDeclaration extends Node {
   const FieldDeclaration(this.name, this.type, this.mutable, this.requiredField,
       this.initializer, super.span,

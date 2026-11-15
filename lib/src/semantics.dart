@@ -133,6 +133,9 @@ class SemanticModel {
   /// `quds:` libraries whose classes, functions, or extensions are used.
   final usedSdk = <String>{};
 
+  /// Names touched from each `quds:` import. A section import shows these.
+  final usedSdkNames = <String, Set<String>>{};
+
   /// Public names of a `quds:` library that exist in its generated Dart.
   ///
   /// Aliases are erased, so they are absent. Names re-exported from `dart:`
@@ -532,6 +535,8 @@ class Analyzer {
           registerImport(statement);
         case PartDirective():
           model.parts.add(statement);
+        case SectionDeclaration():
+          break;
         case WhenStatement():
           registerWhen(statement);
         case TestDeclaration():
@@ -1478,8 +1483,16 @@ class Analyzer {
     if (libraryName == null || (imported == null && !prelude)) {
       fail('Unknown import: ${node.uri}', node);
     }
-    final dartNames = imported == null ? <String>{} : _sdkDartNames(imported);
-    final aliasNames = imported == null ? <String>{} : _sdkAliasNames(imported);
+    var dartNames = imported == null ? <String>{} : _sdkDartNames(imported);
+    var aliasNames = imported == null ? <String>{} : _sdkAliasNames(imported);
+    final section = sdkImport(node.uri)?.section;
+    if (section != null) {
+      if (imported == null) fail('Unknown import: ${node.uri}', node);
+      final selected = _namesInSection(imported, section);
+      if (selected == null) fail('Unknown import: ${node.uri}', node);
+      dartNames = selected.$1;
+      aliasNames = selected.$2;
+    }
     if (node.show.isNotEmpty) {
       for (final name in node.show) {
         final inPrelude = prelude && _preludeNames.contains(name);
@@ -1492,14 +1505,35 @@ class Analyzer {
     }
     if (prelude) _bindPrelude(node, allowOther: imported != null);
     if (imported == null) return;
-    model.sdkDartNames[node.uri] = dartNames;
     model.resolvedImports[node] = sdkDartFileName(libraryName);
+    var filter = _sdkFilter(node, {...dartNames, ...aliasNames});
+    if (section != null) {
+      final visible = <String>[
+        ...dartNames,
+        for (final name in aliasNames)
+          if (!dartNames.contains(name)) name,
+      ];
+      final shown = node.show.isNotEmpty
+          ? [
+              for (final name in node.show)
+                if (visible.contains(name)) name,
+            ]
+          : [
+              for (final name in visible)
+                if (!node.hide.contains(name)) name,
+            ];
+      model.sdkDartNames[node.uri] = shown.toSet();
+      if (shown.isEmpty) return;
+      filter = ImportDeclaration(node.uri, node.prefix, node.span,
+          export: node.export, show: shown);
+    } else {
+      model.sdkDartNames[node.uri] = dartNames;
+    }
     if (node.show.isNotEmpty &&
         !node.show.any(
             (name) => dartNames.contains(name) || aliasNames.contains(name))) {
       return;
     }
-    final filter = _sdkFilter(node, {...dartNames, ...aliasNames});
     final previous = _suppressSdkUse;
     _suppressSdkUse = true;
     if (node.prefix != null) {
@@ -1523,6 +1557,45 @@ class Analyzer {
       }
       _suppressSdkUse = previous;
     }
+  }
+
+  /// Public names whose section is [section] or a section under it.
+  ///
+  /// Null when the library has no such header. A parent section includes
+  /// `section::child` because that child is part of the parent.
+  (Set<String>, Set<String>)? _namesInSection(Program program, String section) {
+    var current = '';
+    var exists = false;
+    final dartNames = <String>{};
+    final aliases = <String>{};
+    for (final statement in program.statements) {
+      if (statement is SectionDeclaration) {
+        current = statement.path;
+        if (current == section || current.startsWith('$section::')) {
+          exists = true;
+        }
+        continue;
+      }
+      if (current != section && !current.startsWith('$section::')) continue;
+      switch (statement) {
+        case ClassDeclaration() when !statement.name.startsWith('_'):
+          dartNames.add(statement.name);
+        case FunctionDeclaration()
+            when statement.name != 'main' && !statement.name.startsWith('_'):
+          dartNames.add(statement.name);
+        case ExtensionDeclaration()
+            when statement.name != null && !statement.name!.startsWith('_'):
+          dartNames.add(statement.name!);
+        case AliasDeclaration() when !statement.name.startsWith('_'):
+          aliases.add(statement.name);
+        case ImportDeclaration() when statement.export:
+          dartNames.addAll(_exportedDartNames(statement));
+        default:
+          break;
+      }
+    }
+    if (!exists) return null;
+    return (dartNames, aliases);
   }
 
   Set<String> _sdkDartNames(Program program) {
@@ -2045,7 +2118,10 @@ class Analyzer {
 
   void _touch(Symbol symbol) {
     if (_suppressSdkUse) return;
-    if (symbol.library.startsWith('quds:')) model.usedSdk.add(symbol.library);
+    if (symbol.library.startsWith('quds:')) {
+      model.usedSdk.add(symbol.library);
+      (model.usedSdkNames[symbol.library] ??= <String>{}).add(symbol.name);
+    }
   }
 
   void validateType(String type, Node node, {bool allowVoid = true}) {
@@ -3178,6 +3254,8 @@ class Analyzer {
         _assignMember(node);
       case PartDirective():
         fail('part belongs at the top level', node);
+      case SectionDeclaration():
+        fail('A section header belongs at the top level', node);
       case AliasDeclaration():
       case ExtensionDeclaration():
       case ClassDeclaration():

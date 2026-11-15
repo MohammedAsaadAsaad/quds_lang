@@ -403,6 +403,7 @@ List<Map<String, Object>> _qudsLocals(
       case ContinueStatement():
       case RethrowStatement():
       case PartDirective():
+      case SectionDeclaration():
       case AliasDeclaration():
       case AnnotationDeclaration():
         break;

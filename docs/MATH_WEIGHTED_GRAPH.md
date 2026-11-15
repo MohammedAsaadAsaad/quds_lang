@@ -83,7 +83,7 @@ performance claim.
 ## Quds example
 
 ```quds
-use quds:math
+use quds:math::graph::weighted
 
 main():
   edges = [WeightedEdge(source: 0, target: 1, weight: 2.0), WeightedEdge(source: 1, target: 2, weight: 3.0)]
@@ -92,6 +92,8 @@ main():
   print shortest.distances[2]                    # 5.0
   print minimumSpanningForest(4, edges).componentCount # 2
 ```
+
+`use quds:math::graph::weighted` binds this section and not the unweighted graph functions. `use quds:math::graph` binds both, because `weighted` is part of `graph`. `use quds:math` still binds the whole library.
 
 ## Verification
 

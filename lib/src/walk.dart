@@ -63,6 +63,7 @@ void walkAst(Node node, void Function(Node node) visit,
       case SymbolExpression():
       case AliasDeclaration():
       case PartDirective():
+      case SectionDeclaration():
       case TypeParameter():
         break;
       case UnaryExpression(:final operand):

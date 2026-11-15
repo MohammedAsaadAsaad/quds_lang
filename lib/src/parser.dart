@@ -286,6 +286,9 @@ class Parser {
     _suffixIf = false;
     if (_pending.isNotEmpty) return _pending.removeAt(0);
     final span = current.span;
+    if (topLevel && at(TokenKind.colon) && peek().kind == TokenKind.colon) {
+      return sectionHeader(span);
+    }
     final notes = takeAnnotations();
     if (topLevel && word('use')) return useImport(span);
     if (topLevel && word('export')) return exportDirective(span);
@@ -1058,6 +1061,24 @@ class Parser {
     final count = expression();
     return RepeatStatement(suite(), null, extent(span),
         count: count, elseBody: asValue ? const [] : _statementElse());
+  }
+
+  /// `:: graph`, `:: graph::weighted`, or a bare `::` back to the library root.
+  Statement sectionHeader(SourceSpan span) {
+    take();
+    take();
+    if (at(TokenKind.newline) || at(TokenKind.eof)) {
+      if (at(TokenKind.newline)) endLine();
+      return SectionDeclaration('', extent(span));
+    }
+    final parts = <String>[name().lexeme];
+    while (at(TokenKind.colon) && peek().kind == TokenKind.colon) {
+      take();
+      take();
+      parts.add(name().lexeme);
+    }
+    endLine();
+    return SectionDeclaration(parts.join('::'), extent(span));
   }
 
   ImportDeclaration useImport(SourceSpan span) {

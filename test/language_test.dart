@@ -3198,6 +3198,104 @@ main():
     expect(File('lib/sdk/math.quds').readAsStringSync(), mathSdkSource);
   });
 
+  test('a quds library section imports that section and its children',
+      () async {
+    expect(
+        formatQuds(':: graph\n\nf() = 1\n::\n'), ':: graph\n\nf() = 1\n::\n');
+    expect(sdkSectionNames('math'), containsAll(['graph', 'graph::weighted']));
+    compile('''
+:: kept
+kept() = 1
+::
+main():
+  print kept()
+''');
+    expect(() => compile('''
+:: graph::
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E100'))));
+    expect(() => compile('''
+main():
+  :: graph
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E100'))));
+
+    final graph = compile('''
+use quds:math::graph
+main():
+  noEdges: List<int> = []
+  print bfsDistances([noEdges], 0)[0]
+''');
+    expect(graph.dart, contains("import 'quds_math.dart' show bfsDistances;"));
+    expect(graph.dart, isNot(contains('dijkstra')));
+    expect(graph.dart, isNot(contains('mean')));
+    expect(graph.dart, isNot(contains('bigInt')));
+
+    compile('''
+use quds:math::graph show bfsDistances
+main():
+  noEdges: List<int> = []
+  print bfsDistances([noEdges], 0)[0]
+''');
+    compile('''
+use quds:math::graph::weighted as paths
+main():
+  print paths.dijkstra(1, [], 0).distances[0]
+''');
+    compile('''
+use quds:math
+main():
+  print bigInt("1")
+''');
+    expect(() => compile('''
+use quds:math::graph
+main():
+  print bigInt("1")
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::graph
+main():
+  print mean([1.0])
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::graph::weighted
+main():
+  noEdges: List<int> = []
+  print bfsDistances([noEdges], 0)[0]
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::graph show dijkstra
+main():
+  noEdges: List<int> = []
+  print bfsDistances([noEdges], 0)[0]
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::graph hide dijkstra
+main():
+  edges: List<WeightedEdge> = []
+  print dijkstra(1, edges, 0).distances[0]
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::missing
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E900'))));
+    expect(() => compile('''
+use quds:math::
+main():
+  print 1
+'''), throwsA(predicate((error) => '$error'.contains('E900'))));
+    await execute('''
+use quds:math::graph
+main():
+  noEdges: List<int> = []
+  edges: List<WeightedEdge> = [WeightedEdge(source: 0, target: 1, weight: 2.0)]
+  print bfsDistances([noEdges], 0)[0]
+  print dijkstra(2, edges, 0).distances[1]
+''', '0\n2.0\n');
+  });
+
   test('quds:core matches the embedded library and executes', () async {
     expect(File('lib/sdk/core.quds').readAsStringSync(), coreSdkSource);
     final result = compile('''

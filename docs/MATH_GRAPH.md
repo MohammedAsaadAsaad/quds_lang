@@ -55,7 +55,7 @@ ordinary library code and does not change Quds binding or reference semantics.
 ## Quds example
 
 ```quds
-use quds:math
+use quds:math::graph
 
 main():
   noEdges: List<int> = []
@@ -68,7 +68,7 @@ main():
 ```
 
 The explicitly typed empty row keeps empty-collection inference unambiguous.
-The import also supports the existing `as`, `show`, and `hide` facilities.
+`use quds:math::graph` binds this section and `graph::weighted`. `use quds:math` still binds both, along with the rest of the library. The import also supports the existing `as`, `show`, and `hide` facilities.
 Dart clients can import the generated bundle using the same function names and
 ordinary positional arguments.
 

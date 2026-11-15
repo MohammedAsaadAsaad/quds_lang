@@ -478,6 +478,8 @@ const mathSdkSource = '''# Mathematics that dart:math does not provide.
 # transforms, special functions, optimization, and elementary number theory.
 # log stays the logger. Natural log is ln, and a prefix still sees dart's log.
 # min and max stay the language functions for two numbers of one type.
+# :: graph opens a section. use quds:math::graph imports that section and every
+# section named graph::something. A bare :: returns later names to the root.
 # Example:
 #   print sqrt(9.0)
 #   print pi
@@ -7358,6 +7360,8 @@ _minInt() -> int:
   if largest == 9007199254740991: return 0 - largest
   return 0 - largest - 1
 
+:: graph
+
 # Discrete graph algorithms. Vertices are 0..<graph.length; graph[u] lists
 # outgoing neighbors. Parallel edges and self-loops are allowed. All algorithms
 # validate even unreachable edges, preserve inputs and return fresh lists.
@@ -7654,6 +7658,8 @@ _graphColorNeighbor(states: List<_GraphState>, queue: List<int>, vertex: int, ne
     if states[neighbor].mark == states[vertex].mark:
       throw "bipartiteColoring needs a bipartite graph"
 
+:: graph::weighted
+
 # One finite-weight edge. Shortest-path APIs interpret it as source -> target;
 # minimumSpanningForest interprets the same pair as an undirected edge.
 value class WeightedEdge:
@@ -7875,6 +7881,8 @@ _shortestPaths(source: int, work: List<_WeightedState>) -> ShortestPaths:
     distances.add(cell.distance)
     parents.add(cell.parent)
   return ShortestPaths(source: source, distances: distances, predecessors: parents)
+
+::
 
 # Parse an arbitrary-precision integer using Dart's BigInt literal grammar.
 # Invalid text throws FormatException. No conversion through int or double.
@@ -8505,12 +8513,63 @@ List<String> sdkLibraryNames() {
   return sorted;
 }
 
-/// `quds:core` -> `core`. Null when the name is not a single identifier.
-String? sdkLibraryName(String uri) {
+/// A `quds:` import. [section] is null for the whole library.
+class SdkImport {
+  const SdkImport(this.library, this.section);
+  final String library;
+
+  /// `graph`, or `graph::weighted`. Null imports every public name.
+  final String? section;
+}
+
+final _sdkIdentifier = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+/// `quds:math` and `quds:math::graph::weighted`. Null when the URI is not a
+/// library name followed by optional `::` sections.
+SdkImport? sdkImport(String uri) {
   if (!uri.startsWith('quds:')) return null;
-  final name = uri.substring('quds:'.length);
-  if (!RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(name)) return null;
-  return name;
+  final body = uri.substring('quds:'.length);
+  if (body.isEmpty) return null;
+  final parts = body.split('::');
+  for (final part in parts) {
+    if (!_sdkIdentifier.hasMatch(part)) return null;
+  }
+  if (parts.length == 1) return SdkImport(parts.first, null);
+  return SdkImport(parts.first, parts.sublist(1).join('::'));
+}
+
+/// `quds:core` -> `core`. `quds:math::graph` -> `math`.
+String? sdkLibraryName(String uri) => sdkImport(uri)?.library;
+
+final _sectionHeader =
+    RegExp(r'^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$');
+final _sdkSectionCache = <String, (int, int, List<String>)>{};
+
+/// Section paths declared by column-0 `::` headers in [library].
+///
+/// The scan reads the source text only. It does not parse or type-check.
+List<String> sdkSectionNames(String library) {
+  if (sdkLibraryName('quds:$library') == null) return const [];
+  final source = readSdk(library);
+  if (source == null) return const [];
+  final cached = _sdkSectionCache[library];
+  if (cached != null &&
+      cached.$1 == source.length &&
+      cached.$2 == source.hashCode) {
+    return cached.$3;
+  }
+  final names = <String>[];
+  final seen = <String>{};
+  for (final line in source.split('\n')) {
+    if (!line.startsWith('::')) continue;
+    var header = line.substring(2).trim();
+    final comment = header.indexOf('#');
+    if (comment >= 0) header = header.substring(0, comment).trimRight();
+    if (header.isEmpty || !_sectionHeader.hasMatch(header)) continue;
+    if (seen.add(header)) names.add(header);
+  }
+  _sdkSectionCache[library] = (source.length, source.hashCode, names);
+  return names;
 }
 
 /// Generated Dart file written beside the caller's output.

@@ -7,6 +7,7 @@ import 'compiler.dart';
 import 'complete.dart';
 import 'format.dart';
 import 'lexer.dart';
+import 'libraries.dart';
 import 'navigate.dart';
 import 'parser.dart';
 import 'sdk.dart';
@@ -93,6 +94,7 @@ class LspSession {
           },
           'renameProvider': true,
           'documentFormattingProvider': true,
+          'foldingRangeProvider': true,
         }
       }));
     }
@@ -127,6 +129,9 @@ class LspSession {
     }
     if (method == 'textDocument/formatting') {
       return _format(id, _params(request));
+    }
+    if (method == 'textDocument/foldingRange') {
+      return LspExchange(_result(id, _folding(_params(request))));
     }
     if (id == null) return const LspExchange();
     return LspExchange(_error(id, -32601, 'Method not found'));
@@ -270,6 +275,12 @@ class LspSession {
             opened.text,
             formatQuds(opened.text,
                 indent: indent, width: width, singleLineIf: singleLineIf))));
+  }
+
+  List<Map<String, Object>> _folding(Map<String, dynamic> params) {
+    final opened = _document(params);
+    if (opened == null) return const [];
+    return foldingRanges(opened.text);
   }
 
   Map<String, Object?> _completion(Map<String, dynamic> params) {

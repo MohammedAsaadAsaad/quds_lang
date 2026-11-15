@@ -63,7 +63,11 @@
 6. قسم المكتبة يُفتح داخل الملف نفسه. `:: graph` يبدأ القسم، و`:: graph::weighted`
    يبدأ قسمًا أضيق، و`::` وحده يعيد ما بعده إلى جذر المكتبة. `use quds:math::graph`
    يستورد `graph` وكل قسم يبدأ اسمه بـ `graph::`. `use quds:math::graph::weighted`
-   يستورد القسم الأضيق. `use quds:math` يبقى المكتبة كلها.
+   يستورد القسم الأضيق. `use quds:math` يبقى المكتبة كلها. `lib/sdk/math.quds`
+   مقسوم إلى `scalar` و`number` و`complex` و`vector` و`interval` و`stats`
+   و`distribution` و`calculus` و`interp` و`linalg` و`polynomial` و`signal`
+   و`special` و`optimize` و`graph` و`graph::weighted` و`exact` و`autodiff`
+   و`geometry`. قسم `support` يجمع المساعدات الخاصة ولا يصدّر اسمًا عامًا.
 
 ## مراحل التنفيذ
 

@@ -234,7 +234,7 @@ void _loadLibraries(
   for (final statement in program.statements) {
     final uri = switch (statement) {
       ImportDeclaration()
-          when statement.uri.endsWith('.quds') ||
+          when libraryTarget(statement.uri).endsWith('.quds') ||
               statement.uri.startsWith('package:') ||
               statement.uri.startsWith('generated:') =>
         statement.uri,

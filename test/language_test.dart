@@ -3202,7 +3202,30 @@ main():
       () async {
     expect(
         formatQuds(':: graph\n\nf() = 1\n::\n'), ':: graph\n\nf() = 1\n::\n');
-    expect(sdkSectionNames('math'), containsAll(['graph', 'graph::weighted']));
+    expect(
+        sdkSectionNames('math'),
+        containsAll([
+          'scalar',
+          'number',
+          'complex',
+          'vector',
+          'interval',
+          'stats',
+          'distribution',
+          'calculus',
+          'interp',
+          'linalg',
+          'polynomial',
+          'signal',
+          'special',
+          'optimize',
+          'support',
+          'graph',
+          'graph::weighted',
+          'exact',
+          'autodiff',
+          'geometry',
+        ]));
     compile('''
 :: kept
 kept() = 1
@@ -3255,6 +3278,54 @@ main():
 '''), throwsA(predicate((error) => '$error'.contains('E200'))));
     expect(() => compile('''
 use quds:math::graph
+main():
+  print mean([1.0])
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    final stats = compile('''
+use quds:math::stats
+main():
+  print mean([1.0, 3.0])
+  print geometricMean([1.0, 4.0])
+  print spearman([1.0, 2.0, 3.0], [3.0, 2.0, 1.0])
+''');
+    expect(
+        stats.dart,
+        contains(
+            "import 'quds_math.dart' show mean, geometricMean, spearman;"));
+    expect(stats.dart, isNot(contains('bfsDistances')));
+    expect(stats.dart, isNot(contains('dijkstra')));
+    compile('''
+use quds:math::scalar
+main():
+  print ln(1.0)
+''');
+    compile('''
+use quds:math::exact
+main():
+  print bigInt("1")
+''');
+    compile('''
+use quds:math::geometry
+main():
+  print binaryFraction(0.5)
+''');
+    compile('''
+use quds:math::support
+main():
+  print 1
+''');
+    expect(() => compile('''
+use quds:math::stats
+main():
+  print ln(1.0)
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::scalar
+main():
+  print mean([1.0])
+'''), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::support
 main():
   print mean([1.0])
 '''), throwsA(predicate((error) => '$error'.contains('E200'))));

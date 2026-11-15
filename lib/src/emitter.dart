@@ -1,5 +1,6 @@
 import 'ast.dart';
 import 'constants.dart';
+import 'libraries.dart';
 import 'semantics.dart';
 import 'source.dart';
 import 'walk.dart';
@@ -209,6 +210,19 @@ class DartEmitter {
     return rewritten.join('\n');
   }
 
+  String _sectionCombinator(
+      ImportDeclaration node, List<String> sectionNames, String home) {
+    if (node.export) {
+      return sectionNames.isEmpty ? '' : ' show ${sectionNames.join(', ')}';
+    }
+    final used = model.usedSdkNames[home] ?? const <String>{};
+    final show = [
+      for (final name in sectionNames)
+        if (used.contains(name)) name,
+    ];
+    return show.isEmpty ? '' : ' show ${show.join(', ')}';
+  }
+
   void _emitPublicNames(Program program) {
     final counts = <String, int>{};
     for (final node in program.statements) {
@@ -269,15 +283,21 @@ class DartEmitter {
           _imports.add("import '$uri'$prefix$combinator;");
           continue;
         }
+        final target = libraryTarget(node.uri);
         final uri = model.resolvedImports[node] ??
-            (node.uri.endsWith('.quds')
-                ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
-                : node.uri);
-        final combinator = node.show.isNotEmpty
-            ? ' show ${node.show.join(', ')}'
-            : node.hide.isNotEmpty
-                ? ' hide ${node.hide.join(', ')}'
-                : '';
+            (target.endsWith('.quds')
+                ? '${target.substring(0, target.length - 5)}.dart'
+                : target);
+        final sectionNames = model.sectionImports[node];
+        final home = model.importHomes[node];
+        final combinator = sectionNames != null && home != null
+            ? _sectionCombinator(node, sectionNames, home)
+            : node.show.isNotEmpty
+                ? ' show ${node.show.join(', ')}'
+                : node.hide.isNotEmpty
+                    ? ' hide ${node.hide.join(', ')}'
+                    : '';
+        if (sectionNames != null && combinator.isEmpty) continue;
         if (node.export) {
           _imports.add("export '$uri'$combinator;");
           continue;

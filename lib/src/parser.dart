@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'ast.dart';
+import 'libraries.dart';
 import 'lexer.dart';
 
 class Parser {
@@ -1106,13 +1107,13 @@ class Parser {
     endLine();
     if (buffer.isEmpty) fail('Expected import uri', span);
     return ImportDeclaration(
-        _normalizeUri(_stripUri(buffer.toString())), prefix, extent(span),
+        normalizeImportUri(_stripUri(buffer.toString())), prefix, extent(span),
         condition: condition, show: filters.$1, hide: filters.$2);
   }
 
   ImportDeclaration exportDirective(SourceSpan span) {
     take();
-    final uri = _normalizeUri(_stripUri(readUri()));
+    final uri = normalizeImportUri(_stripUri(readUri()));
     final filters = _combinators();
     endLine();
     return ImportDeclaration(uri, null, extent(span),
@@ -1128,66 +1129,6 @@ class Parser {
       names.add(name().lexeme);
     }
     return hiding ? (const <String>[], names) : (names, const <String>[]);
-  }
-
-  String _normalizeUri(String uri) {
-    final package = _packageDots(uri);
-    if (package != null) return package;
-    if (uri.contains(':') || uri.contains('/') || uri.contains('\\')) {
-      return uri;
-    }
-    final dotted = _dotPath(uri);
-    if (dotted != null) return dotted;
-    if (uri.endsWith('.quds')) return uri;
-    return '$uri.quds';
-  }
-
-  /// `package:flutter.material` is `package:flutter/material.dart`.
-  ///
-  /// The first segment is the package name. Each later dot is a directory.
-  /// A trailing `.dart` or `.quds` is the file extension, not another directory.
-  String? _packageDots(String uri) {
-    if (!uri.startsWith('package:')) return null;
-    var rest = uri.substring('package:'.length);
-    if (rest.isEmpty ||
-        rest.contains('/') ||
-        rest.contains('\\') ||
-        !rest.contains('.')) {
-      return null;
-    }
-    if (rest.endsWith('.dart')) {
-      rest = rest.substring(0, rest.length - 5);
-    } else if (rest.endsWith('.quds')) {
-      rest = rest.substring(0, rest.length - 5);
-    }
-    if (rest.isEmpty || !rest.contains('.')) return null;
-    final parts = rest.split('.');
-    if (parts.length < 2 || parts.any((part) => part.isEmpty)) return null;
-    return 'package:${parts.first}/${parts.skip(1).join('/')}.dart';
-  }
-
-  /// `src.sum` is `src/sum.quds` beside the importer. A segment of only `^`
-  /// climbs that many directories: `^^^.sum` is `../../../sum.quds`.
-  String? _dotPath(String uri) {
-    if (!uri.contains('.') && !uri.startsWith('^')) return null;
-    var body = uri;
-    if (body.endsWith('.quds')) body = body.substring(0, body.length - 5);
-    if (body.isEmpty || body.startsWith('.') || body.endsWith('.')) return null;
-    final parts = body.split('.');
-    if (parts.any((part) => part.isEmpty)) return null;
-    final segments = <String>[];
-    var named = false;
-    for (final part in parts) {
-      if (RegExp(r'^\^+$').hasMatch(part)) {
-        segments.addAll(List.filled(part.length, '..'));
-        continue;
-      }
-      if (part.contains('^')) return null;
-      named = true;
-      segments.add(part);
-    }
-    if (!named) return null;
-    return '${segments.join('/')}.quds';
   }
 
   String _stripUri(String uri) {

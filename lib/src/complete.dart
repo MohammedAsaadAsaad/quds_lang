@@ -2005,24 +2005,33 @@ List<Map<String, Object?>>? _importCompletion(
       }
       return items;
     }
-    return _qudsSectionCompletion(source, cursor, partial.substring(0, marker),
-        partial.substring(marker + 2));
+    return _sectionItems(
+        source,
+        cursor,
+        partial.substring(marker + 2),
+        sdkSectionNames(partial.substring(0, marker)),
+        'quds:${partial.substring(0, marker)}');
   }
   return _relativeCompletion(source, cursor, index, uri, file);
 }
 
-/// Completions after `quds:library::`. Only the next path segment is offered.
-List<Map<String, Object?>> _qudsSectionCompletion(
-    String source, int cursor, String library, String rest) {
-  if (!sdkLibraryNames().contains(library)) return const [];
+/// Completions after `library::`. Only the next path segment is offered.
+List<Map<String, Object?>> _sectionItems(String source, int cursor, String rest,
+    List<String> sections, String libraryLabel) {
+  if (libraryLabel.startsWith('quds:') &&
+      !sdkLibraryNames().contains(libraryLabel.substring(5))) {
+    return const [];
+  }
   if (RegExp(r'(?<!:):(?!:)').hasMatch(rest)) return const [];
   final splitAt = rest.lastIndexOf('::');
   final parent = splitAt < 0 ? '' : rest.substring(0, splitAt);
   final typed = splitAt < 0 ? rest : rest.substring(splitAt + 2);
-  if (parent.isNotEmpty && !_sectionHeader.hasMatch(parent)) return const [];
+  if (parent.isNotEmpty && !librarySectionPattern.hasMatch(parent)) {
+    return const [];
+  }
   final heads = <String>{};
   final deeper = <String>{};
-  for (final section in sdkSectionNames(library)) {
+  for (final section in sections) {
     final String tail;
     if (parent.isEmpty) {
       tail = section;
@@ -2043,18 +2052,24 @@ List<Map<String, Object?>> _qudsSectionCompletion(
   for (final head in labels) {
     final path = '$prefix$head';
     items.add(_importItem(
-        source, start, cursor, head, head, 'quds:$library::$path', 9));
+        source, start, cursor, head, head, '$libraryLabel::$path', 9));
     if (deeper.contains(head)) {
       items.add(_importItem(source, start, cursor, '$head::', '$head::',
-          'quds:$library::$path::', 9,
+          '$libraryLabel::$path::', 9,
           retrigger: true));
     }
   }
   return items;
 }
 
-final _sectionHeader =
-    RegExp(r'^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$');
+String? _importedQudsFile(String? from, String libraryText) {
+  if (from == null || from == '<input>' || libraryText.isEmpty) return null;
+  final normalized = normalizeImportUri(libraryText);
+  if (librarySection(normalized) != null) return null;
+  final path = resolveLibraryPath(from, normalized);
+  if (path == null || !File(path).existsSync()) return null;
+  return path;
+}
 
 List<Map<String, Object?>> _packageCompletion(
     String source, int cursor, String rest, String? file) {
@@ -2183,6 +2198,14 @@ Directory? _packageDirectory(PackageLibrary? library, String? current,
 
 List<Map<String, Object?>> _relativeCompletion(
     String source, int cursor, int uriStart, String uri, String? file) {
+  final marker = uri.indexOf('::');
+  if (marker >= 0) {
+    final library = uri.substring(0, marker);
+    final path = _importedQudsFile(file, library);
+    if (path == null) return const [];
+    return _sectionItems(source, cursor, uri.substring(marker + 2),
+        fileSectionNames(path), library);
+  }
   var body = uri;
   var from = uriStart;
   if (body.startsWith('.')) {
@@ -2250,6 +2273,12 @@ List<Map<String, Object?>> _relativeEntries(String source, int start, int end,
       if (stem.isEmpty || !stem.startsWith(partial)) continue;
       items.add(_importItem(source, start, end, stem, stem, name, 17,
           filter: _importFilter(source, start, end, partial, stem)));
+      if (fileSectionNames(entity.path).isNotEmpty) {
+        items.add(_importItem(
+            source, start, end, '$stem::', '$stem::', name, 17,
+            retrigger: true,
+            filter: _importFilter(source, start, end, partial, '$stem::')));
+      }
     }
   }
   items.sort((a, b) => (a['label'] as String).compareTo(b['label'] as String));

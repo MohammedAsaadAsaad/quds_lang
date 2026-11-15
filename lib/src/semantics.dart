@@ -188,8 +188,22 @@ class SemanticModel {
   /// Dart import URI for a `package:` or `generated:` library that was loaded.
   final resolvedImports = <ImportDeclaration, String>{};
 
+  /// Public names selected by a `::section` import, in source order.
+  final sectionImports = <ImportDeclaration, List<String>>{};
+
+  /// Library key whose touched names belong to [sectionImports].
+  final importHomes = <ImportDeclaration, String>{};
+
   /// Emit `@protected` because this package depends on `package:meta`.
   var protectWithMeta = false;
+}
+
+class _FilteredImport {
+  const _FilteredImport(this.filter, this.empty);
+  final ImportDeclaration? filter;
+
+  /// True when the section selects no names, so nothing is bound.
+  final bool empty;
 }
 
 /// A symbol for one name read from a Dart SDK library.
@@ -1451,7 +1465,7 @@ class Analyzer {
       _bindPackage(node);
       return;
     }
-    if (!node.uri.endsWith('.quds')) {
+    if (!libraryTarget(node.uri).endsWith('.quds')) {
       fail('Unknown import: ${node.uri}', node);
     }
     if (_file == '<input>') return;
@@ -1459,12 +1473,15 @@ class Analyzer {
     if (path == _file) return;
     final imported = _libraries[path];
     if (imported == null) fail('Unknown import: ${node.uri}', node);
-    final filter = node.show.isEmpty && node.hide.isEmpty ? null : node;
+    final filtered = _filteredImport(node, imported, path);
+    if (filtered.empty) return;
     if (node.export) {
-      _importLibrary(imported, path, filter: node, bind: false);
+      _importLibrary(imported, path,
+          filter: filtered.filter ?? node, bind: false);
       return;
     }
-    _importLibrary(imported, path, filter: filter, qualify: node.prefix);
+    _importLibrary(imported, path,
+        filter: filtered.filter, qualify: node.prefix);
   }
 
   static const _preludeNames = [
@@ -1763,12 +1780,15 @@ class Analyzer {
     final dartUri = dartLibraryUri(_file, node.uri);
     if (dartUri != null) model.resolvedImports[node] = dartUri;
     if (path == _file) return;
-    final filter = node.show.isEmpty && node.hide.isEmpty ? null : node;
+    final filtered = _filteredImport(node, imported, path);
+    if (filtered.empty) return;
     if (node.export) {
-      _importLibrary(imported, path, filter: node, bind: false);
+      _importLibrary(imported, path,
+          filter: filtered.filter ?? node, bind: false);
       return;
     }
-    _importLibrary(imported, path, filter: filter, qualify: node.prefix);
+    _importLibrary(imported, path,
+        filter: filtered.filter, qualify: node.prefix);
   }
 
   String _resolveLibrary(String from, String uri) {
@@ -1778,6 +1798,49 @@ class Analyzer {
     final target = Uri.file(from).resolve(uri);
     if (target.scheme != 'file' && target.scheme.isNotEmpty) return uri;
     return target.toFilePath();
+  }
+
+  /// A section import keeps that section and every section under it.
+  ///
+  /// [home] is the library key stored on the imported symbols.
+  _FilteredImport _filteredImport(
+      ImportDeclaration node, Program imported, String home) {
+    final section = librarySection(node.uri);
+    if (section == null) {
+      return _FilteredImport(
+          node.show.isEmpty && node.hide.isEmpty ? null : node, false);
+    }
+    if (!librarySectionPattern.hasMatch(section)) {
+      fail('Unknown import: ${node.uri}', node);
+    }
+    final selected = _namesInSection(imported, section);
+    if (selected == null) fail('Unknown import: ${node.uri}', node);
+    final visible = <String>[
+      ...selected.$1,
+      for (final name in selected.$2)
+        if (!selected.$1.contains(name)) name,
+    ];
+    for (final name in node.show) {
+      if (!visible.contains(name)) {
+        error('E200', 'Name $name is not defined', node);
+      }
+    }
+    final shown = node.show.isNotEmpty
+        ? [
+            for (final name in node.show)
+              if (visible.contains(name)) name,
+          ]
+        : [
+            for (final name in visible)
+              if (!node.hide.contains(name)) name,
+          ];
+    model.sectionImports[node] = shown;
+    model.importHomes[node] = home;
+    if (shown.isEmpty) return const _FilteredImport(null, true);
+    return _FilteredImport(
+        ImportDeclaration(node.uri, node.prefix, node.span,
+            export: node.export, show: shown),
+        false);
   }
 
   bool _keeps(String name, ImportDeclaration? filter) {
@@ -2118,10 +2181,9 @@ class Analyzer {
 
   void _touch(Symbol symbol) {
     if (_suppressSdkUse) return;
-    if (symbol.library.startsWith('quds:')) {
-      model.usedSdk.add(symbol.library);
-      (model.usedSdkNames[symbol.library] ??= <String>{}).add(symbol.name);
-    }
+    if (symbol.library.isEmpty) return;
+    if (symbol.library.startsWith('quds:')) model.usedSdk.add(symbol.library);
+    (model.usedSdkNames[symbol.library] ??= <String>{}).add(symbol.name);
   }
 
   void validateType(String type, Node node, {bool allowVoid = true}) {

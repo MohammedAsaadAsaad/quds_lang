@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'libraries.dart';
+
 /// Source of `quds:core`. Kept equal to `lib/sdk/core.quds`.
 const coreSdkSource = '''# A list under another name.
 # Example:
@@ -478,8 +480,13 @@ const mathSdkSource = '''# Mathematics that dart:math does not provide.
 # transforms, special functions, optimization, and elementary number theory.
 # log stays the logger. Natural log is ln, and a prefix still sees dart's log.
 # min and max stay the language functions for two numbers of one type.
-# :: graph opens a section. use quds:math::graph imports that section and every
-# section named graph::something. A bare :: returns later names to the root.
+# A column-0 :: name opens a section. use quds:math::stats imports that section
+# and every section named stats::something. This file is divided into scalar,
+# number, complex, vector, interval, stats, distribution, calculus, interp,
+# linalg, polynomial, signal, special, optimize, graph, graph::weighted, exact,
+# autodiff, and geometry. support collects private helpers and exports nothing.
+# A bare :: returns the following declarations to the library root.
+# use quds:math still imports the whole library, including dart:math.
 # Example:
 #   print sqrt(9.0)
 #   print pi
@@ -490,6 +497,8 @@ export dart:core show BigInt
 use dart:math as math
 use dart:math
 export dart:math
+
+:: scalar
 
 # Natural logarithm. log itself stays the logger.
 # Example:
@@ -699,6 +708,8 @@ logit(p: double) -> double:
     throw "logit needs a probability strictly between 0 and 1"
   return math.log(p / (1.0 - p))
 
+:: number
+
 # The greatest common divisor of [a] and [b]. The result is never negative.
 # Example:
 #   print gcd(12, 18)
@@ -814,6 +825,8 @@ fibonacci(n: int) -> int:
     left = left - 1
   return current
 
+:: complex
+
 # A complex number. Addition, subtraction, multiplication, and division use
 # the operators. Point from dart:math stays a 2D position, not a complex value.
 # Example:
@@ -924,6 +937,8 @@ value class Complex:
     nextImag = _scaleRatio((ai * br - ar * bi) / den, topScale, scale)
     return Complex(real: nextReal, imag: nextImag)
 
+:: vector
+
 # A 2D vector. Point from dart:math remains available for positions.
 # Example:
 #   v = Vec2(x: 3.0, y: 4.0)
@@ -1019,6 +1034,8 @@ value class Vec3:
   operator -(other: Vec3) -> Vec3:
     return Vec3(x: x - other.x, y: y - other.y, z: z - other.z)
 
+:: interval
+
 # A closed span of real numbers. [low] is expected to be at or below [high].
 # Example:
 #   span = Interval(low: 0.0, high: 1.0)
@@ -1057,6 +1074,8 @@ value class Interval:
 interval(a: double, b: double) -> Interval:
   if a <= b: return Interval(low: a, high: b)
   return Interval(low: b, high: a)
+
+:: stats
 
 # The sum of [values]. An empty list is 0.
 # Example:
@@ -1286,6 +1305,8 @@ summarize(values: List<double>) -> Summary:
       maximum: maximum(values),
       variance: spread)
 
+:: distribution
+
 # The error function, from the regularized incomplete gamma function.
 # Example:
 #   print approximately(erf(0.0), 0.0, 1.0e-6)
@@ -1381,6 +1402,8 @@ poissonPmf(k: int, lambda: double) -> double:
     if k == 0: return 1.0
     return 0.0
   return math.exp(0.0 - lambda + (k to double) * math.log(lambda) - logGamma((k to double) + 1.0))
+
+:: calculus
 
 # [count] evenly spaced values from [start] through [end], including both ends.
 # Example:
@@ -1661,6 +1684,8 @@ rungeKutta(
     i = i + 1
   return y
 
+:: scalar
+
 # Hyperbolic sine. dart:math has sin, and does not have sinh.
 # Example:
 #   print sinh(0.0)
@@ -1742,6 +1767,8 @@ expm1(x: double) -> double:
   if risen == 1.0: return x
   return (risen - 1.0) * (x / math.log(risen))
 
+:: stats
+
 # The geometric mean of positive numbers.
 # Example:
 #   print approximately(geometricMean([1.0, 4.0]), 2.0, 1.0e-9)
@@ -1785,6 +1812,8 @@ diff(values: List<double>) -> List<double>:
     made.add(values[i] - values[i - 1])
     i = i + 1
   return made
+
+:: interp
 
 # Piecewise linear value of [ys] at [x]. [xs] must increase.
 # Outside the span, the nearest end value is returned.
@@ -1834,6 +1863,8 @@ lineFit(xs: List<double>, ys: List<double>) -> Line:
   if xx == 0.0: throw "lineFit needs more than one x value"
   slope = xy / xx
   return Line(slope: slope, intercept: my - slope * mx)
+
+:: linalg
 
 # Rows turned into columns.
 # Example:
@@ -2232,6 +2263,8 @@ qr(rows: List<List<double>>) -> QR:
     j = j + 1
   return QR(q: q, r: scaleMatrix(r, scale))
 
+:: polynomial
+
 # Coefficients are constant-term first: index k belongs to x^k.
 # Example:
 #   print polyEval([1.0, 2.0, 3.0], 2.0)
@@ -2353,6 +2386,8 @@ lagrange(x: double, xs: List<double>, ys: List<double>) -> double:
     i = i + 1
   return total
 
+:: number
+
 # [base] ^ [exponent] modulo [modulus], in the range 0 through modulus - 1.
 # Example:
 #   print modPow(2, 10, 1000)
@@ -2410,6 +2445,8 @@ totient(n: int) -> int:
       total = total - total ~/ prime
       last = prime
   return total
+
+:: stats
 
 # Sum that keeps the bits a naive total would drop.
 # Example:
@@ -2554,6 +2591,8 @@ covarianceMatrix(observations: List<List<double>>) -> List<List<double>>:
     made.add(line)
     row = row + 1
   return made
+
+:: distribution
 
 # Beta function.
 # Example:
@@ -2780,6 +2819,8 @@ poissonSample(random: Random, lambda: double) -> int:
           if logged <= -lambda + (k to double) * math.log(lambda) - logGamma((k to double) + 1.0): return k
     guard = guard + 1
   throw "poissonSample did not converge"
+
+:: linalg
 
 # Maximum absolute column sum.
 # Example:
@@ -3130,6 +3171,8 @@ matrixExp(rows: List<List<double>>) -> List<List<double>>:
     squares = squares - 1
   return sum
 
+:: calculus
+
 # A value and an estimate of its absolute error.
 # Example:
 #   print romberg((x: double) -> x, 0.0, 1.0, 4).value
@@ -3355,6 +3398,8 @@ solveBoundary(
     made.add(state[0])
   return made
 
+:: signal
+
 # Discrete Fourier transform. The length must be a positive power of two.
 # Example:
 #   print fft([Complex(real: 1.0, imag: 0.0), Complex(real: 0.0, imag: 0.0), Complex(real: 0.0, imag: 0.0), Complex(real: 0.0, imag: 0.0)])[0].real
@@ -3395,6 +3440,7 @@ convolve(left: List<double>, right: List<double>) -> List<double>:
     k = k + 1
   return made
 
+:: linalg
 
 # Euclidean length of the largest singular value.
 # Example:
@@ -3528,6 +3574,8 @@ tridiagonalSolve(
     k = k - 1
   return answer
 
+:: polynomial
+
 # Sum of two polynomials, constant term first.
 # Example:
 #   print polyAdd([1.0, 2.0], [3.0])[0]
@@ -3621,6 +3669,8 @@ spline(x: double, xs: List<double>, ys: List<double>) -> double:
   while segment < xs.length - 2 and x > xs[segment + 1]:
     segment = segment + 1
   return _splinePiece(x, xs, ys, moments, segment)
+
+:: calculus
 
 # Backward Euler for a stiff system. The result is the state at [x1].
 # Example:
@@ -3723,6 +3773,8 @@ tripleIntegral(
     return doubleIntegral((x: double, y: double) -> f(x, y, z), x0, x1, y0,
     y1, steps)
   return integrate(slice, z0, z1, steps)
+
+:: distribution
 
 # Exponential density with rate [rate].
 # Example:
@@ -3903,6 +3955,8 @@ fisherSample(random: Random, d1: double, d2: double) -> double:
   if d1 <= 0.0 or d2 <= 0.0: throw "degrees must be positive"
   return (chiSquareSample(random, d1) / d1) / (chiSquareSample(random, d2) / d2)
 
+:: stats
+
 # A statistic and its upper-tail probability.
 # Example:
 #   print oneSampleT([1.0, 2.0, 3.0], 2.0).statistic
@@ -4000,6 +4054,8 @@ kendall(xs: List<double>, ys: List<double>) -> double:
   pairs = agree + differ
   if pairs == 0: throw "kendall is undefined without comparable pairs"
   return ((agree - differ) to double) / (pairs to double)
+
+:: signal
 
 # Fourier transform of any positive length.
 # Example:
@@ -4099,6 +4155,8 @@ fft2(rows: List<List<Complex>>) -> List<List<Complex>>:
       rowIndex = rowIndex + 1
     col = col + 1
   return out
+
+:: optimize
 
 # A root of [f] bracketed by a sign change, by Brent's method.
 # Example:
@@ -4223,6 +4281,8 @@ nonlinearFit(
     guard = guard + 1
   return Fit(parameters: p, cost: cost)
 
+:: distribution
+
 # Digamma function, the logarithmic derivative of gamma.
 # Example:
 #   print digamma(1.0)
@@ -4250,6 +4310,8 @@ inverseErf(y: double) -> double:
   if y == 0.0: return y
   if y < 0.0: return 0.0 - inverseErf(0.0 - y)
   return (0.0 - _normalTail((1.0 - y) / 2.0)) / math.sqrt(2.0)
+
+:: special
 
 # Riemann zeta for real [s] other than 1.
 # Example:
@@ -4299,6 +4361,8 @@ besselJ(order: int, x: double) -> double:
 #   print besselY0(1.0)
 besselY0(x: double) -> double:
   return besselY(0, x)
+
+:: number
 
 # Primes from 2 through [n].
 # Example:
@@ -4496,6 +4560,8 @@ _bicgstabUnit(rows: List<List<double>>, values: List<double>) -> List<double>:
     guard = guard + 1
   return x
 
+:: linalg
+
 # Product of a coordinate matrix and a vector. Equal-length index lists.
 # Example:
 #   print sparseMatvec([0, 1], [0, 1], [4.0, 3.0], [1.0, 2.0])[1]
@@ -4546,6 +4612,8 @@ _sparseConjugateGradientUnit(
     guard = guard + 1
   return x
 
+:: complex
+
 # Complex matrix product.
 # Example:
 #   print complexMatmul([[Complex(real: 2.0, imag: 0.0)]], [[Complex(real: 3.0, imag: 1.0)]])[0][0].real
@@ -4577,6 +4645,8 @@ complexSolve(
     rows: List<List<Complex>>, values: List<Complex>) -> List<Complex>:
   if values.length != rows.length: throw "complexSolve needs one value per row"
   return _csolve(rows, values)
+
+:: number
 
 # A reduced fraction. The denominator is positive.
 # Example:
@@ -4612,6 +4682,8 @@ fraction(numerator: int, denominator: int) -> Fraction:
     top = _checkedMultiply(top, -1)
     bottom = _checkedMultiply(bottom, -1)
   return Fraction(numerator: top, denominator: bottom)
+
+:: signal
 
 # Inverse of the unnormalized DCT-II from [dct].
 # Example:
@@ -4700,6 +4772,8 @@ inverseHaar(values: List<double>) -> List<double>:
     length = length * 2
   return data
 
+:: stats
+
 # Kendall tau-b. Ties reduce the denominator.
 # Example:
 #   print kendallB([1.0, 2.0, 3.0], [3.0, 2.0, 1.0])
@@ -4725,6 +4799,8 @@ kendallB(xs: List<double>, ys: List<double>) -> double:
   if den <= 0: throw "kendallB is undefined for a constant sample"
   return ((agree - differ) to double) / math.sqrt(den to double)
 
+:: polynomial
+
 # Least-squares polynomial, constant term first.
 # Example:
 #   print polyfit([0.0, 1.0], [1.0, 3.0], 1)[1]
@@ -4743,6 +4819,8 @@ polyfit(xs: List<double>, ys: List<double>, degree: int) -> List<double>:
       k = k + 1
     grid.add(row)
   return leastSquares(grid, ys)
+
+:: interp
 
 # Bilinear interpolation. [grid] rows follow [ys] and columns follow [xs].
 # Example:
@@ -4777,6 +4855,8 @@ bilinear(
   low = v00 * (1.0 - tx) + v10 * tx
   high = v01 * (1.0 - tx) + v11 * tx
   return low * (1.0 - ty) + high * ty
+
+:: special
 
 # Legendre polynomial P_n(x).
 # Example:
@@ -4996,6 +5076,8 @@ besselK(order: int, x: double) -> double:
   if x <= 0.0: throw "besselK needs a positive argument"
   return _besselKReal(_abs(order to double), x)
 
+:: distribution
+
 # Gamma density. The mean is shape times scale.
 # Example:
 #   print gammaPdf(1.0, 1.0, 1.0)
@@ -5151,6 +5233,8 @@ negativeBinomialCdf(failures: int, successes: int, chance: double) -> double:
   if failures < 0: return 0.0
   return incompleteBeta(successes to double, (failures to double) + 1.0, chance)
 
+:: stats
+
 # Chi-square goodness of fit. Expected counts are fully specified.
 # Example:
 #   print chiSquareGoodness([10.0, 10.0], [10.0, 10.0]).statistic
@@ -5290,6 +5374,8 @@ regression(rows: List<List<double>>, values: List<double>) -> Regression:
     i = i + 1
   return Regression(coefficients: solved, errors: errors,
   probabilities: probabilities)
+
+:: optimize
 
 # Nelder-Mead minimum of a scalar function of several reals.
 # Example:
@@ -5447,6 +5533,8 @@ linearProgram(
     i = i + 1
   return Optimum(value: board[m][width - 1], position: position)
 
+:: calculus
+
 # Backward differentiation formula of order 2. The result is the state at [x1].
 # Example:
 #   print bdf2((x: double, y: List<double>) -> [0.0 - y[0]], 0.0, [1.0], 1.0, 8)[0]
@@ -5581,6 +5669,9 @@ adaptiveDoubleIntegral(
     return _adapt(inner, x0, x1, tolerance, whole, 0)
   whole = _simpson3(outer, y0, y1)
   return _adapt(outer, y0, y1, tolerance, whole, 0)
+
+# Private helpers shared across sections. This section exports nothing.
+:: support
 
 _scaleVector(values: List<double>, factor: double) -> List<double>:
   made: List<double> = []
@@ -5933,6 +6024,8 @@ _qrEigen(rows: List<List<double>>) -> List<Complex>:
   if p > 0: throw "eigenvalues did not converge"
   return _sortRoots(found)
 
+:: scalar
+
 extend double Reals:
   # This number of radians, written in degrees.
   # Example:
@@ -5951,6 +6044,8 @@ extend double Reals:
   #   print 1.0.about(1.0)
   about(other: double) -> bool = approximately(this, other, 1.0e-9)
 
+:: number
+
 extend int Factors:
   # This integer's factorial. Negative values throw.
   # Example:
@@ -5960,6 +6055,8 @@ extend int Factors:
   # Example:
   #   print 7.prime()
   prime() -> bool = isPrime(this)
+
+:: stats
 
 extend List<double> Samples:
   # The sum of these numbers.
@@ -5986,6 +6083,9 @@ extend List<double> Samples:
   # Example:
   #   print numbers.maximum()
   maximum() -> double = maximum(this)
+
+# Private helpers shared across sections. This section exports nothing.
+:: support
 
 # Absolute value used by elimination. Private, so it is not part of the API.
 _abs(x: double) -> double:
@@ -7225,6 +7325,8 @@ _fractionAdd(left: Fraction, right: Fraction, subtract: bool) -> Fraction:
   bottom = _checkedMultiply(left.denominator ~/ common, right.denominator ~/ trim)
   return fraction(top ~/ trim, bottom)
 
+:: linalg
+
 # Conjugate gradient for a symmetric positive definite system.
 # Example:
 #   print conjugateGradient([[4.0, 1.0], [1.0, 3.0]], [1.0, 2.0])[0]
@@ -7882,7 +7984,7 @@ _shortestPaths(source: int, work: List<_WeightedState>) -> ShortestPaths:
     parents.add(cell.parent)
   return ShortestPaths(source: source, distances: distances, predecessors: parents)
 
-::
+:: exact
 
 # Parse an arbitrary-precision integer using Dart's BigInt literal grammar.
 # Invalid text throws FormatException. No conversion through int or double.
@@ -8090,6 +8192,8 @@ _bigFractionAdd(left: BigFraction, right: BigFraction, subtract: bool) -> BigFra
   if subtract: top = top - right.numerator * rightScale
   else: top = top + right.numerator * rightScale
   return bigFraction(top, left.denominator * leftScale)
+
+:: autodiff
 
 # Forward-mode automatic differentiation: value + tangent*epsilon, epsilon^2=0.
 # All operations require finite values/tangents and reject non-finite results.
@@ -8306,6 +8410,8 @@ _dualPowerSlope(value: double, exponent: double, tangent: double) -> double:
     if (exponent < 0.0) != (tangent < 0.0): slope = -slope
   if value < 0.0 and exponent % 2.0 == 0.0: slope = -slope
   return slope
+
+:: geometry
 
 # Exact rational representation of a finite binary64 value, not of its decimal
 # spelling. Repeated powers of two are exact; BigInt.from sees an integer.
@@ -8541,8 +8647,6 @@ SdkImport? sdkImport(String uri) {
 /// `quds:core` -> `core`. `quds:math::graph` -> `math`.
 String? sdkLibraryName(String uri) => sdkImport(uri)?.library;
 
-final _sectionHeader =
-    RegExp(r'^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_][A-Za-z0-9_]*)*$');
 final _sdkSectionCache = <String, (int, int, List<String>)>{};
 
 /// Section paths declared by column-0 `::` headers in [library].
@@ -8558,16 +8662,7 @@ List<String> sdkSectionNames(String library) {
       cached.$2 == source.hashCode) {
     return cached.$3;
   }
-  final names = <String>[];
-  final seen = <String>{};
-  for (final line in source.split('\n')) {
-    if (!line.startsWith('::')) continue;
-    var header = line.substring(2).trim();
-    final comment = header.indexOf('#');
-    if (comment >= 0) header = header.substring(0, comment).trimRight();
-    if (header.isEmpty || !_sectionHeader.hasMatch(header)) continue;
-    if (seen.add(header)) names.add(header);
-  }
+  final names = sectionHeadersIn(source);
   _sdkSectionCache[library] = (source.length, source.hashCode, names);
   return names;
 }

@@ -5,6 +5,111 @@ const path = require('path');
 
 const languageId = 'quds';
 
+const sectionPattern =
+  /^[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*$/;
+
+// Keep these folds in step with foldingRanges in lib/src/libraries.dart.
+function foldingRangesFor(lines) {
+  return [
+    ...sectionFolds(lines),
+    ...markerFolds(lines),
+    ...indentFolds(lines),
+  ];
+}
+
+function sectionFolds(lines) {
+  const headers = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith('::')) continue;
+    let path = lines[i].slice(2).trim();
+    const comment = path.indexOf('#');
+    if (comment >= 0) path = path.slice(0, comment).trimEnd();
+    headers.push({ line: i, path, fold: sectionPattern.test(path) });
+  }
+  const ranges = [];
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i];
+    if (!header.fold) continue;
+    let end = lines.length - 1;
+    for (let j = i + 1; j < headers.length; j++) {
+      if (headers[j].path.startsWith(`${header.path}::`)) continue;
+      end = headers[j].line - 1;
+      break;
+    }
+    while (end > header.line && lines[end].trim() === '') end--;
+    if (end <= header.line) continue;
+    ranges.push({
+      startLine: header.line,
+      endLine: end,
+      kind: 'region',
+      collapsedText: header.path,
+    });
+  }
+  return ranges;
+}
+
+function markerFolds(lines) {
+  const open = /^\s*#\s*region\b\s*(.*)$/;
+  const close = /^\s*#\s*end\s+region\b/;
+  const stack = [];
+  const ranges = [];
+  for (let i = 0; i < lines.length; i++) {
+    const start = open.exec(lines[i]);
+    if (start) {
+      stack.push({ line: i, label: start[1].trim() });
+      continue;
+    }
+    if (close.test(lines[i]) && stack.length) {
+      const region = stack.pop();
+      if (i <= region.line) continue;
+      const range = {
+        startLine: region.line,
+        endLine: i,
+        kind: 'region',
+      };
+      if (region.label) range.collapsedText = region.label;
+      ranges.push(range);
+    }
+  }
+  return ranges;
+}
+
+function indentFolds(lines) {
+  const stack = [];
+  const ranges = [];
+  let last = lines.length - 1;
+  while (last > 0 && lines[last].trim() === '') last--;
+  function close(indent, end) {
+    while (stack.length && indent <= stack[stack.length - 1].indent) {
+      const start = stack.pop();
+      let line = end;
+      while (line > start.line && lines[line].trim() === '') line--;
+      if (line > start.line) {
+        ranges.push({ startLine: start.line, endLine: line });
+      }
+    }
+  }
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() === '') continue;
+    const indent = indentWidth(lines[i]);
+    close(indent, i - 1);
+    stack.push({ line: i, indent });
+  }
+  close(-1, last);
+  return ranges;
+}
+
+function indentWidth(line) {
+  let indent = 0;
+  for (let i = 0; i < line.length; i++) {
+    const unit = line.charCodeAt(i);
+    if (unit === 32) indent++;
+    else if (unit === 9) indent += 2;
+    else break;
+  }
+  return indent;
+}
+
 function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection(languageId);
   const output = vscode.window.createOutputChannel('Quds');
@@ -56,6 +161,25 @@ function activate(context) {
         ['declaration', 'readonly'],
       ),
     ),
+    vscode.languages.registerFoldingRangeProvider(languageId, {
+      provideFoldingRanges(document) {
+        const lines = [];
+        for (let i = 0; i < document.lineCount; i++) {
+          lines.push(document.lineAt(i).text.replace(/\r$/, ''));
+        }
+        return foldingRangesFor(lines).map((range) => {
+          const kind =
+            range.kind === 'region' ? vscode.FoldingRangeKind.Region : undefined;
+          const folding = new vscode.FoldingRange(
+            range.startLine,
+            range.endLine,
+            kind,
+          );
+          if (range.collapsedText) folding.collapsedText = range.collapsedText;
+          return folding;
+        });
+      },
+    }),
     vscode.commands.registerCommand('quds.run', (uri) => runTool('run', uri)),
     vscode.commands.registerCommand('quds.debug', (uri) => debugProgram(uri)),
     vscode.commands.registerCommand('quds.showDart', (uri) => showDart(uri)),

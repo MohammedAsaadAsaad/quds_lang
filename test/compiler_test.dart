@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:quds_lang/quds_lang.dart';
 import 'package:quds_lang/src/complete.dart';
 import 'package:quds_lang/src/dart_api.dart';
+import 'package:quds_lang/src/libraries.dart';
 import 'package:quds_lang/src/navigate.dart';
 import 'package:quds_lang/src/flutter_project.dart';
 import 'package:test/test.dart';
@@ -1286,6 +1287,85 @@ main():
     expect(output, contains('completionProvider'));
     expect(output, contains('codeLensProvider'));
     expect(output, contains('documentFormattingProvider'));
+    expect(output, contains('foldingRangeProvider'));
+  });
+
+  test('a section folds through its children and stops at the next header', () {
+    const source = ':: graph\n'
+        'f():\n'
+        '  return 1\n'
+        ':: graph::weighted\n'
+        'g():\n'
+        '  return 2\n'
+        '::\n'
+        'h():\n'
+        '  return 3\n'
+        '# region note\n'
+        'kept():\n'
+        '  return 4\n'
+        '# end region\n';
+    final ranges = foldingRanges(source);
+    Map<String, Object> region(String text) =>
+        ranges.firstWhere((range) => range['collapsedText'] == text,
+            orElse: () => const {});
+    expect(region('graph'), {
+      'startLine': 0,
+      'endLine': 5,
+      'kind': 'region',
+      'collapsedText': 'graph',
+    });
+    expect(region('graph::weighted'), {
+      'startLine': 3,
+      'endLine': 5,
+      'kind': 'region',
+      'collapsedText': 'graph::weighted',
+    });
+    expect(region('note'), {
+      'startLine': 9,
+      'endLine': 12,
+      'kind': 'region',
+      'collapsedText': 'note',
+    });
+    expect(ranges.where((range) => range['kind'] == 'region'),
+        isNot(anyElement(containsPair('collapsedText', ''))));
+    expect(ranges, contains(containsPair('startLine', 1)));
+    final body = ranges.firstWhere((range) => range['startLine'] == 1);
+    expect(body['endLine'], 2);
+    expect(body.containsKey('kind'), isFalse);
+    final math = foldingRanges(File('lib/sdk/math.quds').readAsStringSync());
+    final graph = math.firstWhere((range) => range['collapsedText'] == 'graph');
+    final weighted =
+        math.firstWhere((range) => range['collapsedText'] == 'graph::weighted');
+    expect(graph['startLine'] as int, lessThan(weighted['startLine'] as int));
+    expect(graph['endLine'] as int,
+        greaterThanOrEqualTo(weighted['endLine'] as int));
+    expect(math.where((range) => range['collapsedText'] == 'stats').length,
+        greaterThan(1));
+
+    final directory = Directory.systemTemp.createTempSync('quds-fold-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final uri = Uri.file('${directory.path}/app.quds').toString();
+    final session = LspSession();
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': source,
+        }
+      }
+    });
+    final folded = session.handle({
+      'jsonrpc': '2.0',
+      'id': 9,
+      'method': 'textDocument/foldingRange',
+      'params': {
+        'textDocument': {'uri': uri},
+      }
+    });
+    expect(folded.response!['result'], ranges);
   });
 
   test('lsp formats an open buffer and publishes its diagnostics', () {
@@ -2083,6 +2163,85 @@ main():
 
     final member = at('value = m.', app.path);
     expect(member.map((entry) => entry['label']), isNot(contains('helper')));
+  });
+
+  test('a relative file section imports that section and its children',
+      () async {
+    final root = Directory.systemTemp.createTempSync('quds-file-section-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    Directory('${root.path}/src').createSync();
+    File('${root.path}/src/somefile.quds').writeAsStringSync('''
+:: section1
+one() -> int = 1
+:: section1::child
+two() -> int = 2
+::
+three() -> int = 3
+''');
+    final app = File('${root.path}/app.quds');
+    app.writeAsStringSync('''
+use src.somefile::section1
+main():
+  print one()
+  print two()
+''');
+    final compiled = compile(app.readAsStringSync(), file: app.path);
+    expect(
+        compiled.dart, contains("import 'src/somefile.dart' show one, two;"));
+    expect(compiled.dart, isNot(contains('three')));
+    File('${root.path}/src/somefile.dart').writeAsStringSync(compile(
+            File('${root.path}/src/somefile.quds').readAsStringSync(),
+            file: '${root.path}/src/somefile.quds')
+        .dart);
+    File('${root.path}/app.dart').writeAsStringSync(compiled.dart);
+    final run = await Process.run(Platform.resolvedExecutable, ['app.dart'],
+        workingDirectory: root.path);
+    expect(run.exitCode, 0,
+        reason: '${run.stdout}\n${run.stderr}\n${compiled.dart}');
+    expect(run.stdout, '1\n2\n');
+
+    compile('''
+use src.somefile::section1::child as part
+main():
+  print part.two()
+''', file: app.path);
+    expect(() => compile('''
+use src.somefile::section1::child
+main():
+  print one()
+''', file: app.path), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use src.somefile::section1
+main():
+  print three()
+''', file: app.path), throwsA(predicate((error) => '$error'.contains('E200'))));
+    expect(() => compile('''
+use src.somefile::missing
+main():
+  print 1
+''', file: app.path), throwsA(predicate((error) => '$error'.contains('E900'))));
+    compile('''
+use src.somefile
+main():
+  print three()
+''', file: app.path);
+
+    List<Map<String, Object?>> at(String line) => completeAt(
+          source: line,
+          line: 0,
+          character: line.length,
+          file: app.path,
+          compileSource: (_) => null,
+        );
+    final opened = at('use src.somefile::');
+    expect(opened.map((entry) => entry['label']),
+        containsAll(['section1', 'section1::']));
+    expect(opened.firstWhere((entry) => entry['label'] == 'section1')['detail'],
+        'src.somefile::section1');
+    final nested = at('use src.somefile::section1::');
+    expect(nested.map((entry) => entry['label']), ['child']);
+    final files = at('use src.');
+    expect(files.map((entry) => entry['label']), contains('somefile::'));
   });
 
   test('range includes both ends', () async {

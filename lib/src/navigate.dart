@@ -43,7 +43,7 @@ LibraryPlace? libraryAt(String source, int line, int column, {String? from}) {
   if (index < start || index > uriEnd) return null;
   final uri = row.substring(uriStart, uriEnd);
   if (uri.isEmpty) return null;
-  return _libraryPlace(uri, from);
+  return _libraryPlace(normalizeImportUri(uri), from);
 }
 
 LibraryPlace? _libraryPlace(String uri, String? from) {

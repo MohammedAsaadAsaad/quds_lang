@@ -429,7 +429,7 @@ adds the collection names `Array` (`List`), `Dict` (`Map`), and `HashSet`
 the mathematics Dart does not provide, such as `ln`, `sinh`, `gcd`, `mean`,
 `Complex`, `Vec2`, `inverse`, `qr`, `eigenSymmetric`, `svd`, `simpson`, `rungeKutta`, `studentCdf`, `fft`, `eigenvalues`, `adaptiveIntegral`, `besselJ`, `primesUpTo`, `gmres`, `lambertW`, and `fraction`. It does not duplicate
 `sin` or `sqrt`. Unprefixed `log` stays the logger. Unprefixed `min` and `max`
-stay the language functions. `use quds:math::graph` binds the `graph` section and every section under it, including `graph::weighted`. `use quds:math::graph::weighted` binds only that section. A missing section is `E900`. In the library, `:: graph` opens a section at column 0 and a bare `::` returns to the root.
+stay the language functions. `use quds:math::graph` binds the `graph` section and every section under it, including `graph::weighted`. `use src.somefile::section` does the same for any Quds file. `use quds:math::graph::weighted` binds only that section. A missing section is `E900`. In the library, `:: graph` opens a section at column 0 and a bare `::` returns to the root.
 Go to definition on an SDK declaration opens a read-only `quds-sdk` document.
 `show` and
 `hide` apply to the prelude and to those names. `use quds:missing` is

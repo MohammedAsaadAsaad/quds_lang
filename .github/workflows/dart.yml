@@ -28,6 +28,8 @@ jobs:
           dart run bin/quds.dart test test/math_autodiff_reference.quds
           dart run bin/quds.dart test test/math_autodiff_imports.quds
           dart run bin/quds.dart test test/math_autodiff_alias.quds
+          dart run bin/quds.dart test test/math_geometry.quds
+          dart run bin/quds.dart test test/math_geometry_reference.quds
           dart run bin/quds.dart test test/math_prefix.quds
           dart run bin/quds.dart test test/expect.quds
           reject() {

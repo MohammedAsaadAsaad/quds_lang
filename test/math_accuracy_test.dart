@@ -53,6 +53,12 @@ void main() {
   final gradient=m.autoGradient((List<m.Dual> x)=>x[0]*x[1],[2.0,3.0]);
   if (gradient[0]!=3.0 || gradient[1]!=2.0) throw 'AD gradient';
   if (m.autoJacobian((List<m.Dual> x)=>[x[0]*x[1]],[2.0,3.0])[0][1]!=2.0) throw 'AD Jacobian';
+  if (m.binaryFraction(0.1).toString()!='3602879701896397/36028797018963968') throw 'binary fraction';
+  final origin=m.Vec2(x:0.0,y:0.0);
+  if (m.orientation2D(origin,m.Vec2(x:1e-300,y:0.0),m.Vec2(x:0.0,y:1e-300))!=1) throw 'exact orientation';
+  final square=[origin,m.Vec2(x:1.0,y:0.0),m.Vec2(x:1.0,y:1.0),m.Vec2(x:0.0,y:1.0)];
+  if (m.convexHull(square).length!=4 || m.polygonSignedAreaExact(square).toString()!='1/1') throw 'exact polygon';
+  if (!m.pointInPolygon(m.Vec2(x:0.5,y:0.5),square,true)) throw 'polygon winding';
   print('WEB MATH OK');
 }
 ''');

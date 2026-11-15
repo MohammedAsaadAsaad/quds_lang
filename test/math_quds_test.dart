@@ -19,6 +19,8 @@ void main() {
     'math_autodiff_reference.quds': 'QUDS AD CHECKS=598 FAILURES=0',
     'math_autodiff_imports.quds': null,
     'math_autodiff_alias.quds': null,
+    'math_geometry.quds': null,
+    'math_geometry_reference.quds': 'QUDS GEOMETRY CHECKS=738 FAILURES=0',
     'math_api.quds': null,
     'math_operators.quds': null,
     'math_prefix.quds': null,

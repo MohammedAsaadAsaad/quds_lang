@@ -1,5 +1,28 @@
 # Compiler validation — latest 2026-11-15
 
+## Exact planar geometry — C3
+
+Added six public functions: `binaryFraction`, `orientation2D`,
+`segmentsIntersect`, `polygonSignedAreaExact`, `pointInPolygon`, `convexHull`.
+The SDK now has **324** public top-level functions. Contracts, exact binary64
+input interpretation and exclusions: [MATH_GEOMETRY.md](MATH_GEOMETRY.md).
+
+| Check | Observed result |
+| --- | --- |
+| Quds geometry references | **738 cases passed**, independently generated with Python Fraction, rational segment/ray intersections and Jarvis hulls |
+| Hand-written Quds geometry suite | **Six declarations passed**, including subnormal/large coordinates, degenerate segments, winding, ownership and nonfinite rejection |
+| Compiler regression suite | Six tests passed; List/Set implement Iterable with the same element type; element widening remains rejected |
+| Final format | 39 Dart files; zero changes |
+| `dart analyze` | No issues |
+| Final `dart test --reporter expanded` | **259 passed; zero failures; zero skips** |
+| JavaScript + Node | Exact binary fraction, subnormal orientation, hull, area and containment smoke checks passed |
+
+The Quds tests exposed a missing collection interface compatibility rule, fixed
+without relaxing generic element equality. The direct generated-Dart smoke
+caller supplies the explicit containment boundary flag, as required by the
+backend calling convention for Quds default arguments.
+
+
 ## Forward AD, gradients and Jacobians — C1 / first part of C2
 
 Added `Dual`, `dualConstant`, `dualVariable`, `evaluateDual`, `autoDerivative`,

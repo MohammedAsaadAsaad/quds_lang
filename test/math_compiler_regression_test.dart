@@ -4,6 +4,21 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('collection interfaces retain the exact element type', () {
+    expect(() => compile('''
+accept(values: Iterable<int>) -> int = values.length
+main():
+  items = [1, 2]
+  items.addAll([3, 4])
+  print accept(items)
+'''), returnsNormally);
+    expect(() => compile('''
+accept(values: Iterable<num>) -> int = values.length
+main():
+  print accept([1, 2])
+'''), throwsA(predicate((e) => '$e'.contains('E500'))));
+  });
+
   test('imported AD signatures preserve nominal identity and filters', () {
     expect(() => compile('''
 use quds:math as m

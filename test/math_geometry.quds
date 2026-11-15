@@ -1,0 +1,77 @@
+use quds:math
+
+test "binary64 conversion is exact and preserves rational meaning":
+  expect(binaryFraction(0.1).toString(), "3602879701896397/36028797018963968")
+  expect(binaryFraction(-0.0).toString(), "0/1")
+  smallest = binaryFraction(5.0e-324)
+  expect(smallest.numerator, BigInt.one)
+  expect(smallest.denominator, BigInt.one << 1074)
+  invalid() -> BigFraction = binaryFraction(1.0 / 0.0)
+  expect(invalid, throwsA(equals("binaryFraction needs a finite value")))
+
+test "orientation is exact despite floating cross-product underflow":
+  a = Vec2(x: 0.0, y: 0.0)
+  b = Vec2(x: 1.0e-300, y: 0.0)
+  c = Vec2(x: 0.0, y: 1.0e-300)
+  expect(orientation2D(a, b, c), 1)
+  expect(orientation2D(a, c, b), -1)
+  expect(orientation2D(a, b, b), 0)
+  expect(orientation2D(Vec2(x: 1.0e308, y: 1.0e308), Vec2(x: -1.0e308, y: 1.0e308), Vec2(x: 0.0, y: -1.0e308)), 1)
+
+test "closed segment intersection covers degeneracies":
+  a = Vec2(x: 0.0, y: 0.0)
+  b = Vec2(x: 2.0, y: 0.0)
+  c = Vec2(x: 1.0, y: 0.0)
+  d = Vec2(x: 3.0, y: 0.0)
+  expect(segmentsIntersect(a, b, c, d), true)
+  expect(segmentsIntersect(a, a, a, b), true)
+  expect(segmentsIntersect(a, a, c, d), false)
+  expect(segmentsIntersect(a, b, b, d), true)
+  expect(segmentsIntersect(a, b, Vec2(x: 1.0, y: -1.0), Vec2(x: 1.0, y: 1.0)), true)
+
+test "hulls have deterministic ordering and fresh result lists":
+  a = Vec2(x: 0.0, y: 0.0)
+  b = Vec2(x: 2.0, y: 0.0)
+  c = Vec2(x: 2.0, y: 2.0)
+  d = Vec2(x: 0.0, y: 2.0)
+  input = [c, a, Vec2(x: 1.0, y: 1.0), b, d, a]
+  snapshot = input.toList()
+  output = convexHull(input)
+  expect(output, [a, b, c, d])
+  expect(input, snapshot)
+  output.add(a)
+  expect(input, snapshot)
+  empty: List<Vec2> = []
+  expect(convexHull(empty), isEmpty)
+  expect(convexHull([a, a]), [a])
+  expect(convexHull([a, Vec2(x: 1.0, y: 0.0), b]), [a, b])
+
+test "polygon containment uses a nonzero winding rule":
+  square = [Vec2(x: 0.0, y: 0.0), Vec2(x: 2.0, y: 0.0), Vec2(x: 2.0, y: 2.0), Vec2(x: 0.0, y: 2.0)]
+  expect(pointInPolygon(Vec2(x: 1.0, y: 1.0), square), true)
+  expect(pointInPolygon(Vec2(x: 3.0, y: 1.0), square), false)
+  expect(pointInPolygon(Vec2(x: 2.0, y: 1.0), square), true)
+  expect(pointInPolygon(Vec2(x: 2.0, y: 1.0), square, includeBoundary: false), false)
+  twice = square.toList()
+  twice.addAll(square)
+  expect(pointInPolygon(Vec2(x: 1.0, y: 1.0), twice, includeBoundary: false), true)
+  expect(polygonSignedAreaExact(square).toString(), "4/1")
+  expect(polygonSignedAreaExact(square.reversed.toList()).toString(), "-4/1")
+  expect(polygonSignedAreaExact(twice).toString(), "8/1")
+  empty: List<Vec2> = []
+  expect(pointInPolygon(Vec2(x: 0.0, y: 0.0), empty), false)
+  expect(polygonSignedAreaExact(empty).toString(), "0/1")
+
+test "geometry rejects nonfinite coordinates consistently":
+  a = Vec2(x: 0.0, y: 0.0)
+  invalid = Vec2(x: 0.0 / 0.0, y: 1.0)
+  badOrientation() -> int = orientation2D(a, a, invalid)
+  badIntersection() -> bool = segmentsIntersect(a, a, a, invalid)
+  badHull() -> List<Vec2> = convexHull([a, invalid])
+  badArea() -> BigFraction = polygonSignedAreaExact([invalid])
+  badContainment() -> bool = pointInPolygon(a, [invalid])
+  expect(badOrientation, throwsA(equals("geometry needs finite coordinates")))
+  expect(badIntersection, throwsA(equals("geometry needs finite coordinates")))
+  expect(badHull, throwsA(equals("geometry needs finite coordinates")))
+  expect(badArea, throwsA(equals("geometry needs finite coordinates")))
+  expect(badContainment, throwsA(equals("geometry needs finite coordinates")))

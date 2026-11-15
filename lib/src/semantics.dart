@@ -3729,7 +3729,8 @@ class Analyzer {
     if (from.startsWith('readonly ')) return false;
     final fromHead = _genericHead(from);
     final toHead = _genericHead(to);
-    if (fromHead == toHead &&
+    if ((fromHead == toHead ||
+            toHead == 'Iterable' && const {'List', 'Set'}.contains(fromHead)) &&
         const {'List', 'Set', 'Iterable', 'Map', 'Future', 'Stream'}
             .contains(fromHead) &&
         from.endsWith('>') &&

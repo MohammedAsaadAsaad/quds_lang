@@ -8298,6 +8298,168 @@ _dualPowerSlope(value: double, exponent: double, tangent: double) -> double:
     if (exponent < 0.0) != (tangent < 0.0): slope = -slope
   if value < 0.0 and exponent % 2.0 == 0.0: slope = -slope
   return slope
+
+# Exact rational representation of a finite binary64 value, not of its decimal
+# spelling. Repeated powers of two are exact; BigInt.from sees an integer.
+# At most 1074 doubling steps are needed, including minimum subnormals.
+# Example:
+#   print binaryFraction(0.1)
+binaryFraction(value: double) -> BigFraction:
+  if not _finite(value): throw "binaryFraction needs a finite value"
+  var scaled = value
+  var denominator = BigInt.one
+  while scaled != scaled.truncateToDouble():
+    scaled *= 2.0
+    denominator = denominator * BigInt.from(2)
+  return bigFraction(BigInt.from(scaled), denominator)
+
+# Exact orientation sign of the supplied binary64 coordinates: +1 CCW,
+# -1 clockwise, 0 collinear. Uses BigInt rationals, without an epsilon or an
+# overflow-prone double cross product. All coordinates must be finite.
+orientation2D(a: Vec2, b: Vec2, c: Vec2) -> int:
+  _checkGeometryPoint(a)
+  _checkGeometryPoint(b)
+  _checkGeometryPoint(c)
+  return _orientationExact(a, b, c)
+
+# Closed segment intersection, including endpoint touches, collinear overlaps
+# and zero-length segments. Exact for the represented finite coordinates.
+segmentsIntersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2) -> bool:
+  _checkGeometryPoint(a)
+  _checkGeometryPoint(b)
+  _checkGeometryPoint(c)
+  _checkGeometryPoint(d)
+  first = _orientationExact(a, b, c)
+  second = _orientationExact(a, b, d)
+  third = _orientationExact(c, d, a)
+  fourth = _orientationExact(c, d, b)
+  if first == 0 and _pointOnSegment(a, b, c): return true
+  if second == 0 and _pointOnSegment(a, b, d): return true
+  if third == 0 and _pointOnSegment(c, d, a): return true
+  if fourth == 0 and _pointOnSegment(c, d, b): return true
+  return first * second < 0 and third * fourth < 0
+
+# Signed shoelace area, exactly as a rational for the given binary64 vertices.
+# Positive for CCW order. Empty, point and segment polygons have zero area.
+# A repeated closing vertex is permitted; self-intersections give signed area.
+polygonSignedAreaExact(polygon: List<Vec2>) -> BigFraction:
+  for point in polygon:
+    _checkGeometryPoint(point)
+  var total = bigFraction(BigInt.zero, BigInt.one)
+  var index = 0
+  while index < polygon.length:
+    next = (index + 1) % polygon.length
+    a = polygon[index]
+    b = polygon[next]
+    total = total + binaryFraction(a.x) * binaryFraction(b.y) - binaryFraction(a.y) * binaryFraction(b.x)
+    index += 1
+  return total / bigFraction(BigInt.from(2), BigInt.one)
+
+# Nonzero winding rule, with explicit boundary inclusion (default true).
+# Works with concave and self-intersecting vertex walks. A point/segment walk
+# has boundary only and no interior. No automatic polygon repair is attempted.
+pointInPolygon(point: Vec2, polygon: List<Vec2>, includeBoundary: bool = true) -> bool:
+  _checkGeometryPoint(point)
+  for vertex in polygon:
+    _checkGeometryPoint(vertex)
+  var winding = 0
+  var index = 0
+  while index < polygon.length:
+    a = polygon[index]
+    b = polygon[(index + 1) % polygon.length]
+    side = _orientationExact(a, b, point)
+    if side == 0 and _pointOnSegment(a, b, point): return includeBoundary
+    if a.y <= point.y:
+      if b.y > point.y and side > 0: winding += 1
+    else:
+      if b.y <= point.y and side < 0: winding -= 1
+    index += 1
+  return winding != 0
+
+# CCW convex hull, starting at the lexicographically smallest vertex. No closing
+# duplicate or interior collinear vertices. Degenerate hulls contain 0, 1 or 2
+# vertices. Stable mergesort plus monotone chain: O(n log n) point comparisons
+# and O(n) exact orientations; BigInt cost depends on coordinate bit length.
+# The input list is not mutated; immutable Vec2 values may be shared.
+convexHull(points: List<Vec2>) -> List<Vec2>:
+  for point in points:
+    _checkGeometryPoint(point)
+  ordered = _sortGeometryPoints(points)
+  unique: List<Vec2> = []
+  for point in ordered:
+    if unique.length == 0 or point.x != unique.last.x or point.y != unique.last.y:
+      unique.add(point)
+  if unique.length < 2: return unique
+  lower: List<Vec2> = []
+  for point in unique:
+    _appendHullPoint(lower, point)
+  upper: List<Vec2> = []
+  var index = unique.length - 1
+  while index >= 0:
+    _appendHullPoint(upper, unique[index])
+    index -= 1
+  output: List<Vec2> = []
+  index = 0
+  while index + 1 < lower.length:
+    output.add(lower[index])
+    index += 1
+  index = 0
+  while index + 1 < upper.length:
+    output.add(upper[index])
+    index += 1
+  return output
+
+_checkGeometryPoint(point: Vec2):
+  if not _finite(point.x) or not _finite(point.y): throw "geometry needs finite coordinates"
+
+_orientationExact(a: Vec2, b: Vec2, c: Vec2) -> int:
+  ax = binaryFraction(a.x)
+  ay = binaryFraction(a.y)
+  bx = binaryFraction(b.x)
+  by = binaryFraction(b.y)
+  cx = binaryFraction(c.x)
+  cy = binaryFraction(c.y)
+  crossValue = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+  return crossValue.numerator.sign
+
+_pointOnSegment(a: Vec2, b: Vec2, point: Vec2) -> bool:
+  return point.x >= min(a.x, b.x) and point.x <= max(a.x, b.x) and point.y >= min(a.y, b.y) and point.y <= max(a.y, b.y)
+
+_pointOrdered(a: Vec2, b: Vec2) -> bool:
+  return a.x < b.x or (a.x == b.x and a.y <= b.y)
+
+_sortGeometryPoints(points: List<Vec2>) -> List<Vec2>:
+  if points.length < 2:
+    output: List<Vec2> = []
+    for point in points:
+      output.add(point)
+    return output
+  left: List<Vec2> = []
+  right: List<Vec2> = []
+  var index = 0
+  while index < points.length:
+    if index < points.length ~/ 2: left.add(points[index])
+    else: right.add(points[index])
+    index += 1
+  a = _sortGeometryPoints(left)
+  b = _sortGeometryPoints(right)
+  output: List<Vec2> = []
+  var i = 0
+  var j = 0
+  while i < a.length or j < b.length:
+    if j == b.length or (i < a.length and _pointOrdered(a[i], b[j])):
+      output.add(a[i])
+      i += 1
+    else:
+      output.add(b[j])
+      j += 1
+  return output
+
+_appendHullPoint(hull: List<Vec2>, point: Vec2):
+  while hull.length >= 2:
+    if _orientationExact(hull[hull.length - 2], hull.last, point) > 0: break
+    hull.removeLast()
+  hull.add(point)
 ''';
 
 const embeddedSdk = <String, String>{

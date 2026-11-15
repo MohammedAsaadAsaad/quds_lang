@@ -113,6 +113,23 @@ group "quds:math":
     expect turned.r[0][0] == 1.0
     expect turned.r[0][1] == 0.0
     expect turned.r[1][1] == 1.0
+  test "calculus":
+    expect secondDerivative((x: double) -> x * x, 0.0) == 2.0
+    expect partial((x: double, y: double) -> x * y, 3.0, 4.0, 0) == 4.0
+    expect partial((x: double, y: double) -> x * y, 3.0, 4.0, 1) == 3.0
+    expect gradient((x: double, y: double) -> x + y, 1.0, 2.0)[1] == 1.0
+    expect criticalPoint((x: double) -> x * x, 0.0 - 2.0, 2.0) == 0.0
+    expect simpson((x: double) -> x, 0.0, 2.0, 2) == 2.0
+    expect simpsonSamples([0.0, 1.0, 2.0], 1.0) == 2.0
+    expect cumulativeIntegral([0.0, 1.0, 2.0], 1.0)[2] == 2.0
+    expect meanValue((x: double) -> x, 0.0, 2.0, 2) == 1.0
+    area = doubleIntegral((x: double, y: double) -> 1.0, 0.0, 2.0, 0.0, 3.0, 2)
+    expect area == 6.0
+    expect arcLength((x: double) -> 2.0, 0.0, 1.0, 2) == 1.0
+    expect secant((x: double) -> x - 2.0, 0.0, 4.0, 1) == 2.0
+    expect newton((x: double) -> x - 2.0, 0.0, 1) == 2.0
+    expect euler((x: double, y: double) -> 2.0, 0.0, 1.0, 1.0, 2) == 3.0
+    expect rungeKutta((x: double, y: double) -> x, 0.0, 0.0, 1.0, 1) == 0.5
   test "scientific":
     expect erf(0.0) < 1.0e-6
     expect erfc(0.0) > 0.999999

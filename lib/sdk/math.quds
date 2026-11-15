@@ -1,7 +1,7 @@
 # Mathematics that dart:math does not provide.
 # Every public dart:math name is still re-exported: pi, sqrt, sin, Random,
 # Point, and the rest. Names added here are the ones Dart leaves out,
-# including dense linear algebra.
+# including dense linear algebra and calculus.
 # log stays the logger. Natural log is ln, and a prefix still sees dart's log.
 # min and max stay the language functions for two numbers of one type.
 # Example:
@@ -896,6 +896,206 @@ bisect(
       fa = fm
     i = i + 1
   return (a + b) / 2.0
+
+# The second derivative of [f] at [x], from three samples.
+# Example:
+#   print secondDerivative((x: double) -> x * x, 0.0)
+secondDerivative(f: (double) -> double, x: double) -> double:
+  step = 1.0 / 1024.0
+  return (f(x + step) - 2.0 * f(x) + f(x - step)) / (step * step)
+
+# Partial derivative of [f] at ([x], [y]). [axis] 0 moves x, and 1 moves y.
+# Example:
+#   print partial((x: double, y: double) -> x * y, 3.0, 4.0, 0)
+partial(
+    f: (double, double) -> double,
+    x: double,
+    y: double,
+    axis: int) -> double:
+  if axis != 0 and axis != 1: throw "partial axis must be 0 or 1"
+  step = 1.0 / 1024.0
+  if axis == 0: return (f(x + step, y) - f(x - step, y)) / (2.0 * step)
+  return (f(x, y + step) - f(x, y - step)) / (2.0 * step)
+
+# Both partial derivatives, with respect to x and then y.
+# Example:
+#   print gradient((x: double, y: double) -> x + y, 1.0, 2.0)[0]
+gradient(
+    f: (double, double) -> double,
+    x: double,
+    y: double) -> List<double>:
+  made: List<double> = []
+  made.add(partial(f, x, y, 0))
+  made.add(partial(f, x, y, 1))
+  return made
+
+# A root of the derivative of [f] between [low] and [high].
+# Example:
+#   print criticalPoint((x: double) -> x * x, 0.0 - 2.0, 2.0)
+criticalPoint(f: (double) -> double, low: double, high: double) -> double:
+  return bisect((x: double) -> derivative(f, x), low, high)
+
+# Simpson integral of [f] from [start] to [end]. [steps] must be even.
+# Example:
+#   print simpson((x: double) -> x, 0.0, 2.0, 2)
+simpson(
+    f: (double) -> double, start: double, end: double, steps: int) -> double:
+  if steps < 2 or steps % 2 != 0:
+    throw "simpson needs a positive even step count"
+  width = (end - start) / (steps to double)
+  var total = f(start) + f(end)
+  var i = 1
+  while i < steps:
+    var weight = 4.0
+    if i % 2 == 0: weight = 2.0
+    total = total + weight * f(start + width * (i to double))
+    i = i + 1
+  return total * width / 3.0
+
+# Simpson integral of [samples] separated by [step]. The panel count is even.
+# Example:
+#   print simpsonSamples([0.0, 1.0, 2.0], 1.0)
+simpsonSamples(samples: List<double>, step: double) -> double:
+  if step == 0.0: throw "step cannot be zero"
+  panels = samples.length - 1
+  if panels < 2 or panels % 2 != 0:
+    throw "simpsonSamples needs an even number of panels"
+  var total = samples[0] + samples[samples.length - 1]
+  var i = 1
+  while i < panels:
+    var weight = 4.0
+    if i % 2 == 0: weight = 2.0
+    total = total + weight * samples[i]
+    i = i + 1
+  return total * step / 3.0
+
+# Running trapezoidal integrals. The first entry is 0.
+# Example:
+#   print cumulativeIntegral([0.0, 1.0, 2.0], 1.0)[2]
+cumulativeIntegral(samples: List<double>, step: double) -> List<double>:
+  if samples.isEmpty: throw "cumulativeIntegral needs a sample"
+  if step == 0.0: throw "step cannot be zero"
+  made: List<double> = []
+  made.add(0.0)
+  var total = 0.0
+  var i = 0
+  while i < samples.length - 1:
+    total = total + (samples[i] + samples[i + 1]) * 0.5 * step
+    made.add(total)
+    i = i + 1
+  return made
+
+# Integral of [f] divided by the length of the span.
+# Example:
+#   print meanValue((x: double) -> x, 0.0, 2.0, 2)
+meanValue(
+    f: (double) -> double, start: double, end: double, steps: int) -> double:
+  if start == end: throw "meanValue needs a span"
+  return integrate(f, start, end, steps) / (end - start)
+
+# Integral of [f] over the rectangle [x0]..[x1] by [y0]..[y1].
+# Example:
+#   print doubleIntegral((x: double, y: double) -> 1.0, 0.0, 2.0, 0.0, 3.0, 2)
+doubleIntegral(
+    f: (double, double) -> double,
+    x0: double,
+    x1: double,
+    y0: double,
+    y1: double,
+    steps: int) -> double:
+  slice(y: double) -> double:
+    return integrate((x: double) -> f(x, y), x0, x1, steps)
+  return integrate(slice, y0, y1, steps)
+
+# Length of the graph of [f] from [start] to [end].
+# Example:
+#   print arcLength((x: double) -> 2.0, 0.0, 1.0, 2)
+arcLength(
+    f: (double) -> double, start: double, end: double, steps: int) -> double:
+  speed(x: double) -> double:
+    return hypot(1.0, derivative(f, x))
+  return integrate(speed, start, end, steps)
+
+# A root of [f] by the secant method, starting from [low] and [high].
+# Example:
+#   print secant((x: double) -> x - 2.0, 0.0, 4.0, 1)
+secant(
+    f: (double) -> double,
+    low: double,
+    high: double,
+    steps: int) -> double:
+  if steps < 1: throw "steps must be positive"
+  var a = low
+  var b = high
+  var i = 0
+  while i < steps:
+    fa = f(a)
+    fb = f(b)
+    if fb == fa: throw "secant needs a changing function"
+    next = b - fb * (b - a) / (fb - fa)
+    a = b
+    b = next
+    i = i + 1
+  return b
+
+# A root of [f] by Newton iteration, starting at [guess].
+# Example:
+#   print newton((x: double) -> x - 2.0, 0.0, 1)
+newton(f: (double) -> double, guess: double, steps: int) -> double:
+  if steps < 1: throw "steps must be positive"
+  var x = guess
+  var i = 0
+  step = 1.0 / 1024.0
+  while i < steps:
+    slope = (f(x + step) - f(x - step)) / (2.0 * step)
+    if slope == 0.0: throw "newton needs a non-zero derivative"
+    x = x - f(x) / slope
+    i = i + 1
+  return x
+
+# Euler step for y' = [f](x, y) from ([x0], [y0]) until [x1].
+# Example:
+#   print euler((x: double, y: double) -> 2.0, 0.0, 1.0, 1.0, 2)
+euler(
+    f: (double, double) -> double,
+    x0: double,
+    y0: double,
+    x1: double,
+    steps: int) -> double:
+  if steps < 1: throw "steps must be positive"
+  width = (x1 - x0) / (steps to double)
+  var x = x0
+  var y = y0
+  var i = 0
+  while i < steps:
+    y = y + width * f(x, y)
+    x = x + width
+    i = i + 1
+  return y
+
+# Fourth-order Runge-Kutta for y' = [f](x, y) from ([x0], [y0]) until [x1].
+# Example:
+#   print rungeKutta((x: double, y: double) -> x, 0.0, 0.0, 1.0, 1)
+rungeKutta(
+    f: (double, double) -> double,
+    x0: double,
+    y0: double,
+    x1: double,
+    steps: int) -> double:
+  if steps < 1: throw "steps must be positive"
+  width = (x1 - x0) / (steps to double)
+  var x = x0
+  var y = y0
+  var i = 0
+  while i < steps:
+    k1 = f(x, y)
+    k2 = f(x + width * 0.5, y + width * 0.5 * k1)
+    k3 = f(x + width * 0.5, y + width * 0.5 * k2)
+    k4 = f(x + width, y + width * k3)
+    y = y + width * (k1 + 2.0 * k2 + 2.0 * k3 + k4) / 6.0
+    x = x + width
+    i = i + 1
+  return y
 
 # Hyperbolic sine. dart:math has sin, and does not have sinh.
 # Example:

@@ -427,7 +427,7 @@ adds the collection names `Array` (`List`), `Dict` (`Map`), and `HashSet`
 `lib/sdk/ext.quds`, with methods on `String`, `List`, `Map`, `Set`, `int`, and `double`.
 `use quds:math` loads `lib/sdk/math.quds`. It re-exports `dart:math` and adds
 the mathematics Dart does not provide, such as `ln`, `sinh`, `gcd`, `mean`,
-`Complex`, `Vec2`, `inverse`, `qr`, `eigenSymmetric`, `svd`, `simpson`, `rungeKutta`, `studentCdf`, `fft`, `eigenvalues`, `adaptiveIntegral`, `besselJ`, and `primesUpTo`. It does not duplicate
+`Complex`, `Vec2`, `inverse`, `qr`, `eigenSymmetric`, `svd`, `simpson`, `rungeKutta`, `studentCdf`, `fft`, `eigenvalues`, `adaptiveIntegral`, `besselJ`, `primesUpTo`, `gmres`, `lambertW`, and `fraction`. It does not duplicate
 `sin` or `sqrt`. Unprefixed `log` stays the logger. Unprefixed `min` and `max`
 stay the language functions.
 Go to definition on an SDK declaration opens a read-only `quds-sdk` document.

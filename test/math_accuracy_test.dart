@@ -39,6 +39,11 @@ void main() {
   var threw=false;
   try { m.factorial(19); } catch (_) { threw=true; }
   if (!threw) throw 'unsafe integer range';
+  final edges=[m.WeightedEdge(source:0,target:1,weight:2.0),m.WeightedEdge(source:1,target:2,weight:3.0)];
+  if (m.dijkstra(4,edges,0).distances[2]!=5.0) throw 'weighted Dijkstra';
+  if (m.bellmanFord(4,edges,0).pathTo(2).join(',')!='0,1,2') throw 'weighted Bellman-Ford';
+  final forest=m.minimumSpanningForest(4,edges);
+  if (forest.componentCount!=2 || forest.weight!=5.0) throw 'weighted forest';
   print('WEB MATH OK');
 }
 ''');

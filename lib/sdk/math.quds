@@ -7178,3 +7178,225 @@ _graphColorNeighbor(states: List<_GraphState>, queue: List<int>, vertex: int, ne
   else:
     if states[neighbor].mark == states[vertex].mark:
       throw "bipartiteColoring needs a bipartite graph"
+
+# One finite-weight edge. Shortest-path APIs interpret it as source -> target;
+# minimumSpanningForest interprets the same pair as an undirected edge.
+value class WeightedEdge:
+  source: int
+  target: int
+  weight: double
+
+# A shortest-path result. Infinity denotes an unreachable vertex; predecessor
+# indices and distances are fresh, mutable lists (not immutable object graphs).
+value class ShortestPaths:
+  source: int
+  distances: List<double>
+  predecessors: List<int>
+
+  # A fresh endpoint-inclusive path, or [] if target is unreachable. Work is
+  # O(V). Reject invalid targets or corrupted predecessor chains explicitly.
+  pathTo(target: int) -> List<int>:
+    if target < 0 or target >= distances.length: throw "path target out of range"
+    if source < 0 or source >= distances.length or predecessors.length != distances.length:
+      throw "ShortestPaths has invalid state"
+    if distances[target] == 1.0 / 0.0:
+      empty: List<int> = []
+      return empty
+    if not _finite(distances[target]): throw "ShortestPaths has invalid state"
+    backward: List<int> = []
+    var current = target
+    while current != source:
+      if current < 0 or current >= distances.length or backward.length >= distances.length:
+        throw "ShortestPaths has invalid state"
+      backward.add(current)
+      current = predecessors[current]
+    output: List<int> = [source]
+    var index = backward.length - 1
+    while index >= 0:
+      output.add(backward[index])
+      index -= 1
+    return output
+
+# Minimum spanning forest, including isolated vertices in componentCount.
+# Selected edge values retain their original orientation. The result list is
+# fresh; edge values themselves contain only immutable primitive fields.
+value class SpanningForest:
+  vertexCount: int
+  componentCount: int
+  edges: List<WeightedEdge>
+  weight: double
+
+# Directed shortest paths for nonnegative finite weights. All edges, including
+# unreachable ones, are validated. Ties settle the smallest vertex and keep the
+# first predecessor that achieved a distance. Dense Dijkstra: O(V^2+E) time,
+# O(V+E) auxiliary space. A non-finite working sum throws rather than masquerading
+# as unreachable. Binary64 weights use strict comparisons, without an epsilon.
+# Example:
+#   edges = [WeightedEdge(source: 0, target: 1, weight: 2.0)]
+#   print dijkstra(3, edges, 0).pathTo(1)
+dijkstra(vertexCount: int, edges: List<WeightedEdge>, source: int) -> ShortestPaths:
+  _validateWeightedGraph(vertexCount, edges)
+  _weightedSource(vertexCount, source)
+  for edge in edges:
+    if edge.weight < 0.0: throw "dijkstra needs nonnegative weights"
+  adjacency = _weightedAdjacency(vertexCount, edges, false)
+  work = _weightedWork(vertexCount)
+  work[source].distance = 0.0
+  work[source].parent = source
+  var step = 0
+  while step < vertexCount:
+    vertex = _weightedMinimum(work)
+    if vertex == -1: break
+    work[vertex].settled = true
+    for index in adjacency[vertex]:
+      edge = edges[index]
+      if not work[edge.target].settled:
+        candidate = _weightedSum(work[vertex].distance, edge.weight)
+        if candidate < work[edge.target].distance:
+          work[edge.target].distance = candidate
+          work[edge.target].parent = vertex
+    step += 1
+  return _shortestPaths(source, work)
+
+# Directed shortest paths with finite, possibly negative weights. A negative
+# cycle reachable from source throws; an unreachable negative cycle is ignored.
+# Edge order determines equal-distance ties. Bellman-Ford: O(V*E+V) time,
+# O(V) auxiliary space. Reachable non-finite working sums throw. Cycle detection
+# is for binary64 relaxation arithmetic; near-zero real-weight cycles can be
+# ill-conditioned and are not certified by an arbitrary tolerance.
+# Example:
+#   edges = [WeightedEdge(source: 0, target: 1, weight: -2.0)]
+#   print bellmanFord(2, edges, 0).distances
+bellmanFord(vertexCount: int, edges: List<WeightedEdge>, source: int) -> ShortestPaths:
+  _validateWeightedGraph(vertexCount, edges)
+  _weightedSource(vertexCount, source)
+  work = _weightedWork(vertexCount)
+  work[source].distance = 0.0
+  work[source].parent = source
+  var pass = 1
+  while pass < vertexCount:
+    var changed = false
+    for edge in edges:
+      if _finite(work[edge.source].distance):
+        candidate = _weightedSum(work[edge.source].distance, edge.weight)
+        if candidate < work[edge.target].distance:
+          work[edge.target].distance = candidate
+          work[edge.target].parent = edge.source
+          changed = true
+    if not changed: break
+    pass += 1
+  for edge in edges:
+    if _finite(work[edge.source].distance):
+      candidate = _weightedSum(work[edge.source].distance, edge.weight)
+      if candidate < work[edge.target].distance:
+        throw "bellmanFord found a reachable negative cycle"
+  return _shortestPaths(source, work)
+
+# Undirected minimum spanning forest, accepting finite negative/zero weights,
+# parallel edges, self-loops and disconnected inputs. Loops are never selected.
+# Dense Prim: O(V^2+E) time and O(V+E) auxiliary space. Components start at their
+# smallest unvisited vertex. Equal keys settle the smallest vertex and retain
+# the first connecting edge. Empty input has zero weight and zero components.
+# A non-finite accumulated forest weight throws.
+# Example:
+#   edges = [WeightedEdge(source: 0, target: 1, weight: 2.0)]
+#   print minimumSpanningForest(3, edges).componentCount
+minimumSpanningForest(vertexCount: int, edges: List<WeightedEdge>) -> SpanningForest:
+  _validateWeightedGraph(vertexCount, edges)
+  adjacency = _weightedAdjacency(vertexCount, edges, true)
+  work = _weightedWork(vertexCount)
+  selected: List<WeightedEdge> = []
+  var components = 0
+  var total = 0.0
+  var step = 0
+  while step < vertexCount:
+    var vertex = _weightedMinimum(work)
+    if vertex == -1:
+      var root = 0
+      while root < vertexCount:
+        if not work[root].settled:
+          vertex = root
+          work[root].distance = 0.0
+          components += 1
+          break
+        root += 1
+    work[vertex].settled = true
+    if work[vertex].edgeIndex >= 0:
+      edge = edges[work[vertex].edgeIndex]
+      selected.add(edge)
+      total = _weightedSum(total, edge.weight)
+    for index in adjacency[vertex]:
+      edge = edges[index]
+      var neighbor = edge.target
+      if neighbor == vertex: neighbor = edge.source
+      if not work[neighbor].settled and edge.weight < work[neighbor].distance:
+        work[neighbor].distance = edge.weight
+        work[neighbor].parent = vertex
+        work[neighbor].edgeIndex = index
+    step += 1
+  return SpanningForest(vertexCount: vertexCount, componentCount: components, edges: selected, weight: total)
+
+class _WeightedState:
+  var distance: double = 0.0
+  var parent: int = -1
+  var edgeIndex: int = -1
+  var settled: bool = false
+
+_validateWeightedGraph(vertexCount: int, edges: List<WeightedEdge>):
+  if vertexCount < 0: throw "weighted graph vertex count must be nonnegative"
+  for edge in edges:
+    if edge.source < 0 or edge.source >= vertexCount or edge.target < 0 or edge.target >= vertexCount:
+      throw "weighted graph vertex out of range"
+    if not _finite(edge.weight): throw "weighted graph needs finite weights"
+
+_weightedSource(vertexCount: int, source: int):
+  if source < 0 or source >= vertexCount: throw "weighted graph source out of range"
+
+_weightedWork(vertexCount: int) -> List<_WeightedState>:
+  work: List<_WeightedState> = []
+  var index = 0
+  while index < vertexCount:
+    cell = _WeightedState()
+    cell.distance = 1.0 / 0.0
+    work.add(cell)
+    index += 1
+  return work
+
+_weightedMinimum(work: List<_WeightedState>) -> int:
+  var selected = -1
+  var best = 1.0 / 0.0
+  var index = 0
+  while index < work.length:
+    if not work[index].settled and work[index].distance < best:
+      selected = index
+      best = work[index].distance
+    index += 1
+  return selected
+
+_weightedSum(left: double, right: double) -> double:
+  total = left + right
+  if not _finite(total): throw "weighted graph sum overflow"
+  return total
+
+_weightedAdjacency(vertexCount: int, edges: List<WeightedEdge>, undirected: bool) -> List<List<int>>:
+  adjacency: List<List<int>> = []
+  var vertex = 0
+  while vertex < vertexCount:
+    row: List<int> = []
+    adjacency.add(row)
+    vertex += 1
+  var index = 0
+  while index < edges.length:
+    edge = edges[index]
+    adjacency[edge.source].add(index)
+    if undirected and edge.target != edge.source: adjacency[edge.target].add(index)
+    index += 1
+  return adjacency
+
+_shortestPaths(source: int, work: List<_WeightedState>) -> ShortestPaths:
+  distances: List<double> = []
+  parents: List<int> = []
+  for cell in work:
+    distances.add(cell.distance)
+    parents.add(cell.parent)
+  return ShortestPaths(source: source, distances: distances, predecessors: parents)

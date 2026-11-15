@@ -1,8 +1,9 @@
 # Discrete graphs in `quds:math`
 
 This is the first expansion package from [the math roadmap](MATH_EXPANSION_ROADMAP_AR.md).
-It adds eight operations; it does not supply weighted graphs, flow, matching, or
-symbolic graph invariants.
+This page covers eight unweighted operations. Weighted paths and spanning forests
+are documented separately in [MATH_WEIGHTED_GRAPH.md](MATH_WEIGHTED_GRAPH.md).
+Flow, matching and symbolic graph invariants remain future packages.
 
 ## Representation and shared contract
 

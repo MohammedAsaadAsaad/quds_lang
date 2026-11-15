@@ -1,0 +1,259 @@
+use quds:math
+
+class _WCell:
+  var value: double = 0.0
+
+class _WCounts:
+  var checks: int = 0
+  var graphs: int = 0
+
+_wCheck(counts: _WCounts, condition: bool, description: String):
+  counts.checks += 1
+  expect(condition, true, reason: description)
+
+_wMatrix(size: int) -> List<List<_WCell>>:
+  grid: List<List<_WCell>> = []
+  var i = 0
+  while i < size:
+    row: List<_WCell> = []
+    var j = 0
+    while j < size:
+      cell = _WCell(value: 1000000.0)
+      if i == j: cell.value = 0.0
+      row.add(cell)
+      j += 1
+    grid.add(row)
+    i += 1
+  return grid
+
+_wFloyd(grid: List<List<_WCell>>):
+  var k = 0
+  while k < grid.length:
+    var i = 0
+    while i < grid.length:
+      var j = 0
+      while j < grid.length:
+        if grid[i][k].value < 1000000.0 and grid[k][j].value < 1000000.0:
+          candidate = grid[i][k].value + grid[k][j].value
+          if candidate < grid[i][j].value: grid[i][j].value = candidate
+        j += 1
+      i += 1
+    k += 1
+
+_wReach(size: int, edges: List<WeightedEdge>) -> List<List<_WCell>>:
+  grid = _wMatrix(size)
+  for edge in edges:
+    if edge.source != edge.target:
+      grid[edge.source][edge.target].value = 1.0
+      grid[edge.target][edge.source].value = 1.0
+  _wFloyd(grid)
+  return grid
+
+_wComponents(grid: List<List<_WCell>>) -> int:
+  var count = 0
+  var i = 0
+  while i < grid.length:
+    var smallest = true
+    var j = 0
+    while j < i:
+      if grid[i][j].value < 1000000.0: smallest = false
+      j += 1
+    if smallest: count += 1
+    i += 1
+  return count
+
+_wForestWeight(size: int, edges: List<WeightedEdge>) -> double:
+  full = _wReach(size, edges)
+  wanted = size - _wComponents(full)
+  var best = 1.0 / 0.0
+  var mask = 0
+  while mask < (1 << edges.length):
+    selected: List<WeightedEdge> = []
+    var total = 0.0
+    var index = 0
+    while index < edges.length:
+      if (mask & (1 << index)) != 0:
+        selected.add(edges[index])
+        total += edges[index].weight
+      index += 1
+    if selected.length == wanted and total < best:
+      reach = _wReach(size, selected)
+      var connected = true
+      var i = 0
+      while i < size:
+        var j = 0
+        while j < size:
+          if (full[i][j].value < 1000000.0) != (reach[i][j].value < 1000000.0): connected = false
+          j += 1
+        i += 1
+      if connected: best = total
+    mask += 1
+  return best
+
+_wPaths(counts: _WCounts, actual: ShortestPaths, source: int, edges: List<WeightedEdge>, reference: List<List<_WCell>>):
+  _wCheck(counts, actual.source == source, "result source")
+  _wCheck(counts, actual.distances.length == reference.length, "distance shape")
+  _wCheck(counts, actual.predecessors.length == reference.length, "predecessor shape")
+  var target = 0
+  while target < reference.length:
+    expected = reference[source][target].value
+    path = actual.pathTo(target)
+    if expected == 1000000.0:
+      _wCheck(counts, actual.distances[target] == 1.0 / 0.0, "unreachable infinity")
+      _wCheck(counts, actual.predecessors[target] == -1 and path.length == 0, "unreachable path")
+    else:
+      _wCheck(counts, actual.distances[target] == expected, "Floyd shortest distance")
+      _wCheck(counts, path.first == source and path.last == target, "weighted path endpoints")
+      _wCheck(counts, path.toSet().length == path.length, "weighted simple path")
+      var total = 0.0
+      var i = 1
+      while i < path.length:
+        var weight = 1.0 / 0.0
+        for edge in edges:
+          if edge.source == path[i - 1] and edge.target == path[i] and edge.weight < weight:
+            weight = edge.weight
+        _wCheck(counts, weight < 1.0 / 0.0, "path uses a real edge")
+        total += weight
+        i += 1
+      _wCheck(counts, total == expected, "weighted path cost")
+    target += 1
+
+_wVerify(counts: _WCounts, size: int, edges: List<WeightedEdge>):
+  counts.graphs += 1
+  snapshot = edges.toList()
+  reference = _wMatrix(size)
+  var nonnegative = true
+  for edge in edges:
+    if edge.weight < reference[edge.source][edge.target].value:
+      reference[edge.source][edge.target].value = edge.weight
+    if edge.weight < 0.0: nonnegative = false
+  _wFloyd(reference)
+  var source = 0
+  while source < size:
+    var negativeCycle = false
+    var i = 0
+    while i < size:
+      if reference[source][i].value < 1000000.0 and reference[i][i].value < 0.0: negativeCycle = true
+      i += 1
+    if negativeCycle:
+      rejectCycle() -> ShortestPaths = bellmanFord(size, edges, source)
+      counts.checks += 1
+      expect(rejectCycle, throwsA(equals("bellmanFord found a reachable negative cycle")))
+    else:
+      _wPaths(counts, bellmanFord(size, edges, source), source, edges, reference)
+    if nonnegative:
+      _wPaths(counts, dijkstra(size, edges, source), source, edges, reference)
+    else:
+      rejectNegative() -> ShortestPaths = dijkstra(size, edges, source)
+      counts.checks += 1
+      expect(rejectNegative, throwsA(equals("dijkstra needs nonnegative weights")))
+    source += 1
+  forest = minimumSpanningForest(size, edges)
+  _wCheck(counts, forest.vertexCount == size, "forest vertex count")
+  _wCheck(counts, forest.componentCount == _wComponents(_wReach(size, edges)), "forest components")
+  _wCheck(counts, forest.edges.length == size - forest.componentCount, "forest edge count")
+  _wCheck(counts, forest.weight == _wForestWeight(size, edges), "forest against exhaustive subsets")
+  var total = 0.0
+  for edge in forest.edges:
+    _wCheck(counts, edges.contains(edge) and edge.source != edge.target, "forest input edge")
+    total += edge.weight
+  _wCheck(counts, total == forest.weight, "forest weight connected edges")
+  actualReach = _wReach(size, forest.edges)
+  expectedReach = _wReach(size, edges)
+  var i = 0
+  while i < size:
+    var j = 0
+    while j < size:
+      _wCheck(counts, (actualReach[i][j].value < 1000000.0) == (expectedReach[i][j].value < 1000000.0), "forest connectivity")
+      j += 1
+    i += 1
+  counts.checks += 1
+  expect(edges, equals(snapshot))
+
+_wPower4(exponent: int) -> int:
+  var total = 1
+  var i = 0
+  while i < exponent:
+    total *= 4
+    i += 1
+  return total
+
+test "weighted graphs against independent Quds oracles":
+  counts = _WCounts()
+  var size = 0
+  while size <= 3:
+    var pairs = size * size
+    if size == 3: pairs = 6
+    var code = 0
+    while code < _wPower4(pairs):
+      edges: List<WeightedEdge> = []
+      var encoding = code
+      var u = 0
+      while u < size:
+        var v = 0
+        while v < size:
+          if size != 3 or u != v:
+            digit = encoding % 4
+            encoding = encoding ~/ 4
+            if digit != 0:
+              var weight = -2.0
+              if digit == 2: weight = 0.0
+              if digit == 3: weight = 3.0
+              edges.add(WeightedEdge(source: u, target: v, weight: weight))
+          v += 1
+        u += 1
+      _wVerify(counts, size, edges)
+      code += 1
+    size += 1
+  expect(counts.graphs, 4357)
+  expect(counts.checks, greaterThan(100000))
+  print "QUDS WEIGHTED CHECKS={counts.checks} GRAPHS={counts.graphs} FAILURES=0"
+
+test "parallel edges deterministic ties and disconnected components":
+  edges = [WeightedEdge(source: 0, target: 2, weight: 1.0), WeightedEdge(source: 0, target: 1, weight: 1.0), WeightedEdge(source: 1, target: 3, weight: 2.0), WeightedEdge(source: 2, target: 3, weight: 2.0), WeightedEdge(source: 0, target: 1, weight: 5.0)]
+  expect(dijkstra(5, edges, 0).pathTo(3), [0, 1, 3])
+  expect(bellmanFord(5, edges, 0).pathTo(3), [0, 1, 3])
+  forest = minimumSpanningForest(5, edges)
+  expect(forest.componentCount, 2)
+  expect(forest.weight, 4.0)
+  expect(forest.edges, [edges[1], edges[0], edges[2]])
+  counts = _WCounts()
+  _wVerify(counts, 5, edges)
+
+test "weighted domains and unreachable malformed edges":
+  invalid = [WeightedEdge(source: 2, target: 0, weight: 1.0)]
+  badDijkstra() -> ShortestPaths = dijkstra(2, invalid, 0)
+  badBellman() -> ShortestPaths = bellmanFord(2, invalid, 0)
+  badForest() -> SpanningForest = minimumSpanningForest(2, invalid)
+  expect(badDijkstra, throwsA(equals("weighted graph vertex out of range")))
+  expect(badBellman, throwsA(equals("weighted graph vertex out of range")))
+  expect(badForest, throwsA(equals("weighted graph vertex out of range")))
+  noEdges: List<WeightedEdge> = []
+  noSource() -> ShortestPaths = dijkstra(0, noEdges, 0)
+  badSource() -> ShortestPaths = bellmanFord(2, noEdges, -1)
+  negativeSize() -> SpanningForest = minimumSpanningForest(-1, noEdges)
+  expect(noSource, throwsA(equals("weighted graph source out of range")))
+  expect(badSource, throwsA(equals("weighted graph source out of range")))
+  expect(negativeSize, throwsA(equals("weighted graph vertex count must be nonnegative")))
+  for weight in [1.0 / 0.0, -1.0 / 0.0, 0.0 / 0.0]:
+    nonfinite = [WeightedEdge(source: 0, target: 1, weight: weight)]
+    rejectDijkstra() -> ShortestPaths = dijkstra(2, nonfinite, 0)
+    rejectBellman() -> ShortestPaths = bellmanFord(2, nonfinite, 0)
+    rejectForest() -> SpanningForest = minimumSpanningForest(2, nonfinite)
+    expect(rejectDijkstra, throwsA(equals("weighted graph needs finite weights")))
+    expect(rejectBellman, throwsA(equals("weighted graph needs finite weights")))
+    expect(rejectForest, throwsA(equals("weighted graph needs finite weights")))
+
+test "reachable overflow and corrupt path chains fail explicitly":
+  edges = [WeightedEdge(source: 0, target: 1, weight: 1.0e308), WeightedEdge(source: 1, target: 2, weight: 1.0e308)]
+  overDijkstra() -> ShortestPaths = dijkstra(3, edges, 0)
+  overBellman() -> ShortestPaths = bellmanFord(3, edges, 0)
+  overForest() -> SpanningForest = minimumSpanningForest(3, edges)
+  expect(overDijkstra, throwsA(equals("weighted graph sum overflow")))
+  expect(overBellman, throwsA(equals("weighted graph sum overflow")))
+  expect(overForest, throwsA(equals("weighted graph sum overflow")))
+  broken = ShortestPaths(source: 0, distances: [0.0, 1.0], predecessors: [0, 1])
+  cycle() -> List<int> = broken.pathTo(1)
+  target() -> List<int> = broken.pathTo(2)
+  expect(cycle, throwsA(equals("ShortestPaths has invalid state")))
+  expect(target, throwsA(equals("path target out of range")))

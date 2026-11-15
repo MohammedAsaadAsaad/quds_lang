@@ -1,5 +1,29 @@
 # Compiler validation — latest 2026-11-15
 
+## Weighted graphs — delivery B2
+
+Added `WeightedEdge`, `ShortestPaths`, `SpanningForest`, `dijkstra`, `bellmanFord`
+and `minimumSpanningForest`. Public top-level math functions: **303**.
+Contracts and numerical limits: [MATH_WEIGHTED_GRAPH.md](MATH_WEIGHTED_GRAPH.md).
+
+| Check | Observed result |
+| --- | --- |
+| `quds test test/math_weighted_graph.quds` | Four declarations passed; **224,537 assertions on 4357 graphs** |
+| Independent Quds oracles | Floyd–Warshall for paths/cycles, exhaustive edge subsets for forest optimality |
+| `dart format .` / final format check | 39 Dart files; formatted; final check has zero changes |
+| `dart analyze` | No issues |
+| `dart test --reporter expanded` | **248 passed; zero failures; zero skips** |
+| JavaScript + Node | Existing smoke plus all three weighted APIs and path reconstruction passed |
+| Earlier Quds numerical/unweighted suites | Passed unchanged, including 1167 numerical and 151,457 unweighted graph assertions |
+| `git diff --check` | Passed |
+
+Input domains, deterministic ties, parallel edges, disconnected graphs, negative
+cycles, malformed endpoints, NaN/infinity, sum overflow and invalid predecessor
+chains have Quds tests. The exhaustive graph grid uses small exactly representable
+integer weights; it is not a certificate for arbitrarily ill-conditioned real
+weights. No language syntax changed. Other roadmap deliveries remain outstanding.
+
+
 ## Quds-first math tests and compiler corrections
 
 Mathematical behavior is now tested primarily in `.quds` suites through

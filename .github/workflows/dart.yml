@@ -21,6 +21,7 @@ jobs:
           dart run bin/quds.dart test test/math_operators.quds
           dart run bin/quds.dart test test/math_graph.quds
           dart run bin/quds.dart test test/math_graph_reference.quds
+          dart run bin/quds.dart test test/math_weighted_graph.quds
           dart run bin/quds.dart test test/math_prefix.quds
           dart run bin/quds.dart test test/expect.quds
           reject() {

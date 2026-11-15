@@ -11,6 +11,8 @@ void main() {
     'math_reference.quds': 'QUDS NUMERIC CHECKS=1167 FAILURES=0',
     'math_graph_reference.quds':
         'QUDS GRAPH CHECKS=151457 GRAPHS=1695 FAILURES=0',
+    'math_weighted_graph.quds':
+        'QUDS WEIGHTED CHECKS=224537 GRAPHS=4357 FAILURES=0',
     'math_api.quds': null,
     'math_operators.quds': null,
     'math_prefix.quds': null,

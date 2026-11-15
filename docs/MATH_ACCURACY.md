@@ -1,7 +1,7 @@
 # Math numerical audit — 2026-11-15
 
 This section records the original numerical audit, before graph expansion.
-The current SDK adds eight graph functions (300 top-level functions total),
+The current SDK adds eleven graph functions (303 top-level functions total),
 with exact graph contracts and separate independent tests in [MATH_GRAPH.md](MATH_GRAPH.md).
 See [the expansion roadmap](MATH_EXPANSION_ROADMAP_AR.md) for further domains.
 
@@ -25,7 +25,8 @@ strict relative checks for tiny tails instead of substituting one loose toleranc
 force coloring oracles in Quds: **151,457 assertions on 1695 graphs**, plus a
 20,000-vertex chain. `math_api.quds` closes the earlier Quds call-site gaps,
 including distribution quantiles, typed callbacks and fixed-seed samplers.
-All **300** public top-level functions now have a Quds call site. This is still
+All **303** public top-level functions now have a Quds call site.
+Weighted graph contracts and their Quds oracles are in [MATH_WEIGHTED_GRAPH.md](MATH_WEIGHTED_GRAPH.md). This is still
 call-site traceability, not complete branch/domain coverage.
 
 `math_quds_test.dart` only launches the Quds suites and verifies their completion

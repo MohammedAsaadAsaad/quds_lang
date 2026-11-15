@@ -36,6 +36,7 @@ Implement Quds, a **general-purpose language**, not a Flutter UI framework, as a
 ## Development workflow
 
 - Start with a small milestone and ship tests in the same PR.
+- Push each completed, tested package to `origin/main` incrementally, as requested by the project owner; do not wait for all math expansion domains to finish.
 - Run `dart format .`, `dart analyze`, `dart test` when Dart SDK is available.
 - Math SDK behavior must be tested primarily in `.quds` suites using `quds test`; Dart/JavaScript runners supplement interoperability checks, not replace Quds call/type-check coverage. Every public math API needs an executable Quds call.
 - Fix compiler defects exposed by those suites and add regressions in the same change, preserving approved syntax.

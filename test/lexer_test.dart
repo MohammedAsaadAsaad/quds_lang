@@ -1,7 +1,26 @@
+import 'dart:convert';
 import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('UTF-8 span indexing preserves supplementary Unicode and CRLF', () {
+    const source = '𐐀 = "😀"\r\nπ = 3.14\n';
+    final tokens = const Lexer().tokenize(source);
+    final identifiers =
+        tokens.where((t) => t.kind == TokenKind.identifier).toList();
+    expect(identifiers.first.lexeme, '𐐀');
+    expect(identifiers.first.span.length, 4);
+    expect(identifiers.last.span.offset, 15);
+    expect(identifiers.last.span.line, 2);
+    expect(tokens.firstWhere((t) => t.kind == TokenKind.equals).span.column, 4);
+    final bytes = utf8.encode(source);
+    for (final token in tokens) {
+      expect(
+          utf8.decode(bytes.sublist(
+              token.span.offset, token.span.offset + token.span.length)),
+          token.lexeme);
+    }
+  });
   final lexer = Lexer();
 
   test('emits indentation and dedentation for nested blocks', () {

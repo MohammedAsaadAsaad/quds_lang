@@ -2405,7 +2405,10 @@ class Analyzer {
 
   bool returns(List<Statement> body) {
     for (final statement in body) {
-      if (statement is ReturnStatement) return true;
+      // Throwing paths cannot fall through to a missing return value.
+      if (statement is ReturnStatement ||
+          statement is ThrowStatement ||
+          statement is RethrowStatement) return true;
       if (statement is GuardedStatement &&
           statement.alternate != null &&
           statement.statement is ReturnStatement) {

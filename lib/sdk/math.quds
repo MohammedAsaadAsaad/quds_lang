@@ -43,21 +43,27 @@ degrees(value: double) -> double = value * 180.0 / math.pi
 # Example:
 #   print wrapRadians(tau())
 wrapRadians(angle: double) -> double:
-  turns = (angle + math.pi) / tau()
-  var shifted = turns - (turns.floor to double)
-  if shifted <= 0.0: shifted = shifted + 1.0
-  return shifted * tau() - math.pi
+  shifted = angle % tau()
+  if shifted > math.pi: return shifted - tau()
+  return shifted
 
 # The point [t] of the way from [a] to [b]. [t] is not clamped.
 # Example:
 #   print lerp(0.0, 10.0, 0.5)
-lerp(a: double, b: double, t: double) -> double = a + (b - a) * t
+lerp(a: double, b: double, t: double) -> double:
+  if t == 0.0: return a
+  if t == 1.0 or a == b: return b
+  if (a < 0.0 and b > 0.0) or (a > 0.0 and b < 0.0):
+    return (1.0 - t) * a + t * b
+  return a + (b - a) * t
 
 # Where [value] sits between [a] and [b], as a fraction of that span.
 # Example:
 #   print inverseLerp(0.0, 10.0, 5.0)
 inverseLerp(a: double, b: double, value: double) -> double:
   if a == b: throw "inverseLerp needs two different ends"
+  if not _finite(b - a) or not _finite(value - a):
+    return (value / 2.0 - a / 2.0) / (b / 2.0 - a / 2.0)
   return (value - a) / (b - a)
 
 # [value] read on one span and written on another.
@@ -121,6 +127,9 @@ hypot(x: double, y: double) -> double:
   var ay = y
   if ax < 0.0: ax = 0.0 - ax
   if ay < 0.0: ay = 0.0 - ay
+  if ax > 1.7976931348623157e308: return ax
+  if ay > 1.7976931348623157e308: return ay
+  if ax != ax or ay != ay: return ax + ay
   if ax < ay:
     saved = ax
     ax = ay
@@ -143,7 +152,7 @@ log10(value: double) -> double = math.log(value) / math.ln10
 # Example:
 #   print decimalScale(2)
 decimalScale(places: int) -> double:
-  if places < 0: throw "places cannot be negative"
+  if places < 0 or places > 308: throw "places must be from 0 through 308"
   var scale = 1.0
   var left = places
   while left > 0:
@@ -156,6 +165,7 @@ decimalScale(places: int) -> double:
 #   print roundTo(1.235, 2)
 roundTo(value: double, places: int) -> double:
   scale = decimalScale(places)
+  if not _finite(value * scale): return value
   return ((value * scale).round to double) / scale
 
 # [value] rounded down to [places] digits after the decimal point.
@@ -163,6 +173,7 @@ roundTo(value: double, places: int) -> double:
 #   print floorTo(1.239, 2)
 floorTo(value: double, places: int) -> double:
   scale = decimalScale(places)
+  if not _finite(value * scale): return value
   return ((value * scale).floor to double) / scale
 
 # [value] rounded up to [places] digits after the decimal point.
@@ -170,6 +181,7 @@ floorTo(value: double, places: int) -> double:
 #   print ceilTo(1.231, 2)
 ceilTo(value: double, places: int) -> double:
   scale = decimalScale(places)
+  if not _finite(value * scale): return value
   return ((value * scale).ceil to double) / scale
 
 # Smooth step from 0 at [edge0] to 1 at [edge1].
@@ -216,12 +228,12 @@ logit(p: double) -> double:
 gcd(a: int, b: int) -> int:
   var x = a
   var y = b
-  if x < 0: x = 0 - x
-  if y < 0: y = 0 - y
   while y != 0:
     next = x % y
     x = y
     y = next
+  if x < 0 - _maxInt(): throw "gcd result is outside int range"
+  if x < 0: return 0 - x
   return x
 
 # The least common multiple of [a] and [b]. Zero when either argument is zero.
@@ -229,11 +241,10 @@ gcd(a: int, b: int) -> int:
 #   print lcm(4, 6)
 lcm(a: int, b: int) -> int:
   if a == 0 or b == 0: return 0
-  var x = a
-  var y = b
-  if x < 0: x = 0 - x
-  if y < 0: y = 0 - y
-  return x ~/ gcd(x, y) * y
+  answer = _checkedMultiply(a ~/ gcd(a, b), b)
+  if answer < 0 - _maxInt(): throw "lcm result is outside int range"
+  if answer < 0: return 0 - answer
+  return answer
 
 # [base] raised to a non-negative integer [exponent].
 # Example:
@@ -244,9 +255,9 @@ ipow(base: int, exponent: int) -> int:
   var left = exponent
   var factor = base
   while left > 0:
-    if left % 2 == 1: total = total * factor
+    if left % 2 == 1: total = _checkedMultiply(total, factor)
     left = left ~/ 2
-    if left > 0: factor = factor * factor
+    if left > 0: factor = _checkedMultiply(factor, factor)
   return total
 
 # n! for a non-negative [n]. 0! is 1.
@@ -257,7 +268,7 @@ factorial(n: int) -> int:
   var total = 1
   var i = 2
   while i <= n:
-    total = total * i
+    total = _checkedMultiply(total, i)
     i = i + 1
   return total
 
@@ -270,7 +281,7 @@ permutations(n: int, k: int) -> int:
   var total = 1
   var i = 0
   while i < k:
-    total = total * (n - i)
+    total = _checkedMultiply(total, n - i)
     i = i + 1
   return total
 
@@ -285,7 +296,12 @@ combinations(n: int, k: int) -> int:
   var total = 1
   var i = 0
   while i < taken:
-    total = total * (n - i) ~/ (i + 1)
+    numerator = n - i
+    denominator = i + 1
+    common = gcd(numerator, denominator)
+    reduced = numerator ~/ common
+    rest = denominator ~/ common
+    total = _checkedMultiply(total ~/ rest, reduced)
     i = i + 1
   return total
 
@@ -293,24 +309,16 @@ combinations(n: int, k: int) -> int:
 # Example:
 #   print isPrime(7)
 isPrime(n: int) -> bool:
-  if n < 2: return false
-  if n % 2 == 0: return n == 2
-  if n % 3 == 0: return n == 3
-  var d = 5
-  while d <= n ~/ d:
-    if n % d == 0: return false
-    if n % (d + 2) == 0: return false
-    d = d + 6
-  return true
+  return isProbablePrime(n)
 
 # The least prime strictly greater than [n].
 # Example:
 #   print nextPrime(14)
 nextPrime(n: int) -> int:
-  var candidate = n + 1
-  if candidate < 2: candidate = 2
+  if n < 2: return 2
+  var candidate = _checkedAdd(n, 1)
   while not isPrime(candidate):
-    candidate = candidate + 1
+    candidate = _checkedAdd(candidate, 1)
   return candidate
 
 # The [n]th Fibonacci number. fibonacci(0) is 0 and fibonacci(1) is 1.
@@ -323,7 +331,7 @@ fibonacci(n: int) -> int:
   var current = 1
   var left = n - 1
   while left > 0:
-    next = previous + current
+    next = _checkedAdd(previous, current)
     previous = current
     current = next
     left = left - 1
@@ -364,9 +372,7 @@ value class Complex:
   # Example:
   #   print Complex(real: 2.0, imag: 0.0).reciprocal().real
   reciprocal() -> Complex:
-    den = real * real + imag * imag
-    if den == 0.0: throw "division by zero"
-    return Complex(real: real / den, imag: (0.0 - imag) / den)
+    return Complex(real: 1.0, imag: 0.0) / this
   # e raised to this number.
   # Example:
   #   print Complex(real: 0.0, imag: 0.0).exponential().real
@@ -378,13 +384,15 @@ value class Complex:
   #   print Complex(real: 1.0, imag: 0.0).logarithm().real
   logarithm() -> Complex:
     if real == 0.0 and imag == 0.0: throw "logarithm of zero"
-    return Complex(real: math.log(abs()), imag: argument())
+    mag = max(_abs(real), _abs(imag))
+    return Complex(real: math.log(mag) + math.log(hypot(real / mag, imag / mag)), imag: argument())
   # Principal square root. The real part is non-negative.
   # Example:
   #   print Complex(real: 0.0 - 1.0, imag: 0.0).squareRoot().imag
   squareRoot() -> Complex:
     if real == 0.0 and imag == 0.0: return Complex(real: 0.0, imag: 0.0)
-    root = math.sqrt(abs())
+    mag = max(_abs(real), _abs(imag))
+    root = math.sqrt(mag) * math.sqrt(hypot(real / mag, imag / mag))
     half = argument() / 2.0
     return Complex(real: root * math.cos(half), imag: root * math.sin(half))
   # This number raised to [exponent], through the principal logarithm.
@@ -426,10 +434,17 @@ value class Complex:
     nextImag = real * other.imag + imag * other.real
     return Complex(real: nextReal, imag: nextImag)
   operator /(other: Complex) -> Complex:
-    den = other.real * other.real + other.imag * other.imag
-    if den == 0.0: throw "division by zero"
-    nextReal = (real * other.real + imag * other.imag) / den
-    nextImag = (imag * other.real - real * other.imag) / den
+    scale = max(_abs(other.real), _abs(other.imag))
+    if scale == 0.0: throw "division by zero"
+    br = other.real / scale
+    bi = other.imag / scale
+    topScale = max(_abs(real), _abs(imag))
+    if topScale == 0.0: return Complex(real: 0.0, imag: 0.0)
+    ar = real / topScale
+    ai = imag / topScale
+    den = br * br + bi * bi
+    nextReal = _scaleRatio((ar * br + ai * bi) / den, topScale, scale)
+    nextImag = _scaleRatio((ai * br - ar * bi) / den, topScale, scale)
     return Complex(real: nextReal, imag: nextImag)
 
 # A 2D vector. Point from dart:math remains available for positions.
@@ -447,9 +462,12 @@ value class Vec2:
   # Example:
   #   print v.normalized().length()
   normalized() -> Vec2:
-    len = length()
-    if len == 0.0: return Vec2(x: 0.0, y: 0.0)
-    return scale(1.0 / len)
+    mag = max(_abs(x), _abs(y))
+    if mag == 0.0: return Vec2(x: 0.0, y: 0.0)
+    nx = x / mag
+    ny = y / mag
+    len = hypot(nx, ny)
+    return Vec2(x: nx / len, y: ny / len)
   # This vector multiplied by a real [factor].
   # Example:
   #   print v.scale(2.0).x
@@ -490,9 +508,13 @@ value class Vec3:
   # Example:
   #   print v.normalized().x
   normalized() -> Vec3:
-    len = length()
-    if len == 0.0: return Vec3(x: 0.0, y: 0.0, z: 0.0)
-    return scale(1.0 / len)
+    mag = max(_abs(x), max(_abs(y), _abs(z)))
+    if mag == 0.0: return Vec3(x: 0.0, y: 0.0, z: 0.0)
+    nx = x / mag
+    ny = y / mag
+    nz = z / mag
+    len = hypot(hypot(nx, ny), nz)
+    return Vec3(x: nx / len, y: ny / len, z: nz / len)
   # This vector multiplied by a real [factor].
   # Example:
   #   print v.scale(2.0).z
@@ -582,7 +604,10 @@ product(values: List<double>) -> double:
 #   print mean([1.0, 2.0, 3.0])
 mean(values: List<double>) -> double:
   if values.isEmpty: throw "mean of an empty list"
-  return sumOf(values) / (values.length to double)
+  scaled: List<double> = []
+  for value in values:
+    scaled.add(value / (values.length to double))
+  return kahanSum(scaled)
 
 # The middle value. An even count uses the mean of the two middle values.
 # Example:
@@ -595,7 +620,7 @@ median(values: List<double>) -> double:
   ordered.sort()
   mid = ordered.length ~/ 2
   if ordered.length % 2 == 1: return ordered[mid]
-  return (ordered[mid - 1] + ordered[mid]) / 2.0
+  return ordered[mid - 1] / 2.0 + ordered[mid] / 2.0
 
 # The smallest value. An empty list throws.
 # Example:
@@ -629,11 +654,12 @@ sampleRange(values: List<double>) -> double:
 variance(values: List<double>) -> double:
   if values.length < 2: throw "variance needs at least two values"
   center = mean(values)
-  var total = 0.0
+  denominator = (values.length - 1) to double
+  terms: List<double> = []
   for value in values:
     delta = value - center
-    total = total + delta * delta
-  return total / ((values.length - 1) to double)
+    terms.add((delta / denominator) * delta)
+  return kahanSum(terms)
 
 # The population variance, divided by n. An empty list throws.
 # Example:
@@ -641,22 +667,26 @@ variance(values: List<double>) -> double:
 populationVariance(values: List<double>) -> double:
   if values.isEmpty: throw "populationVariance of an empty list"
   center = mean(values)
-  var total = 0.0
+  denominator = values.length to double
+  terms: List<double> = []
   for value in values:
     delta = value - center
-    total = total + delta * delta
-  return total / (values.length to double)
+    terms.add((delta / denominator) * delta)
+  return kahanSum(terms)
 
 # The sample standard deviation.
 # Example:
 #   print stddev([1.0, 2.0, 3.0])
-stddev(values: List<double>) -> double = math.sqrt(variance(values))
+stddev(values: List<double>) -> double:
+  if values.length < 2: throw "stddev needs at least two values"
+  return _spread(values, (values.length - 1) to double)
 
 # The population standard deviation.
 # Example:
 #   print populationStddev([1.0, 2.0, 3.0])
 populationStddev(values: List<double>) -> double:
-  return math.sqrt(populationVariance(values))
+  if values.isEmpty: throw "populationStddev of an empty list"
+  return _spread(values, values.length to double)
 
 # The value at [percent] of the way through the sorted sample.
 # [percent] runs from 0 through 100. Ties are interpolated.
@@ -704,11 +734,18 @@ covariance(xs: List<double>, ys: List<double>) -> double:
 # Example:
 #   print correlation([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
 correlation(xs: List<double>, ys: List<double>) -> double:
+  if xs.length != ys.length: throw "correlation needs matching lists"
   sx = stddev(xs)
   sy = stddev(ys)
-  if sx == 0.0 or sy == 0.0:
-    throw "correlation is undefined for a constant list"
-  return covariance(xs, ys) / (sx * sy)
+  if sx == 0.0 or sy == 0.0: throw "correlation is undefined for a constant list"
+  mx = mean(xs)
+  my = mean(ys)
+  terms: List<double> = []
+  var i = 0
+  while i < xs.length:
+    terms.add(_differenceRatio(xs[i], mx, sx) * _differenceRatio(ys[i], my, sy) / ((xs.length - 1) to double))
+    i = i + 1
+  return bounded(kahanSum(terms), -1.0, 1.0)
 
 # Each value rewritten as a population z-score.
 # Example:
@@ -772,46 +809,54 @@ summarize(values: List<double>) -> Summary:
       maximum: maximum(values),
       variance: spread)
 
-# The error function. The approximation is Abramowitz and Stegun 7.1.26.
+# The error function, from the regularized incomplete gamma function.
 # Example:
 #   print approximately(erf(0.0), 0.0, 1.0e-6)
 erf(x: double) -> double:
-  if x < 0.0: return 0.0 - _positiveErfTail(0.0 - x, true)
-  return _positiveErfTail(x, true)
+  if x < 0.0: return 0.0 - erf(0.0 - x)
+  if x == 0.0: return x
+  if x >= 6.0: return 1.0
+  if x * x < 1.5: return _gammaSeries(0.5, x * x)
+  return 1.0 - _gammaFraction(0.5, x * x)
 
-# The complementary error function, 1 - erf(x), kept accurate for large x.
+# Complementary error function, using the upper gamma tail directly.
 # Example:
 #   print approximately(erfc(0.0), 1.0, 1.0e-6)
 erfc(x: double) -> double:
-  if x < 0.0: return 2.0 - _positiveErfTail(0.0 - x, false)
-  return _positiveErfTail(x, false)
+  if x < 0.0: return 2.0 - erfc(0.0 - x)
+  if x == 0.0: return 1.0
+  if x > 27.3: return 0.0
+  if x * x < 1.5: return 1.0 - _gammaSeries(0.5, x * x)
+  return _gammaFraction(0.5, x * x)
 
 # Normal density. [center] defaults to 0 and [sigma] defaults to 1.
 # Example:
 #   print normalPdf(0.0) > 0.0
 normalPdf(x: double, center: double = 0.0, sigma: double = 1.0) -> double:
   if sigma <= 0.0: throw "sigma must be positive"
-  z = (x - center) / sigma
-  return exp(0.0 - 0.5 * z * z) / (sigma * sqrt(2.0 * pi))
+  z = _differenceRatio(x, center, sigma)
+  return exp(0.0 - 0.5 * z * z) / sqrt(2.0 * pi) / sigma
 
 # Normal cumulative probability, from the error function.
 # Example:
 #   print approximately(normalCdf(0.0), 0.5, 1.0e-6)
 normalCdf(x: double, center: double = 0.0, sigma: double = 1.0) -> double:
   if sigma <= 0.0: throw "sigma must be positive"
-  z = (x - center) / sigma
-  return 0.5 * (1.0 + erf(z / sqrt(2.0)))
+  z = _differenceRatio(x, center, sigma)
+  return 0.5 * erfc(0.0 - z / sqrt(2.0))
 
-# Natural log of the gamma function, using the Lanczos approximation.
+# Natural log of the absolute gamma function, using Lanczos.
 # Undefined at non-positive integers.
 # Example:
 #   print approximately(logGamma(1.0), 0.0, 1.0e-6)
 logGamma(x: double) -> double:
+  if x == 1.0 or x == 2.0: return 0.0
   whole = x.floor to double
   if x <= 0.0 and x == whole:
     throw "logGamma is undefined at a non-positive integer"
+  if _abs(x) < 1.0e-8: return -math.log(_abs(x)) - 0.5772156649015329 * x
   if x < 0.5:
-    return math.log(math.pi / math.sin(math.pi * x)) - logGamma(1.0 - x)
+    return math.log(math.pi) - math.log(_abs(math.sin(math.pi * x))) - logGamma(1.0 - x)
   z = x - 1.0
   var sum = 0.99999999999980993
   sum = sum + 676.5203681218851 / (z + 1.0)
@@ -829,11 +874,10 @@ logGamma(x: double) -> double:
 # Example:
 #   print approximately(gamma(5.0), 24.0, 1.0e-6)
 gamma(x: double) -> double:
-  whole = x.floor to double
-  if x <= 0.0 and x == whole:
-    throw "gamma is undefined at a non-positive integer"
-  if x < 0.0: return math.pi / (math.sin(math.pi * x) * gamma(1.0 - x))
-  return math.exp(logGamma(x))
+  if x <= 0.0 and x % 1.0 == 0.0: throw "gamma is undefined at a non-positive integer"
+  magnitude = math.exp(logGamma(x))
+  if x < 0.0 and math.sin(math.pi * x) < 0.0: return 0.0 - magnitude
+  return magnitude
 
 # Binomial probability of [k] successes in [n] trials of chance [p].
 # Example:
@@ -841,9 +885,14 @@ gamma(x: double) -> double:
 binomialPmf(k: int, n: int, p: double) -> double:
   if k < 0 or n < 0 or k > n: return 0.0
   if p < 0.0 or p > 1.0: throw "probability must be from 0 through 1"
-  ways = combinations(n, k) to double
-  return ways * (math.pow(p, k) to double) * (math.pow(1.0 - p,
-  n - k) to double)
+  if p == 0.0:
+    if k == 0: return 1.0
+    return 0.0
+  if p == 1.0:
+    if k == n: return 1.0
+    return 0.0
+  logged = _logChoose(n, k) + (k to double) * math.log(p) + ((n - k) to double) * log1p(0.0 - p)
+  return math.exp(logged)
 
 # Poisson probability of [k] events when the mean count is [lambda].
 # Example:
@@ -854,8 +903,7 @@ poissonPmf(k: int, lambda: double) -> double:
   if lambda == 0.0:
     if k == 0: return 1.0
     return 0.0
-  power = math.pow(lambda, k) to double
-  return math.exp(0.0 - lambda) * power / (factorial(k) to double)
+  return math.exp(0.0 - lambda + (k to double) * math.log(lambda) - logGamma((k to double) + 1.0))
 
 # [count] evenly spaced values from [start] through [end], including both ends.
 # Example:
@@ -921,13 +969,13 @@ bisect(
   var fb = f(b)
   if fa == 0.0: return a
   if fb == 0.0: return b
-  if fa * fb > 0.0: throw "bisect needs a sign change"
+  if (fa > 0.0 and fb > 0.0) or (fa < 0.0 and fb < 0.0): throw "bisect needs a sign change"
   var i = 0
   while i < steps:
     mid = (a + b) / 2.0
     fm = f(mid)
     if fm == 0.0: return mid
-    if fa * fm < 0.0:
+    if (fa < 0.0 and fm > 0.0) or (fa > 0.0 and fm < 0.0):
       b = mid
       fb = fm
     else:
@@ -1140,36 +1188,44 @@ rungeKutta(
 # Example:
 #   print sinh(0.0)
 sinh(x: double) -> double:
-  return (math.exp(x) - math.exp(0.0 - x)) / 2.0
+  if x < 0.0: return 0.0 - sinh(0.0 - x)
+  if x > 20.0: return math.exp(x - math.ln2)
+  return (expm1(x) - expm1(0.0 - x)) / 2.0
 
 # Hyperbolic cosine.
 # Example:
 #   print cosh(0.0)
 cosh(x: double) -> double:
-  return (math.exp(x) + math.exp(0.0 - x)) / 2.0
+  mag = _abs(x)
+  if mag > 20.0: return math.exp(mag - math.ln2)
+  return (math.exp(mag) + math.exp(0.0 - mag)) / 2.0
 
 # Hyperbolic tangent, in (-1, 1).
 # Example:
 #   print tanh(0.0)
 tanh(x: double) -> double:
   if x > 20.0: return 1.0
-  if x < 0.0 - 20.0: return 0.0 - 1.0
-  risen = math.exp(2.0 * x)
-  return (risen - 1.0) / (risen + 1.0)
+  if x < -20.0: return -1.0
+  rise = expm1(2.0 * x)
+  return rise / (rise + 2.0)
 
 # Inverse hyperbolic sine.
 # Example:
 #   print asinh(0.0)
 asinh(x: double) -> double:
   if x < 0.0: return 0.0 - asinh(0.0 - x)
-  return math.log(x + math.sqrt(x * x + 1.0))
+  if x < 1.0e-8: return x
+  if x > 1.0e150: return math.log(x) + math.ln2
+  return log1p(x + x * x / (1.0 + hypot(x, 1.0)))
 
 # Inverse hyperbolic cosine. [x] must be at least 1.
 # Example:
 #   print acosh(1.0)
 acosh(x: double) -> double:
   if x < 1.0: throw "acosh needs a value at least 1"
-  return math.log(x + math.sqrt(x * x - 1.0))
+  if x > 1.0e150: return math.log(x) + math.ln2
+  gap = x - 1.0
+  return log1p(gap + math.sqrt(gap * (x + 1.0)))
 
 # Inverse hyperbolic tangent. [x] must sit strictly between -1 and 1.
 # Example:
@@ -1177,7 +1233,7 @@ acosh(x: double) -> double:
 atanh(x: double) -> double:
   if x <= 0.0 - 1.0 or x >= 1.0:
     throw "atanh needs a value strictly between -1 and 1"
-  return 0.5 * math.log((1.0 + x) / (1.0 - x))
+  return 0.5 * (log1p(x) - log1p(0.0 - x))
 
 # Real cube root, including for negative [x].
 # Example:
@@ -1192,19 +1248,22 @@ cbrt(x: double) -> double:
 #   print log1p(0.0)
 log1p(x: double) -> double:
   if x <= 0.0 - 1.0: throw "log1p needs a value greater than -1"
-  if x == 0.0: return 0.0
+  if x == 0.0: return x
+  if x > 1.7976931348623157e308: return x
   shifted = 1.0 + x
   if shifted == 1.0: return x
-  return math.log(shifted) * x / (shifted - 1.0)
+  return math.log(shifted) * (x / (shifted - 1.0))
 
 # exp([x]) - 1, accurate when [x] is near zero.
 # Example:
 #   print expm1(0.0)
 expm1(x: double) -> double:
-  if x == 0.0: return 0.0
+  if x == 0.0: return x
+  if x < -37.0: return -1.0
   risen = math.exp(x)
+  if _abs(risen) > 1.7976931348623157e308: return risen
   if risen == 1.0: return x
-  return (risen - 1.0) * x / math.log(risen)
+  return (risen - 1.0) * (x / math.log(risen))
 
 # The geometric mean of positive numbers.
 # Example:
@@ -1257,6 +1316,7 @@ diff(values: List<double>) -> List<double>:
 interp(x: double, xs: List<double>, ys: List<double>) -> double:
   if xs.length != ys.length or xs.length < 2:
     throw "interp needs matching lists of at least two points"
+  _increasing(xs)
   if x <= xs[0]: return ys[0]
   last = xs.length - 1
   if x >= xs[last]: return ys[last]
@@ -1284,25 +1344,19 @@ value class Line:
 lineFit(xs: List<double>, ys: List<double>) -> Line:
   if xs.length != ys.length or xs.length < 2:
     throw "lineFit needs matching lists of at least two points"
-  count = xs.length to double
-  var sx = 0.0
-  var sy = 0.0
-  var sxx = 0.0
-  var sxy = 0.0
+  mx = mean(xs)
+  my = mean(ys)
+  var xx = 0.0
+  var xy = 0.0
   var i = 0
   while i < xs.length:
-    x = xs[i]
-    y = ys[i]
-    sx = sx + x
-    sy = sy + y
-    sxx = sxx + x * x
-    sxy = sxy + x * y
+    dx = xs[i] - mx
+    xx = xx + dx * dx
+    xy = xy + dx * (ys[i] - my)
     i = i + 1
-  base = count * sxx - sx * sx
-  if base == 0.0: throw "lineFit needs more than one x value"
-  slope = (count * sxy - sx * sy) / base
-  intercept = (sy - slope * sx) / count
-  return Line(slope: slope, intercept: intercept)
+  if xx == 0.0: throw "lineFit needs more than one x value"
+  slope = xy / xx
+  return Line(slope: slope, intercept: my - slope * mx)
 
 # Rows turned into columns.
 # Example:
@@ -1500,8 +1554,8 @@ frobenius(rows: List<List<double>>) -> double:
   grid = _rectCopy(rows)
   var total = 0.0
   for row in grid:
-    total = total + _dot(row, row)
-  return math.sqrt(total)
+    total = hypot(total, vectorLength(row))
+  return total
 
 # The dot product of two vectors of the same length.
 # Example:
@@ -1552,7 +1606,10 @@ diagonalMatrix(values: List<double>) -> List<List<double>>:
 #   print vectorLength([3.0, 4.0])
 vectorLength(values: List<double>) -> double:
   if values.isEmpty: throw "vectorLength needs a vector"
-  return math.sqrt(_dot(values, values))
+  var total = 0.0
+  for value in values:
+    total = hypot(total, value)
+  return total
 
 # The sum of each row.
 # Example:
@@ -1596,35 +1653,15 @@ inverse(rows: List<List<double>>) -> List<List<double>>:
     col = col + 1
   return transpose(columns)
 
-# The rank of a rectangular matrix. Entries smaller than 1e-9 count as zero.
+# Numerical rank: singular values above 1e-12 times the largest count.
 # Example:
 #   print rank([[1.0, 2.0], [2.0, 4.0]])
 rank(rows: List<List<double>>) -> int:
   if rows.isEmpty: return 0
-  var grid = _rectCopy(rows)
-  height = grid.length
-  width = grid[0].length
-  var row = 0
-  var col = 0
+  vals = svd(rows).values
   var found = 0
-  while row < height and col < width:
-    var pivot = row
-    var look = row + 1
-    while look < height:
-      if _abs(grid[look][col]) > _abs(grid[pivot][col]): pivot = look
-      look = look + 1
-    if _abs(grid[pivot][col]) <= 1.0e-9: col = col + 1
-    else:
-      if pivot != row: grid = _swapRows(grid, row, pivot)
-      var below = row + 1
-      while below < height:
-        factor = grid[below][col] / grid[row][col]
-        cleared = _cancel(grid[below], grid[row], factor, col)
-        grid = _replaceRow(grid, below, cleared)
-        below = below + 1
-      row = row + 1
-      col = col + 1
-      found = found + 1
+  for value in vals:
+    if value > 1.0e-12 * vals[0]: found = found + 1
   return found
 
 # Least-squares solution of matrix * x = [values].
@@ -1634,10 +1671,7 @@ rank(rows: List<List<double>>) -> int:
 leastSquares(rows: List<List<double>>, values: List<double>) -> List<double>:
   grid = _rectCopy(rows)
   if values.length != grid.length: throw "leastSquares needs one value per row"
-  if grid.length < grid[0].length:
-    throw "leastSquares needs at least as many rows as columns"
-  left = transpose(grid)
-  return solveLinear(matmul(left, grid), matvec(left, values))
+  return matvec(pseudoinverse(grid), values)
 
 # [rows] raised to a non-negative integer power. Power 0 is the identity.
 # Example:
@@ -1692,27 +1726,34 @@ value class QR:
 # Example:
 #   print qr([[0.0, 1.0], [1.0, 0.0]]).q[1][0]
 qr(rows: List<List<double>>) -> QR:
-  grid = _rectCopy(rows)
-  height = grid.length
-  width = grid[0].length
+  original = _rectCopy(rows)
+  height = original.length
+  width = original[0].length
   if height < width: throw "qr needs at least as many rows as columns"
-  basis: List<List<double>> = []
-  var upper = _filled(width, width, 0.0)
-  var col = 0
-  while col < width:
-    var v = _column(grid, col)
-    var j = 0
-    while j < col:
-      coeff = _dot(basis[j], v)
-      upper = _replaceRow(upper, j, _setAt(upper[j], col, coeff))
-      v = _axpy(v, basis[j], 0.0 - coeff)
-      j = j + 1
-    len = vectorLength(v)
-    if len <= 1.0e-9: throw "qr needs independent columns"
-    upper = _replaceRow(upper, col, _setAt(upper[col], col, len))
-    basis.add(_scaleList(v, 1.0 / len))
-    col = col + 1
-  return QR(q: transpose(basis), r: upper)
+  scale = _matrixScale(original)
+  if scale == 0.0: throw "qr needs independent columns"
+  grid = _divideMatrix(original, scale)
+  var q = _filled(height, width, 0.0)
+  var r = _filled(width, width, 0.0)
+  var j = 0
+  while j < width:
+    var col = _column(grid, j)
+    var pass = 0
+    while pass < 2:
+      var i = 0
+      while i < j:
+        basis = _column(q, i)
+        projection = dot(basis, col)
+        r = _put(r, i, j, r[i][j] + projection)
+        col = _axpy(col, basis, 0.0 - projection)
+        i = i + 1
+      pass = pass + 1
+    length = vectorLength(col)
+    if length <= 2.22e-16 * (width to double): throw "qr needs independent columns"
+    r = _put(r, j, j, length)
+    q = _setColumn(q, j, _divideVector(col, length))
+    j = j + 1
+  return QR(q: q, r: scaleMatrix(r, scale))
 
 # Coefficients are constant-term first: index k belongs to x^k.
 # Example:
@@ -1742,29 +1783,39 @@ polyDerivative(coeffs: List<double>) -> List<double>:
 # Example:
 #   print quadraticRoots(1.0, 0.0 - 3.0, 2.0)[0].real
 quadraticRoots(a: double, b: double, c: double) -> List<Complex>:
-  if _abs(a) <= 1.0e-14:
-    if _abs(b) <= 1.0e-14: throw "quadraticRoots needs a degree"
-    one: List<Complex> = [Complex(real: (0.0 - c) / b, imag: 0.0)]
-    return one
-  disc = b * b - 4.0 * a * c
-  twoA = 2.0 * a
+  scale = max(_abs(a), max(_abs(b), _abs(c)))
+  if scale == 0.0: throw "zero polynomial has no isolated roots"
+  aa = a / scale
+  bb = b / scale
+  cc = c / scale
+  if a == 0.0:
+    if b == 0.0: throw "constant polynomial has no roots"
+    return [Complex(real: -cc / bb, imag: 0.0)]
+  disc = bb * bb - 4.0 * aa * cc
   roots: List<Complex> = []
   if disc >= 0.0:
-    root = math.sqrt(disc)
-    roots.add(Complex(real: (0.0 - b + root) / twoA, imag: 0.0))
-    roots.add(Complex(real: (0.0 - b - root) / twoA, imag: 0.0))
+    rad = math.sqrt(disc)
+    var signed = rad
+    if bb < 0.0: signed = -rad
+    q = -0.5 * (bb + signed)
+    if q == 0.0:
+      roots.add(Complex(real: -bb / (2.0 * aa), imag: 0.0))
+      roots.add(Complex(real: -bb / (2.0 * aa), imag: 0.0))
+    else:
+      roots.add(Complex(real: q / aa, imag: 0.0))
+      roots.add(Complex(real: cc / q, imag: 0.0))
   else:
-    root = math.sqrt(0.0 - disc)
-    mid = (0.0 - b) / twoA
-    roots.add(Complex(real: mid, imag: root / twoA))
-    roots.add(Complex(real: mid, imag: (0.0 - root) / twoA))
+    realPart = -bb / (2.0 * aa)
+    imagPart = math.sqrt(-disc) / (2.0 * _abs(aa))
+    roots.add(Complex(real: realPart, imag: -imagPart))
+    roots.add(Complex(real: realPart, imag: imagPart))
   return _sortRoots(roots)
 
 # Roots of a x^3 + b x^2 + c x + d. A leading zero falls back to quadratic.
 # Example:
 #   print cubicRoots(1.0, 0.0 - 6.0, 11.0, 0.0 - 6.0)[1].real
 cubicRoots(a: double, b: double, c: double, d: double) -> List<Complex>:
-  if _abs(a) <= 1.0e-14: return quadraticRoots(b, c, d)
+  if a == 0.0: return quadraticRoots(b, c, d)
   aa = b / a
   bb = c / a
   cc = d / a
@@ -1773,7 +1824,7 @@ cubicRoots(a: double, b: double, c: double, d: double) -> List<Complex>:
   q = cc + 2.0 * aa * aa * aa / 27.0 - aa * bb / 3.0
   disc = q * q / 4.0 + p * p * p / 27.0
   roots: List<Complex> = []
-  if disc > 1.0e-12:
+  if disc > 1.0e-15 * (_abs(q * q / 4.0) + _abs(p * p * p / 27.0)):
     s = math.sqrt(disc)
     u = cbrt(0.0 - q / 2.0 + s)
     v = cbrt(0.0 - q / 2.0 - s)
@@ -1784,7 +1835,7 @@ cubicRoots(a: double, b: double, c: double, d: double) -> List<Complex>:
     roots.add(Complex(real: real2 - shift, imag: imag2))
     roots.add(Complex(real: real2 - shift, imag: 0.0 - imag2))
   else:
-    if _abs(p) <= 1.0e-12:
+    if p == 0.0:
       y = cbrt(0.0 - q)
       roots.add(Complex(real: y - shift, imag: 0.0))
       roots.add(Complex(real: y - shift, imag: 0.0))
@@ -1833,16 +1884,11 @@ modPow(base: int, exponent: int, modulus: int) -> int:
   if exponent < 0: throw "modPow needs a non-negative exponent"
   var left = exponent
   var factor = base % modulus
-  if factor < 0: factor = factor + modulus
   var total = 1 % modulus
   while left > 0:
-    if left % 2 == 1:
-      total = total * factor % modulus
-      if total < 0: total = total + modulus
+    if left % 2 == 1: total = _mulMod(total, factor, modulus)
     left = left ~/ 2
-    if left > 0:
-      factor = factor * factor % modulus
-      if factor < 0: factor = factor + modulus
+    if left > 0: factor = _mulMod(factor, factor, modulus)
   return total
 
 # The inverse of [a] modulo [modulus]. The arguments must be coprime.
@@ -1854,17 +1900,15 @@ modInverse(a: int, modulus: int) -> int:
   var newT = 1
   var r = modulus
   var newR = a % modulus
-  if newR < 0: newR = newR + modulus
   while newR != 0:
     quote = r ~/ newR
-    nextT = t - quote * newT
+    nextT = (t - _mulMod(quote % modulus, newT, modulus)) % modulus
     t = newT
     newT = nextT
     nextR = r - quote * newR
     r = newR
     newR = nextR
   if r != 1: throw "modInverse needs coprime arguments"
-  if t < 0: t = t + modulus
   return t
 
 # Prime factors of [n], with repetition, in ascending order. 1 has none.
@@ -1897,11 +1941,15 @@ kahanSum(values: List<double>) -> double:
   var sum = 0.0
   var compensation = 0.0
   for value in values:
-    y = value - compensation
-    t = sum + y
-    compensation = t - sum - y
-    sum = t
-  return sum
+    t = sum + value
+    if not _finite(t):
+      sum = t
+      compensation = 0.0
+    else:
+      if _abs(sum) >= _abs(value): compensation = compensation + ((sum - t) + value)
+      else: compensation = compensation + ((value - t) + sum)
+      sum = t
+  return sum + compensation
 
 # Adjusted Fisher-Pearson sample skewness. A constant sample throws.
 # Example:
@@ -2077,17 +2125,9 @@ normalQuantile(
 binomialCdf(k: int, n: int, p: double) -> double:
   if n < 0 or k < 0: return 0.0
   if p < 0.0 or p > 1.0: throw "probability must be from 0 through 1"
-  if k >= n: return 1.0
-  if p == 0.0: return 1.0
+  if k >= n or p == 0.0: return 1.0
   if p == 1.0: return 0.0
-  var term = math.pow(1.0 - p, n) to double
-  var total = term
-  var i = 0
-  while i < k:
-    term = term * ((n - i) to double) / ((i + 1) to double) * p / (1.0 - p)
-    total = total + term
-    i = i + 1
-  return total
+  return incompleteBeta((n - k) to double, (k to double) + 1.0, 1.0 - p)
 
 # Sum of the Poisson masses from 0 through [k].
 # Example:
@@ -2096,14 +2136,9 @@ poissonCdf(k: int, lambda: double) -> double:
   if k < 0: return 0.0
   if lambda < 0.0: throw "lambda cannot be negative"
   if lambda == 0.0: return 1.0
-  var term = math.exp(0.0 - lambda)
-  var total = term
-  var i = 1
-  while i <= k:
-    term = term * lambda / (i to double)
-    total = total + term
-    i = i + 1
-  return total
+  shape = (k to double) + 1.0
+  if lambda < shape + 1.0: return 1.0 - _gammaSeries(shape, lambda)
+  return _gammaFraction(shape, lambda)
 
 # Density of Student's t with [df] degrees of freedom.
 # Example:
@@ -2190,7 +2225,11 @@ fisherCdf(x: double, d1: double, d2: double) -> double:
   if d1 <= 0.0 or d2 <= 0.0: throw "degrees must be positive"
   if x < 0.0: return 0.0
   if x == 0.0: return 0.0
-  return incompleteBeta(d1 / 2.0, d2 / 2.0, d1 * x / (d1 * x + d2))
+  ratio = d2 / d1
+  if x < ratio:
+    z = _scaleRatio(x, d1, d2)
+    return incompleteBeta(d1 / 2.0, d2 / 2.0, z / (1.0 + z))
+  return incompleteBeta(d1 / 2.0, d2 / 2.0, 1.0 / (1.0 + ratio / x))
 
 # The F value whose cumulative probability is [p].
 # Example:
@@ -2230,19 +2269,40 @@ binomialSample(random: Random, n: int, p: double) -> int:
     i = i + 1
   return hits
 
-# Knuth's Poisson draw. Comfortable for moderate [lambda].
+# Poisson draw: Knuth for small means, transformed rejection for larger means.
 # Example:
 #   print poissonSample(Random(1), 0.0)
 poissonSample(random: Random, lambda: double) -> int:
-  if lambda < 0.0: throw "lambda cannot be negative"
+  if not _finite(lambda) or lambda < 0.0: throw "lambda must be finite and non-negative"
+  if lambda > 1.0e8: throw "poissonSample mean exceeds the numerical accuracy limit"
   if lambda == 0.0: return 0
-  limit = math.exp(0.0 - lambda)
-  var mass = 1.0
-  var count = 0
-  while mass > limit:
-    mass = mass * random.nextDouble()
-    count = count + 1
-  return count - 1
+  if lambda < 30.0:
+    limit = math.exp(0.0 - lambda)
+    var mass = 1.0
+    var count = 0
+    while mass > limit:
+      mass = mass * random.nextDouble()
+      count = count + 1
+    return count - 1
+  root = math.sqrt(lambda)
+  b = 0.931 + 2.53 * root
+  a = -0.059 + 0.02483 * b
+  invAlpha = 1.1239 + 1.1328 / (b - 3.4)
+  vr = 0.9277 - 3.6224 / (b - 2.0)
+  var guard = 0
+  while guard < 10000:
+    u = random.nextDouble() - 0.5
+    v = random.nextDouble()
+    us = 0.5 - _abs(u)
+    if us > 0.0:
+      k = ((2.0 * a / us + b) * u + lambda + 0.43).floor
+      if k >= 0:
+        if us >= 0.07 and v <= vr: return k
+        if us >= 0.013 or v <= us:
+          logged = math.log(v * invAlpha / (a / (us * us) + b))
+          if logged <= -lambda + (k to double) * math.log(lambda) - logGamma((k to double) + 1.0): return k
+    guard = guard + 1
+  throw "poissonSample did not converge"
 
 # Maximum absolute column sum.
 # Example:
@@ -2384,6 +2444,8 @@ eigenSymmetric(rows: List<List<double>>) -> Eigen:
   var grid = _squareCopy(rows)
   n = grid.length
   if n == 0: throw "eigenSymmetric needs a matrix"
+  scale = _matrixScale(grid)
+  if scale > 0.0: grid = _divideMatrix(grid, scale)
   var i = 0
   while i < n:
     var j = i + 1
@@ -2455,7 +2517,7 @@ eigenSymmetric(rows: List<List<double>>) -> Eigen:
   var vals: List<double> = []
   i = 0
   while i < n:
-    vals.add(grid[i][i])
+    vals.add(grid[i][i] * scale)
     i = i + 1
   i = 0
   while i < n:
@@ -2477,47 +2539,76 @@ value class SVD:
   values: List<double>
   v: List<List<double>>
 
-# Singular values from the symmetric eigenproblem of A transpose A.
+# One-sided Jacobi SVD: avoids squaring the condition number in A transpose A.
 # Example:
 #   print svd([[5.0]]).values[0]
 svd(rows: List<List<double>>) -> SVD:
-  grid = _rectCopy(rows)
-  m = grid.length
-  n = grid[0].length
-  var gram = _symmetrize(matmul(transpose(grid), grid))
-  var wide = false
+  original = _rectCopy(rows)
+  m = original.length
+  n = original[0].length
   if m < n:
-    gram = _symmetrize(matmul(grid, transpose(grid)))
-    wide = true
-  solved = eigenSymmetric(gram)
-  k = solved.values.length
-  sigmas: List<double> = []
+    tall = svd(transpose(original))
+    return SVD(u: tall.v, values: tall.values, v: tall.u)
+  scale = _matrixScale(original)
+  var work = original
+  if scale > 0.0: work = _divideMatrix(original, scale)
+  var vectors = identity(n)
+  var sweep = 0
+  var changed = true
+  while changed and sweep < 100:
+    changed = false
+    var p = 0
+    while p < n:
+      var q = p + 1
+      while q < n:
+        left = _column(work, p)
+        right = _column(work, q)
+        aa = dot(left, left)
+        bb = dot(right, right)
+        ab = dot(left, right)
+        if aa > 0.0 and bb > 0.0 and _abs(ab) > 1.0e-14 * math.sqrt(aa) * math.sqrt(bb):
+          jacobiTau = (bb - aa) / (2.0 * ab)
+          var t = 1.0 / (_abs(jacobiTau) + hypot(1.0, jacobiTau))
+          if jacobiTau < 0.0: t = 0.0 - t
+          c = 1.0 / hypot(1.0, t)
+          sn = t * c
+          work = _setColumn(work, p, _axpy(_scaleList(left, c), right, 0.0 - sn))
+          work = _setColumn(work, q, _axpy(_scaleList(right, c), left, sn))
+          vp = _column(vectors, p)
+          vq = _column(vectors, q)
+          vectors = _setColumn(vectors, p, _axpy(_scaleList(vp, c), vq, 0.0 - sn))
+          vectors = _setColumn(vectors, q, _axpy(_scaleList(vq, c), vp, sn))
+          changed = true
+        q = q + 1
+      p = p + 1
+    sweep = sweep + 1
+  if changed: throw "svd did not converge"
+  var values: List<double> = []
   var i = 0
-  while i < k:
-    var lam = solved.values[k - 1 - i]
-    if lam < 0.0: lam = 0.0
-    sigmas.add(math.sqrt(lam))
+  while i < n:
+    values.add(vectorLength(_column(work, i)))
     i = i + 1
-  basis = _reverseColumns(solved.vectors)
-  if wide:
-    u = basis
-    var v = _filled(n, m, 0.0)
-    var col = 0
-    while col < m:
-      if sigmas[col] > 1.0e-12:
-        prod = matvec(transpose(grid), _column(u, col))
-        v = _setColumn(v, col, _scaleList(prod, 1.0 / sigmas[col]))
-      col = col + 1
-    return SVD(u: u, values: sigmas, v: v)
-  v = basis
+  i = 0
+  while i < n:
+    var j = i + 1
+    while j < n:
+      if values[j] > values[i]:
+        values = _swapDoubles(values, i, j)
+        work = _swapColumns(work, i, j)
+        vectors = _swapColumns(vectors, i, j)
+      j = j + 1
+    i = i + 1
   var u = _filled(m, n, 0.0)
-  var col = 0
-  while col < n:
-    if sigmas[col] > 1.0e-12:
-      prod = matvec(grid, _column(v, col))
-      u = _setColumn(u, col, _scaleList(prod, 1.0 / sigmas[col]))
-    col = col + 1
-  return SVD(u: u, values: sigmas, v: v)
+  sigmas: List<double> = []
+  i = 0
+  while i < n:
+    if values[i] > 0.0:
+      u = _setColumn(u, i, _divideVector(_column(work, i), values[i]))
+    else:
+      u = _setColumn(u, i, _orthogonalColumn(u, i))
+    sigmas.add(values[i] * scale)
+    i = i + 1
+  return SVD(u: u, values: sigmas, v: vectors)
 
 # Moore-Penrose inverse from the thin SVD. Tiny singular values are dropped.
 # Example:
@@ -2860,50 +2951,53 @@ eigenGeneral(rows: List<List<double>>) -> Spectrum:
 # Example:
 #   print matrixSqrt([[4.0, 0.0], [0.0, 9.0]])[1][1]
 matrixSqrt(rows: List<List<double>>) -> List<List<double>>:
-  grid = _squareCopy(rows)
-  n = grid.length
+  original = _squareCopy(rows)
+  n = original.length
+  scale = _matrixScale(original)
+  if scale == 0.0: return _filled(n, n, 0.0)
+  grid = _divideMatrix(original, scale)
   var y = grid
   var z = identity(n)
   var k = 0
-  while k < 24:
+  while k < 100:
     yNext = scaleMatrix(addMatrices(y, inverse(z)), 0.5)
     zNext = scaleMatrix(addMatrices(z, inverse(y)), 0.5)
     y = yNext
     z = zNext
+    residual = normInf(subtractMatrices(matmul(y, y), grid))
+    if residual <= 1.0e-13 * normInf(grid): return scaleMatrix(y, math.sqrt(scale))
     k = k + 1
-  return y
+  throw "matrixSqrt did not converge"
 
 # Principal matrix logarithm. The spectrum must not meet the non-positive reals.
 # Example:
 #   print matrixLog(matrixExp([[0.0, 0.5], [0.0, 0.0]]))[0][1]
 matrixLog(rows: List<List<double>>) -> List<List<double>>:
-  n = _squareCopy(rows).length
   var scaled = _squareCopy(rows)
+  n = scaled.length
+  _matrixScale(scaled)
   var count = 0
-  while count < 12 and normInf(subtractMatrices(scaled, identity(n))) > 0.5:
+  while normInf(subtractMatrices(scaled, identity(n))) > 0.5 and count < 60:
     scaled = matrixSqrt(scaled)
     count = count + 1
-  var x = subtractMatrices(scaled, identity(n))
-  var term = x
-  var total = _filled(n, n, 0.0)
+  if count == 60: throw "matrixLog did not converge"
+  z = matmul(subtractMatrices(scaled, identity(n)), inverse(addMatrices(scaled, identity(n))))
+  zz = matmul(z, z)
+  var term = z
+  var total = z
   var k = 1
-  var flip = 1.0
-  while k <= 16:
-    total = addMatrices(total, scaleMatrix(term, flip / (k to double)))
-    term = matmul(term, x)
-    flip = 0.0 - flip
+  while k <= 32:
+    term = matmul(term, zz)
+    total = addMatrices(total, scaleMatrix(term, 1.0 / ((2 * k + 1) to double)))
+    if normInf(term) <= 1.0e-16 * (1.0 + normInf(total)):
+      return scaleMatrix(total, math.pow(2.0, count + 1) to double)
     k = k + 1
-  var factor = 1.0
-  var i = 0
-  while i < count:
-    factor = factor * 2.0
-    i = i + 1
-  return scaleMatrix(total, factor)
+  throw "matrixLog series did not converge"
 
 # Conjugate gradient for a symmetric positive definite system.
 # Example:
 #   print conjugateGradient([[4.0, 1.0], [1.0, 3.0]], [1.0, 2.0])[0]
-conjugateGradient(
+_conjugateGradientUnit(
     rows: List<List<double>>, values: List<double>) -> List<double>:
   grid = _squareCopy(rows)
   n = grid.length
@@ -3007,6 +3101,7 @@ polyDivide(dividend: List<double>, divisor: List<double>) -> Quotient:
     while i < v.length:
       rem = _setAt(rem, i + shift, saved[i + shift] - coef * v[i])
       i = i + 1
+    rem = _setAt(rem, rem.length - 1, 0.0)
     rem = _trimPoly(rem)
   return Quotient(quotient: _trimPoly(quot), remainder: rem)
 
@@ -3082,6 +3177,10 @@ implicitEuler(
       z = _axpy(z, delta, 1.0)
       if vectorLength(delta) < 1.0e-10: guard = 8
       else: guard = guard + 1
+    slope = f(x + width, z)
+    residual = _axpy(_axpy(z, y, -1.0), slope, 0.0 - width)
+    if not _finite(vectorLength(residual)) or vectorLength(residual) > 1.0e-8 * (1.0 + vectorLength(z)):
+      throw "implicitEuler did not converge"
     y = z
     x = x + width
     step = step + 1
@@ -3106,7 +3205,7 @@ firstEvent(
   finished = rungeKuttaSystem(f, x0, y0, x1, 32)
   end = guard(x1, finished)
   if end == 0.0: return Crossing(at: x1, state: finished)
-  if start * end > 0.0: throw "firstEvent needs a sign change"
+  if _sameSign(start, end): throw "firstEvent needs a sign change"
   var lo = x0
   var hi = x1
   var here = _copyDoubles(y0)
@@ -3115,7 +3214,7 @@ firstEvent(
     mid = (lo + hi) / 2.0
     reached = rungeKuttaSystem(f, lo, here, mid, 8)
     probe = guard(mid, reached)
-    if guard(lo, here) * probe <= 0.0: hi = mid
+    if not _sameSign(guard(lo, here), probe): hi = mid
     else:
       lo = mid
       here = reached
@@ -3123,20 +3222,13 @@ firstEvent(
   at = (lo + hi) / 2.0
   return Crossing(at: at, state: rungeKuttaSystem(f, lo, here, at, 8))
 
-# Adaptive Simpson integral. The error estimate is the last Richardson correction.
+# Adaptive Simpson integral. Error is the sum of accepted local Richardson estimates.
 # Example:
 #   print adaptiveIntegral((x: double) -> x * x, 0.0, 1.0).value
-adaptiveIntegral(
-    f: (double) -> double,
-    start: double,
-    end: double,
-    tolerance: double = 1.0e-8) -> Estimate:
+adaptiveIntegral(f: (double) -> double, start: double, end: double, tolerance: double = 1.0e-8) -> Estimate:
   if tolerance <= 0.0: throw "tolerance must be positive"
   whole = _simpson3(f, start, end)
-  mid = (start + end) / 2.0
-  refined = _simpson3(f, start, mid) + _simpson3(f, mid, end)
-  value = _adapt(f, start, end, tolerance, whole, 0)
-  return Estimate(value: value, error: _abs(refined - whole) / 15.0)
+  return _adaptEstimate(f, start, end, tolerance, whole, 0)
 
 # Integral of [f] over a box, by nested trapezoids.
 # Example:
@@ -3169,7 +3261,7 @@ exponentialPdf(x: double, rate: double) -> double:
 exponentialCdf(x: double, rate: double) -> double:
   if rate <= 0.0: throw "rate must be positive"
   if x < 0.0: return 0.0
-  return 1.0 - math.exp(0.0 - rate * x)
+  return 0.0 - expm1(0.0 - rate * x)
 
 # Exponential quantile.
 # Example:
@@ -3177,7 +3269,7 @@ exponentialCdf(x: double, rate: double) -> double:
 exponentialQuantile(p: double, rate: double) -> double:
   if rate <= 0.0: throw "rate must be positive"
   if p <= 0.0 or p >= 1.0: throw "probability must sit strictly between 0 and 1"
-  return (0.0 - math.log(1.0 - p)) / rate
+  return (0.0 - log1p(0.0 - p)) / rate
 
 # One exponential draw.
 # Example:
@@ -3207,7 +3299,7 @@ weibullCdf(x: double, shape: double, scale: double) -> double:
   if shape <= 0.0 or scale <= 0.0: throw "shape and scale must be positive"
   if x < 0.0: return 0.0
   power = math.pow(x / scale, shape) to double
-  return 1.0 - math.exp(0.0 - power)
+  return 0.0 - expm1(0.0 - power)
 
 # Weibull quantile.
 # Example:
@@ -3215,7 +3307,7 @@ weibullCdf(x: double, shape: double, scale: double) -> double:
 weibullQuantile(p: double, shape: double, scale: double) -> double:
   if shape <= 0.0 or scale <= 0.0: throw "shape and scale must be positive"
   if p <= 0.0 or p >= 1.0: throw "probability must sit strictly between 0 and 1"
-  power = math.pow(0.0 - math.log(1.0 - p), 1.0 / shape) to double
+  power = math.pow(0.0 - log1p(0.0 - p), 1.0 / shape) to double
   return scale * power
 
 # One Weibull draw.
@@ -3251,7 +3343,7 @@ geometricQuantile(p: double, chance: double) -> int:
   if chance <= 0.0 or chance > 1.0: throw "probability must be from 0 through 1"
   if p <= 0.0 or p >= 1.0: throw "probability must sit strictly between 0 and 1"
   if chance == 1.0: return 0
-  raw = math.log(1.0 - p) / math.log(1.0 - chance)
+  raw = log1p(0.0 - p) / log1p(0.0 - chance)
   var whole = raw.floor
   if (whole to double) < raw: whole = whole + 1
   if whole > 0: whole = whole - 1
@@ -3274,8 +3366,8 @@ hypergeometricPmf(k: int, population: int, marked: int, draws: int) -> double:
     throw "hypergeometric needs a feasible population"
   if k < 0 or k > marked or k > draws: return 0.0
   if draws - k > population - marked: return 0.0
-  ways = combinations(marked, k) * combinations(population - marked, draws - k)
-  return (ways to double) / (combinations(population, draws) to double)
+  logged = _logChoose(marked, k) + _logChoose(population - marked, draws - k) - _logChoose(population, draws)
+  return math.exp(logged)
 
 # Hypergeometric cumulative probability.
 # Example:
@@ -3309,6 +3401,7 @@ betaSample(random: Random, a: double, b: double) -> double:
   if a <= 0.0 or b <= 0.0: throw "beta needs positive arguments"
   left = gammaSample(random, a, 1.0)
   right = gammaSample(random, b, 1.0)
+  if left + right == 0.0: throw "betaSample underflow for these shapes"
   return left / (left + right)
 
 # Chi-square draw with [df] degrees of freedom.
@@ -3396,7 +3489,7 @@ oneWayAnova(groups: List<List<double>>) -> Inference:
   df2 = (count - groups.length) to double
   if within == 0.0:
     if between == 0.0: return Inference(statistic: 0.0, probability: 1.0)
-    return Inference(statistic: 1.0e16, probability: 0.0)
+    return Inference(statistic: between / within, probability: 0.0)
   stat = (between / df1) / (within / df2)
   return Inference(statistic: stat, probability: 1.0 - fisherCdf(stat, df1,
   df2))
@@ -3421,13 +3514,14 @@ kendall(xs: List<double>, ys: List<double>) -> double:
   while i < xs.length:
     var j = i + 1
     while j < xs.length:
-      cross = (xs[i] - xs[j]) * (ys[i] - ys[j])
-      if cross > 0.0: agree = agree + 1
-      if cross < 0.0: differ = differ + 1
+      dx = xs[i] - xs[j]
+      dy = ys[i] - ys[j]
+      if _sameSign(dx, dy): agree = agree + 1
+      if _differentSigns(dx, dy): differ = differ + 1
       j = j + 1
     i = i + 1
   pairs = agree + differ
-  if pairs == 0: return 1.0
+  if pairs == 0: throw "kendall is undefined without comparable pairs"
   return ((agree - differ) to double) / (pairs to double)
 
 # Fourier transform of any positive length.
@@ -3542,7 +3636,7 @@ brent(
   var b = high
   var fa = f(a)
   var fb = f(b)
-  if fa * fb > 0.0: throw "brent needs a sign change"
+  if (fa > 0.0 and fb > 0.0) or (fa < 0.0 and fb < 0.0): throw "brent needs a sign change"
   if _abs(fa) < _abs(fb):
     saved = a
     a = b
@@ -3575,7 +3669,7 @@ brent(
     d = c
     c = b
     fc = fb
-    if fa * fs < 0.0:
+    if (fa < 0.0 and fs > 0.0) or (fa > 0.0 and fs < 0.0):
       b = s
       fb = fs
     else:
@@ -3675,19 +3769,10 @@ digamma(x: double) -> double:
 # Example:
 #   print inverseErf(0.0)
 inverseErf(y: double) -> double:
-  if y <= 0.0 - 1.0 or y >= 1.0: throw "inverseErf needs a value strictly between -1 and 1"
-  if y == 0.0: return 0.0
-  var x = y
-  if _abs(y) > 0.7:
-    x = math.sqrt(0.0 - math.log((1.0 - _abs(y)) * 0.5))
-    if y < 0.0: x = 0.0 - x
-  var i = 0
-  while i < 6:
-    err = erf(x) - y
-    dens = math.exp(0.0 - x * x) * 2.0 / math.sqrt(math.pi)
-    x = x - err / dens
-    i = i + 1
-  return x
+  if y <= -1.0 or y >= 1.0: throw "inverseErf needs a value strictly between -1 and 1"
+  if y == 0.0: return y
+  if y < 0.0: return 0.0 - inverseErf(0.0 - y)
+  return (0.0 - _normalTail((1.0 - y) / 2.0)) / math.sqrt(2.0)
 
 # Riemann zeta for real [s] other than 1.
 # Example:
@@ -3722,40 +3807,21 @@ zeta(s: double) -> double:
 #   print besselJ(0, 0.0)
 besselJ(order: int, x: double) -> double:
   if order < 0:
+    if order == _minInt(): throw "Bessel order outside supported range"
     flipped = besselJ(0 - order, x)
     if (0 - order) % 2 == 1: return 0.0 - flipped
     return flipped
-  var term = 1.0
-  var m = 0
-  while m < order:
-    term = term * (x / 2.0) / ((m + 1) to double)
-    m = m + 1
-  var total = term
-  var k = 1
-  while k < 60:
-    term = term * (0.0 - (x / 2.0) * (x / 2.0)) / ((k to double) * ((k + order) to double))
-    total = total + term
-    if _abs(term) <= 1.0e-15 * (1.0 + _abs(total)): k = 60
-    else: k = k + 1
-  return total
+  if x < 0.0:
+    flipped = besselJ(order, 0.0 - x)
+    if order % 2 == 1: return 0.0 - flipped
+    return flipped
+  return _besselJReal(order to double, x)
 
 # Bessel function of the second kind, order zero. [x] must be positive.
 # Example:
 #   print besselY0(1.0)
 besselY0(x: double) -> double:
-  if x <= 0.0: throw "besselY0 needs a positive argument"
-  mascheroni = 0.5772156649015329
-  var series = 0.0 - mascheroni
-  var term = 1.0
-  var harmonic = 0.0
-  var k = 1
-  while k <= 40:
-    harmonic = harmonic + 1.0 / (k to double)
-    term = term * (0.0 - (x / 2.0) * (x / 2.0)) / ((k to double) * (k to double))
-    series = series + term * (harmonic - mascheroni)
-    k = k + 1
-  return 2.0 / math.pi * math.log(x / 2.0) * besselJ(0,
-  x) - 2.0 / math.pi * series
+  return besselY(0, x)
 
 # Primes from 2 through [n].
 # Example:
@@ -3798,12 +3864,13 @@ isProbablePrime(n: int) -> bool:
     s = s + 1
   bases: List<int> = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37]
   for base in bases:
+    if n == base: return true
     var x = modPow(base, d, n)
     if x != 1 and x != n - 1:
       var r = 1
       var witness = false
       while r < s and not witness:
-        x = x * x % n
+        x = _mulMod(x, x, n)
         if x == n - 1: witness = true
         else: r = r + 1
       if not witness: return false
@@ -3828,11 +3895,14 @@ chineseRemainder(residues: List<int>, moduli: List<int>) -> int:
     gap = a - acc
     if gap % g != 0: throw "chineseRemainder needs consistent residues"
     reduced = moduli[i] ~/ g
-    step = (mod ~/ g) % reduced
-    var t = (modInverse(step, reduced) * (gap ~/ g)) % reduced
+    var t = 0
+    if reduced > 1:
+      step = (mod ~/ g) % reduced
+      t = _mulMod(modInverse(step, reduced), (gap ~/ g) % reduced, reduced)
     if t < 0: t = t + reduced
-    acc = acc + mod * t
-    mod = mod * reduced
+    modNext = _checkedMultiply(mod, reduced)
+    acc = _addMod(acc % modNext, _mulMod(mod, t, modNext), modNext)
+    mod = modNext
     i = i + 1
   acc = acc % mod
   if acc < 0: acc = acc + mod
@@ -3864,6 +3934,7 @@ extendedGcd(a: int, b: int) -> Bezout:
     s = nextS
     oldT = t
     t = nextT
+  if oldR < 0 - _maxInt(): throw "extendedGcd result is outside int range"
   if oldR < 0:
     oldR = 0 - oldR
     oldS = 0 - oldS
@@ -3874,7 +3945,7 @@ extendedGcd(a: int, b: int) -> Bezout:
 # GMRES solution of a square linear system. The start is the zero vector.
 # Example:
 #   print gmres([[4.0, 1.0], [1.0, 3.0]], [1.0, 2.0])[0]
-gmres(rows: List<List<double>>, values: List<double>) -> List<double>:
+_gmresUnit(rows: List<List<double>>, values: List<double>) -> List<double>:
   grid = _squareCopy(rows)
   n = grid.length
   if values.length != n: throw "gmres needs one value per row"
@@ -3914,7 +3985,7 @@ gmres(rows: List<List<double>>, values: List<double>) -> List<double>:
 # BiCGSTAB solution of a square linear system.
 # Example:
 #   print bicgstab([[1.0, 2.0], [3.0, 4.0]], [5.0, 6.0])[0]
-bicgstab(rows: List<List<double>>, values: List<double>) -> List<double>:
+_bicgstabUnit(rows: List<List<double>>, values: List<double>) -> List<double>:
   grid = _squareCopy(rows)
   n = grid.length
   if values.length != n: throw "bicgstab needs one value per row"
@@ -3972,7 +4043,7 @@ sparseMatvec(
 # Conjugate gradient for a symmetric positive definite coordinate matrix.
 # Example:
 #   print sparseConjugateGradient([0, 1, 0, 1], [0, 1, 1, 0], [4.0, 3.0, 1.0, 1.0], [1.0, 2.0], 2)[0]
-sparseConjugateGradient(
+_sparseConjugateGradientUnit(
     rowIndex: List<int>,
     columnIndex: List<int>,
     entries: List<double>,
@@ -4037,29 +4108,33 @@ value class Fraction:
   numerator: int required
   denominator: int required
   operator +(other: Fraction) -> Fraction:
-    return fraction(
-        numerator * other.denominator + other.numerator * denominator,
-        denominator * other.denominator)
+    return _fractionAdd(this, other, false)
   operator -(other: Fraction) -> Fraction:
-    return fraction(
-        numerator * other.denominator - other.numerator * denominator,
-        denominator * other.denominator)
+    return _fractionAdd(this, other, true)
   operator *(other: Fraction) -> Fraction:
-    return fraction(numerator * other.numerator,
-    denominator * other.denominator)
+    a = gcd(numerator, other.denominator)
+    b = gcd(other.numerator, denominator)
+    return fraction(_checkedMultiply(numerator ~/ a, other.numerator ~/ b),
+    _checkedMultiply(denominator ~/ b, other.denominator ~/ a))
   operator /(other: Fraction) -> Fraction:
-    return fraction(numerator * other.denominator,
-    denominator * other.numerator)
+    if other.numerator == 0: throw "division by zero"
+    a = gcd(numerator, other.numerator)
+    b = gcd(denominator, other.denominator)
+    return fraction(_checkedMultiply(numerator ~/ a, other.denominator ~/ b),
+    _checkedMultiply(denominator ~/ b, other.numerator ~/ a))
 
 fraction(numerator: int, denominator: int) -> Fraction:
   if denominator == 0: throw "fraction needs a non-zero denominator"
-  var top = numerator
-  var bottom = denominator
+  if numerator == 0: return Fraction(numerator: 0, denominator: 1)
+  if numerator == _minInt() and denominator == numerator:
+    return Fraction(numerator: 1, denominator: 1)
+  divisor = gcd(numerator, denominator)
+  var top = numerator ~/ divisor
+  var bottom = denominator ~/ divisor
   if bottom < 0:
-    top = 0 - top
-    bottom = 0 - bottom
-  divisor = gcd(top, bottom)
-  return Fraction(numerator: top ~/ divisor, denominator: bottom ~/ divisor)
+    top = _checkedMultiply(top, -1)
+    bottom = _checkedMultiply(bottom, -1)
+  return Fraction(numerator: top, denominator: bottom)
 
 # Inverse of the unnormalized DCT-II from [dct].
 # Example:
@@ -4160,16 +4235,17 @@ kendallB(xs: List<double>, ys: List<double>) -> double:
   while i < xs.length:
     var j = i + 1
     while j < xs.length:
-      cross = (xs[i] - xs[j]) * (ys[i] - ys[j])
-      if cross > 0.0: agree = agree + 1
-      if cross < 0.0: differ = differ + 1
+      dx = xs[i] - xs[j]
+      dy = ys[i] - ys[j]
+      if _sameSign(dx, dy): agree = agree + 1
+      if _differentSigns(dx, dy): differ = differ + 1
       j = j + 1
     i = i + 1
   pairs = xs.length * (xs.length - 1) ~/ 2
   leftTies = _tiePairs(xs)
   rightTies = _tiePairs(ys)
   den = (pairs - leftTies) * (pairs - rightTies)
-  if den <= 0: return 1.0
+  if den <= 0: throw "kendallB is undefined for a constant sample"
   return ((agree - differ) to double) / math.sqrt(den to double)
 
 # Least-squares polynomial, constant term first.
@@ -4202,6 +4278,10 @@ bilinear(
     grid: List<List<double>>) -> double:
   if xs.length < 2 or ys.length < 2 or grid.length != ys.length:
     throw "bilinear needs a grid on increasing axes"
+  _increasing(xs)
+  _increasing(ys)
+  for row in grid:
+    if row.length != xs.length: throw "bilinear needs a rectangular grid"
   var i = 0
   while i < xs.length - 2 and x > xs[i + 1]:
     i = i + 1
@@ -4279,38 +4359,62 @@ laguerre(n: int, x: double) -> double:
 # Example:
 #   print lambertW(e)
 lambertW(x: double) -> double:
-  floor = 0.0 - math.exp(0.0 - 1.0)
-  if x < floor - 1.0e-12: throw "lambertW needs x at least -1/e"
-  if _abs(x - floor) <= 1.0e-12: return 0.0 - 1.0
-  if x == 0.0: return 0.0
-  var w = 0.0
-  if x < 0.0: w = 0.0 - 0.5
-  if x > 1.0: w = math.log(x)
-  var i = 0
-  while i < 16:
-    rise = math.exp(w)
-    mass = w * rise
-    gap = mass - x
-    den = rise * (w + 1.0) - (w + 2.0) * gap / (2.0 * w + 2.0)
-    if den == 0.0: i = 16
-    else:
-      w = w - gap / den
+  floor = -1.0 / math.e
+  if x < floor: throw "lambertW needs x at least -1/e"
+  if x == floor: return -1.0
+  if x == 0.0: return x
+  if x - floor < 1.0e-8:
+    p = math.sqrt(2.0 * math.e * (x - floor))
+    return -1.0 + p - p * p / 3.0 + 11.0 * p * p * p / 72.0 - 43.0 * p * p * p * p / 540.0 + 769.0 * p * p * p * p * p / 17280.0
+  if x > 1.0:
+    logged = math.log(x)
+    var w = logged
+    if logged > 1.0: w = logged - math.log(logged)
+    var i = 0
+    while i < 50:
+      delta = (w + math.log(w) - logged) * (w / (w + 1.0))
+      w = w - delta
+      if _abs(delta) <= 1.0e-15 * (1.0 + _abs(w)): return w
       i = i + 1
-  return w
+    throw "lambertW did not converge"
+  var w = x
+  if x < 0.0: w = -0.5
+  var i = 0
+  while i < 50:
+    rise = math.exp(w)
+    gap = w * rise - x
+    den = rise * (w + 1.0) - (w + 2.0) * gap / (2.0 * w + 2.0)
+    delta = gap / den
+    w = w - delta
+    if _abs(delta) <= 1.0e-15 * (1.0 + _abs(w)): return w
+    i = i + 1
+  throw "lambertW did not converge"
 
 # Airy function Ai for a moderate real argument.
 # Example:
 #   print airyAi(0.0)
 airyAi(x: double) -> double:
-  if _abs(x) > 12.0: throw "airyAi series needs a moderate argument"
-  return _airyC1() * _airyF(x) - _airyC2() * _airyG(x)
+  if _abs(x) > 12.0: throw "airyAi needs a moderate argument"
+  if _abs(x) < 1.0: return _airyC1() * _airyF(x) - _airyC2() * _airyG(x)
+  if x > 0.0:
+    z = 2.0 / 3.0 * x * math.sqrt(x)
+    return math.sqrt(x / 3.0) * _besselKReal(1.0 / 3.0, z) / math.pi
+  mag = 0.0 - x
+  z = 2.0 / 3.0 * mag * math.sqrt(mag)
+  return math.sqrt(mag) / 3.0 * (_besselJReal(-1.0 / 3.0, z) + _besselJReal(1.0 / 3.0, z))
 
 # Airy function Bi for a moderate real argument.
 # Example:
 #   print airyBi(0.0)
 airyBi(x: double) -> double:
-  if _abs(x) > 12.0: throw "airyBi series needs a moderate argument"
-  return math.sqrt(3.0) * (_airyC1() * _airyF(x) + _airyC2() * _airyG(x))
+  if _abs(x) > 12.0: throw "airyBi needs a moderate argument"
+  if _abs(x) < 1.0: return math.sqrt(3.0) * (_airyC1() * _airyF(x) + _airyC2() * _airyG(x))
+  if x > 0.0:
+    z = 2.0 / 3.0 * x * math.sqrt(x)
+    return math.sqrt(x / 3.0) * (_besselIReal(-1.0 / 3.0, z) + _besselIReal(1.0 / 3.0, z))
+  mag = 0.0 - x
+  z = 2.0 / 3.0 * mag * math.sqrt(mag)
+  return math.sqrt(mag / 3.0) * (_besselJReal(-1.0 / 3.0, z) - _besselJReal(1.0 / 3.0, z))
 
 # Complete elliptic integral of the first kind. [k] is the modulus.
 # Example:
@@ -4332,55 +4436,50 @@ ellipticK(k: double) -> double:
 #   print ellipticE(0.0)
 ellipticE(k: double) -> double:
   if _abs(k) > 1.0: throw "ellipticE needs a modulus from -1 through 1"
-  m = k * k
-  var series = 1.0
-  var coef = 1.0
-  var n = 1
-  while n <= 40:
-    coef = coef * (((2 * n - 1) to double) / (2 * n to double))
-    coef = coef * (((2 * n - 1) to double) / (2 * n to double))
-    power = math.pow(m, n to double) to double
-    series = series - coef * power / ((2 * n - 1) to double)
-    n = n + 1
-  return math.pi / 2.0 * series
+  if _abs(k) == 1.0: return 1.0
+  var a = 1.0
+  var b = math.sqrt((1.0 - k) * (1.0 + k))
+  var correction = k * k / 2.0
+  var weight = 1.0
+  var i = 0
+  while i < 30:
+    c = (a - b) / 2.0
+    correction = correction + weight * c * c
+    next = (a + b) / 2.0
+    b = math.sqrt(a * b)
+    a = next
+    weight = weight * 2.0
+    if _abs(c) <= 1.0e-16 * a: return math.pi / (2.0 * a) * (1.0 - correction)
+    i = i + 1
+  throw "ellipticE did not converge"
 
 # Gauss hypergeometric 2F1(a, b; c; z) for |z| < 1.
 # Example:
 #   print hypergeometric(1.0, 1.0, 2.0, 0.5)
 hypergeometric(a: double, b: double, c: double, z: double) -> double:
   if _abs(z) >= 1.0: throw "hypergeometric needs |z| < 1"
-  if c == 0.0: throw "hypergeometric needs a non-zero c"
+  if c <= 0.0 and c % 1.0 == 0.0: throw "hypergeometric hit a pole"
+  if z < 0.0:
+    return (math.pow(1.0 - z, 0.0 - a) to double) * hypergeometric(a, c - b, c, z / (z - 1.0))
   var term = 1.0
   var total = 1.0
   var n = 0
-  while n < 80:
+  while n < 100000:
     den = (c + (n to double)) * ((n + 1) to double)
-    if den == 0.0: throw "hypergeometric hit a pole"
     term = term * (a + (n to double)) * (b + (n to double)) / den * z
     total = total + term
-    if _abs(term) <= 1.0e-15 * (1.0 + _abs(total)): n = 80
-    else: n = n + 1
-  return total
+    if not _finite(total): throw "hypergeometric overflow"
+    if _abs(term) <= 1.0e-15 * _abs(total): return total
+    n = n + 1
+  throw "hypergeometric did not converge"
 
 # Bessel J for a real order and a non-negative argument.
 # Example:
 #   print besselJReal(0.0, 1.0)
 besselJReal(nu: double, x: double) -> double:
-  whole = nu.round to double
-  if nu == whole: return besselJ(nu.round, x)
+  if nu % 1.0 == 0.0: return besselJ(nu.round, x)
   if x < 0.0: throw "besselJReal needs a non-negative argument"
-  if x == 0.0:
-    if nu > 0.0: return 0.0
-    throw "besselJReal is undefined at zero for a negative order"
-  var term = math.exp(nu * math.log(x / 2.0) - logGamma(nu + 1.0))
-  var total = term
-  var k = 0
-  while k < 50:
-    term = term * (0.0 - (x / 2.0) * (x / 2.0))
-    term = term / (((k + 1) to double) * ((k + 1) to double + nu))
-    total = total + term
-    k = k + 1
-  return total
+  return _besselJReal(nu, x)
 
 # Bessel Y for an integer order. [x] must be positive.
 # Example:
@@ -4388,69 +4487,37 @@ besselJReal(nu: double, x: double) -> double:
 besselY(order: int, x: double) -> double:
   if x <= 0.0: throw "besselY needs a positive argument"
   if order < 0:
+    if order == _minInt(): throw "Bessel order outside supported range"
     flipped = besselY(0 - order, x)
     if (0 - order) % 2 == 1: return 0.0 - flipped
     return flipped
-  if order == 0: return besselY0(x)
-  var finite = 0.0
-  var k = 0
-  while k < order:
-    var piece = (2 * k to double) * math.log(x / 2.0)
-    piece = piece - logGamma((k + 1) to double) - logGamma((order - k + 1) to double)
-    finite = finite + math.exp(piece)
-    k = k + 1
-  finite = 0.0 - math.exp(logGamma(order to double) - (order to double) * math.log(x / 2.0)) / math.pi * finite
-  var coef = math.exp((order to double) * math.log(x / 2.0) - logGamma((order + 1) to double))
-  var series = 0.0
-  k = 0
-  while k < 40:
-    series = series + (digamma((k + 1) to double) + digamma((order + k + 1) to double)) * coef
-    coef = coef * (0.0 - (x / 2.0) * (x / 2.0))
-    coef = coef / (((k + 1) to double) * ((order + k + 1) to double))
-    k = k + 1
-  return finite + 2.0 / math.pi * math.log(x / 2.0) * besselJ(order,
-  x) - series / math.pi
+  nu = order to double
+  pieces = _besselPieces(nu, x)
+  angular = simpson((t: double) -> math.sin(x * math.sin(t) - nu * t), 0.0, math.pi, pieces)
+  limit = _besselLimit(nu, x)
+  parity = 1.0
+  var sign = parity
+  if order % 2 == 1: sign = -1.0
+  tail = simpson((t: double) -> math.exp(nu * t - x * sinh(t)) + sign * math.exp(0.0 - nu * t - x * sinh(t)), 0.0, limit, 2048)
+  return (angular - tail) / math.pi
 
 # Modified Bessel function of the first kind, integer order.
 # Example:
 #   print besselI(0, 0.0)
 besselI(order: int, x: double) -> double:
+  if order == _minInt(): throw "Bessel order outside supported range"
   var n = order
   if n < 0: n = 0 - n
   var sign = 1.0
-  if x < 0.0 and n % 2 == 1: sign = 0.0 - 1.0
-  var mag = _abs(x)
-  if mag == 0.0:
-    if n == 0: return 1.0
-    return 0.0
-  var term = math.exp((n to double) * math.log(mag / 2.0) - logGamma((n + 1) to double))
-  var total = term
-  var k = 0
-  while k < 50:
-    term = term * (mag / 2.0) * (mag / 2.0)
-    term = term / (((k + 1) to double) * ((n + k + 1) to double))
-    total = total + term
-    k = k + 1
-  return sign * total
+  if x < 0.0 and n % 2 == 1: sign = -1.0
+  return sign * _besselIReal(n to double, _abs(x))
 
 # Modified Bessel function of the second kind, integer order. [x] is positive.
 # Example:
 #   print besselK(0, 1.0)
 besselK(order: int, x: double) -> double:
   if x <= 0.0: throw "besselK needs a positive argument"
-  var n = order
-  if n < 0: n = 0 - n
-  if n == 0: return _besselK0(x)
-  if n == 1: return _besselK1(x)
-  var older = _besselK0(x)
-  var recent = _besselK1(x)
-  var m = 1
-  while m < n:
-    nxt = older + (2.0 * (m to double) / x) * recent
-    older = recent
-    recent = nxt
-    m = m + 1
-  return recent
+  return _besselKReal(_abs(order to double), x)
 
 # Gamma density. The mean is shape times scale.
 # Example:
@@ -4491,6 +4558,8 @@ betaPdf(x: double, a: double, b: double) -> double:
   if x <= 0.0 or x >= 1.0:
     if x == 0.0 and a < 1.0: throw "betaPdf is infinite at an endpoint"
     if x == 1.0 and b < 1.0: throw "betaPdf is infinite at an endpoint"
+    if x == 0.0 and a == 1.0: return b
+    if x == 1.0 and b == 1.0: return a
     return 0.0
   var logP = (a - 1.0) * math.log(x) + (b - 1.0) * math.log(1.0 - x)
   logP = logP - logGamma(a) - logGamma(b) + logGamma(a + b)
@@ -4528,7 +4597,7 @@ lognormalPdf(x: double, center: double, sigma: double) -> double:
   if sigma <= 0.0: throw "sigma must be positive"
   if x <= 0.0: return 0.0
   z = (math.log(x) - center) / sigma
-  return math.exp(0.0 - 0.5 * z * z) / (x * sigma * math.sqrt(2.0 * math.pi))
+  return math.exp(0.0 - 0.5 * z * z) / math.sqrt(2.0 * math.pi) / sigma / x
 
 # Lognormal cumulative probability.
 # Example:
@@ -4556,7 +4625,7 @@ lognormalSample(random: Random, center: double, sigma: double) -> double:
 cauchyPdf(x: double, center: double, spread: double) -> double:
   if spread <= 0.0: throw "spread must be positive"
   z = (x - center) / spread
-  return 1.0 / (math.pi * spread * (1.0 + z * z))
+  return (1.0 / (1.0 + z * z)) / math.pi / spread
 
 # Cauchy cumulative probability.
 # Example:
@@ -4589,22 +4658,21 @@ negativeBinomialPmf(failures: int, successes: int, chance: double) -> double:
   if successes < 1: throw "negativeBinomial needs at least one success"
   if chance <= 0.0 or chance > 1.0: throw "probability must be from 0 through 1"
   if failures < 0: return 0.0
-  ways = combinations(failures + successes - 1, failures) to double
-  return ways * (math.pow(1.0 - chance,
-  failures to double) to double) * (math.pow(chance,
-  successes to double) to double)
+  if successes == 1: return geometricPmf(failures, chance)
+  if chance == 1.0:
+    if failures == 0: return 1.0
+    return 0.0
+  logged = _logChoose(_checkedAdd(failures, successes - 1), failures) + (failures to double) * log1p(0.0 - chance) + (successes to double) * math.log(chance)
+  return math.exp(logged)
 
 # Negative binomial cumulative probability.
 # Example:
 #   print negativeBinomialCdf(0, 1, 0.5)
 negativeBinomialCdf(failures: int, successes: int, chance: double) -> double:
+  if successes < 1: throw "negativeBinomial needs at least one success"
+  if chance <= 0.0 or chance > 1.0: throw "probability must be from 0 through 1"
   if failures < 0: return 0.0
-  var total = 0.0
-  var i = 0
-  while i <= failures:
-    total = total + negativeBinomialPmf(i, successes, chance)
-    i = i + 1
-  return total
+  return incompleteBeta(successes to double, (failures to double) + 1.0, chance)
 
 # Chi-square goodness of fit. Expected counts are fully specified.
 # Example:
@@ -4650,17 +4718,31 @@ kolmogorovSmirnov(
     i = i + 1
   root = math.sqrt(ordered.length to double)
   lam = (root + 0.12 + 0.11 / root) * gap
-  var series = 0.0
-  var sign = 1.0
-  var k = 1
-  while k <= 20:
-    series = series + sign * math.exp(0.0 - 2.0 * (k to double) * (k to double) * lam * lam)
-    sign = 0.0 - sign
-    k = k + 1
-  var probability = 2.0 * series
-  if probability < 0.0: probability = 0.0
-  if probability > 1.0: probability = 1.0
-  return Inference(statistic: gap, probability: probability)
+  if lam == 0.0: return Inference(statistic: gap, probability: 1.0)
+  var probability = 0.0
+  if lam < 1.18:
+    var series = 0.0
+    var k = 1
+    while k <= 100:
+      odd = (2 * k - 1) to double
+      term = math.exp(0.0 - odd * odd * math.pi * math.pi / (8.0 * lam * lam))
+      series = series + term
+      if term < 1.0e-16 * series: k = 101
+      else: k = k + 1
+    probability = 1.0 - math.sqrt(2.0 * math.pi) / lam * series
+  else:
+    var series = 0.0
+    var sign = 1.0
+    var k = 1
+    while k <= 100:
+      term = math.exp(0.0 - 2.0 * (k to double) * (k to double) * lam * lam)
+      series = series + sign * term
+      sign = 0.0 - sign
+      if term < 1.0e-16: k = 101
+      else: k = k + 1
+    probability = 2.0 * series
+  return Inference(statistic: gap, probability: bounded(probability, 0.0, 1.0))
+
 
 # Two-sided Mann-Whitney test. Ties score one half.
 # Example:
@@ -4675,7 +4757,12 @@ mannWhitney(left: List<double>, right: List<double>) -> Inference:
   n1 = left.length to double
   n2 = right.length to double
   center = n1 * n2 / 2.0
-  spread2 = n1 * n2 * (n1 + n2 + 1.0) / 12.0
+  combined = _copyDoubles(left)
+  for value in right:
+    combined.add(value)
+  n = n1 + n2
+  correction = _tieCubic(combined)
+  spread2 = n1 * n2 / 12.0 * (n + 1.0 - correction / (n * (n - 1.0)))
   if wins == center or spread2 == 0.0: return Inference(statistic: wins,
   probability: 1.0)
   z = (wins - center) / math.sqrt(spread2)
@@ -4833,16 +4920,17 @@ linearProgram(
       j = j + 1
     i = i + 1
   var guard = 0
-  while guard < 40 * (n + m):
+  var optimal = false
+  while guard < 1000 * (n + m):
     var pivotColumn = 0 - 1
-    var most = 0.0
     var j = 0
     while j < width - 1:
-      if board[m][j] < most - 1.0e-12:
-        most = board[m][j]
+      if pivotColumn < 0 and board[m][j] < -1.0e-12:
         pivotColumn = j
       j = j + 1
-    if pivotColumn < 0: guard = 40 * (n + m)
+    if pivotColumn < 0:
+      optimal = true
+      guard = 1000 * (n + m)
     else:
       var pivotRow = 0 - 1
       var best = 0.0
@@ -4851,7 +4939,7 @@ linearProgram(
       while i < m:
         if board[i][pivotColumn] > 1.0e-12:
           ratio = board[i][width - 1] / board[i][pivotColumn]
-          if not seen or ratio < best:
+          if not seen or ratio < best or (ratio == best and basis[i] < basis[pivotRow]):
             best = ratio
             pivotRow = i
             seen = true
@@ -4874,6 +4962,7 @@ linearProgram(
         i = i + 1
       basis = _setInt(basis, pivotRow, pivotColumn)
       guard = guard + 1
+  if not optimal: throw "linearProgram did not converge"
   var position = _zeroDoubles(n)
   i = 0
   while i < m:
@@ -4915,6 +5004,10 @@ bdf2(
       z = _axpy(z, delta, 1.0)
       if vectorLength(delta) < 1.0e-10: guard = 8
       else: guard = guard + 1
+    slope = f(x + width, z)
+    residual = _axpy(_axpy(_axpy(z, y, -4.0 / 3.0), previous, 1.0 / 3.0), slope, 0.0 - 2.0 * width / 3.0)
+    if not _finite(vectorLength(residual)) or vectorLength(residual) > 1.0e-8 * (1.0 + vectorLength(z)):
+      throw "bdf2 did not converge"
     previous = y
     y = z
     x = x + width
@@ -4945,7 +5038,7 @@ signEvents(
     if i == 0 and g0 == 0.0: made.add(Crossing(at: t,
     state: _copyDoubles(here)))
     if g1 == 0.0: made.add(Crossing(at: t + width, state: nxt))
-    else: if g0 * g1 < 0.0: made.add(firstEvent(f, guard, t, here, t + width))
+    else: if _differentSigns(g0, g1): made.add(firstEvent(f, guard, t, here, t + width))
     here = nxt
     t = t + width
     i = i + 1
@@ -4961,6 +5054,7 @@ heat(
     dt: double,
     steps: int) -> List<double>:
   if initial.length < 2: throw "heat needs at least the two boundaries"
+  if diffusivity < 0.0: throw "diffusivity cannot be negative"
   if dx <= 0.0 or dt <= 0.0 or steps < 1: throw "heat needs positive spacing and steps"
   r = diffusivity * dt / (dx * dx)
   var current = _copyDoubles(initial)
@@ -5043,6 +5137,7 @@ _hessRhs(tall: List<List<double>>, columns: int, norm0: double) -> List<double>:
 
 _window(n: int, a0: double, a1: double, a2: double) -> List<double>:
   if n < 1: throw "a window needs a positive length"
+  if n == 1: return [1.0]
   made: List<double> = []
   var i = 0
   while i < n:
@@ -5098,27 +5193,10 @@ _airyG(z: double) -> double:
   return series
 
 _besselK0(x: double) -> double:
-  mascheroni = 0.5772156649015329
-  var series = 0.0 - mascheroni
-  var term = 1.0
-  var harmonic = 0.0
-  var k = 1
-  while k <= 40:
-    harmonic = harmonic + 1.0 / (k to double)
-    term = term * (x / 2.0) * (x / 2.0) / ((k to double) * (k to double))
-    series = series + (harmonic - mascheroni) * term
-    k = k + 1
-  return 0.0 - math.log(x / 2.0) * besselI(0, x) + series
+  return _besselKReal(0.0, x)
 
 _besselK1(x: double) -> double:
-  var series = 0.0
-  var coef = x / 2.0
-  var k = 0
-  while k < 40:
-    series = series + (digamma((k + 1) to double) + digamma((k + 2) to double)) * coef
-    coef = coef * (x / 2.0) * (x / 2.0) / (((k + 1) to double) * ((k + 2) to double))
-    k = k + 1
-  return 1.0 / x + math.log(x / 2.0) * besselI(1, x) - 0.5 * series
+  return _besselKReal(1.0, x)
 
 _orderScores(scores: List<double>) -> List<int>:
   var order = _zeroInts(scores.length)
@@ -5181,9 +5259,9 @@ _pollard(n: int) -> int:
     var divisor = 1
     var guard = 0
     while divisor == 1 and guard < 20000:
-      x = (x * x + bump) % n
-      y = (y * y + bump) % n
-      y = (y * y + bump) % n
+      x = _addMod(_mulMod(x, x, n), bump % n, n)
+      y = _addMod(_mulMod(y, y, n), bump % n, n)
+      y = _addMod(_mulMod(y, y, n), bump % n, n)
       var gap = x - y
       if gap < 0: gap = 0 - gap
       divisor = gcd(gap, n)
@@ -5735,13 +5813,14 @@ _gammaSeries(s: double, x: double) -> double:
   var sum = 1.0 / s
   var del = sum
   var n = 0
-  while n < 200:
+  while n < 100000:
     ap = ap + 1.0
     del = del * x / ap
     sum = sum + del
-    if _abs(del) < _abs(sum) * 1.0e-12: n = 200
-    else: n = n + 1
-  return sum * math.exp(0.0 - x + s * math.log(x) - logGamma(s))
+    if _abs(del) <= _abs(sum) * 1.0e-14:
+      return sum * math.exp(0.0 - x + s * math.log(x) - logGamma(s))
+    n = n + 1
+  throw "incomplete gamma series did not converge"
 
 _gammaFraction(s: double, x: double) -> double:
   tiny = 1.0e-30
@@ -5750,7 +5829,7 @@ _gammaFraction(s: double, x: double) -> double:
   var d = 1.0 / b
   var h = d
   var i = 1
-  while i <= 200:
+  while i <= 10000:
     an = (0.0 - (i to double)) * ((i to double) - s)
     b = b + 2.0
     d = an * d + b
@@ -5760,9 +5839,10 @@ _gammaFraction(s: double, x: double) -> double:
     d = 1.0 / d
     del = d * c
     h = h * del
-    if _abs(del - 1.0) < 1.0e-12: i = 201
-    else: i = i + 1
-  return math.exp(0.0 - x + s * math.log(x) - logGamma(s)) * h
+    if _abs(del - 1.0) < 1.0e-14:
+      return math.exp(0.0 - x + s * math.log(x) - logGamma(s)) * h
+    i = i + 1
+  throw "incomplete gamma fraction did not converge"
 
 _betaFraction(a: double, b: double, x: double) -> double:
   tiny = 1.0e-30
@@ -5775,7 +5855,7 @@ _betaFraction(a: double, b: double, x: double) -> double:
   d = 1.0 / d
   var h = d
   var m = 1
-  while m <= 200:
+  while m <= 10000:
     m2 = 2 * m
     var aa = (m to double) * (b - (m to double)) * x / ((qam + (m2 to double)) * (a + (m2 to double)))
     d = 1.0 + aa * d
@@ -5793,9 +5873,9 @@ _betaFraction(a: double, b: double, x: double) -> double:
     d = 1.0 / d
     del = d * c
     h = h * del
-    if _abs(del - 1.0) < 1.0e-12: m = 201
-    else: m = m + 1
-  return h
+    if _abs(del - 1.0) < 1.0e-14: return h
+    m = m + 1
+  throw "incomplete beta fraction did not converge"
 
 _normalTail(p: double) -> double:
   a1 = 0.0 - 3.969683028665376e1
@@ -5834,7 +5914,7 @@ _normalTail(p: double) -> double:
       den = polyEval([1.0, b5, b4, b3, b2, b1], r)
       x = num / den
     else:
-      q = math.sqrt(0.0 - 2.0 * math.log(1.0 - p))
+      q = math.sqrt(0.0 - 2.0 * log1p(0.0 - p))
       num = polyEval([c6, c5, c4, c3, c2, c1], q)
       den = polyEval([1.0, d4, d3, d2, d1], q)
       x = 0.0 - num / den
@@ -6094,7 +6174,7 @@ _polyZip(left: List<double>, right: List<double>, sign: double) -> List<double>:
 _trimPoly(coeffs: List<double>) -> List<double>:
   if coeffs.isEmpty: return [0.0]
   var end = coeffs.length - 1
-  while end > 0 and _abs(coeffs[end]) <= 1.0e-12:
+  while end > 0 and coeffs[end] == 0.0:
     end = end - 1
   made: List<double> = []
   var i = 0
@@ -6105,13 +6185,13 @@ _trimPoly(coeffs: List<double>) -> List<double>:
 
 _tinyPoly(coeffs: List<double>) -> bool:
   for value in coeffs:
-    if _abs(value) > 1.0e-10: return false
+    if value != 0.0: return false
   return true
 
 _monicPoly(coeffs: List<double>) -> List<double>:
   cleaned = _trimPoly(coeffs)
   lead = cleaned[cleaned.length - 1]
-  if _abs(lead) <= 1.0e-14: return [0.0]
+  if lead == 0.0: return [0.0]
   made: List<double> = []
   for value in cleaned:
     made.add(value / lead)
@@ -6169,6 +6249,8 @@ _durand(coeffs: List<double>) -> List<Complex>:
     roots = next
     if moved < 1.0e-12: sweep = 80
     else: sweep = sweep + 1
+  for root in roots:
+    if _atComplex(monic, root).abs() > 1.0e-8 * (1.0 + root.abs()): throw "polynomial roots did not converge"
   return _sortRoots(roots)
 
 _characteristic(rows: List<List<double>>) -> List<double>:
@@ -6381,20 +6463,8 @@ _simpson3(f: (double) -> double, a: double, b: double) -> double:
   mid = (a + b) / 2.0
   return (b - a) / 6.0 * (f(a) + 4.0 * f(mid) + f(b))
 
-_adapt(
-    f: (double) -> double,
-    a: double,
-    b: double,
-    eps: double,
-    whole: double,
-    depth: int) -> double:
-  mid = (a + b) / 2.0
-  left = _simpson3(f, a, mid)
-  right = _simpson3(f, mid, b)
-  delta = left + right - whole
-  if depth >= 18 or _abs(delta) <= 15.0 * eps: return left + right + delta / 15.0
-  return _adapt(f, a, mid, eps / 2.0, left, depth + 1) + _adapt(f, mid, b,
-  eps / 2.0, right, depth + 1)
+_adapt(f: (double) -> double, a: double, b: double, eps: double, whole: double, depth: int) -> double:
+  return _adaptEstimate(f, a, b, eps, whole, depth).value
 
 _gammaMarsaglia(random: Random, shape: double) -> double:
   d = shape - 1.0 / 3.0
@@ -6409,7 +6479,7 @@ _gammaMarsaglia(random: Random, shape: double) -> double:
       if u == 0.0: u = 1.0e-16
       if math.log(u) < 0.5 * z * z + d * (1.0 - v + math.log(v)): return d * v
     guard = guard + 1
-  return d
+  throw "gammaSample did not converge"
 
 _ranks(values: List<double>) -> List<double>:
   var order = _zeroInts(values.length)
@@ -6528,3 +6598,287 @@ _chirpTransform(values: List<Complex>, sign: double) -> List<Complex>:
     made.add(item)
     k = k + 1
   return made
+
+# Overflow-safe modular addition for canonical residues.
+_addMod(a: int, b: int, modulus: int) -> int:
+  if a >= modulus - b: return a - (modulus - b)
+  return a + b
+
+_mulMod(a: int, b: int, modulus: int) -> int:
+  var left = a % modulus
+  var right = b % modulus
+  var total = 0
+  while right > 0:
+    if right % 2 == 1: total = _addMod(total, left, modulus)
+    right = right ~/ 2
+    if right > 0: left = _addMod(left, left, modulus)
+  return total
+
+_checkedMultiply(a: int, b: int) -> int:
+  largest = _maxInt()
+  smallest = _minInt()
+  if a > 0:
+    if b > 0 and a > largest ~/ b: throw "integer result is outside int range"
+    if b < 0 and b < smallest ~/ a: throw "integer result is outside int range"
+  if a < 0:
+    if b > 0 and a < smallest ~/ b: throw "integer result is outside int range"
+    if b < 0 and a < largest ~/ b: throw "integer result is outside int range"
+  return a * b
+
+_checkedAdd(a: int, b: int) -> int:
+  if b > 0 and a > _maxInt() - b: throw "integer result is outside int range"
+  if b < 0 and a < _minInt() - b: throw "integer result is outside int range"
+  return a + b
+
+_logChoose(n: int, k: int) -> double:
+  return logGamma((n to double) + 1.0) - logGamma((k to double) + 1.0) - logGamma(((n - k) to double) + 1.0)
+
+# Schlaefli integrals avoid catastrophic cancellation of large-argument series.
+_besselPieces(nu: double, x: double) -> int:
+  if not _finite(x) or not _finite(nu) or _abs(nu) > 10000.0 or x > 10000.0:
+    throw "Bessel argument or order exceeds the numerical work limit"
+  var pieces = ((x + _abs(nu)) * 32.0).ceil
+  if pieces < 1024: pieces = 1024
+  if pieces % 2 == 1: pieces = pieces + 1
+  return pieces
+
+_besselLimit(nu: double, x: double) -> double:
+  var limit = 1.0
+  while limit < 710.0:
+    if x * sinh(limit) - _abs(nu) * limit > x + 50.0: return limit
+    limit = limit + 0.5
+  throw "Bessel tail did not converge"
+
+_besselJReal(nu: double, x: double) -> double:
+  pieces = _besselPieces(nu, x)
+  if x == 0.0:
+    if nu == 0.0: return 1.0
+    if nu > 0.0: return 0.0
+    throw "besselJReal is undefined at zero for a negative order"
+  if x <= 10.0:
+    var term = math.exp(nu * math.log(x / 2.0) - logGamma(nu + 1.0))
+    if nu + 1.0 < 0.0 and math.sin(math.pi * (nu + 1.0)) < 0.0: term = 0.0 - term
+    var total = term
+    var k = 1
+    while k <= 10000:
+      term = term * (0.0 - (x / (2.0 * (k to double))) * (x / (2.0 * ((k to double) + nu))))
+      total = total + term
+      if _abs(term) <= 1.0e-16 * _abs(total): return total
+      k = k + 1
+    throw "Bessel series did not converge"
+  angular = simpson((t: double) -> math.cos(nu * t - x * math.sin(t)), 0.0, math.pi, pieces)
+  if nu % 1.0 == 0.0: return angular / math.pi
+  limit = _besselLimit(nu, x)
+  tail = simpson((t: double) -> math.exp(0.0 - x * sinh(t) - nu * t), 0.0, limit, 2048)
+  return (angular - math.sin(math.pi * nu) * tail) / math.pi
+
+_besselIReal(nu: double, x: double) -> double:
+  _besselPieces(nu, x)
+  if x == 0.0:
+    if nu == 0.0: return 1.0
+    if nu > 0.0: return 0.0
+    throw "Bessel I is undefined at zero for a negative order"
+  var term = math.exp(nu * math.log(x / 2.0) - logGamma(nu + 1.0))
+  var total = term
+  var k = 1
+  while k <= 10000:
+    term = term * ((x / (2.0 * (k to double))) * (x / (2.0 * ((k to double) + nu))))
+    total = total + term
+    if _abs(total) > 1.7976931348623157e308: return total
+    if _abs(term) <= 1.0e-16 * _abs(total): return total
+    k = k + 1
+  throw "Bessel I series did not converge"
+
+_besselKReal(nu: double, x: double) -> double:
+  _besselPieces(nu, x)
+  limit = _besselLimit(nu, x)
+  return simpson((t: double) -> 0.5 * (math.exp(nu * t - x * cosh(t)) + math.exp(0.0 - nu * t - x * cosh(t))), 0.0, limit, 2048)
+
+_finite(x: double) -> bool:
+  return x == x and _abs(x) <= 1.7976931348623157e308
+
+_matrixScale(rows: List<List<double>>) -> double:
+  var scale = 0.0
+  for row in rows:
+    for value in row:
+      if not _finite(value): throw "matrix entries must be finite"
+      if _abs(value) > scale: scale = _abs(value)
+  return scale
+
+_divideVector(values: List<double>, divisor: double) -> List<double>:
+  made: List<double> = []
+  for value in values:
+    made.add(value / divisor)
+  return made
+
+_divideMatrix(rows: List<List<double>>, divisor: double) -> List<List<double>>:
+  made: List<List<double>> = []
+  for row in rows:
+    made.add(_divideVector(row, divisor))
+  return made
+
+_orthogonalColumn(previous: List<List<double>>, count: int) -> List<double>:
+  var k = 0
+  while k < previous.length:
+    var candidate = _zeroDoubles(previous.length)
+    candidate = _setAt(candidate, k, 1.0)
+    var j = 0
+    while j < count:
+      col = _column(previous, j)
+      candidate = _axpy(candidate, col, 0.0 - dot(col, candidate))
+      j = j + 1
+    length = vectorLength(candidate)
+    if length > 1.0e-10: return _divideVector(candidate, length)
+    k = k + 1
+  throw "could not complete an orthogonal basis"
+
+_increasing(values: List<double>):
+  var i = 1
+  while i < values.length:
+    if values[i] <= values[i - 1]: throw "coordinates must be strictly increasing"
+    i = i + 1
+
+_fractionAdd(left: Fraction, right: Fraction, subtract: bool) -> Fraction:
+  common = gcd(left.denominator, right.denominator)
+  a = _checkedMultiply(left.numerator, right.denominator ~/ common)
+  var b = _checkedMultiply(right.numerator, left.denominator ~/ common)
+  if subtract: b = _checkedMultiply(b, -1)
+  top = _checkedAdd(a, b)
+  trim = gcd(top, common)
+  bottom = _checkedMultiply(left.denominator ~/ common, right.denominator ~/ trim)
+  return fraction(top ~/ trim, bottom)
+
+# Conjugate gradient for a symmetric positive definite system.
+# Example:
+#   print conjugateGradient([[4.0, 1.0], [1.0, 3.0]], [1.0, 2.0])[0]
+conjugateGradient(rows: List<List<double>>, values: List<double>) -> List<double>:
+  return _solveScaled(rows, values, 0)
+
+# BiCGSTAB solution, with relative residual validation.
+# Example:
+#   print bicgstab([[1.0, 2.0], [3.0, 4.0]], [5.0, 6.0])[0]
+bicgstab(rows: List<List<double>>, values: List<double>) -> List<double>:
+  return _solveScaled(rows, values, 1)
+
+# GMRES solution, with scaling and relative residual validation.
+# Example:
+#   print gmres([[4.0, 1.0], [1.0, 3.0]], [1.0, 2.0])[0]
+gmres(rows: List<List<double>>, values: List<double>) -> List<double>:
+  return _solveScaled(rows, values, 2)
+
+_solveScaled(rows: List<List<double>>, values: List<double>, method: int) -> List<double>:
+  grid = _squareCopy(rows)
+  if values.length != grid.length: throw "solver needs one value per row"
+  aScale = _matrixScale(grid)
+  var bScale = 0.0
+  for value in values:
+    if not _finite(value): throw "solver values must be finite"
+    if _abs(value) > bScale: bScale = _abs(value)
+  if bScale == 0.0: return _zeroDoubles(values.length)
+  if aScale == 0.0: throw "system is singular"
+  a = _divideMatrix(grid, aScale)
+  b = _divideVector(values, bScale)
+  var answer: List<double> = []
+  if method == 0: answer = _conjugateGradientUnit(a, b)
+  else:
+    if method == 1: answer = _bicgstabUnit(a, b)
+    else: answer = _gmresUnit(a, b)
+  residual = vectorLength(_axpy(matvec(a, answer), b, -1.0))
+  if not _finite(residual) or residual > 1.0e-8 * (1.0 + vectorLength(b)):
+    throw "iterative solver did not converge"
+  made: List<double> = []
+  for value in answer:
+    made.add(_scaleRatio(value, bScale, aScale))
+  return made
+
+_sameSign(a: double, b: double) -> bool:
+  return (a > 0.0 and b > 0.0) or (a < 0.0 and b < 0.0)
+
+_differentSigns(a: double, b: double) -> bool:
+  return (a > 0.0 and b < 0.0) or (a < 0.0 and b > 0.0)
+
+_scaleRatio(coefficient: double, numerator: double, denominator: double) -> double:
+  if coefficient == 0.0: return coefficient
+  ratio = numerator / denominator
+  if _finite(ratio) and ratio != 0.0: return coefficient * ratio
+  return (coefficient * numerator) / denominator
+
+_spread(values: List<double>, denominator: double) -> double:
+  center = mean(values)
+  scale = math.sqrt(denominator)
+  var total = 0.0
+  for value in values:
+    total = hypot(total, _differenceRatio(value, center, scale))
+  return total
+
+_differenceRatio(left: double, right: double, scale: double) -> double:
+  delta = left - right
+  if _finite(delta): return delta / scale
+  return left / scale - right / scale
+
+_tieCubic(values: List<double>) -> double:
+  ordered = _copyDoubles(values)
+  ordered.sort()
+  var i = 0
+  var total = 0.0
+  while i < ordered.length:
+    var j = i + 1
+    while j < ordered.length and ordered[j] == ordered[i]:
+      j = j + 1
+    count = (j - i) to double
+    total = total + count * (count - 1.0) * (count + 1.0)
+    i = j
+  return total
+
+# Conjugate gradient on a symmetric positive definite coordinate matrix.
+# Example:
+#   print sparseConjugateGradient([0, 1], [0, 1], [4.0, 3.0], [1.0, 2.0], 2)[0]
+sparseConjugateGradient(rowIndex: List<int>, columnIndex: List<int>, entries: List<double>, values: List<double>, size: int) -> List<double>:
+  if values.length != size: throw "sparseConjugateGradient needs one value per row"
+  if rowIndex.length != columnIndex.length or rowIndex.length != entries.length:
+    throw "sparseConjugateGradient needs matching coordinates"
+  var aScale = 0.0
+  var bScale = 0.0
+  for entry in entries:
+    if not _finite(entry): throw "matrix entries must be finite"
+    if _abs(entry) > aScale: aScale = _abs(entry)
+  for value in values:
+    if not _finite(value): throw "solver values must be finite"
+    if _abs(value) > bScale: bScale = _abs(value)
+  if bScale == 0.0: return _zeroDoubles(size)
+  if aScale == 0.0: throw "system is singular"
+  scaled = _divideVector(entries, aScale)
+  rhs = _divideVector(values, bScale)
+  answer = _sparseConjugateGradientUnit(rowIndex, columnIndex, scaled, rhs, size)
+  residual = vectorLength(_axpy(sparseMatvec(rowIndex, columnIndex, scaled, answer), rhs, -1.0))
+  if not _finite(residual) or residual > 1.0e-8 * (1.0 + vectorLength(rhs)):
+    throw "sparse solver did not converge"
+  made: List<double> = []
+  for value in answer:
+    made.add(_scaleRatio(value, bScale, aScale))
+  return made
+
+_adaptEstimate(f: (double) -> double, a: double, b: double, eps: double, whole: double, depth: int) -> Estimate:
+  mid = (a + b) / 2.0
+  left = _simpson3(f, a, mid)
+  right = _simpson3(f, mid, b)
+  delta = left + right - whole
+  if not _finite(delta): throw "non-finite integrand or quadrature overflow"
+  if _abs(delta) <= 15.0 * eps:
+    return Estimate(value: left + right + delta / 15.0, error: _abs(delta) / 15.0)
+  if depth >= 18: throw "adaptive integration did not converge"
+  l = _adaptEstimate(f, a, mid, eps / 2.0, left, depth + 1)
+  r = _adaptEstimate(f, mid, b, eps / 2.0, right, depth + 1)
+  return Estimate(value: l.value + r.value, error: l.error + r.error)
+
+# VM integers are signed 64-bit; JavaScript uses exactly representable integers
+# through 2^53-1. Detect its rounding without emitting an unsafe int literal.
+_maxInt() -> int:
+  safe = 9007199254740991
+  if safe + 1 == safe + 2: return safe
+  return safe * 1024 + 1023
+
+_minInt() -> int:
+  largest = _maxInt()
+  if largest == 9007199254740991: return 0 - largest
+  return 0 - largest - 1

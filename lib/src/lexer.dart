@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'source.dart';
 export 'source.dart';
 
@@ -81,9 +80,10 @@ class Lexer {
 }
 
 class _Scanner {
-  _Scanner(this.source, this.file);
+  _Scanner(this.source, this.file) : _byteOffsets = _utf8Offsets(source);
   final String source;
   final String file;
+  final List<int> _byteOffsets;
   final tokens = <Token>[];
   final indents = <int>[0];
   final brackets = <Token>[];
@@ -101,14 +101,23 @@ class _Scanner {
       RegExp(r'^[\p{L}\p{Nl}\p{N}\p{M}_]$', unicode: true);
   bool get end => i >= source.length;
   String get ch => end ? '' : source[i];
-  String get rune =>
-      end ? '' : String.fromCharCode(source.substring(i).runes.first);
+  String get rune {
+    if (end) return '';
+    final first = source.codeUnitAt(i);
+    if (first >= 0xd800 && first <= 0xdbff && i + 1 < source.length) {
+      final second = source.codeUnitAt(i + 1);
+      if (second >= 0xdc00 && second <= 0xdfff)
+        return source.substring(i, i + 2);
+    }
+    return source[i];
+  }
+
   bool at(String value) => source.startsWith(value, i);
-  SourceSpan span(int start, int startLine, int startColumn) => SourceSpan(
-      startLine, startColumn, utf8.encode(source.substring(start, i)).length,
-      file: file, offset: utf8.encode(source.substring(0, start)).length);
-  SourceSpan get here => SourceSpan(line, column, 0,
-      file: file, offset: utf8.encode(source.substring(0, i)).length);
+  SourceSpan span(int start, int startLine, int startColumn) =>
+      SourceSpan(startLine, startColumn, _byteOffsets[i] - _byteOffsets[start],
+          file: file, offset: _byteOffsets[start]);
+  SourceSpan get here =>
+      SourceSpan(line, column, 0, file: file, offset: _byteOffsets[i]);
   Never fail(String code, String message, [SourceSpan? location]) =>
       throw LexerException(code, message, location ?? here);
   void advance() {
@@ -491,4 +500,29 @@ class _Scanner {
     }
     fail('E004', 'Unterminated string', location);
   }
+}
+
+// Index UTF-8 offsets once rather than re-encoding every token's source prefix.
+// Columns still use the original UTF-16 indices, and CRLF bytes remain intact.
+List<int> _utf8Offsets(String source) {
+  final offsets = List<int>.filled(source.length + 1, 0);
+  var index = 0;
+  var bytes = 0;
+  for (final rune in source.runes) {
+    offsets[index] = bytes;
+    if (rune > 0xffff) {
+      offsets[index + 1] = bytes + 3;
+      index += 2;
+      bytes += 4;
+    } else {
+      index++;
+      bytes += rune <= 0x7f
+          ? 1
+          : rune <= 0x7ff
+              ? 2
+              : 3;
+    }
+    offsets[index] = bytes;
+  }
+  return offsets;
 }

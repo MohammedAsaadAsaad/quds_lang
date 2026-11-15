@@ -1,0 +1,22 @@
+use quds:math
+group "review regressions":
+  test "modPow must not overflow before reduction":
+    expect(modPow(4000000000, 2, 5000000000), 0)
+  test "Mersenne 61 is prime":
+    expect(isProbablePrime(2305843009213693951), true)
+  test "a redundant modulus is a valid CRT constraint":
+    expect(chineseRemainder([1, 1], [4, 2]), 1)
+  test "expm1 has the correct negative tail":
+    expect(expm1(-1000.0), -1.0)
+  test "expm1 preserves positive overflow":
+    expect(expm1(1000.0), exp(1000.0))
+  test "asinh of a large finite argument remains finite":
+    expect(asinh(1.0e200), closeTo(461.2101657793691, 1.0e-10))
+  test "acosh of a large finite argument remains finite":
+    expect(acosh(1.0e200), closeTo(461.2101657793691, 1.0e-10))
+  test "a small prime is not its own compositeness witness":
+    expect(isProbablePrime(5), true)
+  test "binomial probability at its central mode":
+    expect(binomialPmf(50, 100, 0.5), closeTo(0.07958923738717877, 1.0e-12))
+  test "Poisson probability is nonnegative and normalized in scale":
+    expect(poissonPmf(30, 30.0), closeTo(0.07263452647159079, 1.0e-12))

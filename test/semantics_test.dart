@@ -2,6 +2,15 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('throwing paths satisfy a non-void function return contract', () {
+    compile('alwaysFails() -> int:\n  throw "stop"\n');
+    compile(
+        'f(ok: bool) -> int:\n  if ok:\n    return 1\n  else:\n    throw "stop"\n');
+  });
+  test('a conditional throw does not hide a missing return path', () {
+    expect(() => compile('f(ok: bool) -> int:\n  if ok:\n    throw "stop"\n'),
+        throwsA(isA<CompilerException>()));
+  });
   test('outer mutable assignment and explicit immutable shadow', () {
     compile(
         'main():\n  var x = 1\n  if true:\n    x += 2\n    shadow x = x + 1\n    print x\n  print x\n');

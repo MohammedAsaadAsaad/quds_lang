@@ -16,6 +16,7 @@ jobs:
         run: |
           set -euo pipefail
           dart run bin/quds.dart test test/math.quds
+          dart run bin/quds.dart test test/math_accuracy.quds
           dart run bin/quds.dart test test/math_prefix.quds
           dart run bin/quds.dart test test/expect.quds
           reject() {

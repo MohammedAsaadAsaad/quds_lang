@@ -89,3 +89,6 @@ export PUB_CACHE=/workspace/.pub-cache
 ```
 
 See [what the compiler implements](docs/MVP_0.md), [validation results](docs/VALIDATION.md), [environment setup](docs/ENVIRONMENT.md), [approved decisions](docs/LANGUAGE_DECISIONS.md), and [what the design closed](docs/OPEN_QUESTIONS.md).
+
+The SDK math precision contract and numerical regression checks are documented in
+[math accuracy](docs/MATH_ACCURACY.md) and [the API inventory](docs/MATH_COVERAGE.md).

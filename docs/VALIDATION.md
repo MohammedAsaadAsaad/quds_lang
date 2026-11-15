@@ -1,4 +1,44 @@
-# MVP-0 validation — 2026-11-11
+# Compiler validation — latest 2026-11-15
+
+## Math audit and compiler prerequisites
+
+Validated with Dart 3.13.7 on Linux x64. See [MATH_ACCURACY.md](MATH_ACCURACY.md)
+for numerical contracts, reference versions, tolerances and limitations, and
+[MATH_COVERAGE.md](MATH_COVERAGE.md) for the 292-function inventory.
+
+| Command/check | Observed outcome |
+| --- | --- |
+| `dart format --output=none --set-exit-if-changed .` | 35 files; zero changes |
+| `dart analyze` | No issues |
+| `dart test --reporter expanded` | 228 passed; 1 skipped; no failures |
+| Frozen native math reference runner | 2591 checks; zero failures |
+| JavaScript math smoke | `dart compile js` passed; Node printed `WEB MATH OK` |
+| `quds test test/math.quds` | All 14 test declarations passed |
+| `quds test test/math_accuracy.quds` | All 10 former failing regressions passed |
+| Prefix and matcher suites | Passed; matcher fixture intentionally skips two assertions |
+| Four negative CLI fixtures in CI | Each exited 65 with its expected diagnostic |
+| Embedded SDK/source equality | Passed |
+| Reference regeneration | Byte-identical fixture and coverage inventory |
+| `git diff --check` | Passed |
+
+The skipped full-suite test is the existing debug-adapter integration test:
+`test/compiler_test.dart` skips after retrying a breakpoint stop that has no stack
+frames. It is unrelated to the numerical changes; no numerical reference or math
+regression was skipped. The precision and JavaScript test file also passed in
+isolation (2 tests), and embedded math-source equality passed in isolation (1 test).
+No debug-adapter fix or Flutter UI validation is claimed here.
+
+The original review's ten failing math cases now pass. Frozen cases use SciPy,
+NumPy, selected 80-digit mpmath anchors, analytic identities, exact integer
+comparisons and fixed-seed sampling. The detailed document distinguishes sampled
+accuracy from a global error guarantee and explains the corrected constant-sample
+Kendall expectation and floating least-squares assertions.
+
+---
+
+The sections below are historical records from 2026-11-11. Their older test counts,
+implementation gaps and environment-publication statements are retained as history,
+not as claims about the current compiler or environment.
 
 Validated on Linux x64 with Dart **3.13.7 (stable)**. The package's locked
 development dependencies require Dart >=3.13.0. No Flutter installation, service,

@@ -474,3 +474,10 @@ A function may contain a local function. The local function sees the enclosing b
 
 The parity table still includes aborting a future that has already started.
 No claim of full 115-decision conformance is made.
+
+## Math numerical validation
+
+See [MATH_ACCURACY.md](MATH_ACCURACY.md) for the tested numerical grid, corrected
+algorithms, platform integer limits, tolerances and convergence/domain contracts.
+[MATH_COVERAGE.md](MATH_COVERAGE.md) records executable call sites for every
+public top-level math function; it does not claim exhaustive branch coverage.

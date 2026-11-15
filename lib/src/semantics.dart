@@ -386,6 +386,12 @@ class Analyzer {
   /// Path of the source being checked. Imports and parts resolve from here.
   final String _file;
   Map<String, Program> _libraries = const {};
+
+  /// Symbols of an imported library, including its private names and prefixes.
+  ///
+  /// A call re-checks a function that has defaults. That check used to run in
+  /// the importer's scope, which cannot see `_names` or `use dart:math as math`.
+  final _libraryScopes = <String, _Scope>{};
   final _global = _Scope();
   late _Scope _scope = _global;
   final _checked = <FunctionDeclaration>{};
@@ -2166,6 +2172,12 @@ class Analyzer {
       if (named != null) _touch(named);
       return;
     }
+    // A class brought in from dart:math or another re-exported Dart library.
+    // Its symbol is external, so it has no Quds class declaration.
+    if (named != null && model.dartShapes.containsKey(type)) {
+      _touch(named);
+      return;
+    }
     final open = type.indexOf('<');
     if (open > 0 && type.endsWith('>')) {
       final head = type.substring(0, open);
@@ -2201,6 +2213,69 @@ class Analyzer {
       if (space != null && owns(space[function.name])) return true;
     }
     return false;
+  }
+
+  /// Scope for [home], parented at the importer's globals.
+  ///
+  /// Public names are already in the global scope. Private functions stay in
+  /// this scope only. A `use dart:x as prefix` inside the library is bound
+  /// here so bodies can write `math.log` without leaking the prefix.
+  _Scope _libraryScope(String home) {
+    final cached = _libraryScopes[home];
+    if (cached != null) return cached;
+    final scope = _Scope(_global);
+    _libraryScopes[home] = scope;
+    final program = _libraries[home];
+    if (program == null) return scope;
+    final saved = _scope;
+    _scope = _global;
+    try {
+      for (final statement in program.statements) {
+        switch (statement) {
+          case FunctionDeclaration():
+            final known = model.declarations[statement];
+            if (known != null) {
+              scope.symbols[statement.name] = known;
+              continue;
+            }
+            _importFunction(statement, library: home);
+            final placed = _global.symbols.remove(statement.name);
+            if (placed != null) scope.symbols[statement.name] = placed;
+          case ClassDeclaration() when statement.name.startsWith('_'):
+            if (model.declarations[statement] == null) {
+              registerClass(statement, library: home);
+            }
+          case ImportDeclaration()
+              when statement.prefix != null &&
+                  statement.uri.startsWith('dart:'):
+            _bindDartPrefix(scope, statement);
+          default:
+            break;
+        }
+      }
+    } finally {
+      _scope = saved;
+    }
+    return scope;
+  }
+
+  void _bindDartPrefix(_Scope scope, ImportDeclaration node) {
+    final prefix = node.prefix;
+    if (prefix == null || scope.symbols.containsKey(prefix)) return;
+    DartSurface? surface;
+    try {
+      surface = readDartLibrary(node.uri);
+    } catch (_) {
+      surface = null;
+    }
+    if (surface == null) return;
+    final space = <String, Symbol>{};
+    for (final name in surface.names.keys) {
+      final top = surface.names[name];
+      if (top == null) continue;
+      space[name] = symbolForDart(top, surface.types[name]);
+    }
+    scope.symbols[prefix] = Symbol(prefix, prefix, 'prefix', namespace: space);
   }
 
   void analyzeFunction(FunctionDeclaration function) {
@@ -2241,7 +2316,18 @@ class Analyzer {
     // A top-level function does not close over the caller's locals. Calls
     // re-check a function that has defaults, and that call may sit inside
     // another function. Parent the body at the global scope in that case.
-    _scope = _Scope(_declaredAtTopLevel(function) ? _global : savedScope);
+    // An imported function is parented at its own library so private helpers
+    // and that library's prefixes stay visible.
+    final home = model.declarations[function]?.library ?? '';
+    final _Scope parent;
+    if (home.isNotEmpty && home != library) {
+      parent = _libraryScope(home);
+    } else if (_declaredAtTopLevel(function)) {
+      parent = _global;
+    } else {
+      parent = savedScope;
+    }
+    _scope = _Scope(parent);
     _function = function;
     final declared = model.declarations[function]!.type;
     _returnType = function.generator == 'sync' &&

@@ -483,6 +483,8 @@ const mathSdkSource = '''# Mathematics that dart:math does not provide.
 #   print pi
 #   print ln(e)
 #   print mean([1.0, 2.0, 3.0])
+use dart:core show BigInt
+export dart:core show BigInt
 use dart:math as math
 use dart:math
 export dart:math
@@ -7873,6 +7875,213 @@ _shortestPaths(source: int, work: List<_WeightedState>) -> ShortestPaths:
     distances.add(cell.distance)
     parents.add(cell.parent)
   return ShortestPaths(source: source, distances: distances, predecessors: parents)
+
+# Parse an arbitrary-precision integer using Dart's BigInt literal grammar.
+# Invalid text throws FormatException. No conversion through int or double.
+# Example:
+#   print bigInt("1208925819614629174706176")
+bigInt(text: String) -> BigInt = BigInt.parse(text)
+
+# Exact rational storage. Use bigFraction() for canonical normalization; this
+# raw value constructor intentionally stores its arguments as given, just as
+# Fraction does. Arithmetic rejects a zero denominator and normalizes results.
+value class BigFraction:
+  numerator: BigInt required
+  denominator: BigInt required
+
+  operator +(other: BigFraction) -> BigFraction:
+    return _bigFractionAdd(this, other, false)
+
+  operator -(other: BigFraction) -> BigFraction:
+    return _bigFractionAdd(this, other, true)
+
+  operator *(other: BigFraction) -> BigFraction:
+    _checkBigFraction(this)
+    _checkBigFraction(other)
+    a = numerator.gcd(other.denominator)
+    b = other.numerator.gcd(denominator)
+    return bigFraction((numerator ~/ a) * (other.numerator ~/ b), (denominator ~/ b) * (other.denominator ~/ a))
+
+  operator /(other: BigFraction) -> BigFraction:
+    _checkBigFraction(this)
+    _checkBigFraction(other)
+    if other.numerator == BigInt.zero: throw "division by zero"
+    a = numerator.gcd(other.numerator)
+    b = denominator.gcd(other.denominator)
+    return bigFraction((numerator ~/ a) * (other.denominator ~/ b), (denominator ~/ b) * (other.numerator ~/ a))
+
+  negated() -> BigFraction = bigFraction(-numerator, denominator)
+
+  reciprocal() -> BigFraction = bigFraction(denominator, numerator)
+
+  compareTo(other: BigFraction) -> int:
+    left = bigFraction(numerator, denominator)
+    right = bigFraction(other.numerator, other.denominator)
+    difference = left.numerator * right.denominator - right.numerator * left.denominator
+    return difference.sign
+
+  toString() -> String = "{numerator}/{denominator}"
+
+# Canonical exact rational: reduced terms, positive denominator, zero as 0/1.
+# No fixed precision limit; operations are limited by available memory.
+# Example:
+#   print bigFraction(bigInt("-12"), bigInt("-18"))
+bigFraction(numerator: BigInt, denominator: BigInt) -> BigFraction:
+  if denominator == BigInt.zero: throw "bigFraction needs a non-zero denominator"
+  divisor = numerator.gcd(denominator)
+  var top = numerator ~/ divisor
+  var bottom = denominator ~/ divisor
+  if bottom < BigInt.zero:
+    top = -top
+    bottom = -bottom
+  return BigFraction(numerator: top, denominator: bottom)
+
+# Exact factorial, with 0! = 1. Work guard: 0 <= n <= 100000.
+# Example:
+#   print bigFactorial(30)
+bigFactorial(n: int) -> BigInt:
+  _bigWorkLimit(n, 100000, "bigFactorial")
+  var total = BigInt.one
+  var index = 2
+  while index <= n:
+    total = total * BigInt.from(index)
+    index += 1
+  return total
+
+# Exact binomial coefficient; k>n returns zero, as combinations() does.
+# Work guard: 0 <= n <= 100000; k must be nonnegative.
+# Example:
+#   print bigCombinations(100, 50)
+bigCombinations(n: int, k: int) -> BigInt:
+  _bigWorkLimit(n, 100000, "bigCombinations")
+  if k < 0: throw "bigCombinations needs nonnegative k"
+  if k > n: return BigInt.zero
+  var count = k
+  if n - k < count: count = n - k
+  var total = BigInt.one
+  var index = 1
+  while index <= count:
+    total = (total * BigInt.from(n - count + index)) ~/ BigInt.from(index)
+    index += 1
+  return total
+
+# Exact Fibonacci with F0=0, F1=1, using fast doubling (O(log n) big-integer
+# steps). Work guard: 0 <= n <= 1000000; bit-operation cost grows with output.
+# Example:
+#   print bigFibonacci(100)
+bigFibonacci(n: int) -> BigInt:
+  _bigWorkLimit(n, 1000000, "bigFibonacci")
+  var left = BigInt.zero
+  var right = BigInt.one
+  var bit = 1
+  while bit <= n ~/ 2:
+    bit *= 2
+  while bit > 0:
+    even = left * (BigInt.from(2) * right - left)
+    odd = left * left + right * right
+    if (n & bit) == 0:
+      left = even
+      right = odd
+    else:
+      left = odd
+      right = even + odd
+    bit = bit ~/ 2
+  return left
+
+# Exact Catalan number Cn = choose(2n,n)/(n+1). Work guard: n <= 50000.
+# Example:
+#   print bigCatalan(30)
+bigCatalan(n: int) -> BigInt:
+  _bigWorkLimit(n, 50000, "bigCatalan")
+  return bigCombinations(2 * n, n) ~/ BigInt.from(n + 1)
+
+# Exact set-partition count S(n,k), with S(0,0)=1 and k>n giving zero.
+# Descending recurrence uses O(k) storage. Guards: n<=10000, n*k<=1000000.
+# Example:
+#   print bigStirlingSecond(20, 10)
+bigStirlingSecond(n: int, k: int) -> BigInt:
+  _bigWorkLimit(n, 10000, "bigStirlingSecond")
+  if k < 0: throw "bigStirlingSecond needs nonnegative k"
+  if k > n: return BigInt.zero
+  if n * k > 1000000: throw "bigStirlingSecond work limit exceeded"
+  row = _bigCells(k + 1)
+  row[0].value = BigInt.one
+  var index = 1
+  while index <= n:
+    var column = k
+    if column > index: column = index
+    while column > 0:
+      row[column].value = BigInt.from(column) * row[column].value + row[column - 1].value
+      column -= 1
+    row[0].value = BigInt.zero
+    index += 1
+  return row[k].value
+
+# Exact Bell number using the Bell triangle. Guards: 0<=n<=1000.
+# O(n^2) big-integer additions and O(n) storage, not fixed-cost arithmetic.
+# Example:
+#   print bigBell(20)
+bigBell(n: int) -> BigInt:
+  _bigWorkLimit(n, 1000, "bigBell")
+  row = _bigCells(n + 1)
+  row[0].value = BigInt.one
+  var index = 1
+  while index <= n:
+    var previous = row[0].value
+    row[0].value = row[index - 1].value
+    var column = 1
+    while column <= index:
+      saved = row[column].value
+      row[column].value = row[column - 1].value + previous
+      previous = saved
+      column += 1
+    index += 1
+  return row[0].value
+
+# Exact unrestricted integer partition count, p(0)=1, via coin-change DP.
+# O(n^2) big-integer additions, O(n) storage. Guards: 0<=n<=2000.
+# Example:
+#   print bigPartitions(100)
+bigPartitions(n: int) -> BigInt:
+  _bigWorkLimit(n, 2000, "bigPartitions")
+  row = _bigCells(n + 1)
+  row[0].value = BigInt.one
+  var part = 1
+  while part <= n:
+    var total = part
+    while total <= n:
+      row[total].value = row[total].value + row[total - part].value
+      total += 1
+    part += 1
+  return row[n].value
+
+class _BigCell:
+  var value: BigInt required
+
+_bigCells(count: int) -> List<_BigCell>:
+  row: List<_BigCell> = []
+  var index = 0
+  while index < count:
+    row.add(_BigCell(value: BigInt.zero))
+    index += 1
+  return row
+
+_bigWorkLimit(n: int, limit: int, operation: String):
+  if n < 0 or n > limit: throw "{operation} needs n from 0 through {limit}"
+
+_checkBigFraction(value: BigFraction):
+  if value.denominator == BigInt.zero: throw "bigFraction needs a non-zero denominator"
+
+_bigFractionAdd(left: BigFraction, right: BigFraction, subtract: bool) -> BigFraction:
+  _checkBigFraction(left)
+  _checkBigFraction(right)
+  common = left.denominator.gcd(right.denominator)
+  leftScale = right.denominator ~/ common
+  rightScale = left.denominator ~/ common
+  var top = left.numerator * leftScale
+  if subtract: top = top - right.numerator * rightScale
+  else: top = top + right.numerator * rightScale
+  return bigFraction(top, left.denominator * leftScale)
 ''';
 
 const embeddedSdk = <String, String>{

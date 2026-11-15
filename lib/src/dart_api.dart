@@ -780,6 +780,25 @@ class _Parser {
       if (peek != 'get' && peek != 'set' && peek != 'operator') {
         leading = _rawType();
       }
+      if (leading != null && peek == 'operator') {
+        take();
+        final at = _here;
+        var operator = '';
+        while (i < tokens.length && peek != '(' && peek != ';' && peek != '}') {
+          operator += take();
+        }
+        if (peek == '(') {
+          final signature = _parameters(params, type.fields);
+          final key =
+              operator == '-' && signature.$1.isEmpty ? 'unary-' : operator;
+          type.members[key] = _noted(
+              operator, _simplify(leading, params), at, doc,
+              parameters: signature.$1, optional: signature.$2);
+        }
+        _skipMember();
+        if (i == before) i++;
+        continue;
+      }
       if (peek == 'get' || peek == 'set') {
         final kind = take();
         final at = _here;

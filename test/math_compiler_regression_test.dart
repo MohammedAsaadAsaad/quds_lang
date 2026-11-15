@@ -4,6 +4,45 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('SDK BigInt operators retain static result and argument types', () {
+    final result = compile('''
+use dart:core show BigInt
+main():
+  a = BigInt.from(3)
+  b = BigInt.from(2)
+  total = a + b
+  ratio = a / b
+  integer = a ~/ b
+  negative = -a
+  complemented = ~a
+  smaller = a < b
+''');
+    final main =
+        result.program.statements.whereType<FunctionDeclaration>().single;
+    final types = {
+      for (final binding in main.body!.whereType<Binding>())
+        binding.name: result.semantics.types[binding.value]
+    };
+    expect(types['total'], 'BigInt');
+    expect(types['ratio'], 'double');
+    expect(types['integer'], 'BigInt');
+    expect(types['negative'], 'BigInt');
+    expect(types['complemented'], 'BigInt');
+    expect(types['smaller'], 'bool');
+    for (final expression in ['a + 1', 'a << a', 'a >>> 1']) {
+      expect(
+          () => compile(
+              'use dart:core show BigInt\nmain():\n  a = BigInt.one\n  print($expression)\n'),
+          throwsA(predicate((e) => '$e'.contains('E300'))));
+    }
+    for (final expression in ['a + BigInt.one', '-a', '~a']) {
+      expect(
+          () => compile(
+              'use dart:core show BigInt\nmain():\n  a: BigInt? = null\n  print($expression)\n'),
+          throwsA(predicate((e) => '$e'.contains('E308'))));
+    }
+  });
+
   test('bit operations reject floating and mixed operands in Quds', () {
     for (final expression in ['1.5 & 1', '1 << 1.5', 'true | 1', '~1.5']) {
       expect(() => compile('main():\n  print($expression)\n'),

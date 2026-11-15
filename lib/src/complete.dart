@@ -1125,6 +1125,7 @@ void _sdkMembers(
   final shape = compilation.semantics.dartShapes[_head(bare)];
   if (shape == null) return;
   for (final member in shape.members.values) {
+    if (!_name(member.name)) continue;
     if (member.getter) {
       add(_plain(member.name, 10, member.type, range, sort: '0'));
       continue;

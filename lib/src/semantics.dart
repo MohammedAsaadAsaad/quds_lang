@@ -2166,7 +2166,7 @@ class Analyzer {
       }
       return;
     }
-    final named = _global.symbols[type];
+    final named = _global.symbols[type] ?? _scope.lookup(type);
     if (named?.classDeclaration != null ||
         named?.classCase != null ||
         _pendingClasses.contains(type)) {
@@ -2229,7 +2229,7 @@ class Analyzer {
     final program = _libraries[home];
     if (program == null) return scope;
     final saved = _scope;
-    _scope = _global;
+    _scope = scope;
     try {
       for (final statement in program.statements) {
         switch (statement) {
@@ -5019,6 +5019,10 @@ class Analyzer {
       final joined = _joinedCollection(left, right);
       if (joined != null) return joined;
     }
+    if (left.endsWith('?') && op != '??') {
+      error('E308',
+          'A nullable value is used where a non-null value is required', node);
+    }
     final owner = _global.symbols[unwrap(left)]?.classDeclaration;
     final method = owner == null ? null : _method(owner, op);
     if (owner != null && method != null && method.isOperator) {
@@ -5032,6 +5036,13 @@ class Analyzer {
       return model.declarations[method]?.type ??
           method.returnType ??
           owner.name;
+    }
+    final native = _sdkMember(left, op);
+    if (native != null &&
+        !native.getter &&
+        native.parameters.length == 1 &&
+        compatible(right, native.parameters.single.$2)) {
+      return native.type;
     }
     error('E300', 'Operator $op is not defined for $left and $right', node);
   }
@@ -5284,6 +5295,19 @@ class Analyzer {
 
   String unary(UnaryExpression node) {
     final type = expression(node.operand);
+    if (node.operator == '-' || node.operator == '~') {
+      if (type.endsWith('?')) {
+        error(
+            'E308',
+            'A nullable value is used where a non-null value is required',
+            node);
+      }
+      final native =
+          _sdkMember(type, node.operator == '-' ? 'unary-' : node.operator);
+      if (native != null && !native.getter && native.parameters.isEmpty) {
+        return native.type;
+      }
+    }
     if (node.operator == '~') {
       if (type == 'int') return 'int';
       fail('Invalid unary operator ~ for $type', node);

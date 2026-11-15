@@ -44,6 +44,11 @@ void main() {
   if (m.bellmanFord(4,edges,0).pathTo(2).join(',')!='0,1,2') throw 'weighted Bellman-Ford';
   final forest=m.minimumSpanningForest(4,edges);
   if (forest.componentCount!=2 || forest.weight!=5.0) throw 'weighted forest';
+  final large=m.bigInt('1208925819614629174706176');
+  if ((large+BigInt.one).toString()!='1208925819614629174706177') throw 'BigInt operator';
+  if (m.bigFibonacci(100).toString()!='354224848179261915075') throw 'exact Fibonacci';
+  if (m.bigFactorial(30).toString()!='265252859812191058636308480000000') throw 'exact factorial';
+  if (m.bigFraction(large,large).toString()!='1/1') throw 'exact rational';
   print('WEB MATH OK');
 }
 ''');

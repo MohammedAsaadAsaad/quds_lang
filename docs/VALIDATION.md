@@ -1,5 +1,37 @@
 # Compiler validation — latest 2026-11-15
 
+## Exact arithmetic foundation — delivery B3
+
+Added BigInt interop/re-export, canonical rational arithmetic and seven exact
+combinatorial functions. The SDK now has **312** public top-level functions;
+all have Quds call sites. Contracts: [MATH_EXACT.md](MATH_EXACT.md).
+
+| Check | Observed result |
+| --- | --- |
+| `quds test test/math_exact_reference.quds` | **1199 reference cases**, zero failures |
+| `quds test test/math_exact.quds` | Six declarations passed: operators, normalization, raw/canonical distinction, imports, boundaries and errors |
+| Compiler regressions | Typed BigInt result/operand checks and nullable rejection passed; filtered library imports retain their own BigInt types |
+| `dart format --output=none --set-exit-if-changed .` | 39 Dart files; zero pending changes |
+| `dart analyze` | No issues |
+| `dart test --reporter expanded` | **251 passed; zero failures; zero skips** |
+| JavaScript + Node | BigInt arithmetic, factorial/Fibonacci and rational normalization passed, alongside existing smoke checks |
+| Reference generation and embedded SDK synchronization | Byte-identical on repeat |
+| `git diff --check` | Passed |
+
+Independent references use Python integers/Fraction, inclusion-exclusion for
+Stirling, convolution for Catalan and Euler's pentagonal recurrence for integer
+partitions. Running the committed Quds files requires no Python. Case counts
+include multi-assertion rational normalization checks and are not a count of
+independent mathematical theorems.
+
+SDK operator metadata previously discarded Dart operators. They are now read and
+statically checked, including the distinct unary/binary minus signatures; no
+BigInt operation is hardcoded as dynamic. A filtered math import also exposed
+validation of a private class's BigInt field against the caller rather than its
+own library scope. The scope/type lookup was corrected, and the full rerun passed.
+No syntax was added. Decimal, rigorous intervals and other roadmap work remain.
+
+
 ## Weighted graphs — delivery B2
 
 Added `WeightedEdge`, `ShortestPaths`, `SpanningForest`, `dijkstra`, `bellmanFord`

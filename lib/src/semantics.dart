@@ -105,6 +105,7 @@ class SemanticModel {
 
   /// Parameter order expressed as indices into source-order arguments.
   final argumentOrder = <CallExpression, List<int>>{};
+  final inferredTypeArguments = <CallExpression, List<String>>{};
 
   /// Const expressions that were evaluated. Short-circuited operands are absent.
   final constants = <Expression, ConstValue>{};
@@ -862,6 +863,26 @@ class Analyzer {
   }
 
   void checkShape(ClassDeclaration type) {
+    final names = {..._typeNames};
+    final bounds = {..._typeBounds};
+    _typeNames.addAll(type.typeParameters.map((p) => p.name));
+    for (final p in type.typeParameters) {
+      _typeBounds.remove(p.name);
+      if (p.bound != null) _typeBounds[p.name] = p.bound!;
+    }
+    try {
+      _checkShape(type);
+    } finally {
+      _typeNames
+        ..clear()
+        ..addAll(names);
+      _typeBounds
+        ..clear()
+        ..addAll(bounds);
+    }
+  }
+
+  void _checkShape(ClassDeclaration type) {
     if (type.modifiers.contains('singleton')) {
       for (final field in type.fields) {
         if (field.initializer == null && field.lazyBody == null) {
@@ -898,14 +919,14 @@ class Analyzer {
     final parentName = type.superclass;
     final parent = parentName == null
         ? null
-        : _global.symbols[parentName]?.classDeclaration;
+        : _typeSymbol(_genericHead(parentName))?.classDeclaration;
     if (parent != null &&
         (parent.modifiers.contains('final') || parent.kind == 'final')) {
       error('E720', 'A final class cannot be extended', type);
     }
     if (parent != null) _rejectSealedOutside(type, parent);
     for (final name in type.interfaces) {
-      final face = _global.symbols[name]?.classDeclaration;
+      final face = _typeSymbol(_genericHead(name))?.classDeclaration;
       if (face != null) _rejectSealedOutside(type, face);
     }
     if (parent != null && parent.modifiers.contains('base')) {
@@ -919,17 +940,23 @@ class Analyzer {
       }
     }
     for (final name in type.interfaces) {
-      final face = _global.symbols[name]?.classDeclaration;
-      if (face == null || face.kind != 'interface') {
-        error('E700', 'implements expects an interface', type);
+      _checkInterface(type, name, {});
+    }
+    if (type.kind == 'interface') {
+      final seen = <ClassDeclaration>{};
+      ClassDeclaration? current = type;
+      while (current != null) {
+        if (!seen.add(current))
+          error('E700', 'Cyclic interface inheritance', type);
+        final edge = current.superclass;
+        if (edge == null) break;
+        final next = _typeSymbol(_genericHead(edge))?.classDeclaration;
+        if (next?.kind != 'interface')
+          error('E700', 'An interface extends an interface', type);
+        current = next;
       }
-      for (final field in face.fields) {
-        final found = type.fields.where((item) => item.name == field.name);
-        if (found.isEmpty || found.single.type != field.type) {
-          error('E700', 'interface member ${field.name} is not implemented',
-              type);
-        }
-      }
+      if (type.superclass != null)
+        validateType(type.superclass!, type, allowVoid: false);
     }
     for (final name in type.mixins) {
       final mixin = _global.symbols[name]?.classDeclaration;
@@ -2251,7 +2278,7 @@ class Analyzer {
     }
     final parent = type.superclass == null
         ? null
-        : _global.symbols[type.superclass!]?.classDeclaration;
+        : _typeSymbol(_genericHead(type.superclass!))?.classDeclaration;
     if (parent == null) return null;
     return _declarer(parent, name);
   }
@@ -3180,7 +3207,14 @@ class Analyzer {
         if (_function == null && _returnType != '<infer>') {
           fail('return is only valid inside a function', node);
         }
-        final type = node.value == null ? 'void' : expression(node.value!);
+        final savedExpected = _expected;
+        _expected = _returnType == '<infer>' ? null : _returnType;
+        final String type;
+        try {
+          type = node.value == null ? 'void' : expression(node.value!);
+        } finally {
+          _expected = savedExpected;
+        }
         if (_returnType == '<infer>') break;
         if (!compatible(type, _returnType!))
           fail('Return type $type is incompatible with $_returnType', node);
@@ -3605,13 +3639,15 @@ class Analyzer {
       error('E307', 'A readonly reference cannot be mutated', node);
     }
     final type = unwrap(raw);
-    final declaration = _global.symbols[type]?.classDeclaration;
+    final declaration = _typeSymbol(_genericHead(type))?.classDeclaration;
     if (declaration == null) {
       fail(
           _hinted('No member ${node.name} on $raw', node.name,
               _memberCandidates(raw)),
           node);
     }
+    final targetType = memberType(type, node.name) ??
+        fail('No member ${node.name} on $raw', node);
     final properties =
         _propertiesOf(declaration).where((item) => item.name == node.name);
     if (properties.isNotEmpty) {
@@ -3620,12 +3656,20 @@ class Analyzer {
         fail('Property ${node.name} is read-only', node);
       }
       final value = expression(node.value);
-      if (!compatible(value, property.type)) {
-        fail('Cannot assign $value to ${property.type}', node);
+      final written = node.operator == '=' || node.operator == '??='
+          ? value
+          : binaryType(
+              targetType,
+              node.operator.substring(0, node.operator.length - 1),
+              value,
+              node);
+      if (node.operator == '??=') _checkIfNull(targetType, value, node);
+      if (!compatible(written, targetType)) {
+        fail('Cannot assign $value to ${targetType}', node);
       }
       _checkMember(declaration, node.name, node);
-      model.references[node] = Symbol(
-          property.name, _dartMember(type, property.name), property.type);
+      model.references[node] =
+          Symbol(property.name, _dartMember(type, property.name), targetType);
       return;
     }
     final fields =
@@ -3643,9 +3687,17 @@ class Analyzer {
     }
     final value = expression(node.value);
     if (node.operator == '??=') {
-      _checkIfNull(fields.first.type, value, node);
-    } else if (!compatible(value, fields.first.type)) {
-      fail('Cannot assign $value to ${fields.first.type}', node);
+      _checkIfNull(targetType, value, node);
+    } else if (!compatible(
+        node.operator == '='
+            ? value
+            : binaryType(
+                targetType,
+                node.operator.substring(0, node.operator.length - 1),
+                value,
+                node),
+        targetType)) {
+      fail('Cannot assign $value to ${targetType}', node);
     }
     if (type == '_QudsLog' && fields.first.name == 'minimum') {
       final written = node.value;
@@ -3656,8 +3708,8 @@ class Analyzer {
         error('E300', 'Unknown log level ${written.value}', written);
       }
     }
-    model.references[node] = Symbol(fields.first.name,
-        _dartMember(type, fields.first.name), fields.first.type);
+    model.references[node] = Symbol(
+        fields.first.name, _dartMember(type, fields.first.name), targetType);
   }
 
   void _installChecks() {
@@ -4103,21 +4155,107 @@ class Analyzer {
     return false;
   }
 
-  bool _implementsType(String from, String to) {
-    if (isNullableType(from) || isNullableType(to)) return false;
-    final declaration = _global.symbols[unwrap(from)]?.classDeclaration;
+  bool _implementsType(String from, String to,
+      [Set<String> visited = const {}]) {
+    if (isNullableType(from) ||
+        isNullableType(to) ||
+        visited.contains(_genericHead(from))) return false;
+    final declaration = _typeSymbol(_genericHead(from))?.classDeclaration;
     if (declaration == null) return false;
-    if (declaration.interfaces.contains(to) || declaration.superclass == to) {
-      return true;
-    }
-    if (declaration.superclass != null &&
-        _implementsType(declaration.superclass!, to)) {
-      return true;
-    }
-    for (final name in declaration.interfaces) {
-      if (_implementsType(name, to)) return true;
+    final substitution = _genericSubstitution(from, declaration);
+    for (final edge in [
+      if (declaration.superclass != null) declaration.superclass!,
+      ...declaration.interfaces
+    ]) {
+      final parent =
+          _substitute(_classMemberType(edge, declaration), substitution);
+      if (_sameType(parent, to) ||
+          _implementsType(parent, to, {...visited, _genericHead(from)}))
+        return true;
     }
     return false;
+  }
+
+  void _checkInterface(
+      ClassDeclaration implementation, String type, Set<String> visited) {
+    final head = _genericHead(type);
+    if (!visited.add(head))
+      error('E700', 'Cyclic interface inheritance', implementation);
+    validateType(type, implementation, allowVoid: false);
+    final face = _typeSymbol(head)?.classDeclaration;
+    if (face == null || face.kind != 'interface')
+      error('E700', 'implements expects an interface', implementation);
+    final substitution = _genericSubstitution(type, face);
+    void requireMember(String name, String expected, {bool getter = true}) {
+      if (getter) {
+        final field =
+            _fieldsOf(implementation).where((f) => f.name == name).lastOrNull;
+        final property = _propertiesOf(implementation)
+            .where((p) => p.name == name)
+            .lastOrNull;
+        if (field == null &&
+            (property == null ||
+                property.getter == null && property.getterBody == null)) {
+          error('E700', 'interface getter $name is not implemented',
+              implementation);
+        }
+      }
+      final field =
+          _fieldsOf(implementation).where((f) => f.name == name).lastOrNull;
+      if (field?.isStatic == true)
+        error('E700', 'interface member $name is static', implementation);
+      final actual = memberType(implementation.name, name);
+      if (actual == null ||
+          !compatible(actual,
+              _substitute(_classMemberType(expected, face), substitution))) {
+        error('E700', 'interface member $name is not implemented',
+            implementation);
+      }
+    }
+
+    for (final field in face.fields) {
+      requireMember(field.name, field.type);
+    }
+    for (final property in face.properties) {
+      requireMember(property.name, property.type,
+          getter: property.getter != null || property.getterBody != null);
+      if (property.setterBody != null) {
+        final field = _fieldsOf(implementation)
+            .where((f) => f.name == property.name)
+            .firstOrNull;
+        final actual = _propertiesOf(implementation)
+            .where((p) => p.name == property.name)
+            .firstOrNull;
+        if ((field?.mutable != true && actual?.setterBody == null) ||
+            !_sameType(memberType(implementation.name, property.name)!,
+                _substitute(property.type, substitution))) {
+          error('E700', 'interface setter ${property.name} is not implemented',
+              implementation);
+        }
+      }
+    }
+    for (final method in face.methods) {
+      if (method.typeParameters.isNotEmpty)
+        error('E910', 'Generic interface methods require further conformance',
+            implementation);
+      requireMember(method.name, functionType(method), getter: false);
+      final actual = _method(implementation, method.name);
+      if (actual == null ||
+          actual.isStatic ||
+          method.readonlyMethod && !actual.readonlyMethod ||
+          method.parameters.indexed.any((p) =>
+              p.$2.defaultValue != null &&
+              actual.parameters[p.$1].defaultValue == null)) {
+        error('E700', 'interface method ${method.name} is not implemented',
+            implementation);
+      }
+    }
+    if (face.superclass != null) {
+      _checkInterface(
+          implementation,
+          _substitute(_classMemberType(face.superclass!, face), substitution),
+          visited);
+    }
   }
 
   void _checkIntersection(List<String> parts, Node node) {
@@ -4362,12 +4500,13 @@ class Analyzer {
   }
 
   String _substitute(String type, Map<String, String> substitution) {
-    var result = type;
-    for (final entry in substitution.entries) {
-      result = result.replaceAll(
-          RegExp('\\b${RegExp.escape(entry.key)}\\b'), entry.value);
-    }
-    return result;
+    if (substitution.isEmpty) return type;
+    final names = substitution.keys.map(RegExp.escape).join('|');
+    return type.replaceAllMapped(
+        RegExp('(?<![\\w.])($names)\\b(?!\\s*:)(\\?)?'),
+        (match) => match.group(2) == null
+            ? substitution[match.group(1)]!
+            : nullableType(substitution[match.group(1)]!));
   }
 
   String _genericHead(String type) {
@@ -4744,7 +4883,6 @@ class Analyzer {
       }
     }
     final declaration = _typeSymbol(_genericHead(look))?.classDeclaration;
-    final substitution = _genericSubstitution(look, declaration);
     if (node.name == 'instance' &&
         declaration != null &&
         declaration.modifiers.contains('singleton')) {
@@ -4768,8 +4906,7 @@ class Analyzer {
     final found = memberType(look, node.name);
     if (found != null) {
       if (declaration != null) _checkMember(declaration, node.name, node);
-      final substituted =
-          _selfType(_substitute(found, substitution), declaration, look);
+      final substituted = _selfType(found, declaration, look);
       final classOwns = declaration != null &&
           (_method(declaration, node.name) != null ||
               _fieldsOf(declaration).any((item) => item.name == node.name));
@@ -4862,23 +4999,34 @@ class Analyzer {
         shadows: owner.typeParameters.map((item) => item.name).toSet());
   }
 
-  String? memberType(String type, String name) {
+  String? memberType(String type, String name,
+      [Set<String> visited = const {}]) {
+    final head = _genericHead(type);
+    if (visited.contains(head)) return null;
+    final nextVisited = {...visited, head};
     final declaration = _typeSymbol(_genericHead(type))?.classDeclaration;
     if (declaration != null) {
-      for (final field in _fieldsOf(declaration)) {
-        if (field.name == name) {
-          return _classMemberType(
-              model.declarations[field]?.type ?? field.type, declaration);
-        }
+      final substitution = _genericSubstitution(type, declaration);
+      String instantiate(String raw) =>
+          _substitute(_classMemberType(raw, declaration), substitution);
+      for (final field in declaration.fields) {
+        if (field.name == name)
+          return instantiate(model.declarations[field]?.type ?? field.type);
       }
-      for (final property in _propertiesOf(declaration)) {
-        if (property.name == name) {
-          return _classMemberType(property.type, declaration);
-        }
+      for (final property in declaration.properties) {
+        if (property.name == name) return instantiate(property.type);
       }
-      final method = _method(declaration, name);
-      if (method != null) {
-        return _classMemberType(functionType(method), declaration);
+      for (final method in declaration.methods) {
+        if (method.name == name) return instantiate(functionType(method));
+      }
+      for (final mixin in declaration.mixins.reversed) {
+        final inherited = memberType(instantiate(mixin), name, nextVisited);
+        if (inherited != null) return inherited;
+      }
+      if (declaration.superclass != null) {
+        final inherited =
+            memberType(instantiate(declaration.superclass!), name, nextVisited);
+        if (inherited != null) return inherited;
       }
     }
     final extensions = _extensions(type, name);
@@ -4894,10 +5042,11 @@ class Analyzer {
 
   List<PropertyDeclaration> _propertiesOf(ClassDeclaration type) {
     final inherited = <PropertyDeclaration>[];
+    final visited = <ClassDeclaration>{type};
     var name = type.superclass;
     while (name != null) {
       final parent = _global.symbols[name]?.classDeclaration;
-      if (parent == null) break;
+      if (parent == null || !visited.add(parent)) break;
       inherited.insertAll(0, parent.properties);
       name = parent.superclass;
     }
@@ -4933,10 +5082,11 @@ class Analyzer {
 
   List<FieldDeclaration> _fieldsOf(ClassDeclaration type) {
     final inherited = <FieldDeclaration>[];
+    final visited = <ClassDeclaration>{type};
     var name = type.superclass;
     while (name != null) {
       final parent = _global.symbols[name]?.classDeclaration;
-      if (parent == null) break;
+      if (parent == null || !visited.add(parent)) break;
       inherited.insertAll(0, parent.fields);
       name = parent.superclass;
     }
@@ -4944,7 +5094,9 @@ class Analyzer {
   }
 
   FunctionDeclaration? _method(ClassDeclaration type, String name,
-      {int? arity}) {
+      {int? arity, Set<ClassDeclaration> visited = const {}}) {
+    if (visited.contains(type)) return null;
+    final nextVisited = {...visited, type};
     for (final method in type.methods) {
       if (method.name == name &&
           (arity == null || method.parameters.length == arity)) return method;
@@ -4952,13 +5104,35 @@ class Analyzer {
     for (final mixin in type.mixins.reversed) {
       final declaration = _global.symbols[mixin]?.classDeclaration;
       if (declaration == null) continue;
-      final found = _method(declaration, name, arity: arity);
+      final found =
+          _method(declaration, name, arity: arity, visited: nextVisited);
       if (found != null) return found;
     }
     final parent = type.superclass == null
         ? null
-        : _global.symbols[type.superclass!]?.classDeclaration;
-    if (parent != null) return _method(parent, name, arity: arity);
+        : _typeSymbol(_genericHead(type.superclass!))?.classDeclaration;
+    if (parent != null)
+      return _method(parent, name, arity: arity, visited: nextVisited);
+    return null;
+  }
+
+  (String, ClassDeclaration)? _methodReceiver(
+      String type, FunctionDeclaration method,
+      [Set<String> visited = const {}]) {
+    final head = _genericHead(type);
+    if (visited.contains(head)) return null;
+    final declaration = _typeSymbol(head)?.classDeclaration;
+    if (declaration == null) return null;
+    if (declaration.methods.contains(method)) return (type, declaration);
+    final substitution = _genericSubstitution(type, declaration);
+    for (final edge in [
+      ...declaration.mixins.reversed,
+      if (declaration.superclass != null) declaration.superclass!
+    ]) {
+      final found = _methodReceiver(
+          _substitute(edge, substitution), method, {...visited, head});
+      if (found != null) return found;
+    }
     return null;
   }
 
@@ -5096,9 +5270,28 @@ class Analyzer {
       }
       error('E302', 'Empty maps require a type annotation', node);
     }
+    final context = _expected;
+    final wanted =
+        context != null && context.startsWith('Map<') && context.endsWith('>')
+            ? _splitTypes(context.substring(4, context.length - 1))
+            : null;
+    String infer(Expression expressionNode, String? expected) {
+      final saved = _expected;
+      _expected = expected;
+      try {
+        return expression(expressionNode);
+      } finally {
+        _expected = saved;
+      }
+    }
+
     String? key;
     String? value;
     void unify(String nextKey, String nextValue, Node at) {
+      if (wanted != null && wanted.length == 2) {
+        if (compatible(nextKey, wanted[0])) nextKey = wanted[0];
+        if (compatible(nextValue, wanted[1])) nextValue = wanted[1];
+      }
       if (key == null) {
         key = nextKey;
         value = nextValue;
@@ -5123,14 +5316,14 @@ class Analyzer {
           fail('A map spread requires a map', entry);
         }
         final inner = spread.substring(4, spread.length - 1);
-        final splitAt = inner.indexOf(',');
-        unify(inner.substring(0, splitAt).trim(),
-            inner.substring(splitAt + 1).trim(), entry);
+        final pair = _splitTypes(inner);
+        unify(pair[0], pair[1], entry);
       } else if (entry is MapComprehension) {
         final shaped = mapControl(entry);
         unify(shaped.$1, shaped.$2, entry);
       } else {
-        unify(expression(entry), expression(node.values[i]), node.values[i]);
+        unify(infer(entry, wanted?[0]), infer(node.values[i], wanted?[1]),
+            node.values[i]);
       }
     }
     final inferred = 'Map<$key, $value>';
@@ -6219,8 +6412,10 @@ class Analyzer {
       final functionResolved = resolved;
       model.references[callee] = model.declarations[functionResolved]!;
       _touch(model.references[callee]!);
+      final methodOwner = _methodReceiver(objectType, functionResolved);
       final substitution = {
-        ..._genericSubstitution(objectType, declaration),
+        ..._genericSubstitution(
+            methodOwner?.$1 ?? objectType, methodOwner?.$2 ?? declaration),
         ..._extensionSubstitution(objectType, functionResolved)
       };
       final parameters = [
@@ -6779,24 +6974,80 @@ class Analyzer {
         _satisfiesTypeBound(evidence, bound, {...visited, argument});
   }
 
-  void _inferType(String parameterType, String argumentType,
-      Map<String, String> found, List<TypeParameter> parameters) {
-    if (parameters.any((parameter) => parameter.name == parameterType)) {
-      found[parameterType] = argumentType;
-      return;
+  void _inferType(String pattern, String actual, Map<String, String> found,
+      List<TypeParameter> parameters) {
+    _inferGeneric(pattern, actual, found, parameters);
+  }
+
+  bool _inferGeneric(String pattern, String actual, Map<String, String> found,
+      List<TypeParameter> parameters) {
+    pattern = model.resolve(pattern);
+    actual = model.resolve(actual);
+    if (parameters.any((p) => p.name == pattern)) {
+      final previous = found[pattern];
+      if (previous == null || previous == actual) {
+        found[pattern] = actual;
+        return true;
+      }
+      if (compatible(previous, actual)) {
+        found[pattern] = actual;
+        return true;
+      }
+      if (compatible(actual, previous)) return true;
+      if (previous == 'Null' || actual == 'Null') {
+        found[pattern] = nullableType(previous == 'Null' ? actual : previous);
+        return true;
+      }
+      if (numeric(unwrap(previous)) && numeric(unwrap(actual))) {
+        found[pattern] =
+            isNullableType(previous) || isNullableType(actual) ? 'num?' : 'num';
+        return true;
+      }
+      return false;
     }
-    for (final prefix in ['List<', 'Set<', 'Future<', 'Iterable<']) {
-      if (parameterType.startsWith(prefix) &&
-          parameterType.endsWith('>') &&
-          argumentType.startsWith(prefix) &&
-          argumentType.endsWith('>')) {
-        _inferType(
-            parameterType.substring(prefix.length, parameterType.length - 1),
-            argumentType.substring(prefix.length, argumentType.length - 1),
-            found,
-            parameters);
+    if (isNullableType(pattern)) {
+      // Null satisfies the nullable shell but supplies no evidence for its inner type.
+      if (actual == 'Null') return true;
+      return _inferGeneric(unwrap(pattern), unwrap(actual), found, parameters);
+    }
+    if (isNullableType(actual)) return compatible(actual, pattern);
+    final expectedFunction = functionTypeParts(pattern);
+    final actualFunction = functionTypeParts(actual);
+    if (expectedFunction != null && actualFunction != null) {
+      final left = _splitTypes(expectedFunction.$1);
+      final right = _splitTypes(actualFunction.$1);
+      if (left.length != right.length) return false;
+      for (var i = 0; i < left.length; i++) {
+        if (!_inferGeneric(functionParameterType(left[i]),
+            functionParameterType(right[i]), found, parameters)) return false;
+      }
+      return _inferGeneric(
+          expectedFunction.$2, actualFunction.$2, found, parameters);
+    }
+    final head = _genericHead(pattern);
+    if (pattern.endsWith('>') && head != pattern) {
+      var source = actual;
+      final sourceHead = _genericHead(source);
+      if (head == 'Iterable' && const {'List', 'Set'}.contains(sourceHead)) {
+        source = 'Iterable${source.substring(sourceHead.length)}';
+      } else if (head == 'Iterable' || head == 'List') {
+        final element = _nativeShape(source)?.listElement;
+        if (element != null) source = '$head<$element>';
+      }
+      if (_genericHead(source) == head && source.endsWith('>')) {
+        final left =
+            _splitTypes(pattern.substring(head.length + 1, pattern.length - 1));
+        final right =
+            _splitTypes(source.substring(head.length + 1, source.length - 1));
+        if (left.length != right.length) return false;
+        for (var i = 0; i < left.length; i++) {
+          if (!_inferGeneric(left[i], right[i], found, parameters))
+            return false;
+        }
+        return true;
       }
     }
+    return compatible(actual, pattern);
   }
 
   String constructCase(CallExpression node, Symbol symbol) {
@@ -6821,44 +7072,25 @@ class Analyzer {
   }
 
   /// `List<int>` matches `List<T>` when [function] declares `T`.
-  bool _matchGeneric(String parameterType, String argumentType,
-      FunctionDeclaration function, Map<String, String> found) {
-    for (final parameter in function.typeParameters) {
-      if (parameter.name != parameterType) continue;
-      if (parameter.bound != null &&
-          !compatible(argumentType, parameter.bound!)) {
-        return false;
-      }
-      final previous = found[parameter.name];
-      if (previous != null &&
-          previous != argumentType &&
-          !compatible(argumentType, previous) &&
-          !compatible(previous, argumentType)) {
-        return false;
-      }
-      found[parameter.name] = previous ?? argumentType;
-      return true;
-    }
-    for (final prefix in ['List<', 'Set<', 'Iterable<', 'Future<']) {
-      if (parameterType.startsWith(prefix) &&
-          parameterType.endsWith('>') &&
-          argumentType.startsWith(prefix) &&
-          argumentType.endsWith('>')) {
-        return _matchGeneric(
-            parameterType.substring(prefix.length, parameterType.length - 1),
-            argumentType.substring(prefix.length, argumentType.length - 1),
-            function,
-            found);
-      }
-    }
-    return false;
-  }
+  bool _matchGeneric(String pattern, String actual,
+          FunctionDeclaration function, Map<String, String> found) =>
+      _inferGeneric(pattern, actual, found, function.typeParameters);
 
   bool argumentsMatch(CallExpression node, List<Parameter> parameters,
       {required bool commit,
       FunctionDeclaration? function,
-      _CheckedArguments? checked}) {
+      _CheckedArguments? checked,
+      Map<String, String> typeArguments = const {}}) {
     parameters = _callParameters(parameters, function);
+    final inferred = {...typeArguments};
+    final types = <int, String>{};
+    if (function != null &&
+        typeArguments.isEmpty &&
+        _expected != null &&
+        function.returnType != null) {
+      _inferGeneric(
+          function.returnType!, _expected!, inferred, function.typeParameters);
+    }
     final order = List<int>.filled(parameters.length, -1);
     var positional = 0;
     var named = false;
@@ -6888,11 +7120,24 @@ class Analyzer {
       }
       final savedExpected = _expected;
       if (parameters[target].type != '<infer>') {
-        _expected = parameters[target].type;
+        _expected = _substitute(parameters[target].type, inferred);
+        if (function != null &&
+            function.typeParameters.any((p) =>
+                !inferred.containsKey(p.name) &&
+                !_typeNames.contains(p.name) &&
+                RegExp('\\b${RegExp.escape(p.name)}\\b')
+                    .hasMatch(_expected!))) {
+          _expected = null;
+        }
       }
       final type = expression(argument.value);
       _expected = savedExpected;
-      if (!_accepts(type, parameters[target].type, function)) return false;
+      if (function == null) {
+        if (!compatible(type, parameters[target].type)) return false;
+      } else if (!_inferGeneric(
+          parameters[target].type, type, inferred, function.typeParameters))
+        return false;
+      types[target] = type;
       if (checked != null) checked.types[argument.value] = type;
       order[target] = i;
     }
@@ -6903,6 +7148,22 @@ class Analyzer {
         if (!hole) return false;
       }
     }
+    for (final entry in types.entries) {
+      if (!compatible(
+          entry.value, _substitute(parameters[entry.key].type, inferred)))
+        return false;
+    }
+    if (function != null) {
+      for (final parameter in function.typeParameters) {
+        final argument = inferred[parameter.name];
+        if (argument != null &&
+            parameter.bound != null &&
+            !_satisfiesTypeBound(
+                argument, _substitute(parameter.bound!, inferred)))
+          return false;
+      }
+    }
+    checked?.inferred.addAll(inferred);
     return true;
   }
 
@@ -6946,10 +7207,13 @@ class Analyzer {
     final verified = checked ?? _CheckedArguments();
     if (checked == null &&
         !argumentsMatch(node, parameters,
-            commit: true, function: function, checked: verified)) {
+            commit: true,
+            function: function,
+            checked: verified,
+            typeArguments: typeArguments)) {
       fail('No overload matches this call', node);
     }
-    final inferred = {...typeArguments};
+    final inferred = {...verified.inferred, ...typeArguments};
     final order = List<int>.filled(parameters.length, -1);
     final rest = <int>[];
     var positional = 0;
@@ -7013,6 +7277,26 @@ class Analyzer {
             fallback);
       }
     }
+    for (var i = 0; i < parameters.length; i++) {
+      if (parameters[i].variadic || order[i] < 0) continue;
+      final argument = node.arguments[order[i]];
+      if (isHole(argument.value)) continue;
+      final actual =
+          verified.types[argument.value] ?? model.types[argument.value]!;
+      if (!compatible(actual, _substitute(parameters[i].type, inferred))) {
+        fail('Inferred type does not accept argument $actual', argument);
+      }
+    }
+    if (function != null &&
+        function.typeParameters.isNotEmpty &&
+        function.typeParameters.every((p) => inferred.containsKey(p.name))) {
+      final arguments = [
+        for (final p in function.typeParameters) inferred[p.name]!
+      ];
+      _checkTypeArguments(
+          function.name, function.typeParameters, arguments, node);
+      model.inferredTypeArguments[node] = arguments;
+    }
     model.argumentOrder[node] = order;
     model.variadicArguments[node] = rest;
     if (holes.isNotEmpty) {
@@ -7043,17 +7327,9 @@ class Analyzer {
   void _rememberInference(FunctionDeclaration? function, String parameter,
       String argument, Map<String, String> inferred) {
     if (function == null) return;
-    final found = <String, String>{};
-    if (!_matchGeneric(parameter, argument, function, found)) return;
-    for (final entry in found.entries) {
-      final previous = inferred[entry.key];
-      if (previous != null &&
-          previous != entry.value &&
-          !compatible(entry.value, previous) &&
-          !compatible(previous, entry.value)) {
-        fail('Type argument ${entry.value} conflicts with $previous', function);
-      }
-      inferred[entry.key] ??= entry.value;
+    if (!_inferGeneric(
+        parameter, argument, inferred, function.typeParameters)) {
+      fail('Conflicting generic argument $argument', function);
     }
   }
 
@@ -8208,6 +8484,7 @@ class Analyzer {
 
 // Local to one successful argument check; never reused between overload trials.
 class _CheckedArguments {
+  final inferred = <String, String>{};
   final types = <Expression, String>{};
   final variadics = <Argument>{};
 }

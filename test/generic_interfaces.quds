@@ -1,0 +1,60 @@
+interface Container<T>:
+  value: T
+interface Reader<T>:
+  read(value: T) -> T = value
+interface Group<U> extends Container<List<U>>:
+  size: int
+class IntContainer implements Container<int>:
+  value: int required
+class GenericContainer<T> implements Container<T>:
+  value: T required
+class IntReader implements Reader<int>:
+  read(value: int) -> int = value + 1
+class IntGroup implements Group<int>:
+  value: List<int> required
+  size: int required
+readContainer(value: Container<int>) -> int = value.value
+readGroup(value: Group<int>) -> int = value.value[0]
+readParent(value: Container<List<int>>) -> int = value.value[0]
+readMethod(reader: Reader<int>, value: int) -> int = reader.read(value)
+
+test "concrete classes fulfill instantiated field contracts":
+  expect(readContainer(IntContainer(value: 21)), 21)
+
+test "generic classes substitute interface arguments":
+  value = GenericContainer<int>(value: 22)
+  expect(readContainer(value), 22)
+
+test "instantiated method contracts accept matching implementations":
+  expect(readMethod(IntReader(), 22), 23)
+
+test "interface inheritance substitutes nested arguments":
+  group = IntGroup(value: [24], size: 1)
+  expect(readGroup(group), 24)
+  expect(readParent(group), 24)
+
+interface AdvancedReader<U> extends Reader<U>:
+  name: String
+class NamedReader implements AdvancedReader<int>:
+  name: String required
+  read(value: int) -> int = value + 1
+readAdvanced(reader: AdvancedReader<int>) -> int = reader.read(25)
+
+test "inherited methods substitute the declaring interface arguments":
+  expect(readAdvanced(NamedReader(name: "reader")), 26)
+
+interface Writable<T>:
+  property value: T:
+    get:
+      throw "abstract"
+    set(value):
+      throw "abstract"
+class MutableInt implements Writable<int>:
+  var value: int = 0
+writeThrough(target: Writable<int>):
+  target.value = 27
+
+test "writable generic properties require a matching setter contract":
+  value = MutableInt()
+  writeThrough(value)
+  expect(value.value, 27)

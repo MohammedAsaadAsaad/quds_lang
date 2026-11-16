@@ -1,0 +1,41 @@
+interface Container<T>:
+  value: T
+interface Group<U> extends Container<List<U>>:
+  size: int
+class IntGroup implements Group<int>:
+  value: List<int> required
+  size: int required
+interface Reader<T>:
+  read(value: T) -> T = value
+class IntReader implements Reader<int>:
+  read(value: int) -> int = value + 1
+lookup<K, V>(values: Map<K, V>, key: K) -> V? = values[key]
+identity<T>(value: T) -> T = value
+head<T>(values: Iterable<T>) -> T:
+  for value in values:
+    return value
+  throw "empty"
+readGroup(group: Group<int>) -> int = group.value[0]
+readReader(reader: Reader<int>) -> int = reader.read(18)
+main():
+  var trace = ""
+  values() -> Map<String, int>:
+    trace += "values "
+    return map:
+      "x": 20
+  key() -> String:
+    trace += "key "
+    return "x"
+  resultValue: int? = lookup(values(), key())
+  require resultValue == 20
+  require trace == "values key "
+  empty: List<int> = identity([])
+  require empty.length == 0
+  nested: Map<String, List<int>> = map:
+    "empty": []
+    "full": [21]
+  require nested["empty"]!.length == 0
+  require head(nested["full"]!) == 21
+  require readGroup(IntGroup(value: [22], size: 1)) == 22
+  require readReader(IntReader()) == 19
+  print "COLLECTION INTERFACES OK"

@@ -1,5 +1,53 @@
 # Compiler validation — latest 2026-11-16
 
+## Collection inference and generic interface contracts — L3.2b — 2026-11-16
+
+Contract, examples and remaining limitations:
+[COLLECTION_INFERENCE_INTERFACES.md](COLLECTION_INFERENCE_INTERFACES.md).
+
+| Check | Observed result |
+| --- | --- |
+| Baseline probes | Map<K,V> inference and List-to-Iterable<T> inference failed with E500; an instantiated interface implementation failed with E700 |
+| Primary Quds suites | **22 declarations passed**: 16 collection cases and six interface cases |
+| New focused runner | **29 passed**: primary suites, 26 rejected programs, original diagnostic spans, deterministic golden and backend execution |
+| Combined focused check with L3.1/L3.2a runners | **73 passed**, including all previous nullability/constraint cases |
+| Generated Dart | Exact `collection_interfaces.dart.txt` golden matched; `dart analyze --fatal-infos` passed |
+| Dart VM and JavaScript/Node | Quds fixture passed on both with marker `COLLECTION INTERFACES OK`; argument side effects remained once and in source order |
+| `dart pub get` | Passed; dependency constraints retained |
+| Isolated debugger regression | One passed, zero skips; no debugger timing fix claimed |
+| Final `dart format .` | 45 files; zero pending changes |
+| Final `dart analyze` | No issues |
+| Final `dart test --reporter expanded` | **378 passed; zero failures; one skip** in 7m54s. The skipped debugger case passed separately on the final tree |
+| `git diff --check` | Passed |
+
+Inference uses shared structural type traversal and per-candidate evidence, with
+post-substitution compatibility and bound checks. Mutable collection invariance
+is maintained through generic calls. Expected context reaches nested Map values
+and empty collection/return blocks. Substitution is simultaneous and preserves
+nullable function/result boundaries. The emitter retains inferred function
+arguments and instantiated inherited interface contracts.
+
+The first focused regression run caught a new failure in explicit dependent
+calls from L3.2a. Supplying the known explicit substitution to the same candidate
+checker fixed it; the combined focused run passed all 71 tests before the two additional getter
+regressions; the final focused run above passed 73.
+The backend fixture also exposed unsupported `return map:` parsing; the existing
+literal syntax now works there and receives declared return context.
+The first full run finished with 375 passes, one failure and one skip. The
+failure exposed null rejected against a concrete nullable parameter in the new
+matcher; it now accepts the nullable shell without inventing inner generic
+evidence. A new Quds declaration covers this, the original language test passed
+in isolation, and the 71 focused tests passed again. The skipped debugger test
+reported empty stackFrames after retries and passed in isolation. A subsequent
+full run was deliberately interrupted to add two getter-kind rejections (a
+write-only property and a method used as a function-valued getter). That
+interrupted run is not a completed validation. The final stable run in the
+table is authoritative; no fix to the debugger timing race is claimed.
+No approved syntax was redesigned. Generic interface methods and the broader
+inference/variance/external-type cases listed in the contract remain outside
+this delivery; L3.2 is not declared complete.
+
+
 ## Generic argument constraints — L3.2a — 2026-11-16
 
 The first part of L3.2 checks Quds generic applications, without claiming all

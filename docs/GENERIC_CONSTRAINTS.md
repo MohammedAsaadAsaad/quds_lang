@@ -5,6 +5,10 @@ This is the first bounded package of L3.2 from
 nullability in L3.1. It strengthens existing QUDS-024/040 syntax and semantics;
 it does not change the approved language design.
 
+Follow-up collection inference and instantiated interface work is implemented
+in [L3.2b](COLLECTION_INFERENCE_INTERFACES.md). The limits below describe this
+L3.2a package; consult the follow-up for the current expanded subset.
+
 ## Confirmed defects and resulting behavior
 
 Before this package, a Quds class type annotation such as `Box<int, String>`
@@ -82,7 +86,9 @@ libraries still require their own matrices. Raw generic types retain existing
 behavior. This is not a proof of support for every F-bound or cyclic declaration.
 Existing mutable-list invariance is retained and tested; no math API was added.
 
-Next package: L3.2b should begin with independent Quds reproductions for
-Map/Iterable inference and instantiated interface contracts. Keep the same
-acceptance gate: positive/negative Quds programs, generated Dart verification,
-full project tests, documentation, then an incremental push to main.
+The L3.2b follow-up is now documented in
+[collection inference and instantiated interfaces](COLLECTION_INFERENCE_INTERFACES.md).
+Continue from the latest handoff entry rather than repeating the completed
+constraint or collection packages. Keep the same acceptance gate: positive and
+negative Quds programs, generated Dart verification, full project tests,
+documentation, then an incremental push to main.

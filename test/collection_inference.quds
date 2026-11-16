@@ -1,0 +1,121 @@
+use quds:core::typed
+lookup<K, V>(values: Map<K, V>, key: K) -> V? = values[key]
+identity<T>(value: T) -> T = value
+first<T>(values: Iterable<T>) -> T:
+  for value in values:
+    return value
+  throw "empty"
+class Entries<K, V>:
+  values: Map<K, V> required
+apply<T, R>(callback: (T) -> R, value: T) -> R = callback(value)
+maybe(value: int) -> int? = value
+pick<A, B: A>(firstValue: A, secondValue: B) -> B = secondValue
+
+test "map keys and values infer independently":
+  values = map:
+    "x": 3
+  resultValue: int? = lookup(values, "x")
+  expect(resultValue, 3)
+  expect(lookup(values, "missing"), null)
+
+test "iterable inference accepts lists":
+  resultValue: int = first([4, 5])
+  expect(resultValue, 4)
+
+test "nested map and list types retain their arguments":
+  values = map:
+    "x": [6, 7]
+  selected: List<int>? = lookup(values, "x")
+  expect(selected![1], 7)
+
+test "constructors infer map arguments":
+  values = map:
+    "x": 8
+  container = Entries(values: values)
+  expect(container.values["x"], 8)
+
+test "nullable map values retain their layer":
+  values: Map<String, int?> = map:
+    "x": null
+    "y": 9
+  expect(lookup(values, "x"), null)
+  expect(lookup(values, "y"), 9)
+  selected: int? = lookup(values, "y")
+  expect(selected, 9)
+
+test "context flows into nested empty map values":
+  values: Map<String, List<int>> = map:
+    "empty": []
+    "full": [10]
+  expect(values["empty"]!.length, 0)
+  expect(values["full"]![0], 10)
+
+test "return context types empty collections through generic calls":
+  values: List<int> = identity([])
+  emptyMap: Map<String, int> = map:
+  mapping: Map<String, int> = identity(emptyMap)
+  expect(values.length, 0)
+  expect(mapping.length, 0)
+
+test "prior arguments type later empty collections":
+  choose<T>(sample: T, value: T) -> T = value
+  values = choose([11], [])
+  expect(values.length, 0)
+
+test "callbacks infer argument and nullable result types":
+  value: int? = apply(maybe, 12)
+  expect(value, 12)
+
+test "dependent function bounds use joint inference":
+  broad: num = 1.5
+  value: int = pick(broad, 13)
+  expect(value, 13)
+
+test "spread and conditional literals retain declared element context":
+  source = [14]
+  values: List<int?> = [null, ...source, if true: 15]
+  expect(values[1], 14)
+  expect(values[2], 15)
+
+
+class Tuple<A, B>:
+  left: A required
+  right: B required
+swapped<B, A>(left: B, right: A) -> Tuple<B, A> = Tuple<B, A>(left: left, right: right)
+
+test "substitution is simultaneous across overlapping parameter names":
+  pair = swapped(16, "value")
+  expect(pair.left, 16)
+  expect(pair.right, "value")
+
+test "native typed lists contribute their actual iterable element type":
+  values = Float64List.fromList([17.5])
+  value: double = first(values)
+  expect(value, 17.5)
+
+
+emptyValues() -> Map<String, List<int>>:
+  return map:
+
+test "return context types empty map block literals":
+  values = emptyValues()
+  expect(values.length, 0)
+
+
+test "joint scalar inference joins numeric and nullable arguments safely":
+  choose<T>(left: T, right: T) -> T = right
+  numericValue: num = choose(1, 2.5)
+  nullableValue: int? = choose(null, 18)
+  expect(numericValue, 2.5)
+  expect(nullableValue, 18)
+
+
+echoText(value: String?) -> String? = value
+echoList(value: List<int>?) -> List<int>? = value
+nullable<T>(value: T?) -> T? = value
+
+test "null satisfies a concrete nullable shell without inventing inner evidence":
+  expect(echoText(null), null)
+  expect(echoList(null), null)
+  resultValue: int? = nullable(null)
+  expect(resultValue, null)

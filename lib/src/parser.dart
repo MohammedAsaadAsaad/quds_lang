@@ -456,9 +456,16 @@ class Parser {
     if (word('return')) {
       take();
       if (word('if')) return finishLine(ReturnStatement(null, extent(span)));
-      final value = at(TokenKind.newline) ? null : expression(bare: true);
+      var value = at(TokenKind.newline) ? null : expression(bare: true);
+      if (value is Identifier &&
+          at(TokenKind.colon) &&
+          (value.name == 'map' || value.name == 'set')) {
+        value = collectionLiteral(value.name, value.span);
+      }
       final returned = ReturnStatement(value, extent(span));
-      if (value is DoExpression ||
+      if (value is MapExpression ||
+          value is SetExpression ||
+          value is DoExpression ||
           value is WithExpression ||
           value is MatchExpression ||
           value is AwaitAllExpression ||

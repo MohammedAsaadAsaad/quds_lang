@@ -105,3 +105,6 @@ The first package's supported behavior is documented in
 
 Generic application checks and the remaining L3.2 scope are documented in
 [generic constraints](docs/GENERIC_CONSTRAINTS.md).
+
+The next bounded generic package is described in
+[collection inference and instantiated interfaces](docs/COLLECTION_INFERENCE_INTERFACES.md).

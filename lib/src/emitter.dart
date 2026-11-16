@@ -1176,10 +1176,18 @@ class DartEmitter {
     }
     if (node.kind == 'interface') {
       line(
-          'abstract interface class ${node.name}${_typeParameters(node.typeParameters)} {');
+          'abstract interface class ${node.name}${_typeParameters(node.typeParameters)}${node.superclass == null ? '' : ' implements ${_dartType(node.superclass!)}'} {');
       _depth++;
       for (final field in node.fields) {
         line('${_dartType(field.type)} get ${field.name};');
+      }
+      for (final property in node.properties) {
+        final type = _dartType(property.type);
+        if (property.getter != null || property.getterBody != null) {
+          line('$type get ${property.name};');
+        }
+        if (property.setterBody != null)
+          line('set ${property.name}($type value);');
       }
       for (final method in node.methods) {
         emitFunction(method);
@@ -3217,6 +3225,8 @@ class DartEmitter {
       if (original?.function != null && original?.classDeclaration == null) {
         target += '<${applied.arguments.map(_dartType).join(', ')}>';
       }
+    } else if (model.inferredTypeArguments[node] case final arguments?) {
+      target += '<${arguments.map(_dartType).join(', ')}>';
     }
     if ((targetSymbol.dartName == 'min' || targetSymbol.dartName == 'max') &&
         !targetSymbol.external &&

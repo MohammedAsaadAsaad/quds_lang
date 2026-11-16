@@ -172,6 +172,9 @@ void walkAst(Node node, void Function(Node node) visit,
       case UsingStatement(:final value, :final body):
         walkAst(value, visit);
         _nodes(body, visit);
+      case IndexAssignment(:final target, :final value):
+        walkAst(target, visit);
+        walkAst(value, visit);
       case MemberAssignment(:final object, :final value):
         walkAst(object, visit);
         walkAst(value, visit);

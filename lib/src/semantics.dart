@@ -3332,6 +3332,8 @@ class Analyzer {
         model.declarations[node] = resource;
         statements(node.body);
         _scope = savedUsing;
+      case IndexAssignment():
+        _assignIndex(node);
       case MemberAssignment():
         _assignMember(node);
       case PartDirective():
@@ -3458,6 +3460,44 @@ class Analyzer {
     final here = model.libraryOf[type] ?? library;
     if (home.isNotEmpty && home != here) {
       error('E703', 'A sealed type is extended outside its library', type);
+    }
+  }
+
+  void _assignIndex(IndexAssignment node) {
+    final readType = expression(node.target);
+    final raw = model.types[node.target.object]!;
+    if (raw.startsWith('readonly ')) {
+      error('E307', 'A readonly reference cannot be mutated', node.target);
+    }
+    final isMap = raw.startsWith('Map<');
+    if (!isMap && !raw.startsWith('List<')) {
+      error('E300', 'Indexed assignment needs a List or Map', node.target);
+    }
+    final target = isMap
+        ? _splitTypes(raw.substring(4, raw.length - 1))[1]
+        : raw.substring(5, raw.length - 1);
+    final saved = _expected;
+    _expected = target;
+    final value = expression(node.value);
+    _expected = saved;
+    if (node.operator == '??=') {
+      if (isMap) {
+        if (!compatible(value, target))
+          fail('Cannot assign $value to $target', node.value);
+      } else {
+        if (!target.endsWith('?') && target != 'Null')
+          fail('??= requires a nullable binding', node);
+        if (!compatible(value, target))
+          fail('Cannot assign $value to $target', node.value);
+      }
+      return;
+    }
+    final written = node.operator == '='
+        ? value
+        : binaryType(readType,
+            node.operator.substring(0, node.operator.length - 1), value, node);
+    if (!compatible(written, target)) {
+      fail('Cannot assign $written to $target', node.value);
     }
   }
 
@@ -4893,11 +4933,13 @@ class Analyzer {
     }
     if (type.startsWith('Map<')) {
       final inner = type.substring(4, type.length - 1);
-      final splitAt = inner.indexOf(',');
-      final key = inner.substring(0, splitAt).trim();
-      final value = inner.substring(splitAt + 1).trim();
+      final parts = _splitTypes(inner);
+      final key = parts[0];
+      final value = parts[1];
       if (!compatible(indexType, key)) fail('Map key type is $key', node.index);
-      return _readonlyView(raw, value);
+      final lookup =
+          value.endsWith('?') || value == 'dynamic' ? value : '$value?';
+      return _readonlyView(raw, lookup);
     }
     if (type == 'String') {
       if (!compatible(indexType, 'int'))
@@ -5578,7 +5620,9 @@ class Analyzer {
         model.implicitThis.add(node);
         model.references[node] =
             Symbol(node.name, _dartMember(_thisType!, node.name), member);
-        return member;
+        return _readonlyMethod
+            ? _readonlyView('readonly this', member)
+            : member;
       }
     }
     if (symbol == null) {
@@ -5607,6 +5651,8 @@ class Analyzer {
       return '(${symbol.parameterTypes.join(', ')}) -> ${symbol.type}';
     }
     final visible = _promoted[symbol.name] ?? symbol.type;
+    if (_readonlyMethod && symbol.field)
+      return _readonlyView('readonly this', visible);
     return symbol.readonly ? 'readonly $visible' : visible;
   }
 
@@ -5698,9 +5744,28 @@ class Analyzer {
       error('E302', 'Empty lists require contextual typing (not supported yet)',
           node);
     }
-    var type = elementTypeOf(node.elements.first, aware(node.nullAware, 0));
-    for (var i = 1; i < node.elements.length; i++) {
-      final next = elementTypeOf(node.elements[i], aware(node.nullAware, i));
+    final expected = _expected;
+    final wanted = expected != null &&
+            expected.startsWith('List<') &&
+            expected.endsWith('>')
+        ? expected.substring(5, expected.length - 1)
+        : null;
+    final elements = <String>[];
+    for (var i = 0; i < node.elements.length; i++) {
+      final saved = _expected;
+      _expected = node.elements[i] is SpreadElement ? expected : wanted;
+      try {
+        elements.add(elementTypeOf(node.elements[i], aware(node.nullAware, i)));
+      } finally {
+        _expected = saved;
+      }
+    }
+    if (wanted != null && elements.every((type) => compatible(type, wanted))) {
+      return expected!;
+    }
+    var type = elements.first;
+    for (var i = 1; i < elements.length; i++) {
+      final next = elements[i];
       if (numeric(type) && numeric(next) && type != next) {
         type = 'num';
       } else if (type != next &&
@@ -7742,6 +7807,7 @@ class Analyzer {
   Expression? _slot(Statement statement) => switch (statement) {
         ReturnStatement(:final value) => value,
         Binding(:final value) => value,
+        IndexAssignment(:final value) => value,
         MemberAssignment(:final value) => value,
         ThrowStatement(:final value) => value,
         YieldStatement(:final value) => value,
@@ -7898,7 +7964,7 @@ class Analyzer {
 
   String thisExpression(ThisExpression node) {
     if (_thisType == null) fail('this is outside a type', node);
-    return _thisType!;
+    return _readonlyMethod ? 'readonly ${_thisType!}' : _thisType!;
   }
 
   String tryExpression(TryExpression node) {

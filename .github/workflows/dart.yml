@@ -40,6 +40,7 @@ jobs:
           dart run bin/quds.dart test test/math_interval_reference.quds
           dart run bin/quds.dart test test/math_prefix.quds
           dart run bin/quds.dart test test/expect.quds
+          dart run bin/quds.dart test test/index_assignment.quds
           reject() {
             local file="$1"
             local needle="$2"

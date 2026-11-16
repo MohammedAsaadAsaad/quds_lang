@@ -448,6 +448,13 @@ class UsingStatement extends Statement {
   final bool async;
 }
 
+class IndexAssignment extends Statement {
+  const IndexAssignment(this.target, this.operator, this.value, super.span);
+  final IndexExpression target;
+  final String operator;
+  final Expression value;
+}
+
 class MemberAssignment extends Statement {
   const MemberAssignment(
       this.object, this.name, this.operator, this.value, super.span);

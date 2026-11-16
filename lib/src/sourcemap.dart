@@ -391,6 +391,9 @@ List<Map<String, Object>> _qudsLocals(
         for (final argument in arguments) {
           visitExpression(argument.value, end);
         }
+      case IndexAssignment(:final target, :final value):
+        visitExpression(target, end);
+        visitExpression(value, end);
       case MemberAssignment(:final object, :final value):
         visitExpression(object, end);
         visitExpression(value, end);

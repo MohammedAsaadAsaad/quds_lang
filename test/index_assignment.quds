@@ -1,0 +1,149 @@
+class _IndexWork:
+  rows: List<List<int>> required
+  var events: String = ""
+
+_indexRows(work: _IndexWork) -> List<List<int>>:
+  work.events += "R"
+  return work.rows
+
+_indexRow(work: _IndexWork) -> int:
+  work.events += "I"
+  return -1
+
+_indexColumn(work: _IndexWork) -> int:
+  work.events += "J"
+  return -1
+
+_indexValue(work: _IndexWork) -> int:
+  work.events += "V"
+  return 7
+
+test "indexed writes update shared objects through immutable bindings":
+  items = [1, 2, 3]
+  alias = items
+  items[0] = 10
+  items[-1] += 4
+  expect(alias, [10, 2, 7])
+  items[1] *= 3
+  items[0] -= 2
+  expect(items, [8, 6, 7])
+
+test "nested targets evaluate receiver and indices before the value once":
+  work = _IndexWork(rows: [[1, 2], [3, 4]])
+  _indexRows(work)[_indexRow(work)][_indexColumn(work)] += _indexValue(work)
+  expect(work.events, "RIJV")
+  expect(work.rows, [[1, 2], [3, 11]])
+  work.events = ""
+  _indexRows(work)[_indexRow(work)][_indexColumn(work)] = _indexValue(work)
+  expect(work.events, "RIJV")
+  expect(work.rows[1][1], 7)
+
+test "map writes keep negative integer keys and nullable lookups":
+  counts: Map<int, int> = map:
+    -1: 3
+  counts[-1] = 4
+  counts[-2] ??= 5
+  counts[-1] ??= 99
+  expect(counts[-1], 4)
+  expect(counts[-2], 5)
+  expect(counts[0], null)
+  paired: Map<(int, int), String> = map:
+    (1, 2): "first"
+  paired[(2, 3)] = "second"
+  expect(paired[(2, 3)], "second")
+  nested: Map<String, List<int>> = map:
+  nested["row"] = []
+  expect(nested["row"], isEmpty)
+
+test "null-coalescing indexed writes are lazy and evaluate their target once":
+  work = _IndexWork(rows: [])
+  values: List<int?> = [null, 2]
+  values[0] ??= _indexValue(work)
+  values[1] ??= _indexValue(work)
+  expect(work.events, "V")
+  expect(values, [7, 2])
+  nullable: List<int?> = [null]
+  nullable[0] ??= null
+  expect(nullable[0], null)
+  work.events = ""
+  entries: Map<int, int> = map:
+  entries[_indexRow(work)] ??= _indexValue(work)
+  entries[_indexRow(work)] ??= _indexValue(work)
+  expect(work.events, "IVI")
+  expect(entries[-1], 7)
+
+test "compound indexed writes support collection joins and user operators":
+  rows = [[1], [2]]
+  rows[0] += [3, 4]
+  expect(rows[0], [1, 3, 4])
+  initial = map:
+    "a": 1
+  maps = [initial]
+  maps[0] += map:
+    "b": 2
+    "a": 3
+  expected = map:
+    "a": 3
+    "b": 2
+  expect(maps[0], expected)
+  numbers = [_IndexedNumber(value: 3)]
+  numbers[0] += _IndexedNumber(value: 4)
+  expect(numbers[0].value, 7)
+  texts = ["a"]
+  texts[0] *= 3
+  expect(texts, ["aaa"])
+
+test "indexed writes keep runtime range errors":
+  values = [1]
+  outside():
+    values[-2] = 9
+  expect(outside, throwsRangeError)
+  expect(values, [1])
+
+test "indexed updates permit matrix kernels without copying rows":
+  matrix = [[1, 2], [3, 4]]
+  firstRow = matrix[0]
+  for row in range(0, 1):
+    for column in range(0, 1):
+      matrix[row][column] *= 2
+  expect(matrix, [[2, 4], [6, 8]])
+  expect(firstRow, [2, 4])
+
+value class _IndexedNumber:
+  value: int required
+  operator +(other: _IndexedNumber) -> _IndexedNumber:
+    return _IndexedNumber(value: value + other.value)
+
+_asyncIndexRow(work: _IndexWork) async -> List<int>:
+  work.events += "R"
+  return work.rows[0]
+
+_asyncIndexKey(work: _IndexWork) async -> int = _indexRow(work)
+_asyncIndexValue(work: _IndexWork) async -> int = _indexValue(work)
+
+test "indexed writes preserve await evaluation order" async:
+  work = _IndexWork(rows: [[2]])
+  (await _asyncIndexRow(work))[await _asyncIndexKey(work)] += await _asyncIndexValue(work)
+  expect(work.events, "RIV")
+  expect(work.rows[0], [9])
+
+_indexFailure() -> Result<int, String> = Error("index failure")
+
+_indexPropagate(items: List<int>) -> Result<int, String>:
+  items[0] = _indexFailure()?
+  return Ok(1)
+
+test "indexed RHS result propagation prevents the write":
+  values = [3]
+  match _indexPropagate(values):
+    Error(message):
+      expect(message, "index failure")
+    Ok(answer):
+      expect(answer, -1)
+  expect(values, [3])
+
+test "nested contextual nullable lists keep their element types":
+  nested: List<List<int?>> = [[], [null, 2]]
+  nested[0] = [1, null]
+  expect(nested[0][1], null)
+  expect(nested[1][1], 2)

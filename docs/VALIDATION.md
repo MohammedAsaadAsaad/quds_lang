@@ -1,5 +1,32 @@
 # Compiler validation — latest 2026-11-16
 
+## Language foundation: indexed mutation — 2026-11-16
+
+This delivery strengthens the compiler before further math expansion.
+Contracts, examples and remaining foundation work:
+[LANGUAGE_NUMERIC_FOUNDATION.md](LANGUAGE_NUMERIC_FOUNDATION.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds indexed mutation suite | **10 declarations passed**: shared aliases, nested targets/order, negative indices, map keys/lookups, lazy defaults, compound operations, bounds, async, Result propagation and nullable nested literals |
+| Focused `dart test test/index_assignment_test.dart --reporter expanded` | **16 passed**, including readonly method aliases, original diagnostic spans and 12 unsafe-access cases |
+| Quds JavaScript fixture | Compiled with Dart to JavaScript and executed with Node; marker `INDEX WEB OK` |
+| Final `dart test --reporter expanded` | **290 passed; zero failures; zero skips** |
+| `dart analyze` | No issues |
+| Final format | 40 Dart files; zero pending changes |
+| `git diff --check` | Passed |
+
+The typed AST now represents indexed assignment, with target/value traversal
+for source maps and Result propagation. Receiver and indices are evaluated once;
+indexed writes retain shared-object behavior, negative-list indexing, lazy
+null-coalescing and compound-update order. Map reads correctly admit absent
+keys, while writes check stored value types. Readonly instance-field views
+cannot be made mutable by introducing a local alias inside a readonly method.
+Contextual list element types support nullable/nested literals without relaxing
+invariance of mutable collection references. Existing compiler and all math
+suites passed on the final tree. No approved syntax was redesigned.
+
+
 ## Symbolic domain audit and imported sibling types — 2026-11-16
 
 Public math functions remain **380**. Contracts and limitations:

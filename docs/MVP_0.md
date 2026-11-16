@@ -481,3 +481,12 @@ See [MATH_ACCURACY.md](MATH_ACCURACY.md) for the tested numerical grid, correcte
 algorithms, platform integer limits, tolerances and convergence/domain contracts.
 [MATH_COVERAGE.md](MATH_COVERAGE.md) records executable call sites for every
 public top-level math function; it does not claim exhaustive branch coverage.
+
+
+## Numerical language foundations: indexed assignment
+
+`items[index] = value`, compound updates and `??=` now support List and Map
+storage, including nested targets, negative list indices, typed values and
+readonly rejection. Map lookups are nullable; map writes use the stored value
+type. See [LANGUAGE_NUMERIC_FOUNDATION.md](LANGUAGE_NUMERIC_FOUNDATION.md) for
+evaluation order, examples, tests and remaining compiler/storage work.

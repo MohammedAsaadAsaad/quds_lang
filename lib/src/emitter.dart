@@ -1095,6 +1095,8 @@ class DartEmitter {
         DeferStatement() => _expressionPropagates(node.expression),
         WhenStatement() => _containsPropagate(node.body),
         UsingStatement() => _containsPropagate(node.body),
+        IndexAssignment() => _expressionPropagates(node.target) ||
+            _expressionPropagates(node.value),
         MemberAssignment() => _expressionPropagates(node.value),
         LabelStatement() => _statementPropagates(node.statement),
         MatchStatement() =>
@@ -2103,6 +2105,8 @@ class DartEmitter {
             : '} finally { ${resource.dartName}.dispose(); }');
         _depth--;
         line('}');
+      case IndexAssignment():
+        _emitIndexAssignment(node);
       case MemberAssignment():
         final dart = model.references[node]?.dartName ?? node.name;
         line(
@@ -2878,6 +2882,32 @@ class DartEmitter {
     return '(() { final $temp = $value; if ($temp is Error) throw _QudsPropagate($temp); return ($temp as Ok).value; })()';
   }
 
+  void _emitIndexAssignment(IndexAssignment node) {
+    final receiver = '_qo${_temps++}';
+    final key = '_qi${_temps++}';
+    final at = '_qi${_temps++}';
+    final list = _bareType(model.types[node.target.object]).startsWith('List<');
+    line('{');
+    _depth++;
+    line('final $receiver = ${expression(node.target.object)};');
+    line('final $key = ${expression(node.target.index)};');
+    if (list) line('final $at = $key < 0 ? $receiver.length + $key : $key;');
+    final slot = '$receiver[${list ? at : key}]';
+    final targetType = model.types[node.target]!;
+    if (node.operator == '+=' && targetType.startsWith('Map<')) {
+      final old = '_qv${_temps++}';
+      final added = '_qv${_temps++}';
+      line('final $old = $slot;');
+      line('final $added = ${expression(node.value)};');
+      line(
+          '$slot = <${_dartType(targetType.substring(4, targetType.length - 1))}>{...$old, ...$added};');
+    } else {
+      line('$slot ${node.operator} ${expression(node.value)};');
+    }
+    _depth--;
+    line('}');
+  }
+
   String _index(IndexExpression node, {bool constantContext = false}) {
     final object = expression(node.object, constantContext: constantContext);
     final index = expression(node.index, constantContext: constantContext);
@@ -3529,6 +3559,7 @@ class DartEmitter {
   Expression? _slot(Statement statement) => switch (statement) {
         ReturnStatement(:final value) => value,
         Binding(:final value) => value,
+        IndexAssignment(:final value) => value,
         MemberAssignment(:final value) => value,
         ThrowStatement(:final value) => value,
         YieldStatement(:final value) => value,

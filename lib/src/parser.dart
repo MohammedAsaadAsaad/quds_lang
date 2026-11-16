@@ -541,6 +541,12 @@ class Parser {
           member.lexeme, operator, value, extent(span)));
     }
     var value = expression(bare: true);
+    if (value is IndexExpression && assignments.contains(current.kind)) {
+      final operator = take().lexeme;
+      final written = finishBlockValue(expression(bare: true));
+      final assigned = IndexAssignment(value, operator, written, extent(span));
+      return _suffixIf && word('if') ? finishLine(assigned) : assigned;
+    }
     if (value is MemberAccess && assignments.contains(current.kind)) {
       if (value.nullAware) fail('Cannot assign through ?.');
       final operator = take().lexeme;

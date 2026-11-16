@@ -3202,7 +3202,7 @@ class DartEmitter {
       return '${expression(member.object, constantContext: constantContext)}.copyWith($args)';
     }
     final constructed = _constructed(node, targetSymbol.name);
-    final target = member != null
+    var target = member != null
         ? '${expression(member.object, constantContext: constantContext)}.${model.references[member]?.dartName ?? member.name}'
         : node.callee is Identifier &&
                 model.implicitThis.contains(node.callee as Identifier)
@@ -3212,6 +3212,12 @@ class DartEmitter {
                         node.callee is TypeApplication)
                 ? constructed
                 : targetSymbol.dartName;
+    if (node.callee case TypeApplication applied) {
+      final original = model.references[applied.callee];
+      if (original?.function != null && original?.classDeclaration == null) {
+        target += '<${applied.arguments.map(_dartType).join(', ')}>';
+      }
+    }
     if ((targetSymbol.dartName == 'min' || targetSymbol.dartName == 'max') &&
         !targetSymbol.external &&
         targetSymbol.function == null) {

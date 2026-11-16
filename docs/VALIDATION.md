@@ -1,5 +1,39 @@
 # Compiler validation — latest 2026-11-16
 
+## Generic argument constraints — L3.2a — 2026-11-16
+
+The first part of L3.2 checks Quds generic applications, without claiming all
+inference/interface work is complete. Contract and limits:
+[GENERIC_CONSTRAINTS.md](GENERIC_CONSTRAINTS.md). Agent continuation plan:
+[LANGUAGE_NEXT_STAGE_HANDOFF_AR.md](LANGUAGE_NEXT_STAGE_HANDOFF_AR.md).
+
+| Check | Observed result |
+| --- | --- |
+| Baseline probes | Incorrect arity and invalid numeric bounds in annotations were accepted; a valid dependent bound was rejected; a nullable implementing type incorrectly satisfied a nonnullable interface bound |
+| Primary `quds test test/generic_constraints.quds` | **Nine declarations passed**: explicit/inferred and dependent constructor bounds, explicit generic functions, forwarding bound evidence, nested fields, numeric/nullable/interface bounds |
+| Final `dart test test/generic_constraints_test.dart --reporter expanded` | **25 passed**: primary Quds runner, 22 invalid programs, original diagnostic spans, deterministic golden and backend integration |
+| Dart golden + analysis | Exact output matched `test/goldens/generic_constraints.dart.txt`; generated program passed `dart analyze --fatal-infos` |
+| Dart VM + JavaScript/Node | Quds fixture executed on both with marker `GENERIC CONSTRAINTS OK`; explicit type arguments and once-only argument order retained |
+| `dart pub get` | Passed; dependency constraints retained |
+| Final `dart format .` | 44 files; zero pending changes |
+| Final `dart analyze` | No issues |
+| Final `dart test --reporter expanded` | **350 passed; zero failures; zero skips** in 7m29s |
+| `git diff --check` | Passed |
+
+The shared checker validates argument count/types and substitutes dependent
+bounds for annotations, explicit functions and explicit/inferred constructors.
+Bound evidence is scoped, explicit function arguments seed result inference,
+and explicit arguments survive Dart emission. Interface inheritance no longer
+discards whole-value nullability during compatibility checks.
+
+An initial complete-project run was intentionally interrupted to add the
+confirmed nullable-interface regression and fix. Its interrupted tests are not
+reported as a completed validation; the final stable run above is authoritative.
+No syntax redesign or math API additions are included. Map/callback inference,
+generic interface inheritance/substitution and external metadata remain future
+L3.2 work; L3.3/3.4 also remain open.
+
+
 ## Function type nullability and composition — 2026-11-16
 
 First implementation package from

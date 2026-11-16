@@ -1,0 +1,72 @@
+class Numeric<T: num>:
+  value: T required
+
+class Pair<A, B: A>:
+  first: A required
+  second: B required
+
+interface Named:
+  name: String
+
+class Person implements Named:
+  name: String required
+
+class Labelled<T: Named>:
+  value: T required
+
+class Nested<T: num>:
+  child: Numeric<T> required
+
+identity<T: num>(value: T) -> T = value
+forward<U: num>(value: U) -> U = identity<U>(value)
+makeNumeric<T: num>(value: T) -> Numeric<T> = Numeric<T>(value: value)
+pick<A, B: A>(first: A, second: B) -> B = second
+read(value: Numeric<int>) -> int = value.value
+
+test "bounded classes work with explicit and inferred arguments":
+  explicit = Numeric<int>(value: 3)
+  inferred = Numeric(value: 4.5)
+  expect(read(explicit), 3)
+  expect(inferred.value, 4.5)
+
+test "dependent constructor bounds use instantiated types":
+  pair = Pair<num, int>(first: 1.5, second: 2)
+  expect(pair.first, 1.5)
+  expect(pair.second, 2)
+
+test "inferred constructors check dependent bounds after inference":
+  broad: num = 2.5
+  pair = Pair(first: broad, second: 3)
+  expect(pair.second, 3)
+
+test "explicit generic functions use dependent bounds":
+  resultValue: int = pick<num, int>(1.5, 4)
+  expect(resultValue, 4)
+  expect(identity<int>(5), 5)
+
+test "generic parameters carry bound evidence into calls and results":
+  expect(forward<int>(6), 6)
+  expect(makeNumeric<double>(7.5).value, 7.5)
+
+test "nested bounded fields retain their declared parameter":
+  nested = Nested<int>(child: Numeric<int>(value: 8))
+  expect(nested.child.value, 8)
+
+test "interface bounds accept conforming class arguments":
+  labelled = Labelled<Person>(value: Person(name: "Quds"))
+  expect(labelled.value.name, "Quds")
+
+class MaybeNumber<T: num?>:
+  value: T required
+
+test "nullable numeric bounds preserve null":
+  item = MaybeNumber<int?>(value: null)
+  expect(item.value, null)
+
+
+class MaybeLabelled<T: Named?>:
+  value: T required
+
+test "nullable interface bounds accept nullable implementing types":
+  item = MaybeLabelled<Person?>(value: null)
+  expect(item.value, null)

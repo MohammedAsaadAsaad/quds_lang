@@ -1,0 +1,27 @@
+class Numeric<T: num>:
+  value: T required
+class Pair<A, B: A>:
+  first: A required
+  second: B required
+pick<A, B: A>(first: A, second: B) -> B = second
+identity<T: num>(value: T) -> T = value
+forward<U: num>(value: U) -> U = identity<U>(value)
+main():
+  var trace = ""
+  first() -> num:
+    trace += "first "
+    return 1.5
+  second() -> int:
+    trace += "second "
+    return 2
+  selected: int = pick<num, int>(first(), second())
+  require selected == 2
+  require trace == "first second "
+  pair = Pair<num, int>(first: 3.5, second: 4)
+  require pair.second == 4
+  require forward<int>(5) == 5
+  nested: List<Map<String, Numeric<int>>> = [map:
+    "value": Numeric<int>(value: 6)
+  ]
+  require nested[0]["value"]!.value == 6
+  print "GENERIC CONSTRAINTS OK"

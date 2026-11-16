@@ -102,3 +102,6 @@ The next compiler-foundation packages and agent handoff are recorded in
 [the detailed Arabic execution plan](docs/LANGUAGE_NEXT_STAGE_HANDOFF_AR.md).
 The first package's supported behavior is documented in
 [function types and nullability](docs/FUNCTION_NULLABILITY.md).
+
+Generic application checks and the remaining L3.2 scope are documented in
+[generic constraints](docs/GENERIC_CONSTRAINTS.md).

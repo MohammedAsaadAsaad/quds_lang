@@ -693,6 +693,12 @@ class Analyzer {
                 ? 'Future<${statement.returnType}>'
                 : type;
     final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
+    for (final parameter in statement.typeParameters) {
+      _typeBounds.remove(parameter.name);
+      if (parameter.bound != null)
+        _typeBounds[parameter.name] = parameter.bound!;
+    }
     _typeNames.addAll(statement.typeParameters.map((item) => item.name));
     if (effective != '<infer>') validateType(effective, statement);
     for (final parameter in statement.typeParameters) {
@@ -703,6 +709,9 @@ class Analyzer {
     _typeNames
       ..clear()
       ..addAll(savedTypes);
+    _typeBounds
+      ..clear()
+      ..addAll(savedBounds);
     final symbol = create(statement.name, effective, function: statement);
     model.declarations[statement] = symbol;
     final existing = scope.symbols[statement.name];
@@ -755,6 +764,12 @@ class Analyzer {
       model.declarations[item] = caseSymbol;
     }
     final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
+    for (final parameter in statement.typeParameters) {
+      _typeBounds.remove(parameter.name);
+      if (parameter.bound != null)
+        _typeBounds[parameter.name] = parameter.bound!;
+    }
     _typeNames.addAll(statement.typeParameters.map((item) => item.name));
     for (final parameter in statement.typeParameters) {
       if (parameter.bound != null) {
@@ -797,7 +812,16 @@ class Analyzer {
           .where((name) => !_typeNames.contains(name))
           .toList();
       _typeNames.addAll(added);
+      final savedMethodBounds = {..._typeBounds};
+      for (final parameter in method.typeParameters) {
+        _typeBounds.remove(parameter.name);
+        if (parameter.bound != null)
+          _typeBounds[parameter.name] = parameter.bound!;
+      }
       if (effective != '<infer>') validateType(effective, method);
+      _typeBounds
+        ..clear()
+        ..addAll(savedMethodBounds);
       _typeNames.removeAll(added);
       final dartName = method.isOperator
           ? method.name
@@ -811,6 +835,9 @@ class Analyzer {
     _typeNames
       ..clear()
       ..addAll(savedTypes);
+    _typeBounds
+      ..clear()
+      ..addAll(savedBounds);
   }
 
   void registerExtension(ExtensionDeclaration statement,
@@ -2409,11 +2436,10 @@ class Analyzer {
     final open = type.indexOf('<');
     if (open > 0 && type.endsWith('>')) {
       final head = type.substring(0, open);
-      if (_global.symbols[head]?.classDeclaration != null) {
-        final inner = type.substring(open + 1, type.length - 1);
-        for (final part in _splitTypes(inner)) {
-          validateType(part, node, allowVoid: false);
-        }
+      final declaration = _typeSymbol(head)?.classDeclaration;
+      if (declaration != null) {
+        final args = _splitTypes(type.substring(open + 1, type.length - 1));
+        _checkTypeArguments(head, declaration.typeParameters, args, node);
         return;
       }
     }
@@ -2603,6 +2629,7 @@ class Analyzer {
     final savedBounds = {..._typeBounds};
     _typeNames.addAll(function.typeParameters.map((item) => item.name));
     for (final parameter in function.typeParameters) {
+      _typeBounds.remove(parameter.name);
       if (parameter.bound != null) {
         _typeBounds[parameter.name] = parameter.bound!;
       }
@@ -4077,6 +4104,7 @@ class Analyzer {
   }
 
   bool _implementsType(String from, String to) {
+    if (isNullableType(from) || isNullableType(to)) return false;
     final declaration = _global.symbols[unwrap(from)]?.classDeclaration;
     if (declaration == null) return false;
     if (declaration.interfaces.contains(to) || declaration.superclass == to) {
@@ -6570,30 +6598,16 @@ class Analyzer {
       fail('Choose one overload with a call or a typed context', node);
     }
     final selected = candidates.single;
-    if (applied.arguments.length != selected.typeParameters.length) {
-      fail('Type arguments do not match ${selected.name}', node);
-    }
-    final substitution = {
-      for (var i = 0; i < selected.typeParameters.length; i++)
-        selected.typeParameters[i].name: applied.arguments[i]
-    };
-    for (var i = 0; i < selected.typeParameters.length; i++) {
-      final bound = selected.typeParameters[i].bound;
-      if (bound != null && !compatible(applied.arguments[i], bound)) {
-        fail('Type ${applied.arguments[i]} is not a $bound', node);
-      }
-    }
+    final substitution = _checkTypeArguments(
+        selected.name, selected.typeParameters, applied.arguments, node);
     final parameters = [
       for (final parameter in selected.parameters)
         Parameter(parameter.name, _substitute(parameter.type, substitution),
             parameter.mutable, parameter.span,
             defaultValue: parameter.defaultValue, variadic: parameter.variadic)
     ];
-    final returned = applyArguments(node, parameters, selected);
-    final declared = model.declarations[selected]!.type;
-    return declared == '<infer>'
-        ? returned
-        : _substitute(declared, substitution);
+    return applyArguments(node, parameters, selected,
+        typeArguments: substitution);
   }
 
   String constructClass(CallExpression node, ClassDeclaration type,
@@ -6705,21 +6719,10 @@ class Analyzer {
       ClassDeclaration type,
       List<Parameter> parameters,
       List<String> explicit) {
-    if (type.typeParameters.isEmpty) return const {};
+    if (type.typeParameters.isEmpty && explicit.isEmpty) return const {};
     if (explicit.isNotEmpty) {
-      if (explicit.length != type.typeParameters.length) {
-        fail('Type arguments do not match ${type.name}', node);
-      }
-      for (var i = 0; i < explicit.length; i++) {
-        final bound = type.typeParameters[i].bound;
-        if (bound != null && !compatible(explicit[i], bound)) {
-          fail('Type ${explicit[i]} is not a $bound', node);
-        }
-      }
-      return {
-        for (var i = 0; i < explicit.length; i++)
-          type.typeParameters[i].name: explicit[i]
-      };
+      return _checkTypeArguments(
+          type.name, type.typeParameters, explicit, node);
     }
     final found = <String, String>{};
     for (final argument in node.arguments) {
@@ -6735,12 +6738,45 @@ class Analyzer {
       if (inferred == null) {
         error('E302', 'A type cannot be inferred', node);
       }
-      final bound = parameter.bound;
-      if (bound != null && !compatible(inferred, bound)) {
-        fail('Type $inferred is not a $bound', node);
+    }
+    _checkTypeArguments(
+        type.name,
+        type.typeParameters,
+        [for (final parameter in type.typeParameters) found[parameter.name]!],
+        node);
+    return found;
+  }
+
+  Map<String, String> _checkTypeArguments(String name,
+      List<TypeParameter> parameters, List<String> arguments, Node node) {
+    if (parameters.length != arguments.length) {
+      fail('Type arguments do not match $name', node);
+    }
+    for (final argument in arguments) {
+      validateType(argument, node, allowVoid: false);
+    }
+    final substitution = {
+      for (var i = 0; i < parameters.length; i++)
+        parameters[i].name: arguments[i]
+    };
+    for (var i = 0; i < parameters.length; i++) {
+      final declared = parameters[i].bound;
+      if (declared == null) continue;
+      final bound = _substitute(declared, substitution);
+      if (!_satisfiesTypeBound(arguments[i], bound)) {
+        fail('Type ${arguments[i]} is not a $bound', node);
       }
     }
-    return found;
+    return substitution;
+  }
+
+  bool _satisfiesTypeBound(String argument, String bound,
+      [Set<String> visited = const {}]) {
+    if (compatible(argument, bound)) return true;
+    if (visited.contains(argument)) return false;
+    final evidence = _typeBounds[argument];
+    return evidence != null &&
+        _satisfiesTypeBound(evidence, bound, {...visited, argument});
   }
 
   void _inferType(String parameterType, String argumentType,
@@ -6900,7 +6936,8 @@ class Analyzer {
 
   String applyArguments(CallExpression node, List<Parameter> parameters,
       FunctionDeclaration? function,
-      {_CheckedArguments? checked}) {
+      {_CheckedArguments? checked,
+      Map<String, String> typeArguments = const {}}) {
     parameters = _callParameters(parameters, function);
     if (function != null &&
         parameters.any((parameter) => parameter.defaultValue != null)) {
@@ -6912,7 +6949,7 @@ class Analyzer {
             commit: true, function: function, checked: verified)) {
       fail('No overload matches this call', node);
     }
-    final inferred = <String, String>{};
+    final inferred = {...typeArguments};
     final order = List<int>.filled(parameters.length, -1);
     final rest = <int>[];
     var positional = 0;

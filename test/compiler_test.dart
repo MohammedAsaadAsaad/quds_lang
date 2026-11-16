@@ -1339,8 +1339,8 @@ main():
     expect(graph['startLine'] as int, lessThan(weighted['startLine'] as int));
     expect(graph['endLine'] as int,
         greaterThanOrEqualTo(weighted['endLine'] as int));
-    expect(math.where((range) => range['collapsedText'] == 'stats').length,
-        greaterThan(1));
+    expect(math.where((range) => range['collapsedText'] == 'stats').length, 1);
+    expect(math.where((range) => range['collapsedText'] == 'scalar').length, 1);
 
     final directory = Directory.systemTemp.createTempSync('quds-fold-');
     addTearDown(() => directory.deleteSync(recursive: true));

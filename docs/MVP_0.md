@@ -490,3 +490,15 @@ storage, including nested targets, negative list indices, typed values and
 readonly rejection. Map lookups are nullable; map writes use the stored value
 type. See [LANGUAGE_NUMERIC_FOUNDATION.md](LANGUAGE_NUMERIC_FOUNDATION.md) for
 evaluation order, examples, tests and remaining compiler/storage work.
+
+
+## Typed numeric storage in core
+
+`use quds:core::typed` selects the native typed-storage section; `use quds:core`
+includes it alongside the existing collections. Concrete numeric lists support
+indexing, mutation, iteration, copies and shared buffer/sublist views. Native
+identities survive prefixes and generic Quds containers. Readonly storage is
+protected by static checks and native unmodifiable views at runtime, including
+Dart/dynamic callbacks and captured references. See
+[CORE_TYPED_STORAGE.md](CORE_TYPED_STORAGE.md) for names, precision, platform
+limits and tests.

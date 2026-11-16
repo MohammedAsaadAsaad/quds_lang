@@ -190,6 +190,19 @@ class Bag<T>:
       return 0
     else:
       return local.values.sum()
+
+
+:: typed
+
+# Contiguous fixed-length numeric storage from Dart. Views share bytes; fromList
+# copies. Names and narrowing/rounding follow dart:typed_data.
+# Example:
+#   samples = Float64List(4)
+#   samples[0] = 1.5
+#   alias = Float64List.view(samples.buffer)
+#   print alias[0]
+use dart:typed_data show Float32List, Float64List, Int8List, Uint8List, Uint8ClampedList, Int16List, Uint16List, Int32List, Uint32List, ByteData, ByteBuffer, Endian, TypedData
+export dart:typed_data show Float32List, Float64List, Int8List, Uint8List, Uint8ClampedList, Int16List, Uint16List, Int32List, Uint32List, ByteData, ByteBuffer, Endian, TypedData
 ''';
 
 const extSdkSource = '''extend String Text:

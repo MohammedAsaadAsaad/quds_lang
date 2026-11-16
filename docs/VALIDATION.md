@@ -1,5 +1,35 @@
 # Compiler validation — latest 2026-11-16
 
+## Typed numeric storage in core — 2026-11-16
+
+Added the native typed-storage section to `quds:core`, with the same names
+available through `quds:core::typed`. Contracts and platform/precision limits:
+[CORE_TYPED_STORAGE.md](CORE_TYPED_STORAGE.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds storage suites | **Nine declarations passed** across typed_storage.quds, typed_storage_prefix.quds and typed_storage_core.quds |
+| Focused typed storage compiler/interoperability tests | **16 passed**, including unsafe writes, readonly capture, filtered exports, nominal identity, completion and hidden names |
+| Dart VM + JavaScript/Node driver | Native storage smoke checks and readonly writes blocked across Dart/dynamic boundaries; mutable aliases remain visible |
+| Compiler import-completion regression | Passed after adding the newly available core:: / typed suggestions to its exact expectation |
+| Final `dart test --reporter expanded` | **306 passed; zero failures; zero skips** |
+| `dart analyze` | No issues |
+| Final format | 41 Dart files; zero pending changes |
+| Embedded core synchronization | Byte-identical on repeat using `python3 tool/sync_sdk.py core` |
+| `git diff --check` | Passed |
+
+The SDK reuses Dart storage classes; numeric payloads are not copied by views.
+Compiler integration reads concrete list element/interface metadata, retains
+native identities across prefixes and generic type arguments, and protects
+readonly native storage through captured references and runtime unmodifiable
+views. Empty re-export filter intersections no longer expose all names.
+An intermediate full run found a stale completion expectation (core previously
+had no sections); the final stable run above passed with the new typed section
+explicitly tested. No new syntax or reinterpretation of approved rules was
+introduced. Strided views, broad generic Dart interop and backend performance
+guarantees are outside this delivery.
+
+
 ## Language foundation: indexed mutation — 2026-11-16
 
 This delivery strengthens the compiler before further math expansion.

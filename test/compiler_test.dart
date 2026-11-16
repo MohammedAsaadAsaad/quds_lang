@@ -2113,7 +2113,9 @@ main():
     expect(item(sdk, 'core')['detail'], 'quds:core');
     expect((item(sdk, 'core')['textEdit'] as Map)['newText'], 'core');
     final sdkPartial = at('use quds:c', app.path);
-    expect(sdkPartial.map((entry) => entry['label']), ['core']);
+    expect(sdkPartial.map((entry) => entry['label']), ['core', 'core::']);
+    final coreSections = at('use quds:core::', app.path);
+    expect(coreSections.map((entry) => entry['label']), ['typed']);
     final mathSections = at('use quds:math::', app.path);
     expect(mathSections.map((entry) => entry['label']),
         containsAll(['graph', 'graph::']));

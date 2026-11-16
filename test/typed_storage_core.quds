@@ -1,0 +1,20 @@
+use quds:core
+use quds:math show mean, matvec
+
+test "core root exports typed storage alongside existing generic collections":
+  data = Float64List(2)
+  data[0] = 2.5
+  stored = Stack<Float64List>()
+  stored.push(data)
+  restored = stored.pop()
+  expect(restored[0], 2.5)
+  restored[1] = 4.0
+  expect(data[1], 4.0)
+  array: Array<double> = restored.toList()
+  expect(array, [2.5, 4.0])
+  expect(mean(data), 3.25)
+  first = Float64List.fromList([1.0, 2.0])
+  second = Float64List.fromList([3.0, 4.0])
+  matrix: List<List<double>> = [first, second]
+  vector = Float64List.fromList([2.0, 3.0])
+  expect(matvec(matrix, vector), [8.0, 18.0])

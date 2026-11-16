@@ -100,8 +100,17 @@ String _withDoc(String head, String? documentation) {
 /// Public members of one Dart SDK class, including names inherited from its
 /// sources in the same library.
 class DartShape {
-  const DartShape(this.members, this.constructors, this.statics);
+  const DartShape(this.members, this.constructors, this.statics,
+      {this.listElement, this.supertypes = const {}, this.name = ''});
 
+  final String name;
+  bool get typedStorage =>
+      name == 'TypedData' ||
+      name == 'ByteBuffer' ||
+      supertypes
+          .any((item) => item == 'TypedData' || item.endsWith('.TypedData'));
+  final String? listElement;
+  final Set<String> supertypes;
   final Map<String, DartMember> members;
   final Map<String, DartMember> constructors;
   final Map<String, DartMember> statics;
@@ -113,6 +122,53 @@ class DartSurface {
 
   final Map<String, DartTop> names;
   final Map<String, DartShape> types;
+}
+
+/// Preserve source metadata while giving external signature types a library identity.
+DartSurface mapDartSurfaceTypes(
+    DartSurface surface, String Function(String) type) {
+  DartMember member(DartMember source) => DartMember(
+      name: source.name,
+      type: type(source.type),
+      parameters: [for (final p in source.parameters) (p.$1, type(p.$2))],
+      optional: source.optional,
+      getter: source.getter,
+      documentation: source.documentation,
+      file: source.file,
+      line: source.line,
+      column: source.column,
+      offset: source.offset);
+  Map<String, DartMember> members(Map<String, DartMember> source) =>
+      {for (final entry in source.entries) entry.key: member(entry.value)};
+  return DartSurface({
+    for (final entry in surface.names.entries)
+      entry.key: DartTop(
+          name: entry.value.name,
+          type: type(entry.value.type),
+          parameters: [
+            for (final p in entry.value.parameters) (p.$1, type(p.$2))
+          ],
+          optional: entry.value.optional,
+          constant: entry.value.constant,
+          number: entry.value.number,
+          integer: entry.value.integer,
+          isType: entry.value.isType,
+          callable: entry.value.callable,
+          documentation: entry.value.documentation,
+          file: entry.value.file,
+          line: entry.value.line,
+          column: entry.value.column,
+          offset: entry.value.offset),
+  }, {
+    for (final entry in surface.types.entries)
+      entry.key: DartShape(members(entry.value.members),
+          members(entry.value.constructors), members(entry.value.statics),
+          name: entry.value.name,
+          listElement: entry.value.listElement == null
+              ? null
+              : type(entry.value.listElement!),
+          supertypes: entry.value.supertypes.map(type).toSet()),
+  });
 }
 
 class _Cached {
@@ -273,6 +329,8 @@ _Loaded _load(File entry) {
       final base = classes[parent];
       if (base == null) continue;
       inherit(base);
+      type.listElement ??= base.listElement;
+      type.superNames.addAll(base.superNames);
       for (final entry in base.members.entries) {
         type.members.putIfAbsent(entry.key, () => entry.value);
       }
@@ -289,6 +347,9 @@ _Loaded _load(File entry) {
           Map<String, DartMember>.of(type.members),
           Map<String, DartMember>.of(type.constructors),
           Map<String, DartMember>.of(type.statics),
+          name: type.name,
+          listElement: type.listElement,
+          supertypes: Set<String>.of(type.superNames),
         ),
   };
   return _Loaded(DartSurface(names, types), files);
@@ -300,6 +361,8 @@ class _Class {
   final String name;
   final bool public;
   final supers = <String>[];
+  final superNames = <String>{};
+  String? listElement;
   final members = <String, DartMember>{};
   final constructors = <String, DartMember>{};
   final statics = <String, DartMember>{};
@@ -721,7 +784,14 @@ class _Parser {
             peek != 'on') {
           final raw = _rawType();
           final head = _head(raw);
-          if (head.isNotEmpty) type.supers.add(head);
+          if (head.isNotEmpty) {
+            type.supers.add(head);
+            type.superNames.add(head);
+          }
+          final list =
+              RegExp(r'^(?:List|TypedDataList)<(.+)>$').firstMatch(raw);
+          if (list != null)
+            type.listElement = _simplify(list.group(1)!, params);
           if (peek == ',') {
             i++;
             continue;

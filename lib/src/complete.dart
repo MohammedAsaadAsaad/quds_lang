@@ -1108,7 +1108,10 @@ void _typeMembers(
       add(_plain(property.name, 10, 'get ${property.type}', range, sort: '0'));
     }
   }
-  _builtinMembers(bare, onType, range, add);
+  final typed = compilation.semantics.classes.containsKey(_head(bare))
+      ? null
+      : compilation.semantics.dartShapes[_head(bare)]?.listElement;
+  _builtinMembers(typed == null ? bare : 'List<$typed>', onType, range, add);
   _sdkMembers(compilation, bare, onType, range, add);
 }
 
@@ -1122,19 +1125,26 @@ void _sdkMembers(
   if (onType) return;
   var bare = type;
   if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+  if (compilation.semantics.classes.containsKey(_head(bare))) return;
   final shape = compilation.semantics.dartShapes[_head(bare)];
   if (shape == null) return;
   for (final member in shape.members.values) {
     if (!_name(member.name)) continue;
     if (member.getter) {
-      add(_plain(member.name, 10, member.type, range, sort: '0'));
+      add(_plain(member.name, 10,
+          compilation.semantics.displayType(member.type), range,
+          sort: '0'));
       continue;
     }
     final parameters = [
       for (final parameter in member.parameters)
-        '${parameter.$1}: ${parameter.$2}'
+        '${parameter.$1}: ${compilation.semantics.displayType(parameter.$2)}'
     ].join(', ');
-    add(_plain(member.name, 2, '($parameters) -> ${member.type}', range,
+    add(_plain(
+        member.name,
+        2,
+        '($parameters) -> ${compilation.semantics.displayType(member.type)}',
+        range,
         sort: '1'));
   }
 }
@@ -1362,6 +1372,7 @@ const _methods = {
   'List': {
     'add': ([('value', 'T')], 'void'),
     'addAll': ([('values', 'Iterable<T>')], 'void'),
+    'setAll': ([('index', 'int'), ('values', 'Iterable<T>')], 'void'),
     'insert': ([('index', 'int'), ('value', 'T')], 'void'),
     'removeAt': ([('index', 'int')], 'T'),
     'removeLast': (<(String, String)>[], 'T'),

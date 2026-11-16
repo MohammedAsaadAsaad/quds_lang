@@ -1,0 +1,23 @@
+use quds:core::typed as storage
+use dart:typed_data as direct show Float64List
+
+class Float64List:
+  value: int required
+
+test "prefixed typed storage keeps native and caller type identity":
+  native: storage.Float64List = storage.Float64List.fromList([1.0, 2.0])
+  native[-1] = 3.0
+  expect(native[1], 3.0)
+  sub = storage.Float64List.sublistView(native, 1)
+  sub[0] = 4.0
+  expect(native[1], 4.0)
+  borrowed: readonly storage.Float64List = native
+  expect(borrowed[0], 1.0)
+  fromDart: direct.Float64List = native
+  fromDart[0] = 8.0
+  expect(native[0], 8.0)
+  caller = Float64List(value: 7)
+  expect(caller.value, 7)
+  bytes = storage.ByteData(4)
+  bytes.setUint32(0, 16909060, storage.Endian.big)
+  expect(bytes.getUint8(0), 1)

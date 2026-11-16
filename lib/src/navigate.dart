@@ -490,11 +490,13 @@ String? _hoverText(
 String? _libraryHover(SemanticModel model, Symbol? symbol) {
   if (symbol == null) return null;
   final function = symbol.function;
-  final signature = symbol.signature ??
+  final rawSignature = symbol.signature ??
       (function == null ? null : _signature(function, model)) ??
       (symbol.classDeclaration == null
           ? null
           : 'class ${symbol.classDeclaration!.name}');
+  final signature =
+      rawSignature == null ? null : model.displayType(rawSignature);
   final documentation = _written(symbol.documentation) ??
       _written(function?.documentation) ??
       _written(symbol.classDeclaration?.documentation);

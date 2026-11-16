@@ -958,6 +958,11 @@ class DartEmitter {
       final declared = model.declarations[parameter]!.type;
       final view = _readonlyBoundary(declared);
       if (view == null) continue;
+      if (view.startsWith('@typed:')) {
+        final dartName = model.declarations[parameter]!.dartName;
+        lines.add('$dartName = ${_typedReadonly(declared, dartName)};');
+        continue;
+      }
       _useReadonly = true;
       final dartName = model.declarations[parameter]!.dartName;
       lines.add('$dartName = $view($dartName);');
@@ -965,9 +970,38 @@ class DartEmitter {
     return lines;
   }
 
+  final _typedReadonlyEmitting = <Expression>{};
+
+  String? _typedReadonlySuffix(String type) {
+    if (!type.startsWith('readonly ')) return null;
+    final base = _bareType(model.resolve(type));
+    if (!base.startsWith('@dart.typed.')) return null;
+    if (model.classes.containsKey(base)) return null;
+    final shape = model.dartShapes[base];
+    if (shape == null) return null;
+    if (shape.members.containsKey('asUnmodifiableView'))
+      return '.asUnmodifiableView()';
+    if (shape.name == 'TypedData') return '@base';
+    if (shape.name == 'ByteBuffer')
+      return '.asUint8List().asUnmodifiableView().buffer';
+    return null;
+  }
+
+  String _typedReadonly(String type, String value) {
+    if (_typedReadonlySuffix(type) == '@base') {
+      // TypedData is sealed to SDK implementations; its concrete classes all
+      // expose asUnmodifiableView, although the common interface does not.
+      final access = type.endsWith('?') ? '?.' : '.';
+      return '((($value) as dynamic)${access}asUnmodifiableView() as ${_dartType(type)})';
+    }
+    return '($value)${type.endsWith('?') ? '?' : ''}${_typedReadonlySuffix(type)!}';
+  }
+
   String _wrapReturn(String value) {
     final view = _returnView;
     if (view == null) return value;
+    if (view.startsWith('@typed:'))
+      return _typedReadonly(view.substring(7), value);
     _useReadonly = true;
     return '$view($value)';
   }
@@ -975,6 +1009,7 @@ class DartEmitter {
   /// A Dart signature cannot spell `readonly`, so the boundary is a view.
   String? _readonlyBoundary(String type) {
     if (!type.startsWith('readonly ')) return null;
+    if (_typedReadonlySuffix(type) != null) return '@typed:$type';
     final inner = type.substring(9);
     if (inner.startsWith('List<') && inner.endsWith('>')) {
       return 'UnmodifiableListView<${_dartType(inner.substring(5, inner.length - 1))}>';
@@ -2163,7 +2198,7 @@ class DartEmitter {
   String _constructed(CallExpression node, String ctor) {
     final type = model.types[node];
     if (type != null && type.startsWith('$ctor<') && type.endsWith('>')) {
-      return type;
+      return _dartType(type);
     }
     return ctor;
   }
@@ -2477,6 +2512,19 @@ class DartEmitter {
       _useBoolHelper = true;
       return '_qBool(${expression(node, constantContext: constantContext)})';
     }
+    final typedReadonly = model.types[node];
+    if (typedReadonly != null &&
+        _typedReadonlySuffix(typedReadonly) != null &&
+        _typedReadonlyEmitting.add(node)) {
+      try {
+        return _typedReadonly(
+            typedReadonly,
+            expression(node,
+                constantContext: constantContext, opaqueBool: opaqueBool));
+      } finally {
+        _typedReadonlyEmitting.remove(node);
+      }
+    }
     final logic = node is BinaryExpression &&
         (node.operator == 'and' || node.operator == 'or');
     final childOpaque = !constantContext && (opaqueBool || logic);
@@ -2563,6 +2611,8 @@ class DartEmitter {
 
   String _sequenceElement(String type) {
     final bare = _bareType(type);
+    final typed = model.dartShapes[bare]?.listElement;
+    if (typed != null) return typed;
     for (final head in ['List<', 'Iterable<', 'Set<']) {
       if (bare.startsWith(head) && bare.endsWith('>')) {
         return bare.substring(head.length, bare.length - 1);
@@ -2886,7 +2936,9 @@ class DartEmitter {
     final receiver = '_qo${_temps++}';
     final key = '_qi${_temps++}';
     final at = '_qi${_temps++}';
-    final list = _bareType(model.types[node.target.object]).startsWith('List<');
+    final base = _bareType(model.types[node.target.object]);
+    final list =
+        base.startsWith('List<') || model.dartShapes[base]?.listElement != null;
     line('{');
     _depth++;
     line('final $receiver = ${expression(node.target.object)};');
@@ -2916,7 +2968,8 @@ class DartEmitter {
       _useAt = true;
       return '_qAt($object, $index)';
     }
-    if (bare.startsWith('List<')) {
+    if (bare.startsWith('List<') ||
+        model.dartShapes[bare]?.listElement != null) {
       final items = '_qo${_temps++}';
       final at = '_qi${_temps++}';
       return '(() { final $items = $object; final $at = $index; return $items[$at < 0 ? $items.length + $at : $at]; })()';

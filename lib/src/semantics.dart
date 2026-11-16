@@ -158,6 +158,21 @@ class SemanticModel {
     return type;
   }
 
+  /// Internal native identity keys are never part of user-facing type text.
+  String displayType(String text) {
+    var result = text;
+    for (final entry in backendTypes.entries) {
+      if (!entry.key.startsWith('@dart.typed.')) continue;
+      final visible = aliases.entries
+          .where((alias) => alias.value == entry.key)
+          .firstOrNull;
+      final name = visible?.key ?? entry.value.split('.').last;
+      result =
+          result.replaceAll(RegExp('${RegExp.escape(entry.key)}\\b'), name);
+    }
+    return result;
+  }
+
   final wrapAs = <Expression, String>{};
   final captures = <CaptureExpression, List<(Symbol outer, Symbol copy)>>{};
   final shapes = <Node, List<String>>{};
@@ -216,7 +231,7 @@ Symbol symbolForDart(DartTop top, [DartShape? shape, String library = '']) {
     final constructors = shape?.constructors ?? const <String, DartMember>{};
     for (final entry in constructors.entries) {
       if (entry.key.isEmpty) continue;
-      namespace[entry.key] = _dartMemberSymbol(entry.value, top.name);
+      namespace[entry.key] = _dartMemberSymbol(entry.value, top.type);
     }
     final statics = shape?.statics ?? const <String, DartMember>{};
     for (final entry in statics.entries) {
@@ -227,7 +242,7 @@ Symbol symbolForDart(DartTop top, [DartShape? shape, String library = '']) {
     return Symbol(
       top.name,
       top.name,
-      top.name,
+      top.type,
       external: true,
       callable: unnamed != null,
       parameterTypes: unnamed == null
@@ -435,8 +450,8 @@ class Analyzer {
     constConstructorOf: (node) => model.constCalls[node],
     fail: fail,
   );
-  Never fail(String message, Node node) =>
-      throw CompilerException(registryCode(message), message, node.span);
+  Never fail(String message, Node node) => throw CompilerException(
+      registryCode(message), model.displayType(message), node.span);
   Symbol create(String name, String type,
           {bool mutable = false,
           bool constant = false,
@@ -480,7 +495,7 @@ class Analyzer {
   String? _doType;
   int _doDepth = 0;
   Never error(String code, String message, Node node) =>
-      throw CompilerException(code, message, node.span);
+      throw CompilerException(code, model.displayType(message), node.span);
   void warn(String code, String message, Node node) {
     model.warnings.add(CompilerException(code, message, node.span));
   }
@@ -1652,13 +1667,14 @@ class Analyzer {
   /// exporter. A name already in scope, such as prelude `min`, stays as it is.
   void _importDartExport(ImportDeclaration statement,
       {required String home, ImportDeclaration? filter, String? qualify}) {
-    final surface = readDartLibrary(statement.uri);
-    if (surface == null) fail('Unknown import: ${statement.uri}', statement);
-    final restricted = _restrict(filter, statement);
+    final rawSurface = readDartLibrary(statement.uri);
+    if (rawSurface == null) fail('Unknown import: ${statement.uri}', statement);
+    final surface = _nativeSurface(statement.uri, rawSurface);
+    model.dartShapes.addAll(surface.types);
     final target =
         qualify == null ? _global.symbols : _space(qualify, statement);
     for (final entry in surface.names.entries) {
-      if (!_keeps(entry.key, restricted)) continue;
+      if (!_keeps(entry.key, statement) || !_keeps(entry.key, filter)) continue;
       if (target.containsKey(entry.key)) {
         if (qualify != null) {
           error('E204', 'Two imports define ${entry.key}', statement);
@@ -1667,6 +1683,7 @@ class Analyzer {
       }
       final shape = surface.types[entry.key];
       if (shape != null) model.dartShapes[entry.key] = shape;
+      _bindNativeAlias(entry.key, entry.value, qualify);
       target[entry.key] = symbolForDart(entry.value, shape, home);
     }
   }
@@ -1731,7 +1748,47 @@ class Analyzer {
     _bindSurface(node, surface);
   }
 
+  DartSurface? _typedSurface;
+  final _typedTypeNames = <String, String>{};
+
+  DartSurface _nativeSurface(String uri, DartSurface surface) {
+    if (uri != 'dart:typed_data') return surface;
+    final cached = _typedSurface;
+    if (cached != null) return cached;
+    const prefix = '_qNativeTyped';
+    model.backendTypeImports[prefix] = uri;
+    for (final entry in surface.types.entries) {
+      final key = '@dart.typed.${entry.key}';
+      _typedTypeNames[entry.key] = key;
+      model.backendTypes[key] = '$prefix.${entry.key}';
+      model.internalTypes[key] =
+          Symbol(key, '$prefix.${entry.key}', key, external: true);
+    }
+    String canonical(String source) {
+      var mapped = source;
+      for (final entry in _typedTypeNames.entries) {
+        mapped = mapped.replaceAll(
+            RegExp('(?<![\\w.])${RegExp.escape(entry.key)}\\b'), entry.value);
+      }
+      return mapped;
+    }
+
+    final mapped = mapDartSurfaceTypes(surface, canonical);
+    for (final entry in mapped.types.entries) {
+      model.dartShapes[_typedTypeNames[entry.key]!] = entry.value;
+    }
+    _typedSurface = mapped;
+    return mapped;
+  }
+
+  void _bindNativeAlias(String name, DartTop top, String? prefix) {
+    if (!top.isType || !top.type.startsWith('@dart.typed.')) return;
+    model.aliases[prefix == null ? name : '$prefix.$name'] = top.type;
+  }
+
   void _bindSurface(ImportDeclaration node, DartSurface surface) {
+    surface = _nativeSurface(node.uri, surface);
+
     model.dartShapes.addAll(surface.types);
     if (node.show.isNotEmpty) {
       for (final name in node.show) {
@@ -1749,6 +1806,7 @@ class Analyzer {
       if (node.prefix == null && target.containsKey(name)) continue;
       final top = surface.names[name];
       if (top == null) continue;
+      _bindNativeAlias(name, top, node.prefix);
       target[name] = symbolForDart(top, surface.types[name]);
     }
   }
@@ -1967,9 +2025,13 @@ class Analyzer {
           if (exported == null) {
             fail('Unknown import: ${statement.uri}', statement);
           }
+          final restricted = _restrict(filter, statement);
+          if (((filter?.show.isNotEmpty ?? false) ||
+                  statement.show.isNotEmpty) &&
+              restricted.show.isEmpty) break;
           _importLibrary(exported, exportedPath,
               seen: visited,
-              filter: _restrict(filter, statement),
+              filter: restricted,
               qualify: qualify,
               check: false);
         case PartDirective() when !statement.of:
@@ -3470,12 +3532,12 @@ class Analyzer {
       error('E307', 'A readonly reference cannot be mutated', node.target);
     }
     final isMap = raw.startsWith('Map<');
-    if (!isMap && !raw.startsWith('List<')) {
+    if (!isMap && _listElement(raw) == null) {
       error('E300', 'Indexed assignment needs a List or Map', node.target);
     }
     final target = isMap
         ? _splitTypes(raw.substring(4, raw.length - 1))[1]
-        : raw.substring(5, raw.length - 1);
+        : _listElement(raw)!;
     final saved = _expected;
     _expected = target;
     final value = expression(node.value);
@@ -3667,6 +3729,15 @@ class Analyzer {
   var _assignPattern = false;
 
   String elementType(String type, Node node) {
+    final typed = _nativeShape(type)?.listElement;
+    if (typed != null) {
+      if (type.endsWith('?'))
+        error(
+            'E308',
+            'A nullable value is used where a non-null value is required',
+            node);
+      return typed;
+    }
     if (type.startsWith('List<') && type.endsWith('>')) {
       return type.substring(5, type.length - 1);
     }
@@ -3950,6 +4021,20 @@ class Analyzer {
     }
     if (from.contains(' | ')) {
       return from.split(' | ').every((arm) => compatible(arm.trim(), to));
+    }
+    final native = _nativeShape(from);
+    if (native != null &&
+        !from.startsWith('readonly ') &&
+        !from.endsWith('?')) {
+      if (native.supertypes.contains(to)) return true;
+      final element = native.listElement;
+      for (final prefix in ['List<', 'Iterable<']) {
+        if (element != null &&
+            to.startsWith(prefix) &&
+            to.endsWith('>') &&
+            _sameType(element, to.substring(prefix.length, to.length - 1)))
+          return true;
+      }
     }
     if (to == 'num' && (from == 'int' || from == 'double')) return true;
     if (to.endsWith('?')) {
@@ -4428,6 +4513,8 @@ class Analyzer {
   }
 
   String? _sequenceElement(String type) {
+    final native = _nativeShape(type)?.listElement;
+    if (native != null) return native;
     if (type.startsWith('List<') && type.endsWith('>')) {
       return type.substring(5, type.length - 1);
     }
@@ -4582,6 +4669,7 @@ class Analyzer {
     if (node.object is Identifier) {
       final owner = _scope.lookup((node.object as Identifier).name);
       if (owner != null && owner.namespace != null) {
+        _touch(owner);
         model.references[node.object] = owner;
         model.types[node.object] = 'prefix';
         final found = owner.namespace![node.name];
@@ -4610,6 +4698,7 @@ class Analyzer {
     final nested = model.references[node.object]?.namespace?[node.name];
     final owner = model.references[node.object];
     if (nested != null && owner?.type != 'prefix') {
+      if (owner != null) _touch(owner);
       model.references[node] = nested;
       return nested.type;
     }
@@ -4926,10 +5015,11 @@ class Analyzer {
     }
     final type = unwrap(raw.startsWith('readonly ') ? raw.substring(9) : raw);
     final indexType = expression(node.index);
-    if (type.startsWith('List<')) {
+    final listElement = _listElement(type);
+    if (listElement != null) {
       if (!compatible(indexType, 'int'))
         fail('List index must be int', node.index);
-      return _readonlyView(raw, type.substring(5, type.length - 1));
+      return _readonlyView(raw, listElement);
     }
     if (type.startsWith('Map<')) {
       final inner = type.substring(4, type.length - 1);
@@ -4966,6 +5056,9 @@ class Analyzer {
     bound(node.end);
     if (type == 'String') return 'String';
     if (type.startsWith('List<') && type.endsWith('>')) return type;
+    final native = _nativeShape(type);
+    if (native?.listElement != null)
+      return native!.members['sublist']?.type ?? 'List<${native.listElement}>';
     fail('Cannot slice $type', node);
   }
 
@@ -5309,7 +5402,8 @@ class Analyzer {
         memberType.startsWith('Map<') ||
         memberType.startsWith('Set<') ||
         memberType.startsWith('Iterable<') ||
-        _global.symbols[_genericHead(memberType)]?.classDeclaration != null) {
+        _global.symbols[_genericHead(memberType)]?.classDeclaration != null ||
+        _typedStorage(memberType)) {
       return 'readonly $memberType';
     }
     return memberType;
@@ -5883,6 +5977,7 @@ class Analyzer {
   }
 
   String _callPrefixed(CallExpression node, MemberAccess callee, Symbol owner) {
+    _touch(owner);
     final id = callee.object as Identifier;
     model.references[id] = owner;
     model.types[id] = 'prefix';
@@ -6027,6 +6122,17 @@ class Analyzer {
       }
       final objectType =
           nullableExtension ? objectTypeRaw : unwrap(objectTypeRaw);
+      if (rawObject.startsWith('readonly ') && _typedStorage(objectType)) {
+        final name = callee.name;
+        final shape = _nativeShape(objectType)!;
+        final safe = shape.listElement != null
+            ? !_mutating.contains(name) &&
+                !const {'setRange', 'setInt8', 'setUint8'}.contains(name)
+            : name.startsWith('get') || name.startsWith('as');
+        if (!safe)
+          error('E307', 'A readonly reference cannot be mutated', callee);
+      }
+
       final eventPayload = _eventPayload(objectType);
       if (eventPayload != null) {
         if (callee.name != 'add')
@@ -6064,12 +6170,29 @@ class Analyzer {
             return found.isEmpty ? null : found.single;
           }();
       if (resolved == null) {
+        if (_typedStorage(objectType) &&
+            _sdkMember(objectType, callee.name) != null) {
+          final result = _dartCall(objectType, callee.name, node);
+          if (result != null) {
+            return rawObject.startsWith('readonly ') &&
+                    callee.name.startsWith('as')
+                ? _readonlyView(rawObject, result)
+                : result;
+          }
+        }
         final builtin = _collectionCall(objectType, callee.name, node);
         if (builtin != null) return builtin;
         final number = _numberCall(objectType, callee.name, node);
         if (number != null) return number;
         final dartCall = _dartCall(objectType, callee.name, node);
-        if (dartCall != null) return dartCall;
+        if (dartCall != null) {
+          if (rawObject.startsWith('readonly ') &&
+              _typedStorage(objectType) &&
+              (callee.name.startsWith('as') || callee.name == 'sublistView')) {
+            return _readonlyView(rawObject, dartCall);
+          }
+          return dartCall;
+        }
         fail(
             _hinted('No method ${callee.name} on $objectType', callee.name,
                 _memberCandidates(objectType)),
@@ -6926,7 +7049,29 @@ class Analyzer {
     'Pointer',
   };
 
+  DartShape? _nativeShape(String type) {
+    final head = _dartHead(model.resolve(type));
+    if (_typeSymbol(head)?.classDeclaration != null) return null;
+    return model.dartShapes[head];
+  }
+
+  bool _typedStorage(String type) {
+    final resolved = model.resolve(type);
+    if (!_dartHead(resolved).startsWith('@dart.typed.')) return false;
+    final shape = _nativeShape(resolved);
+    return shape?.typedStorage ?? false;
+  }
+
+  String? _listElement(String type) {
+    if (type.startsWith('List<') && type.endsWith('>'))
+      return type.substring(5, type.length - 1);
+    return _nativeShape(type)?.listElement;
+  }
+
   (String, Map<String, String>)? _collectionVars(String type) {
+    final typedElement = _nativeShape(type)?.listElement;
+    if (typedElement != null) return ('List', {'T': typedElement});
+
     if (type.startsWith('List<') && type.endsWith('>')) {
       return ('List', {'T': type.substring(5, type.length - 1)});
     }
@@ -6966,6 +7111,10 @@ class Analyzer {
     return switch ((family, name)) {
       ('List', 'add') => ([('value', 'T')], 'void'),
       ('List', 'addAll') => ([('values', 'Iterable<T>')], 'void'),
+      ('List', 'setAll') => (
+          [('index', 'int'), ('values', 'Iterable<T>')],
+          'void'
+        ),
       ('List', 'insert') => ([('index', 'int'), ('value', 'T')], 'void'),
       ('List', 'insertAll') => (
           [('index', 'int'), ('values', 'Iterable<T>')],
@@ -7472,6 +7621,7 @@ class Analyzer {
     'fillRange',
     'replaceRange',
     'setAll',
+    'setRange',
     'removeRange',
   };
 
@@ -7498,7 +7648,7 @@ class Analyzer {
       if (outer == null) {
         fail(_hinted('Undefined symbol: $name', name, _visibleNames()), node);
       }
-      final copy = create(name, outer.type);
+      final copy = create(name, outer.type, readonly: outer.readonly);
       _scope.symbols[name] = copy;
       copies.add((outer, copy));
     }

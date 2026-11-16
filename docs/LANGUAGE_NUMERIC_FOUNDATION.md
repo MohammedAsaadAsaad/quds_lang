@@ -69,12 +69,21 @@ compiler cases and diagnostic spans. `test/index_assignment_web.quds` is
 compiled to JavaScript and executed with Node to check the same backend
 semantics. Commands and final observed results are in [VALIDATION.md](VALIDATION.md).
 
+## Delivery 2: native typed storage
+
+Implemented the concrete numeric storage bridge in `quds:core::typed`, also
+available from `quds:core`. Float32/64 and signed/unsigned 8/16/32-bit arrays,
+clamped bytes, ByteData, ByteBuffer, TypedData and Endian keep their Dart names.
+Copies, shared views, byte offsets, readonly runtime guards, source-visible
+native identities, generic Quds containers and existing List<double> math calls
+are covered by executable Quds tests and VM/JavaScript interoperability checks.
+See [CORE_TYPED_STORAGE.md](CORE_TYPED_STORAGE.md) for the exact scope and limits.
+
 ## Next foundation deliveries
 
-1. **Typed numeric storage and views.** Audit Dart typed-data interop, inherited
-   collection interfaces, indexing and mutation, then provide tested contiguous
-   buffers and views. Specify shared storage, offsets, alignment, bounds and
-   readonly behavior. Existing List/Map writes do not claim typed-buffer support.
+1. **Storage follow-up.** Concrete native storage and contiguous shared views
+   are delivered above. Strided/multidimensional storage, broader external
+   generic interfaces and performance measurements remain separate milestones.
 2. **Complete collection/type conformance.** Expand contextual inference,
    generic constraints, imported nominal types, nullable access and readonly
    boundaries using executable Quds programs. Keep invariant mutable collection

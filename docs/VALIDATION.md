@@ -759,3 +759,16 @@ No extra network domain is needed for the verified Docker-based SDK route.
 - Intermediate regression: stricter generic bounds exposed nullable lookup/removal
   signatures and concrete nullable inference. Both were corrected before the
   focused and full final runs. No failed result is being counted as a pass.
+
+## 2026-11-16 — L3.3 readonly paths
+
+- `dart format .`: 48 files (one formatting change before the final run).
+- `dart analyze`: no issues.
+- `dart test test/readonly_paths_test.dart test/index_assignment_test.dart test/typed_storage_test.dart test/generic_methods_test.dart --reporter expanded`: **82 passed**, zero failures/skips, 45 seconds.
+- `dart test --reporter expanded`: **459 passed**, zero failures/skips, **7m56s**.
+- Six new Quds declarations; negative programs and original spans; nested
+  List/Map/nullable/dynamic/callback mutation attempts on VM and JavaScript.
+- An earlier full run was interrupted to retain the standard scalar-leaf
+  UnmodifiableListView path. It is not counted as a completed validation.
+- See READONLY_PATHS.md for unsupported custom-class runtime proxies, mutable
+  Set elements and Map keys. No universal runtime readonly guarantee is claimed.

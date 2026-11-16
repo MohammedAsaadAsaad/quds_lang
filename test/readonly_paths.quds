@@ -1,0 +1,53 @@
+class Counter:
+  var count: int = 1
+  increment():
+    count += 1
+  readonly read() -> int = count
+class Child extends Counter:
+  tag: int = 0
+class Container<T>:
+  values: List<T> required
+  readonly read() -> readonly List<T> = values
+identity<T>(value: T) -> T = value
+
+test "readonly class reads preserve other mutable aliases":
+  owner = Child()
+  view: readonly Child = owner
+  expect(view.read(), 1)
+  owner.increment()
+  expect(view.read(), 2)
+
+test "readonly inherited generic reads preserve nested aliases":
+  values = [[1]]
+  owner = Container<List<int>>(values: values)
+  view: readonly Container<List<int>> = owner
+  expect(view.read()[0][0], 1)
+  values[0][0] = 2
+  expect(view.read()[0][0], 2)
+
+test "readonly collection iteration is supported":
+  values: readonly List<List<int>> = [[1], [2]]
+  var total = 0
+  for row in values:
+    total += row[0]
+  expect(total, 3)
+
+test "readonly callbacks can read collection elements":
+  values: readonly List<List<int>> = [[1], [2]]
+  sizes = values.map((row: readonly List<int>) -> row.length)
+  expect(sizes, [1, 1])
+
+test "new outer copies preserve readonly element references":
+  original = [[1]]
+  values: readonly List<List<int>> = original
+  copy = values.toList()
+  copy.add([2])
+  expect(copy.length, 2)
+  expect(original.length, 1)
+  original[0][0] = 3
+  expect(copy[0][0], 3)
+
+test "casts and identity retain readonly while allowing safe reads":
+  values: readonly List<int> = [1]
+  view = identity(values as List<int>)
+  expect(view[0], 1)

@@ -3980,6 +3980,9 @@ class Analyzer {
   var _assignPattern = false;
 
   String elementType(String type, Node node) {
+    if (type.startsWith('readonly ')) {
+      return _readonlyView(type, elementType(type.substring(9), node));
+    }
     final typed = _nativeShape(type)?.listElement;
     if (typed != null) {
       if (isNullableType(type))
@@ -4231,7 +4234,11 @@ class Analyzer {
   bool compatible(String from, String to) {
     from = model.resolve(from);
     to = model.resolve(to);
-    if (from == to || from == '*' || to == 'dynamic') return true;
+    if (from == to || from == '*') return true;
+    if ((to == 'dynamic' || to == 'Object' || to == 'Object?') &&
+        from.startsWith('readonly ') &&
+        !_readonlyBoundarySafe(from)) return false;
+    if (to == 'dynamic') return true;
     if (to == 'Object?' && from != 'void') return true;
     final variable = unwrap(from);
     if (_typeNames.contains(variable) &&
@@ -4252,6 +4259,8 @@ class Analyzer {
         _checkingBounds.remove(pair);
       }
     }
+    if (from.startsWith('readonly ') && !to.startsWith('readonly '))
+      return false;
     final fromClass = _typeSymbol(from)?.classDeclaration;
     final toClass = _typeSymbol(to)?.classDeclaration;
     if (fromClass != null && identical(fromClass, toClass)) return true;
@@ -5147,7 +5156,7 @@ class Analyzer {
           node.nullAware || isNullableType(type) ? 'int?' : 'int';
       return _readonlyView(raw, lengthType);
     }
-    if (base == 'dynamic') return 'dynamic';
+    if (base == 'dynamic') return _readonlyView(raw, 'dynamic');
     final look = nullableExtension ? type : (_typeBounds[base] ?? base);
     if (look.contains(' & ')) {
       for (final part in look.split(' & ')) {
@@ -5192,6 +5201,17 @@ class Analyzer {
       final extensions = classOwns
           ? const <FunctionDeclaration>[]
           : _extensions(look, node.name);
+      final accessedMethod =
+          declaration == null ? null : _method(declaration, node.name);
+      final accessedExtension =
+          extensions.length == 1 ? extensions.single : null;
+      final readMethod = accessedMethod ?? accessedExtension;
+      if (raw.startsWith('readonly ') &&
+          readMethod != null &&
+          !readMethod.readonlyMethod) {
+        error('E307', 'A readonly reference cannot expose a mutating method',
+            node);
+      }
       final extensionSymbol =
           extensions.length == 1 ? model.declarations[extensions.single] : null;
       if (extensionSymbol != null) {
@@ -5882,6 +5902,38 @@ class Analyzer {
     _promoted.remove(name);
   }
 
+  // Only these shapes have a runtime view that can cross an erased boundary.
+  bool _readonlyBoundarySafe(String type) {
+    type = model.resolve(type).replaceFirst('readonly ', '');
+    if (isNullableType(type)) return _readonlyBoundarySafe(unwrap(type));
+    if (const {'int', 'double', 'num', 'bool', 'String', 'Null', 'Never'}
+        .contains(type)) return true;
+    if (_typedStorage(type)) return true;
+    final head = _genericHead(type);
+    if (head == type || !type.endsWith('>')) return false;
+    final args = _splitTypes(type.substring(head.length + 1, type.length - 1));
+    if (head == 'List' || head == 'Iterable')
+      return args.length == 1 && _readonlyBoundarySafe(args[0]);
+    if (head == 'Set')
+      return args.length == 1 &&
+          const {'int', 'double', 'num', 'bool', 'String'}.contains(args[0]);
+    if (head == 'Map')
+      return args.length == 2 &&
+          const {'int', 'double', 'num', 'bool', 'String'}
+              .contains(unwrap(args[0])) &&
+          _readonlyBoundarySafe(args[1]);
+    return false;
+  }
+
+  void _checkReadonlyEscape(String type, Node node) {
+    if (type.startsWith('readonly ') && !_readonlyBoundarySafe(type)) {
+      error(
+          'E910',
+          'This readonly shape has no runtime guard for an erased or Dart boundary',
+          node);
+    }
+  }
+
   String _readonlyView(String receiver, String memberType) {
     if (!receiver.startsWith('readonly ') ||
         memberType.startsWith('readonly ')) {
@@ -5903,14 +5955,14 @@ class Analyzer {
         _typedStorage(memberType)) {
       return 'readonly $memberType';
     }
-    return memberType;
+    return 'readonly $memberType';
   }
 
   String typeTest(TypeTestExpression node) {
     final value = expression(node.operand);
     if (value == 'void') fail('Void expressions cannot be operands', node);
     validateType(node.type, node, allowVoid: false);
-    if (node.operator == 'as') return node.type;
+    if (node.operator == 'as') return _readonlyView(value, node.type);
     return 'bool';
   }
 
@@ -6467,7 +6519,7 @@ class Analyzer {
     model.references[node.callee] = symbol;
     _touch(symbol);
     for (final argument in node.arguments) {
-      expression(argument.value);
+      _checkReadonlyEscape(expression(argument.value), argument);
     }
     if (symbol.type.isEmpty || symbol.type == 'dynamic') return 'dynamic';
     return symbol.type;
@@ -6647,6 +6699,11 @@ class Analyzer {
         return 'void';
       }
       if (objectType == 'dynamic') {
+        if (rawObject.startsWith('readonly ') && callee.name != 'toString')
+          error(
+              'E307',
+              'A readonly dynamic reference cannot call an unclassified method',
+              callee);
         return _passExternal(
             node, Symbol(callee.name, callee.name, 'dynamic', external: true));
       }
@@ -6681,10 +6738,19 @@ class Analyzer {
                 : result;
           }
         }
-        final builtin = _collectionCall(objectType, callee.name, node);
+        final builtin = _collectionCall(objectType, callee.name, node,
+            readonly: rawObject.startsWith('readonly '));
         if (builtin != null) return builtin;
         final number = _numberCall(objectType, callee.name, node);
         if (number != null) return number;
+        if (rawObject.startsWith('readonly ') &&
+            !_typedStorage(objectType) &&
+            callee.name != 'toString') {
+          error(
+              'E307',
+              'A readonly reference cannot call an unclassified Dart method',
+              callee);
+        }
         final dartCall = _dartCall(objectType, callee.name, node);
         if (dartCall != null) {
           if (rawObject.startsWith('readonly ') &&
@@ -6707,6 +6773,10 @@ class Analyzer {
             resolved.isStatic
                 ? 'Static member ${callee.name} is used on an instance'
                 : 'Instance member ${callee.name} is used on the type',
+            callee);
+      }
+      if (rawObject.startsWith('readonly ') && !resolved.readonlyMethod) {
+        error('E307', 'A readonly reference may only call readonly methods',
             callee);
       }
       final functionResolved = resolved;
@@ -7862,10 +7932,16 @@ class Analyzer {
     return _subst(shape, vars);
   }
 
-  String? _collectionCall(String type, String name, CallExpression node) {
+  String? _collectionCall(String type, String name, CallExpression node,
+      {bool readonly = false}) {
     final found = _collectionVars(type);
     if (found == null) return null;
-    final (family, vars) = found;
+    final family = found.$1;
+    final vars = {
+      for (final entry in found.$2.entries)
+        entry.key:
+            readonly ? _readonlyView('readonly this', entry.value) : entry.value
+    };
     if (family == 'String') {
       final text = _textCall(name, node);
       if (text != null) return text;
@@ -8309,8 +8385,8 @@ class Analyzer {
   }
 
   String conversion(ConversionExpression node) {
-    final source =
-        unwrap(expression(node.operand).replaceFirst('readonly ', ''));
+    final raw = expression(node.operand);
+    final source = unwrap(raw.replaceFirst('readonly ', ''));
     final target = isNullableType(node.type)
         ? node.type.substring(0, node.type.length - 1)
         : node.type;
@@ -8318,8 +8394,8 @@ class Analyzer {
     if (source != target && !_convertible(source, target)) {
       error('E300', 'Cannot convert $source to $target', node);
     }
-    if (!node.safe) return node.type;
-    return isNullableType(node.type) ? node.type : '${node.type}?';
+    final result = node.safe ? nullableType(node.type) : node.type;
+    return source == target ? _readonlyView(raw, result) : result;
   }
 
   bool _convertible(String from, String to) {

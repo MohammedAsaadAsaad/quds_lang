@@ -71,6 +71,8 @@ class DartEmitter {
   var _useChecks = false;
   var _useConfig = false;
   var _useReadonly = false;
+  var _useReadonlyList = false;
+  var _useReadonlyMap = false;
   String? _returnView;
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
@@ -668,6 +670,32 @@ class DartEmitter {
         ..writeln("import 'dart:core';")
         ..writeln("import 'dart:core' as _quds_core;");
     }
+    if (_useReadonlyList) {
+      helpers.writeln(r'''class _QudsReadonlyList<E> extends ListBase<E> {
+  _QudsReadonlyList(this._source, this._read);
+  final List<E> _source;
+  final E Function(E) _read;
+  int get length => _source.length;
+  set length(int value) => throw UnsupportedError('readonly list');
+  E operator [](int index) => _read(_source[index]);
+  void operator []=(int index, E value) => throw UnsupportedError('readonly list');
+}''');
+    }
+    if (_useReadonlyMap) {
+      helpers.writeln(r'''class _QudsReadonlyMap<K, V> extends MapBase<K, V> {
+  _QudsReadonlyMap(this._source, this._read);
+  final Map<K, V> _source;
+  final V Function(V) _read;
+  Iterable<K> get keys => _source.keys;
+  V? operator [](Object? key) {
+    final value = _source[key];
+    return value == null ? null : _read(value);
+  }
+  void operator []=(K key, V value) => throw UnsupportedError('readonly map');
+  V? remove(Object? key) => throw UnsupportedError('readonly map');
+  void clear() => throw UnsupportedError('readonly map');
+}''');
+    }
     if (_useReadonly) {
       prelude.writeln("import 'dart:collection';");
     }
@@ -1017,19 +1045,51 @@ class DartEmitter {
     if (!type.startsWith('readonly ')) return null;
     if (_typedReadonlySuffix(type) != null) return '@typed:$type';
     final inner = type.substring(9);
-    if (inner.startsWith('List<') && inner.endsWith('>')) {
-      return 'UnmodifiableListView<${_dartType(inner.substring(5, inner.length - 1))}>';
+    final bare = nonNullableType(inner);
+    if (bare.startsWith('List<') ||
+        bare.startsWith('Map<') ||
+        bare.startsWith('Set<') ||
+        bare.startsWith('Iterable<')) {
+      final value = '_qr';
+      return '((${_dartType(type)} $value) => ${_readonlyGuard(type, value)})';
     }
-    if (inner.startsWith('Set<') && inner.endsWith('>')) {
-      return 'UnmodifiableSetView<${_dartType(inner.substring(4, inner.length - 1))}>';
+    return null;
+  }
+
+  String _readonlyGuard(String type, String value) {
+    if (!type.startsWith('readonly ')) type = 'readonly $type';
+    if (_typedReadonlySuffix(type) != null) return _typedReadonly(type, value);
+    final inner = type.substring(9);
+    if (isNullableType(inner)) {
+      final guarded =
+          _readonlyGuard('readonly ${nonNullableType(inner)}', '_qn');
+      return '((${_dartType(inner)} _qn) => _qn == null ? null : $guarded)($value)';
+    }
+    if (inner.startsWith('List<') && inner.endsWith('>')) {
+      _useReadonly = true;
+      final element = inner.substring(5, inner.length - 1);
+      final read = _readonlyGuard(element, '_qe');
+      if (read == '_qe')
+        return 'UnmodifiableListView<${_dartType(element)}>($value)';
+      _useReadonlyList = true;
+      return '_QudsReadonlyList<${_dartType(element)}>($value, (_qe) => $read)';
     }
     if (inner.startsWith('Map<') && inner.endsWith('>')) {
       final parts = _splitTypeArgs(inner.substring(4, inner.length - 1));
-      if (parts.length == 2) {
-        return 'UnmodifiableMapView<${_dartType(parts[0])}, ${_dartType(parts[1])}>';
-      }
+      _useReadonly = true;
+      _useReadonlyMap = true;
+      return '_QudsReadonlyMap<${_dartType(parts[0])}, ${_dartType(parts[1])}>($value, '
+          '(_qe) => ${_readonlyGuard(parts[1], '_qe')})';
     }
-    return null;
+    if (inner.startsWith('Set<') && inner.endsWith('>')) {
+      _useReadonly = true;
+      return 'UnmodifiableSetView<${_dartType(inner.substring(4, inner.length - 1))}>($value)';
+    }
+    if (inner.startsWith('Iterable<') && inner.endsWith('>')) {
+      final element = inner.substring(9, inner.length - 1);
+      return '$value.map<${_dartType(element)}>((_qe) => ${_readonlyGuard(element, '_qe')})';
+    }
+    return value;
   }
 
   List<String> _splitTypeArgs(String text) => splitTypeList(text);
@@ -2502,13 +2562,12 @@ class DartEmitter {
     }
     final typedReadonly = model.types[node];
     if (typedReadonly != null &&
-        _typedReadonlySuffix(typedReadonly) != null &&
+        _readonlyBoundary(typedReadonly) != null &&
         _typedReadonlyEmitting.add(node)) {
       try {
-        return _typedReadonly(
-            typedReadonly,
-            expression(node,
-                constantContext: constantContext, opaqueBool: opaqueBool));
+        final value = expression(node,
+            constantContext: constantContext, opaqueBool: opaqueBool);
+        return _readonlyGuard(typedReadonly, value);
       } finally {
         _typedReadonlyEmitting.remove(node);
       }
@@ -3703,6 +3762,16 @@ class DartEmitter {
   }
 
   String _convert(ConversionExpression node) {
+    final sourceType = model.types[node.operand]!;
+    final bareSource =
+        nonNullableType(sourceType.replaceFirst('readonly ', ''));
+    final bareTarget = nonNullableType(node.type.replaceFirst('readonly ', ''));
+    if (bareSource == bareTarget &&
+        !const {'int', 'double', 'num', 'String', 'bool'}
+            .contains(bareSource)) {
+      final cast = node.safe ? nullableType(node.type) : node.type;
+      return '(${expression(node.operand)} as ${_dartType(cast)})';
+    }
     _useConversion = true;
     final target = node.type.endsWith('?')
         ? node.type.substring(0, node.type.length - 1)

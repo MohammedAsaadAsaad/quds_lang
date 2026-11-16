@@ -1,0 +1,7 @@
+nested(values: List<List<int>>) -> readonly List<List<int>> = values
+nestedMap(values: Map<String, List<int>>) -> readonly Map<String, List<int>> = values
+nullable(values: List<List<int>>?) -> readonly List<List<int>>? = values
+throughDynamic(values: List<List<int>>) -> dynamic:
+  view: readonly List<List<int>> = values
+  return view
+consume(values: readonly List<List<int>>, probe: (dynamic) -> bool) -> bool = probe(values)

@@ -24,6 +24,9 @@ jobs:
           dart run bin/quds.dart test test/math_weighted_graph.quds
           dart run bin/quds.dart test test/math_flow.quds
           dart run bin/quds.dart test test/math_plan.quds
+          dart run bin/quds.dart test test/math_symbolic.quds
+          dart run bin/quds.dart test test/math_symbolic_imports.quds
+          dart run bin/quds.dart test test/math_symbolic_reference.quds
           dart run bin/quds.dart test test/math_exact.quds
           dart run bin/quds.dart test test/math_exact_reference.quds
           dart run bin/quds.dart test test/math_autodiff.quds

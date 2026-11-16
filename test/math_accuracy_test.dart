@@ -69,6 +69,11 @@ void main() {
   final overflow=m.realInterval(1e308,1e308)+m.realInterval(1e308,1e308);
   if (overflow.low!=1.7976931348623157e308 || overflow.high!=double.infinity) throw 'interval overflow';
   if (!(m.realInterval(1.0,1.0)/m.realInterval(3.0,3.0)).contains(1/3)) throw 'interval division';
+  final sx=m.exprSymbol('x');
+  final sz=m.exprNumber(m.bigFraction(BigInt.zero,BigInt.one));
+  final so=m.exprNumber(m.bigFraction(BigInt.one,BigInt.one));
+  if (m.simplifyExpr(m.exprMultiply(sz,m.exprDivide(so,sx))).kind!='multiply') throw 'symbolic domain';
+  if (m.exprText(m.deriveExpr(m.exprPower(sx,sz),'x'))!='0/1') throw 'symbolic zero-power derivative';
   print('WEB MATH OK');
 }
 ''');

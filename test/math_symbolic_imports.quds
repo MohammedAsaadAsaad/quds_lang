@@ -1,0 +1,17 @@
+use quds:math::symbolic as symbolic
+
+class BigFraction:
+  value: int required
+
+class _PhaseState:
+  value: int required
+
+test "symbolic sections validate hidden sibling types in their own library":
+  x = symbolic.exprSymbol("x")
+  expect(symbolic.exprText(x), "x")
+  expect(symbolic.exprText(symbolic.exprSqrt(x)), "(sqrt(x))")
+  own = _PhaseState(value: 7)
+  expect(own.value, 7)
+  expect(x.number.numerator.toString(), "0")
+  ownFraction = BigFraction(value: 11)
+  expect(ownFraction.value, 11)

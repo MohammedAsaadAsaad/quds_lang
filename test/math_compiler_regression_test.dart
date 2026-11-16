@@ -4,6 +4,52 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('deep single-signature calls do not reanalyze argument subtrees', () {
+    var expression = '0';
+    for (var depth = 0; depth < 40; depth++) {
+      expression = 'increment($expression)';
+    }
+    final result = compile('increment(x: int) -> int = x + 1\n'
+        'main():\n  print $expression\n');
+    expect(result.dart, contains('void main()'));
+    expect(result.dart, isNotEmpty);
+  });
+
+  test('section class dependencies stay in the imported library scope', () {
+    expect(() => compile('''
+use quds:math::symbolic as symbolic
+class BigFraction:
+  value: int required
+class _PhaseState:
+  value: int required
+main():
+  x = symbolic.exprSymbol("x")
+  print x.number.numerator.toString()
+  print BigFraction(value: 7).value
+  print _PhaseState(value: 9).value
+'''), returnsNormally);
+    expect(() => compile('''
+use quds:math::symbolic as symbolic
+main():
+  print symbolic.exprSymbol("x")
+  print BigFraction()
+'''), throwsA(predicate((e) => '$e'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::symbolic as symbolic
+main():
+  print symbolic.exprSymbol("x")
+  print _PhaseState()
+'''), throwsA(predicate((e) => '$e'.contains('E200'))));
+    expect(() => compile('''
+use quds:math::symbolic as symbolic
+class BigFraction:
+  value: int required
+main():
+  own = BigFraction(value: 7)
+  print symbolic.Expr(kind: "number", name: "", number: own, arguments: [])
+'''), throwsA(predicate((e) => '$e'.contains('E500'))));
+  });
+
   test('SDK sections and whole imports share declaration identity', () {
     final result = compile('''
 use quds:math::scalar as scalar

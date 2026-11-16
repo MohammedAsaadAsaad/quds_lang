@@ -30,6 +30,7 @@ All **380** public top-level functions now have a Quds call site.
 [Forward AD](MATH_AUTODIFF.md) adds 598 value/derivative reference cases.
 [Exact planar geometry](MATH_GEOMETRY.md) adds 738 reference cases.
 [Binary64 and interval arithmetic](MATH_INTERVAL.md) adds 1138 reference cases.
+[Symbolic polynomial calculus](MATH_SYMBOLIC.md) adds 1475 exact reference cases.
 [Integer flow and matching](MATH_FLOW.md) adds 58012 flow checks on 4164 networks and 5040 matching checks on 682 graphs.
 [The remaining numbered plan](MATH_PLAN.md) adds Hessian, log-probability, phase-I linear programming, a once-built sparse pattern, named-rounding decimal, outward intervals, reverse-mode gradients, weighted and bootstrap statistics, a stiff-step rejection, window-sum STFT, a symbolic expression tree, tensors, prime fields, and triangle Euler characteristic. The family ledger is [MATH_CONTRACTS.md](MATH_CONTRACTS.md).
 Weighted graph contracts and their Quds oracles are in [MATH_WEIGHTED_GRAPH.md](MATH_WEIGHTED_GRAPH.md). This is still

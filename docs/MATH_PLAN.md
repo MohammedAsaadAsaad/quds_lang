@@ -77,9 +77,9 @@ A constant signal of amplitude 1 then has DC real part 1. Partial frames are not
 ## 14. Symbolic expressions
 
 `Expr` is a data tree (`number`, `symbol`, `add`, `subtract`, `multiply`, `divide`, `power`, `sqrt`, `sin`). It is not the language parser.
-`simplifyExpr` folds constants and the identities `+0`, `-0`, `*0`, and `*1`. It does not rewrite `sqrt(x*x)` or `x/x`.
+`simplifyExpr` folds constants and the identities `+0`, `-0`, and `*1`. It folds `*0` only when the other operand is proved total, preserving the domain of `1/x`, roots and negative powers. It does not rewrite `sqrt(x*x)` or `x/x`.
 `deriveExpr` differentiates polynomials and products. `sin` and other unsupported forms throw `symbolic derivative is not supported`.
-`integratePolynomial` integrates one polynomial of degree at most 16 and throws `symbolic integral is not supported` otherwise. The constant of integration is omitted.
+`integratePolynomial` integrates one polynomial of degree at most 16 and throws `symbolic integral is not supported` otherwise. The constant of integration is omitted. The stronger domain contracts and independent reference tests are in [MATH_SYMBOLIC.md](MATH_SYMBOLIC.md).
 
 ## 15. Tensors, prime fields, triangles
 

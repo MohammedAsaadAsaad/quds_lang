@@ -1,5 +1,43 @@
 # Compiler validation — latest 2026-11-16
 
+## Symbolic domain audit and imported sibling types — 2026-11-16
+
+Public math functions remain **380**. Contracts and limitations:
+[MATH_SYMBOLIC.md](MATH_SYMBOLIC.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds symbolic reference suite | **1475 exact cases passed on 59 polynomials**, including dense degrees 9, 12 and 16 at five rational points |
+| Hand-written Quds symbolic suite | **Eight declarations passed**: singular domains, safe identities, zero powers, zero/cancelling polynomials, exactly-once nested calls and degree/work boundaries |
+| Quds section import suite | Passed with hidden sibling BigFraction metadata and distinct caller BigFraction / private _PhaseState classes |
+| Focused compiler regression suite | **Nine passed**: forty nested calls, hidden type rejection, foreign constructor types and existing compiler guards |
+| Final `dart test --reporter expanded` | **274 passed; zero failures; zero skips** |
+| `dart analyze` | No issues |
+| Final `dart format --output=none --set-exit-if-changed .` | 39 files; zero pending changes |
+| JavaScript + Node | Symbolic domain and zero-power checks passed alongside all existing math/graph interoperability checks |
+| Repeated generators and SDK synchronization | Five artifacts byte-identical, including the supplemental Dart reference fixture |
+| `git diff --check` | Passed |
+
+The initial Quds repro showed `0*(1/x)` incorrectly simplify to zero, and the
+documented degree-16 integration case incorrectly throw unsupported above
+exponent 8. Zero products now require a conservative totality proof; powers up
+to 16 honor the integration contract. Zero-power differentiation explicitly
+avoids introducing a reciprocal singularity as that proof becomes stricter.
+
+Class signatures are validated in the defining library, and foreign field /
+constructor types retain nominal identity. Private SDK metadata uses internal
+keys rather than colliding with caller private class names. Successful argument
+checks are reused locally; competing overload trials retain their selected
+contextual check. The new polynomial oracle only evaluates trees and compares
+against Python Fraction formulas, rather than differentiating/integrating its
+own expected AST.
+
+An intermediate full run before adding the upper-degree references had 273
+passes and the existing empty-frame debugger skip. The final stable tree above
+passed all 274 tests without skips. No debugger retry or suppression was added;
+this result does not establish that the pre-existing adapter race is fixed.
+
+
 ## Integrated binary64 / interval delivery — 2026-11-16
 
 Integrated with `a5f1e6e`, preserving the concurrent library sections, flow,

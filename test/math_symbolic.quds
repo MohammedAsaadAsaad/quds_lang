@@ -1,0 +1,82 @@
+use quds:math
+
+test "zero polynomial integrates to zero":
+  zero = exprNumber(bigFraction(BigInt.zero, BigInt.one))
+  expect(exprText(integratePolynomial(zero, "x")), "0/1")
+
+test "zero multiplication retains the domain of a reciprocal":
+  zero = exprNumber(bigFraction(BigInt.zero, BigInt.one))
+  one = exprNumber(bigFraction(BigInt.one, BigInt.one))
+  reciprocal = exprDivide(one, exprSymbol("x"))
+  expect(simplifyExpr(exprMultiply(zero, reciprocal)).kind, "multiply")
+
+test "zero multiplication preserves square-root and negative-power domains":
+  zero = exprNumber(bigFraction(BigInt.zero, BigInt.one))
+  x = exprSymbol("x")
+  root = exprSqrt(x)
+  reciprocal = exprPower(x, exprNumber(bigFraction(-BigInt.one, BigInt.one)))
+  expect(simplifyExpr(exprMultiply(zero, root)).kind, "multiply")
+  expect(simplifyExpr(exprMultiply(root, zero)).kind, "multiply")
+  expect(simplifyExpr(exprMultiply(zero, reciprocal)).kind, "multiply")
+  expect(simplifyExpr(exprMultiply(exprDivide(x, x), zero)).kind, "multiply")
+  expect(simplifyExpr(exprMultiply(zero, exprSqrt(exprNumber(bigFraction(-BigInt.one, BigInt.one))))).kind, "multiply")
+
+test "zero multiplication still simplifies provably total expressions":
+  zero = exprNumber(bigFraction(BigInt.zero, BigInt.one))
+  one = exprNumber(bigFraction(BigInt.one, BigInt.one))
+  two = exprNumber(bigFraction(BigInt.from(2), BigInt.one))
+  x = exprSymbol("x")
+  expect(exprText(simplifyExpr(exprMultiply(zero, x))), "0/1")
+  expect(exprText(simplifyExpr(exprMultiply(exprSin(x), zero))), "0/1")
+  expect(exprText(simplifyExpr(exprMultiply(zero, exprPower(x, two)))), "0/1")
+  expect(exprText(simplifyExpr(exprMultiply(exprDivide(x, two), zero))), "0/1")
+  expect(exprText(simplifyExpr(exprMultiply(zero, exprSqrt(one)))), "0/1")
+
+test "zero-power derivative does not introduce a reciprocal singularity":
+  zero = exprNumber(bigFraction(BigInt.zero, BigInt.one))
+  one = exprNumber(bigFraction(BigInt.one, BigInt.one))
+  x = exprSymbol("x")
+  expect(exprText(deriveExpr(exprPower(x, zero), "x")), "0/1")
+  expect(exprText(deriveExpr(exprPower(exprSin(x), zero), "x")), "0/1")
+  restrictedPower = exprPower(exprDivide(one, x), zero)
+  unsupported() -> Expr = deriveExpr(restrictedPower, "x")
+  expect(unsupported, throwsA(equals("symbolic derivative is not supported")))
+
+test "constant singularities reject before annihilation and existing guards stay":
+  zero = exprNumber(bigFraction(BigInt.zero, BigInt.one))
+  one = exprNumber(bigFraction(BigInt.one, BigInt.one))
+  singular() -> Expr = simplifyExpr(exprMultiply(zero, exprDivide(one, zero)))
+  expect(singular, throwsA(equals("division by zero")))
+  x = exprSymbol("x")
+  expect(exprText(simplifyExpr(exprDivide(x, x))), "(x/x)")
+  expect(exprText(simplifyExpr(exprSqrt(exprMultiply(x, x)))), "(sqrt((x*x)))")
+  expect(exprText(integratePolynomial(exprSubtract(x, x), "x")), "0/1")
+
+class _SymbolicHits:
+  var value: int = 0
+
+_symbolicStep(value: int, counter: _SymbolicHits) -> int:
+  counter.value += 1
+  return value + 1
+
+test "deep argument trees execute every nested call exactly once":
+  counter = _SymbolicHits()
+  expect(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(_symbolicStep(0, counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), counter), 20)
+  expect(counter.value, 20)
+
+test "polynomial integration honors the documented degree sixteen limit":
+  x = exprSymbol("x")
+  highPower = exprPower(x, exprNumber(bigFraction(BigInt.from(16), BigInt.one)))
+  integral = integratePolynomial(highPower, "x")
+  expect(integral.kind, "multiply")
+  expect(integral.arguments[0].number.numerator.toString(), "1")
+  expect(integral.arguments[0].number.denominator.toString(), "17")
+  expect(integral.arguments[1].arguments[1].number.numerator.toString(), "17")
+  overExponent() -> Expr = integratePolynomial(exprPower(x, exprNumber(bigFraction(BigInt.from(17), BigInt.one))), "x")
+  overDegree() -> Expr = integratePolynomial(exprMultiply(highPower, x), "x")
+  otherSymbol() -> Expr = integratePolynomial(exprSymbol("y"), "x")
+  fractionalPower() -> Expr = integratePolynomial(exprPower(x, exprNumber(bigFraction(BigInt.one, BigInt.from(2)))), "x")
+  expect(overExponent, throwsA(equals("symbolic integral is not supported")))
+  expect(overDegree, throwsA(equals("symbolic polynomial exceeds the work limit")))
+  expect(otherSymbol, throwsA(equals("symbolic integral is not supported")))
+  expect(fractionalPower, throwsA(equals("symbolic integral is not supported")))

@@ -9312,8 +9312,9 @@ exprSqrt(value: Expr) -> Expr = _exprNode("sqrt", [value])
 
 exprSin(value: Expr) -> Expr = _exprNode("sin", [value])
 
-# Constant folding and the identities +0, -0, *1, and *0. No cancellation of
-# a symbol with itself and no removal of a square root.
+# Constant folding and the identities +0, -0, *1. Multiplication by zero
+# collapses only when the other operand is defined for all real assignments.
+# No cancellation of a symbol with itself and no removal of a square root.
 simplifyExpr(expr: Expr) -> Expr:
   if expr.kind == "number" or expr.kind == "symbol": return expr
   arguments: List<Expr> = []
@@ -9330,7 +9331,8 @@ simplifyExpr(expr: Expr) -> Expr:
       if _exprIsNumber(right, _exprZero()): return left
       if left.kind == "number" and right.kind == "number": return exprNumber(left.number - right.number)
     if expr.kind == "multiply":
-      if _exprIsNumber(left, _exprZero()) or _exprIsNumber(right, _exprZero()): return exprNumber(_exprZero())
+      if _exprIsNumber(left, _exprZero()) and _exprEverywhere(right): return exprNumber(_exprZero())
+      if _exprIsNumber(right, _exprZero()) and _exprEverywhere(left): return exprNumber(_exprZero())
       if _exprIsNumber(left, _exprOne()): return right
       if _exprIsNumber(right, _exprOne()): return left
       if left.kind == "number" and right.kind == "number": return exprNumber(left.number * right.number)
@@ -9343,6 +9345,28 @@ simplifyExpr(expr: Expr) -> Expr:
       if left.kind == "number" and right.kind == "number" and right.number.denominator == BigInt.one:
         return exprNumber(_exprPowerNumber(left.number, right.number.numerator))
   return Expr(kind: expr.kind, name: expr.name, number: expr.number, arguments: arguments)
+
+# A conservative proof of totality on finite real assignments. Unknown and
+# potentially partial operations retain their domain by staying in the tree.
+_exprEverywhere(node: Expr) -> bool:
+  if node.kind == "number": return node.number.denominator != BigInt.zero
+  if node.kind == "symbol": return true
+  if node.kind == "sin":
+    return node.arguments.length == 1 and _exprEverywhere(node.arguments[0])
+  if node.kind == "sqrt":
+    if node.arguments.length != 1: return false
+    argument = node.arguments[0]
+    return argument.kind == "number" and argument.number.denominator != BigInt.zero and argument.number.compareTo(_exprZero()) >= 0
+  if node.arguments.length != 2: return false
+  left = node.arguments[0]
+  right = node.arguments[1]
+  if node.kind == "add" or node.kind == "subtract" or node.kind == "multiply":
+    return _exprEverywhere(left) and _exprEverywhere(right)
+  if node.kind == "divide":
+    return _exprEverywhere(left) and right.kind == "number" and right.number.denominator != BigInt.zero and right.number.numerator != BigInt.zero
+  if node.kind == "power":
+    return _exprEverywhere(left) and right.kind == "number" and right.number.denominator == BigInt.one and right.number.numerator >= BigInt.zero
+  return false
 
 # Formal derivative in [variable]. sqrt and unknown kinds throw.
 deriveExpr(expr: Expr, variable: String) -> Expr:
@@ -9360,6 +9384,9 @@ deriveExpr(expr: Expr, variable: String) -> Expr:
     exponent = expr.arguments[1]
     if exponent.kind != "number" or exponent.number.denominator != BigInt.one: throw "symbolic derivative is not supported"
     base = expr.arguments[0]
+    if exponent.number.numerator == BigInt.zero:
+      if not _exprEverywhere(base): throw "symbolic derivative is not supported"
+      return exprNumber(_exprZero())
     power = exprNumber(bigFraction(exponent.number.numerator - BigInt.one, BigInt.one))
     factor = exprNumber(exponent.number)
     return simplifyExpr(exprMultiply(exprMultiply(factor, exprPower(base, power)), deriveExpr(base, variable)))
@@ -9440,7 +9467,7 @@ _exprPolynomial(expr: Expr, variable: String) -> List<_FracCell>:
   if expr.kind == "multiply": return _exprPolyMul(_exprPolynomial(expr.arguments[0], variable), _exprPolynomial(expr.arguments[1], variable))
   if expr.kind == "power":
     exponent = expr.arguments[1]
-    if exponent.kind != "number" or exponent.number.denominator != BigInt.one or exponent.number.numerator < BigInt.zero or exponent.number.numerator > BigInt.from(8):
+    if exponent.kind != "number" or exponent.number.denominator != BigInt.one or exponent.number.numerator < BigInt.zero or exponent.number.numerator > BigInt.from(16):
       throw "symbolic integral is not supported"
     base = _exprPolynomial(expr.arguments[0], variable)
     var total = _exprCoeff(_exprOne(), 0, _exprOne())

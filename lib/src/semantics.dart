@@ -2002,7 +2002,20 @@ class Analyzer {
     if (existing != null) {
       error('E204', 'Two imports define ${statement.name}', statement);
     }
-    registerClass(statement, library: home, scopeName: key);
+    // Validate the imported class's fields and methods in its own library,
+    // where sibling types remain visible even if a section/show hides them.
+    final saved = _scope;
+    final savedAliasShadows = {...model.activeAliasShadows};
+    _scope = _libraryScope(home);
+    model.activeAliasShadows.addAll(_scope.symbols.keys);
+    try {
+      registerClass(statement, library: home, scopeName: key);
+    } finally {
+      _scope = saved;
+      model.activeAliasShadows
+        ..clear()
+        ..addAll(savedAliasShadows);
+    }
     if (qualify != null) {
       _space(qualify, statement)[statement.name] = _global.symbols[key]!;
     }
@@ -2392,11 +2405,11 @@ class Analyzer {
       scope.symbols[declaration.name] = Symbol(
           declaration.name, declaration.name, declaration.name,
           classDeclaration: declaration, library: home);
-      if (!declaration.name.startsWith('_')) {
-        final key = '@${_libraryTypes.length - 1}.${declaration.name}';
-        names[declaration.name] = key;
-        model.backendTypes[key] = '$prefix.${declaration.name}';
-      }
+      // Private metadata also needs a library-specific key: registering it
+      // under its bare name would collide with the caller's private classes.
+      final key = '@${_libraryTypes.length - 1}.${declaration.name}';
+      names[declaration.name] = key;
+      model.backendTypes[key] = '$prefix.${declaration.name}';
     }
     final saved = _scope;
     final savedAliasShadows = {...model.activeAliasShadows};
@@ -2448,11 +2461,13 @@ class Analyzer {
     return _global.symbols[name] ?? scoped ?? model.internalTypes[name];
   }
 
-  String _libraryType(String type, String home) {
+  String _libraryType(String type, String home,
+      {Set<String> shadows = const {}}) {
     final names = _libraryTypes[home];
     if (names == null) return type;
     var output = type;
     for (final entry in names.entries) {
+      if (shadows.contains(entry.key)) continue;
       output = output.replaceAll(
           RegExp('(?<![\\w.])${RegExp.escape(entry.key)}\\b'), entry.value);
     }
@@ -4703,19 +4718,32 @@ class Analyzer {
         _ => false,
       };
 
+  String _classMemberType(String type, ClassDeclaration owner) {
+    final home = model.libraryOf[owner];
+    if (home == null || home.isEmpty || home == _activeLibrary) return type;
+    _libraryScope(home);
+    return _libraryType(type, home,
+        shadows: owner.typeParameters.map((item) => item.name).toSet());
+  }
+
   String? memberType(String type, String name) {
     final declaration = _typeSymbol(_genericHead(type))?.classDeclaration;
     if (declaration != null) {
       for (final field in _fieldsOf(declaration)) {
         if (field.name == name) {
-          return model.declarations[field]?.type ?? field.type;
+          return _classMemberType(
+              model.declarations[field]?.type ?? field.type, declaration);
         }
       }
       for (final property in _propertiesOf(declaration)) {
-        if (property.name == name) return property.type;
+        if (property.name == name) {
+          return _classMemberType(property.type, declaration);
+        }
       }
       final method = _method(declaration, name);
-      if (method != null) return functionType(method);
+      if (method != null) {
+        return _classMemberType(functionType(method), declaration);
+      }
     }
     final extensions = _extensions(type, name);
     final properties = _extensionProperties(type, name);
@@ -6175,13 +6203,16 @@ class Analyzer {
         : symbol.overloads;
     if (candidates.isEmpty) fail('${callee.name} is not callable', callee);
     FunctionDeclaration? selected;
+    // A single signature has no competing contextual inference. Reuse its
+    // checked arguments instead of recursively analyzing the same tree again.
+    final checked = candidates.length == 1 ? _CheckedArguments() : null;
     for (final candidate in candidates) {
       if (candidate.returnType == null &&
           model.declarations[candidate]?.type == '<infer>') {
         analyzeFunction(candidate);
       }
       if (argumentsMatch(node, candidate.parameters,
-          commit: false, function: candidate)) {
+          commit: false, function: candidate, checked: checked)) {
         final current = selected;
         final selectedVariadic =
             current != null && current.parameters.any((p) => p.variadic);
@@ -6196,7 +6227,8 @@ class Analyzer {
     }
     if (selected == null) fail('No overload matches this call', node);
     model.references[callee] = model.declarations[selected]!;
-    return applyArguments(node, selected.parameters, selected);
+    return applyArguments(node, selected.parameters, selected,
+        checked: checked);
   }
 
   String _checkExpect(CallExpression node, Symbol symbol) {
@@ -6433,10 +6465,17 @@ class Analyzer {
       List<Parameter> parameters,
       List<String> explicit,
       ConstructorDeclaration? constructor) {
-    final substitution =
-        _constructorSubstitution(node, type, parameters, explicit);
-    final instantiated = [
+    final owned = [
       for (final parameter in parameters)
+        Parameter(parameter.name, _classMemberType(parameter.type, type),
+            parameter.mutable, parameter.span,
+            defaultValue: parameter.defaultValue,
+            variadic: parameter.variadic,
+            initializing: parameter.initializing)
+    ];
+    final substitution = _constructorSubstitution(node, type, owned, explicit);
+    final instantiated = [
+      for (final parameter in owned)
         Parameter(parameter.name, _substitute(parameter.type, substitution),
             parameter.mutable, parameter.span,
             defaultValue: parameter.defaultValue,
@@ -6605,7 +6644,9 @@ class Analyzer {
   }
 
   bool argumentsMatch(CallExpression node, List<Parameter> parameters,
-      {required bool commit, FunctionDeclaration? function}) {
+      {required bool commit,
+      FunctionDeclaration? function,
+      _CheckedArguments? checked}) {
     parameters = _callParameters(parameters, function);
     final order = List<int>.filled(parameters.length, -1);
     var positional = 0;
@@ -6619,6 +6660,7 @@ class Analyzer {
             parameters.last.variadic &&
             positional >= parameters.length - 1) {
           if (!variadicArgument(argument, parameters.last)) return false;
+          checked?.variadics.add(argument);
           positional++;
           continue;
         }
@@ -6640,6 +6682,7 @@ class Analyzer {
       final type = expression(argument.value);
       _expected = savedExpected;
       if (!_accepts(type, parameters[target].type, function)) return false;
+      if (checked != null) checked.types[argument.value] = type;
       order[target] = i;
     }
     for (var i = 0; i < parameters.length; i++) {
@@ -6681,13 +6724,17 @@ class Analyzer {
   }
 
   String applyArguments(CallExpression node, List<Parameter> parameters,
-      FunctionDeclaration? function) {
+      FunctionDeclaration? function,
+      {_CheckedArguments? checked}) {
     parameters = _callParameters(parameters, function);
     if (function != null &&
         parameters.any((parameter) => parameter.defaultValue != null)) {
       analyzeFunction(function);
     }
-    if (!argumentsMatch(node, parameters, commit: true, function: function)) {
+    final verified = checked ?? _CheckedArguments();
+    if (checked == null &&
+        !argumentsMatch(node, parameters,
+            commit: true, function: function, checked: verified)) {
       fail('No overload matches this call', node);
     }
     final inferred = <String, String>{};
@@ -6705,7 +6752,8 @@ class Analyzer {
         if (parameters.isNotEmpty &&
             parameters.last.variadic &&
             positional >= parameters.length - 1) {
-          if (!variadicArgument(argument, parameters.last)) {
+          if (!verified.variadics.contains(argument) &&
+              !variadicArgument(argument, parameters.last)) {
             fail('Variadic argument does not match ${parameters.last.type}',
                 argument);
           }
@@ -6732,7 +6780,7 @@ class Analyzer {
       if (parameters[target].type != '<infer>') {
         _expected = parameters[target].type;
       }
-      final type = expression(argument.value);
+      final type = verified.types[argument.value] ?? expression(argument.value);
       _expected = savedExpected;
       if (!_accepts(type, parameters[target].type, function)) {
         fail(
@@ -7919,4 +7967,10 @@ class Analyzer {
     if (second == null) return first;
     return first.intersection(second);
   }
+}
+
+// Local to one successful argument check; never reused between overload trials.
+class _CheckedArguments {
+  final types = <Expression, String>{};
+  final variadics = <Argument>{};
 }

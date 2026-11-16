@@ -1,0 +1,91 @@
+use quds:math
+
+test "binary64 neighbors and ulps handle IEEE boundaries":
+  expect(nextUp(1.0), 1.0000000000000002)
+  expect(nextDown(1.0), 0.9999999999999999)
+  expect(nextUp(-1.0), -0.9999999999999999)
+  expect(nextDown(-1.0), -1.0000000000000002)
+  expect(ulp(1.0), 2.220446049250313e-16)
+  expect(ulp(-1.0), ulp(1.0))
+  expect(ulp(0.0), 5.0e-324)
+  expect(nextUp(-5.0e-324).isNegative, true)
+  expect(nextDown(5.0e-324).isNegative, false)
+  expect(nextUp(-0.0), 5.0e-324)
+  expect(nextDown(0.0), -5.0e-324)
+  infinity = 1.0 / 0.0
+  expect(nextUp(1.7976931348623157e308), infinity)
+  expect(nextDown(infinity), 1.7976931348623157e308)
+  expect(nextUp(-infinity), -1.7976931348623157e308)
+  expect(nextUp(infinity), infinity)
+  expect(nextDown(-infinity), -infinity)
+  expect(ulp(infinity), infinity)
+  nan = 0.0 / 0.0
+  expect(nextUp(nan).isNaN, true)
+  expect(nextDown(nan).isNaN, true)
+  expect(ulp(nan).isNaN, true)
+
+test "interval operations enclose rounded decimal results":
+  a = realInterval(0.1, 0.1)
+  b = realInterval(0.2, 0.2)
+  expect((a + b).contains(0.3), true)
+  expect((b - a).contains(0.1), true)
+  expect((a * b).contains(0.02), true)
+  expect((a / b).contains(0.5), true)
+  expect((-a).contains(-0.1), true)
+  expect(a.low, 0.1)
+  expect(a.high, 0.1)
+  expect(a.contains(0.2), false)
+
+test "unbounded intervals represent finite real values":
+  infinity = 1.0 / 0.0
+  whole = realInterval(-infinity, infinity)
+  zero = realInterval(0.0, 0.0)
+  expect(whole.contains(infinity), false)
+  expect(whole.contains(-infinity), false)
+  expect(whole.contains(0.0 / 0.0), false)
+  expect(whole.contains(1.7976931348623157e308), true)
+  expect((whole * zero).low, 0.0)
+  expect((whole * zero).high, 0.0)
+  positive = realInterval(1.0, infinity)
+  quotient = realInterval(1.0, 1.0) / positive
+  expect(quotient.contains(0.5), true)
+  expect((whole + positive).low, -infinity)
+  expect((whole - positive).high, infinity)
+  expect((-positive).low, -infinity)
+
+test "overflow and underflow retain exact real enclosures":
+  huge = realInterval(1.7976931348623157e308, 1.7976931348623157e308)
+  overflow = huge + huge
+  expect(overflow.low, 1.7976931348623157e308)
+  expect(overflow.high, 1.0 / 0.0)
+  tiny = realInterval(5.0e-324, 5.0e-324)
+  underflow = tiny * tiny
+  expect(underflow.low <= 0.0, true)
+  expect(underflow.high >= 5.0e-324, true)
+
+test "interval factories and raw operations reject invalid domains":
+  reversed() -> RealInterval = realInterval(2.0, 1.0)
+  nan() -> RealInterval = realInterval(0.0 / 0.0, 1.0)
+  infinitePoint() -> RealInterval = realInterval(1.0 / 0.0, 1.0 / 0.0)
+  negativeInfinitePoint() -> RealInterval = realInterval(-1.0 / 0.0, -1.0 / 0.0)
+  raw = RealInterval(low: 2.0, high: 1.0)
+  invalidContains() -> bool = raw.contains(1.0)
+  invalidAdd() -> RealInterval = raw + realInterval(0.0, 1.0)
+  invalidSubtract() -> RealInterval = realInterval(0.0, 1.0) - raw
+  invalidMultiply() -> RealInterval = raw * realInterval(0.0, 0.0)
+  invalidNegate() -> RealInterval = -raw
+  invalidDivide() -> RealInterval = raw / realInterval(1.0, 2.0)
+  divisionZero() -> RealInterval = realInterval(1.0, 2.0) / realInterval(-1.0, 1.0)
+  divisionEndpoint() -> RealInterval = realInterval(1.0, 2.0) / realInterval(0.0, 1.0)
+  expect(reversed, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(nan, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(infinitePoint, throwsA(equals("RealInterval endpoints enclose no finite reals")))
+  expect(negativeInfinitePoint, throwsA(equals("RealInterval endpoints enclose no finite reals")))
+  expect(invalidContains, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(invalidAdd, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(invalidSubtract, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(invalidMultiply, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(invalidNegate, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(invalidDivide, throwsA(equals("RealInterval needs ordered non-NaN endpoints")))
+  expect(divisionZero, throwsA(equals("RealInterval division contains zero")))
+  expect(divisionEndpoint, throwsA(equals("RealInterval division contains zero")))

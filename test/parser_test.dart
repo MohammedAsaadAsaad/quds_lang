@@ -4,6 +4,15 @@ import 'package:test/test.dart';
 Program parse(String source) => Parser(Lexer().tokenize(source)).parse();
 
 void main() {
+  test('function lookahead recognizes qualified parameter types', () {
+    final program = parse(
+        'read(value: lib.Box<int>?, transform: (lib.Box) -> lib.Box) -> lib.Box = transform(value)\n');
+    final declaration = program.statements.single as FunctionDeclaration;
+    expect(declaration.parameters.first.type, 'lib.Box<int>?');
+    expect(declaration.parameters.last.type, '(lib.Box) -> lib.Box');
+    expect(declaration.returnType, 'lib.Box');
+  });
+
   test('Pratt precedence, associativity, grouping and source location', () {
     final program = parse('main():\n  x = 8 - 3 - 1 * (2 + 4)\n');
     final body = (program.statements.single as FunctionDeclaration).body!;

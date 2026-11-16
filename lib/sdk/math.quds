@@ -336,6 +336,65 @@ extend double Reals:
   #   print 1.0.about(1.0)
   about(other: double) -> bool = approximately(this, other, 1.0e-9)
 
+# Adjacent binary64 value toward positive infinity, including signed zero.
+# NaN propagates; positive infinity is fixed. No logarithm or bit-width cast.
+# Example:
+#   print nextUp(1.0) > 1.0
+nextUp(value: double) -> double:
+  if value.isNaN: return value
+  if value == 1.0 / 0.0: return value
+  if value == -1.0 / 0.0: return -1.7976931348623157e308
+  if value == 0.0: return 5.0e-324
+  if value == -5.0e-324: return -0.0
+  var magnitude = value.abs()
+  var exponent = 0
+  while magnitude >= 2.0:
+    magnitude = magnitude * 0.5
+    exponent += 1
+  while magnitude < 1.0:
+    magnitude = magnitude * 2.0
+    exponent -= 1
+  var step = _binarySpacing(exponent)
+  if value < 0.0 and magnitude == 1.0 and exponent > -1022:
+    step = step * 0.5
+  return value + step
+
+# Adjacent binary64 toward negative infinity. NaN propagates.
+# Example:
+#   print nextDown(1.0) < 1.0
+nextDown(value: double) -> double = -nextUp(-value)
+
+# Positive spacing at abs(value); at powers of two this uses the upper binade.
+# Both zeros/subnormals have spacing 2^-1074; infinity maps to +infinity.
+# Example:
+#   print ulp(1.0)
+ulp(value: double) -> double:
+  if value.isNaN: return value
+  if value.isInfinite: return 1.0 / 0.0
+  var magnitude = value.abs()
+  if magnitude < 2.2250738585072014e-308: return 5.0e-324
+  var exponent = 0
+  while magnitude >= 2.0:
+    magnitude = magnitude * 0.5
+    exponent += 1
+  while magnitude < 1.0:
+    magnitude = magnitude * 2.0
+    exponent -= 1
+  return _binarySpacing(exponent)
+
+_binarySpacing(exponent: int) -> double:
+  var power = exponent - 52
+  if power < -1074: return 5.0e-324
+  var spacing = 1.0
+  while power < 0:
+    spacing = spacing * 0.5
+    power += 1
+  while power > 0:
+    spacing = spacing * 2.0
+    power -= 1
+  return spacing
+
+
 :: number
 
 # The greatest common divisor of [a] and [b]. The result is never negative.
@@ -1149,6 +1208,74 @@ _nextUp(value: double) -> double:
   raised = magnitude + unit
   if raised == magnitude: throw "outward interval step underflowed"
   return raised
+
+# Enclosure of finite real values, with possibly unbounded endpoints.
+# Use realInterval() for checked construction. Every operation revalidates raw
+# constructors. Basic operations round outward; this is distinct from Interval.
+value class RealInterval:
+  low: double required
+  high: double required
+
+  contains(value: double) -> bool:
+    _checkRealInterval(this)
+    return value.isFinite and value >= low and value <= high
+
+  operator +(other: RealInterval) -> RealInterval:
+    _checkRealInterval(this)
+    _checkRealInterval(other)
+    return realInterval(nextDown(low + other.low), nextUp(high + other.high))
+
+  operator -(other: RealInterval) -> RealInterval:
+    _checkRealInterval(this)
+    _checkRealInterval(other)
+    return realInterval(nextDown(low - other.high), nextUp(high - other.low))
+
+  operator -() -> RealInterval:
+    _checkRealInterval(this)
+    return realInterval(-high, -low)
+
+  operator *(other: RealInterval) -> RealInterval:
+    _checkRealInterval(this)
+    _checkRealInterval(other)
+    if low == 0.0 and high == 0.0: return realInterval(0.0, 0.0)
+    if other.low == 0.0 and other.high == 0.0: return realInterval(0.0, 0.0)
+    products = [_intervalProduct(low, other.low), _intervalProduct(low, other.high), _intervalProduct(high, other.low), _intervalProduct(high, other.high)]
+    var lower = products[0]
+    var upper = products[0]
+    for corner in products:
+      if corner < lower: lower = corner
+      if corner > upper: upper = corner
+    return realInterval(nextDown(lower), nextUp(upper))
+
+  operator /(other: RealInterval) -> RealInterval:
+    _checkRealInterval(this)
+    _checkRealInterval(other)
+    if other.low <= 0.0 and other.high >= 0.0:
+      throw "RealInterval division contains zero"
+    var lower = nextDown(1.0 / other.high)
+    var upper = nextUp(1.0 / other.low)
+    if other.low > 0.0 and lower < 0.0: lower = 0.0
+    if other.high < 0.0 and upper > 0.0: upper = 0.0
+    return this * realInterval(lower, upper)
+
+# Checked, ordered endpoints. Unlike interval(), does not reorder arguments.
+# Infinity denotes an unbounded real endpoint, never a member of the interval.
+# Example:
+#   print (realInterval(0.1, 0.1) + realInterval(0.2, 0.2)).contains(0.3)
+realInterval(low: double, high: double) -> RealInterval:
+  output = RealInterval(low: low, high: high)
+  _checkRealInterval(output)
+  return output
+
+_checkRealInterval(span: RealInterval):
+  if span.low.isNaN or span.high.isNaN or span.low > span.high:
+    throw "RealInterval needs ordered non-NaN endpoints"
+  if span.low == 1.0 / 0.0 or span.high == -1.0 / 0.0:
+    throw "RealInterval endpoints enclose no finite reals"
+
+_intervalProduct(a: double, b: double) -> double:
+  if a == 0.0 or b == 0.0: return 0.0
+  return a * b
 
 :: stats
 

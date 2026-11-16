@@ -1,8 +1,10 @@
 # Exact integers, rationals and combinatorial counts
 
 Delivery B3 provides an exact-arithmetic foundation in `quds:math`. It does not
-replace the existing bounded `int` or binary64 functions. Decimal arithmetic,
-rigorous intervals and general symbolic algebra remain separate deliveries.
+replace the existing bounded `int` or binary64 functions. Decimal arithmetic is now in `exact::decimal`, and limited symbolic trees
+are in `symbolic`; see [MATH_PLAN.md](MATH_PLAN.md). General symbolic algebra
+remains outside this delivery.
+Outward-rounded binary64 intervals are now documented in [MATH_INTERVAL.md](MATH_INTERVAL.md).
 
 ## Integer interop
 

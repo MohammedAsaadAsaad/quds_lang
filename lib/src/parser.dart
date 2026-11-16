@@ -214,6 +214,11 @@ class Parser {
     }
     if (token.kind != TokenKind.identifier) return false;
     var i = start + 1;
+    while (i < end && tokens[i].kind == TokenKind.dot) {
+      i++;
+      if (i >= end || tokens[i].kind != TokenKind.identifier) return false;
+      i++;
+    }
     if (i < end && tokens[i].kind == TokenKind.less) {
       var depth = 0;
       while (i < end) {

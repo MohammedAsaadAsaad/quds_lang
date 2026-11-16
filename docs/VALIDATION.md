@@ -1,5 +1,62 @@
 # Compiler validation — latest 2026-11-16
 
+## Integrated binary64 / interval delivery — 2026-11-16
+
+Integrated with `a5f1e6e`, preserving the concurrent library sections, flow,
+matching and numbered-plan additions. Public math functions: **380**.
+`RealInterval` supplements `OutwardInterval` in `interval::outward`;
+its contract includes subnormals and unbounded endpoints. Neighbors are in
+`scalar`. Details: [MATH_INTERVAL.md](MATH_INTERVAL.md).
+
+| Check | Observed result |
+| --- | --- |
+| Full `dart test --reporter expanded --concurrency=2` | **268 passed; zero failures; one existing debugger skip** |
+| Isolated debugger test | **One passed; zero skips**, using the exact name command recorded below |
+| Primary interval references | **1138 passed** again on the integrated tree |
+| Primary interval contracts | Five declarations passed |
+| Primary section import test | Passed: prefixed sections, whole-library import, shared nominal types and both interval APIs |
+| Focused compiler/parser tests | **18 passed**, including the added section identity and qualified parameter regressions |
+| Concurrent plan / flow / matching Quds suites | Passed in the full run; plan marker 78, flow marker 58012 on 4164 networks; matching 5040 checks on 682 graphs |
+| `dart analyze` | No issues |
+| Final format | 39 Dart files; zero pending changes |
+| JavaScript + Node | Math and graph checks passed, including binary64 and interval boundaries |
+| Repeated generators and SDK synchronization | Four artifacts byte-identical |
+| `git diff --check` | Passed |
+
+Three compiler regressions were exposed by actual Quds imports and fixed:
+SDK sections now share one parsed declaration identity, function lookahead
+accepts qualified parameter types already supported by the type grammar, and
+section `show` combinators retain classes referenced through prefixed types.
+The debugger still skipped itself for empty frames in the parallel full run
+and passed alone; no suppression was added and that race is not claimed fixed.
+
+
+## Binary64 neighbors and outward-rounded intervals — pre-integration run 2026-11-16
+
+Added `nextUp`, `nextDown`, `ulp`, `realInterval` and `RealInterval`.
+The integrated SDK has **380** public top-level functions; this table records
+the pre-integration run. A post-integration result will be recorded above it. Contracts and limitations:
+[MATH_INTERVAL.md](MATH_INTERVAL.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary `quds test test/math_interval_reference.quds` | **1138 reference cases passed**, using independent Python nextafter/ulp and Fraction extrema |
+| Primary `quds test test/math_interval.quds` | **Five declarations passed**: IEEE boundaries, rounded decimal operations, unbounded reals, underflow/overflow and domain rejection |
+| `dart analyze` | No issues |
+| `dart format --output=none --set-exit-if-changed .` | 39 Dart files; zero changes |
+| Full `dart test --reporter expanded` | **260 passed; zero failures; one skipped debugger integration test** |
+| Isolated skipped debugger test | **One passed; zero skips** with `dart test test/compiler_test.dart --name 'quds debug stops on the quds line' --reporter expanded` |
+| JavaScript + Node | Neighbor limits, signed zero, ULP, interval arithmetic and underflow/overflow checks passed with existing math/graph smoke suites |
+| Regeneration | Embedded SDK, interval references, numerical references and API inventory byte-identical on repeat |
+| `git diff --check` | Passed |
+
+The pre-existing debugger test skipped itself in the parallel full run because
+the Dart debug adapter returned an empty stack after its built-in retries.
+It passed when rerun alone. No retry or suppression was added and this run does
+not establish that the existing debugger race is fixed. No math test skipped.
+
+
+
 ## Numbered plan items 3–15
 
 Public math functions: **376**. Contracts: [MATH_PLAN.md](MATH_PLAN.md) and [MATH_CONTRACTS.md](MATH_CONTRACTS.md).

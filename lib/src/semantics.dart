@@ -2183,7 +2183,12 @@ class Analyzer {
     if (_suppressSdkUse) return;
     if (symbol.library.isEmpty) return;
     if (symbol.library.startsWith('quds:')) model.usedSdk.add(symbol.library);
-    (model.usedSdkNames[symbol.library] ??= <String>{}).add(symbol.name);
+    // A prefixed class symbol is keyed as prefix.Type, but import `show`
+    // combinators name the declaration in the library, without that prefix.
+    final name = symbol.classDeclaration != null && symbol.classCase == null
+        ? symbol.classDeclaration!.name
+        : symbol.name;
+    (model.usedSdkNames[symbol.library] ??= <String>{}).add(name);
   }
 
   void validateType(String type, Node node, {bool allowVoid = true}) {

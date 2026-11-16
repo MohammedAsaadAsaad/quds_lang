@@ -4,6 +4,21 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('SDK sections and whole imports share declaration identity', () {
+    final result = compile('''
+use quds:math::scalar as scalar
+use quds:math::interval::outward as spans
+use quds:math as whole show RealInterval, realInterval
+accept(input: whole.RealInterval) -> spans.RealInterval = input
+main():
+  print scalar.nextUp(1.0)
+  print accept(whole.realInterval(1.0, 2.0)).contains(1.5)
+  print spans.realInterval(0.0, 1.0).contains(0.5)
+''');
+    expect(result.dart,
+        contains(RegExp(r'as spans show [^;\n]*\bRealInterval\b')));
+  });
+
   test('collection interfaces retain the exact element type', () {
     expect(() => compile('''
 accept(values: Iterable<int>) -> int = values.length

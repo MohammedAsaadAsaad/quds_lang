@@ -59,6 +59,16 @@ void main() {
   final square=[origin,m.Vec2(x:1.0,y:0.0),m.Vec2(x:1.0,y:1.0),m.Vec2(x:0.0,y:1.0)];
   if (m.convexHull(square).length!=4 || m.polygonSignedAreaExact(square).toString()!='1/1') throw 'exact polygon';
   if (!m.pointInPolygon(m.Vec2(x:0.5,y:0.5),square,true)) throw 'polygon winding';
+  if (m.nextUp(1.0)!=1.0000000000000002 || m.nextDown(-1.0)!=-1.0000000000000002) throw 'binary neighbors';
+  if (!m.nextUp(-5e-324).isNegative || m.nextDown(5e-324).isNegative) throw 'signed zero neighbor';
+  if (m.nextUp(-double.infinity)!=-1.7976931348623157e308 || m.ulp(0.0)!=5e-324) throw 'binary limits';
+  final enclosure=m.realInterval(0.1,0.1)+m.realInterval(0.2,0.2);
+  if (!enclosure.contains(0.3)) throw 'interval addition';
+  final product=m.realInterval(5e-324,5e-324)*m.realInterval(5e-324,5e-324);
+  if (product.low>0.0 || product.high<5e-324) throw 'interval underflow';
+  final overflow=m.realInterval(1e308,1e308)+m.realInterval(1e308,1e308);
+  if (overflow.low!=1.7976931348623157e308 || overflow.high!=double.infinity) throw 'interval overflow';
+  if (!(m.realInterval(1.0,1.0)/m.realInterval(3.0,3.0)).contains(1/3)) throw 'interval division';
   print('WEB MATH OK');
 }
 ''');

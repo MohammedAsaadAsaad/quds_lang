@@ -46,6 +46,8 @@ Addition aligns scales exactly. Division requires a named rounding and a result 
 Endpoints are finite and ordered. A subnormal endpoint is rejected. Zero steps out to the smallest normal (`2.2250738585072014e-308`), which still contains the exact value.
 `outwardAdd`, `outwardSubtract`, `outwardMultiply`, and `outwardDivide` round the endpoint image outward by one binary64 step.
 A divisor interval that contains 0 throws. Overflow throws `outward interval overflow`.
+The additional `RealInterval` type in the same section supports subnormals and
+unbounded endpoints, with overflow enclosures; see [MATH_INTERVAL.md](MATH_INTERVAL.md).
 
 ## 10. Reverse mode
 

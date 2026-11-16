@@ -140,11 +140,20 @@ void _loadSdkImports(Program program, Map<String, Program> libraries) {
     if (statement is! ImportDeclaration) continue;
     final name = sdkLibraryName(statement.uri);
     if (name == null || libraries.containsKey(statement.uri)) continue;
+    // Sections select names from one library; they must share declaration
+    // identity with each other and with an import of the whole SDK library.
+    final target = libraryTarget(statement.uri);
+    final cached = libraries[target];
+    if (cached != null) {
+      libraries[statement.uri] = cached;
+      continue;
+    }
     final source = readSdk(name);
     if (source == null) continue;
-    final path = sdkPath(name) ?? statement.uri;
+    final path = sdkPath(name) ?? target;
     final parsed = Parser(Lexer().tokenize(source, file: path)).parse();
     final loaded = expandMacros(parsed);
+    libraries[target] = loaded;
     libraries[statement.uri] = loaded;
     _loadSdkImports(loaded, libraries);
   }

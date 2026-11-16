@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "input": "bench/language_workloads.quds",
+  "source_bytes": 1292,
+  "dart_bytes": 4188,
+  "dart": "Dart SDK version: 3.13.7 (stable) (Thu Oct 22 14:28:57 2026 -0700) on \"linux_x64\"",
+  "os": "linux",
+  "processors": 5,
+  "warmup": 1,
+  "repeat": 5,
+  "initial_quds_compile_us": 276259,
+  "module_staging_us": 6731,
+  "warm_quds_compile": {
+    "samples_us": [
+      43026,
+      33888,
+      28084,
+      27175,
+      24939
+    ],
+    "min_us": 24939,
+    "median_us": 28084,
+    "max_us": 43026
+  },
+  "dart_aot_compile_us": 1202555,
+  "aot_process_execution_including_startup": {
+    "samples_us": [
+      11122,
+      10597,
+      11663,
+      10797,
+      9533
+    ],
+    "min_us": 9533,
+    "median_us": 10797,
+    "max_us": 11663
+  },
+  "output": "2181009417.0\n99990000\n"
+}

@@ -131,8 +131,9 @@ String? _helpText(String? topic) {
         '    Write the documentation as HTML.\n',
     'migrate': 'quds migrate [quds.yaml]\n'
         '    Write language: 1.2. A file that names another version is left unchanged.\n',
-    'benchmark': 'quds benchmark <input.quds> [--baseline <microseconds>]\n'
-        '    Run debug and release, require the same output, and print the elapsed time.\n',
+    'benchmark':
+        'quds benchmark <input.quds> [--baseline <microseconds>] [--measure] [--warmup <count>] [--repeat <count>]\n'
+            '    Check debug/release output; --measure separates Quds compilation, Dart AOT compilation and AOT process execution including startup.\n',
     'lsp': 'quds lsp\n'
         '    Serve the language protocol on standard input and output.\n',
     'debug': 'quds debug <input.quds>\n'
@@ -817,6 +818,20 @@ Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
         }
       }
     });
+    for (final entry
+        in compiled.semantics.backendTypeImports.entries.toList()) {
+      final uri = Uri.parse(entry.value);
+      final typePath = uri.scheme == 'file'
+          ? uri.toFilePath()
+          : !uri.hasScheme
+              ? Uri.file(path).resolve(entry.value).toFilePath()
+              : null;
+      if (typePath == null || !typePath.endsWith('.dart')) continue;
+      final sourcePath = '${typePath.substring(0, typePath.length - 5)}.quds';
+      final target = targets[canonical(sourcePath)];
+      if (target != null)
+        compiled.semantics.backendTypeImports[entry.key] = fileUri(target.path);
+    }
     final emitter = DartEmitter(compiled.semantics);
     final dart = emitter.emit(compiled.program);
     final target = targets[path]!;
@@ -1273,52 +1288,53 @@ String _escape(String text) => text
     .replaceAll('>', '&gt;');
 
 void _benchmark(List<String> arguments) {
+  const usage =
+      'Usage: quds benchmark <input.quds> [--baseline <microseconds>] '
+      '[--measure] [--warmup <count>] [--repeat <count>]';
   final args = [...arguments];
-  final baselineFlag = args.indexOf('--baseline');
-  int? baseline;
-  if (baselineFlag != -1) {
-    if (baselineFlag + 1 >= args.length) {
-      stderr.writeln(
-          'Usage: quds benchmark <input.quds> [--baseline <microseconds>]');
-      exitCode = 64;
-      return;
-    }
-    baseline = int.tryParse(args[baselineFlag + 1]);
-    if (baseline == null) {
-      stderr.writeln('Baseline must be an integer number of microseconds');
-      exitCode = 64;
-      return;
-    }
-    args
-      ..removeAt(baselineFlag + 1)
-      ..removeAt(baselineFlag);
+  final measured = args.remove('--measure');
+  int? option(String name, int? fallback) {
+    final index = args.indexOf(name);
+    if (index == -1) return fallback;
+    if (index + 1 >= args.length) throw FormatException(usage);
+    final value = int.tryParse(args[index + 1]);
+    if (value == null || value < 0)
+      throw FormatException('$name must be a nonnegative integer');
+    args.removeRange(index, index + 2);
+    return value;
   }
-  if (args.length != 2 || !args[1].endsWith('.quds')) {
-    stderr.writeln(
-        'Usage: quds benchmark <input.quds> [--baseline <microseconds>]');
-    exitCode = 64;
-    return;
-  }
-  final input = File(args[1]);
-  final watch = Stopwatch()..start();
+
   try {
-    final result = compile(input.readAsStringSync(), file: input.path);
+    final baseline = option('--baseline', null);
+    final warmup = option('--warmup', 1)!;
+    final repeat = option('--repeat', 5)!;
+    if (repeat < 1 ||
+        repeat > 100 ||
+        warmup > 100 ||
+        args.length != 2 ||
+        !args[1].endsWith('.quds')) {
+      throw FormatException(usage);
+    }
+    final input = File(args[1]);
+    final source = input.readAsStringSync();
+    final total = Stopwatch()..start();
+    final compileWatch = Stopwatch()..start();
+    final result = compile(source, file: input.path);
+    compileWatch.stop();
     final directory = Directory.systemTemp.createTempSync('quds-bench-');
     try {
-      writeSdkBundles(directory.path, result);
-      final dart = File('${directory.path}/bench.dart')
-        ..writeAsStringSync(result.dart);
+      final stageWatch = Stopwatch()..start();
+      final (dart, staged) = _temporaryDartTree(input, result, directory);
+      stageWatch.stop();
       final debug = Process.runSync(_dartExecutable(),
           _withPackages(['run', '--enable-asserts', dart.path]));
       final release = Process.runSync(_dartExecutable(),
           _withPackages(['run', '--no-enable-asserts', dart.path]));
-      watch.stop();
       if (debug.exitCode != 0 || release.exitCode != 0) {
         stderr.write(_atQuds(
-          debug.exitCode != 0 ? debug.stderr : release.stderr,
-          result.sourceMap,
-          'bench.dart',
-        ));
+            debug.exitCode != 0 ? debug.stderr : release.stderr,
+            staged.sourceMap,
+            dart.uri.pathSegments.last));
         exitCode = debug.exitCode != 0 ? debug.exitCode : release.exitCode;
         return;
       }
@@ -1327,8 +1343,80 @@ void _benchmark(List<String> arguments) {
         exitCode = 1;
         return;
       }
-      final elapsed = watch.elapsedMicroseconds;
       stdout.writeln('parity ok');
+      if (measured) {
+        final compilerSamples = <int>[];
+        for (var i = 0; i < warmup + repeat; i++) {
+          final watch = Stopwatch()..start();
+          final next = compile(source, file: input.path);
+          watch.stop();
+          if (next.dart != result.dart)
+            throw StateError('Compiler output changed during measurement');
+          if (i >= warmup) compilerSamples.add(watch.elapsedMicroseconds);
+        }
+        final binary =
+            '${directory.path}/bench${Platform.isWindows ? '.exe' : ''}';
+        final aotWatch = Stopwatch()..start();
+        final aot = Process.runSync(_dartExecutable(), [
+          'compile',
+          'exe',
+          if (_packageConfigPath() case final config?) '--packages=$config',
+          dart.path,
+          '-o',
+          binary
+        ]);
+        aotWatch.stop();
+        if (aot.exitCode != 0) {
+          stderr.write(_atQuds(
+              aot.stderr, staged.sourceMap, dart.uri.pathSegments.last));
+          exitCode = aot.exitCode;
+          return;
+        }
+        final runtimeSamples = <int>[];
+        for (var i = 0; i < warmup + repeat; i++) {
+          final watch = Stopwatch()..start();
+          final run = Process.runSync(binary, const []);
+          watch.stop();
+          if (run.exitCode != 0 || run.stdout != debug.stdout) {
+            stderr.writeln('Measured AOT execution failed or output differs');
+            stderr.write(run.stderr);
+            exitCode = run.exitCode == 0 ? 1 : run.exitCode;
+            return;
+          }
+          if (i >= warmup) runtimeSamples.add(watch.elapsedMicroseconds);
+        }
+        Map<String, Object> samples(List<int> values) {
+          final sorted = [...values]..sort();
+          return {
+            'samples_us': values,
+            'min_us': sorted.first,
+            'median_us': sorted[sorted.length ~/ 2],
+            'max_us': sorted.last
+          };
+        }
+
+        final version = Process.runSync(_dartExecutable(), ['--version']);
+        stdout.writeln('metrics ${jsonEncode({
+              'schema': 1,
+              'input': input.path,
+              'source_bytes': utf8.encode(source).length,
+              'dart_bytes': utf8.encode(staged.dart).length,
+              'dart': '${version.stdout}${version.stderr}'.trim(),
+              'os': Platform.operatingSystem,
+              'processors': Platform.numberOfProcessors,
+              'warmup': warmup,
+              'repeat': repeat,
+              'initial_quds_compile_us': compileWatch.elapsedMicroseconds,
+              'module_staging_us': stageWatch.elapsedMicroseconds,
+              'warm_quds_compile': samples(compilerSamples),
+              'dart_aot_compile_us': aotWatch.elapsedMicroseconds,
+              'aot_process_execution_including_startup':
+                  samples(runtimeSamples),
+              'output': '${debug.stdout}',
+            })}');
+      }
+      total.stop();
+      final elapsed = total.elapsedMicroseconds;
       stdout.writeln('elapsed $elapsed');
       if (baseline != null && elapsed > baseline) {
         stderr.writeln('Benchmark regression: $elapsed > $baseline');
@@ -1337,12 +1425,18 @@ void _benchmark(List<String> arguments) {
     } finally {
       directory.deleteSync(recursive: true);
     }
+  } on FormatException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 64;
   } on CompilerException catch (error) {
     stderr.writeln(error);
     exitCode = 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
     exitCode = 74;
+  } on ProcessException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 69;
   }
 }
 

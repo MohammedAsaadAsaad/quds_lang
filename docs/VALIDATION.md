@@ -772,3 +772,17 @@ No extra network domain is needed for the verified Docker-based SDK route.
   UnmodifiableListView path. It is not counted as a completed validation.
 - See READONLY_PATHS.md for unsupported custom-class runtime proxies, mutable
   Set elements and Map keys. No universal runtime readonly guarantee is claimed.
+
+## 2026-11-16 — L3.4 measured emitter and CLI phases
+
+- `dart format .`: 50 files, zero changes. `dart analyze`: no issues.
+- `dart test test/performance_test.dart test/quds_test_runner_test.dart --reporter expanded`: **9 passed**, zero failures/skips, 26 seconds.
+- `dart test --reporter expanded`: **461 passed**, zero failures/skips, **4m38s**.
+- Emitter-only benchmark: one warm-up/five samples per size. All output/mapping
+  SHA-256 values identical before/after. 4000-function median: 3248090 → 18919 µs.
+  Raw samples/tool metadata in bench/results, limits in PERFORMANCE_BASELINE.md.
+- `dart run bin/quds.dart benchmark bench/language_workloads.quds --measure --warmup 1 --repeat 5`: passed VM assert parity and all AOT output checks; checksum
+  `2181009417.0` then `99990000`. Metrics archived in bench/results.
+- Intermediate AOT invocation placed --packages at the wrong CLI level; fixed
+  before the successful workload, focused, and full runs. Imported nominal-type
+  staging and duplicate generated imports were corrected and regression-tested.

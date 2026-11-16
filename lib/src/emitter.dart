@@ -51,6 +51,7 @@ class DartEmitter {
   StringBuffer? _redirect;
   final _unions = <String>{};
   int _depth = 0;
+  int _nextOutputLine = 3;
   int _temps = 0;
   SourceSpan? _span;
   final mappings = <(int, SourceSpan)>[];
@@ -82,10 +83,10 @@ class DartEmitter {
       return;
     }
     if (_span != null) {
-      final generatedLine = '\n'.allMatches(_out.toString()).length + 1;
-      mappings.add((generatedLine, _span!));
+      mappings.add((_nextOutputLine, _span!));
     }
     _out.writeln('${'  ' * _depth}$text');
+    _nextOutputLine += '\n'.allMatches(text).length + 1;
   }
 
   String emit(Program program) {
@@ -105,6 +106,7 @@ class DartEmitter {
     _emitReflectableRegistry(program);
     for (final node in program.statements) {
       _out.writeln();
+      _nextOutputLine++;
       if (node is FunctionDeclaration) {
         emitFunction(node);
       } else if (node is! ImportDeclaration &&
@@ -536,7 +538,7 @@ class DartEmitter {
       }
     }
     final prelude = StringBuffer();
-    for (final item in _imports) {
+    for (final item in _imports.toSet()) {
       prelude.writeln(item);
     }
     if (_useChecks) {

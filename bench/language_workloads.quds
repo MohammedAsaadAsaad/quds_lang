@@ -1,0 +1,57 @@
+use quds:core::typed
+
+identity<T>(value: T) -> T = value
+fillSum(size: int) -> double:
+  values = Float64List(size)
+  var index = 0
+  while index < size:
+    values[index] = index to double
+    index += 1
+  var total = 0.0
+  for value in values:
+    total += identity(value)
+  return total
+
+matvec(size: int) -> double:
+  matrix = Float64List(size * size)
+  vector = Float64List(size)
+  var row = 0
+  while row < size:
+    matrix[row * size + row] = 2.0
+    vector[row] = 1.0
+    row += 1
+  var total = 0.0
+  row = 0
+  while row < size:
+    var column = 0
+    while column < size:
+      total += matrix[row * size + column] * vector[column]
+      column += 1
+    row += 1
+  return total
+
+copiesAndViews(size: int) -> double:
+  values = Float64List(size)
+  values[0] = 1.0
+  copy = Float64List.fromList(values)
+  view = Float64List.view(values.buffer)
+  values[0] = 2.0
+  return copy[0] + view[0]
+
+closures(size: int) -> int:
+  twice = (value: int) -> identity(value) + identity(value)
+  var index = 0
+  var total = 0
+  while index < size:
+    total += twice(index)
+    index += 1
+  return total
+
+main():
+  var checksum = 0.0
+  for size in [128, 8192, 65536]:
+    checksum += fillSum(size)
+    checksum += copiesAndViews(size)
+  checksum += matvec(32)
+  print checksum
+  print closures(10000)

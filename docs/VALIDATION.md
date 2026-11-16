@@ -1,4 +1,18 @@
-# Compiler validation — latest 2026-11-15
+# Compiler validation — latest 2026-11-16
+
+## Integer flow and bipartite matching — B4
+
+Added `FlowEdge`, `MaximumFlow`, `maximumFlow`, `MatchEdge`, `Matching`, and
+`maximumMatching` in `graph::flow` and `graph::matching`. Public math functions:
+**326**. Contracts: [MATH_FLOW.md](MATH_FLOW.md).
+
+| Check | Observed result |
+| --- | --- |
+| Quds flow oracle | **58012 checks on 4164 networks**, minimum cut by subset enumeration |
+| Quds matching oracle | **5040 checks on 682 graphs**, maximum size by subset enumeration |
+| Section import and completion | `use quds:math::graph` sees the flow, and `graph::` offers `flow`, `matching`, and `weighted` |
+| `dart analyze` | No issues |
+| `dart test` | **262 passed, 1 skipped, zero failures**. The skip is the existing debugger case after `debug adapter returned no stack frames after retries` |
 
 ## Exact planar geometry — C3
 

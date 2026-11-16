@@ -3222,6 +3222,8 @@ main():
           'support',
           'graph',
           'graph::weighted',
+          'graph::flow',
+          'graph::matching',
           'exact',
           'autodiff',
           'geometry',
@@ -3254,6 +3256,29 @@ main():
     expect(graph.dart, isNot(contains('dijkstra')));
     expect(graph.dart, isNot(contains('mean')));
     expect(graph.dart, isNot(contains('bigInt')));
+
+    final flow = compile('''
+use quds:math::graph::flow
+main():
+  edges = [FlowEdge(source: 0, target: 1, capacity: 1)]
+  print maximumFlow(2, edges, 0, 1).value
+''');
+    expect(flow.dart, contains('FlowEdge'));
+    expect(flow.dart, contains('maximumFlow'));
+    expect(flow.dart, isNot(contains('maximumMatching')));
+    expect(flow.dart, isNot(contains('dijkstra')));
+    compile('''
+use quds:math::graph
+main():
+  edges = [FlowEdge(source: 0, target: 1, capacity: 1)]
+  print maximumFlow(2, edges, 0, 1).value
+''');
+    compile('''
+use quds:math::graph::matching
+main():
+  edges = [MatchEdge(left: 0, right: 0)]
+  print maximumMatching(1, 1, edges).size
+''');
 
     compile('''
 use quds:math::graph show bfsDistances

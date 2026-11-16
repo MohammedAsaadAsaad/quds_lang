@@ -483,8 +483,9 @@ const mathSdkSource = '''# Mathematics that dart:math does not provide.
 # A column-0 :: name opens a section. use quds:math::stats imports that section
 # and every section named stats::something. This file is divided into scalar,
 # number, complex, vector, interval, stats, distribution, calculus, interp,
-# linalg, polynomial, signal, special, optimize, graph, graph::weighted, exact,
-# autodiff, and geometry. Each of those sections is opened once. support collects
+# linalg, polynomial, signal, special, optimize, graph, graph::weighted,
+# graph::flow, graph::matching, exact, autodiff, and geometry. Each of those
+# sections is opened once. support collects
 # private helpers and exports nothing.
 # A bare :: returns the following declarations to the library root.
 # use quds:math still imports the whole library, including dart:math.
@@ -7919,6 +7920,301 @@ _shortestPaths(source: int, work: List<_WeightedState>) -> ShortestPaths:
     distances.add(cell.distance)
     parents.add(cell.parent)
   return ShortestPaths(source: source, distances: distances, predecessors: parents)
+
+:: graph::flow
+
+# One directed capacity. Zero is allowed. A self-loop is validated and carries
+# no source-sink flow. Parallel edges stay separate.
+value class FlowEdge:
+  source: int
+  target: int
+  capacity: int
+
+# An integral maximum flow and one minimum cut. flows follows the input edge
+# order. sourceSide is the residual source component, sorted, and its leaving
+# capacity equals value. Lists are fresh; this is not deep immutability.
+value class MaximumFlow:
+  source: int
+  sink: int
+  value: int
+  flows: List<int>
+  sourceSide: List<int>
+
+# Integral maximum flow by Edmonds-Karp. Capacities are nonnegative ints.
+# Every edge is validated before search. Source and sink must differ. The
+# reachable residual set is a minimum cut. Work guard: at most 64 vertices and
+# 1024 edges; this is a complexity bound, not a mathematical restriction.
+# A sum that does not fit the platform int throws. Inputs are not mutated.
+# Example:
+#   edges = [FlowEdge(source: 0, target: 1, capacity: 5)]
+#   print maximumFlow(2, edges, 0, 1).value
+maximumFlow(vertexCount: int, edges: List<FlowEdge>, source: int, sink: int) -> MaximumFlow:
+  if vertexCount < 0: throw "flow vertex count must be nonnegative"
+  for edge in edges:
+    if edge.source < 0 or edge.source >= vertexCount or edge.target < 0 or edge.target >= vertexCount:
+      throw "flow vertex out of range"
+    if edge.capacity < 0: throw "flow capacity must be nonnegative"
+  if vertexCount > 64 or edges.length > 1024: throw "flow exceeds the work limit"
+  if source < 0 or source >= vertexCount: throw "flow source out of range"
+  if sink < 0 or sink >= vertexCount: throw "flow sink out of range"
+  if source == sink: throw "flow source and sink must differ"
+  sent = _flowSlots(edges.length, 0)
+  net = _flowNetwork(vertexCount, edges)
+  var total = 0
+  while true:
+    path = _flowPath(vertexCount, net, source, sink)
+    if path.length == 0: break
+    var bottleneck = net.arcs[path[0]].cap
+    for index in path:
+      if net.arcs[index].cap < bottleneck: bottleneck = net.arcs[index].cap
+    if bottleneck <= 0: throw "maximumFlow has invalid state"
+    for index in path:
+      arc = net.arcs[index]
+      arc.cap = arc.cap - bottleneck
+      net.arcs[arc.rev].cap = _checkedAdd(net.arcs[arc.rev].cap, bottleneck)
+      sent[arc.origin].value = _checkedAdd(sent[arc.origin].value, bottleneck * arc.sign)
+    total = _checkedAdd(total, bottleneck)
+  flows = _flowInts(sent)
+  _flowCertify(vertexCount, edges, source, sink, flows, total)
+  side = _flowSourceSide(vertexCount, net, edges, source, sink, total)
+  return MaximumFlow(source: source, sink: sink, value: total, flows: flows, sourceSide: side)
+
+class _FlowArc:
+  var to: int = 0
+  var rev: int = 0
+  var origin: int = 0
+  var cap: int = 0
+  var sign: int = 1
+
+class _FlowSlot:
+  var value: int = 0
+
+class _FlowNet:
+  arcs: List<_FlowArc>
+  adjacency: List<List<int>>
+
+_flowSlots(count: int, fill: int) -> List<_FlowSlot>:
+  made: List<_FlowSlot> = []
+  var index = 0
+  while index < count:
+    slot = _FlowSlot()
+    slot.value = fill
+    made.add(slot)
+    index += 1
+  return made
+
+_flowInts(slots: List<_FlowSlot>) -> List<int>:
+  made: List<int> = []
+  for slot in slots:
+    made.add(slot.value)
+  return made
+
+_flowRows(count: int) -> List<List<int>>:
+  rows: List<List<int>> = []
+  var index = 0
+  while index < count:
+    row: List<int> = []
+    rows.add(row)
+    index += 1
+  return rows
+
+_flowNetwork(vertexCount: int, edges: List<FlowEdge>) -> _FlowNet:
+  arcs: List<_FlowArc> = []
+  adjacency = _flowRows(vertexCount)
+  var index = 0
+  while index < edges.length:
+    edge = edges[index]
+    if edge.source != edge.target:
+      forward = arcs.length
+      go = _FlowArc()
+      go.to = edge.target
+      go.rev = forward + 1
+      go.origin = index
+      go.cap = edge.capacity
+      go.sign = 1
+      back = _FlowArc()
+      back.to = edge.source
+      back.rev = forward
+      back.origin = index
+      back.cap = 0
+      back.sign = -1
+      arcs.add(go)
+      arcs.add(back)
+      adjacency[edge.source].add(forward)
+      adjacency[edge.target].add(forward + 1)
+    index += 1
+  return _FlowNet(arcs: arcs, adjacency: adjacency)
+
+_flowPath(vertexCount: int, net: _FlowNet, source: int, sink: int) -> List<int>:
+  parent = _flowSlots(vertexCount, -1)
+  parent[source].value = -2
+  queue: List<int> = [source]
+  var head = 0
+  var found = false
+  while head < queue.length and not found:
+    vertex = queue[head]
+    head += 1
+    for arcIndex in net.adjacency[vertex]:
+      arc = net.arcs[arcIndex]
+      if arc.cap > 0 and parent[arc.to].value == -1:
+        parent[arc.to].value = arcIndex
+        if arc.to == sink: found = true
+        else: queue.add(arc.to)
+  empty: List<int> = []
+  if not found: return empty
+  path: List<int> = []
+  var current = sink
+  while current != source:
+    if path.length >= vertexCount or current < 0 or current >= vertexCount: throw "maximumFlow has invalid state"
+    arcIndex = parent[current].value
+    if arcIndex < 0: throw "maximumFlow has invalid state"
+    path.add(arcIndex)
+    current = net.arcs[net.arcs[arcIndex].rev].to
+  return path
+
+_flowCertify(vertexCount: int, edges: List<FlowEdge>, source: int, sink: int, flows: List<int>, total: int):
+  balance = _flowSlots(vertexCount, 0)
+  var index = 0
+  while index < edges.length:
+    edge = edges[index]
+    flow = flows[index]
+    if flow < 0 or flow > edge.capacity: throw "maximumFlow has invalid state"
+    if edge.source == edge.target:
+      if flow != 0: throw "maximumFlow has invalid state"
+    else:
+      balance[edge.source].value = _checkedAdd(balance[edge.source].value, flow)
+      balance[edge.target].value = _checkedAdd(balance[edge.target].value, 0 - flow)
+    index += 1
+  if balance[source].value != total or balance[sink].value != 0 - total: throw "maximumFlow has invalid state"
+  var vertex = 0
+  while vertex < vertexCount:
+    if vertex != source and vertex != sink and balance[vertex].value != 0: throw "maximumFlow has invalid state"
+    vertex += 1
+
+_flowSourceSide(vertexCount: int, net: _FlowNet, edges: List<FlowEdge>, source: int, sink: int, total: int) -> List<int>:
+  seen = _flowSlots(vertexCount, 0)
+  seen[source].value = 1
+  queue: List<int> = [source]
+  var head = 0
+  while head < queue.length:
+    vertex = queue[head]
+    head += 1
+    for arcIndex in net.adjacency[vertex]:
+      arc = net.arcs[arcIndex]
+      if arc.cap > 0 and seen[arc.to].value == 0:
+        seen[arc.to].value = 1
+        queue.add(arc.to)
+  if seen[sink].value != 0: throw "maximumFlow has invalid state"
+  side: List<int> = []
+  var vertex = 0
+  while vertex < vertexCount:
+    if seen[vertex].value != 0: side.add(vertex)
+    vertex += 1
+  var leaving = 0
+  var index = 0
+  while index < edges.length:
+    edge = edges[index]
+    if edge.source != edge.target and seen[edge.source].value != 0 and seen[edge.target].value == 0:
+      leaving = _checkedAdd(leaving, edge.capacity)
+    index += 1
+  if leaving != total: throw "maximumFlow has invalid state"
+  return side
+
+:: graph::matching
+
+# One left-to-right incidence. Parallel copies do not raise the matching size.
+value class MatchEdge:
+  left: int
+  right: int
+
+# A maximum cardinality matching. Unmatched entries are -1. Mate lists are
+# fresh and consistent: leftMate[left] == right exactly when rightMate[right] == left.
+value class Matching:
+  size: int
+  leftMate: List<int>
+  rightMate: List<int>
+
+# Maximum bipartite cardinality by augmenting paths. Endpoints are validated
+# before search. Ties follow increasing left index and input edge order.
+# Work guard: at most 200 vertices on a side and 2000 edges. Inputs are not mutated.
+# Example:
+#   edges = [MatchEdge(left: 0, right: 0)]
+#   print maximumMatching(1, 1, edges).size
+maximumMatching(leftCount: int, rightCount: int, edges: List<MatchEdge>) -> Matching:
+  if leftCount < 0 or rightCount < 0: throw "matching side count must be nonnegative"
+  for edge in edges:
+    if edge.left < 0 or edge.left >= leftCount or edge.right < 0 or edge.right >= rightCount:
+      throw "matching vertex out of range"
+  if leftCount > 200 or rightCount > 200 or edges.length > 2000: throw "matching exceeds the work limit"
+  adjacency = _flowRows(leftCount)
+  for edge in edges:
+    adjacency[edge.left].add(edge.right)
+  pairL = _flowSlots(leftCount, -1)
+  pairR = _flowSlots(rightCount, -1)
+  var augmented = true
+  while augmented:
+    augmented = _matchAugment(adjacency, pairL, pairR)
+  var size = 0
+  for slot in pairL:
+    if slot.value >= 0: size += 1
+  _matchCertify(adjacency, pairL, pairR, size)
+  return Matching(size: size, leftMate: _flowInts(pairL), rightMate: _flowInts(pairR))
+
+_matchAugment(adjacency: List<List<int>>, pairL: List<_FlowSlot>, pairR: List<_FlowSlot>) -> bool:
+  seen = _flowSlots(pairL.length, 0)
+  queue: List<int> = []
+  var left = 0
+  while left < pairL.length:
+    if pairL[left].value < 0:
+      seen[left].value = 1
+      queue.add(left)
+    left += 1
+  parent = _flowSlots(pairR.length, -1)
+  var head = 0
+  var found = -1
+  while head < queue.length and found < 0:
+    vertex = queue[head]
+    head += 1
+    for right in adjacency[vertex]:
+      if pairL[vertex].value == right or parent[right].value >= 0: continue
+      parent[right].value = vertex
+      if pairR[right].value < 0:
+        found = right
+      else:
+        mate = pairR[right].value
+        if seen[mate].value == 0:
+          seen[mate].value = 1
+          queue.add(mate)
+  if found < 0: return false
+  var right = found
+  while right >= 0:
+    left = parent[right].value
+    if left < 0: throw "maximumMatching has invalid state"
+    previous = pairL[left].value
+    pairL[left].value = right
+    pairR[right].value = left
+    right = previous
+  return true
+
+_matchCertify(adjacency: List<List<int>>, pairL: List<_FlowSlot>, pairR: List<_FlowSlot>, size: int):
+  var matched = 0
+  var left = 0
+  while left < pairL.length:
+    right = pairL[left].value
+    if right >= 0:
+      if right >= pairR.length or pairR[right].value != left: throw "maximumMatching has invalid state"
+      var linked = false
+      for neighbor in adjacency[left]:
+        if neighbor == right: linked = true
+      if not linked: throw "maximumMatching has invalid state"
+      matched += 1
+    left += 1
+  if matched != size: throw "maximumMatching has invalid state"
+  var right = 0
+  while right < pairR.length:
+    left = pairR[right].value
+    if left >= 0 and (left >= pairL.length or pairL[left].value != right): throw "maximumMatching has invalid state"
+    right += 1
 
 :: exact
 

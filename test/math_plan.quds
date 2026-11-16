@@ -1,0 +1,150 @@
+use quds:math
+
+_close(actual: double, expected: double) -> bool:
+  var gap = actual - expected
+  if gap < 0.0: gap = 0.0 - gap
+  return gap <= 1.0e-9
+
+group "remaining math plan":
+  test "forward Hessian matches the analytic polynomial and rejects a nonsmooth root":
+    hessian = autoHessian((v: List<HyperDual>) -> v[0] * v[0] * v[1], [2.0, 3.0])
+    expect(hessian[0][0], 6.0)
+    expect(hessian[0][1], 4.0)
+    expect(hessian[1][0], 4.0)
+    expect(hessian[1][1], 0.0)
+    curve = autoHessian((v: List<HyperDual>) -> v[0].sin(), [0.0])
+    expect(_close(curve[0][0], 0.0), true)
+    rough() -> List<List<double>> = autoHessian((v: List<HyperDual>) -> v[0].sqrt(), [0.0])
+    expect(rough, throwsA(equals("HyperDual.sqrt needs a positive value")))
+
+  test "log probabilities keep the tail finite and the zero-one cases":
+    expect(normalPdf(40.0), 0.0)
+    expect(normalLogPdf(40.0) < 0.0 - 100.0, true)
+    expect(_close(normalLogPdf(0.0), 0.0 - 0.5 * ln(2.0 * pi)), true)
+    expect(poissonLogPmf(0, 0.0), 0.0)
+    expect(poissonLogPmf(-1, 1.0) < 0.0 - 1.0e300, true)
+    expect(_close(poissonLogPmf(2, 1.0), 0.0 - 1.0 - ln(2.0)), true)
+    expect(binomialLogPmf(0, 1, 0.0), 0.0)
+    expect(binomialLogPmf(1, 1, 0.0) < 0.0 - 1.0e300, true)
+
+  test "phase one finds a feasible optimum and rejects an empty program":
+    classic = linearProgramPhase([3.0, 2.0], [[1.0, 1.0], [1.0, 3.0]], [4.0, 6.0])
+    expect(classic.value, 12.0)
+    expect(classic.position, [4.0, 0.0])
+    shifted = linearProgramPhase([1.0], [[-1.0], [1.0]], [-1.0, 3.0])
+    expect(shifted.value, 3.0)
+    expect(shifted.position, [3.0])
+    empty() -> Optimum = linearProgramPhase([1.0], [[1.0]], [-1.0])
+    expect(empty, throwsA(equals("linearProgramPhase is infeasible")))
+    open() -> Optimum = linearProgramPhase([1.0], [[-1.0]], [1.0])
+    expect(open, throwsA(equals("linearProgramPhase is unbounded")))
+
+  test "a sparse pattern is built once and the residual is the dense gap":
+    pattern = sparseMatrix(2, [0, 0, 1, 1], [0, 1, 0, 1], [4.0, 1.0, 1.0, 3.0])
+    expect(pattern.builds, 1)
+    image = sparseMultiply(pattern, [1.0, 2.0])
+    expect(image, [6.0, 7.0])
+    expect(pattern.builds, 1)
+    expect(sparseResidual(pattern, [1.0, 2.0], [6.0, 7.0]), 0.0)
+    expect(pattern.rowStart, [0, 2, 4])
+
+  test "decimal rounding is named and never uses a binary float":
+    expect(decimal("1.50", 2, "halfEven").digits, bigInt("150"))
+    expect(decimal("0.1", 2, "halfEven").digits, bigInt("10"))
+    half = decimalDivide(decimal("1", 0, "halfEven"), decimal("2", 0, "halfEven"), 0, "halfEven")
+    away = decimalDivide(decimal("1", 0, "halfEven"), decimal("2", 0, "halfEven"), 0, "halfAway")
+    expect(half.digits, bigInt("0"))
+    expect(away.digits, bigInt("1"))
+    third = decimalDivide(decimal("1", 0, "halfEven"), decimal("3", 0, "halfEven"), 4, "halfEven")
+    expect(third.digits, bigInt("3333"))
+    sum = decimalAdd(decimal("1.5", 1, "halfEven"), decimal("0.25", 2, "halfEven"))
+    expect(sum.scale, 2)
+    expect(sum.digits, bigInt("175"))
+    gap = decimalSubtract(sum, decimal("0.25", 2, "halfEven"))
+    expect(gap.digits, bigInt("150"))
+    expect(decimalMultiply(decimal("2", 0, "halfEven"), decimal("3", 0, "halfEven")).digits, bigInt("6"))
+    bad() -> Decimal = decimal("1.2", 1, "silent")
+    expect(bad, throwsA(equals("decimal rounding must be named")))
+
+  test "outward intervals contain the exact binary sum and product":
+    one = outwardAdd(outwardPoint(1.0), outwardPoint(1.0))
+    expect(one.low < 2.0 and one.high > 2.0, true)
+    span = outwardAdd(outwardPoint(0.1), outwardPoint(0.2))
+    exact = binaryFraction(0.1) + binaryFraction(0.2)
+    expect(binaryFraction(span.low).compareTo(exact) <= 0, true)
+    expect(exact.compareTo(binaryFraction(span.high)) <= 0, true)
+    box = outwardMultiply(outwardPoint(2.0), outwardPoint(3.0))
+    expect(box.low < 6.0 and box.high > 6.0, true)
+    difference = outwardSubtract(outwardPoint(5.0), outwardPoint(2.0))
+    expect(difference.low < 3.0 and difference.high > 3.0, true)
+    third = outwardDivide(outwardPoint(1.0), outwardPoint(3.0))
+    ratio = bigFraction(BigInt.one, BigInt.from(3))
+    expect(binaryFraction(third.low).compareTo(ratio) <= 0, true)
+    expect(ratio.compareTo(binaryFraction(third.high)) <= 0, true)
+    zero() -> OutwardInterval = outwardDivide(outwardPoint(1.0), outwardPoint(0.0))
+    expect(zero, throwsA(equals("outward division by an interval containing zero")))
+
+  test "reverse mode matches one forward gradient and records a single walk":
+    forward = autoGradient((v: List<Dual>) -> v[0] * v[0] * v[1], [2.0, 3.0])
+    backward = reverseGradient((v: List<Reverse>) -> v[0] * v[0] * v[1], [2.0, 3.0])
+    expect(forward, [12.0, 4.0])
+    expect(backward, [12.0, 4.0])
+    slope = reverseGradient((v: List<Reverse>) -> v[0].sin(), [0.0])
+    expect(_close(slope[0], 1.0), true)
+
+  test "weighted moments, a stream, and a seeded percentile bootstrap":
+    expect(weightedMean([1.0, 3.0], [1.0, 3.0]), 2.5)
+    expect(weightedVariance([1.0, 3.0], [1.0, 1.0]), 1.0)
+    moments = streamAdd(streamAdd(streamAdd(streamMoments(), 1.0), 2.0), 3.0)
+    expect(streamMean(moments), 2.0)
+    expect(streamSampleVariance(moments), 1.0)
+    early() -> double = streamSampleVariance(streamMoments())
+    expect(early, throwsA(equals("stream variance needs two samples")))
+    sample = bootstrapMean([0.0, 10.0], 8, 1, 0.5)
+    expect(sample.low, 5.0)
+    expect(sample.high, 10.0)
+    expect(sample.seed, 1)
+    again = bootstrapMean([0.0, 10.0], 8, 1, 0.5)
+    expect(again.low, sample.low)
+    expect(again.high, sample.high)
+
+  test "a stiff step that does not converge is rejected":
+    bad() -> List<double> = implicitEuler((x: double, y: List<double>) -> [1.0 / 0.0], 0.0, [0.0], 1.0, 1)
+    expect(bad, throwsA(equals("implicitEuler did not converge")))
+
+  test "window-sum STFT and an unnormalized causal FIR":
+    window = [0.5, 0.5]
+    frames = stft([1.0, 1.0, 1.0, 1.0], window, 2)
+    expect(frames.length, 2)
+    expect(_close(frames[0][0].real, 1.0), true)
+    expect(_close(frames[0][1].real, 0.0), true)
+    expect(firGain([0.5, 0.5]), 1.0)
+    expect(firFilter([2.0, 2.0, 2.0], [0.5, 0.5]), [1.0, 2.0, 2.0])
+
+  test "symbolic simplification refuses the unsafe identities":
+    x = exprSymbol("x")
+    expect(exprText(simplifyExpr(exprAdd(exprNumber(bigFraction(BigInt.zero, BigInt.one)), x))), "x")
+    expect(exprText(simplifyExpr(exprSubtract(x, exprNumber(bigFraction(BigInt.zero, BigInt.one))))), "x")
+    expect(exprText(simplifyExpr(exprSqrt(exprMultiply(x, x)))), "(sqrt((x*x)))")
+    expect(exprText(simplifyExpr(exprDivide(x, x))), "(x/x)")
+    square = exprPower(x, exprNumber(bigFraction(BigInt.from(2), BigInt.one)))
+    expect(exprText(deriveExpr(square, "x")), "(2/1*x)")
+    expect(exprText(integratePolynomial(exprMultiply(exprNumber(bigFraction(BigInt.from(2), BigInt.one)), x), "x")), "(x^2/1)")
+    unsupported() -> Expr = deriveExpr(exprSin(x), "x")
+    expect(unsupported, throwsA(equals("symbolic derivative is not supported")))
+
+  test "tensor products, prime fields, and triangle Euler numbers":
+    left = tensor([2, 2], [1.0, 2.0, 3.0, 4.0])
+    right = tensor([2, 2], [5.0, 6.0, 7.0, 8.0])
+    expect(tensorMatmul(left, right).values, [19.0, 22.0, 43.0, 50.0])
+    expect(tensorAdd(tensor([2], [1.0, 2.0]), tensor([2], [3.0, 4.0])).values, [4.0, 6.0])
+    expect(fieldAdd(fieldElement(2, 5), fieldElement(3, 5)).residue, 0)
+    expect(fieldMultiply(fieldElement(2, 5), fieldElement(3, 5)).residue, 1)
+    expect(fieldInverse(fieldElement(2, 5)).residue, 3)
+    composite() -> FieldElement = fieldElement(1, 4)
+    expect(composite, throwsA(equals("finite field needs a prime modulus")))
+    zero() -> FieldElement = fieldInverse(fieldElement(0, 5))
+    expect(zero, throwsA(equals("finite field element has no inverse")))
+    expect(eulerCharacteristic(3, [[0, 1, 2]]), 1)
+    expect(eulerCharacteristic(4, [[0, 1, 2], [0, 2, 3]]), 1)
+    print "QUDS PLAN CHECKS=78 FAILURES=0"

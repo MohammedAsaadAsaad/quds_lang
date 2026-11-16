@@ -9,8 +9,10 @@
 # and every section named stats::something. This file is divided into scalar,
 # number, complex, vector, interval, stats, distribution, calculus, interp,
 # linalg, polynomial, signal, special, optimize, graph, graph::weighted,
-# graph::flow, graph::matching, exact, autodiff, and geometry. Each of those
-# sections is opened once. support collects
+# graph::flow, graph::matching, exact, exact::decimal, autodiff,
+# autodiff::reverse, geometry, symbolic, tensor, algebra, and topology. Each
+# of those sections is opened once. interval::outward is the outward-rounded
+# interval type. support collects
 # private helpers and exports nothing.
 # A bare :: returns the following declarations to the library root.
 # use quds:math still imports the whole library, including dart:math.
@@ -1032,6 +1034,122 @@ interval(a: double, b: double) -> Interval:
   if a <= b: return Interval(low: a, high: b)
   return Interval(low: b, high: a)
 
+:: interval::outward
+
+# A new closed interval with outward binary64 rounding. This is not Interval:
+# Interval stays an unordered-end span with no arithmetic. Endpoints must be
+# finite and ordered. Zero steps out to the smallest normal, so a subnormal
+# gap is still an enclosure. A subnormal input endpoint is rejected.
+value class OutwardInterval:
+  low: double required
+  high: double required
+
+# The point interval containing one finite binary64 value.
+# Example:
+#   print outwardPoint(1.0).low
+outwardPoint(value: double) -> OutwardInterval:
+  if not _finite(value): throw "outward interval needs finite endpoints"
+  return OutwardInterval(low: value, high: value)
+
+# Outward sum. The exact sum of the endpoint values lies inside the result.
+# Example:
+#   print outwardAdd(outwardPoint(1.0), outwardPoint(1.0)).high > 2.0
+outwardAdd(left: OutwardInterval, right: OutwardInterval) -> OutwardInterval:
+  _checkOutward(left)
+  _checkOutward(right)
+  return _outwardEnds(_nextDown(left.low + right.low), _nextUp(left.high + right.high))
+
+# Outward difference, containing every exact left endpoint minus right endpoint.
+outwardSubtract(left: OutwardInterval, right: OutwardInterval) -> OutwardInterval:
+  _checkOutward(left)
+  _checkOutward(right)
+  return _outwardEnds(_nextDown(left.low - right.high), _nextUp(left.high - right.low))
+
+# Outward product of every endpoint pair.
+outwardMultiply(left: OutwardInterval, right: OutwardInterval) -> OutwardInterval:
+  _checkOutward(left)
+  _checkOutward(right)
+  a = left.low * right.low
+  b = left.low * right.high
+  c = left.high * right.low
+  d = left.high * right.high
+  return _outwardEnds(_nextDown(_outwardMin4(a, b, c, d)), _nextUp(_outwardMax4(a, b, c, d)))
+
+# Outward quotient. An interval containing zero cannot be a divisor.
+outwardDivide(left: OutwardInterval, right: OutwardInterval) -> OutwardInterval:
+  _checkOutward(left)
+  _checkOutward(right)
+  if right.low <= 0.0 and right.high >= 0.0: throw "outward division by an interval containing zero"
+  a = left.low / right.low
+  b = left.low / right.high
+  c = left.high / right.low
+  d = left.high / right.high
+  return _outwardEnds(_nextDown(_outwardMin4(a, b, c, d)), _nextUp(_outwardMax4(a, b, c, d)))
+
+_checkOutward(span: OutwardInterval):
+  if not _finite(span.low) or not _finite(span.high) or span.low > span.high:
+    throw "outward interval needs finite ordered endpoints"
+
+_outwardEnds(low: double, high: double) -> OutwardInterval:
+  if not _finite(low) or not _finite(high): throw "outward interval overflow"
+  return OutwardInterval(low: low, high: high)
+
+_outwardMin4(a: double, b: double, c: double, d: double) -> double:
+  var best = a
+  if b < best: best = b
+  if c < best: best = c
+  if d < best: best = d
+  return best
+
+_outwardMax4(a: double, b: double, c: double, d: double) -> double:
+  var best = a
+  if b > best: best = b
+  if c > best: best = c
+  if d > best: best = d
+  return best
+
+_nextDown(value: double) -> double:
+  return 0.0 - _nextUp(0.0 - value)
+
+_nextUp(value: double) -> double:
+  if not _finite(value): throw "outward interval needs finite endpoints"
+  if value == 0.0: return 2.2250738585072014e-308
+  var negative = value < 0.0
+  var magnitude = value
+  if negative: magnitude = 0.0 - value
+  if magnitude < 2.2250738585072014e-308: throw "outward interval endpoint is subnormal"
+  var scaled = magnitude
+  var exponent = 0
+  var guard = 0
+  while scaled >= 2.0 and guard < 2000:
+    scaled = scaled / 2.0
+    exponent += 1
+    guard += 1
+  while scaled < 1.0 and guard < 4000:
+    scaled = scaled * 2.0
+    exponent -= 1
+    guard += 1
+  var unit = 1.0
+  var shift = exponent - 52
+  if shift >= 0:
+    var step = 0
+    while step < shift:
+      unit = unit * 2.0
+      step += 1
+  else:
+    var step = 0
+    while step < 0 - shift:
+      unit = unit / 2.0
+      step += 1
+  if negative:
+    var toward = magnitude - unit
+    if scaled == 1.0: toward = magnitude - unit / 2.0
+    if toward == magnitude: throw "outward interval step underflowed"
+    return 0.0 - toward
+  raised = magnitude + unit
+  if raised == magnitude: throw "outward interval step underflowed"
+  return raised
+
 :: stats
 
 # The sum of [values]. An empty list is 0.
@@ -1739,6 +1857,106 @@ extend List<double> Samples:
   #   print numbers.maximum()
   maximum() -> double = maximum(this)
 
+# Arithmetic mean with nonnegative reliability weights. An empty list, a
+# negative weight, or a zero total weight throws. The result is sum(w*x)/sum(w).
+# Example:
+#   print weightedMean([1.0, 3.0], [1.0, 1.0])
+weightedMean(values: List<double>, weights: List<double>) -> double:
+  if values.isEmpty or values.length != weights.length: throw "weightedMean needs values and matching weights"
+  var weightSum = 0.0
+  var total = 0.0
+  var index = 0
+  while index < values.length:
+    weight = weights[index]
+    value = values[index]
+    if not _finite(weight) or not _finite(value) or weight < 0.0: throw "weight must be nonnegative and finite"
+    weightSum = weightSum + weight
+    total = total + weight * value
+    index += 1
+  if weightSum == 0.0: throw "weights must have a positive sum"
+  return total / weightSum
+
+# Population variance for the same reliability weights: sum(w*(x-mean)^2)/sum(w).
+# This is not the Bessel-corrected sample variance.
+weightedVariance(values: List<double>, weights: List<double>) -> double:
+  center = weightedMean(values, weights)
+  var weightSum = 0.0
+  var total = 0.0
+  var index = 0
+  while index < values.length:
+    gap = values[index] - center
+    weightSum = weightSum + weights[index]
+    total = total + weights[index] * gap * gap
+    index += 1
+  return total / weightSum
+
+# Welford moments. count, mean, and the sum of squared deviations are updated
+# in place. The sample variance divides by count-1 and needs two samples.
+class StreamMoments:
+  var count: int = 0
+  var mean: double = 0.0
+  var second: double = 0.0
+
+streamMoments() -> StreamMoments:
+  return StreamMoments()
+
+streamAdd(moments: StreamMoments, value: double) -> StreamMoments:
+  if not _finite(value): throw "stream sample must be finite"
+  moments.count = moments.count + 1
+  delta = value - moments.mean
+  moments.mean = moments.mean + delta / (moments.count to double)
+  after = value - moments.mean
+  moments.second = moments.second + delta * after
+  return moments
+
+streamMean(moments: StreamMoments) -> double:
+  if moments.count < 1: throw "stream mean needs a sample"
+  return moments.mean
+
+streamSampleVariance(moments: StreamMoments) -> double:
+  if moments.count < 2: throw "stream variance needs two samples"
+  return moments.second / ((moments.count - 1) to double)
+
+# Percentile bootstrap of the sample mean. The generator is minstd:
+# state = seed * 48271 mod 2147483647, then index = state mod n.
+# [seed] is the first state and must be from 1 through 2147483646.
+# [level] is the nominal central probability, strictly between 0 and 1.
+# Ranks are floor((replicates-1)*(1-level)/2) and
+# floor((replicates-1)*(1+level)/2) of the sorted resample means.
+# This is a reproducible percentile interval. It does not certify that the
+# false-alarm rate equals 1-level.
+value class BootstrapInterval:
+  low: double required
+  high: double required
+  seed: int required
+  replicates: int required
+  level: double required
+
+bootstrapMean(values: List<double>, replicates: int, seed: int, level: double) -> BootstrapInterval:
+  if values.isEmpty or values.length > 10000: throw "bootstrap needs from 1 through 10000 values"
+  if replicates < 1 or replicates > 10000: throw "bootstrap replicates must be from 1 through 10000"
+  if seed < 1 or seed > 2147483646: throw "bootstrap seed must be from 1 through 2147483646"
+  if not (level > 0.0 and level < 1.0): throw "bootstrap level must be strictly between 0 and 1"
+  for value in values:
+    if not _finite(value): throw "bootstrap sample must be finite"
+  means: List<double> = []
+  var generator = seed
+  var copy = 0
+  while copy < replicates:
+    var total = 0.0
+    var draw = 0
+    while draw < values.length:
+      generator = (generator * 48271) % 2147483647
+      total = total + values[generator % values.length]
+      draw += 1
+    means.add(total / (values.length to double))
+    copy += 1
+  means.sort()
+  span = (replicates - 1) to double
+  lowIndex = (span * (1.0 - level) / 2.0).floor
+  highIndex = (span * (1.0 + level) / 2.0).floor
+  return BootstrapInterval(low: means[lowIndex], high: means[highIndex], seed: seed, replicates: replicates, level: level)
+
 :: distribution
 
 # The error function, from the regularized incomplete gamma function.
@@ -1836,6 +2054,40 @@ poissonPmf(k: int, lambda: double) -> double:
     if k == 0: return 1.0
     return 0.0
   return math.exp(0.0 - lambda + (k to double) * math.log(lambda) - logGamma((k to double) + 1.0))
+
+# Natural log of the normal density. Finite for every finite z, including
+# tails where normalPdf underflows to 0. At those tails the density contract
+# remains 0, and this log contract remains the exact log formula in binary64.
+# Example:
+#   print normalLogPdf(0.0)
+normalLogPdf(x: double, center: double = 0.0, sigma: double = 1.0) -> double:
+  if sigma <= 0.0: throw "sigma must be positive"
+  z = _differenceRatio(x, center, sigma)
+  return 0.0 - 0.5 * math.log(2.0 * math.pi) - math.log(sigma) - 0.5 * z * z
+
+# Natural log of the Poisson probability. A negative count is -infinity, matching
+# poissonPmf returning 0. lambda 0 is 0 at k 0 and -infinity otherwise.
+# The log stays finite when the probability itself underflows.
+poissonLogPmf(k: int, lambda: double) -> double:
+  if lambda < 0.0: throw "lambda cannot be negative"
+  if k < 0: return 0.0 - 1.0 / 0.0
+  if lambda == 0.0:
+    if k == 0: return 0.0
+    return 0.0 - 1.0 / 0.0
+  return 0.0 - lambda + (k to double) * math.log(lambda) - logGamma((k to double) + 1.0)
+
+# Natural log of the binomial probability. p of 0 or 1 uses the same 0 and 1
+# cases as binomialPmf, without calling ln(0).
+binomialLogPmf(k: int, n: int, p: double) -> double:
+  if k < 0 or n < 0 or k > n: return 0.0 - 1.0 / 0.0
+  if p < 0.0 or p > 1.0: throw "probability must be from 0 through 1"
+  if p == 0.0:
+    if k == 0: return 0.0
+    return 0.0 - 1.0 / 0.0
+  if p == 1.0:
+    if k == n: return 0.0
+    return 0.0 - 1.0 / 0.0
+  return _logChoose(n, k) + (k to double) * math.log(p) + ((n - k) to double) * log1p(0.0 - p)
 
 # Beta function.
 # Example:
@@ -2932,6 +3184,9 @@ solveBoundary(
   return made
 
 # Backward Euler for a stiff system. The result is the state at [x1].
+# Each step runs a short Newton iteration and then checks the backward-Euler
+# residual. If that residual is not finite or not within tolerance, this throws
+# and does not return the last Newton state.
 # Example:
 #   print implicitEuler((x: double, y: List<double>) -> [0.0 - 50.0 * y[0]], 0.0, [1.0], 1.0, 4)[0]
 implicitEuler(
@@ -4293,6 +4548,76 @@ sparseConjugateGradient(rowIndex: List<int>, columnIndex: List<int>, entries: Li
     made.add(_scaleRatio(value, bScale, aScale))
   return made
 
+# Compressed-row pattern built once. [builds] stays 1: later products read this
+# pattern and allocate only the output vector. [rowStart] has size+1 entries.
+class SparseMatrix:
+  var builds: int = 1
+  var size: int = 0
+  rowStart: List<int>
+  columns: List<int>
+  entries: List<double>
+
+# One coordinate pass builds the pattern. Duplicate positions stay separate.
+# Example:
+#   print sparseMatrix(2, [0, 1], [0, 1], [4.0, 3.0]).builds
+sparseMatrix(size: int, rowIndex: List<int>, columnIndex: List<int>, entries: List<double>) -> SparseMatrix:
+  if size < 0 or size > 256: throw "sparseMatrix size must be from 0 through 256"
+  if rowIndex.length != columnIndex.length or rowIndex.length != entries.length:
+    throw "sparseMatrix needs one entry per index"
+  if entries.length > 4096: throw "sparseMatrix exceeds the work limit"
+  var counts = _zeroInts(size)
+  var index = 0
+  while index < entries.length:
+    row = rowIndex[index]
+    column = columnIndex[index]
+    if row < 0 or column < 0 or row >= size or column >= size: throw "sparseMatrix index is outside the matrix"
+    if not _finite(entries[index]): throw "matrix entries must be finite"
+    counts = _setInt(counts, row, counts[row] + 1)
+    index += 1
+  var rowStart = _zeroInts(size + 1)
+  var row = 0
+  while row < size:
+    rowStart = _setInt(rowStart, row + 1, rowStart[row] + counts[row])
+    row += 1
+  var cursor = _zeroInts(size)
+  var columns = _zeroInts(entries.length)
+  var stored: List<double> = []
+  var fill = 0
+  while fill < entries.length:
+    stored.add(0.0)
+    fill += 1
+  index = 0
+  while index < entries.length:
+    row = rowIndex[index]
+    place = rowStart[row] + cursor[row]
+    columns = _setInt(columns, place, columnIndex[index])
+    stored = _setAt(stored, place, entries[index])
+    cursor = _setInt(cursor, row, cursor[row] + 1)
+    index += 1
+  return SparseMatrix(builds: 1, size: size, rowStart: rowStart, columns: columns, entries: stored)
+
+# Product using the stored pattern. Does not allocate another copy of the indices.
+sparseMultiply(matrix: SparseMatrix, vector: List<double>) -> List<double>:
+  if vector.length != matrix.size: throw "sparseMultiply needs one value per row"
+  var made = _zeroDoubles(matrix.size)
+  var row = 0
+  while row < matrix.size:
+    var cursor = matrix.rowStart[row]
+    var stop = matrix.rowStart[row + 1]
+    var total = 0.0
+    while cursor < stop:
+      total = total + matrix.entries[cursor] * vector[matrix.columns[cursor]]
+      cursor += 1
+    made = _setAt(made, row, total)
+    row += 1
+  return made
+
+# Euclidean residual ||A x - b||. The pattern is not rebuilt.
+sparseResidual(matrix: SparseMatrix, solution: List<double>, rhs: List<double>) -> double:
+  if rhs.length != matrix.size: throw "sparseResidual needs one value per row"
+  image = sparseMultiply(matrix, solution)
+  return vectorLength(_axpy(image, rhs, -1.0))
+
 _adaptEstimate(f: (double) -> double, a: double, b: double, eps: double, whole: double, depth: int) -> Estimate:
   mid = (a + b) / 2.0
   left = _simpson3(f, a, mid)
@@ -4782,6 +5107,62 @@ inverseHaar(values: List<double>) -> List<double>:
     length = length * 2
   return data
 
+# Short-time transform. Each full frame is windowed, transformed by fft, then
+# divided by the sum of the window. That window-sum normalization makes a
+# constant signal of amplitude 1 have DC real part 1. No partial frame is
+# padded. The window length must be a positive power of two, and hop at least 1.
+# Example:
+#   print stft([1.0, 1.0], [1.0, 1.0], 2)[0][0].real
+stft(samples: List<double>, window: List<double>, hop: int) -> List<List<Complex>>:
+  if window.isEmpty or not _powerOfTwo(window.length): throw "stft window must be a positive power of two"
+  if hop < 1: throw "stft hop must be positive"
+  var gain = 0.0
+  for weight in window:
+    if not _finite(weight): throw "stft window must be finite"
+    gain = gain + weight
+  if gain == 0.0: throw "stft window sum must be nonzero"
+  frames: List<List<Complex>> = []
+  var start = 0
+  while start + window.length <= samples.length:
+    frame: List<Complex> = []
+    var index = 0
+    while index < window.length:
+      sample = samples[start + index]
+      if not _finite(sample): throw "stft samples must be finite"
+      frame.add(Complex(real: sample * window[index], imag: 0.0))
+      index += 1
+    spectrum = fft(frame)
+    scaled: List<Complex> = []
+    for bin in spectrum:
+      scaled.add(Complex(real: bin.real / gain, imag: bin.imag / gain))
+    frames.add(scaled)
+    start += hop
+  return frames
+
+# Causal FIR. y[n] = sum_k coef[k] * x[n-k], with x before the start equal to 0.
+# There is no hidden gain: firGain is the sum of the taps, which is the DC gain.
+firFilter(samples: List<double>, coefficients: List<double>) -> List<double>:
+  if coefficients.isEmpty: throw "firFilter needs coefficients"
+  made: List<double> = []
+  var index = 0
+  while index < samples.length:
+    var total = 0.0
+    var tap = 0
+    while tap < coefficients.length:
+      source = index - tap
+      if source >= 0: total = total + coefficients[tap] * samples[source]
+      tap += 1
+    made.add(total)
+    index += 1
+  return made
+
+# Sum of FIR taps. This is the DC gain under the causal convention above.
+firGain(coefficients: List<double>) -> double:
+  var total = 0.0
+  for coefficient in coefficients:
+    total = total + coefficient
+  return total
+
 :: optimize
 
 # A root of [f] bracketed by a sign change, by Brent's method.
@@ -5062,6 +5443,158 @@ linearProgram(
     if basis[i] < n: position = _setAt(position, basis[i], board[i][width - 1])
     i = i + 1
   return Optimum(value: board[m][width - 1], position: position)
+
+# Same shape as linearProgram, except a negative limit is allowed. Phase I
+# minimizes the sum of artificial variables. A positive sum throws
+# "linearProgramPhase is infeasible" and does not return a point. An unbounded
+# ray throws. x stays nonnegative. At most 12 variables and 12 constraints.
+# Example:
+#   print linearProgramPhase([1.0], [[-1.0], [1.0]], [-1.0, 3.0]).value
+linearProgramPhase(costs: List<double>, rows: List<List<double>>, limits: List<double>) -> Optimum:
+  if costs.isEmpty or rows.isEmpty or rows.length != limits.length:
+    throw "linearProgramPhase needs costs, constraints, and limits"
+  m = rows.length
+  n = costs.length
+  if n > 12 or m > 12: throw "linearProgramPhase exceeds the work limit"
+  var artificials = 0
+  var i = 0
+  while i < m:
+    if rows[i].length != n: throw "linearProgramPhase needs one column per cost"
+    if not _finite(limits[i]): throw "linearProgramPhase needs finite entries"
+    if limits[i] < 0.0: artificials += 1
+    var j = 0
+    while j < n:
+      if not _finite(rows[i][j]): throw "linearProgramPhase needs finite entries"
+      j += 1
+    i += 1
+  for cost in costs:
+    if not _finite(cost): throw "linearProgramPhase needs finite entries"
+  width = n + m + artificials + 1
+  var board = _filled(m + 1, width, 0.0)
+  var basis = _zeroInts(m)
+  var artColumn = n + m
+  i = 0
+  while i < m:
+    var sign = 1.0
+    var rhs = limits[i]
+    if limits[i] < 0.0:
+      sign = -1.0
+      rhs = 0.0 - limits[i]
+    var j = 0
+    while j < n:
+      board = _put(board, i, j, sign * rows[i][j])
+      j += 1
+    board = _put(board, i, n + i, sign)
+    if limits[i] < 0.0:
+      board = _put(board, i, artColumn, 1.0)
+      basis = _setInt(basis, i, artColumn)
+      artColumn += 1
+    else:
+      basis = _setInt(basis, i, n + i)
+    board = _put(board, i, width - 1, rhs)
+    i += 1
+  var art = 0
+  while art < artificials:
+    board = _put(board, m, n + m + art, 1.0)
+    art += 1
+  i = 0
+  while i < m:
+    if basis[i] >= n + m:
+      factor = board[m][basis[i]]
+      var col = 0
+      while col < width:
+        board = _put(board, m, col, board[m][col] - factor * board[i][col])
+        col += 1
+    i += 1
+  var solved = _phaseSimplex(board, basis, m, width)
+  if solved.grid[m][width - 1] < 0.0 - 1.0e-7: throw "linearProgramPhase is infeasible"
+  board = solved.grid
+  basis = solved.basis
+  var col = 0
+  while col < width:
+    board = _put(board, m, col, 0.0)
+    col += 1
+  var j = 0
+  while j < n:
+    board = _put(board, m, j, 0.0 - costs[j])
+    j += 1
+  i = 0
+  while i < m:
+    if basis[i] < n:
+      factor = board[m][basis[i]]
+      col = 0
+      while col < width:
+        board = _put(board, m, col, board[m][col] - factor * board[i][col])
+        col += 1
+    i += 1
+  art = 0
+  while art < artificials:
+    board = _put(board, m, n + m + art, 1.0)
+    art += 1
+  solved = _phaseSimplex(board, basis, m, width)
+  var position = _zeroDoubles(n)
+  i = 0
+  while i < m:
+    if solved.basis[i] < n: position = _setAt(position, solved.basis[i], solved.grid[i][width - 1])
+    i += 1
+  return Optimum(value: solved.grid[m][width - 1], position: position)
+
+class _PhaseState:
+  grid: List<List<double>>
+  basis: List<int>
+
+_phaseSimplex(board: List<List<double>>, basis: List<int>, m: int, width: int) -> _PhaseState:
+  var grid = board
+  var base = basis
+  var guard = 0
+  var optimal = false
+  limit = 1000 * width
+  while guard < limit and not optimal:
+    var column = 0 - 1
+    var j = 0
+    while j < width - 1:
+      if column < 0 and grid[m][j] < 0.0 - 1.0e-9: column = j
+      j += 1
+    if column < 0:
+      optimal = true
+    else:
+      var pivotRow = 0 - 1
+      var best = 0.0
+      var seen = false
+      var i = 0
+      while i < m:
+        if grid[i][column] > 1.0e-12:
+          ratio = grid[i][width - 1] / grid[i][column]
+          var take = false
+          if not seen: take = true
+          else:
+            if ratio < best - 1.0e-15: take = true
+            else:
+              if _abs(ratio - best) <= 1.0e-15 and base[i] < base[pivotRow]: take = true
+          if take:
+            best = ratio
+            pivotRow = i
+            seen = true
+        i += 1
+      if pivotRow < 0: throw "linearProgramPhase is unbounded"
+      pivot = grid[pivotRow][column]
+      var col = 0
+      while col < width:
+        grid = _put(grid, pivotRow, col, grid[pivotRow][col] / pivot)
+        col += 1
+      i = 0
+      while i <= m:
+        if i != pivotRow:
+          factor = grid[i][column]
+          col = 0
+          while col < width:
+            grid = _put(grid, i, col, grid[i][col] - factor * grid[pivotRow][col])
+            col += 1
+        i += 1
+      base = _setInt(base, pivotRow, column)
+      guard += 1
+  if not optimal: throw "linearProgramPhase did not converge"
+  return _PhaseState(grid: grid, basis: base)
 
 :: special
 
@@ -7950,6 +8483,151 @@ _bigFractionAdd(left: BigFraction, right: BigFraction, subtract: bool) -> BigFra
   else: top = top + right.numerator * rightScale
   return bigFraction(top, left.denominator * leftScale)
 
+:: exact::decimal
+
+# A base-10 fixed scale stored as a signed BigInt. No conversion through double.
+# [rounding] is one of halfEven, halfAway, floor, ceiling, towardZero.
+# Scale is the number of digits after the decimal point, from 0 through 100.
+value class Decimal:
+  digits: BigInt required
+  scale: int required
+
+# Parse decimal text at [scale], rounding extra digits by the named mode.
+# Example:
+#   print decimal("1.50", 2, "halfEven").digits
+decimal(text: String, scale: int, rounding: String) -> Decimal:
+  _decimalScale(scale)
+  _decimalMode(rounding)
+  if text.isEmpty: throw "decimal text is not a number"
+  var index = 0
+  var negative = false
+  if text[0] == "+": index = 1
+  else:
+    if text[0] == "-":
+      negative = true
+      index = 1
+  if index >= text.length: throw "decimal text is not a number"
+  var whole = BigInt.zero
+  var fracPart = BigInt.zero
+  var fractionDigits = 0
+  var sawDigit = false
+  var sawDot = false
+  while index < text.length:
+    ch = text[index]
+    if ch == ".":
+      if sawDot: throw "decimal text is not a number"
+      sawDot = true
+    else:
+      fractionDigits = _decimalAbsorb(ch, sawDot, fractionDigits)
+      if sawDot: fracPart = fracPart * BigInt.from(10) + BigInt.from(_decimalValue(ch))
+      else: whole = whole * BigInt.from(10) + BigInt.from(_decimalValue(ch))
+      sawDigit = true
+    index += 1
+  if not sawDigit: throw "decimal text is not a number"
+  var digits = whole * _decimalTen(fractionDigits) + fracPart
+  if fractionDigits > scale:
+    digits = _decimalRound(digits, _decimalTen(fractionDigits - scale), rounding)
+  else:
+    digits = digits * _decimalTen(scale - fractionDigits)
+  if negative: digits = BigInt.zero - digits
+  return Decimal(digits: digits, scale: scale)
+
+# Exact sum. The result scale is the larger input scale.
+decimalAdd(left: Decimal, right: Decimal) -> Decimal:
+  _decimalPair(left, right)
+  var scale = left.scale
+  var a = left.digits
+  var b = right.digits
+  if right.scale > scale:
+    a = a * _decimalTen(right.scale - scale)
+    scale = right.scale
+  else: b = b * _decimalTen(scale - right.scale)
+  return Decimal(digits: a + b, scale: scale)
+
+decimalSubtract(left: Decimal, right: Decimal) -> Decimal:
+  return decimalAdd(left, Decimal(digits: BigInt.zero - right.digits, scale: right.scale))
+
+# Exact product. Scales add, and the sum must stay within 100.
+decimalMultiply(left: Decimal, right: Decimal) -> Decimal:
+  _decimalPair(left, right)
+  scale = left.scale + right.scale
+  _decimalScale(scale)
+  return Decimal(digits: left.digits * right.digits, scale: scale)
+
+# Quotient stored at [scale] after the named rounding. The divisor must be nonzero.
+decimalDivide(left: Decimal, right: Decimal, scale: int, rounding: String) -> Decimal:
+  _decimalPair(left, right)
+  _decimalScale(scale)
+  _decimalMode(rounding)
+  if right.digits == BigInt.zero: throw "division by zero"
+  var numerator = left.digits * _decimalTen(scale + right.scale)
+  var denominator = right.digits
+  if denominator < BigInt.zero:
+    numerator = BigInt.zero - numerator
+    denominator = BigInt.zero - denominator
+  else: numerator = numerator * _decimalTen(0)
+  digits = _decimalRound(numerator, denominator * _decimalTen(left.scale), rounding)
+  return Decimal(digits: digits, scale: scale)
+
+_decimalScale(scale: int):
+  if scale < 0 or scale > 100: throw "decimal scale is outside 0 through 100"
+
+_decimalMode(rounding: String):
+  if rounding == "halfEven" or rounding == "halfAway" or rounding == "floor" or rounding == "ceiling" or rounding == "towardZero": return
+  throw "decimal rounding must be named"
+
+_decimalTen(scale: int) -> BigInt:
+  var power = BigInt.one
+  var index = 0
+  while index < scale:
+    power = power * BigInt.from(10)
+    index += 1
+  return power
+
+_decimalValue(ch: String) -> int:
+  if ch == "0": return 0
+  if ch == "1": return 1
+  if ch == "2": return 2
+  if ch == "3": return 3
+  if ch == "4": return 4
+  if ch == "5": return 5
+  if ch == "6": return 6
+  if ch == "7": return 7
+  if ch == "8": return 8
+  if ch == "9": return 9
+  throw "decimal text is not a number"
+
+_decimalAbsorb(ch: String, sawDot: bool, digits: int) -> int:
+  _decimalValue(ch)
+  if sawDot: return digits + 1
+  return digits
+
+_decimalPair(left: Decimal, right: Decimal):
+  _decimalScale(left.scale)
+  _decimalScale(right.scale)
+
+_decimalRound(numerator: BigInt, denominator: BigInt, rounding: String) -> BigInt:
+  if denominator <= BigInt.zero: throw "decimal rounding needs a positive divisor"
+  quotient = numerator ~/ denominator
+  var remainder = numerator - quotient * denominator
+  if remainder < BigInt.zero: remainder = BigInt.zero - remainder
+  if rounding == "towardZero": return quotient
+  if rounding == "floor":
+    if numerator < BigInt.zero and remainder != BigInt.zero: return quotient - BigInt.one
+    return quotient
+  if rounding == "ceiling":
+    if numerator > BigInt.zero and remainder != BigInt.zero: return quotient + BigInt.one
+    return quotient
+  twice = remainder * BigInt.from(2)
+  var bump = false
+  if twice > denominator: bump = true
+  if twice == denominator:
+    if rounding == "halfAway": bump = true
+    if rounding == "halfEven" and quotient % BigInt.from(2) != BigInt.zero: bump = true
+  if not bump: return quotient
+  if numerator >= BigInt.zero: return quotient + BigInt.one
+  return quotient - BigInt.one
+
 :: autodiff
 
 # Forward-mode automatic differentiation: value + tangent*epsilon, epsilon^2=0.
@@ -8168,6 +8846,148 @@ _dualPowerSlope(value: double, exponent: double, tangent: double) -> double:
   if value < 0.0 and exponent % 2.0 == 0.0: slope = -slope
   return slope
 
+# Second-order forward number: value + dx*e1 + dy*e2 + dxy*e1*e2.
+# Nonpositive sqrt and ln are rejected, including the nonsmooth point 0.
+value class HyperDual:
+  value: double required
+  dx: double required
+  dy: double required
+  dxy: double required
+
+  operator +(other: HyperDual) -> HyperDual:
+    return _hyper(value + other.value, dx + other.dx, dy + other.dy, dxy + other.dxy)
+
+  operator -(other: HyperDual) -> HyperDual:
+    return _hyper(value - other.value, dx - other.dx, dy - other.dy, dxy - other.dxy)
+
+  operator *(other: HyperDual) -> HyperDual:
+    return _hyper(value * other.value, dx * other.value + value * other.dx, dy * other.value + value * other.dy, dxy * other.value + value * other.dxy + dx * other.dy + dy * other.dx)
+
+  sin() -> HyperDual:
+    sine = math.sin(value)
+    cosine = math.cos(value)
+    return _hyper(sine, cosine * dx, cosine * dy, cosine * dxy - sine * dx * dy)
+
+  sqrt() -> HyperDual:
+    if value <= 0.0: throw "HyperDual.sqrt needs a positive value"
+    root = math.sqrt(value)
+    slope = 1.0 / (2.0 * root)
+    curve = 0.0 - 1.0 / (4.0 * root * root * root)
+    return _hyper(root, slope * dx, slope * dy, slope * dxy + curve * dx * dy)
+
+# Hessian by one forward HyperDual evaluation per input pair, in coordinate
+# order. At most 8 inputs. A nonsmooth callback throws from the HyperDual
+# operation and no finite-difference substitute is used.
+# Example:
+#   print autoHessian((v: List<HyperDual>) -> v[0] * v[0], [3.0])[0][0]
+autoHessian(f: (List<HyperDual>) -> HyperDual, point: List<double>) -> List<List<double>>:
+  if point.length > 8: throw "autoHessian exceeds the work limit"
+  for value in point:
+    if not _finite(value): throw "automatic differentiation needs a finite point"
+  rows: List<List<double>> = []
+  var i = 0
+  while i < point.length:
+    row: List<double> = []
+    var j = 0
+    while j < point.length:
+      seed: List<HyperDual> = []
+      var k = 0
+      while k < point.length:
+        var dx = 0.0
+        var dy = 0.0
+        if k == i: dx = 1.0
+        if k == j: dy = 1.0
+        seed.add(HyperDual(value: point[k], dx: dx, dy: dy, dxy: 0.0))
+        k += 1
+      output = f(seed)
+      if not _finite(output.value) or not _finite(output.dxy): throw "HyperDual result is not finite"
+      row.add(output.dxy)
+      j += 1
+    rows.add(row)
+    i += 1
+  return rows
+
+_hyper(value: double, dx: double, dy: double, dxy: double) -> HyperDual:
+  if not _finite(value) or not _finite(dx) or not _finite(dy) or not _finite(dxy):
+    throw "HyperDual result is not finite"
+  return HyperDual(value: value, dx: dx, dy: dy, dxy: dxy)
+
+:: autodiff::reverse
+
+class ReverseNode:
+  var adjoint: double = 0.0
+  value: double
+  left: int
+  right: int
+  leftSlope: double
+  rightSlope: double
+
+class ReverseTape:
+  nodes: List<ReverseNode>
+
+# Reverse-mode value. The tape is recorded by the operations and walked once
+# from the output. This type is not Dual and does not store a forward tangent.
+value class Reverse:
+  tape: ReverseTape
+  index: int
+
+  operator +(other: Reverse) -> Reverse:
+    _revSame(tape, other.tape)
+    return _revPush(tape, _revAt(this) + _revAt(other), index, other.index, 1.0, 1.0)
+
+  operator *(other: Reverse) -> Reverse:
+    _revSame(tape, other.tape)
+    return _revPush(tape, _revAt(this) * _revAt(other), index, other.index, _revAt(other), _revAt(this))
+
+  sin() -> Reverse:
+    value = _revAt(this)
+    return _revPush(tape, math.sin(value), index, -1, math.cos(value), 0.0)
+
+# Gradient from one recording of [f] and one backward walk. The callback is
+# called once. At most 32 inputs. Variable order matches [point].
+# Example:
+#   print reverseGradient((v: List<Reverse>) -> v[0] * v[0], [3.0])[0]
+reverseGradient(f: (List<Reverse>) -> Reverse, point: List<double>) -> List<double>:
+  if point.length > 32: throw "reverseGradient exceeds the work limit"
+  tape = ReverseTape(nodes: [])
+  variables: List<Reverse> = []
+  for value in point:
+    if not _finite(value): throw "reverseGradient needs a finite point"
+    variables.add(_revPush(tape, value, -1, -1, 0.0, 0.0))
+  output = f(variables)
+  _revSame(tape, output.tape)
+  _revBack(tape, output.index)
+  made: List<double> = []
+  var index = 0
+  while index < point.length:
+    made.add(tape.nodes[index].adjoint)
+    index += 1
+  return made
+
+_revAt(value: Reverse) -> double:
+  return value.tape.nodes[value.index].value
+
+_revSame(left: ReverseTape, right: ReverseTape):
+  if left.nodes.length != right.nodes.length: throw "reverse operation needs one tape"
+
+_revPush(tape: ReverseTape, value: double, left: int, right: int, leftSlope: double, rightSlope: double) -> Reverse:
+  if not _finite(value) or not _finite(leftSlope) or not _finite(rightSlope): throw "reverse result is not finite"
+  tape.nodes.add(ReverseNode(value: value, left: left, right: right, leftSlope: leftSlope, rightSlope: rightSlope))
+  return Reverse(tape: tape, index: tape.nodes.length - 1)
+
+_revBack(tape: ReverseTape, output: int):
+  tape.nodes[output].adjoint = 1.0
+  var index = tape.nodes.length - 1
+  while index >= 0:
+    node = tape.nodes[index]
+    if node.left >= 0:
+      left = tape.nodes[node.left]
+      left.adjoint = left.adjoint + node.adjoint * node.leftSlope
+    if node.right >= 0:
+      right = tape.nodes[node.right]
+      right.adjoint = right.adjoint + node.adjoint * node.rightSlope
+    index -= 1
+
 :: geometry
 
 # Exact rational representation of a finite binary64 value, not of its decimal
@@ -8331,3 +9151,365 @@ _appendHullPoint(hull: List<Vec2>, point: Vec2):
     if _orientationExact(hull[hull.length - 2], hull.last, point) > 0: break
     hull.removeLast()
   hull.add(point)
+
+:: symbolic
+
+# Mathematical expression tree. It is not the language parser: kinds are data,
+# and simplification does not rewrite the source. sqrt(x*x) stays, and x/x
+# stays, because neither identity holds for every value. An unsupported
+# derivative or integral throws instead of inventing a formula.
+value class Expr:
+  kind: String required
+  name: String required
+  number: BigFraction required
+  arguments: List<Expr> required
+
+exprNumber(number: BigFraction) -> Expr:
+  return Expr(kind: "number", name: "", number: bigFraction(number.numerator, number.denominator), arguments: _exprNone())
+
+exprSymbol(name: String) -> Expr:
+  if name.isEmpty: throw "symbolic symbol needs a name"
+  return Expr(kind: "symbol", name: name, number: _exprZero(), arguments: _exprNone())
+
+exprAdd(left: Expr, right: Expr) -> Expr = _exprNode("add", [left, right])
+
+exprSubtract(left: Expr, right: Expr) -> Expr = _exprNode("subtract", [left, right])
+
+exprMultiply(left: Expr, right: Expr) -> Expr = _exprNode("multiply", [left, right])
+
+exprDivide(left: Expr, right: Expr) -> Expr = _exprNode("divide", [left, right])
+
+exprPower(left: Expr, right: Expr) -> Expr = _exprNode("power", [left, right])
+
+exprSqrt(value: Expr) -> Expr = _exprNode("sqrt", [value])
+
+exprSin(value: Expr) -> Expr = _exprNode("sin", [value])
+
+# Constant folding and the identities +0, -0, *1, and *0. No cancellation of
+# a symbol with itself and no removal of a square root.
+simplifyExpr(expr: Expr) -> Expr:
+  if expr.kind == "number" or expr.kind == "symbol": return expr
+  arguments: List<Expr> = []
+  for argument in expr.arguments:
+    arguments.add(simplifyExpr(argument))
+  if expr.kind == "add" or expr.kind == "subtract" or expr.kind == "multiply" or expr.kind == "divide" or expr.kind == "power":
+    left = arguments[0]
+    right = arguments[1]
+    if expr.kind == "add":
+      if _exprIsNumber(left, _exprZero()): return right
+      if _exprIsNumber(right, _exprZero()): return left
+      if left.kind == "number" and right.kind == "number": return exprNumber(left.number + right.number)
+    if expr.kind == "subtract":
+      if _exprIsNumber(right, _exprZero()): return left
+      if left.kind == "number" and right.kind == "number": return exprNumber(left.number - right.number)
+    if expr.kind == "multiply":
+      if _exprIsNumber(left, _exprZero()) or _exprIsNumber(right, _exprZero()): return exprNumber(_exprZero())
+      if _exprIsNumber(left, _exprOne()): return right
+      if _exprIsNumber(right, _exprOne()): return left
+      if left.kind == "number" and right.kind == "number": return exprNumber(left.number * right.number)
+    if expr.kind == "divide":
+      if left.kind == "number" and right.kind == "number":
+        if right.number.numerator == BigInt.zero: throw "division by zero"
+        return exprNumber(left.number / right.number)
+    if expr.kind == "power":
+      if _exprIsNumber(right, _exprOne()): return left
+      if left.kind == "number" and right.kind == "number" and right.number.denominator == BigInt.one:
+        return exprNumber(_exprPowerNumber(left.number, right.number.numerator))
+  return Expr(kind: expr.kind, name: expr.name, number: expr.number, arguments: arguments)
+
+# Formal derivative in [variable]. sqrt and unknown kinds throw.
+deriveExpr(expr: Expr, variable: String) -> Expr:
+  if expr.kind == "number": return exprNumber(_exprZero())
+  if expr.kind == "symbol":
+    if expr.name == variable: return exprNumber(_exprOne())
+    return exprNumber(_exprZero())
+  if expr.kind == "add": return simplifyExpr(exprAdd(deriveExpr(expr.arguments[0], variable), deriveExpr(expr.arguments[1], variable)))
+  if expr.kind == "subtract": return simplifyExpr(exprSubtract(deriveExpr(expr.arguments[0], variable), deriveExpr(expr.arguments[1], variable)))
+  if expr.kind == "multiply":
+    left = expr.arguments[0]
+    right = expr.arguments[1]
+    return simplifyExpr(exprAdd(exprMultiply(deriveExpr(left, variable), right), exprMultiply(left, deriveExpr(right, variable))))
+  if expr.kind == "power":
+    exponent = expr.arguments[1]
+    if exponent.kind != "number" or exponent.number.denominator != BigInt.one: throw "symbolic derivative is not supported"
+    base = expr.arguments[0]
+    power = exprNumber(bigFraction(exponent.number.numerator - BigInt.one, BigInt.one))
+    factor = exprNumber(exponent.number)
+    return simplifyExpr(exprMultiply(exprMultiply(factor, exprPower(base, power)), deriveExpr(base, variable)))
+  throw "symbolic derivative is not supported"
+
+# Antiderivative of a polynomial in one symbol, with the constant term omitted.
+# Degree after expansion stays at most 16. Other expressions throw.
+integratePolynomial(expr: Expr, variable: String) -> Expr:
+  coefficients = _exprPolynomial(expr, variable)
+  integrated: List<Expr> = []
+  integrated.add(exprNumber(_exprZero()))
+  var power = 0
+  while power < coefficients.length:
+    denominator = BigInt.from(power + 1)
+    coefficient = bigFraction(coefficients[power].value.numerator, coefficients[power].value.denominator * denominator)
+    if coefficient.numerator != BigInt.zero:
+      var term = exprNumber(coefficient)
+      if power + 1 > 0:
+        term = exprMultiply(term, exprPower(exprSymbol(variable), exprNumber(bigFraction(BigInt.from(power + 1), BigInt.one))))
+      integrated.add(term)
+    power += 1
+  var total = integrated[0]
+  var index = 1
+  while index < integrated.length:
+    total = exprAdd(total, integrated[index])
+    index += 1
+  return simplifyExpr(total)
+
+exprText(expr: Expr) -> String:
+  if expr.kind == "number": return "{expr.number.numerator}/{expr.number.denominator}"
+  if expr.kind == "symbol": return expr.name
+  if expr.kind == "sqrt": return "(sqrt({exprText(expr.arguments[0])}))"
+  if expr.kind == "sin": return "(sin({exprText(expr.arguments[0])}))"
+  if expr.kind == "add": return "({exprText(expr.arguments[0])}+{exprText(expr.arguments[1])})"
+  if expr.kind == "subtract": return "({exprText(expr.arguments[0])}-{exprText(expr.arguments[1])})"
+  if expr.kind == "multiply": return "({exprText(expr.arguments[0])}*{exprText(expr.arguments[1])})"
+  if expr.kind == "divide": return "({exprText(expr.arguments[0])}/{exprText(expr.arguments[1])})"
+  if expr.kind == "power": return "({exprText(expr.arguments[0])}^{exprText(expr.arguments[1])})"
+  throw "symbolic expression is not supported"
+
+_exprNone() -> List<Expr>:
+  made: List<Expr> = []
+  return made
+
+_exprZero() -> BigFraction = bigFraction(BigInt.zero, BigInt.one)
+
+_exprOne() -> BigFraction = bigFraction(BigInt.one, BigInt.one)
+
+_exprNode(kind: String, arguments: List<Expr>) -> Expr:
+  return Expr(kind: kind, name: "", number: _exprZero(), arguments: arguments)
+
+_exprIsNumber(expr: Expr, number: BigFraction) -> bool:
+  return expr.kind == "number" and expr.number.numerator == number.numerator and expr.number.denominator == number.denominator
+
+_exprPowerNumber(number: BigFraction, exponent: BigInt) -> BigFraction:
+  if exponent < BigInt.zero:
+    if number.numerator == BigInt.zero: throw "division by zero"
+    inverted = bigFraction(number.denominator, number.numerator)
+    return _exprPowerNumber(inverted, BigInt.zero - exponent)
+  var total = _exprOne()
+  var count = BigInt.zero
+  while count < exponent:
+    total = total * number
+    count = count + BigInt.one
+    if count > BigInt.from(16): throw "symbolic power exceeds the work limit"
+  return total
+
+class _FracCell:
+  var value: BigFraction required
+
+_exprPolynomial(expr: Expr, variable: String) -> List<_FracCell>:
+  if expr.kind == "number": return _exprCoeff(_exprZero(), 0, expr.number)
+  if expr.kind == "symbol":
+    if expr.name != variable: throw "symbolic integral is not supported"
+    return _exprCoeff(_exprZero(), 1, _exprOne())
+  if expr.kind == "add": return _exprPolyAdd(_exprPolynomial(expr.arguments[0], variable), _exprPolynomial(expr.arguments[1], variable), false)
+  if expr.kind == "subtract": return _exprPolyAdd(_exprPolynomial(expr.arguments[0], variable), _exprPolynomial(expr.arguments[1], variable), true)
+  if expr.kind == "multiply": return _exprPolyMul(_exprPolynomial(expr.arguments[0], variable), _exprPolynomial(expr.arguments[1], variable))
+  if expr.kind == "power":
+    exponent = expr.arguments[1]
+    if exponent.kind != "number" or exponent.number.denominator != BigInt.one or exponent.number.numerator < BigInt.zero or exponent.number.numerator > BigInt.from(8):
+      throw "symbolic integral is not supported"
+    base = _exprPolynomial(expr.arguments[0], variable)
+    var total = _exprCoeff(_exprOne(), 0, _exprOne())
+    var count = BigInt.zero
+    while count < exponent.number.numerator:
+      total = _exprPolyMul(total, base)
+      count = count + BigInt.one
+    return total
+  throw "symbolic integral is not supported"
+
+_exprCoeff(ignored: BigFraction, power: int, coefficient: BigFraction) -> List<_FracCell>:
+  made: List<_FracCell> = []
+  var index = 0
+  while index <= power:
+    made.add(_FracCell(value: _exprZero()))
+    index += 1
+  made[power].value = coefficient
+  return made
+
+_exprPolyAdd(left: List<_FracCell>, right: List<_FracCell>, subtract: bool) -> List<_FracCell>:
+  var width = left.length
+  if right.length > width: width = right.length
+  if width > 17: throw "symbolic polynomial exceeds the work limit"
+  made: List<_FracCell> = []
+  var index = 0
+  while index < width:
+    var value = _exprZero()
+    if index < left.length: value = value + left[index].value
+    if index < right.length:
+      if subtract: value = value - right[index].value
+      else: value = value + right[index].value
+    made.add(_FracCell(value: value))
+    index += 1
+  return made
+
+_exprPolyMul(left: List<_FracCell>, right: List<_FracCell>) -> List<_FracCell>:
+  width = left.length + right.length - 1
+  if width > 17: throw "symbolic polynomial exceeds the work limit"
+  made: List<_FracCell> = []
+  var index = 0
+  while index < width:
+    made.add(_FracCell(value: _exprZero()))
+    index += 1
+  var i = 0
+  while i < left.length:
+    var j = 0
+    while j < right.length:
+      made[i + j].value = made[i + j].value + left[i].value * right[j].value
+      j += 1
+    i += 1
+  return made
+
+:: tensor
+
+# Dense row-major tensor. The value count must equal the product of [shape].
+# At most 4096 values. This is storage and arithmetic, not a symbolic tensor.
+value class Tensor:
+  shape: List<int> required
+  values: List<double> required
+
+tensor(shape: List<int>, values: List<double>) -> Tensor:
+  if shape.isEmpty or shape.length > 4: throw "tensor rank must be from 1 through 4"
+  var count = 1
+  for extent in shape:
+    if extent < 0: throw "tensor extent must be nonnegative"
+    count = count * extent
+    if count > 4096: throw "tensor exceeds the work limit"
+  if values.length != count: throw "tensor values must match the shape"
+  for value in values:
+    if not _finite(value): throw "tensor values must be finite"
+  copied: List<int> = []
+  for extent in shape:
+    copied.add(extent)
+  stored: List<double> = []
+  for value in values:
+    stored.add(value)
+  return Tensor(shape: copied, values: stored)
+
+tensorAdd(left: Tensor, right: Tensor) -> Tensor:
+  if left.shape.length != right.shape.length: throw "tensor add needs the same shape"
+  var index = 0
+  while index < left.shape.length:
+    if left.shape[index] != right.shape[index]: throw "tensor add needs the same shape"
+    index += 1
+  made: List<double> = []
+  index = 0
+  while index < left.values.length:
+    made.add(left.values[index] + right.values[index])
+    index += 1
+  return Tensor(shape: left.shape, values: made)
+
+# Rank-2 product. The inner extents must agree.
+tensorMatmul(left: Tensor, right: Tensor) -> Tensor:
+  if left.shape.length != 2 or right.shape.length != 2: throw "tensor matmul needs rank 2"
+  if left.shape[1] != right.shape[0]: throw "tensor matmul needs compatible shapes"
+  rows = left.shape[0]
+  inner = left.shape[1]
+  columns = right.shape[1]
+  made: List<double> = []
+  var row = 0
+  while row < rows:
+    var column = 0
+    while column < columns:
+      var total = 0.0
+      var k = 0
+      while k < inner:
+        total = total + left.values[row * inner + k] * right.values[k * columns + column]
+        k += 1
+      made.add(total)
+      column += 1
+    row += 1
+  return tensor([rows, columns], made)
+
+:: algebra
+
+# Residue in a prime field. The modulus must be a proven prime no larger than
+# 1000000, by trial division. The stored residue is in 0 through modulus-1.
+value class FieldElement:
+  residue: int required
+  modulus: int required
+
+fieldElement(value: int, modulus: int) -> FieldElement:
+  _fieldPrime(modulus)
+  var residue = value % modulus
+  if residue < 0: residue = residue + modulus
+  return FieldElement(residue: residue, modulus: modulus)
+
+fieldAdd(left: FieldElement, right: FieldElement) -> FieldElement:
+  _fieldSame(left, right)
+  return fieldElement(left.residue + right.residue, left.modulus)
+
+fieldMultiply(left: FieldElement, right: FieldElement) -> FieldElement:
+  _fieldSame(left, right)
+  return fieldElement(left.residue * right.residue, left.modulus)
+
+# Modular inverse by the extended Euclidean algorithm. Zero has none.
+fieldInverse(value: FieldElement) -> FieldElement:
+  _fieldPrime(value.modulus)
+  if value.residue == 0: throw "finite field element has no inverse"
+  var oldRemainder = value.modulus
+  var remainder = value.residue
+  var oldCoefficient = 0
+  var coefficient = 1
+  while remainder != 0:
+    quotient = oldRemainder ~/ remainder
+    nextRemainder = oldRemainder - quotient * remainder
+    nextCoefficient = oldCoefficient - quotient * coefficient
+    oldRemainder = remainder
+    remainder = nextRemainder
+    oldCoefficient = coefficient
+    coefficient = nextCoefficient
+  if oldRemainder != 1: throw "finite field element has no inverse"
+  return fieldElement(oldCoefficient, value.modulus)
+
+_fieldSame(left: FieldElement, right: FieldElement):
+  if left.modulus != right.modulus: throw "finite field moduli must agree"
+
+_fieldPrime(modulus: int):
+  if modulus < 2 or modulus > 1000000: throw "finite field modulus is outside 2 through 1000000"
+  if modulus == 2: return
+  if modulus % 2 == 0: throw "finite field needs a prime modulus"
+  var divisor = 3
+  while divisor * divisor <= modulus:
+    if modulus % divisor == 0: throw "finite field needs a prime modulus"
+    divisor += 2
+
+:: topology
+
+# Euler characteristic of a pure triangle complex: V - E + F.
+# [vertexCount] includes isolated vertices. Each face is three distinct
+# indices. An undirected edge is counted once. This is not homology.
+# Example:
+#   print eulerCharacteristic(3, [[0, 1, 2]])
+eulerCharacteristic(vertexCount: int, faces: List<List<int>>) -> int:
+  if vertexCount < 0 or vertexCount > 5000: throw "topology vertex count is outside 0 through 5000"
+  if faces.length > 2000: throw "topology exceeds the work limit"
+  edges: List<int> = []
+  for face in faces:
+    if face.length != 3: throw "topology face must be a triangle"
+    if face[0] == face[1] or face[0] == face[2] or face[1] == face[2]: throw "topology face repeats a vertex"
+    var slot = 0
+    while slot < 3:
+      if face[slot] < 0 or face[slot] >= vertexCount: throw "topology vertex out of range"
+      slot += 1
+    _topologyEdge(edges, vertexCount, face[0], face[1])
+    _topologyEdge(edges, vertexCount, face[1], face[2])
+    _topologyEdge(edges, vertexCount, face[2], face[0])
+  return vertexCount - edges.length + faces.length
+
+_topologyEdge(edges: List<int>, vertexCount: int, left: int, right: int):
+  var low = left
+  var high = right
+  if high < low:
+    low = right
+    high = left
+  code = low * vertexCount + high
+  for existing in edges:
+    if existing == code: return
+  edges.add(code)

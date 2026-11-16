@@ -1,7 +1,7 @@
 # Math numerical audit — 2026-11-15
 
 This section records the original numerical audit, before graph expansion.
-The current SDK adds eleven graph functions plus integer flow and bipartite matching (326 top-level functions total, including exact arithmetic, forward AD and exact planar geometry),
+The current SDK adds eleven graph functions, integer flow and bipartite matching, and the remaining numbered plan (376 top-level functions total, including exact arithmetic, forward AD, reverse AD, and exact planar geometry),
 with exact graph contracts and separate independent tests in [MATH_GRAPH.md](MATH_GRAPH.md).
 See [the expansion roadmap](MATH_EXPANSION_ROADMAP_AR.md) for further domains.
 
@@ -25,11 +25,12 @@ strict relative checks for tiny tails instead of substituting one loose toleranc
 force coloring oracles in Quds: **151,457 assertions on 1695 graphs**, plus a
 20,000-vertex chain. `math_api.quds` closes the earlier Quds call-site gaps,
 including distribution quantiles, typed callbacks and fixed-seed samplers.
-All **326** public top-level functions now have a Quds call site.
+All **376** public top-level functions now have a Quds call site.
 [Exact arithmetic](MATH_EXACT.md) adds 1199 independent Quds reference cases.
 [Forward AD](MATH_AUTODIFF.md) adds 598 value/derivative reference cases.
 [Exact planar geometry](MATH_GEOMETRY.md) adds 738 reference cases.
 [Integer flow and matching](MATH_FLOW.md) adds 58012 flow checks on 4164 networks and 5040 matching checks on 682 graphs.
+[The remaining numbered plan](MATH_PLAN.md) adds Hessian, log-probability, phase-I linear programming, a once-built sparse pattern, named-rounding decimal, outward intervals, reverse-mode gradients, weighted and bootstrap statistics, a stiff-step rejection, window-sum STFT, a symbolic expression tree, tensors, prime fields, and triangle Euler characteristic. The family ledger is [MATH_CONTRACTS.md](MATH_CONTRACTS.md).
 Weighted graph contracts and their Quds oracles are in [MATH_WEIGHTED_GRAPH.md](MATH_WEIGHTED_GRAPH.md). This is still
 call-site traceability, not complete branch/domain coverage.
 

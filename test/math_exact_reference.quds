@@ -5,9 +5,9 @@ use quds:math
 class _ExactCount:
   var value: int = 0
 
-_expectBig(counter: _ExactCount, actual: BigInt, decimal: String):
+_expectBig(counter: _ExactCount, actual: BigInt, digits: String):
   counter.value += 1
-  expect(actual.toString(), decimal)
+  expect(actual.toString(), digits)
 
 _expectRational(counter: _ExactCount, actual: BigFraction, top: String, bottom: String):
   counter.value += 1

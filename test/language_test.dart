@@ -3210,6 +3210,7 @@ main():
           'complex',
           'vector',
           'interval',
+          'interval::outward',
           'stats',
           'distribution',
           'calculus',
@@ -3225,8 +3226,14 @@ main():
           'graph::flow',
           'graph::matching',
           'exact',
+          'exact::decimal',
           'autodiff',
+          'autodiff::reverse',
           'geometry',
+          'symbolic',
+          'tensor',
+          'algebra',
+          'topology',
         ]));
     compile('''
 :: kept

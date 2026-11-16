@@ -1,5 +1,19 @@
 # Compiler validation — latest 2026-11-16
 
+## Numbered plan items 3–15
+
+Public math functions: **376**. Contracts: [MATH_PLAN.md](MATH_PLAN.md) and [MATH_CONTRACTS.md](MATH_CONTRACTS.md).
+
+| Check | Observed result |
+| --- | --- |
+| Quds plan suite | **78 expects, zero failures**, marker `QUDS PLAN CHECKS=78 FAILURES=0` |
+| Hessian | `x*x*y` at `(2, 3)` is `[[6, 4], [4, 0]]`; `HyperDual.sqrt` at 0 throws |
+| Phase I | The nonnegative example is value 12 at `[4, 0]`; a negative empty program throws `linearProgramPhase is infeasible` |
+| Reverse mode | Same `[12, 4]` gradient as forward mode, from one callback |
+| Exact reference | **1199 checks, zero failures** after renaming the local parameter that shadowed `decimal` |
+| `dart analyze` | No issues |
+| `dart test` | **264 passed, zero failures, zero skips** |
+
 ## Integer flow and bipartite matching — B4
 
 Added `FlowEdge`, `MaximumFlow`, `maximumFlow`, `MatchEdge`, `Matching`, and

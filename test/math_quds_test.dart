@@ -14,6 +14,7 @@ void main() {
     'math_weighted_graph.quds':
         'QUDS WEIGHTED CHECKS=224537 GRAPHS=4357 FAILURES=0',
     'math_flow.quds': 'QUDS FLOW CHECKS=58012 GRAPHS=4164 FAILURES=0',
+    'math_plan.quds': 'QUDS PLAN CHECKS=78 FAILURES=0',
     'math_exact.quds': null,
     'math_exact_reference.quds': 'QUDS EXACT CHECKS=1199 FAILURES=0',
     'math_autodiff.quds': null,

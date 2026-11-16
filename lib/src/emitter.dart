@@ -1,3 +1,4 @@
+import 'type_syntax.dart';
 import 'ast.dart';
 import 'constants.dart';
 import 'libraries.dart';
@@ -1026,41 +1027,9 @@ class DartEmitter {
     return null;
   }
 
-  List<String> _splitTypeArgs(String text) {
-    final parts = <String>[];
-    var start = 0;
-    var depth = 0;
-    for (var i = 0; i < text.length; i++) {
-      final char = text[i];
-      if (char == '<' || char == '(') depth++;
-      if (char == '>' || char == ')') depth--;
-      if (char == ',' && depth == 0) {
-        parts.add(text.substring(start, i).trim());
-        start = i + 1;
-      }
-    }
-    parts.add(text.substring(start).trim());
-    return parts;
-  }
+  List<String> _splitTypeArgs(String text) => splitTypeList(text);
 
-  (String, String) _splitFunctionType(String type) {
-    var depth = 0;
-    for (var i = 0; i < type.length; i++) {
-      if (type[i] == '(') depth++;
-      if (type[i] == ')') {
-        depth--;
-        if (depth == 0) {
-          final arrow = type.indexOf('->', i);
-          return (type.substring(1, i), type.substring(arrow + 2).trim());
-        }
-      }
-    }
-    final arrow = type.lastIndexOf('->');
-    return (
-      type.substring(1, type.indexOf(')')),
-      type.substring(arrow + 3).trim()
-    );
-  }
+  (String, String) _splitFunctionType(String type) => functionTypeParts(type)!;
 
   String _dartType(String type) {
     final resolved = model.resolve(type);
@@ -1077,27 +1046,29 @@ class DartEmitter {
       return _dartType(type.split(' & ').first.trim());
     }
     if (type.contains(' | ')) return _unionClass(type);
-    if (type.startsWith('(') && type.endsWith(')?')) {
-      return '${_dartType(type.substring(1, type.length - 2))}?';
+    if (isNullableType(type)) {
+      return '${_dartType(nonNullableType(type))}?';
     }
-    if (type.startsWith('(') &&
-        type.endsWith(')') &&
-        !type.contains('->') &&
-        !type.substring(1, type.length - 1).contains(',')) {
-      final inner = type.substring(1, type.length - 1).trim();
-      if (inner.isNotEmpty) return '(${_dartType(inner)},)';
-    }
-    if (type.startsWith('(') && type.contains('->')) {
+    if (functionTypeParts(type) != null) {
       final (parameters, returns) = _splitFunctionType(type);
       final args = parameters.trim().isEmpty
           ? ''
-          : parameters
-              .split(',')
-              .map((item) => _dartType(item.trim()))
+          : splitTypeList(parameters)
+              .map((item) => _dartType(functionParameterType(item)))
               .join(', ');
       return '${_dartType(returns)} Function($args)';
     }
+    if (type.startsWith('(') && type.endsWith(')')) {
+      final fields = splitTypeList(type.substring(1, type.length - 1));
+      final rendered = fields.map(_dartType).join(', ');
+      return '($rendered${fields.length == 1 ? ',' : ''})';
+    }
     if (type.startsWith('Range<')) return 'Iterable<num>';
+    final generic = type.indexOf('<');
+    if (generic > 0 && type.endsWith('>')) {
+      final args = splitTypeList(type.substring(generic + 1, type.length - 1));
+      return '${type.substring(0, generic)}<${args.map(_dartType).join(', ')}>';
+    }
     return type;
   }
 
@@ -2024,7 +1995,7 @@ class DartEmitter {
           final type = model.types[node.values.single] ?? '';
           final record = type.startsWith('(') &&
               type.endsWith(')') &&
-              !type.contains('->');
+              functionTypeParts(type) == null;
           final read = record ? value : '$value.${_deconstructName(type)}()';
           line('final $temp = $read;');
           for (var i = 0; i < node.targets.length; i++) {
@@ -2739,7 +2710,7 @@ class DartEmitter {
     final type = model.types[node.object];
     final bare = _bareType(type);
     final builtin = model.references[node]?.dartName == node.name;
-    final nullAware = node.nullAware || (type?.endsWith('?') ?? false);
+    final nullAware = node.nullAware || (type != null && isNullableType(type));
     if (builtin && node.name == 'chars' && bare == 'String') {
       return nullAware ? "$object?.split('')" : "$object.split('')";
     }

@@ -1,0 +1,37 @@
+maybe(value: int) -> int?:
+  if value < 0:
+    return null
+  return value
+factory() -> (int) -> int? = maybe
+pair(value: int) -> (int, String)? = (value, "pair")
+main():
+  var trace = ""
+  resolve() -> ((int) -> int?)?:
+    trace += "callee "
+    return maybe
+  fallback() -> (int) -> int?:
+    trace += "fallback "
+    return maybe
+  argument() -> int:
+    trace += "argument "
+    return 21
+  require (resolve() ?? fallback())(argument()) == 21
+  require trace == "callee argument "
+  callbacks: Map<String, List<(int) -> int?>> = map:
+    "present": [maybe]
+  require callbacks["present"]![0](-1) == null
+  records: ((int) -> int?, String) = (factory(), "callback")
+  (callback, name) = records
+  require callback(22) == 22
+  require name == "callback"
+  recordCallback: (int) -> (int, String)? = pair
+  require recordCallback(23) == (23, "pair")
+  var optional: ((int) -> int?)? = null
+  optional ??= factory()
+  require optional(-1) == null
+  nullableList: List<(int) -> int?>? = [maybe]
+  require nullableList![0](24) == 24
+  keyed: Map<(int) -> int?, String> = map:
+    maybe: "key"
+  require keyed[maybe] == "key"
+  print "FUNCTION NULLABILITY OK"

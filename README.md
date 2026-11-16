@@ -97,3 +97,8 @@ domains; its first addition is [unweighted graph algorithms](docs/MATH_GRAPH.md)
 
 Math behavior is tested primarily through `quds test` on `.quds` suites; see
 [the testing policy and commands](docs/MATH_ACCURACY.md#primary-quds-tests).
+
+The next compiler-foundation packages and agent handoff are recorded in
+[the detailed Arabic execution plan](docs/LANGUAGE_NEXT_STAGE_HANDOFF_AR.md).
+The first package's supported behavior is documented in
+[function types and nullability](docs/FUNCTION_NULLABILITY.md).

@@ -1,0 +1,121 @@
+maybe(value: int) -> int?:
+  if value < 0:
+    return null
+  return value
+
+choose() -> (int) -> int? = maybe
+absent() -> ((int) -> int?)? = null
+pair(value: int) -> (int, String)? = (value, "pair")
+items(value: int) -> List<int>? = [value]
+apply(callback: (int) -> int?, value: int) -> int? = callback(value)
+type Callback = (int) -> int?
+
+test "present callbacks may return null":
+  callback: (int) -> int? = maybe
+  expect(callback(3), 3)
+  expect(callback(-1), null)
+  expect(apply(callback, 8), 8)
+
+test "nullable callbacks retain nullable results after fallback":
+  callback: ((int) -> int?)? = null
+  fallback = callback ?? maybe
+  expect(fallback(4), 4)
+  expect(fallback(-1), null)
+
+test "null checking promotes a callback":
+  callback: ((int) -> int?)? = maybe
+  if callback != null:
+    expect(callback(5), 5)
+    expect(callback(-1), null)
+
+test "null assertion unwraps only the callback":
+  callback: ((int) -> int?)? = maybe
+  expect(callback!(6), 6)
+  expect(callback!(-1), null)
+
+test "null assignment promotes callbacks":
+  var callback: ((int) -> int?)? = null
+  callback ??= maybe
+  expect(callback(7), 7)
+  expect(callback(-1), null)
+
+test "maps add a separate nullable callback layer":
+  callbacks: Map<String, (int) -> int?> = map:
+    "present": maybe
+  selected = callbacks["missing"] ?? maybe
+  expect(selected(9), 9)
+  expect(selected(-1), null)
+  expect(callbacks["present"]!(10), 10)
+
+test "nested generic callback parameters preserve commas and arrows":
+  callbacks: List<(int) -> int?> = [maybe]
+  callback: ((int) -> int?, int) -> int? = apply
+  expect(callback(callbacks[0], 11), 11)
+  expect(callback(callbacks[0], -1), null)
+
+test "function aliases and returned callbacks preserve nullability":
+  callback: Callback = choose()
+  expect(callback(12), 12)
+  expect(choose()(-1), null)
+  recovered = absent() ?? maybe
+  expect(recovered(13), 13)
+
+test "nullable records and lists are results of present callbacks":
+  recordCallback: (int) -> (int, String)? = pair
+  listCallback: (int) -> List<int>? = items
+  expect(recordCallback(14), (14, "pair"))
+  expect(listCallback(15)![0], 15)
+
+test "records can contain functions":
+  callbacks: ((int) -> int?, String) = (maybe, "name")
+  (callback, name) = callbacks
+  expect(callback(16), 16)
+  expect(name, "name")
+
+type MaybeCallback = ((int) -> int?)?
+
+test "nullable callback aliases support promotion and fallback":
+  var aliased: MaybeCallback = null
+  recovered = aliased ?? maybe
+  expect(recovered(17), 17)
+  aliased ??= maybe
+  expect(aliased(-1), null)
+
+test "function parameter labels do not consume nested type labels":
+  labelled: (handler: (value: int) -> int?, number: int) -> int? = apply
+  expect(labelled(maybe, 18), 18)
+
+test "callbacks are contravariant in arguments and covariant in results":
+  broad(value: num) -> int = 19
+  callback: (int) -> num? = broad
+  expect(callback(1), 19)
+
+test "callee and arguments run once and fallback stays lazy":
+  var trace = ""
+  resolve() -> ((int) -> int?)?:
+    trace += "callee "
+    return maybe
+  alternative() -> (int) -> int?:
+    trace += "fallback "
+    return maybe
+  argument(value: int) -> int:
+    trace += "arg "
+    return value
+  expect((resolve() ?? alternative())(argument(20)), 20)
+  expect(trace, "callee arg ")
+  trace = ""
+  expect((absent() ?? alternative())(argument(-1)), null)
+  expect(trace, "fallback arg ")
+
+test "nullable generic containers retain nested callback types":
+  callbacks: List<(int) -> int?>? = [maybe]
+  expect(callbacks![0](24), 24)
+  indexed: Map<(int) -> int?, String> = map:
+    maybe: "callback"
+  expect(indexed[maybe], "callback")
+
+test "nullable alias can be promoted by a null check":
+  callback: MaybeCallback = maybe
+  if callback != null:
+    expect(callback(25), 25)
+    expect(callback(-1), null)

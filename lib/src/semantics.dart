@@ -1,3 +1,4 @@
+import 'type_syntax.dart';
 import 'dart:io';
 
 import 'ast.dart';
@@ -2297,16 +2298,15 @@ class Analyzer {
       }
       return;
     }
-    if (type.startsWith('(') && type.endsWith(')?')) {
-      validateType(type.substring(1, type.length - 2), node, allowVoid: true);
+    if (type.startsWith('(') && isNullableType(type)) {
+      validateType(nonNullableType(type), node, allowVoid: false);
       return;
     }
-    if (type.startsWith('(') && type.contains('->')) {
+    if (functionTypeParts(type) != null) {
       final (parameters, returns) = _functionParts(type);
       if (parameters.trim().isNotEmpty) {
         for (final part in _splitTypes(parameters)) {
-          final declared =
-              part.contains(':') ? part.split(':').last.trim() : part;
+          final declared = functionParameterType(part);
           validateType(declared, node, allowVoid: false);
         }
       }
@@ -2331,7 +2331,7 @@ class Analyzer {
       validateType(type.substring(8, type.length - 1), node, allowVoid: false);
       return;
     }
-    if (type.endsWith('?')) {
+    if (isNullableType(type)) {
       validateType(type.substring(0, type.length - 1), node, allowVoid: false);
       return;
     }
@@ -2388,7 +2388,7 @@ class Analyzer {
     if (type.startsWith('(') && type.endsWith(')')) {
       final inner = type.substring(1, type.length - 1);
       if (inner.isEmpty) return;
-      for (final part in inner.split(',')) {
+      for (final part in _splitTypes(inner)) {
         validateType(part.trim(), node, allowVoid: false);
       }
       return;
@@ -3301,6 +3301,8 @@ class Analyzer {
         model.declarations[node] =
             create(node.title, node.isAsync ? 'Future<void>' : 'void');
         final savedFunction = _function;
+        final savedPromoted = Map<String, String>.from(_promoted);
+        _promoted.clear();
         if (node.isAsync) {
           _function = FunctionDeclaration(
               node.title, const [], 'void', node.body, null, node.span,
@@ -3308,6 +3310,9 @@ class Analyzer {
         }
         statements(node.body, nested: true);
         _function = savedFunction;
+        _promoted
+          ..clear()
+          ..addAll(savedPromoted);
       case FunctionDeclaration():
         registerFunction(node, _scope);
         analyzeFunction(node);
@@ -3351,7 +3356,7 @@ class Analyzer {
         statements(node.body, nested: true);
       case IfLetStatement():
         final raw = expression(node.value);
-        if (!raw.endsWith('?') && raw != 'Null') {
+        if (!isNullableType(raw) && raw != 'Null') {
           fail('if let requires a nullable value', node.value);
         }
         if (_scope.lookup(node.name) != null) {
@@ -3547,7 +3552,7 @@ class Analyzer {
         if (!compatible(value, target))
           fail('Cannot assign $value to $target', node.value);
       } else {
-        if (!target.endsWith('?') && target != 'Null')
+        if (!isNullableType(target) && target != 'Null')
           fail('??= requires a nullable binding', node);
         if (!compatible(value, target))
           fail('Cannot assign $value to $target', node.value);
@@ -3731,7 +3736,7 @@ class Analyzer {
   String elementType(String type, Node node) {
     final typed = _nativeShape(type)?.listElement;
     if (typed != null) {
-      if (type.endsWith('?'))
+      if (isNullableType(type))
         error(
             'E308',
             'A nullable value is used where a non-null value is required',
@@ -3808,7 +3813,7 @@ class Analyzer {
       fail('Binding would shadow $name; use shadow in an inner scope', owner);
     }
     final raw = expression(value);
-    if (!raw.endsWith('?') && raw != 'Null') {
+    if (!isNullableType(raw) && raw != 'Null') {
       fail('let requires a nullable value', value);
     }
     final saved = _scope;
@@ -3959,7 +3964,7 @@ class Analyzer {
     final source = _typeSymbol(from)?.classDeclaration;
     final target = _typeSymbol(to)?.classDeclaration;
     if (source != null && identical(source, target)) return true;
-    if (from.endsWith('?') && to.endsWith('?'))
+    if (isNullableType(from) && isNullableType(to))
       return _sameType(unwrap(from), unwrap(to));
     final left = _genericHead(from);
     final right = _genericHead(to);
@@ -3985,7 +3990,10 @@ class Analyzer {
     final toClass = _typeSymbol(to)?.classDeclaration;
     if (fromClass != null && identical(fromClass, toClass)) return true;
     if (from == 'dynamic' && to != 'void') return true;
-    if (to == 'Object' && from != 'void') return true;
+    if (to == 'Object' &&
+        from != 'void' &&
+        from != 'Null' &&
+        !isNullableType(from)) return true;
     if (to.contains(' & ')) {
       return to.split(' & ').every((part) => compatible(from, part.trim()));
     }
@@ -4022,10 +4030,37 @@ class Analyzer {
     if (from.contains(' | ')) {
       return from.split(' | ').every((arm) => compatible(arm.trim(), to));
     }
+    if (isNullableType(to)) {
+      return from == 'Null' || compatible(unwrap(from), unwrap(to));
+    }
+    if (isNullableType(from) || from == 'Null') return false;
+    if (functionTypeParts(from) != null || functionTypeParts(to) != null) {
+      if (functionTypeParts(from) != null && functionTypeParts(to) != null) {
+        final (fromParams, fromReturn) = _functionParts(from);
+        final (toParams, toReturn) = _functionParts(to);
+        final fromList = _splitTypes(fromParams);
+        final toList = _splitTypes(toParams);
+        if (fromList.length == toList.length) {
+          var paramsOk = true;
+          for (var i = 0; i < fromList.length; i++) {
+            if (!compatible(
+                _parameterType(toList[i]), _parameterType(fromList[i]))) {
+              paramsOk = false;
+              break;
+            }
+          }
+          if (paramsOk &&
+              (toReturn == 'void' || compatible(fromReturn, toReturn))) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
     final native = _nativeShape(from);
     if (native != null &&
         !from.startsWith('readonly ') &&
-        !from.endsWith('?')) {
+        !isNullableType(from)) {
       if (native.supertypes.contains(to)) return true;
       final element = native.listElement;
       for (final prefix in ['List<', 'Iterable<']) {
@@ -4037,33 +4072,7 @@ class Analyzer {
       }
     }
     if (to == 'num' && (from == 'int' || from == 'double')) return true;
-    if (to.endsWith('?')) {
-      final inner = to.substring(0, to.length - 1);
-      return from == 'Null' || compatible(unwrap(from), inner);
-    }
-    if (from.startsWith('(') &&
-        to.startsWith('(') &&
-        from.contains('->') &&
-        to.contains('->')) {
-      final (fromParams, fromReturn) = _functionParts(from);
-      final (toParams, toReturn) = _functionParts(to);
-      final fromList = _splitTypes(fromParams);
-      final toList = _splitTypes(toParams);
-      if (fromList.length == toList.length) {
-        var paramsOk = true;
-        for (var i = 0; i < fromList.length; i++) {
-          if (!compatible(
-              _parameterType(toList[i]), _parameterType(fromList[i]))) {
-            paramsOk = false;
-            break;
-          }
-        }
-        if (paramsOk &&
-            (toReturn == 'void' || compatible(fromReturn, toReturn))) {
-          return true;
-        }
-      }
-    }
+
     return false;
   }
 
@@ -4108,7 +4117,7 @@ class Analyzer {
           visit(current.substring(9), polarity);
           return;
         }
-        if (current.endsWith('?')) {
+        if (isNullableType(current)) {
           visit(current.substring(0, current.length - 1), polarity);
           return;
         }
@@ -4118,15 +4127,12 @@ class Analyzer {
           }
           return;
         }
-        if (current.startsWith('(') && current.contains('->')) {
-          final arrow = current.lastIndexOf('->');
-          final parameters = current.substring(1, current.indexOf(')'));
-          if (parameters.trim().isNotEmpty) {
-            for (final item in parameters.split(',')) {
-              visit(item, -polarity);
-            }
+        if (functionTypeParts(current) != null) {
+          final (parameters, returns) = _functionParts(current);
+          for (final item in _splitTypes(parameters)) {
+            visit(functionParameterType(item), -polarity);
           }
-          visit(current.substring(arrow + 3), polarity);
+          visit(returns, polarity);
           return;
         }
         final open = current.indexOf('<');
@@ -4293,7 +4299,7 @@ class Analyzer {
 
   /// The instance method `call` on a class value, including an inherited one.
   FunctionDeclaration? _callOnType(String type) {
-    if (type.endsWith('?') || type.contains('->')) return null;
+    if (isNullableType(type) || type.contains('->')) return null;
     final declaration = model.classes[_classKey(type)];
     if (declaration == null) return null;
     final method = _method(declaration, 'call');
@@ -4361,23 +4367,7 @@ class Analyzer {
     };
   }
 
-  List<String> _splitTypes(String inner) {
-    final parts = <String>[];
-    final buffer = StringBuffer();
-    var depth = 0;
-    for (final char in inner.split('')) {
-      if (char == '<' || char == '(') depth++;
-      if (char == '>' || char == ')') depth--;
-      if (char == ',' && depth == 0) {
-        parts.add(buffer.toString().trim());
-        buffer.clear();
-      } else {
-        buffer.write(char);
-      }
-    }
-    if (buffer.isNotEmpty) parts.add(buffer.toString().trim());
-    return parts;
-  }
+  List<String> _splitTypes(String inner) => splitTypeList(inner);
 
   Map<String, String>? _extensionMatch(
       ExtensionDeclaration extension, String type) {
@@ -4413,8 +4403,7 @@ class Analyzer {
     return found;
   }
 
-  String unwrap(String type) =>
-      type.endsWith('?') ? type.substring(0, type.length - 1) : type;
+  String unwrap(String type) => nonNullableType(type);
   bool numeric(String type) => {'int', 'double', 'num'}.contains(type);
 
   /// `int`, `double`, `num`, or a type parameter bounded by one of them.
@@ -4432,7 +4421,9 @@ class Analyzer {
   }
 
   List<String>? _recordParts(String type) {
-    if (!type.startsWith('(') || !type.endsWith(')') || type.contains('->')) {
+    if (!type.startsWith('(') ||
+        !type.endsWith(')') ||
+        functionTypeParts(type) != null) {
       return null;
     }
     return _splitTypes(type.substring(1, type.length - 1));
@@ -4489,7 +4480,7 @@ class Analyzer {
     var type = collection.startsWith('readonly ')
         ? collection.substring(9)
         : collection;
-    if (type.endsWith('?')) return false;
+    if (isNullableType(type)) return false;
     type = unwrap(type);
     if (type == 'String') return element == 'String';
     if (type.startsWith('Map<') && type.endsWith('>')) {
@@ -4502,7 +4493,9 @@ class Analyzer {
 
   /// The two positional fields of a record, when [type] is one.
   List<String>? _pairFields(String type) {
-    if (!type.startsWith('(') || !type.endsWith(')') || type.contains('->')) {
+    if (!type.startsWith('(') ||
+        !type.endsWith(')') ||
+        functionTypeParts(type) != null) {
       return null;
     }
     final parts = _splitTypes(type.substring(1, type.length - 1));
@@ -4597,11 +4590,7 @@ class Analyzer {
     return '($parameters) -> $type';
   }
 
-  String _parameterType(String declared) {
-    final trimmed = declared.trim();
-    if (!trimmed.contains(':')) return trimmed;
-    return trimmed.split(':').last.trim();
-  }
+  String _parameterType(String declared) => functionParameterType(declared);
 
   bool _numericUse(Node root, String name) {
     var found = false;
@@ -4640,25 +4629,8 @@ class Analyzer {
     }
   }
 
-  (String, String) _functionParts(String type) {
-    var depth = 0;
-    for (var i = 0; i < type.length; i++) {
-      if (type[i] == '(') depth++;
-      if (type[i] == ')') {
-        depth--;
-        if (depth == 0) {
-          final arrow = type.indexOf('->', i);
-          if (arrow < 0) break;
-          return (type.substring(1, i), type.substring(arrow + 2).trim());
-        }
-      }
-    }
-    final arrow = type.lastIndexOf('->');
-    return (
-      type.substring(1, type.indexOf(')')),
-      type.substring(arrow + 3).trim()
-    );
-  }
+  (String, String) _functionParts(String type) =>
+      functionTypeParts(unwrap(model.resolve(type)))!;
 
   void parameterType(Parameter parameter, String type) {
     final symbol = create(parameter.name, type, mutable: parameter.mutable);
@@ -4703,10 +4675,10 @@ class Analyzer {
       return nested.type;
     }
     final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
-    final nullableExtension = type.endsWith('?') &&
+    final nullableExtension = isNullableType(type) &&
         !node.nullAware &&
         _extensions(type, node.name).isNotEmpty;
-    if (type.endsWith('?') && !node.nullAware && !nullableExtension) {
+    if (isNullableType(type) && !node.nullAware && !nullableExtension) {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
     }
@@ -4716,14 +4688,17 @@ class Analyzer {
       if (node.name != 'add') fail('No member ${node.name} on an event', node);
       final shown = '($eventPayload) -> void';
       model.references[node] = Symbol('add', 'add', shown);
-      return node.nullAware || type.endsWith('?') ? '$shown?' : shown;
+      return node.nullAware || isNullableType(type)
+          ? nullableType(shown)
+          : shown;
     }
     if (node.name == 'length' &&
         (base == 'String' ||
             base.startsWith('List<') ||
             base.startsWith('Set<') ||
             base.startsWith('Map<'))) {
-      final lengthType = node.nullAware || type.endsWith('?') ? 'int?' : 'int';
+      final lengthType =
+          node.nullAware || isNullableType(type) ? 'int?' : 'int';
       return _readonlyView(raw, lengthType);
     }
     if (base == 'dynamic') return 'dynamic';
@@ -4734,8 +4709,9 @@ class Analyzer {
         if (found == null) continue;
         model.references[node] =
             Symbol(node.name, _dartMember(part.trim(), node.name), found);
-        final foundType =
-            node.nullAware || type.endsWith('?') ? '$found?' : found;
+        final foundType = node.nullAware || isNullableType(type)
+            ? nullableType(found)
+            : found;
         return _readonlyView(raw, foundType);
       }
     }
@@ -4790,31 +4766,34 @@ class Analyzer {
         model.references[node] = Symbol(node.name, dart, substituted);
       }
       if (substituted.contains('->')) return substituted;
-      final foundType =
-          node.nullAware || type.endsWith('?') ? '$substituted?' : substituted;
+      final foundType = node.nullAware || isNullableType(type)
+          ? nullableType(substituted)
+          : substituted;
       return _readonlyView(raw, foundType);
     }
     final numberGetter = _numberGetter(base, node.name);
     if (numberGetter != null) {
       model.references[node] = Symbol(node.name, node.name, numberGetter);
-      final foundType = node.nullAware || type.endsWith('?')
-          ? '$numberGetter?'
+      final foundType = node.nullAware || isNullableType(type)
+          ? nullableType(numberGetter)
           : numberGetter;
       return _readonlyView(raw, foundType);
     }
     final builtin = _collectionGetter(base, node.name);
     if (builtin != null) {
       model.references[node] = Symbol(node.name, node.name, builtin);
-      final foundType =
-          node.nullAware || type.endsWith('?') ? '$builtin?' : builtin;
+      final foundType = node.nullAware || isNullableType(type)
+          ? nullableType(builtin)
+          : builtin;
       return _readonlyView(raw, foundType);
     }
     final sdk = _sdkMember(base, node.name);
     if (sdk != null && sdk.getter) {
       model.references[node] = _dartMemberSymbol(sdk, sdk.type);
       final dartGetter = sdk.type;
-      final foundType =
-          node.nullAware || type.endsWith('?') ? '$dartGetter?' : dartGetter;
+      final foundType = node.nullAware || isNullableType(type)
+          ? nullableType(dartGetter)
+          : dartGetter;
       return _readonlyView(raw, foundType);
     }
     fail(
@@ -5009,7 +4988,7 @@ class Analyzer {
 
   String index(IndexExpression node) {
     final raw = expression(node.object);
-    if (raw.endsWith('?')) {
+    if (isNullableType(raw)) {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
     }
@@ -5027,8 +5006,7 @@ class Analyzer {
       final key = parts[0];
       final value = parts[1];
       if (!compatible(indexType, key)) fail('Map key type is $key', node.index);
-      final lookup =
-          value.endsWith('?') || value == 'dynamic' ? value : '$value?';
+      final lookup = nullableType(value);
       return _readonlyView(raw, lookup);
     }
     if (type == 'String') {
@@ -5041,7 +5019,7 @@ class Analyzer {
 
   String slice(SliceExpression node) {
     final raw = expression(node.object);
-    if (raw.endsWith('?')) {
+    if (isNullableType(raw)) {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
     }
@@ -5108,7 +5086,7 @@ class Analyzer {
       if (entry is SpreadElement) {
         var spread = expression(entry.operand);
         if (entry.nullAware) {
-          if (!spread.endsWith('?')) {
+          if (!isNullableType(spread)) {
             fail('...? requires a nullable map', entry);
           }
           spread = unwrap(spread);
@@ -5192,7 +5170,7 @@ class Analyzer {
   String spreadElementType(SpreadElement element) {
     var type = expression(element.operand);
     if (element.nullAware) {
-      if (!type.endsWith('?')) {
+      if (!isNullableType(type)) {
         fail('...? requires a nullable collection', element);
       }
       type = unwrap(type);
@@ -5340,8 +5318,8 @@ class Analyzer {
       if (name == null) return const {};
       final symbol = _scope.lookup(name);
       if (symbol == null || symbol.field) return const {};
-      final current = _promoted[name] ?? symbol.type;
-      if (!current.endsWith('?')) return const {};
+      final current = model.resolve(_promoted[name] ?? symbol.type);
+      if (!isNullableType(current)) return const {};
       final unequal = node.operator == '!=';
       if (unequal != whenTrue) return const {};
       return {name: unwrap(current)};
@@ -5364,7 +5342,8 @@ class Analyzer {
   }
 
   void _checkIfNull(String target, String value, Node node) {
-    if (!target.endsWith('?') && target != 'Null') {
+    target = model.resolve(target);
+    if (!isNullableType(target) && target != 'Null') {
       fail('??= requires a nullable binding', node);
     }
     final inner = unwrap(target);
@@ -5375,9 +5354,10 @@ class Analyzer {
 
   void _afterAssignment(
       String name, String target, String value, String operator) {
+    target = model.resolve(target);
     if ((operator == '=' || operator == '??=') &&
-        target.endsWith('?') &&
-        !value.endsWith('?') &&
+        isNullableType(target) &&
+        !isNullableType(value) &&
         value != 'Null') {
       _promoted[name] = value;
       return;
@@ -5390,7 +5370,7 @@ class Analyzer {
         memberType.startsWith('readonly ')) {
       return memberType;
     }
-    if (memberType.endsWith('?')) {
+    if (isNullableType(memberType)) {
       final inner = _readonlyView(receiver, unwrap(memberType));
       return inner == unwrap(memberType) ? memberType : '$inner?';
     }
@@ -5478,7 +5458,7 @@ class Analyzer {
       final joined = _joinedCollection(left, right);
       if (joined != null) return joined;
     }
-    if (left.endsWith('?') && op != '??') {
+    if (isNullableType(left) && op != '??') {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
     }
@@ -5760,7 +5740,7 @@ class Analyzer {
   String unary(UnaryExpression node) {
     final type = expression(node.operand);
     if (node.operator == '-' || node.operator == '~') {
-      if (type.endsWith('?')) {
+      if (isNullableType(type)) {
         error(
             'E308',
             'A nullable value is used where a non-null value is required',
@@ -5785,7 +5765,7 @@ class Analyzer {
       if (type == 'int') return 'int';
       fail('Invalid unary operator ~ for $type', node);
     }
-    if (node.operator == '!' && type.endsWith('?')) return unwrap(type);
+    if (node.operator == '!' && isNullableType(type)) return unwrap(type);
     if (node.operator == 'not' && type == 'bool') return 'bool';
     if (node.operator != 'not' && node.operator != '!' && numeric(type)) {
       return type;
@@ -5796,7 +5776,7 @@ class Analyzer {
   /// A Dart library type this file did not declare. Different ones can share a list.
   bool _externalNominal(String type) {
     if (type == 'dynamic') return true;
-    if (type.endsWith('?')) return _externalNominal(unwrap(type));
+    if (isNullableType(type)) return _externalNominal(unwrap(type));
     const known = {
       'int',
       'double',
@@ -5911,7 +5891,7 @@ class Analyzer {
       error('E302', 'A null-aware element needs an expected element type',
           element);
     }
-    return type.endsWith('?') ? unwrap(type) : type;
+    return isNullableType(type) ? unwrap(type) : type;
   }
 
   String interpolation(InterpolatedString node) {
@@ -5936,7 +5916,7 @@ class Analyzer {
       final spread = argument.value as SpreadElement;
       final type = expression(spread.operand);
       final bare = spread.nullAware ? unwrap(type) : type;
-      if (spread.nullAware && !type.endsWith('?')) return false;
+      if (spread.nullAware && !isNullableType(type)) return false;
       final element = _collectionElement(bare);
       return element != null && compatible(element, parameter.type);
     }
@@ -6105,10 +6085,10 @@ class Analyzer {
       final objectTypeRaw = rawObject.startsWith('readonly ')
           ? rawObject.substring(9)
           : rawObject;
-      final nullableExtension = objectTypeRaw.endsWith('?') &&
+      final nullableExtension = isNullableType(objectTypeRaw) &&
           !callee.nullAware &&
           _extensions(objectTypeRaw, callee.name).isNotEmpty;
-      if (objectTypeRaw.endsWith('?') &&
+      if (isNullableType(objectTypeRaw) &&
           !callee.nullAware &&
           !nullableExtension) {
         error(
@@ -6238,17 +6218,18 @@ class Analyzer {
       final type = expression(callee);
       final invoked = _callOnType(type);
       if (invoked != null) return _applyCallMethod(node, type, invoked);
-      if (type.endsWith('?')) {
+      if (isNullableType(type)) {
         error(
             'E308',
             'A nullable value is used where a non-null value is required',
             callee);
       }
-      if (!type.contains('->')) fail('Value is not callable', callee);
+      if (functionTypeParts(type) == null)
+        fail('Value is not callable', callee);
       final (parameters, returns) = _functionParts(type);
       final expected = parameters.isEmpty
           ? <String>[]
-          : parameters.split(',').map((item) => item.trim()).toList();
+          : splitTypeList(parameters).map(functionParameterType).toList();
       if (node.arguments.length != expected.length) {
         fail('Callable expects ${expected.length} arguments', node);
       }
@@ -6364,11 +6345,17 @@ class Analyzer {
     if (symbol.function == null &&
         symbol.overloads.isEmpty &&
         symbol.parameterTypes.isEmpty &&
-        symbol.type.contains('->')) {
-      final (parameters, returns) = _functionParts(symbol.type);
+        functionTypeParts(unwrap(model.resolve(symbol.type))) != null) {
+      final callable = model.resolve(_promoted[symbol.name] ?? symbol.type);
+      if (isNullableType(callable))
+        error(
+            'E308',
+            'A nullable value is used where a non-null value is required',
+            callee);
+      final (parameters, returns) = _functionParts(callable);
       final expected = parameters.trim().isEmpty
           ? <String>[]
-          : parameters.split(',').map((item) => item.trim()).toList();
+          : splitTypeList(parameters).map(functionParameterType).toList();
       if (node.arguments.length != expected.length) {
         fail('Callable expects ${expected.length} arguments', node);
       }
@@ -7184,7 +7171,7 @@ class Analyzer {
 
   String _dartHead(String type) {
     var bare = type.startsWith('readonly ') ? type.substring(9) : type;
-    if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+    if (isNullableType(bare)) bare = bare.substring(0, bare.length - 1);
     return _genericHead(bare);
   }
 
@@ -7381,7 +7368,7 @@ class Analyzer {
         var stored = otherType.startsWith('readonly ')
             ? otherType.substring(9)
             : otherType;
-        if (stored.endsWith('?')) fail('zip expects an iterable', other);
+        if (isNullableType(stored)) fail('zip expects an iterable', other);
         stored = unwrap(stored);
         final otherElement = _sequenceElement(stored);
         if (otherElement == null) fail('zip expects an iterable', other);
@@ -7661,7 +7648,7 @@ class Analyzer {
   String conversion(ConversionExpression node) {
     final source =
         unwrap(expression(node.operand).replaceFirst('readonly ', ''));
-    final target = node.type.endsWith('?')
+    final target = isNullableType(node.type)
         ? node.type.substring(0, node.type.length - 1)
         : node.type;
     validateType(target, node, allowVoid: false);
@@ -7669,7 +7656,7 @@ class Analyzer {
       error('E300', 'Cannot convert $source to $target', node);
     }
     if (!node.safe) return node.type;
-    return node.type.endsWith('?') ? node.type : '${node.type}?';
+    return isNullableType(node.type) ? node.type : '${node.type}?';
   }
 
   bool _convertible(String from, String to) {
@@ -7710,7 +7697,7 @@ class Analyzer {
     }
     var bare =
         expected.startsWith('readonly ') ? expected.substring(9) : expected;
-    if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
+    if (isNullableType(bare)) bare = bare.substring(0, bare.length - 1);
     final symbol = _global.symbols[bare];
     final declaration = symbol?.classDeclaration;
     if (declaration == null) {
@@ -7865,7 +7852,7 @@ class Analyzer {
 
   String? _plainCollection(String type) {
     final bare = type.startsWith('readonly ') ? type.substring(9) : type;
-    if (bare.endsWith('?')) return null;
+    if (isNullableType(bare)) return null;
     if (bare.startsWith('List<') && bare.endsWith('>')) return bare;
     if (bare.startsWith('Map<') && bare.endsWith('>')) return bare;
     return null;
@@ -8050,10 +8037,7 @@ class Analyzer {
     }
   }
 
-  String _nullable(String type) {
-    if (type == 'Null' || type.endsWith('?')) return type;
-    return '$type?';
-  }
+  String _nullable(String type) => nullableType(type);
 
   String loopExpression(LoopExpression node) {
     _armValueLoop = true;

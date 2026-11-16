@@ -1,5 +1,36 @@
 # Compiler validation — latest 2026-11-16
 
+## Function type nullability and composition — 2026-11-16
+
+First implementation package from
+[LANGUAGE_NEXT_STAGE_HANDOFF_AR.md](LANGUAGE_NEXT_STAGE_HANDOFF_AR.md).
+Contracts and remaining scope: [FUNCTION_NULLABILITY.md](FUNCTION_NULLABILITY.md).
+
+| Check | Observed result |
+| --- | --- |
+| Baseline reproduction | `((int) -> int?)?` combined with a fallback callback failed with E300 before the fix; the same program now executes |
+| Primary `quds test test/function_nullability.quds` | **16 declarations passed**, covering callback/result null layers, aliases, promotion, fallback, assertions, null assignment, higher-order functions, nested collections, records, variance and evaluation order |
+| `dart test test/function_nullability_test.dart --reporter expanded` | **19 passed**: Quds runner, 15 rejected programs, independent test promotion scopes, original diagnostic spans, golden output plus backend execution |
+| Generated Dart golden | Exact deterministic output matched `test/goldens/function_nullability.dart.txt`; generated program analyzed with `--fatal-infos` without issues |
+| Dart VM + JavaScript/Node | Quds fixture executed successfully on both; marker `FUNCTION NULLABILITY OK` |
+| `dart pub get` | Passed; existing dependency constraints retained |
+| `dart analyze` | No issues |
+| `dart format .` | 43 Dart files; zero pending changes |
+| Final `dart test --reporter expanded` | **325 passed; zero failures; zero skips** in 7m32s |
+| `git diff --check` | Passed |
+
+Shared structural type operations distinguish top-level function nullability
+from nullable results, ignore arrow `>` when splitting generic parameters,
+and preserve record delimiters. Invocation and compatibility use these shapes;
+Dart emission recursively renders function types nested in generic and record
+types. Nullable results no longer satisfy nonnullable `Object`. Test declarations
+save/clear/restore promotion facts so one test cannot make another's unsafe
+callback call appear valid. Existing approved syntax remains unchanged.
+
+This delivery does not complete all generic/readonly combinations or the math
+expansion. The handoff identifies L3.2 as the next implementation package.
+
+
 ## Typed numeric storage in core — 2026-11-16
 
 Added the native typed-storage section to `quds:core`, with the same names

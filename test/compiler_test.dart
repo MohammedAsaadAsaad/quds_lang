@@ -2121,7 +2121,10 @@ main():
     expect((item(mathSections, 'graph::')['textEdit'] as Map)['newText'],
         'graph::');
     final weighted = at('use quds:math::graph::', app.path);
-    expect(weighted.map((entry) => entry['label']), ['weighted']);
+    expect(weighted.map((entry) => entry['label']),
+        ['flow', 'matching', 'weighted']);
+    expect(item(weighted, 'flow')['detail'], 'quds:math::graph::flow');
+    expect(item(weighted, 'matching')['detail'], 'quds:math::graph::matching');
     expect(item(weighted, 'weighted')['detail'], 'quds:math::graph::weighted');
     final graphPartial = at('use quds:math::g', app.path);
     expect(graphPartial.map((entry) => entry['label']),

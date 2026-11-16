@@ -1,0 +1,15 @@
+use "generic_inheritance_library.quds" as foreign
+class Caller<U> extends foreign.LibraryBase<List<U>>:
+  updateShared(values: List<U>):
+    shared = values
+  sharedValue() -> List<U> = shared
+
+test "prefixed superclass forwards types and constructor arguments":
+  value = Caller<int>(secret: [21], shared: [22])
+  expect(value.read()[0], 21)
+  expect(value.sharedValue()[0], 22)
+
+test "protected inherited members remain available in a subtype":
+  value = Caller<int>(secret: [23], shared: [24])
+  value.updateShared([25])
+  expect(value.sharedValue()[0], 25)

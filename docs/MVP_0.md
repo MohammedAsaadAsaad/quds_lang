@@ -344,6 +344,10 @@ unchanged by the map.
   and instantiated interface contracts are covered by the bounded
   [L3.2b conformance package](COLLECTION_INFERENCE_INTERFACES.md). Its listed
   limits apply; this does not imply complete Dart generic parity.
+- Nested generic superclass field/constructor views and prefixed visibility
+  checks are covered in [L3.2c](GENERIC_INHERITANCE.md). Explicit `super.field`
+  formals support the listed named/positional parent cases; broader synthesis
+  over explicit parent constructors remains E910 in this subset.
 - Intersection types `A & B`. `&` binds tighter than `|`. A parameter lowers
   to `T extends` the first type, then checks `is!` for each later part. Two
   disjoint concrete types are `E306`. A member that belongs to a later part is

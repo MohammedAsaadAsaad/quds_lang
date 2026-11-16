@@ -1,0 +1,120 @@
+class Base<T>:
+  var value: T required
+  count: int = 2
+  read() -> T = value
+class Middle<V> extends Base<Map<String, V>>:
+  tag: String required
+class Derived<U> extends Middle<List<U>>:
+  active: bool = true
+  ownRead() -> Map<String, List<U>> = value
+class ListBase<T>:
+  value: List<T> required
+class ListChild<U> extends ListBase<U>:
+  init(super.value):
+    require true
+class ExplicitBase<T>:
+  value: T required
+  init(this.value):
+    require true
+class ExplicitChild<U> extends ExplicitBase<List<U>>:
+  init(super.value):
+    require true
+class PrivateBase<T>:
+  private var stored: T required
+  read() -> T = stored
+class PrivateChild<U> extends PrivateBase<List<U>>:
+  change(value: List<U>):
+    stored = value
+class BoundedBase<T: num>:
+  value: T required
+class BoundedChild<U: num> extends BoundedBase<U>:
+  title: String required
+class OverrideChild<U> extends Base<List<U>>:
+  read() -> List<U> = value
+
+test "multi-level inherited fields retain nested arguments":
+  values = map:
+    "x": [3, 4]
+  value = Derived<int>(value: values, tag: "nested")
+  expect(value.value["x"]![1], 4)
+  expect(value.tag, "nested")
+  expect(value.count, 2)
+  expect(value.active, true)
+
+test "constructor inference uses inherited field types":
+  values = map:
+    "x": [5]
+  value = Derived(value: values, tag: "inferred")
+  resultValue: int = value.value["x"]![0]
+  expect(resultValue, 5)
+
+test "methods see specialized inherited fields":
+  values = map:
+    "x": [6]
+  value = Derived<int>(value: values, tag: "methods")
+  expect(value.ownRead()["x"]![0], 6)
+  expect(value.read()["x"]![0], 6)
+
+test "explicit super formals forward to a synthesized named constructor":
+  value = ListChild<int>([7])
+  expect(value.value[0], 7)
+
+test "explicit super formals retain a positional parent constructor":
+  value = ExplicitChild<int>([8])
+  expect(value.value[0], 8)
+
+test "private inherited fields preserve Dart names and lexical scope":
+  value = PrivateChild<int>(stored: [9])
+  value.stored = [10]
+  expect(value.read()[0], 10)
+  value.change([11])
+  expect(value.stored[0], 11)
+
+test "superclass bounds are checked with enclosing parameter evidence":
+  value = BoundedChild<int>(value: 12, title: "bounded")
+  expect(value.value, 12)
+
+test "override signatures substitute parent generic arguments":
+  value = OverrideChild<int>(value: [13])
+  resultValue: List<int> = value.read()
+  expect(resultValue[0], 13)
+
+class UnderscoreBase<T>:
+  var _value: T required
+  init(this._value):
+    require true
+class UnderscoreChild<U> extends UnderscoreBase<List<U>>:
+  init(super._value):
+    require true
+
+test "underscore members keep their original Dart spelling":
+  value = UnderscoreChild<int>([14])
+  value._value = [15]
+  expect(value._value[0], 15)
+
+class GetterChild<U> extends Base<List<U>>:
+  empty() -> List<U> = []
+  property emptyValue: List<U>:
+    get = []
+  property current: List<U>:
+    get = value
+
+test "generic getters see specialized inherited fields":
+  value = GetterChild<int>(value: [16])
+  expect(value.current[0], 16)
+  expect(value.empty().length, 0)
+  expect(value.emptyValue.length, 0)
+
+
+class StaticBase<T>:
+  static var calls: int = 0
+  value: T required
+class StaticChild<U> extends StaticBase<List<U>>:
+  static var enabled: bool = true
+  tag: String required
+
+test "static fields do not occupy inherited constructor argument positions":
+  value = StaticChild<int>(value: [17], tag: "static")
+  expect(value.value[0], 17)
+  expect(value.tag, "static")
+  expect(StaticBase.calls, 0)

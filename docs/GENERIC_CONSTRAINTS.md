@@ -9,6 +9,9 @@ Follow-up collection inference and instantiated interface work is implemented
 in [L3.2b](COLLECTION_INFERENCE_INTERFACES.md). The limits below describe this
 L3.2a package; consult the follow-up for the current expanded subset.
 
+Generic superclass field/constructor specialization now has a separate
+[L3.2c contract](GENERIC_INHERITANCE.md).
+
 ## Confirmed defects and resulting behavior
 
 Before this package, a Quds class type annotation such as `Box<int, String>`

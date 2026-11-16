@@ -1,0 +1,34 @@
+class Base<T>:
+  static var calls: int = 0
+  private var stored: T required
+  count: int = 2
+  read() -> T = stored
+class Middle<V> extends Base<Map<String, V>>:
+  tag: String required
+class Derived<U> extends Middle<List<U>>:
+  ownRead() -> Map<String, List<U>> = stored
+class Parent<T>:
+  value: T required
+class ExplicitChild<U> extends Parent<List<U>>:
+  init(super.value):
+    require value.length >= 0
+main():
+  var trace = ""
+  tag() -> String:
+    trace += "tag "
+    return "nested"
+  values() -> Map<String, List<int>>:
+    trace += "values "
+    return map:
+      "x": [31]
+  value = Derived<int>(tag: tag(), stored: values())
+  require trace == "tag values "
+  require value.read()["x"]![0] == 31
+  require value.ownRead()["x"]![0] == 31
+  replacement = map:
+    "x": [32]
+  value.stored = replacement
+  require value.read()["x"]![0] == 32
+  require value.count == 2
+  require ExplicitChild<int>([33]).value[0] == 33
+  print "GENERIC INHERITANCE OK"

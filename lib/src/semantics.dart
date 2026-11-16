@@ -1,5 +1,8 @@
 import 'type_syntax.dart';
 import 'dart:io';
+import 'dart:convert';
+
+import 'hash.dart';
 
 import 'ast.dart';
 import 'checks.dart';
@@ -103,6 +106,9 @@ class SemanticModel {
   final rebinding = <Pattern>{};
   final types = <Expression, String>{};
 
+  /// Stable field views specialized in each declaring class’s formal parameters.
+  final classFields = <ClassDeclaration, List<FieldDeclaration>>{};
+
   /// Parameter order expressed as indices into source-order arguments.
   final argumentOrder = <CallExpression, List<int>>{};
   final inferredTypeArguments = <CallExpression, List<String>>{};
@@ -204,6 +210,7 @@ class SemanticModel {
 
   /// Dart import URI for a `package:` or `generated:` library that was loaded.
   final resolvedImports = <ImportDeclaration, String>{};
+  final resolvedParts = <PartDirective, String>{};
 
   /// Public names selected by a `::section` import, in source order.
   final sectionImports = <ImportDeclaration, List<String>>{};
@@ -425,6 +432,9 @@ class Analyzer {
 
   /// Path of the source being checked. Imports and parts resolve from here.
   final String _file;
+  late final _namePrefix = library == _file
+      ? '_q'
+      : '_qp_${sha256Hex(utf8.encode(_file)).substring(0, 12)}_';
   Map<String, Program> _libraries = const {};
 
   /// Symbols of an imported library, including its private names and prefixes.
@@ -466,7 +476,9 @@ class Analyzer {
           bool field = false}) =>
       Symbol(
               name,
-              name == 'main' && function != null ? 'main' : '_q${_nextName++}',
+              name == 'main' && function != null
+                  ? 'main'
+                  : '$_namePrefix${_nextName++}',
               type,
               mutable: mutable,
               constant: constant,
@@ -883,6 +895,7 @@ class Analyzer {
   }
 
   void _checkShape(ClassDeclaration type) {
+    _fieldsOf(type);
     if (type.modifiers.contains('singleton')) {
       for (final field in type.fields) {
         if (field.initializer == null && field.lazyBody == null) {
@@ -920,6 +933,49 @@ class Analyzer {
     final parent = parentName == null
         ? null
         : _typeSymbol(_genericHead(parentName))?.classDeclaration;
+    if (parentName != null) validateType(parentName, type, allowVoid: false);
+    if (parent != null &&
+        parent.typeParameters.isNotEmpty &&
+        _genericHead(parentName!) == parentName) {
+      error(
+          'E910',
+          'A generic superclass needs explicit type arguments in this subset',
+          type);
+    }
+    if (parent != null && parent.kind != 'interface') {
+      if (type.constructors.isEmpty && parent.constructors.isNotEmpty) {
+        error(
+            'E910',
+            'Synthesizing a constructor over explicit parent constructors needs further conformance',
+            type);
+      }
+      for (final constructor in type.constructors.where((c) => !c.factory)) {
+        final unnamed =
+            parent.constructors.where((c) => c.name == null && !c.factory);
+        if (parent.constructors.isNotEmpty && unnamed.isEmpty) {
+          error('E700', 'A superclass needs an unnamed generative constructor',
+              constructor);
+        }
+        final required = parent.constructors.isEmpty
+            ? _fieldsOf(parent)
+                .where((f) =>
+                    f.requiredField &&
+                    f.initializer == null &&
+                    !f.isStatic &&
+                    f.lazyBody == null)
+                .map((f) => f.name)
+            : unnamed.first.parameters
+                .where((p) => p.defaultValue == null)
+                .map((p) => p.name);
+        for (final name in required) {
+          if (!constructor.parameters
+              .any((p) => p.initializing == 'super' && p.name == name)) {
+            error('E704', 'Superclass parameter $name is not initialized',
+                constructor);
+          }
+        }
+      }
+    }
     if (parent != null &&
         (parent.modifiers.contains('final') || parent.kind == 'final')) {
       error('E720', 'A final class cannot be extended', type);
@@ -1161,7 +1217,14 @@ class Analyzer {
     final savedTypes = {..._typeNames};
     _typeNames.addAll(type.typeParameters.map((item) => item.name));
     if (property.getter case final getter?) {
-      final returned = expression(getter);
+      final savedExpected = _expected;
+      _expected = property.type;
+      final String returned;
+      try {
+        returned = expression(getter);
+      } finally {
+        _expected = savedExpected;
+      }
       if (!compatible(returned, property.type)) {
         fail('Getter type $returned is incompatible with ${property.type}',
             getter);
@@ -1246,6 +1309,13 @@ class Analyzer {
     if (constructor.constant && constructor.body != null) {
       error('E401', 'A const constructor cannot have a body', constructor);
     }
+    final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
+    _typeNames.addAll(type.typeParameters.map((p) => p.name));
+    for (final p in type.typeParameters) {
+      _typeBounds.remove(p.name);
+      if (p.bound != null) _typeBounds[p.name] = p.bound!;
+    }
     final saved = _scope;
     final savedThis = _thisType;
     _scope = _Scope(_global);
@@ -1275,16 +1345,36 @@ class Analyzer {
     }
     _thisType = savedThis;
     _scope = saved;
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
+    _typeBounds
+      ..clear()
+      ..addAll(savedBounds);
   }
 
   void analyzeProperty(ClassDeclaration type, PropertyDeclaration property) {
+    final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
+    _typeNames.addAll(type.typeParameters.map((p) => p.name));
+    for (final p in type.typeParameters) {
+      _typeBounds.remove(p.name);
+      if (p.bound != null) _typeBounds[p.name] = p.bound!;
+    }
     final saved = _scope;
     final savedThis = _thisType;
     _scope = _Scope(_global);
     _thisType = type.name;
     _installFields(type);
     if (property.getter case final getter?) {
-      final returned = expression(getter);
+      final savedExpected = _expected;
+      _expected = property.type;
+      final String returned;
+      try {
+        returned = expression(getter);
+      } finally {
+        _expected = savedExpected;
+      }
       if (!compatible(returned, property.type)) {
         fail('Getter type $returned is incompatible with ${property.type}',
             getter);
@@ -1302,6 +1392,12 @@ class Analyzer {
     }
     _thisType = savedThis;
     _scope = saved;
+    _typeNames
+      ..clear()
+      ..addAll(savedTypes);
+    _typeBounds
+      ..clear()
+      ..addAll(savedBounds);
   }
 
   void analyzeStaticField(FieldDeclaration field) {
@@ -1350,18 +1446,37 @@ class Analyzer {
 
   List<Parameter> _ctorParameters(
       ClassDeclaration type, ConstructorDeclaration constructor) {
-    return [
-      for (final parameter in constructor.parameters)
-        if (parameter.initializing.isEmpty)
-          parameter
-        else
-          Parameter(
-              parameter.name,
-              _fieldType(type, parameter.name, parameter.span),
-              false,
-              parameter.span,
-              initializing: parameter.initializing)
-    ];
+    final result = <Parameter>[];
+    for (final parameter in constructor.parameters) {
+      if (parameter.initializing.isEmpty) {
+        result.add(parameter);
+        continue;
+      }
+      if (parameter.initializing == 'this' &&
+          !type.fields.any((f) => f.name == parameter.name)) {
+        error(
+            'E704',
+            'this.${parameter.name} must initialize a field declared by ${type.name}',
+            parameter);
+      }
+      if (parameter.initializing == 'super' &&
+          (type.superclass == null ||
+              type.fields.any((f) => f.name == parameter.name))) {
+        error(
+            'E200',
+            'super.${parameter.name} must refer to a superclass field',
+            parameter);
+      }
+      result.add(Parameter(
+          parameter.name,
+          _fieldType(type, parameter.name, parameter.span),
+          parameter.mutable,
+          parameter.span,
+          initializing: parameter.initializing,
+          defaultValue: parameter.defaultValue,
+          variadic: parameter.variadic));
+    }
+    return result;
   }
 
   String _fieldType(ClassDeclaration type, String name, SourceSpan span) {
@@ -1497,6 +1612,12 @@ class Analyzer {
     model.imports.add(node);
     if (node.uri.startsWith('quds:')) {
       _bindQuds(node);
+      return;
+    }
+    if (_isLocalDart(node)) {
+      final surface = _localDartSurface(node);
+      if (surface == null) fail('Unknown import: ${node.uri}', node);
+      _bindSurface(node, surface);
       return;
     }
     if (node.uri == 'dart:ffi') _ffi = true;
@@ -1790,6 +1911,16 @@ class Analyzer {
       }
       if (symbol != null) space[name] = symbol;
     }
+  }
+
+  bool _isLocalDart(ImportDeclaration node) =>
+      node.uri.endsWith('.dart') && !Uri.parse(node.uri).hasScheme;
+
+  DartSurface? _localDartSurface(ImportDeclaration node) {
+    final source = node.span.file == '<input>' ? _file : node.span.file;
+    if (source == '<input>') return null;
+    return readDartFile(
+        File(File(source).absolute.uri.resolve(node.uri).toFilePath()));
   }
 
   void _bindDart(ImportDeclaration node) {
@@ -2300,8 +2431,8 @@ class Analyzer {
   bool _insideSubtype(ClassDeclaration type) {
     var name = _thisType;
     while (name != null) {
-      final declaration = _global.symbols[name]?.classDeclaration;
-      if (declaration == type || name == type.name) return true;
+      final declaration = _typeSymbol(_genericHead(name))?.classDeclaration;
+      if (declaration == type || _genericHead(name) == type.name) return true;
       final parent = declaration?.superclass;
       if (parent == null || parent == name) return false;
       name = parent;
@@ -2463,8 +2594,10 @@ class Analyzer {
     final open = type.indexOf('<');
     if (open > 0 && type.endsWith('>')) {
       final head = type.substring(0, open);
-      final declaration = _typeSymbol(head)?.classDeclaration;
+      final symbol = _typeSymbol(head);
+      final declaration = symbol?.classDeclaration;
       if (declaration != null) {
+        _touch(symbol!);
         final args = _splitTypes(type.substring(open + 1, type.length - 1));
         _checkTypeArguments(head, declaration.typeParameters, args, node);
         return;
@@ -2555,7 +2688,9 @@ class Analyzer {
               model.classes[key] = statement;
             }
           case ImportDeclaration()
-              when !statement.export && statement.uri.startsWith('dart:'):
+              when !statement.export &&
+                  (statement.uri.startsWith('dart:') ||
+                      _isLocalDart(statement)):
             _bindDartScope(scope, statement);
           default:
             break;
@@ -2630,7 +2765,9 @@ class Analyzer {
     if (prefix != null && scope.symbols.containsKey(prefix)) return;
     DartSurface? surface;
     try {
-      surface = readDartLibrary(node.uri);
+      surface = _isLocalDart(node)
+          ? _localDartSurface(node)
+          : readDartLibrary(node.uri);
     } catch (_) {
       surface = null;
     }
@@ -2744,7 +2881,14 @@ class Analyzer {
       parameterNames.add(parameter.name);
     }
     if (function.expressionBody case final value?) {
-      final type = expression(value);
+      final savedExpected = _expected;
+      _expected = _returnType == '<infer>' ? null : _returnType;
+      final String type;
+      try {
+        type = expression(value);
+      } finally {
+        _expected = savedExpected;
+      }
       if (_returnType == '<infer>') {
         model.declarations[function]!.type = function.generator == 'sync'
             ? 'Iterable<$type>'
@@ -4774,24 +4918,28 @@ class Analyzer {
   }
 
   void _checkOverride(ClassDeclaration type, FunctionDeclaration method) {
-    final parentName = type.superclass;
-    if (parentName == null) return;
-    final parent = _global.symbols[parentName]?.classDeclaration;
+    final edge = type.superclass;
+    if (edge == null) return;
+    final parent = _typeSymbol(_genericHead(edge))?.classDeclaration;
     if (parent == null) return;
     final inherited = _method(parent, method.name);
-    if (inherited == null || !sameSignature(method, inherited)) return;
-    final inheritedType = model.declarations[inherited]?.type;
-    final methodType = model.declarations[method]?.type;
-    if (inheritedType == null ||
-        methodType == null ||
-        inheritedType == '<infer>' ||
-        methodType == '<infer>') {
-      return;
-    }
-    if (!compatible(methodType, inheritedType)) {
-      error(
-          'E300',
-          'override return type $methodType is incompatible with $inheritedType',
+    if (inherited == null) return;
+    final owner = _methodReceiver(edge, inherited);
+    if (owner == null) return;
+    if (model.declarations[inherited]?.type == '<infer>' ||
+        model.declarations[method]?.type == '<infer>') return;
+    final substitution = _genericSubstitution(owner.$1, owner.$2);
+    final expected = _substitute(functionType(inherited), substitution);
+    final actual = functionType(method);
+    if (!compatible(actual, expected) ||
+        method.isStatic != inherited.isStatic ||
+        inherited.readonlyMethod && !method.readonlyMethod ||
+        inherited.parameters.indexed.any((entry) =>
+            entry.$1 >= method.parameters.length ||
+            entry.$2.variadic != method.parameters[entry.$1].variadic ||
+            entry.$2.defaultValue != null &&
+                method.parameters[entry.$1].defaultValue == null)) {
+      error('E300', 'override type $actual is incompatible with $expected',
           method);
     }
   }
@@ -5045,7 +5193,7 @@ class Analyzer {
     final visited = <ClassDeclaration>{type};
     var name = type.superclass;
     while (name != null) {
-      final parent = _global.symbols[name]?.classDeclaration;
+      final parent = _typeSymbol(_genericHead(name))?.classDeclaration;
       if (parent == null || !visited.add(parent)) break;
       inherited.insertAll(0, parent.properties);
       name = parent.superclass;
@@ -5054,7 +5202,7 @@ class Analyzer {
   }
 
   String _dartMember(String type, String name) {
-    final declaration = _typeSymbol(type)?.classDeclaration;
+    final declaration = _typeSymbol(_genericHead(type))?.classDeclaration;
     if (declaration == null) return name;
     for (final field in declaration.fields) {
       if (field.name == name) {
@@ -5080,17 +5228,34 @@ class Analyzer {
     return _dartMember(parent, name);
   }
 
-  List<FieldDeclaration> _fieldsOf(ClassDeclaration type) {
+  List<FieldDeclaration> _fieldsOf(ClassDeclaration type,
+      [Set<ClassDeclaration> visited = const {}]) {
+    final cached = model.classFields[type];
+    if (cached != null) return cached;
+    if (visited.contains(type)) error('E700', 'Cyclic class inheritance', type);
     final inherited = <FieldDeclaration>[];
-    final visited = <ClassDeclaration>{type};
-    var name = type.superclass;
-    while (name != null) {
-      final parent = _global.symbols[name]?.classDeclaration;
-      if (parent == null || !visited.add(parent)) break;
-      inherited.insertAll(0, parent.fields);
-      name = parent.superclass;
+    final edge = type.superclass;
+    if (edge != null) {
+      final parent = _typeSymbol(_genericHead(edge))?.classDeclaration;
+      if (parent != null) {
+        final substitution = _genericSubstitution(edge, parent);
+        for (final field in _fieldsOf(parent, {...visited, type})) {
+          inherited.add(FieldDeclaration(
+              field.name,
+              _substitute(_classMemberType(field.type, parent), substitution),
+              field.mutable,
+              field.requiredField,
+              field.initializer,
+              field.span,
+              visibility: field.visibility,
+              isStatic: field.isStatic,
+              isConst: field.isConst,
+              isEvent: field.isEvent,
+              lazyBody: field.lazyBody));
+        }
+      }
     }
-    return [...inherited, ...type.fields];
+    return model.classFields[type] = [...inherited, ...type.fields];
   }
 
   FunctionDeclaration? _method(ClassDeclaration type, String name,
@@ -5890,7 +6055,7 @@ class Analyzer {
     }
     final superName = type.superclass;
     if (superName != null) {
-      final parent = _global.symbols[superName]?.classDeclaration;
+      final parent = _typeSymbol(_genericHead(superName))?.classDeclaration;
       if (parent != null) yield* _classMembers(parent, seen);
     }
   }

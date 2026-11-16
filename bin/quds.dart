@@ -5,6 +5,9 @@ import 'dart:typed_data';
 
 import 'package:quds_lang/quds_lang.dart';
 import 'package:quds_lang/src/flutter_project.dart';
+import 'package:quds_lang/src/libraries.dart'
+    show libraryTarget, resolveLibraryPath;
+import 'package:quds_lang/src/walk.dart';
 import 'package:quds_lang/src/sdk.dart';
 import 'package:quds_lang/src/toolchain.dart';
 
@@ -771,6 +774,66 @@ Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
   }
 }
 
+// Stage Quds modules at unique temporary URIs. Re-emitting directives from AST
+// preserves source libraries and gives every module the same SDK bundle identity.
+(File, Compilation) _temporaryDartTree(
+    File input, Compilation root, Directory directory) {
+  String canonical(String path) =>
+      File(path).absolute.uri.normalizePath().toFilePath();
+  String fileUri(String path) =>
+      Uri.file(path).toString().replaceAll(r'$', '%24').replaceAll("'", '%27');
+  final inputPath = canonical(input.path);
+  final paths = <String>{
+    inputPath,
+    for (final path in root.dependencies)
+      if (path.endsWith('.quds')) canonical(path)
+  }.toList();
+  final targets = {
+    for (var i = 0; i < paths.length; i++)
+      paths[i]: File('${directory.path}/module$i.dart')
+  };
+  Compilation? stagedRoot;
+  for (final path in paths) {
+    final compiled = path == inputPath
+        ? root
+        : compile(File(path).readAsStringSync(), file: path);
+    walkAst(compiled.program, (node) {
+      if (node is ImportDeclaration && !node.uri.startsWith('quds:')) {
+        final target = resolveLibraryPath(path, node.uri);
+        final staged = target == null ? null : targets[canonical(target)];
+        if (staged != null) {
+          compiled.semantics.resolvedImports[node] = fileUri(staged.path);
+        } else {
+          final uri = libraryTarget(node.uri);
+          if (uri.endsWith('.dart') && !Uri.parse(uri).hasScheme) {
+            compiled.semantics.resolvedImports[node] =
+                fileUri(Uri.file(path).resolve(uri).toFilePath());
+          }
+        }
+      } else if (node is PartDirective && node.uri.endsWith('.quds')) {
+        final target = canonical(Uri.file(path).resolve(node.uri).toFilePath());
+        if (targets[target] case final staged?) {
+          compiled.semantics.resolvedParts[node] = fileUri(staged.path);
+        }
+      }
+    });
+    final emitter = DartEmitter(compiled.semantics);
+    final dart = emitter.emit(compiled.program);
+    final target = targets[path]!;
+    target.writeAsStringSync(dart);
+    writeSdkBundles(directory.path, compiled);
+    if (path == inputPath) {
+      stagedRoot = Compilation(compiled.program, compiled.semantics, dart,
+          sourceMap: sourceMapFor(emitter, target.path, path,
+              program: compiled.program, source: input.readAsStringSync()),
+          dependencies: compiled.dependencies,
+          models: compiled.models,
+          bundles: compiled.bundles);
+    }
+  }
+  return (targets[inputPath]!, stagedRoot!);
+}
+
 void _analyze(List<String> arguments) {
   _requireQuds(arguments);
   if (exitCode != 0) return;
@@ -778,14 +841,16 @@ void _analyze(List<String> arguments) {
   try {
     final result = compile(input.readAsStringSync(), file: input.path);
     final directory = Directory.systemTemp.createTempSync('quds-analyze-');
-    final output = File('${directory.path}/main.dart')
-      ..writeAsStringSync(result.dart);
-    writeSdkBundles(directory.path, result);
-    final analysis = Process.runSync(
-        _dartExecutable(), _withPackages(['analyze', output.path]));
-    _writeQuds(analysis.stdout, analysis.stderr, result.sourceMap, 'main.dart');
-    exitCode = analysis.exitCode;
-    directory.deleteSync(recursive: true);
+    try {
+      final (output, staged) = _temporaryDartTree(input, result, directory);
+      final analysis = Process.runSync(
+          _dartExecutable(), _withPackages(['analyze', output.path]));
+      _writeQuds(analysis.stdout, analysis.stderr, staged.sourceMap,
+          output.uri.pathSegments.last);
+      exitCode = analysis.exitCode;
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
   } on CompilerException catch (error) {
     stderr.writeln(error);
     exitCode = 65;
@@ -836,26 +901,31 @@ void _test(List<String> arguments) {
     ].join('\n');
     // A raw failure count of 256 becomes a successful exit on POSIX.
     final status = tests.isNotEmpty ? '_qTestFailed == 0 ? 0 : 1' : '0';
-    final dart = '${result.dart}\nFuture<int> $entry() async {\n'
-        '$calls\n  return $status;\n}\n';
-    if (dart.contains('package:matcher/') && _packageConfigPath() == null) {
+    if (result.dart.contains('package:matcher/') &&
+        _packageConfigPath() == null) {
       stderr.writeln('Could not find the package config for matcher');
       exitCode = 1;
       return;
     }
     final directory = Directory.systemTemp.createTempSync('quds-test-');
-    writeSdkBundles(directory.path, result);
-    File('${directory.path}/suite.dart').writeAsStringSync(dart);
-    final output = File('${directory.path}/main.dart')
-      ..writeAsStringSync("import 'dart:io' as io;\n"
-          "import 'suite.dart' as suite;\n"
-          'Future<void> main() async {\n'
-          '  io.exitCode = await suite.$entry();\n}\n');
-    final run =
-        Process.runSync(_dartExecutable(), _withPackages([output.path]));
-    _writeQuds(run.stdout, run.stderr, result.sourceMap, 'suite.dart');
-    exitCode = run.exitCode;
-    directory.deleteSync(recursive: true);
+    try {
+      final (suite, staged) = _temporaryDartTree(input, result, directory);
+      suite.writeAsStringSync('${staged.dart}\nFuture<int> $entry() async {\n'
+          '$calls\n  return $status;\n}\n');
+      final suiteUri = jsonEncode(suite.uri.toString()).replaceAll(r'$', r'\$');
+      final output = File('${directory.path}/main.dart')
+        ..writeAsStringSync("import 'dart:io' as io;\n"
+            'import $suiteUri as suite;\n'
+            'Future<void> main() async {\n'
+            '  io.exitCode = await suite.$entry();\n}\n');
+      final run =
+          Process.runSync(_dartExecutable(), _withPackages([output.path]));
+      _writeQuds(run.stdout, run.stderr, staged.sourceMap,
+          suite.uri.pathSegments.last);
+      exitCode = run.exitCode;
+    } finally {
+      directory.deleteSync(recursive: true);
+    }
   } on CompilerException catch (error) {
     stderr.writeln(error);
     exitCode = 65;

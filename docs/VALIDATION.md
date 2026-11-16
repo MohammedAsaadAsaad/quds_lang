@@ -1,5 +1,43 @@
 # Compiler validation — latest 2026-11-16
 
+## Generic class inheritance and Quds module staging — L3.2c — 2026-11-16
+
+Contract, examples and limits: [GENERIC_INHERITANCE.md](GENERIC_INHERITANCE.md).
+
+| Check | Observed result |
+| --- | --- |
+| Baseline reproductions | Generic inherited constructor fields failed E500; private writes emitted the wrong Dart name; an inherited static field shifted constructor argument labels |
+| Primary Quds inheritance suites | **13 declarations passed**, including two prefixed cross-file cases |
+| New inheritance runner | **28 passed**: primary suites, 20 invalid type/constructor/override cases, five visibility rejections, original span and Dart golden/backend execution |
+| Multi-file Quds runner regressions | Shared SDK identity and relative Dart helper passed; staged `quds analyze` passed; private part helper passed; no source-side generated Dart files |
+| Combined focused check | **108 passed**, including previous nullability, constraints, collections/interfaces and test-discovery regressions |
+| Dart golden | Exact deterministic `generic_inheritance.dart.txt` output matched; generated program analyzed without issues |
+| VM + JavaScript/Node | Quds fixture passed both with marker `GENERIC INHERITANCE OK`; source-order arguments evaluated once; private writes and static-field layout exercised |
+| `dart pub get` | Passed |
+| Final format/analyze | 46 Dart files; zero format changes; analyze reports no issues |
+| Final `dart test --reporter expanded` | **409 passed; zero failures; zero skips** in 8m29s |
+| `git diff --check` | Passed |
+
+The checker and emitter share specialized inherited field views. Generic scopes,
+parent signatures and member spellings survive constructor/property/override
+analysis. Explicit super initializing formals select named or positional Dart
+forwarding according to the parent. Fixed metadata excludes static/event/lazy
+fields from constructor argument positions.
+
+Multi-file test coverage exposed missing dependency output, SDK imports used
+only in a generic type annotation, bare relative `.dart` normalization/binding,
+part directive order and internal symbol collisions between parts. The staging
+helper re-emits AST directives into a shared temporary module tree and rebuilds
+source maps; no regex-only transpilation is introduced.
+
+Intermediate focused failures were corrected, including missing context for
+empty expression/getter results. One intermediate full run was intentionally
+interrupted to add the verified static-field layout regression. Its interrupted
+tests are not reported as completed validation. The final stable run above is
+authoritative. No syntax redesign, math API addition or complete generic/Dart
+inheritance parity is claimed; remaining cases are listed in the contract.
+
+
 ## Collection inference and generic interface contracts — L3.2b — 2026-11-16
 
 Contract, examples and remaining limitations:

@@ -108,3 +108,6 @@ Generic application checks and the remaining L3.2 scope are documented in
 
 The next bounded generic package is described in
 [collection inference and instantiated interfaces](docs/COLLECTION_INFERENCE_INTERFACES.md).
+
+[Generic class inheritance and multi-file Quds testing](docs/GENERIC_INHERITANCE.md)
+documents the L3.2c subset and its remaining constructor/interop limits.

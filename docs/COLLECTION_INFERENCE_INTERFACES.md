@@ -5,6 +5,9 @@ a bounded part of L3.2 in the [agent handoff](LANGUAGE_NEXT_STAGE_HANDOFF_AR.md)
 It strengthens QUDS-003/012/024/035/040 under specification 1.2. It introduces
 no replacement syntax and makes no claim of complete Dart generic parity.
 
+Follow-up superclass/constructor work is documented in
+[L3.2c](GENERIC_INHERITANCE.md). Limits below describe this L3.2b package.
+
 ## Collection inference
 
 Generic function and constructor inference now traverses balanced generic

@@ -55,6 +55,7 @@ class DartEmitter {
   SourceSpan? _span;
   final mappings = <(int, SourceSpan)>[];
   final _imports = <String>[];
+  final _parts = <String>[];
   var _classes = <String, ClassDeclaration>{};
   var _useState = false;
   var _useComputed = false;
@@ -315,10 +316,11 @@ class DartEmitter {
         }
         _imports.add("import '$uri'$prefix$combinator;");
       } else if (node is PartDirective) {
-        final uri = node.uri.endsWith('.quds')
-            ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
-            : node.uri;
-        _imports.add(node.of ? "part of '$uri';" : "part '$uri';");
+        final uri = model.resolvedParts[node] ??
+            (node.uri.endsWith('.quds')
+                ? '${node.uri.substring(0, node.uri.length - 5)}.dart'
+                : node.uri);
+        _parts.add(node.of ? "part of '$uri';" : "part '$uri';");
       }
     }
   }
@@ -834,6 +836,9 @@ class DartEmitter {
       helpers.writeln('bool _qPresent(Object? value) => value != null;\n'
           'T _qSome<T>(Object? value) => value as T;');
     }
+    for (final part in _parts) {
+      prelude.writeln(part);
+    }
     if (helpers.isNotEmpty) prelude.writeln(helpers.toString());
     if (prelude.isEmpty) return source;
     return source.replaceFirst(
@@ -1199,7 +1204,7 @@ class DartEmitter {
     final header = _header(node);
     final tail = [
       if (node.onType != null) 'on ${node.onType}',
-      if (node.superclass != null) 'extends ${node.superclass}',
+      if (node.superclass != null) 'extends ${_dartType(node.superclass!)}',
       if (node.mixins.isNotEmpty) 'with ${node.mixins.join(', ')}',
       if (node.interfaces.isNotEmpty)
         'implements ${node.interfaces.join(', ')}',
@@ -1434,6 +1439,10 @@ class DartEmitter {
 
   void _emitConstructor(
       ClassDeclaration type, ConstructorDeclaration constructor) {
+    final parentName = type.superclass;
+    final parent =
+        parentName == null ? null : _classes[_genericHead(parentName)];
+    final namedSuper = parent != null && parent.constructors.isEmpty;
     final params = constructor.parameters.map((parameter) {
       final declared = model.declarations[parameter]!;
       if (parameter.initializing == 'this') {
@@ -1445,7 +1454,8 @@ class DartEmitter {
         }
         return 'this.${parameter.name}';
       }
-      if (parameter.initializing == 'super') return 'super.${parameter.name}';
+      if (parameter.initializing == 'super' && !namedSuper)
+        return 'super.${parameter.name}';
       return '${_dartType(declared.type)} ${declared.dartName}';
     }).join(', ');
     final private = constructor.parameters.where((parameter) {
@@ -1460,6 +1470,8 @@ class DartEmitter {
       ..._copyInitializers(type, constructor),
       for (final binding in lifted)
         '${model.references[binding]!.dartName} = ${expression(binding.value)}',
+      if (namedSuper)
+        'super(${constructor.parameters.where((p) => p.initializing == 'super').map((p) => '${p.name}: ${model.declarations[p]!.dartName}').join(', ')})',
     ];
     final tail = inits.isEmpty ? '' : ' : ${inits.join(', ')}';
     final prefix = '${constructor.constant ? 'const ' : ''}'
@@ -1697,17 +1709,14 @@ class DartEmitter {
     line('}');
   }
 
-  List<FieldDeclaration> _inherited(ClassDeclaration node) {
-    final fields = <FieldDeclaration>[];
-    var name = node.superclass;
-    while (name != null) {
-      final parent = _classes[name];
-      if (parent == null) break;
-      fields.insertAll(0, parent.fields);
-      name = parent.superclass;
-    }
-    return fields;
-  }
+  List<FieldDeclaration> _inherited(ClassDeclaration node) =>
+      (model.classFields[node] ?? const <FieldDeclaration>[])
+          .where((field) =>
+              !node.fields.contains(field) &&
+              !field.isStatic &&
+              !field.isEvent &&
+              field.lazyBody == null)
+          .toList();
 
   void emitExtension(ExtensionDeclaration node) {
     _span = node.span;
@@ -3158,7 +3167,8 @@ class DartEmitter {
       final fields = targetSymbol.classCase?.fields ??
           [
             ..._inherited(targetSymbol.classDeclaration!),
-            ...targetSymbol.classDeclaration!.fields
+            ...targetSymbol.classDeclaration!.fields.where((field) =>
+                !field.isStatic && !field.isEvent && field.lazyBody == null)
           ];
       final declared = targetSymbol.classDeclaration!.name;
       final ctor = targetSymbol.classCase?.name ??

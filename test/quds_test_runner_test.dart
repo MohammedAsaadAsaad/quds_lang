@@ -79,4 +79,61 @@ test "entry collision":
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout, 'ok entry collision\n');
   });
+
+  test(
+      'temporary Quds modules share SDK identities and resolve relative Dart imports',
+      () async {
+    final sub = Directory('${directory.path}/sub')..createSync();
+    File('${sub.path}/helper.dart')
+        .writeAsStringSync('int next(int value) => value + 1;\n');
+    File('${sub.path}/child.quds').writeAsStringSync('''
+use quds:core show Stack
+use "helper.dart" as native
+make() -> Stack<int>:
+  value = Stack<int>()
+  value.push(native.next(40))
+  return value
+''');
+    final source = '''
+use quds:core show Stack
+use "sub/child.quds" as child
+accept(value: Stack<int>) -> int = value.top()
+test "shared SDK identity":
+  expect(accept(child.make()), 41)
+''';
+    final result = await run(source);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, 'ok shared SDK identity\n');
+    final analysisInput = File('${directory.path}/analysis.quds')
+      ..writeAsStringSync('''
+use quds:core show Stack
+use "sub/child.quds" as child
+accept(value: Stack<int>) -> int = value.top()
+main():
+  print accept(child.make())
+''');
+    final analyzed = await Process.run(Platform.resolvedExecutable,
+        ['run', 'bin/quds.dart', 'analyze', analysisInput.path]);
+    expect(analyzed.exitCode, 0,
+        reason: '${analyzed.stdout}\n${analyzed.stderr}');
+    expect(File('${sub.path}/child.dart').existsSync(), isFalse);
+    expect(File('${directory.path}/suite.dart').existsSync(), isFalse);
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('temporary Quds part libraries retain their owner and private scope',
+      () async {
+    File('${directory.path}/helper.quds').writeAsStringSync('''
+part of "suite.quds"
+_increment(value: int) -> int = value + 1
+''');
+    final result = await run('''
+part "helper.quds"
+test "private part helper":
+  expect(_increment(41), 42)
+''');
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    expect(result.stdout, 'ok private part helper\n');
+    expect(File('${directory.path}/helper.dart').existsSync(), isFalse);
+    expect(File('${directory.path}/suite.dart').existsSync(), isFalse);
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }

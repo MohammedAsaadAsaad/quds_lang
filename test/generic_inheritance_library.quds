@@ -1,0 +1,4 @@
+class LibraryBase<T>:
+  private var secret: T required
+  protected var shared: T required
+  read() -> T = secret

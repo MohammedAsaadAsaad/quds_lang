@@ -62,6 +62,7 @@ String _normalizeLibraryUri(String uri) {
   if (uri.contains(':') || uri.contains('/') || uri.contains('\\')) {
     return uri;
   }
+  if (uri.endsWith('.dart')) return uri;
   final dotted = _dotPath(uri);
   if (dotted != null) return dotted;
   if (uri.endsWith('.quds')) return uri;

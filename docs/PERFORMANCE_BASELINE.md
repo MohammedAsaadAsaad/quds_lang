@@ -56,7 +56,7 @@ copy versus shared view behavior, generic calls and closures. Expected output:
 Dart AOT compilation 1202555 µs, and AOT launch/execution median 10797 µs.
 Those include the labels above; none is an isolated kernel throughput claim.
 Source/Dart byte counts describe artifacts, not heap allocation or RSS.
-Memory profiling, JS throughput and native BLAS/GPU are not measured here.
+Heap/allocation profiling, JS throughput and native BLAS/GPU are not measured here.
 
 ## Multi-file correctness
 
@@ -66,3 +66,14 @@ graph. Previously a function returning an imported class tried to load an
 unbuilt source-side `.dart` file. A regression runs Quds tests, analysis, and the
 measured benchmark over such a module, and checks that no source-side Dart was
 created. Exact validation results are in [VALIDATION.md](VALIDATION.md).
+
+## Linux process RSS follow-up
+
+`python3 tool/profile_workload_memory.py` uses Linux `wait4.ru_maxrss` for five
+separate checksum-verified AOT child lifetimes after one discarded launch. It
+compiles the fixed Quds workload in a temporary tree, and cleans that tree. Raw
+results and tool version are in `bench/results/language_workloads_memory.json`.
+This metric includes fork/exec and the pre-exec high-water mark: it can have a
+launcher RSS floor. It is not an isolated Dart heap, allocation count, or payload
+size, and cannot establish per-kernel memory efficiency. Python standard library
+only; the script explicitly requires Linux for the KiB convention.

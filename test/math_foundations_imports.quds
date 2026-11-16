@@ -1,0 +1,13 @@
+use quds:math::timeseries as series
+use quds:math::logic as logic
+use quds:math::topology as topology
+
+test "new math sections preserve nominal return types and prefixes":
+  estimate: series.KalmanEstimate = series.kalmanScalar(0.0, 1.0, 2.0, 0.0, 1.0)
+  expect(estimate.meanValue, 1.0)
+  answer: logic.SatResult = logic.solveCnf(1, [[1]])
+  expect(answer.satisfiable, true)
+  shape: topology.Homology2 = topology.simplicialHomology(3, [], [[0, 1, 2]])
+  expect(shape.betti0, 1)
+  expect(topology.eulerCharacteristic(3, [[0, 1, 2]]), 1)
+  expect(series.seriesDifference([1.0, 2.0])[0], 1.0)

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "metric": "Linux wait4.ru_maxrss for each child lifetime including fork/exec",
+  "unit": "KiB",
+  "warmup": 1,
+  "repeat": 5,
+  "samples": [
+    12160,
+    12160,
+    12160,
+    12160,
+    12160
+  ],
+  "median": 12160,
+  "min": 12160,
+  "max": 12160,
+  "dart": "Dart SDK version: 3.13.7 (stable) (Thu Oct 22 14:28:57 2026 -0700) on \"linux_x64\"",
+  "os": "linux",
+  "checksum": "2181009417.0\n99990000\n",
+  "limit": "Includes launch/pre-exec high-water mark; may have a launcher RSS floor. Not allocations or isolated Dart heap."
+}

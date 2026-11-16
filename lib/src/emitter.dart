@@ -238,6 +238,10 @@ class DartEmitter {
     }
     for (final node in program.statements) {
       if (node is! FunctionDeclaration || node.name == 'main') continue;
+      // Private bridge names are needed between Quds parts, not as unused
+      // source-name aliases in a standalone generated Dart library.
+      if (node.name.startsWith('_') &&
+          !program.statements.any((item) => item is PartDirective)) continue;
       if (node.typeParameters.isNotEmpty || counts[node.name] != 1) continue;
       final symbol = model.declarations[node];
       if (symbol == null || symbol.dartName == node.name) continue;
@@ -286,7 +290,10 @@ class DartEmitter {
             continue;
           }
           final prefix = node.prefix == null ? '' : ' as ${node.prefix}';
-          _imports.add("import '$uri'$prefix$combinator;");
+          // Inferred nominal results may use a backend type alias while the
+          // automatically selected section still records that type dependency.
+          final ignore = sectioned ? '// ignore: unused_shown_name\n' : '';
+          _imports.add("${ignore}import '$uri'$prefix$combinator;");
           continue;
         }
         final target = libraryTarget(node.uri);

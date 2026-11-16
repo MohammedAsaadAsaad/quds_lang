@@ -9,7 +9,8 @@
 # and every section named stats::something. This file is divided into scalar,
 # number, complex, vector, interval, stats, distribution, calculus, interp,
 # linalg, polynomial, signal, special, optimize, graph, graph::weighted,
-# graph::flow, graph::matching, exact, exact::decimal, autodiff,
+# graph::flow, graph::matching, exact, exact::decimal, timeseries, logic,
+# topology::homology, autodiff,
 # autodiff::reverse, geometry, symbolic, tensor, algebra, and topology. Each
 # of those sections is opened once. interval::outward is the outward-rounded
 # interval type. support collects
@@ -9645,6 +9646,7 @@ eulerCharacteristic(vertexCount: int, faces: List<List<int>>) -> int:
   if vertexCount < 0 or vertexCount > 5000: throw "topology vertex count is outside 0 through 5000"
   if faces.length > 2000: throw "topology exceeds the work limit"
   edges: List<int> = []
+  faceCodes: List<int> = []
   for face in faces:
     if face.length != 3: throw "topology face must be a triangle"
     if face[0] == face[1] or face[0] == face[2] or face[1] == face[2]: throw "topology face repeats a vertex"
@@ -9652,6 +9654,10 @@ eulerCharacteristic(vertexCount: int, faces: List<List<int>>) -> int:
     while slot < 3:
       if face[slot] < 0 or face[slot] >= vertexCount: throw "topology vertex out of range"
       slot += 1
+    ordered = face.sorted()
+    code = (ordered[0] * vertexCount + ordered[1]) * vertexCount + ordered[2]
+    if faceCodes.contains(code): throw "topology repeats a face"
+    faceCodes.add(code)
     _topologyEdge(edges, vertexCount, face[0], face[1])
     _topologyEdge(edges, vertexCount, face[1], face[2])
     _topologyEdge(edges, vertexCount, face[2], face[0])
@@ -9667,3 +9673,259 @@ _topologyEdge(edges: List<int>, vertexCount: int, left: int, right: int):
   for existing in edges:
     if existing == code: return
   edges.add(code)
+
+
+:: timeseries
+
+# Population convention: center at the whole-series mean and divide by n.
+seriesAutocovariance(samples: List<double>, lag: int) -> double:
+  if samples.length == 0 or lag < 0 or lag >= samples.length: throw "series lag must be inside a nonempty series"
+  _seriesFiniteList(samples)
+  center = mean(samples)
+  var total = 0.0
+  var correction = 0.0
+  var index = lag
+  while index < samples.length:
+    productValue = (samples[index] - center) * (samples[index - lag] - center) / samples.length
+    adjusted = productValue - correction
+    next = total + adjusted
+    correction = (next - total) - adjusted
+    total = next
+    index += 1
+  if not _seriesFinite(total): throw "series covariance is not finite"
+  return total
+
+seriesAutocorrelation(samples: List<double>, lag: int) -> double:
+  covarianceValue = seriesAutocovariance(samples, lag)
+  varianceValue = seriesAutocovariance(samples, 0)
+  if varianceValue == 0.0: throw "series correlation needs positive variance"
+  return covarianceValue / varianceValue
+
+seriesDifference(samples: List<double>, lag: int = 1) -> List<double>:
+  if lag < 1 or lag > samples.length: throw "series difference lag must be inside the series"
+  _seriesFiniteList(samples)
+  output: List<double> = []
+  var index = lag
+  while index < samples.length:
+    value = samples[index] - samples[index - lag]
+    if not _seriesFinite(value): throw "series difference is not finite"
+    output.add(value)
+    index += 1
+  return output
+
+# Coefficients are ordered from lag 1 to lag p; this does not fit a model.
+arForecast(history: List<double>, coefficients: List<double>, intercept: double, steps: int) -> List<double>:
+  if coefficients.length > 128 or history.length < coefficients.length or steps < 0 or steps > 10000: throw "AR dimensions exceed the work limit"
+  _seriesFiniteList(history)
+  _seriesFiniteList(coefficients)
+  if not _seriesFinite(intercept): throw "AR intercept must be finite"
+  values = history.toList()
+  output: List<double> = []
+  var stepIndex = 0
+  while stepIndex < steps:
+    var predicted = intercept
+    var lagIndex = 0
+    while lagIndex < coefficients.length:
+      predicted += coefficients[lagIndex] * values[values.length - 1 - lagIndex]
+      lagIndex += 1
+    if not _seriesFinite(predicted): throw "AR forecast is not finite"
+    output.add(predicted)
+    values.add(predicted)
+    stepIndex += 1
+  return output
+
+# Row-stochastic transition: output[j] = sum_i probabilities[i] * rows[i][j].
+markovStep(probabilities: List<double>, rows: List<List<double>>) -> List<double>:
+  size = probabilities.length
+  if size == 0 or size > 128 or rows.length != size: throw "Markov dimensions must match within 1 through 128"
+  _seriesProbability(probabilities)
+  for row in rows:
+    if row.length != size: throw "Markov dimensions must match within 1 through 128"
+    _seriesProbability(row)
+  output: List<double> = []
+  var column = 0
+  while column < size:
+    var total = 0.0
+    var rowIndex = 0
+    while rowIndex < size:
+      total += probabilities[rowIndex] * rows[rowIndex][column]
+      rowIndex += 1
+    output.add(total)
+    column += 1
+  return output
+
+class KalmanEstimate:
+  meanValue: double required
+  variance: double required
+  gain: double required
+
+# Scalar identity state/observation model; process noise is added before update.
+# Joseph-form posterior variance avoids subtracting nearly equal variances.
+kalmanScalar(priorMean: double, varianceValue: double, observation: double, processVariance: double, measurementVariance: double) -> KalmanEstimate:
+  _seriesFiniteList([priorMean, varianceValue, observation, processVariance, measurementVariance])
+  if varianceValue < 0.0 or processVariance < 0.0 or measurementVariance <= 0.0: throw "Kalman variances need nonnegative state/process and positive measurement"
+  predicted = varianceValue + processVariance
+  denominator = predicted + measurementVariance
+  if not _seriesFinite(denominator): throw "Kalman update is not finite"
+  gainValue = predicted / denominator
+  complement = measurementVariance / denominator
+  updated = complement * priorMean + gainValue * observation
+  varianceOutput = complement * complement * predicted + gainValue * gainValue * measurementVariance
+  if not _seriesFinite(updated) or not _seriesFinite(varianceOutput): throw "Kalman update is not finite"
+  return KalmanEstimate(meanValue: updated, variance: varianceOutput, gain: gainValue)
+
+_seriesFinite(value: double) -> bool = value == value and value != 1.0 / 0.0 and value != 0.0 - 1.0 / 0.0
+_seriesFiniteList(values: List<double>):
+  for value in values:
+    if not _seriesFinite(value): throw "series values must be finite"
+_seriesProbability(values: List<double>):
+  _seriesFiniteList(values)
+  var total = 0.0
+  for value in values:
+    if value < 0.0 or value > 1.0 + 1.0e-12: throw "Markov probabilities must be normalized and nonnegative"
+    total += value
+  if total < 1.0 - 1.0e-12 or total > 1.0 + 1.0e-12: throw "Markov probabilities must be normalized and nonnegative"
+
+:: logic
+
+class SatResult:
+  satisfiable: bool required
+  assignment: List<bool> required
+
+# Signed literals use 1-based variable indices. Empty CNF is true; empty clause
+# is false. First assignment is deterministic in ascending binary-mask order.
+solveCnf(variableCount: int, clauses: List<List<int>>) -> SatResult:
+  if variableCount < 0 or variableCount > 16 or clauses.length > 512: throw "SAT exceeds the work limit"
+  var literalCount = 0
+  for clause in clauses:
+    for literal in clause:
+      if literal == 0 or literal < 0 - variableCount or literal > variableCount: throw "SAT literal is outside the variable range"
+      literalCount += 1
+  assignmentCount = 1 << variableCount
+  if (literalCount + clauses.length) * assignmentCount > 16000000: throw "SAT exceeds the work limit"
+  var maskValue = 0
+  while maskValue < assignmentCount:
+    var accepted = true
+    for clause in clauses:
+      var satisfied = false
+      for literal in clause:
+        var indexValue = literal
+        if indexValue < 0: indexValue = 0 - indexValue
+        bitValue = (maskValue & (1 << (indexValue - 1))) != 0
+        if (literal > 0 and bitValue) or (literal < 0 and not bitValue): satisfied = true
+      if not satisfied: accepted = false
+    if accepted:
+      values: List<bool> = []
+      var indexValue = 0
+      while indexValue < variableCount:
+        values.add((maskValue & (1 << indexValue)) != 0)
+        indexValue += 1
+      return SatResult(satisfiable: true, assignment: values)
+    maskValue += 1
+  return SatResult(satisfiable: false, assignment: [])
+
+# An explicit finite relation matrix: reflexive, antisymmetric and transitive.
+isPartialOrder(relation: List<List<bool>>) -> bool:
+  size = relation.length
+  if size > 128: throw "order exceeds the work limit"
+  for row in relation:
+    if row.length != size: throw "order relation must be square"
+  var left = 0
+  while left < size:
+    if not relation[left][left]: return false
+    var right = 0
+    while right < size:
+      if left != right and relation[left][right] and relation[right][left]: return false
+      var middle = 0
+      while middle < size:
+        if relation[left][middle] and relation[middle][right] and not relation[left][right]: return false
+        middle += 1
+      right += 1
+    left += 1
+  return true
+
+:: topology::homology
+
+class Homology2:
+  betti0: int required
+  betti1: int required
+  betti2: int required
+
+# Homology over F2 of a 2-dimensional finite simplicial complex. Triangle
+# boundaries are included automatically. No 3-simplices are filled implicitly.
+simplicialHomology(vertexCount: int, edges: List<List<int>>, faces: List<List<int>>) -> Homology2:
+  if vertexCount < 0 or vertexCount > 128 or edges.length > 256 or faces.length > 128: throw "homology exceeds the work limit"
+  codes: List<int> = []
+  for edge in edges:
+    if edge.length != 2 or edge[0] == edge[1]: throw "homology edge needs two distinct vertices"
+    _homologyVertex(vertexCount, edge[0])
+    _homologyVertex(vertexCount, edge[1])
+    _homologyEdge(codes, vertexCount, edge[0], edge[1])
+  faceCodes: List<int> = []
+  for face in faces:
+    if face.length != 3 or face[0] == face[1] or face[0] == face[2] or face[1] == face[2]: throw "homology face needs three distinct vertices"
+    for vertex in face:
+      _homologyVertex(vertexCount, vertex)
+    ordered = face.sorted()
+    code = (ordered[0] * vertexCount + ordered[1]) * vertexCount + ordered[2]
+    if faceCodes.contains(code): throw "homology repeats a face"
+    faceCodes.add(code)
+    _homologyEdge(codes, vertexCount, face[0], face[1])
+    _homologyEdge(codes, vertexCount, face[1], face[2])
+    _homologyEdge(codes, vertexCount, face[2], face[0])
+  if codes.length > 256: throw "homology exceeds the work limit"
+  parents: List<int> = []
+  var vertexIndex = 0
+  while vertexIndex < vertexCount:
+    parents.add(vertexIndex)
+    vertexIndex += 1
+  var components = vertexCount
+  for code in codes:
+    left = _homologyRoot(parents, code ~/ vertexCount)
+    right = _homologyRoot(parents, code % vertexCount)
+    if left != right:
+      parents[left] = right
+      components -= 1
+  boundary: List<List<int>> = []
+  for code in codes:
+    row: List<int> = []
+    for face in faces:
+      var entryValue = 0
+      if code == _homologyCode(vertexCount, face[0], face[1]) or code == _homologyCode(vertexCount, face[1], face[2]) or code == _homologyCode(vertexCount, face[2], face[0]): entryValue = 1
+      row.add(entryValue)
+    boundary.add(row)
+  var rankValue = 0
+  var column = 0
+  while column < faces.length and rankValue < boundary.length:
+    var pivot = rankValue
+    while pivot < boundary.length and boundary[pivot][column] == 0:
+      pivot += 1
+    if pivot < boundary.length:
+      saved = boundary[rankValue]
+      boundary[rankValue] = boundary[pivot]
+      boundary[pivot] = saved
+      var rowIndex = rankValue + 1
+      while rowIndex < boundary.length:
+        if boundary[rowIndex][column] == 1:
+          var entry = column
+          while entry < faces.length:
+            boundary[rowIndex][entry] = boundary[rowIndex][entry] ^ boundary[rankValue][entry]
+            entry += 1
+        rowIndex += 1
+      rankValue += 1
+    column += 1
+  return Homology2(betti0: components, betti1: codes.length - vertexCount + components - rankValue, betti2: faces.length - rankValue)
+
+_homologyVertex(size: int, vertex: int):
+  if vertex < 0 or vertex >= size: throw "homology vertex out of range"
+_homologyCode(size: int, left: int, right: int) -> int:
+  if left < right: return left * size + right
+  return right * size + left
+_homologyEdge(codes: List<int>, size: int, left: int, right: int):
+  code = _homologyCode(size, left, right)
+  if not codes.contains(code): codes.add(code)
+_homologyRoot(parents: List<int>, start: int) -> int:
+  var vertex = start
+  while parents[vertex] != vertex:
+    vertex = parents[vertex]
+  return vertex

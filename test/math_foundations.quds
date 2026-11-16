@@ -1,0 +1,179 @@
+use quds:math
+
+test "series normalization and differencing":
+  expect(seriesAutocovariance([1.0, 2.0, 3.0], 0), 2.0 / 3.0)
+  expect(seriesAutocovariance([1.0, 2.0, 3.0], 1), 0.0)
+  expect(seriesAutocovariance([1.0, 2.0, 3.0], 2), 0.0 - 1.0 / 3.0)
+  expect(seriesAutocorrelation([1.0, 2.0, 3.0], 2), -0.5)
+  expect(seriesDifference([1.0, 3.0, 6.0]), [2.0, 3.0])
+  expect(seriesDifference([1.0, 3.0, 6.0], 2), [5.0])
+  expect(seriesDifference([1.0], 1).length, 0)
+
+test "series rejects undefined and nonfinite inputs":
+  empty() -> double = seriesAutocovariance([], 0)
+  expect(empty, throwsA(equals("series lag must be inside a nonempty series")))
+  negative() -> double = seriesAutocovariance([1.0], -1)
+  expect(negative, throwsA(equals("series lag must be inside a nonempty series")))
+  longLag() -> double = seriesAutocovariance([1.0], 1)
+  expect(longLag, throwsA(equals("series lag must be inside a nonempty series")))
+  constant() -> double = seriesAutocorrelation([1.0, 1.0], 0)
+  expect(constant, throwsA(equals("series correlation needs positive variance")))
+  infinite() -> List<double> = seriesDifference([0.0, 1.0 / 0.0])
+  expect(infinite, throwsA(equals("series values must be finite")))
+  differenceLag() -> List<double> = seriesDifference([1.0], 0)
+  expect(differenceLag, throwsA(equals("series difference lag must be inside the series")))
+  overflow() -> double = seriesAutocovariance([1.0e308, -1.0e308], 0)
+  expect(overflow, throwsA(equals("series covariance is not finite")))
+
+test "AR coefficients have lag order and do not mutate inputs":
+  history = [1.0, 2.0]
+  coefficients = [1.0, 1.0]
+  expect(arForecast(history, coefficients, 0.0, 5), [3.0, 5.0, 8.0, 13.0, 21.0])
+  expect(history, [1.0, 2.0])
+  expect(coefficients, [1.0, 1.0])
+  expect(arForecast([], [], 2.0, 3), [2.0, 2.0, 2.0])
+  expect(arForecast([1.0], [1.0], 0.0, 0).length, 0)
+  shortHistory() -> List<double> = arForecast([], [1.0], 0.0, 1)
+  expect(shortHistory, throwsA(equals("AR dimensions exceed the work limit")))
+  badSteps() -> List<double> = arForecast([], [], 0.0, 10001)
+  expect(badSteps, throwsA(equals("AR dimensions exceed the work limit")))
+  overflow() -> List<double> = arForecast([1.0e308], [2.0], 0.0, 1)
+  expect(overflow, throwsA(equals("AR forecast is not finite")))
+
+test "Markov rows are stochastic and are not silently normalized":
+  rows = [[0.5, 0.5], [0.0, 1.0]]
+  first = markovStep([1.0, 0.0], rows)
+  expect(first, [0.5, 0.5])
+  expect(markovStep(first, rows), [0.25, 0.75])
+  expect(rows, [[0.5, 0.5], [0.0, 1.0]])
+  rounded = markovStep([1.0, 5.0e-13], [[1.0, 0.0], [1.0, 0.0]])
+  expect(markovStep(rounded, [[1.0, 0.0], [1.0, 0.0]])[0], rounded[0])
+  invalid() -> List<double> = markovStep([1.0], [[0.9]])
+  expect(invalid, throwsA(equals("Markov probabilities must be normalized and nonnegative")))
+  negative() -> List<double> = markovStep([1.0, 0.0], [[1.1, -0.1], [0.0, 1.0]])
+  expect(negative, throwsA(equals("Markov probabilities must be normalized and nonnegative")))
+  shape() -> List<double> = markovStep([1.0], [[1.0, 0.0]])
+  expect(shape, throwsA(equals("Markov dimensions must match within 1 through 128")))
+
+test "scalar Kalman update uses process noise and Joseph variance":
+  estimate = kalmanScalar(0.0, 1.0, 2.0, 0.0, 1.0)
+  expect(estimate.meanValue, 1.0)
+  expect(estimate.variance, 0.5)
+  expect(estimate.gain, 0.5)
+  nearUnitGain = kalmanScalar(1.0e300, 1.0e16, 0.0, 0.0, 1.0)
+  expect(nearUnitGain.meanValue / 1.0e284 > 0.999999999999999, true)
+  expect(nearUnitGain.meanValue / 1.0e284 < 1.000000000000001, true)
+  certain = kalmanScalar(3.0, 0.0, 100.0, 0.0, 1.0)
+  expect(certain.meanValue, 3.0)
+  expect(certain.variance, 0.0)
+  predicted = kalmanScalar(0.0, 0.0, 4.0, 1.0, 1.0)
+  expect(predicted.meanValue, 2.0)
+  noNoise() -> KalmanEstimate = kalmanScalar(0.0, 1.0, 1.0, 0.0, 0.0)
+  expect(noNoise, throwsA(equals("Kalman variances need nonnegative state/process and positive measurement")))
+  negative() -> KalmanEstimate = kalmanScalar(0.0, -1.0, 1.0, 0.0, 1.0)
+  expect(negative, throwsA(equals("Kalman variances need nonnegative state/process and positive measurement")))
+
+test "SAT distinguishes empty satisfying assignments and unsatisfiability":
+  empty = solveCnf(0, [])
+  expect(empty.satisfiable, true)
+  expect(empty.assignment.length, 0)
+  impossible = solveCnf(0, [[]])
+  expect(impossible.satisfiable, false)
+  expect(impossible.assignment.length, 0)
+  expect(solveCnf(2, [[1], [2]]).assignment, [true, true])
+  expect(solveCnf(1, [[1, -1]]).assignment, [false])
+  expect(solveCnf(1, [[1], [-1]]).satisfiable, false)
+  literal() -> SatResult = solveCnf(1, [[0]])
+  expect(literal, throwsA(equals("SAT literal is outside the variable range")))
+  tooLarge() -> SatResult = solveCnf(17, [])
+  expect(tooLarge, throwsA(equals("SAT exceeds the work limit")))
+
+test "all 512 two-variable clause families match independent truth masks":
+  clauses: List<List<int>> = [[], [1], [-1], [2], [-2], [1, 2], [-1, 2], [1, -2], [-1, -2]]
+  masks = [0, 10, 5, 12, 3, 14, 13, 11, 7]
+  var family = 0
+  while family < 512:
+    formula: List<List<int>> = []
+    var expectedMask = 15
+    var indexValue = 0
+    while indexValue < clauses.length:
+      if (family & (1 << indexValue)) != 0:
+        formula.add(clauses[indexValue])
+        expectedMask = expectedMask & masks[indexValue]
+      indexValue += 1
+    answer = solveCnf(2, formula)
+    expect(answer.satisfiable, expectedMask != 0)
+    if answer.satisfiable:
+      var firstMask = 0
+      while (expectedMask & (1 << firstMask)) == 0:
+        firstMask += 1
+      expect(answer.assignment, [(firstMask & 1) != 0, (firstMask & 2) != 0])
+    family += 1
+  print "QUDS SAT FORMULAS=512 FAILURES=0"
+
+test "finite partial orders classify the 19 labelled three-element orders":
+  var code = 0
+  var acceptedCount = 0
+  while code < 512:
+    relation: List<List<bool>> = []
+    var rowIndex = 0
+    while rowIndex < 3:
+      row: List<bool> = []
+      var column = 0
+      while column < 3:
+        row.add((code & (1 << (rowIndex * 3 + column))) != 0)
+        column += 1
+      relation.add(row)
+      rowIndex += 1
+    if isPartialOrder(relation): acceptedCount += 1
+    code += 1
+  expect(acceptedCount, 19)
+  expect(isPartialOrder([]), true)
+  expect(isPartialOrder([[true, true, false], [false, true, true], [false, false, true]]), false)
+  invalid() -> bool = isPartialOrder([[true, false]])
+  expect(invalid, throwsA(equals("order relation must be square")))
+
+test "F2 homology distinguishes components cycles disks and a sphere":
+  empty = simplicialHomology(0, [], [])
+  expect([empty.betti0, empty.betti1, empty.betti2], [0, 0, 0])
+  isolated = simplicialHomology(3, [], [])
+  expect([isolated.betti0, isolated.betti1, isolated.betti2], [3, 0, 0])
+  loopValue = simplicialHomology(3, [[0, 1], [1, 2], [2, 0]], [])
+  expect([loopValue.betti0, loopValue.betti1, loopValue.betti2], [1, 1, 0])
+  disk = simplicialHomology(3, [], [[0, 1, 2]])
+  expect([disk.betti0, disk.betti1, disk.betti2], [1, 0, 0])
+  sphere = simplicialHomology(4, [], [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]])
+  expect([sphere.betti0, sphere.betti1, sphere.betti2], [1, 0, 1])
+  expect(eulerCharacteristic(4, [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]), 2)
+
+test "all tetrahedron-face subsets have the known boundary ranks":
+  triangles = [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]
+  edges = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]
+  var code = 0
+  while code < 16:
+    faces: List<List<int>> = []
+    var indexValue = 0
+    while indexValue < 4:
+      if (code & (1 << indexValue)) != 0: faces.add(triangles[indexValue])
+      indexValue += 1
+    image = simplicialHomology(4, edges, faces)
+    var second = 0
+    if faces.length == 4: second = 1
+    expect(image.betti0, 1)
+    expect(image.betti1, 3 - faces.length + second)
+    expect(image.betti2, second)
+    code += 1
+
+test "simplicial validation rejects degeneracy duplicates and oversized work":
+  duplicate() -> Homology2 = simplicialHomology(3, [], [[0, 1, 2], [2, 0, 1]])
+  expect(duplicate, throwsA(equals("homology repeats a face")))
+  edge() -> Homology2 = simplicialHomology(3, [[0, 0]], [])
+  expect(edge, throwsA(equals("homology edge needs two distinct vertices")))
+  vertex() -> Homology2 = simplicialHomology(3, [[0, 3]], [])
+  expect(vertex, throwsA(equals("homology vertex out of range")))
+  face() -> Homology2 = simplicialHomology(3, [], [[0, 0, 1]])
+  expect(face, throwsA(equals("homology face needs three distinct vertices")))
+  work() -> Homology2 = simplicialHomology(129, [], [])
+  expect(work, throwsA(equals("homology exceeds the work limit")))
+  eulerDuplicate() -> int = eulerCharacteristic(3, [[0, 1, 2], [1, 2, 0]])
+  expect(eulerDuplicate, throwsA(equals("topology repeats a face")))

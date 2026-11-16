@@ -1,6 +1,6 @@
 # خارطة توسيع رياضيات قدس
 
-تاريخ التحديث: 2026-11-15.
+تاريخ التحديث: 2026-11-16.
 
 ## المقصود بالتوسعة
 
@@ -43,9 +43,9 @@
 | التحسين وبحوث العمليات | scalar وmultivariate وleast-squares وLP feasible-start جزئية | LP phase-I، قيود عامة وKKT، QP وconvex، integer programming عبر محرك مختبر، multiobjective وglobal مع حدود الضمان |
 | التحويلات والإشارات | FFT/DCT/Haar وconvolution وwindows جزئية | STFT وspectra وfilters وresampling وwavelets، اتفاقيات normalization والحدود، Laplace/Z عددية أو رمزية بعقود منفصلة |
 | المعادلات والأنظمة الديناميكية | ODE وبعض BVP/PDE والدوال الحدثية | stiff solvers أقوى، DAE، نظم متناثرة، SDE، PDE متعددة الأبعاد وFEM/FVM، استقرار وتقارب بوحدات مستقلة |
-| السلاسل الزمنية والعمليات العشوائية | أدوات إحصاء وعشوائية أساسية | autocorrelation وAR/MA/ARIMA، state-space وKalman، Markov chains وMonte Carlo، قياس الخطأ والمحاكاة القابلة للتكرار |
-| المنطق والرياضيات المتقطعة | مجموعات core وboolean؛ لا محرك استدلال رياضي | علاقات وترتيبات وشبكات، propositional expressions وSAT محدود، أدوات finite sets. لا ادعاء إثبات عام أو حل كل المسائل |
-| الطوبولوجيا والهندسة التفاضلية | لا API متخصص | simplicial complexes وhomology في نطاق محدد، manifolds وخرائط ومترية وgeodesics بعد tensors وAD وهندسة موثوقة |
+| السلاسل الزمنية والعمليات العشوائية | covariance/ACF/difference، تنبؤ AR بمعاملات معطاة، Markov وخطوة Kalman قياسية | fitting وMA/ARIMA وstate-space متعدد الأبعاد ومحاكاة أوسع مع قياس الخطأ |
+| المنطق والرياضيات المتقطعة | مجموعات core وboolean، CNF SAT محدود وفحص ترتيب جزئي | تعبيرات أوسع وشبكات وSMT وأدوات finite sets؛ لا محرك إثبات عام |
+| الطوبولوجيا والهندسة التفاضلية | Euler للمثلثات وBetti فوق F2 حتى البعد 2 | homology أعلى وبمعاملات عامة، persistence وmanifolds وخرائط ومترية وgeodesics |
 
 ## كيف نختار موضع التنفيذ
 
@@ -177,3 +177,9 @@ API قائم بصمت. `Interval` الحالي يبقى فترة مغلقة بس
 | 13 | STFT ومرشح بعقد normalization | الاتفاقية مكتوبة وتُختبر | منفّذ |
 | 14 | محرك تعبيرات رمزية | AST مستقل عن parser اللغة، ويرفض التبسيط غير المحافظ | منفّذ |
 | 15 | tensors ثم حقول منتهية ثم طوبولوجيا محدودة | بعد 9 و10 و14، كل واحد بعقد ومراجع مستقلة | منفّذ |
+
+## أساس المجالات 18–20 ومراجعة العشرين
+
+عقود الحزمة واختباراتها في [MATH_FOUNDATIONS](MATH_FOUNDATIONS.md)، والجدول
+المحدّث للمنفذ والناقص في [MATH_20_DOMAIN_STATUS_AR](MATH_20_DOMAIN_STATUS_AR.md).
+389 دالة عامة لها call sites في قدس؛ هذا لا يعني اكتمال أي مجال.

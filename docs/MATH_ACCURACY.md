@@ -1,7 +1,7 @@
 # Math numerical audit — 2026-11-15
 
 This section records the original numerical audit, before graph expansion.
-The current SDK adds eleven graph functions, integer flow and bipartite matching, and the remaining numbered plan (380 top-level functions total, including exact arithmetic, forward AD, reverse AD, and exact planar geometry),
+The current SDK adds eleven graph functions, integer flow and bipartite matching, and the remaining numbered plan (389 top-level functions total, including exact arithmetic, forward AD, reverse AD, and exact planar geometry),
 with exact graph contracts and separate independent tests in [MATH_GRAPH.md](MATH_GRAPH.md).
 See [the expansion roadmap](MATH_EXPANSION_ROADMAP_AR.md) for further domains.
 
@@ -25,7 +25,7 @@ strict relative checks for tiny tails instead of substituting one loose toleranc
 force coloring oracles in Quds: **151,457 assertions on 1695 graphs**, plus a
 20,000-vertex chain. `math_api.quds` closes the earlier Quds call-site gaps,
 including distribution quantiles, typed callbacks and fixed-seed samplers.
-All **380** public top-level functions now have a Quds call site.
+All **389** public top-level functions now have a Quds call site.
 [Exact arithmetic](MATH_EXACT.md) adds 1199 independent Quds reference cases.
 [Forward AD](MATH_AUTODIFF.md) adds 598 value/derivative reference cases.
 [Exact planar geometry](MATH_GEOMETRY.md) adds 738 reference cases.
@@ -234,3 +234,10 @@ it now asserts the explicit undefined-correlation error instead.
 
 See [the detailed strengthening plan](MATH_STRENGTHENING_PLAN_AR.md) for proposed
 phases, dependencies, numerical contracts, validation gates and release criteria.
+
+## Subsequent finite foundations
+
+[MATH_FOUNDATIONS.md](MATH_FOUNDATIONS.md) adds nine top-level APIs, 686
+exact-rational Quds references, exhaustive small CNF checks, finite partial orders
+and two-dimensional F2 homology. The 389-function call inventory remains
+traceability, not all-domain completion or a numerical proof.

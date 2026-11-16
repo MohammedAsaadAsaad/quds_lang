@@ -786,3 +786,17 @@ No extra network domain is needed for the verified Docker-based SDK route.
 - Intermediate AOT invocation placed --packages at the wrong CLI level; fixed
   before the successful workload, focused, and full runs. Imported nominal-type
   staging and duplicate generated imports were corrected and regression-tested.
+
+## 2026-11-16 — finite math foundations and final verification
+
+- `dart pub get`: succeeded with existing constraints.
+- `dart format .`: 51 files, zero changes in final pass.
+- `dart analyze`: no issues.
+- `dart test test/math_foundations_test.dart test/math_quds_test.dart --name 'math foundations|math_foundations' --reporter expanded`: **4 passed**, zero failures/skips, **19 seconds**. Assertions are in Quds: 11 primary declarations, one frozen-reference declaration and one section-import declaration. The extra runner analyzes and executes an actual Quds consumer on VM and JavaScript/Node.
+- `dart test --reporter expanded`: **465 passed**, zero failures/skips, **5m03s** on final source. An earlier 465-pass run (4m39s) preceded the generated-section diagnostic refinement and is not the final result.
+- **686** exact-rational Quds references; **512** CNF families against independent truth masks; all 512 three-element relation matrices give 19 labelled orders; all 16 tetrahedron boundary-face subsets and known homology examples. These are internal mathematical cases, not additional top-level test-runner counts.
+- All **389** public top-level math APIs have direct Quds call sites in the updated inventory. Embedded/source math text matches exactly. Python generator/profiler tools parse successfully. New Quds suites are also listed explicitly in CI; no remote CI result is claimed here.
+- `python3 tool/profile_workload_memory.py`: six checksum-verified Linux AOT launches, first discarded. Five recorded peak-RSS samples: **12160 KiB** each. wait4 measures the child lifetime including fork/exec and possible launcher high-water-mark floor; this is not a Dart heap/allocation measurement. Archive: bench/results/language_workloads_memory.json.
+- Numerical refinements before final runs: preserve the small Kalman prior weight when gain rounds to one; apply Markov normalization tolerance consistently on repeated transitions. Euler now rejects repeated abstract triangle faces; contract change is explicit in MATH_FOUNDATIONS.
+- Compiler analysis exposed generated private bridge aliases and automatically selected nominal section names. Standalone private aliases are omitted, part bridges retained, and the generated automatic combinator warning is scoped away. Final source-map/part/module tests passed.
+- Full remaining-domain status and limitations: MATH_20_DOMAIN_STATUS_AR and MATH_FOUNDATIONS. No claim of complete mathematics, all 115 language features, or arbitrary custom-class runtime readonly proxies.

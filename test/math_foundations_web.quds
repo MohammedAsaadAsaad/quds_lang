@@ -1,0 +1,41 @@
+use quds:math::timeseries as series
+use quds:math::logic as logic
+use quds:math::topology::homology as topology
+
+_check(value: bool):
+  if not value: throw "math foundations platform check failed"
+
+main():
+  _check(series.seriesDifference([1.0, 3.0, 6.0])[1] == 3.0)
+  _check(series.seriesAutocovariance([1.0, 2.0, 3.0], 1) == 0.0)
+  _check(series.seriesAutocorrelation([1.0, 2.0, 3.0], 2) == -0.5)
+  _check(series.arForecast([1.0, 2.0], [1.0, 1.0], 0.0, 5)[4] == 21.0)
+  _check(series.markovStep([1.0, 0.0], [[0.5, 0.5], [0.0, 1.0]])[0] == 0.5)
+  estimate: series.KalmanEstimate = series.kalmanScalar(0.0, 1.0, 2.0, 0.0, 1.0)
+  _check(estimate.meanValue == 1.0 and estimate.variance == 0.5)
+  extreme = series.kalmanScalar(1.0e300, 1.0e16, 0.0, 0.0, 1.0)
+  _check(extreme.meanValue > 0.999999999999999 * 1.0e284)
+  clauses: List<List<int>> = [[], [1], [-1], [2], [-2], [1, 2], [-1, 2], [1, -2], [-1, -2]]
+  masks = [0, 10, 5, 12, 3, 14, 13, 11, 7]
+  var family = 0
+  while family < 512:
+    formula: List<List<int>> = []
+    var expectedMask = 15
+    var indexValue = 0
+    while indexValue < 9:
+      if (family & (1 << indexValue)) != 0:
+        formula.add(clauses[indexValue])
+        expectedMask = expectedMask & masks[indexValue]
+      indexValue += 1
+    answer = logic.solveCnf(2, formula)
+    _check(answer.satisfiable == (expectedMask != 0))
+    if answer.satisfiable:
+      var assignmentCode = 0
+      if answer.assignment[0]: assignmentCode += 1
+      if answer.assignment[1]: assignmentCode += 2
+      _check((expectedMask & (1 << assignmentCode)) != 0)
+    family += 1
+  _check(logic.isPartialOrder([[true, true], [false, true]]))
+  sphere: topology.Homology2 = topology.simplicialHomology(4, [], [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]])
+  _check(sphere.betti0 == 1 and sphere.betti1 == 0 and sphere.betti2 == 1)
+  print "MATH FOUNDATIONS VM WEB OK"

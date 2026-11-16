@@ -14,6 +14,10 @@ void main() {
     'math_weighted_graph.quds':
         'QUDS WEIGHTED CHECKS=224537 GRAPHS=4357 FAILURES=0',
     'math_flow.quds': 'QUDS FLOW CHECKS=58012 GRAPHS=4164 FAILURES=0',
+    'math_foundations.quds': 'QUDS SAT FORMULAS=512 FAILURES=0',
+    'math_foundations_reference.quds':
+        'QUDS FOUNDATIONS REFERENCES=686 FAILURES=0',
+    'math_foundations_imports.quds': null,
     'math_plan.quds': 'QUDS PLAN CHECKS=78 FAILURES=0',
     'math_symbolic.quds': null,
     'math_symbolic_imports.quds': null,

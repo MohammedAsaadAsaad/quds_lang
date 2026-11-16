@@ -90,3 +90,6 @@ A constant signal of amplitude 1 then has DC real part 1. Partial frames are not
 `fieldInverse` is the extended Euclidean algorithm. Zero throws `finite field element has no inverse`.
 
 `eulerCharacteristic(vertexCount, faces)` is `V - E + F` for a triangle complex. Isolated vertices count. Each undirected edge counts once. A repeated face index or an out-of-range vertex throws. One triangle is 1. Two triangles sharing an edge, on 4 vertices, are 1.
+
+The subsequent finite-domain foundation adds F2 homology and rejects repeated
+Euler triangles; see [MATH_FOUNDATIONS.md](MATH_FOUNDATIONS.md).

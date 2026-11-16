@@ -1,0 +1,136 @@
+interface Transformer:
+  transform<T>(value: T) -> T = value
+class Identity implements Transformer:
+  transform<U>(item: U) -> U = item
+interface Numeric:
+  keep<T: num>(value: T) -> T = value
+class NumericIdentity implements Numeric:
+  keep<U: num>(value: U) -> U = value
+interface Outer<C>:
+  keep<T: C>(value: T) -> C = value
+class OuterImpl<D> implements Outer<D>:
+  keep<U: D>(value: U) -> D = value
+class Shadow<T> implements Transformer:
+  transform<T>(value: T) -> T = value
+class Parent:
+  transform<T>(value: T) -> T = value
+class Inherited extends Parent implements Transformer:
+  tag: int = 1
+class Override extends Parent:
+  transform<U>(value: U) -> U = value
+interface Labelled<C> extends Transformer:
+  caption: C
+class LabelledIdentity implements Labelled<String>:
+  caption: String required
+  transform<V>(value: V) -> V = value
+class Utility:
+  static transform<T>(value: T) -> T = value
+class Combined<C>:
+  combine<T>(value: T, marker: C) -> T = value
+class OptionalValue:
+  keep<T>(value: T?) -> T? = value
+class Defaults:
+  keep<T>(value: T, count: int = 1) -> T = value
+class Variadic:
+  first<T>(...values: T) -> T = values[0]
+read(value: Transformer) -> int = value.transform<int>(3)
+
+test "interface methods compare parameters modulo their names":
+  value: Transformer = Identity()
+  expect(value.transform<int>(4), 4)
+  expect(read(Identity()), 3)
+
+test "method inference retains its instantiated return type":
+  resultValue: int = Identity().transform(5)
+  expect(resultValue, 5)
+
+test "method bounds are checked on explicit and inferred calls":
+  value: Numeric = NumericIdentity()
+  expect(value.keep<int>(6), 6)
+  inferred: double = value.keep(6.5)
+  expect(inferred, 6.5)
+
+test "method bounds refer to the enclosing class arguments":
+  value: Outer<num> = OuterImpl<num>()
+  resultValue: num = value.keep<int>(7)
+  expect(resultValue, 7)
+
+test "method parameters shadow equally named class parameters":
+  value = Shadow<int>()
+  resultValue: String = value.transform<String>("value")
+  expect(resultValue, "value")
+
+test "inherited generic methods fulfill interface contracts":
+  value: Transformer = Inherited()
+  expect(value.transform<int>(8), 8)
+  expect(Override().transform<int>(9), 9)
+
+test "inherited interface methods preserve their generic parameters":
+  value: Labelled<String> = LabelledIdentity(caption: "identity")
+  expect(value.transform<int>(10), 10)
+  expect(value.caption, "identity")
+
+test "static generic methods retain explicit arguments":
+  expect(Utility.transform<int>(11), 11)
+
+test "class and method return substitutions remain separate":
+  value = Combined<String>()
+  resultValue: int = value.combine<int>(12, "marker")
+  expect(resultValue, 12)
+
+test "nullable generic results retain their nullable shell":
+  resultValue: int? = OptionalValue().keep<int>(null)
+  expect(resultValue, null)
+
+test "method defaults keep typed positional lowering":
+  expect(Defaults().keep<int>(13), 13)
+  expect(Defaults().keep<int>(count: 2, value: 14), 14)
+
+test "explicit variadic method arguments use instantiated element types":
+  expect(Variadic().first<int>(15, 16), 15)
+
+test "receiver precedes named argument evaluation once":
+  var trace = ""
+  receiver() -> Combined<String>:
+    trace += "receiver "
+    return Combined<String>()
+  marker() -> String:
+    trace += "marker "
+    return "marker"
+  item() -> int:
+    trace += "item "
+    return 17
+  resultValue = receiver().combine<int>(marker: marker(), value: item())
+  expect(resultValue, 17)
+  expect(trace, "receiver marker item ")
+
+test "explicit generic partial calls remain lazy":
+  var calls = 0
+  receiver() -> Identity:
+    calls += 1
+    return Identity()
+  partialValue = receiver().transform<int>(_)
+  expect(calls, 0)
+  expect(partialValue(18), 18)
+  expect(calls, 1)
+
+
+
+interface Choosing:
+  choose<T, U: T>(value: U) -> T = value
+class ChoosingImpl implements Choosing:
+  choose<A, B: A>(value: B) -> B = value
+
+test "dependent method bounds preserve covariant returns":
+  value: Choosing = ChoosingImpl()
+  resultValue: num = value.choose<num, int>(19)
+  expect(resultValue, 19)
+
+test "core lookup and removal signatures accept null keys and values":
+  values: List<int?> = [null, 1]
+  expect(values.contains(null), true)
+  expect(values.remove(null), true)
+  mapping: Map<String?, int> = map:
+    null: 2
+  expect(mapping.containsKey(null), true)
+  expect(mapping.remove(null), 2)

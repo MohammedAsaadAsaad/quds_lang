@@ -112,6 +112,7 @@ class SemanticModel {
   /// Parameter order expressed as indices into source-order arguments.
   final argumentOrder = <CallExpression, List<int>>{};
   final inferredTypeArguments = <CallExpression, List<String>>{};
+  final instantiatedParameterTypes = <CallExpression, List<String>>{};
 
   /// Const expressions that were evaluated. Short-circuited operands are absent.
   final constants = <Expression, ConstValue>{};
@@ -450,6 +451,7 @@ class Analyzer {
   final _typeNames = <String>{};
   final _pendingClasses = <String>{};
   final _typeBounds = <String, String>{};
+  final _checkingBounds = <(String, String)>{};
   FunctionDeclaration? _function;
   String? _returnType;
   var _lambdaDepth = 0;
@@ -682,8 +684,27 @@ class Analyzer {
     return true;
   }
 
+  void _checkBoundCycles(List<TypeParameter> parameters, Node node) {
+    final names = parameters.map((p) => p.name).toSet();
+    final edges = {
+      for (final p in parameters)
+        if (p.bound != null && names.contains(unwrap(p.bound!)))
+          p.name: unwrap(p.bound!)
+    };
+    for (final name in names) {
+      final visited = <String>{};
+      String? current = name;
+      while (current != null) {
+        if (!visited.add(current))
+          error('E300', 'Cyclic type parameter bounds', node);
+        current = edges[current];
+      }
+    }
+  }
+
   void registerFunction(FunctionDeclaration statement, _Scope scope,
       [List<FunctionDeclaration>? functions]) {
+    _checkBoundCycles(statement.typeParameters, statement);
     final type = statement.returnType ??
         (statement.expressionBody == null
             ? (statement.generator == 'sync'
@@ -745,6 +766,7 @@ class Analyzer {
 
   void registerClass(ClassDeclaration statement,
       {String? library, String? scopeName}) {
+    _checkBoundCycles(statement.typeParameters, statement);
     final key = scopeName ?? statement.name;
     final owner = library ?? this.library;
     final existing = _global.symbols[key];
@@ -802,6 +824,7 @@ class Analyzer {
       analyzeStaticField(field);
     }
     for (final method in statement.methods) {
+      _checkBoundCycles(method.typeParameters, method);
       if (hasAnnotation(statement.annotations, 'macro') &&
           method.name == 'define') {
         continue;
@@ -4209,6 +4232,26 @@ class Analyzer {
     from = model.resolve(from);
     to = model.resolve(to);
     if (from == to || from == '*' || to == 'dynamic') return true;
+    if (to == 'Object?' && from != 'void') return true;
+    final variable = unwrap(from);
+    if (_typeNames.contains(variable) &&
+        !to.contains(' | ') &&
+        !to.contains(' & ') &&
+        !to.startsWith('readonly ')) {
+      if (isNullableType(from) && !isNullableType(to)) return false;
+      final pair = (from, to);
+      if (!_checkingBounds.add(pair)) return false;
+      try {
+        final bound = _typeBounds[variable] ?? 'Object?';
+        if (isNullableType(to)) {
+          if (variable == unwrap(to)) return true;
+          return compatible(unwrap(bound), unwrap(to));
+        }
+        return compatible(bound, to);
+      } finally {
+        _checkingBounds.remove(pair);
+      }
+    }
     final fromClass = _typeSymbol(from)?.classDeclaration;
     final toClass = _typeSymbol(to)?.classDeclaration;
     if (fromClass != null && identical(fromClass, toClass)) return true;
@@ -4379,17 +4422,18 @@ class Analyzer {
       }
     }
     for (final method in face.methods) {
-      if (method.typeParameters.isNotEmpty)
-        error('E910', 'Generic interface methods require further conformance',
-            implementation);
-      requireMember(method.name, functionType(method), getter: false);
       final actual = _method(implementation, method.name);
+      final actualOwner =
+          actual == null ? null : _methodReceiver(implementation.name, actual);
       if (actual == null ||
-          actual.isStatic ||
-          method.readonlyMethod && !actual.readonlyMethod ||
-          method.parameters.indexed.any((p) =>
-              p.$2.defaultValue != null &&
-              actual.parameters[p.$1].defaultValue == null)) {
+          actualOwner == null ||
+          !_methodContractCompatible(
+              actual,
+              actualOwner.$2,
+              _genericSubstitution(actualOwner.$1, actualOwner.$2),
+              method,
+              face,
+              substitution)) {
         error('E700', 'interface method ${method.name} is not implemented',
             implementation);
       }
@@ -4400,6 +4444,100 @@ class Analyzer {
           _substitute(_classMemberType(face.superclass!, face), substitution),
           visited);
     }
+  }
+
+  String _qualifiedMethodType(
+      String type, ClassDeclaration? owner, FunctionDeclaration method) {
+    if (owner == null) return type;
+    final home = model.libraryOf[owner];
+    if (home == null || home.isEmpty || home == _activeLibrary) return type;
+    _libraryScope(home);
+    return _libraryType(type, home, shadows: {
+      ...owner.typeParameters.map((p) => p.name),
+      ...method.typeParameters.map((p) => p.name)
+    });
+  }
+
+  bool _methodContractCompatible(
+      FunctionDeclaration actual,
+      ClassDeclaration actualOwner,
+      Map<String, String> actualClass,
+      FunctionDeclaration expected,
+      ClassDeclaration expectedOwner,
+      Map<String, String> expectedClass) {
+    if (actual.typeParameters.length != expected.typeParameters.length ||
+        actual.isStatic != expected.isStatic ||
+        expected.readonlyMethod && !actual.readonlyMethod ||
+        actual.parameters.length != expected.parameters.length) return false;
+    final actualMap = {...actualClass};
+    final expectedMap = {...expectedClass};
+    final bounds = <String, String>{};
+    for (var i = 0; i < actual.typeParameters.length; i++) {
+      var name = '_QMethodType$i';
+      while (_scope.lookup(name) != null ||
+          model.aliases.containsKey(name) ||
+          _typeNames.contains(name) ||
+          bounds.containsKey(name)) {
+        name += '_';
+      }
+      actualMap[actual.typeParameters[i].name] = name;
+      expectedMap[expected.typeParameters[i].name] = name;
+      bounds[name] = 'Object?';
+    }
+    String normalize(String type, ClassDeclaration owner,
+            FunctionDeclaration method, Map<String, String> map) =>
+        _substitute(_qualifiedMethodType(type, owner, method), map);
+    for (var i = 0; i < actual.typeParameters.length; i++) {
+      final left = normalize(actual.typeParameters[i].bound ?? 'Object?',
+          actualOwner, actual, actualMap);
+      final right = normalize(expected.typeParameters[i].bound ?? 'Object?',
+          expectedOwner, expected, expectedMap);
+      if (!_sameType(left, right)) return false;
+      bounds[actualMap[actual.typeParameters[i].name]!] = right;
+    }
+    for (var i = 0; i < actual.parameters.length; i++) {
+      if (actual.parameters[i].variadic != expected.parameters[i].variadic ||
+          expected.parameters[i].defaultValue != null &&
+              actual.parameters[i].defaultValue == null) return false;
+    }
+    return _contractTypeCompatible(
+        normalize(functionType(actual), actualOwner, actual, actualMap),
+        normalize(functionType(expected), expectedOwner, expected, expectedMap),
+        bounds);
+  }
+
+  bool _contractTypeCompatible(
+      String from, String to, Map<String, String> bounds,
+      [Set<String> visited = const {}]) {
+    if (from == to || to == 'dynamic' || to == 'Object?' && from != 'void')
+      return true;
+    final key = '$from -> $to';
+    if (visited.contains(key)) return false;
+    final next = {...visited, key};
+    if (isNullableType(to)) {
+      if (from == 'Null') return true;
+      var source = unwrap(from);
+      if (source == unwrap(to)) return true;
+      if (bounds[source] case final bound?) source = unwrap(bound);
+      return _contractTypeCompatible(source, unwrap(to), bounds, next);
+    }
+    if (isNullableType(from) || from == 'Null') return false;
+    if (bounds[from] case final bound?)
+      return _contractTypeCompatible(bound, to, bounds, next);
+    if (bounds.containsKey(to)) return false;
+    final left = functionTypeParts(from);
+    final right = functionTypeParts(to);
+    if (left != null && right != null) {
+      final a = _splitTypes(left.$1).map(functionParameterType).toList();
+      final b = _splitTypes(right.$1).map(functionParameterType).toList();
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (!_contractTypeCompatible(b[i], a[i], bounds, next)) return false;
+      }
+      return right.$2 == 'void' ||
+          _contractTypeCompatible(left.$2, right.$2, bounds, next);
+    }
+    return compatible(from, to);
   }
 
   void _checkIntersection(List<String> parts, Node node) {
@@ -4928,18 +5066,11 @@ class Analyzer {
     if (owner == null) return;
     if (model.declarations[inherited]?.type == '<infer>' ||
         model.declarations[method]?.type == '<infer>') return;
-    final substitution = _genericSubstitution(owner.$1, owner.$2);
-    final expected = _substitute(functionType(inherited), substitution);
-    final actual = functionType(method);
-    if (!compatible(actual, expected) ||
-        method.isStatic != inherited.isStatic ||
-        inherited.readonlyMethod && !method.readonlyMethod ||
-        inherited.parameters.indexed.any((entry) =>
-            entry.$1 >= method.parameters.length ||
-            entry.$2.variadic != method.parameters[entry.$1].variadic ||
-            entry.$2.defaultValue != null &&
-                method.parameters[entry.$1].defaultValue == null)) {
-      error('E300', 'override type $actual is incompatible with $expected',
+    if (!_methodContractCompatible(method, type, const {}, inherited, owner.$2,
+        _genericSubstitution(owner.$1, owner.$2))) {
+      error(
+          'E300',
+          'override method ${method.name} is incompatible with its superclass',
           method);
     }
   }
@@ -6400,11 +6531,10 @@ class Analyzer {
     fail('${callee.name} is not callable', callee);
   }
 
-  String call(CallExpression node) {
-    if (node.callee is TypeApplication) {
-      return callApplied(node, node.callee as TypeApplication);
-    }
-    final callee = node.callee;
+  String call(CallExpression node,
+      {Expression? calleeOverride, List<String>? explicitMethodTypes}) {
+    final callee = calleeOverride ?? node.callee;
+    if (callee is TypeApplication) return callApplied(node, callee);
     if (callee is MemberAccess && callee.object is Identifier) {
       final owner = _scope.lookup((callee.object as Identifier).name);
       if (owner?.namespace != null) {
@@ -6536,6 +6666,11 @@ class Analyzer {
             return found.isEmpty ? null : found.single;
           }();
       if (resolved == null) {
+        if (explicitMethodTypes != null)
+          error(
+              'E910',
+              'Explicit generic native or collection methods need further conformance',
+              callee);
         if (_typedStorage(objectType) &&
             _sdkMember(objectType, callee.name) != null) {
           final result = _dartCall(objectType, callee.name, node);
@@ -6578,29 +6713,50 @@ class Analyzer {
       model.references[callee] = model.declarations[functionResolved]!;
       _touch(model.references[callee]!);
       final methodOwner = _methodReceiver(objectType, functionResolved);
-      final substitution = {
+      final ownerDeclaration = methodOwner?.$2 ?? declaration;
+      final classArguments = {
         ..._genericSubstitution(
-            methodOwner?.$1 ?? objectType, methodOwner?.$2 ?? declaration),
+            methodOwner?.$1 ?? objectType, ownerDeclaration),
         ..._extensionSubstitution(objectType, functionResolved)
+      }..removeWhere((key, _) =>
+          functionResolved.typeParameters.any((p) => p.name == key));
+      if (model.declarations[functionResolved]!.type == '<infer>' &&
+          ownerDeclaration != null &&
+          !_checking.contains(functionResolved))
+        analyzeMethod(ownerDeclaration, functionResolved);
+      String specialize(String type) => _selfType(
+          _substitute(
+              _qualifiedMethodType(type, ownerDeclaration, functionResolved),
+              classArguments),
+          declaration,
+          objectType);
+      final methodBounds = {
+        for (final parameter in functionResolved.typeParameters)
+          if (parameter.bound != null)
+            parameter.name: specialize(parameter.bound!)
       };
+      final methodArguments = explicitMethodTypes == null
+          ? const <String, String>{}
+          : _checkTypeArguments(functionResolved.name,
+              functionResolved.typeParameters, explicitMethodTypes, node,
+              bounds: methodBounds);
       final parameters = [
         for (final parameter in functionResolved.parameters)
           Parameter(
               parameter.name,
-              _selfType(_substitute(parameter.type, substitution), declaration,
-                  objectType),
+              _substitute(specialize(parameter.type), methodArguments),
               parameter.mutable,
               parameter.span,
               defaultValue: parameter.defaultValue,
               variadic: parameter.variadic,
               initializing: parameter.initializing)
       ];
-      final returned = applyArguments(node, parameters, functionResolved);
-      final declared = model.declarations[functionResolved]!.type == '<infer>'
-          ? returned
-          : model.declarations[functionResolved]!.type;
-      return _selfType(
-          _substitute(declared, substitution), declaration, objectType);
+      model.references[node.callee] = model.references[callee]!;
+      return applyArguments(node, parameters, functionResolved,
+          typeArguments: methodArguments,
+          parameterBounds: methodBounds,
+          declaredReturnType:
+              specialize(model.declarations[functionResolved]!.type));
     }
     if (callee is! Identifier) {
       final type = expression(callee);
@@ -6929,6 +7085,14 @@ class Analyzer {
   }
 
   String callApplied(CallExpression node, TypeApplication applied) {
+    if (applied.callee case MemberAccess member) {
+      final prefix = member.object is Identifier
+          ? _scope.lookup((member.object as Identifier).name)?.namespace
+          : null;
+      if (prefix == null)
+        return call(node,
+            calleeOverride: member, explicitMethodTypes: applied.arguments);
+    }
     final symbol = _appliedSymbol(node, applied);
     final name = symbol.name;
     if (symbol.library == 'check' && (name == 'isA' || name == 'isSorted')) {
@@ -7108,7 +7272,8 @@ class Analyzer {
   }
 
   Map<String, String> _checkTypeArguments(String name,
-      List<TypeParameter> parameters, List<String> arguments, Node node) {
+      List<TypeParameter> parameters, List<String> arguments, Node node,
+      {Map<String, String> bounds = const {}}) {
     if (parameters.length != arguments.length) {
       fail('Type arguments do not match $name', node);
     }
@@ -7120,7 +7285,7 @@ class Analyzer {
         parameters[i].name: arguments[i]
     };
     for (var i = 0; i < parameters.length; i++) {
-      final declared = parameters[i].bound;
+      final declared = bounds[parameters[i].name] ?? parameters[i].bound;
       if (declared == null) continue;
       final bound = _substitute(declared, substitution);
       if (!_satisfiesTypeBound(arguments[i], bound)) {
@@ -7148,6 +7313,12 @@ class Analyzer {
       List<TypeParameter> parameters) {
     pattern = model.resolve(pattern);
     actual = model.resolve(actual);
+    // A concrete nullable parameter accepts the whole source type, including
+    // an unbounded type variable. Only peel nullable shells for inference.
+    if (!parameters.any((parameter) =>
+        RegExp('\\b${RegExp.escape(parameter.name)}\\b').hasMatch(pattern))) {
+      return compatible(actual, pattern);
+    }
     if (parameters.any((p) => p.name == pattern)) {
       final previous = found[pattern];
       if (previous == null || previous == actual) {
@@ -7245,16 +7416,18 @@ class Analyzer {
       {required bool commit,
       FunctionDeclaration? function,
       _CheckedArguments? checked,
-      Map<String, String> typeArguments = const {}}) {
+      Map<String, String> typeArguments = const {},
+      Map<String, String> parameterBounds = const {},
+      String? declaredReturnType}) {
     parameters = _callParameters(parameters, function);
     final inferred = {...typeArguments};
     final types = <int, String>{};
     if (function != null &&
         typeArguments.isEmpty &&
         _expected != null &&
-        function.returnType != null) {
-      _inferGeneric(
-          function.returnType!, _expected!, inferred, function.typeParameters);
+        (declaredReturnType ?? function.returnType) != null) {
+      _inferGeneric((declaredReturnType ?? function.returnType)!, _expected!,
+          inferred, function.typeParameters);
     }
     final order = List<int>.filled(parameters.length, -1);
     var positional = 0;
@@ -7322,10 +7495,11 @@ class Analyzer {
       for (final parameter in function.typeParameters) {
         final argument = inferred[parameter.name];
         if (argument != null &&
-            parameter.bound != null &&
+            (parameterBounds[parameter.name] ?? parameter.bound) != null &&
             !_satisfiesTypeBound(
-                argument, _substitute(parameter.bound!, inferred)))
-          return false;
+                argument,
+                _substitute(parameterBounds[parameter.name] ?? parameter.bound!,
+                    inferred))) return false;
       }
     }
     checked?.inferred.addAll(inferred);
@@ -7363,7 +7537,9 @@ class Analyzer {
   String applyArguments(CallExpression node, List<Parameter> parameters,
       FunctionDeclaration? function,
       {_CheckedArguments? checked,
-      Map<String, String> typeArguments = const {}}) {
+      Map<String, String> typeArguments = const {},
+      Map<String, String> parameterBounds = const {},
+      String? declaredReturnType}) {
     parameters = _callParameters(parameters, function);
     if (function != null &&
         parameters.any((parameter) => parameter.defaultValue != null)) {
@@ -7375,7 +7551,9 @@ class Analyzer {
             commit: true,
             function: function,
             checked: verified,
-            typeArguments: typeArguments)) {
+            typeArguments: typeArguments,
+            parameterBounds: parameterBounds,
+            declaredReturnType: declaredReturnType)) {
       fail('No overload matches this call', node);
     }
     final inferred = {...verified.inferred, ...typeArguments};
@@ -7459,25 +7637,32 @@ class Analyzer {
         for (final p in function.typeParameters) inferred[p.name]!
       ];
       _checkTypeArguments(
-          function.name, function.typeParameters, arguments, node);
+          function.name, function.typeParameters, arguments, node,
+          bounds: parameterBounds);
       model.inferredTypeArguments[node] = arguments;
     }
+    model.instantiatedParameterTypes[node] = [
+      for (final parameter in parameters) _substitute(parameter.type, inferred)
+    ];
     model.argumentOrder[node] = order;
     model.variadicArguments[node] = rest;
     if (holes.isNotEmpty) {
-      final types = holes.map((index) => parameters[index].type).join(', ');
-      final returned = function == null
-          ? 'void'
-          : (model.declarations[function]?.type ??
-              function.returnType ??
-              'void');
+      final types = holes
+          .map((index) => _substitute(parameters[index].type, inferred))
+          .join(', ');
+      final returned = declaredReturnType ??
+          (function == null
+              ? 'void'
+              : (model.declarations[function]?.type ??
+                  function.returnType ??
+                  'void'));
       return '($types) -> ${_callResult(_substitute(returned, inferred), function)}';
     }
     if (function != null && model.declarations[function]!.type == '<infer>') {
       analyzeFunction(function);
     }
-    final returned =
-        function == null ? 'void' : model.declarations[function]!.type;
+    final returned = declaredReturnType ??
+        (function == null ? 'void' : model.declarations[function]!.type);
     if (function != null) {
       for (final parameter in function.typeParameters) {
         if (inferred.containsKey(parameter.name)) continue;
@@ -7593,12 +7778,12 @@ class Analyzer {
           [('start', 'int'), ('end', 'int')],
           'Iterable<T>'
         ),
-      ('List', 'indexOf') => ([('value', 'Object')], 'int'),
+      ('List', 'indexOf') => ([('value', 'T')], 'int'),
       ('Set', 'add') => ([('value', 'T')], 'bool'),
       ('Set', 'addAll') => ([('values', 'Iterable<T>')], 'void'),
-      ('Set' || 'List', 'remove') => ([('value', 'Object')], 'bool'),
+      ('Set' || 'List', 'remove') => ([('value', 'Object?')], 'bool'),
       ('Set' || 'List', 'clear') => (<(String, String)>[], 'void'),
-      ('Iterable', 'contains') => ([('value', 'Object')], 'bool'),
+      ('Iterable', 'contains') => ([('value', 'Object?')], 'bool'),
       ('Iterable', 'elementAt') => ([('index', 'int')], 'T'),
       ('Iterable', 'toList') => (<(String, String)>[], 'List<T>'),
       ('Iterable', 'toSet') => (<(String, String)>[], 'Set<T>'),
@@ -7607,8 +7792,8 @@ class Analyzer {
           name == 'where' ? 'Iterable<T>' : 'bool'
         ),
       ('Iterable', 'forEach') => ([('action', '(T) -> void')], 'void'),
-      ('Map', 'containsKey') => ([('key', 'Object')], 'bool'),
-      ('Map', 'remove') => ([('key', 'Object')], 'V?'),
+      ('Map', 'containsKey') => ([('key', 'Object?')], 'bool'),
+      ('Map', 'remove') => ([('key', 'Object?')], 'V?'),
       ('Map', 'clear') => (<(String, String)>[], 'void'),
       ('Map', 'addAll') => ([('other', 'Map<K, V>')], 'void'),
       ('Map', 'putIfAbsent') => ([('key', 'K'), ('ifAbsent', '() -> V')], 'V'),

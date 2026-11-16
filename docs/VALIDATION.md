@@ -746,3 +746,16 @@ for `install_script` and `start_skill` returned `INVALID_ARGUMENT`; persistence
 could not be confirmed. Tested local setup/start instructions are retained in
 `ENVIRONMENT.md` and `tool/setup_environment.sh`. Publication remains unperformed.
 No extra network domain is needed for the verified Docker-based SDK route.
+
+## 2026-11-16 — L3.2d generic interface methods
+
+- `dart pub get`: succeeded with the existing dependency constraints.
+- `dart format .`: 47 files, zero changes in the final pass.
+- `dart analyze`: no issues.
+- `dart test test/generic_methods_test.dart test/generic_inheritance_test.dart test/collection_interfaces_test.dart test/generic_constraints_test.dart test/function_nullability_test.dart --reporter expanded`: **130 passed**, zero failures/skips, 21 seconds.
+- `dart test --reporter expanded`: **438 passed**, zero failures/skips, **7m54s**.
+- New primary suite: 16 Quds declarations. Negative programs: 26. Golden Dart
+  analyzed and executed on Dart VM and JavaScript/Node. See GENERIC_METHODS.md.
+- Intermediate regression: stricter generic bounds exposed nullable lookup/removal
+  signatures and concrete nullable inference. Both were corrected before the
+  focused and full final runs. No failed result is being counted as a pass.

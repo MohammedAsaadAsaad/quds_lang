@@ -3200,8 +3200,10 @@ class DartEmitter {
       }
       return '(() { ${declarations.join(' ')} return $rendered(${named.join(', ')}); })()';
     }
-    final member =
-        node.callee is MemberAccess ? node.callee as MemberAccess : null;
+    final sourceCallee = node.callee is TypeApplication
+        ? (node.callee as TypeApplication).callee
+        : node.callee;
+    final member = sourceCallee is MemberAccess ? sourceCallee : null;
     if (member != null && targetSymbol.dartName.startsWith('_q')) {
       final lowered = _lowerCollection(node, member, targetSymbol.dartName,
           constantContext: constantContext);
@@ -3292,7 +3294,7 @@ class DartEmitter {
         }
       }
       final list =
-          '<${_dartType(parameters[variadic].type)}>[${pieces.join(', ')}]';
+          '<${_dartType(model.instantiatedParameterTypes[node]?[variadic] ?? parameters[variadic].type)}>[${pieces.join(', ')}]';
       return '$target(${[...fixed, list].join(', ')})';
     }
     final order = model.argumentOrder[node];
@@ -3322,6 +3324,22 @@ class DartEmitter {
     // Evaluate written arguments exactly once, left to right, before arranging
     // them in declaration order for Dart's positional ABI.
     final declarations = <String>[];
+    if (member != null &&
+        targetSymbol.function?.isStatic == false &&
+        model.types[member.object] != 'prefix' &&
+        model.references[member.object]?.namespace == null) {
+      final receiver = '_qr${_temps++}';
+      declarations.add(
+          'final $receiver = ${expression(member.object, constantContext: constantContext)};');
+      final method = model.references[member]?.dartName ?? member.name;
+      final typeArguments = node.callee is TypeApplication
+          ? (node.callee as TypeApplication).arguments
+          : model.inferredTypeArguments[node];
+      final suffix = typeArguments == null
+          ? ''
+          : '<${typeArguments.map(_dartType).join(', ')}>';
+      target = '$receiver.$method$suffix';
+    }
     final values = <String>[];
     final holeNames = <String>[];
     final holeTypes = <String>[];
@@ -3342,7 +3360,9 @@ class DartEmitter {
       } else if (index >= 0 && _isHole(node.arguments[index].value)) {
         final hole = '_qh${holeNames.length}';
         holeNames.add(hole);
-        holeTypes.add(i < parameters.length ? parameters[i].type : 'Object');
+        holeTypes.add(i < parameters.length
+            ? (model.instantiatedParameterTypes[node]?[i] ?? parameters[i].type)
+            : 'Object');
         values.add(hole);
       } else if (i < parameters.length && parameters[i].defaultValue != null) {
         final saved = _names;

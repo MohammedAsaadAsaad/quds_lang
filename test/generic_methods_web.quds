@@ -1,0 +1,29 @@
+interface Transformer:
+  transform<T>(value: T) -> T = value
+class Identity implements Transformer:
+  transform<U>(value: U) -> U = value
+class Pair<C>:
+  choose<T>(value: T, marker: C) -> T = value
+class Bounded<C>:
+  keep<T: C>(value: T) -> C = value
+main():
+  value: Transformer = Identity()
+  require value.transform<int>(21) == 21
+  inferred: String = value.transform("text")
+  require inferred == "text"
+  bounded: num = Bounded<num>().keep<int>(22)
+  require bounded == 22
+  var trace = ""
+  receiver() -> Pair<String>:
+    trace += "receiver "
+    return Pair<String>()
+  marker() -> String:
+    trace += "marker "
+    return "marker"
+  item() -> int:
+    trace += "item "
+    return 23
+  selected = receiver().choose<int>(marker: marker(), value: item())
+  require selected == 23
+  require trace == "receiver marker item "
+  print "GENERIC METHODS OK"

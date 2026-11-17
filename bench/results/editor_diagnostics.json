@@ -1,0 +1,114 @@
+{
+  "schema": 1,
+  "baseline_commit": "5f8b9c5",
+  "before": {
+    "schema": 1,
+    "samples": [
+      {
+        "name": "small",
+        "bindings": 20,
+        "math_import": false,
+        "initial": {
+          "first_colors_ms": 117.633,
+          "complete_ms": 118.936
+        },
+        "semantic_error_edit": {
+          "first_colors_ms": 140.913,
+          "first_error_ms": 140.907,
+          "complete_ms": 140.984
+        }
+      },
+      {
+        "name": "large",
+        "bindings": 5000,
+        "math_import": false,
+        "initial": {
+          "first_colors_ms": 755.089,
+          "complete_ms": 755.176
+        },
+        "semantic_error_edit": {
+          "first_colors_ms": 499.988,
+          "first_error_ms": 499.985,
+          "complete_ms": 500.109
+        }
+      },
+      {
+        "name": "math",
+        "bindings": 1000,
+        "math_import": true,
+        "initial": {
+          "first_colors_ms": 863.358,
+          "complete_ms": 863.91
+        },
+        "semantic_error_edit": {
+          "first_colors_ms": 759.681,
+          "first_error_ms": 759.677,
+          "complete_ms": 759.775
+        }
+      }
+    ],
+    "continuous_typing": {
+      "updates": 21,
+      "interval_ms": 60,
+      "checks_while_typing": 0,
+      "first_check_while_typing_ms": null,
+      "last_check_ms": 1416.221
+    },
+    "scope": "Live LspSession and background isolates; includes debounce and worker startup on each document, excludes VS Code rendering and pipe transport. Single samples, not latency guarantees."
+  },
+  "after": {
+    "schema": 1,
+    "samples": [
+      {
+        "name": "small",
+        "bindings": 20,
+        "math_import": false,
+        "initial": {
+          "first_colors_ms": 58.44,
+          "complete_ms": 115.849
+        },
+        "semantic_error_edit": {
+          "first_colors_ms": 126.809,
+          "first_error_ms": 138.199,
+          "complete_ms": 144.081
+        }
+      },
+      {
+        "name": "large",
+        "bindings": 5000,
+        "math_import": false,
+        "initial": {
+          "first_colors_ms": 305.358,
+          "complete_ms": 900.382
+        },
+        "semantic_error_edit": {
+          "first_colors_ms": 275.845,
+          "first_error_ms": 361.025,
+          "complete_ms": 521.897
+        }
+      },
+      {
+        "name": "math",
+        "bindings": 1000,
+        "math_import": true,
+        "initial": {
+          "first_colors_ms": 65.322,
+          "complete_ms": 983.922
+        },
+        "semantic_error_edit": {
+          "first_colors_ms": 139.924,
+          "first_error_ms": 391.292,
+          "complete_ms": 729.582
+        }
+      }
+    ],
+    "continuous_typing": {
+      "updates": 21,
+      "interval_ms": 60,
+      "checks_while_typing": 3,
+      "first_check_while_typing_ms": 507.301,
+      "last_check_ms": 1356.003
+    },
+    "scope": "Live LspSession and background isolates; includes debounce and worker startup on each document, excludes VS Code rendering and pipe transport. Single samples, not latency guarantees."
+  }
+}

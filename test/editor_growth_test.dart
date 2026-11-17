@@ -36,7 +36,9 @@ void main() {
     final uri = File('/tmp/quds_editor_growth.quds').uri.toString();
     final notifications = <int, Map>{};
     session.emit = (message) {
+      if (message['method'] != 'textDocument/publishDiagnostics') return;
       final params = message['params'] as Map;
+      if (params['qudsAnalysisComplete'] == false) return;
       notifications[params['version'] as int] = params;
     };
     Future<Map> ready(int version) async {
@@ -88,7 +90,9 @@ void main() {
     final session = LspSession()..background = true;
     addTearDown(session.dispose);
     final ready = Completer<void>();
-    session.emit = (_) {
+    session.emit = (message) {
+      if (message['method'] != 'textDocument/publishDiagnostics' ||
+          (message['params'] as Map)['qudsAnalysisComplete'] == false) return;
       if (!ready.isCompleted) ready.complete();
     };
     final uri = File('/tmp/quds_editor_large.quds').uri.toString();
@@ -122,6 +126,8 @@ void main() {
     addTearDown(session.dispose);
     final events = <String>{};
     session.emit = (message) {
+      if (message['method'] != 'textDocument/publishDiagnostics' ||
+          (message['params'] as Map)['qudsAnalysisComplete'] == false) return;
       events.add((message['params'] as Map)['uri'] as String);
     };
     for (final (name, text) in [

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'compiler.dart';
+import 'semantics.dart';
 import 'complete.dart';
 import 'format.dart';
 import 'lexer.dart';
@@ -38,6 +39,7 @@ class LspSession {
   void Function(Map<String, dynamic> message)? emit;
   final _dirty = <_OpenDocument>{};
   Timer? _idle;
+  Timer? _maximumIdle;
   ReceivePort? _replies;
   SendPort? _worker;
   Isolate? _isolate;
@@ -49,6 +51,8 @@ class LspSession {
   void dispose() {
     _idle?.cancel();
     _idle = null;
+    _maximumIdle?.cancel();
+    _maximumIdle = null;
     _dirty.clear();
     _queued.clear();
     _closed = true;
@@ -193,6 +197,8 @@ class LspSession {
       for (final change in changes) {
         final next = _applyChange(opened.text, _map(change));
         opened.editingLine = _changedLine(opened.text, next);
+        opened.semanticData =
+            _projectTokens(opened.text, next, opened.semanticData);
         opened.text = next;
       }
     }
@@ -224,13 +230,17 @@ class LspSession {
   void _kick(_OpenDocument document, {bool immediate = false}) {
     document.live = true;
     _dirty.add(document);
+    _maximumIdle ??= Timer(const Duration(milliseconds: 250), _analyzeDirty);
     _idle?.cancel();
     _idle = Timer(immediate ? Duration.zero : const Duration(milliseconds: 120),
         _analyzeDirty);
   }
 
   void _analyzeDirty() {
+    _idle?.cancel();
     _idle = null;
+    _maximumIdle?.cancel();
+    _maximumIdle = null;
     final docs = _dirty.toList();
     _dirty.clear();
     for (final document in docs) {
@@ -324,6 +334,33 @@ class LspSession {
     if (message is SendPort) {
       _worker = message;
       _pumpAnalysis();
+      return;
+    }
+    if (message is _SyntaxResult) {
+      final document = _documents[message.uri];
+      if (document != null && document.text == message.source) {
+        if (message.tokens.isNotEmpty) {
+          document.semanticData =
+              _mergeTokens(document.semanticData, message.tokens);
+          emit?.call({
+            'jsonrpc': '2.0',
+            'method': 'quds/semanticTokensReady',
+            'params': {'uri': document.uri, 'version': document.version}
+          });
+        }
+        if (message.diagnostics.isNotEmpty) {
+          document.applyDiagnostics(message.diagnostics);
+          emit?.call(_publish(document, complete: false));
+        }
+      }
+      return;
+    }
+    if (message is _EarlyDiagnostics) {
+      final document = _documents[message.uri];
+      if (document != null && document.text == message.source) {
+        document.applyDiagnostics(message.diagnostics);
+        emit?.call(_publish(document, complete: false));
+      }
       return;
     }
     if (message is! _AnalysisResult) return;
@@ -471,7 +508,7 @@ class LspSession {
   Map<String, Object> _semanticTokens(Map<String, dynamic> params) {
     final opened = _document(params);
     if (opened != null && opened.live) {
-      return {'data': opened.isCurrent ? opened.semanticData : const <int>[]};
+      return {'data': opened.semanticData};
     }
     final located = _tryCompile(params);
     if (located == null) return {'data': const []};
@@ -596,7 +633,8 @@ class LspSession {
     };
   }
 
-  Map<String, dynamic> _publish(_OpenDocument document) {
+  Map<String, dynamic> _publish(_OpenDocument document,
+      {bool complete = true}) {
     final positions = SourceIndex(document.text);
     final diagnostics = document.diagnostics().map((error) {
       return {
@@ -613,6 +651,7 @@ class LspSession {
       'params': {
         'uri': document.uri,
         'version': document.version,
+        'qudsAnalysisComplete': complete,
         'diagnostics': diagnostics
       },
     };
@@ -711,13 +750,18 @@ class _OpenDocument {
     _recovered.clear();
     final compiled = result.compilation;
     _compilation = compiled;
-    semanticData = result.tokens;
+    if (compiled != null) semanticData = result.tokens;
     if (compiled != null) {
       _good = compiled;
       _goodText = result.analysisSource;
     }
+    applyDiagnostics(result.diagnostics);
+    _readyText = result.source;
+  }
+
+  void applyDiagnostics(List<_Diag> diagnostics) {
     _diagnostics = [
-      for (final error in result.diagnostics)
+      for (final error in diagnostics)
         CompilerException(
           error.code,
           error.message,
@@ -725,7 +769,6 @@ class _OpenDocument {
               file: error.file, offset: error.offset),
         ),
     ];
-    _readyText = result.source;
   }
 
   /// Stores an analysis of the current text. A later failure keeps the previous one.
@@ -1030,15 +1073,20 @@ void _analysisWorker(SendPort main) {
   main.send(inbox.sendPort);
   inbox.listen((message) {
     if (message is! _AnalysisRequest) return;
-    main.send(_analyzeRequest(message));
+    main.send(_syntaxResult(message));
+    main.send(_analyzeRequest(message, onDiagnostics: (errors) {
+      main.send(_EarlyDiagnostics(
+          message.uri, message.source, _packDiagnostics(errors)));
+    }));
   });
 }
 
 // All editor recovery stays on the background isolate. An exception during a
 // recovery/diagnostic pass must also produce a result, never strand _busy.
-_AnalysisResult _analyzeRequest(_AnalysisRequest request) {
+_AnalysisResult _analyzeRequest(_AnalysisRequest request,
+    {void Function(List<CompilerException>)? onDiagnostics}) {
   try {
-    return _analyzeBuffer(request);
+    return _analyzeBuffer(request, onDiagnostics: onDiagnostics);
   } catch (error) {
     return _AnalysisResult(request.uri, request.source, null,
         [_Diag('E300', '$error', 1, 1, 0, 0, request.file)],
@@ -1097,7 +1145,8 @@ String _maskEditingLine(String source, int line) {
       source.substring(stop);
 }
 
-_AnalysisResult _analyzeBuffer(_AnalysisRequest request) {
+_AnalysisResult _analyzeBuffer(_AnalysisRequest request,
+    {void Function(List<CompilerException>)? onDiagnostics}) {
   Compilation? compiled;
   var analysisSource = request.source;
   List<CompilerException> errors;
@@ -1108,6 +1157,7 @@ _AnalysisResult _analyzeBuffer(_AnalysisRequest request) {
     errors = failure.code == 'E100'
         ? diagnose(request.source, file: request.file, emitDart: false)
         : [failure];
+    onDiagnostics?.call(errors);
     final lines = <int>{
       request.editingLine ?? _changedLine('', request.source),
       if (failure.span.file == request.file) failure.span.line - 1,
@@ -1149,4 +1199,126 @@ _AnalysisResult _analyzeBuffer(_AnalysisRequest request) {
       tokens: compiled == null
           ? const []
           : semanticTokenData(compiled, analysisSource));
+}
+
+List<_Diag> _packDiagnostics(List<CompilerException> errors) => [
+      for (final error in errors)
+        _Diag(error.code, error.message, error.span.line, error.span.column,
+            error.span.length, error.span.offset, error.span.file)
+    ];
+
+class _EarlyDiagnostics {
+  _EarlyDiagnostics(this.uri, this.source, this.diagnostics);
+  final String uri, source;
+  final List<_Diag> diagnostics;
+}
+
+class _SyntaxResult extends _EarlyDiagnostics {
+  _SyntaxResult(super.uri, super.source, super.diagnostics, this.tokens);
+  final List<int> tokens;
+}
+
+_SyntaxResult _syntaxResult(_AnalysisRequest request) {
+  try {
+    final parser = Parser(Lexer().tokenize(request.source, file: request.file));
+    final program = parser.parse(partial: true);
+    return _SyntaxResult(
+        request.uri,
+        request.source,
+        _packDiagnostics(parser.errors),
+        semanticTokenData(
+            Compilation(program, SemanticModel(), ''), request.source,
+            declarationsOnly: true));
+  } on CompilerException catch (error) {
+    return _SyntaxResult(
+        request.uri, request.source, _packDiagnostics([error]), const []);
+  } catch (_) {
+    // Full analysis reports unexpected failures; syntax colors are provisional.
+    return _SyntaxResult(request.uri, request.source, const [], const []);
+  }
+}
+
+/// Carry colors through an edit without using stale source coordinates. Drop
+/// touched lines and shift untouched later lines; a full analysis replaces them.
+List<int> _projectTokens(String previous, String current, List<int> data) {
+  if (data.isEmpty || previous == current) return data;
+  var start = 0;
+  while (start < previous.length &&
+      start < current.length &&
+      previous.codeUnitAt(start) == current.codeUnitAt(start)) start++;
+  var oldEnd = previous.length, newEnd = current.length;
+  while (oldEnd > start &&
+      newEnd > start &&
+      previous.codeUnitAt(oldEnd - 1) == current.codeUnitAt(newEnd - 1)) {
+    oldEnd--;
+    newEnd--;
+  }
+  final oldIndex = SourceIndex(previous), newIndex = SourceIndex(current);
+  final first = oldIndex.position(start).$1;
+  final last = oldIndex.position(oldEnd).$1;
+  final shift = newIndex.position(newEnd).$1 - last;
+  final result = <int>[];
+  var line = 0, column = 0, emittedLine = 0, emittedColumn = 0;
+  for (var i = 0; i < data.length; i += 5) {
+    line += data[i];
+    column = data[i] == 0 ? column + data[i + 1] : data[i + 1];
+    if (line >= first && line <= last) continue;
+    final moved = line > last ? line + shift : line;
+    result.addAll([
+      moved - emittedLine,
+      moved == emittedLine ? column - emittedColumn : column,
+      data[i + 2],
+      data[i + 3],
+      data[i + 4]
+    ]);
+    emittedLine = moved;
+    emittedColumn = column;
+  }
+  return result;
+}
+
+Iterable<(int, int, int, int, int)> _absoluteTokens(List<int> data) sync* {
+  var line = 0, column = 0;
+  for (var i = 0; i < data.length; i += 5) {
+    line += data[i];
+    column = data[i] == 0 ? column + data[i + 1] : data[i + 1];
+    yield (line, column, data[i + 2], data[i + 3], data[i + 4]);
+  }
+}
+
+// Both streams are already sorted. Retain untouched reference colors while
+// adding newly parsed declarations, without a sort or a full semantic pass.
+List<int> _mergeTokens(List<int> previous, List<int> syntax) {
+  if (previous.isEmpty) return syntax;
+  if (syntax.isEmpty) return previous;
+  final left = _absoluteTokens(previous).iterator;
+  final right = _absoluteTokens(syntax).iterator;
+  var hasLeft = left.moveNext(), hasRight = right.moveNext();
+  var line = 0, column = 0;
+  final result = <int>[];
+  while (hasLeft || hasRight) {
+    final takeRight = !hasLeft ||
+        hasRight &&
+            (right.current.$1 < left.current.$1 ||
+                right.current.$1 == left.current.$1 &&
+                    right.current.$2 <= left.current.$2);
+    final token = takeRight ? right.current : left.current;
+    if (takeRight) {
+      if (hasLeft && left.current.$1 == token.$1 && left.current.$2 == token.$2)
+        hasLeft = left.moveNext();
+      hasRight = right.moveNext();
+    } else {
+      hasLeft = left.moveNext();
+    }
+    result.addAll([
+      token.$1 - line,
+      token.$1 == line ? token.$2 - column : token.$2,
+      token.$3,
+      token.$4,
+      token.$5
+    ]);
+    line = token.$1;
+    column = token.$2;
+  }
+  return result;
 }

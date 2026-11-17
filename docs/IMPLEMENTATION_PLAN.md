@@ -117,3 +117,13 @@ and cancellation/timeouts/stale-version checks in VS Code. Regression coverage
 includes repeated growing edits, 5,000 bindings, deep failed analysis and actual
 stdio LSP traffic. See EDITOR_COMPLETION_GROWTH_AR.md for measurements, reload
 instructions and scope; VALIDATION.md records the final complete test gate.
+
+## 2026-11-17 — staged colors and diagnostics during continuous typing
+
+Bound trailing change debounces in both client and server, project untouched
+semantic tokens through edits, send provisional AST declaration colors, and
+publish actual diagnostics before completion recovery. Complete semantic and
+lowering checks still run; provisional syntax never clears semantic errors or
+feeds unchecked completion types. Serialize stdio frames to prevent notification/
+flush races. See EDITOR_DIAGNOSTICS_LATENCY_AR.md and editor_diagnostics.json for
+before/after phase timings, continuous-typing coverage and full-check costs.

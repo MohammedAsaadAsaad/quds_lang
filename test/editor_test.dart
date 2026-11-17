@@ -218,6 +218,8 @@ main():
     addTearDown(session.dispose);
     final seen = <String, Map>{};
     session.emit = (event) {
+      if (event['method'] != 'textDocument/publishDiagnostics' ||
+          (event['params'] as Map)['qudsAnalysisComplete'] == false) return;
       seen[(event['params'] as Map)['uri'] as String] = event;
     };
     final first = File('/tmp/editor_queue_a.quds').uri.toString();

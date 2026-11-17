@@ -1663,10 +1663,18 @@ Stream<Map<String, dynamic>> _readFrames(Stream<List<int>> input) async* {
 }
 
 Future<void> _serve(LspSession session) async {
-  session.emit = (message) {
-    stdout.write(encodeFrame(message));
-    stdout.flush();
-  };
+  // Notifications can arrive while a response is flushing. IOSink must not
+  // be written while it is bound to its flush stream; serialize every frame.
+  var writes = Future<void>.value();
+  void send(Map<String, dynamic> message) {
+    final frame = encodeFrame(message);
+    writes = writes.then((_) async {
+      stdout.write(frame);
+      await stdout.flush();
+    });
+  }
+
+  session.emit = send;
   final buffer = <int>[];
   await for (final chunk in stdin) {
     buffer.addAll(chunk);
@@ -1691,13 +1699,13 @@ Future<void> _serve(LspSession session) async {
           .map((key, value) => MapEntry(key.toString(), value as dynamic));
       final exchange = session.handle(message);
       final frames = [
-        if (exchange.response != null) exchange.response,
+        if (exchange.response case final response?) response,
         ...exchange.notifications,
       ];
       for (final frame in frames) {
-        stdout.write(encodeFrame(frame));
+        send(frame);
       }
-      if (frames.isNotEmpty) await stdout.flush();
+      if (frames.isNotEmpty) await writes;
     }
   }
 }

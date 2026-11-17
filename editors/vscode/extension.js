@@ -770,6 +770,7 @@ class QudsClient {
     this.documents = new Map();
     this.synced = new Map();
     this.timers = new Map();
+    this.maximumTimers = new Map();
     this.child = null;
     this.ready = false;
     this.starting = null;
@@ -855,6 +856,7 @@ class QudsClient {
 
   dispose() {
     for (const timer of this.timers.values()) clearTimeout(timer);
+    for (const timer of this.maximumTimers.values()) clearTimeout(timer);
     this.semanticRefresh.dispose();
     this.stop();
   }
@@ -871,13 +873,19 @@ class QudsClient {
     const uri = document.uri.toString();
     const previous = this.timers.get(uri);
     if (previous) clearTimeout(previous);
-    this.timers.set(
-      uri,
-      setTimeout(() => {
-        this.timers.delete(uri);
-        if (this.ready) this.sendChange(document);
-      }, 75),
-    );
+    this.timers.set(uri, setTimeout(() => this.flushChange(uri), 75));
+    if (!this.maximumTimers.has(uri)) {
+      this.maximumTimers.set(uri, setTimeout(() => this.flushChange(uri), 150));
+    }
+  }
+
+  flushChange(uri) {
+    clearTimeout(this.timers.get(uri));
+    clearTimeout(this.maximumTimers.get(uri));
+    this.timers.delete(uri);
+    this.maximumTimers.delete(uri);
+    const document = this.documents.get(uri);
+    if (this.ready && document) this.sendChange(document);
   }
 
   close(document) {
@@ -888,6 +896,8 @@ class QudsClient {
     const timer = this.timers.get(uri);
     if (timer) clearTimeout(timer);
     this.timers.delete(uri);
+    clearTimeout(this.maximumTimers.get(uri));
+    this.maximumTimers.delete(uri);
     this.diagnostics.delete(document.uri);
     if (this.ready) {
       this.notify('textDocument/didClose', { textDocument: { uri } });
@@ -1047,6 +1057,8 @@ class QudsClient {
       clearTimeout(timer);
       this.timers.delete(uri);
     }
+    clearTimeout(this.maximumTimers.get(uri));
+    this.maximumTimers.delete(uri);
     await this.starting;
     if (!this.documents.has(uri)) return;
     if (this.synced.get(uri) === document.version) return;
@@ -1184,6 +1196,12 @@ class QudsClient {
   }
 
   onMessage(message) {
+    if (message.method === 'quds/semanticTokensReady') {
+      const params = message.params || {};
+      const document = this.documents.get(params.uri);
+      if (document && document.version === params.version) this.semanticRefresh.fire();
+      return;
+    }
     if (message.method === 'textDocument/publishDiagnostics') {
       this.showDiagnostics(message.params || {});
       return;
@@ -1223,7 +1241,7 @@ class QudsClient {
       return diagnostic;
     });
     this.diagnostics.set(uri, items);
-    this.semanticRefresh.fire();
+    if (params.qudsAnalysisComplete !== false) this.semanticRefresh.fire();
   }
 
   failPending(message) {

@@ -184,7 +184,8 @@ const semanticTokenTypes = [
 const semanticTokenModifiers = ['declaration', 'readonly'];
 
 /// Encoded `textDocument/semanticTokens/full` data for [source].
-List<int> semanticTokenData(Compilation compilation, String source) {
+List<int> semanticTokenData(Compilation compilation, String source,
+    {bool declarationsOnly = false}) {
   final tokens = <_Token>[];
   final positions = SourceIndex(source);
   final methods = <FunctionDeclaration>{};
@@ -258,7 +259,13 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           _variable,
           _bits(
             declaration: compilation.semantics.declarations.containsKey(node),
-            readonly: symbol?.mutable != true,
+            readonly: !(symbol?.mutable ??
+                const {
+                  BindingMode.mutable,
+                  BindingMode.shadowMutable,
+                  BindingMode.lateMutable,
+                  BindingMode.state
+                }.contains(node.mode)),
           ),
           index: positions,
         );
@@ -287,6 +294,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           if (indexToken != null) tokens.add(indexToken);
         }
       case Identifier():
+        if (declarationsOnly) break;
         final kind = _identifierKind(compilation, node, methods, parameters);
         if (kind == null) break;
         final start = positions.stringIndex(node.span.offset);
@@ -295,6 +303,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
             index: positions);
         if (token != null) tokens.add(token);
       case MemberAccess():
+        if (declarationsOnly) break;
         final kind = _memberKind(compilation.semantics, node);
         final token =
             _memberNameToken(source, node, kind.$1, kind.$2, index: positions);

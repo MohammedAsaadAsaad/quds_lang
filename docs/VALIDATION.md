@@ -983,3 +983,41 @@ worker/request handling and extension reload instructions. This supersedes use
 of the earlier tiny-buffer benchmark as evidence for large-document behavior.
 No approved language syntax changed and no visual VS Code-host latency claim
 is made.
+
+## 2026-11-17 — early colors and diagnostics without typing starvation
+
+- `dart format .`: **73 files, zero changes**.
+- `dart analyze`: **No issues found**.
+- `node --check editors/vscode/extension.js`: passes.
+- `dart test test/editor_diagnostics_test.dart test/editor_growth_test.dart test/editor_test.dart --reporter expanded`:
+  **25 pass**, **9s**. New coverage verifies provisional AST colors before full
+  semantic checking, actual E200 diagnostics before recovery completes, unchanged
+  token projection through Unicode/multiline edits, diagnostics for two documents
+  during sustained typing, virtual-clock maximum-debounce/client-close cleanup,
+  and stage/version-aware semantic refresh. Existing real stdio growth coverage
+  also exercises interleaved notifications/responses through serialized writes.
+- Final frozen-source `dart test --reporter expanded`: **570 pass, zero skipped,
+  zero failures**, **6m28s**, including compiler, math, memory, debugger, editor,
+  native interoperability and CLI tests.
+- `dart run tool/profile_diagnostics.dart`: completes. Compared with the protocol
+  from 5f8b9c5, initial declaration colors for 1,000 bindings with quds:math are
+  **65.322ms** versus **863.358ms**. First actual semantic error after editing:
+  **391.292ms** versus **759.677ms**. For 5,000 bindings: first colors **305.358ms**
+  versus **755.089ms**, first error **361.025ms** versus **499.985ms**.
+- Continuous-typing sample: 21 updates, 60ms apart; **3 complete checks during
+  typing**, versus **zero** with the previous trailing-only debounce. Publication
+  still rejects obsolete versions; scheduling bounds do not guarantee analysis
+  completion while a heavy prior job is running.
+- Full-check latency is reported too: initial 5,000-binding check **900.382ms**
+  versus **755.176ms**, math sample **983.922ms** versus **863.910ms**. The added
+  syntax-color phase has a cost; no checks were removed to improve first paint.
+- Raw single-sample data, timings and measurement limits:
+  bench/results/editor_diagnostics.json. Includes LspSession/worker/debounce;
+  excludes VS Code rendering and pipe transport. No universal latency guarantee.
+- `git diff --check` and `git diff --cached --check`: clean.
+
+EDITOR_DIAGNOSTICS_LATENCY_AR.md documents phases, token projection, truthful
+error publication, serial stdio writes, reproductions and extension reloads.
+The full compiler remains authoritative; provisional colors do not feed types
+into completion and syntax success does not clear semantic errors. No approved
+language syntax changed.

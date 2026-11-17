@@ -19,7 +19,7 @@ child.stdout.on('data', chunk=>{
   if(buffer.length<end+4+length)return;
   const message=JSON.parse(buffer.subarray(end+4,end+4+length).toString());
   buffer=buffer.subarray(end+4+length);
-  if(message.method==='textDocument/publishDiagnostics'){
+  if(message.method==='textDocument/publishDiagnostics' && message.params.qudsAnalysisComplete!==false){
    diagnostics.set(message.params.version,message.params);
    const p=waiting.get(message.params.version);if(p){waiting.delete(message.params.version);p.resolve(message.params);}
   }else if(pending.has(message.id)){

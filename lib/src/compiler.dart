@@ -86,7 +86,7 @@ void writeSdkBundles(String directory, Compilation result) {
 }
 
 Compilation compile(String source,
-    {String file = '<input>', bool partial = false}) {
+    {String file = '<input>', bool partial = false, bool emitDart = true}) {
   final parser = Parser(Lexer().tokenize(source, file: file));
   final parsed = parser.parse(partial: partial);
   if (partial && parser.errors.isNotEmpty && parsed.statements.isEmpty) {
@@ -114,6 +114,12 @@ Compilation compile(String source,
       sourcePath != '<input>' && packageDependsOnMeta(sourcePath);
   final emitter = DartEmitter(semantics);
   final dart = emitter.emit(program);
+  if (!emitDart)
+    return Compilation(program, semantics, '',
+        dependencies: [
+          for (final key in libraries.keys)
+            if (!key.startsWith('quds:')) key,
+        ]..sort());
   final generated = file.endsWith('.quds')
       ? '${file.substring(0, file.length - 5)}.dart'
       : 'out.dart';
@@ -199,7 +205,8 @@ void _loadSdkImports(Program program, Map<String, Program> libraries) {
 
 /// Parse and analyze [source]. Every recorded parse error is returned. A
 /// later failure is that one error. A successful program returns its warnings.
-List<CompilerException> diagnose(String source, {String file = '<input>'}) {
+List<CompilerException> diagnose(String source,
+    {String file = '<input>', bool emitDart = true}) {
   Parser? parser;
   try {
     parser = Parser(Lexer().tokenize(source, file: file));
@@ -212,7 +219,7 @@ List<CompilerException> diagnose(String source, {String file = '<input>'}) {
   }
   try {
     return List<CompilerException>.of(
-        compile(source, file: file).semantics.warnings);
+        compile(source, file: file, emitDart: emitDart).semantics.warnings);
   } on CompilerException catch (error) {
     return [error];
   }

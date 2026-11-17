@@ -74,6 +74,8 @@ class LexerException extends CompilerException {
 }
 
 class Lexer {
+  static RegExp get identifierStart => _Scanner.identifierStart;
+  static RegExp get identifierPart => _Scanner.identifierPart;
   const Lexer();
   List<Token> tokenize(String source, {String file = '<input>'}) =>
       _Scanner(source, file).scan();

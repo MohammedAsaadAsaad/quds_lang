@@ -872,3 +872,35 @@ DART_GENERIC_METADATA.md records the implemented direct-call subset and explicit
 E910 limits. LANGUAGE_MEMORY_COMPLETION_AR.md closes the finite handoff plan;
 it does not assert that all 115 language decisions or arbitrary Dart source
 forms have complete implementation parity.
+
+## 2026-11-17 — editor latency, completion coverage and Quds debugger mappings
+
+- `dart format --output=none --set-exit-if-changed .`: **64 files, zero changes**.
+- `dart analyze`: **No issues found**.
+- `node --check editors/vscode/extension.js`: **passes**.
+- `dart test test/editor_test.dart --reporter expanded`: **15 pass**, covering
+  analysis artifacts/diagnostic parity, Quds/native generic specialization,
+  generic SDK extensions, signature help, native argument names, indentation
+  argument blocks, Arabic names, private imported members, backend-name hiding,
+  helper/const-comment source maps, qualified debugger frame names, a mocked
+  VS Code signature provider and startup analysis for multiple documents.
+- Real DAP tests pass: simple Quds breakpoint/locals/evaluate, and a program that
+  stops on Quds line 7, expands Arabic-named list `القيم`, expands its Payload
+  element, reads field `value` as **41**, and evaluates `القيم[0].value` as **41**.
+  Nested references and Watch evaluateName expressions retain source names;
+  user string values are not rewritten.
+- Final frozen-source `dart test --reporter expanded`: **517 pass, zero skipped,
+  zero failures**, **5m37s**.
+- `dart run tool/profile_editor.dart`: **completes**. Fresh-process samples on
+  the math import workload: full compilation **3687.790ms**, editor analysis
+  **1627.528ms**. Cached completion: **623 items**, **100 samples**, p50
+  **3.237ms**, p95 **6.984ms**, maximum **19.134ms**, including JSON encoding.
+  Profiling ran concurrently with the full suite; startup timings are individual
+  samples affected by CPU contention. Rendering, OS pipe transport and starting
+  the Dart process are excluded. Raw data: bench/results/editor_latency.json.
+- `git diff --check`: clean.
+
+EDITOR_PERFORMANCE_DEBUG_AR.md documents the queue, diagnostic parity, coverage,
+measurement scope and extension reload instructions. No approved language syntax
+was changed. This is not a claim of complete Flutter/Dart analyzer parity or a
+visual VS Code-host performance test.

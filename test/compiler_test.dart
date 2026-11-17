@@ -587,7 +587,12 @@ void main() async {
       'command': 'variables',
       'body': {
         'variables': [
-          {'name': dartName, 'value': 'ab', 'variablesReference': 0},
+          {
+            'name': dartName,
+            'value': 'ab',
+            'variablesReference': 30,
+            'evaluateName': '$dartName[0]'
+          },
           {'name': 'length', 'value': '2', 'variablesReference': 0},
         ],
       },
@@ -595,6 +600,32 @@ void main() async {
     final shown = ((variables['body'] as Map)['variables'] as List).cast<Map>();
     expect(shown[0]['name'], 'text');
     expect(shown[1]['name'], 'length');
+    expect(shown[0]['evaluateName'], 'text[0]');
+    namedTranslator.accept({
+      'seq': 6,
+      'type': 'request',
+      'command': 'variables',
+      'arguments': {'variablesReference': 30}
+    });
+    final nested = namedTranslator.present({
+      'request_seq': 6,
+      'type': 'response',
+      'command': 'variables',
+      'body': {
+        'variables': [
+          {
+            'name': dartName,
+            'evaluateName': '$dartName["$dartName"]',
+            'value': 'literal $dartName',
+            'variablesReference': 0
+          }
+        ]
+      }
+    });
+    final child = ((nested['body'] as Map)['variables'] as List).single as Map;
+    expect(child['name'], 'text');
+    expect(child['evaluateName'], 'text["$dartName"]');
+    expect(child['value'], 'literal $dartName');
   });
 
   test('debug hover evaluates the name written in the source', () {
@@ -764,6 +795,123 @@ other():
         expect('${value['value']}', contains('41'));
         final evaluated = await client.request('evaluate', {
           'expression': 'value',
+          'frameId': frame['id'],
+          'context': 'hover',
+        });
+        expect(evaluated['success'], isTrue, reason: '${evaluated['message']}');
+        expect('${(evaluated['body'] as Map)['result']}', contains('41'));
+        await client.request('disconnect');
+        await process.stdin.close();
+        return;
+      } finally {
+        process.kill();
+        await process.exitCode
+            .timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      }
+    }
+    fail('debug adapter returned no stack frames after retries: $lastError');
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
+  test('quds debug expands nested Quds القيم', () async {
+    final directory = Directory.systemTemp.createTempSync('quds-debug-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync(
+          'class Payload:\n  value: int required\nmain():\n  item = Payload(value: 41)\n  القيم = [item]\n  print 0\n  print القيم\n');
+    Object? lastError;
+    for (var session = 0; session < 3; session++) {
+      final process = await Process.start(Platform.resolvedExecutable, [
+        'run',
+        'bin/quds.dart',
+        'debug',
+      ]);
+      final client = _DebugClient(process);
+      client.start();
+      try {
+        final init = await client.request('initialize', {
+          'adapterID': 'quds',
+          'pathFormat': 'path',
+        });
+        expect(init['success'], isTrue,
+            reason: '${init['message']}\n${client.stderr}');
+        await client.event('initialized').timeout(const Duration(seconds: 20));
+        final breakpoints = await client.request('setBreakpoints', {
+          'source': {'path': source.path, 'name': 'app.quds'},
+          'breakpoints': [
+            {'line': 7}
+          ],
+        });
+        final reported =
+            ((breakpoints['body'] as Map)['breakpoints'] as List).single as Map;
+        expect(reported['line'], 7, reason: '$reported\n${client.stderr}');
+        final configured = await client.request('configurationDone');
+        expect(configured['success'], isTrue,
+            reason: '${configured['message']}');
+        final launched = await client.request('launch', {
+          'program': source.path,
+          'cwd': directory.path,
+        });
+        expect(launched['success'], isTrue,
+            reason: '${launched['message']}\n${client.stderr}');
+        final event = await _stopForBreakpoint(client);
+        final thread = (event['body'] as Map)['threadId'];
+        List frames = const [];
+        for (var attempt = 0; attempt < 30; attempt++) {
+          final stack =
+              await client.request('stackTrace', {'threadId': thread});
+          final body = stack['body'];
+          if (body is Map && body['stackFrames'] is List) {
+            frames = body['stackFrames'] as List;
+            if (frames.isNotEmpty) break;
+          }
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+        if (frames.isEmpty) {
+          lastError = 'empty stackFrames\n${client.stderr}';
+          continue;
+        }
+        final frame = frames.cast<Map>().firstWhere(
+            (item) => '${item['source']?['path']}'.endsWith('app.quds'),
+            orElse: () => frames.first as Map);
+        expect(frame['source']['path'], source.path);
+        expect(frame['line'], 7);
+        final scopes = await client.request('scopes', {'frameId': frame['id']});
+        final scopeList =
+            ((scopes['body'] as Map)['scopes'] as List).cast<Map>();
+        final locals = scopeList.firstWhere(
+          (scope) => scope['name'] == 'Locals',
+          orElse: () => scopeList.first,
+        );
+        final vars = await client.request('variables', {
+          'variablesReference': locals['variablesReference'],
+        });
+        final shown = ((vars['body'] as Map)['variables'] as List).cast<Map>();
+        final value = shown.firstWhere(
+          (item) => item['name'] == 'القيم',
+          orElse: () => <String, Object?>{},
+        );
+        expect(value['name'], 'القيم', reason: '$shown\n${client.stderr}');
+        final list = await client.request(
+            'variables', {'variablesReference': value['variablesReference']});
+        final entries =
+            ((list['body'] as Map)['variables'] as List).cast<Map>();
+        final element = entries.firstWhere((entry) =>
+            '${entry['name']}' == '[0]' || '${entry['name']}' == '0');
+        final fields = await client.request(
+            'variables', {'variablesReference': element['variablesReference']});
+        final payload =
+            ((fields['body'] as Map)['variables'] as List).cast<Map>();
+        expect(
+            payload.any((entry) =>
+                entry['name'] == 'value' && '${entry['value']}' == '41'),
+            isTrue,
+            reason: '$payload');
+        expect(
+            shown.any(
+                (entry) => RegExp(r'^_q[0-9]+$').hasMatch('${entry['name']}')),
+            isFalse);
+        final evaluated = await client.request('evaluate', {
+          'expression': 'القيم[0].value',
           'frameId': frame['id'],
           'context': 'hover',
         });

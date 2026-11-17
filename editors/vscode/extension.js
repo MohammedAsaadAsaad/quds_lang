@@ -144,6 +144,11 @@ function activate(context) {
       ':',
       '/',
     ),
+    vscode.languages.registerSignatureHelpProvider(languageId, {
+      provideSignatureHelp(document, position, token) {
+        return client.signatureHelp(document, position, token);
+      },
+    }, '(', ','),
     vscode.languages.registerCodeLensProvider(languageId, {
       provideCodeLenses(document) {
         return client.codeLenses(document);
@@ -868,7 +873,7 @@ class QudsClient {
       setTimeout(() => {
         this.timers.delete(uri);
         if (this.ready) this.sendChange(document);
-      }, 200),
+      }, 75),
     );
   }
 
@@ -898,6 +903,30 @@ class QudsClient {
       const raw = result && Array.isArray(result.items) ? result.items : [];
       const items = raw.map((entry) => completionItem(entry));
       return new vscode.CompletionList(items, !!(result && result.isIncomplete));
+    } catch (error) {
+      this.output.appendLine(error.message);
+      return undefined;
+    }
+  }
+
+  async signatureHelp(document, position, token) {
+    try {
+      await this.sync(document);
+      if (token && token.isCancellationRequested) return undefined;
+      const result = await this.request('textDocument/signatureHelp', {
+        textDocument: { uri: document.uri.toString() },
+        position: { line: position.line, character: position.character },
+      });
+      if (!result || (token && token.isCancellationRequested)) return undefined;
+      const help = new vscode.SignatureHelp();
+      help.signatures = (result.signatures || []).map((entry) => {
+        const signature = new vscode.SignatureInformation(entry.label);
+        signature.parameters = (entry.parameters || []).map((p) => new vscode.ParameterInformation(p.label));
+        return signature;
+      });
+      help.activeSignature = result.activeSignature || 0;
+      help.activeParameter = result.activeParameter || 0;
+      return help;
     } catch (error) {
       this.output.appendLine(error.message);
       return undefined;

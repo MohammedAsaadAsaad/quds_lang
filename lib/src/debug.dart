@@ -1,3 +1,4 @@
+import 'lexer.dart';
 import 'dart:io';
 
 import 'sourcemap.dart';
@@ -81,6 +82,7 @@ class DebugTranslator {
   final _frameLine = <int, int>{};
   final _scopeFrame = <int, int>{};
   final _refFile = <int, String>{};
+  final _refLine = <int, int>{};
   final _variablesRef = <int, int>{};
   var _sequence = 1;
   var _stopOnEntry = false;
@@ -281,6 +283,10 @@ class DebugTranslator {
       frame['source'] = _moved(source, hit);
       frame['line'] = hit.$2;
       frame['column'] = hit.$3;
+      final name = frame['name'];
+      if (name is String)
+        frame['name'] = _debugSourceExpression(
+            name, _files[_key(hit.$1)]?.names ?? const {});
       final id = (frame['id'] as num?)?.toInt();
       if (id != null) {
         _frameFile[id] = _key(hit.$1);
@@ -312,7 +318,10 @@ class DebugTranslator {
     for (final scope in scopes) {
       if (scope is! Map) continue;
       final reference = (scope['variablesReference'] as num?)?.toInt();
-      if (reference != null && reference != 0) _refFile[reference] = file;
+      if (reference != null && reference != 0) {
+        _refFile[reference] = file;
+        if (_frameLine[frame] != null) _refLine[reference] = _frameLine[frame]!;
+      }
     }
   }
 
@@ -346,6 +355,19 @@ class DebugTranslator {
       final name = variable['name'];
       final source = name is String ? names[name] : null;
       if (source != null) variable['name'] = source;
+      final child = (variable['variablesReference'] as num?)?.toInt();
+      if (child != null && child != 0 && file != null) {
+        _refFile[child] = file;
+        if (_refLine[reference] != null) _refLine[child] = _refLine[reference]!;
+      }
+      final evaluateName = variable['evaluateName'];
+      final bound = _files[file];
+      final line = _refLine[reference];
+      if (evaluateName is String && bound != null && line != null) {
+        // Values are user data; only expressions used by Watch are translated.
+        variable['evaluateName'] =
+            _debugSourceExpression(evaluateName, bound.names);
+      }
     }
   }
 
@@ -562,9 +584,16 @@ String _debugExpression(String expression, List<QudsLocal> locals, int line) {
 }
 
 bool _identStart(int unit) =>
-    unit == 95 || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122);
+    unit == 95 ||
+    (unit >= 65 && unit <= 90) ||
+    (unit >= 97 && unit <= 122) ||
+    unit >= 0xd800 && unit <= 0xdfff ||
+    unit > 127 && Lexer.identifierStart.hasMatch(String.fromCharCode(unit));
 
-bool _identPart(int unit) => _identStart(unit) || (unit >= 48 && unit <= 57);
+bool _identPart(int unit) =>
+    _identStart(unit) ||
+    (unit >= 48 && unit <= 57) ||
+    unit > 127 && Lexer.identifierPart.hasMatch(String.fromCharCode(unit));
 
 String? _dartInScope(List<QudsLocal> locals, String name, int line) {
   QudsLocal? best;
@@ -590,4 +619,33 @@ Map<String, dynamic> _map(Object? value) {
     return value.map((key, item) => MapEntry(key.toString(), item));
   }
   return <String, dynamic>{};
+}
+
+String _debugSourceExpression(String expression, Map<String, String> names) {
+  final out = StringBuffer();
+  var index = 0;
+  while (index < expression.length) {
+    final unit = expression.codeUnitAt(index);
+    if (unit == 34 || unit == 39) {
+      final start = index++;
+      while (index < expression.length) {
+        final c = expression.codeUnitAt(index++);
+        if (c == 92 && index < expression.length) {
+          index++;
+          continue;
+        }
+        if (c == unit) break;
+      }
+      out.write(expression.substring(start, index));
+    } else if (RegExp(r'[\w$]').hasMatch(expression[index])) {
+      final start = index++;
+      while (index < expression.length &&
+          RegExp(r'[\w$]').hasMatch(expression[index])) index++;
+      final name = expression.substring(start, index);
+      out.write(names[name] ?? name);
+    } else {
+      out.write(expression[index++]);
+    }
+  }
+  return out.toString();
 }

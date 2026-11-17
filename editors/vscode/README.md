@@ -7,3 +7,19 @@ The extension starts the compiled `quds lsp` binary when one is already built fo
 On Linux, `bash install.sh` from the repository root installs Dart if needed, activates the `quds` command, and installs this extension. After `quds` is on `PATH`, `quds install` does that editor step on Linux, macOS, and Windows, including the other VS Code-family editors it finds, Quds highlighting in Android Studio and other JetBrains IDEs, and a Claude Code skill when Claude Code is installed. You can also install the folder with **Developer: Install Extension from Location**. Then open a `.quds` file and run **Format Document**. **Quds: Restart Language Server** starts the server again.
 
 Saving a `.quds` file formats it. Formatting uses the same rules as `quds format`: indents follow the editor tab size, the line width defaults to 80 and wraps after a comma, and a condition with one statement is written on its header line when it fits. Comments and string contents stay as written. `quds.format.lineWidth` and `quds.format.singleLineIf` change those two choices. A buffer that does not parse is left unchanged. The parse error stays a diagnostic in the Problems list, and saving does not open a format-failure message. Completion answers from the last analysis kept in memory, including after the current line is unfinished. A changed buffer is analyzed in a separate isolate, so the suggestion list does not wait for that analysis. The language server reads the editor buffer, including text that has not been saved. Hover uses that buffer. A mutable binding shows `var name: Type`, a getter/setter shows `property name: Type` (or `get`/`set` when only one side exists), and a function shows `name(parameters) -> Type`. Semantic tokens color those differently: a property or variable is not painted as a function. Another expression shows its type. The three actions above `main` save the file. Run and Profile use a terminal named Quds. Debug builds into `.dart_tool/quds/out/` and stops on breakpoints set in the `.quds` file. Clicking the gutter sets a breakpoint. A blank line stays unverified. Stepping comes from the Dart VM, and the variables pane shows the names written in the `.quds` file. **Quds: Show Generated Dart** opens the source and the generated file together. Hover reads the analysis already kept for that buffer, so moving the pointer does not compile the file again. A position with no type does not open a tooltip. Completion offers names in scope, members after `.`, named arguments, and snippets for `if`, `for`, and `while`. `use quds:` lists the SDK libraries from memory. Go to definition of an SDK declaration opens a read-only document. It reuses that same analysis while the current line is unfinished, and a word from elsewhere in the file is not offered as a suggestion.
+
+## Completion and debugger update — 2026-11-17
+
+Signature help is available at `(` and `,`. Completion specializes inherited Quds
+and Dart generic members, includes generic SDK extensions and unused arguments
+inside indentation call blocks, and supports Arabic identifiers. Private imported
+members are filtered. Analysis stays in a background worker with one latest pending
+request per document; cached live completion does not compile or cold-load Dart
+library metadata on the request path.
+
+Breakpoints account for generated imports/helpers and const lint comments.
+Variables, nested expansion and Watch expressions use Quds names. A real VM/DAP
+integration test expands a Quds list/object and evaluates an Arabic-named binding.
+After updating the installed extension, use **Developer: Reload Window**. Detailed
+measurement scope and current limits are in `docs/EDITOR_PERFORMANCE_DEBUG_AR.md`
+in the repository; raw measurements are under `bench/results/editor_latency.json`.

@@ -1,0 +1,28 @@
+{
+  "dart": "3.13.7 (stable) (Thu Oct 22 14:28:57 2026 -0700) on \"linux_x64\"",
+  "workload": "quds:math, analyzed live buffer",
+  "phases": {
+    "full": {
+      "milliseconds": 3687.79,
+      "dart_bytes": 187,
+      "bundles": 2,
+      "symbols": 566
+    },
+    "analysis": {
+      "milliseconds": 1627.528,
+      "dart_bytes": 0,
+      "bundles": 0,
+      "symbols": 566
+    },
+    "background_ready_ms": 1623.502,
+    "cached_completion": {
+      "samples": 100,
+      "items": 623,
+      "p50_ms": 3.237,
+      "p95_ms": 6.984,
+      "max_ms": 19.134,
+      "includes_json_encoding": true
+    }
+  },
+  "scope": "Language server and response encoding; excludes VS Code rendering and OS pipe transport."
+}

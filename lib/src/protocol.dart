@@ -40,14 +40,15 @@ class LspSession {
   ReceivePort? _replies;
   SendPort? _worker;
   Isolate? _isolate;
-  _AnalysisRequest? _queued;
+  final _queued = <String, _AnalysisRequest>{};
+  bool _busy = false;
   var _closed = false;
 
   void dispose() {
     _idle?.cancel();
     _idle = null;
     _dirty.clear();
-    _queued = null;
+    _queued.clear();
     _closed = true;
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
@@ -84,6 +85,10 @@ class LspSession {
             'triggerCharacters': ['.', ':', '/'],
             'resolveProvider': false,
           },
+          'signatureHelpProvider': {
+            'triggerCharacters': ['(', ','],
+            'retriggerCharacters': [',']
+          },
           'codeLensProvider': {'resolveProvider': false},
           'semanticTokensProvider': {
             'legend': {
@@ -114,6 +119,27 @@ class LspSession {
     }
     if (method == 'textDocument/hover') {
       return LspExchange(_result(id, _hover(_params(request))));
+    }
+    if (method == 'textDocument/signatureHelp') {
+      final params = _params(request);
+      final position = _map(params['position']);
+      final line = (position['line'] as num?)?.toInt() ?? 0;
+      final opened = _document(params);
+      final stable = opened == null
+          ? null
+          : opened.live
+              ? opened.cachedFor(line)
+              : opened.stableFor(line);
+      return LspExchange(_result(
+          id,
+          opened == null
+              ? null
+              : signatureHelpAt(
+                  source: opened.text,
+                  line: line,
+                  character: (position['character'] as num?)?.toInt() ?? 0,
+                  stable: stable,
+                  compileSource: opened.live ? _cachedOnly : opened.analyze)));
     }
     if (method == 'textDocument/completion') {
       return LspExchange(_result(id, _completion(_params(request))));
@@ -178,6 +204,7 @@ class LspSession {
     final document = _map(params['textDocument']);
     final uri = document['uri'];
     if (uri is! String) return const LspExchange();
+    _queued.remove(uri);
     final opened = _documents.remove(uri);
     if (opened != null) _dirty.remove(opened);
     return LspExchange(null, [
@@ -194,7 +221,7 @@ class LspSession {
     document.live = true;
     _dirty.add(document);
     _idle?.cancel();
-    _idle = Timer(immediate ? Duration.zero : const Duration(milliseconds: 300),
+    _idle = Timer(immediate ? Duration.zero : const Duration(milliseconds: 120),
         _analyzeDirty);
   }
 
@@ -222,32 +249,39 @@ class LspSession {
   }
 
   void _sendAnalysis(_OpenDocument document) {
-    final request =
+    _queued[document.uri] =
         _AnalysisRequest(document.uri, document.text, document.file);
-    final worker = _worker;
-    if (worker == null) {
-      _queued = request;
-      _ensureWorker();
+    _ensureWorker();
+    _pumpAnalysis();
+  }
+
+  void _pumpAnalysis() {
+    if (_closed || _busy || _worker == null || _queued.isEmpty) return;
+    final uri = _queued.keys.first;
+    final request = _queued.remove(uri)!;
+    if (!_documents.containsKey(uri)) {
+      _pumpAnalysis();
       return;
     }
-    worker.send(request);
+    _busy = true;
+    _worker!.send(request);
   }
 
   void _onWorkerMessage(Object? message) {
     if (_closed) return;
     if (message is SendPort) {
       _worker = message;
-      final queued = _queued;
-      _queued = null;
-      if (queued != null) message.send(queued);
+      _pumpAnalysis();
       return;
     }
     if (message is! _AnalysisResult) return;
+    _busy = false;
     final document = _documents[message.uri];
-    if (document == null || document.text != message.source) return;
-    document.apply(message);
-    final publish = emit;
-    if (publish != null) publish(_publish(document));
+    if (document != null && document.text == message.source) {
+      document.apply(message);
+      emit?.call(_publish(document));
+    }
+    _pumpAnalysis();
   }
 
   static Compilation? _cachedOnly(String source) => null;
@@ -290,12 +324,13 @@ class LspSession {
     final opened = _document(params);
     if (opened != null) {
       return {
-        'isIncomplete': false,
+        'isIncomplete': opened.live && !opened.isCurrent,
         'items': completeAt(
           source: opened.text,
           line: line,
           character: character,
           stable: opened.live ? opened.cachedFor(line) : opened.stableFor(line),
+          allowUncompiledDart: !opened.live,
           compileSource: opened.live ? _cachedOnly : opened.analyze,
           file: opened.file,
         ),
@@ -321,7 +356,7 @@ class LspSession {
         file: path,
         compileSource: (source) {
           try {
-            return compile(source, file: path);
+            return compile(source, file: path, emitDart: false);
           } on CompilerException {
             return null;
           }
@@ -552,7 +587,7 @@ class LspSession {
     final file = File(path);
     if (!file.existsSync()) return null;
     final text = file.readAsStringSync();
-    return (compile(text, file: path), uri, text);
+    return (compile(text, file: path, emitDart: false), uri, text);
   }
 }
 
@@ -570,6 +605,8 @@ class _OpenDocument {
   var live = false;
   final _recovered = <String, Compilation?>{};
   List<CompilerException> _diagnostics = const [];
+
+  bool get isCurrent => _readyText == text;
 
   String get file {
     final parsed = Uri.tryParse(uri);
@@ -631,7 +668,7 @@ class _OpenDocument {
     if (_readyText == text) return;
     _recovered.clear();
     try {
-      final compiled = compile(text, file: file);
+      final compiled = compile(text, file: file, emitDart: false);
       _compilation = compiled;
       _good = compiled;
       _goodText = text;
@@ -639,14 +676,15 @@ class _OpenDocument {
     } on CompilerException {
       _compilation = null;
       try {
-        final partial = compile(text, file: file, partial: true);
+        final partial =
+            compile(text, file: file, partial: true, emitDart: false);
         _compilation = partial;
         _good = partial;
         _goodText = text;
       } on CompilerException {
         // The previous analysis still answers completion.
       }
-      _diagnostics = diagnose(text, file: file);
+      _diagnostics = diagnose(text, file: file, emitDart: false);
     }
     _readyText = text;
   }
@@ -660,10 +698,10 @@ class _OpenDocument {
     if (_recovered.containsKey(source)) return _recovered[source];
     Compilation? compiled;
     try {
-      compiled = compile(source, file: file);
+      compiled = compile(source, file: file, emitDart: false);
     } on CompilerException {
       try {
-        compiled = compile(source, file: file, partial: true);
+        compiled = compile(source, file: file, partial: true, emitDart: false);
       } on CompilerException {
         compiled = null;
       }
@@ -678,13 +716,13 @@ class _OpenDocument {
     _recovered.clear();
     _compilation = null;
     try {
-      final compiled = compile(text, file: file);
+      final compiled = compile(text, file: file, emitDart: false);
       _compilation = compiled;
       _good = compiled;
       _goodText = text;
       _diagnostics = List<CompilerException>.of(compiled.semantics.warnings);
     } on CompilerException {
-      _diagnostics = diagnose(text, file: file);
+      _diagnostics = diagnose(text, file: file, emitDart: false);
     }
     _readyText = text;
   }
@@ -925,15 +963,16 @@ _AnalysisResult _analyzeRequest(_AnalysisRequest request) {
   Compilation? compiled;
   List<CompilerException> errors;
   try {
-    compiled = compile(request.source, file: request.file);
+    compiled = compile(request.source, file: request.file, emitDart: false);
     errors = compiled.semantics.warnings;
   } on CompilerException {
     try {
-      compiled = compile(request.source, file: request.file, partial: true);
+      compiled = compile(request.source,
+          file: request.file, partial: true, emitDart: false);
     } on CompilerException {
       compiled = null;
     }
-    errors = diagnose(request.source, file: request.file);
+    errors = diagnose(request.source, file: request.file, emitDart: false);
   } catch (error) {
     compiled = null;
     errors = [

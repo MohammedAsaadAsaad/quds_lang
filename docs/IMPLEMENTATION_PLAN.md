@@ -78,3 +78,15 @@ zero failures and zero skips. See VALIDATION.md for exact commands and the linke
 feature documents for unsupported native/readonly shapes. This supersedes the
 old MVP-only progress snapshot above without changing approved language syntax
 or claiming complete implementation of every approved feature.
+
+## 2026-11-17 editor responsiveness and debugging
+
+Completed the editor follow-up in EDITOR_PERFORMANCE_DEBUG_AR.md: analysis skips
+SDK output generation, a bounded latest-per-document background queue preserves
+all open documents, and live completion uses cached semantic metadata. Generic
+inheritance, SDK extensions, native parameters, indentation call blocks, Arabic
+identifiers and signature help have regression coverage. Generated helper/import
+and const-comment insertion now adjusts source maps. Real DAP execution verifies
+Quds breakpoints, original/nested variable names and Watch evaluation. Final gate:
+517 pass, zero skipped/failing; analysis and formatting clean. See VALIDATION.md
+and bench/results/editor_latency.json for exact evidence and measurement limits.

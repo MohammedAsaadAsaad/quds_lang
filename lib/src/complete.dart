@@ -1,3 +1,5 @@
+import 'lexer.dart';
+import 'type_syntax.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,7 +9,6 @@ import 'dart_api.dart';
 import 'libraries.dart';
 import 'sdk.dart';
 import 'semantics.dart';
-import 'source.dart';
 import 'walk.dart';
 
 /// LSP completion items for [source] at the zero-based [line] and [character].
@@ -23,6 +24,7 @@ List<Map<String, Object?>> completeAt({
   required int character,
   String? file,
   Compilation? stable,
+  bool allowUncompiledDart = true,
   required Compilation? Function(String source) compileSource,
 }) {
   final cursor = _stringIndexAt(source, line, character);
@@ -56,7 +58,7 @@ List<Map<String, Object?>> completeAt({
     }
     final compilation = resolved ?? _recover(source, word, dot, compile);
     if (compilation == null) {
-      _uncompiledDart(source, dot, range, add);
+      if (allowUncompiledDart) _uncompiledDart(source, dot, range, add);
       return items.values.toList();
     }
     final scope = _scopeAt(compilation, source, _lineStart(source, cursor));
@@ -76,7 +78,8 @@ List<Map<String, Object?>> completeAt({
   final scope = resolved == null
       ? _Here(const {}, null)
       : _scopeAt(resolved, source, cursor);
-  final argument = _argument(source, word.start);
+  final argument =
+      _argument(source, word.start) ?? _argumentBlock(source, word.start);
   if (argument != null && resolved != null) {
     _namedArguments(resolved, source, scope, argument, range, add);
   }
@@ -117,6 +120,78 @@ List<Map<String, Object?>> completeAt({
     }
   }
   return items.values.toList();
+}
+
+/// Signature information uses the same cached scope and native metadata as completion.
+Map<String, Object?>? signatureHelpAt(
+    {required String source,
+    required int line,
+    required int character,
+    Compilation? stable,
+    required Compilation? Function(String) compileSource}) {
+  final cursor = _stringIndexAt(source, line, character);
+  if (!_inCode(source, cursor)) return null;
+  final compilation =
+      stable ?? _recover(source, _word(source, cursor), null, compileSource);
+  if (compilation == null) return null;
+  final call = _argument(source, cursor);
+  if (call == null) return null;
+  final scope = _scopeAt(compilation, source, cursor);
+  final signatures = <Map<String, Object?>>[];
+  void add(Iterable<_Param> params) {
+    final list = params.toList();
+    signatures.add({
+      'label':
+          '${call.callee}(${list.map((p) => '${p.name}: ${compilation.semantics.displayType(p.type)}').join(', ')})',
+      'parameters': [
+        for (final p in list)
+          {'label': '${p.name}: ${compilation.semantics.displayType(p.type)}'}
+      ]
+    });
+  }
+
+  if (call.member) {
+    final receiver =
+        _receiverName(source, _calleeStart(source, call.paren) - 1);
+    final symbol = scope.names[receiver];
+    if (symbol != null) add(_parametersOf(compilation, symbol, call.callee));
+  } else {
+    final symbol = scope.names[call.callee];
+    if (symbol == null) return null;
+    if (symbol.classDeclaration != null)
+      add(_constructorParameters(symbol.classDeclaration!));
+    else if (symbol.nativeTop != null)
+      add([for (final p in symbol.nativeTop!.parameters) _Param(p.$1, p.$2)]);
+    else
+      for (final fn in symbol.overloads)
+        add([for (final p in fn.parameters) _Param(p.name, p.type)]);
+  }
+  if (signatures.isEmpty) return null;
+  var depth = 0, active = 0;
+  var quote = 0;
+  for (var i = call.paren + 1; i < cursor; i++) {
+    final c = source.codeUnitAt(i);
+    if (quote != 0) {
+      if (c == 92) {
+        i++;
+        continue;
+      }
+      if (c == quote) quote = 0;
+      continue;
+    }
+    if (c == 34 || c == 39) {
+      quote = c;
+      continue;
+    }
+    if (c == 40 || c == 91 || c == 123) depth++;
+    if (c == 41 || c == 93 || c == 125) depth--;
+    if (c == 44 && depth == 0) active++;
+  }
+  return {
+    'signatures': signatures,
+    'activeSignature': 0,
+    'activeParameter': active
+  };
 }
 
 const _keywords = [
@@ -214,7 +289,9 @@ bool _ident(int unit) =>
     unit == 36 ||
     (unit >= 65 && unit <= 90) ||
     (unit >= 97 && unit <= 122) ||
-    (unit >= 48 && unit <= 57);
+    (unit >= 48 && unit <= 57) ||
+    unit >= 0xd800 && unit <= 0xdfff ||
+    unit > 127 && Lexer.identifierPart.hasMatch(String.fromCharCode(unit));
 
 bool _digit(int unit) => unit >= 48 && unit <= 57;
 
@@ -741,6 +818,23 @@ List<ClassDeclaration> _lineage(
   return found;
 }
 
+Iterable<(ClassDeclaration, String)> _typedLineage(
+    Compilation compilation, String type,
+    [Set<ClassDeclaration> seen = const {}]) sync* {
+  type =
+      nonNullableType(stripReadonlyType(compilation.semantics.resolve(type)));
+  final declaration = readonlyClassFor(compilation.semantics, type);
+  if (declaration == null || seen.contains(declaration)) return;
+  yield (declaration, type);
+  final args = _typeArgs(declaration, type);
+  final visited = {...seen, declaration};
+  for (final mixin in declaration.mixins.reversed)
+    yield* _typedLineage(compilation, _applyArgs(mixin, args), visited);
+  if (declaration.superclass != null)
+    yield* _typedLineage(
+        compilation, _applyArgs(declaration.superclass!, args), visited);
+}
+
 void _members(
   Compilation compilation,
   String source,
@@ -763,7 +857,8 @@ void _members(
   }
   final chain = _chainType(compilation, source, dot, scope);
   if (chain != null) {
-    _typeMembers(compilation, chain, null, false, range, add);
+    _typeMembers(compilation, chain, null, false, range, add,
+        accessOwner: scope.owner);
     return;
   }
   final symbol = name == null ? null : scope.names[name];
@@ -787,13 +882,14 @@ void _members(
     if (referenced.external && referenced.type == referenced.name) return;
   }
   final onType = symbol != null &&
-      symbol.classDeclaration != null &&
-      symbol.classCase == null;
+      (symbol.nativeTop?.isType == true ||
+          symbol.classDeclaration != null && symbol.classCase == null);
   final type = onType
-      ? symbol.classDeclaration!.name
+      ? symbol.classDeclaration?.name ?? symbol.type
       : symbol?.type ?? _expressionType(compilation, source, dot);
   if (type == null || type == 'prefix') return;
-  _typeMembers(compilation, type, symbol?.classDeclaration, onType, range, add);
+  _typeMembers(compilation, type, symbol?.classDeclaration, onType, range, add,
+      accessOwner: scope.owner);
 }
 
 /// Type of `a.b.c` before [dot], using the cached analysis only.
@@ -835,10 +931,10 @@ String? _memberType(Compilation compilation, String type, String name) {
     final payload = bare.substring(6, bare.length - 1);
     return '($payload) -> void';
   }
-  final declaration = compilation.semantics.classes[_head(bare)];
+  final declaration = readonlyClassFor(compilation.semantics, bare);
   if (declaration != null) {
-    final args = _typeArgs(declaration, bare);
-    for (final current in _lineage(compilation, declaration)) {
+    for (final (current, instantiated) in _typedLineage(compilation, bare)) {
+      final args = _typeArgs(current, instantiated);
       for (final field in current.fields) {
         if (field.name != name) continue;
         final shown =
@@ -858,14 +954,18 @@ String? _memberType(Compilation compilation, String type, String name) {
     }
   }
   for (final extension in compilation.semantics.extensions) {
-    if (extension.target != bare && extension.target != _head(bare)) continue;
+    final args = _extensionArgs(compilation, extension, bare);
+    if (args == null) continue;
     for (final method in extension.methods) {
       if (method.name != name) continue;
-      return compilation.semantics.declarations[method]?.type ??
-          method.returnType;
+      return _applyArgs(
+          compilation.semantics.declarations[method]?.type ??
+              method.returnType ??
+              'void',
+          args);
     }
     for (final property in extension.properties) {
-      if (property.name == name) return property.type;
+      if (property.name == name) return _applyArgs(property.type, args);
     }
   }
   final family = _family(bare);
@@ -880,16 +980,22 @@ String? _memberType(Compilation compilation, String type, String name) {
       if (method != null) return _subst(method.$2, family.$2);
     }
   }
-  return compilation.semantics.dartShapes[_head(bare)]?.members[name]?.type;
+  final shape = compilation
+      .semantics.dartShapes[_head(compilation.semantics.resolve(bare))];
+  return shape == null
+      ? null
+      : instantiateDartShape(shape, compilation.semantics.resolve(bare))
+          .members[name]
+          ?.type;
 }
 
 Map<String, String> _typeArgs(ClassDeclaration type, String applied) {
-  if (type.typeParameters.isEmpty || !applied.startsWith('${type.name}<')) {
+  if (type.typeParameters.isEmpty || !applied.contains('<')) {
     return const {};
   }
   final close = applied.lastIndexOf('>');
   if (close < 0) return const {};
-  final parts = _split(applied.substring(type.name.length + 1, close));
+  final parts = _split(applied.substring(applied.indexOf('<') + 1, close));
   if (parts.length != type.typeParameters.length) return const {};
   return {
     for (var i = 0; i < parts.length; i++) type.typeParameters[i].name: parts[i]
@@ -1043,33 +1149,111 @@ Symbol? _bestSymbol(Compilation compilation, String source, int dot) {
   return compilation.semantics.references[node];
 }
 
+Map<String, String>? _extensionArgs(
+    Compilation compilation, ExtensionDeclaration extension, String receiver) {
+  final formals = extension.typeParameters.map((p) => p.name).toSet();
+  final found = <String, String>{};
+  bool match(String pattern, String actual) {
+    pattern = compilation.semantics.resolve(pattern);
+    actual = compilation.semantics.resolve(actual);
+    if (formals.contains(pattern)) {
+      final before = found[pattern];
+      found[pattern] = actual;
+      return before == null || before == actual;
+    }
+    if (pattern == actual || pattern == _head(actual)) return true;
+    if (_head(pattern) != _head(actual) ||
+        !pattern.endsWith('>') ||
+        !actual.endsWith('>')) return false;
+    final p = splitTypeList(
+        pattern.substring(pattern.indexOf('<') + 1, pattern.length - 1));
+    final a = splitTypeList(
+        actual.substring(actual.indexOf('<') + 1, actual.length - 1));
+    if (p.length != a.length) return false;
+    for (var i = 0; i < p.length; i++) if (!match(p[i], a[i])) return false;
+    return true;
+  }
+
+  if (!match(extension.target, receiver)) return null;
+  for (final p in extension.typeParameters) {
+    final bound = p.bound;
+    final actual = found[p.name];
+    if (bound == null ||
+        bound == 'Object?' ||
+        actual == null ||
+        bound == actual) continue;
+    if (bound == 'num' && const {'int', 'double', 'num'}.contains(actual))
+      continue;
+    if (bound == 'Object' && !isNullableType(actual)) continue;
+    if (_typedLineage(compilation, actual).any((entry) => entry.$2 == bound))
+      continue;
+    return null;
+  }
+  return found;
+}
+
+bool _completionVisible(Compilation compilation, ClassDeclaration declaration,
+    String visibility, ClassDeclaration? owner) {
+  if (visibility != 'private' && visibility != 'protected') return true;
+  final home = compilation.semantics.libraryOf[declaration] ?? '';
+  final current = compilation.program.span.file;
+  if (home.isEmpty || home == current || home == File(current).absolute.path)
+    return true;
+  return visibility == 'protected' &&
+      owner != null &&
+      _typedLineage(compilation, owner.name)
+          .any((entry) => identical(entry.$1, declaration));
+}
+
 void _typeMembers(
-  Compilation compilation,
-  String type,
-  ClassDeclaration? known,
-  bool onType,
-  Map<String, Object> range,
-  void Function(Map<String, Object?>) add,
-) {
-  var bare = type.startsWith('readonly ') ? type.substring(9) : type;
+    Compilation compilation,
+    String type,
+    ClassDeclaration? known,
+    bool onType,
+    Map<String, Object> range,
+    void Function(Map<String, Object?>) add,
+    {ClassDeclaration? accessOwner}) {
+  var bare = stripReadonlyType(compilation.semantics.resolve(type));
   if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
   if (!onType && bare.startsWith('Event<') && bare.endsWith('>')) {
     final payload = bare.substring(6, bare.length - 1);
     add(_plain('add', 2, '($payload) -> void', range, sort: '1'));
     return;
   }
-  final declaration = known ?? compilation.semantics.classes[_head(bare)];
+  final declaration = known ?? readonlyClassFor(compilation.semantics, bare);
   if (declaration != null) {
-    for (final current in _lineage(compilation, declaration)) {
+    final seen = <String>{};
+    for (final (current, instantiated) in _typedLineage(compilation, bare)) {
+      final args = _typeArgs(current, instantiated);
       for (final field in current.fields) {
-        if (field.isStatic != onType || !_name(field.name)) continue;
-        final shown =
-            compilation.semantics.declarations[field]?.type ?? field.type;
-        add(_plain(field.name, 5, field.mutable ? 'var $shown' : shown, range,
+        if (!_completionVisible(
+                compilation,
+                current,
+                field.name.startsWith('_') ? 'private' : field.visibility,
+                accessOwner ?? known) ||
+            field.isStatic != onType ||
+            !_name(field.name) ||
+            !seen.add(field.name)) continue;
+        final shown = _applyArgs(
+            compilation.semantics.declarations[field]?.type ?? field.type,
+            args);
+        add(_plain(
+            field.name,
+            5,
+            compilation.semantics
+                .displayType(field.mutable ? 'var $shown' : shown),
+            range,
             sort: '0'));
       }
       for (final property in current.properties) {
-        if (onType || !_name(property.name)) continue;
+        if (!_completionVisible(
+                compilation,
+                current,
+                property.name.startsWith('_') ? 'private' : property.visibility,
+                accessOwner ?? known) ||
+            onType ||
+            !_name(property.name) ||
+            !seen.add(property.name)) continue;
         final reads = property.getter != null || property.getterBody != null;
         final writes = property.setter != null || property.setterBody != null;
         final kind = reads && writes
@@ -1077,16 +1261,31 @@ void _typeMembers(
             : reads
                 ? 'get'
                 : 'set';
-        add(_plain(property.name, 10, '$kind ${property.type}', range,
+        add(_plain(property.name, 10,
+            '$kind ${_applyArgs(property.type, args)}', range,
             sort: '0'));
       }
       for (final method in current.methods) {
-        if (method.isStatic != onType ||
+        if (!_completionVisible(
+                compilation,
+                current,
+                method.name.startsWith('_') ? 'private' : method.visibility,
+                accessOwner ?? known) ||
+            method.isStatic != onType ||
             method.isOperator ||
-            !_name(method.name)) {
+            !_name(method.name) ||
+            !seen.add(method.name)) {
           continue;
         }
-        add(_plain(method.name, 2, _signature(compilation, method), range,
+        add(_plain(
+            method.name,
+            2,
+            _applyArgs(
+                _signature(compilation, method),
+                Map.of(args)
+                  ..removeWhere((key, _) =>
+                      method.typeParameters.any((p) => p.name == key))),
+            range,
             sort: '1'));
       }
       if (onType) {
@@ -1097,15 +1296,19 @@ void _typeMembers(
     }
   }
   for (final extension in compilation.semantics.extensions) {
-    if (extension.target != bare && extension.target != _head(bare)) continue;
+    final extensionArgs = _extensionArgs(compilation, extension, bare);
+    if (extensionArgs == null) continue;
     for (final method in extension.methods) {
       if (!_name(method.name)) continue;
-      add(_plain(method.name, 2, _signature(compilation, method), range,
+      add(_plain(method.name, 2,
+          _applyArgs(_signature(compilation, method), extensionArgs), range,
           sort: '1'));
     }
     for (final property in extension.properties) {
       if (!_name(property.name)) continue;
-      add(_plain(property.name, 10, 'get ${property.type}', range, sort: '0'));
+      add(_plain(property.name, 10,
+          'get ${_applyArgs(property.type, extensionArgs)}', range,
+          sort: '0'));
     }
   }
   final typed = compilation.semantics.classes.containsKey(_head(bare))
@@ -1122,13 +1325,20 @@ void _sdkMembers(
   Map<String, Object> range,
   void Function(Map<String, Object?>) add,
 ) {
-  if (onType) return;
-  var bare = type;
-  if (bare.endsWith('?')) bare = bare.substring(0, bare.length - 1);
-  if (compilation.semantics.classes.containsKey(_head(bare))) return;
-  final shape = compilation.semantics.dartShapes[_head(bare)];
-  if (shape == null) return;
-  for (final member in shape.members.values) {
+  final bare =
+      nonNullableType(stripReadonlyType(compilation.semantics.resolve(type)));
+  if (readonlyClassFor(compilation.semantics, bare) != null) return;
+  final raw = compilation.semantics.dartShapes[_head(bare)];
+  if (raw == null) return;
+  final shape = instantiateDartShape(raw, bare);
+  for (final member in (onType
+          ? {
+              ...shape.statics,
+              for (final e in shape.constructors.entries)
+                if (e.key.isNotEmpty) e.key: e.value
+            }
+          : shape.members)
+      .values) {
     if (!_name(member.name)) continue;
     if (member.getter) {
       add(_plain(member.name, 10,
@@ -1493,6 +1703,11 @@ _Call? _argument(String source, int wordStart) {
   while (nameEnd > 0 && _space(source.codeUnitAt(nameEnd - 1))) {
     nameEnd--;
   }
+  if (nameEnd > 0 && source.codeUnitAt(nameEnd - 1) == 62) {
+    final start = _skipBack(source, nameEnd - 1, 60, 62);
+    if (start < 0) return null;
+    nameEnd = start;
+  }
   var nameStart = nameEnd;
   while (nameStart > 0 && _ident(source.codeUnitAt(nameStart - 1))) {
     nameStart--;
@@ -1502,6 +1717,37 @@ _Call? _argument(String source, int wordStart) {
   if (_digit(callee.codeUnitAt(0))) return null;
   final member = nameStart > 0 && source.codeUnitAt(nameStart - 1) == 46;
   return _Call(paren, callee, member);
+}
+
+_Call? _argumentBlock(String source, int cursor) {
+  final start = _lineStart(source, cursor);
+  final indent = source.substring(start, cursor).length -
+      source.substring(start, cursor).trimLeft().length;
+  var end = start;
+  while (end > 0) {
+    var from = end - 1;
+    if (from > 0 && source.codeUnitAt(from) == 10) from--;
+    from = _lineStart(source, from);
+    final line = source.substring(from, end).trimRight();
+    end = from;
+    if (line.trim().isEmpty || line.trimLeft().startsWith('#')) continue;
+    final leading = line.length - line.trimLeft().length;
+    if (leading >= indent) continue;
+    if (!line.endsWith(':') ||
+        RegExp(r'^(class|interface|extend|mixin|enum|sealed|value|abstract|final|base)\b')
+            .hasMatch(line.trimLeft())) return null;
+    final colon = from + line.length - 1;
+    final nameStart = _calleeStart(source, colon);
+    var nameEnd = colon;
+    while (nameEnd > nameStart && _space(source.codeUnitAt(nameEnd - 1)))
+      nameEnd--;
+    if (nameEnd > 0 && source.codeUnitAt(nameEnd - 1) == 62)
+      nameEnd = _skipBack(source, nameEnd - 1, 60, 62);
+    if (nameEnd <= nameStart) return null;
+    return _Call(colon, source.substring(nameStart, nameEnd),
+        nameStart > 0 && source.codeUnitAt(nameStart - 1) == 46);
+  }
+  return null;
 }
 
 void _namedArguments(
@@ -1525,6 +1771,10 @@ void _namedArguments(
     if (symbol == null) return;
     if (symbol.classDeclaration != null && symbol.classCase == null) {
       parameters = _constructorParameters(symbol.classDeclaration!);
+    } else if (symbol.nativeTop != null) {
+      parameters = [
+        for (final p in symbol.nativeTop!.parameters) _Param(p.$1, p.$2)
+      ];
     } else {
       parameters = [
         for (final function in symbol.overloads)
@@ -1537,7 +1787,8 @@ void _namedArguments(
   for (final parameter in parameters) {
     if (!_name(parameter.name) || !seen.add(parameter.name)) continue;
     if (used.contains(parameter.name)) continue;
-    add(_plain(parameter.name, 5, parameter.type, range,
+    add(_plain(parameter.name, 5,
+        compilation.semantics.displayType(parameter.type), range,
         insert: '${parameter.name}: ', sort: '0', commit: false));
   }
 }
@@ -1546,6 +1797,10 @@ int _calleeStart(String source, int paren) {
   var nameEnd = paren;
   while (nameEnd > 0 && _space(source.codeUnitAt(nameEnd - 1))) {
     nameEnd--;
+  }
+  if (nameEnd > 0 && source.codeUnitAt(nameEnd - 1) == 62) {
+    final start = _skipBack(source, nameEnd - 1, 60, 62);
+    if (start >= 0) nameEnd = start;
   }
   var nameStart = nameEnd;
   while (nameStart > 0 && _ident(source.codeUnitAt(nameStart - 1))) {
@@ -1568,6 +1823,23 @@ Set<String> _namesBefore(String source, int paren, int wordStart) {
   if (wordStart < paren || wordStart > source.length) return const {};
   final slice = source.substring(paren, wordStart);
   final names = <String>{};
+  if (source.codeUnitAt(paren) == 58) {
+    final lines = slice
+        .split('\n')
+        .skip(1)
+        .where((line) => line.trim().isNotEmpty)
+        .toList();
+    final indents =
+        lines.map((line) => line.length - line.trimLeft().length).toList();
+    if (indents.isEmpty) return names;
+    final level = indents.reduce((a, b) => a < b ? a : b);
+    for (var i = 0; i < lines.length; i++) {
+      if (indents[i] != level) continue;
+      final match = RegExp(r'^\s*([^\s:]+)\s*:').firstMatch(lines[i]);
+      if (match != null) names.add(match[1]!);
+    }
+    return names;
+  }
   var depth = 0;
   var index = 0;
   while (index < slice.length) {
@@ -1619,16 +1891,36 @@ String _fieldType(ClassDeclaration type, String name) {
 
 Iterable<_Param> _parametersOf(
     Compilation compilation, Symbol symbol, String member) sync* {
-  final type = symbol.classDeclaration?.name ?? symbol.type;
-  final declaration =
-      symbol.classDeclaration ?? compilation.semantics.classes[_head(type)];
-  if (declaration == null) return;
-  for (final current in _lineage(compilation, declaration)) {
+  final imported = symbol.namespace?[member];
+  if (imported != null) {
+    final parameters =
+        imported.nativeTop?.parameters ?? imported.nativeMember?.parameters;
+    if (parameters != null) {
+      for (final p in parameters) yield _Param(p.$1, p.$2);
+      return;
+    }
+    for (final function in imported.overloads)
+      for (final p in function.parameters) yield _Param(p.name, p.type);
+    if (imported.overloads.isNotEmpty) return;
+  }
+  final type = compilation.semantics
+      .resolve(symbol.classDeclaration?.name ?? symbol.type);
+  final raw = compilation.semantics.dartShapes[_head(type)];
+  if (raw != null && readonlyClassFor(compilation.semantics, type) == null) {
+    final method = instantiateDartShape(raw, type).members[member];
+    if (method != null)
+      for (final p in method.parameters) yield _Param(p.$1, p.$2);
+    return;
+  }
+  for (final (current, applied) in _typedLineage(compilation, type)) {
     for (final method in current.methods) {
       if (method.name != member) continue;
-      for (final parameter in method.parameters) {
-        yield _Param(parameter.name, parameter.type);
-      }
+      final args = Map.of(_typeArgs(current, applied))
+        ..removeWhere(
+            (key, _) => method.typeParameters.any((p) => p.name == key));
+      for (final p in method.parameters)
+        yield _Param(p.name, _applyArgs(p.type, args));
+      return;
     }
   }
 }
@@ -1641,7 +1933,7 @@ String _signature(Compilation compilation, FunctionDeclaration function) {
   final returned = compilation.semantics.declarations[function]?.type ??
       function.returnType ??
       'void';
-  return '($parameters) -> $returned';
+  return compilation.semantics.displayType('($parameters) -> $returned');
 }
 
 List<Map<String, Object?>> _symbolItems(
@@ -1649,6 +1941,18 @@ List<Map<String, Object?>> _symbolItems(
   if (symbol.namespace != null && symbol.type == 'prefix') {
     return [_plain(symbol.name, 9, 'prefix', range, sort: '1')];
   }
+  if (symbol.nativeTop?.isType == true)
+    return [
+      _plain(
+          symbol.name,
+          7,
+          compilation?.semantics
+                  .displayType(symbol.signature ?? 'class ${symbol.name}') ??
+              symbol.signature ??
+              'class ${symbol.name}',
+          range,
+          sort: '0')
+    ];
   if (symbol.external &&
       symbol.type == symbol.name &&
       symbol.classDeclaration == null &&
@@ -1665,7 +1969,15 @@ List<Map<String, Object?>> _symbolItems(
         : (symbol.callable || symbol.parameterTypes.isNotEmpty)
             ? 3
             : 6;
-    return [_plain(symbol.name, kind, symbol.signature!, range, sort: '1')];
+    return [
+      _plain(
+          symbol.name,
+          kind,
+          compilation?.semantics.displayType(symbol.signature!) ??
+              symbol.signature!,
+          range,
+          sort: '1')
+    ];
   }
   if ((symbol.callable || symbol.parameterTypes.isNotEmpty) &&
       symbol.function == null &&
@@ -1768,7 +2080,8 @@ String _indent(String source, int index) {
 }
 
 bool _name(String value) =>
-    RegExp(r'^[A-Za-z_$][A-Za-z0-9_$]*$').hasMatch(value);
+    RegExp(r'^[\p{L}\p{Nl}_$][\p{L}\p{Nl}\p{N}\p{M}_$]*$', unicode: true)
+        .hasMatch(value);
 
 String _head(String type) {
   final index = type.indexOf('<');

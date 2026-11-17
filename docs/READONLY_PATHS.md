@@ -65,3 +65,10 @@ HEAP_AND_READONLY_GRAPH.md supersedes the scalar-only Map-key/Set-element
 limit above. Identity-aware deep collection guards now support recursive safe
 collection keys/elements, with stable views and weak-cache GC validation.
 Custom-class proxies are a separate pending package.
+
+## Subsequent class completion
+
+[READONLY_CLASSES.md](READONLY_CLASSES.md) supersedes the old custom-class
+boundary limitation above. Generated supported Quds classes now have transitive
+runtime guards, including private generic parents, lazy fields and async results.
+Native unproxyable types and sealed/mixin hierarchies retain explicit limits.

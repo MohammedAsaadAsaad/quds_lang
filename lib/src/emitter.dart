@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'hash.dart';
 import 'type_syntax.dart';
 import 'readonly_helpers.dart';
 import 'ast.dart';
@@ -40,7 +42,6 @@ class DartEmitter {
   var _usePropagate = false;
   var _useConversion = false;
   var _useReturn = false;
-  var _useEvent = false;
   final _onceFlags = <OnceStatement, String>{};
   var _openGenerics = <String>{};
   var _inDo = false;
@@ -76,6 +77,15 @@ class DartEmitter {
   var _useReadonlyList = false;
   var _useReadonlyMap = false;
   var _useReadonlySet = false;
+  var _useReadonlyRuntime = false;
+  String? _guardEnvironment;
+  String? _proxyResultOwner;
+  var _protectingProxyResult = false;
+  final _registeringReadonly = <Expression>{};
+  static const _readonlyRuntime = r'$qudsReadonly';
+  var _knownGuardsName = r'$qudsKnownGuards';
+  var _isPart = false;
+  var _hasParts = false;
   String? _returnView;
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
@@ -92,6 +102,14 @@ class DartEmitter {
   }
 
   String emit(Program program) {
+    _hasParts = program.statements.any((node) => node is PartDirective);
+    _isPart =
+        program.statements.any((node) => node is PartDirective && node.of);
+    if (_hasParts) {
+      _knownGuardsName +=
+          '_${sha256Hex(utf8.encode(program.span.file)).substring(0, 12)}';
+      _requireReadonlyRuntime();
+    }
     _directives(program.statements);
     _classes = {
       ...model.classes,
@@ -121,6 +139,7 @@ class DartEmitter {
       }
     }
     _emitPublicNames(program);
+    if (_useReadonlyRuntime) _emitKnownReadonlyGuards(program);
     return _suppressUnreadConsts(_withHelpers(_out.toString()));
   }
 
@@ -244,7 +263,7 @@ class DartEmitter {
       // source-name aliases in a standalone generated Dart library.
       if (node.name.startsWith('_') &&
           !program.statements.any((item) => item is PartDirective)) continue;
-      if (node.typeParameters.isNotEmpty || counts[node.name] != 1) continue;
+      if (counts[node.name] != 1) continue;
       final symbol = model.declarations[node];
       if (symbol == null || symbol.dartName == node.name) continue;
       line('final ${node.name} = ${symbol.dartName};');
@@ -291,7 +310,9 @@ class DartEmitter {
             _imports.add("export '$uri'$combinator;");
             continue;
           }
-          final prefix = node.prefix == null ? '' : ' as ${node.prefix}';
+          final prefix = node.prefix == null
+              ? ''
+              : ' as ${_dartImportPrefix(node.prefix!)}';
           // Inferred nominal results may use a backend type alias while the
           // automatically selected section still records that type dependency.
           final ignore = sectioned ? '// ignore: unused_shown_name\n' : '';
@@ -317,7 +338,8 @@ class DartEmitter {
           _imports.add("export '$uri'$combinator;");
           continue;
         }
-        final prefix = node.prefix == null ? '' : ' as ${node.prefix}';
+        final prefix =
+            node.prefix == null ? '' : ' as ${_dartImportPrefix(node.prefix!)}';
         // An explicit filtered/prefixed dart:core import disables Dart's
         // implicit import. Quds primitive types and generated helpers still
         // need core; source-level show/hide remains enforced by semantics.
@@ -528,12 +550,6 @@ class DartEmitter {
           '  final Object? value;\n'
           '}');
     }
-    if (_useEvent) {
-      helpers.writeln('class _QudsEvent<T extends Function> {\n'
-          '  final List<T> handlers = <T>[];\n'
-          '  void add(T handler) => handlers.add(handler);\n'
-          '}');
-    }
     for (final union in _unions) {
       final name = _unionClass(union);
       final parts = union.split(' | ').map((part) => part.trim());
@@ -687,7 +703,7 @@ class DartEmitter {
     if (_useReadonlyMap) helpers.writeln(readonlyMapHelpers);
     if (_useReadonlySet) helpers.writeln(readonlySetHelpers);
     if (_useReadonly) {
-      prelude.writeln("import 'dart:collection';");
+      prelude.writeln("import 'dart:collection' as \$qudsCollection;");
     }
     if (_useProtected) {
       prelude.writeln("import 'package:meta/meta.dart';");
@@ -885,6 +901,8 @@ class DartEmitter {
       for (final parameter in node.typeParameters) parameter.name,
     };
     final symbol = model.declarations[node]!;
+    final savedGuardEnvironment = _guardEnvironment;
+    if (node.isStatic) _guardEnvironment = null;
     final bounds = <String>[];
     final parameters = node.parameters.map((p) {
       final declared = model.declarations[p]!.type;
@@ -916,7 +934,22 @@ class DartEmitter {
     final checks = _intersectionChecks(node);
     final views = _readonlyParameters(node);
     final savedReturn = _returnView;
-    _returnView = _readonlyBoundary(symbol.type);
+    final returned = symbol.type.startsWith('readonly ')
+        ? symbol.type.substring(9)
+        : symbol.type;
+    final container = node.generator == 'sync'
+        ? 'Iterable<'
+        : node.generator == 'async'
+            ? 'Stream<'
+            : node.isAsync
+                ? 'Future<'
+                : '';
+    final bodyReturn = container.isNotEmpty &&
+            returned.startsWith(container) &&
+            returned.endsWith('>')
+        ? '${symbol.type.startsWith('readonly ') ? 'readonly ' : ''}${returned.substring(container.length, returned.length - 1)}'
+        : symbol.type;
+    _returnView = _readonlyBoundary(bodyReturn);
     if (node.expressionBody case final value?) {
       final text = _wrapReturn(expression(value));
       if (checks.isEmpty && views.isEmpty) {
@@ -974,6 +1007,7 @@ class DartEmitter {
     }
     _returnView = savedReturn;
     _openGenerics = savedGenerics;
+    _guardEnvironment = savedGuardEnvironment;
   }
 
   List<String> _readonlyParameters(FunctionDeclaration node) {
@@ -1022,6 +1056,17 @@ class DartEmitter {
   }
 
   String _wrapReturn(String value) {
+    if (_returnView != null &&
+        _proxyResultOwner != null &&
+        !_protectingProxyResult) {
+      _protectingProxyResult = true;
+      try {
+        final guarded = _wrapReturn('_qresult');
+        return '$_readonlyRuntime.protectResult($_proxyResultOwner, $value, (_qresult) => $guarded)';
+      } finally {
+        _protectingProxyResult = false;
+      }
+    }
     final view = _returnView;
     if (view == null) return value;
     if (view.startsWith('@typed:'))
@@ -1039,16 +1084,54 @@ class DartEmitter {
     if (bare.startsWith('List<') ||
         bare.startsWith('Map<') ||
         bare.startsWith('Set<') ||
-        bare.startsWith('Iterable<')) {
+        bare.startsWith('Iterable<') ||
+        bare.startsWith('Future<') ||
+        bare.startsWith('Stream<')) {
       final value = '_qr';
       return '((${_dartType(type)} $value) => ${_readonlyGuard(type, value)})';
     }
-    return null;
+    final declaration = readonlyClassFor(model, inner);
+    if (declaration != null && supportsReadonlyClass(model, declaration) ||
+        _openGenerics.contains(bare)) {
+      _requireReadonlyRuntime();
+      return '((${_dartType(type)} _qr) => ${_readonlyGuard(type, '_qr')})';
+    }
+    if (const {
+          'int',
+          'double',
+          'num',
+          'bool',
+          'String',
+          'Null',
+          'Never',
+          'BigInt',
+          'DateTime',
+          'Duration',
+          'Uri',
+          'RegExp',
+          'Type',
+          'Symbol',
+          'void'
+        }.contains(bare) ||
+        declaration?.kind == 'enum' ||
+        bare.contains('->')) return null;
+    if (bare == 'dynamic' || bare == 'Object' || _guardEnvironment != null) {
+      _requireReadonlyRuntime();
+      return '((${_dartType(type)} _qr) => ${_guardDescriptor(type)}.protect(_qr))';
+    }
+    throw CompilerException(
+        'E910',
+        'No sound runtime readonly boundary for $type',
+        _span ?? const SourceSpan(1, 1, 1));
   }
 
   String _readonlyGuard(String type, String value) {
     if (!type.startsWith('readonly ')) type = 'readonly $type';
     if (_typedReadonlySuffix(type) != null) return _typedReadonly(type, value);
+    if (_hasParts ||
+        type.startsWith('readonly Future<') ||
+        type.startsWith('readonly Stream<'))
+      return '${_guardDescriptor(type)}.protect($value)';
     final inner = type.substring(9);
     if (isNullableType(inner)) {
       final guarded =
@@ -1083,14 +1166,342 @@ class DartEmitter {
       final element = inner.substring(9, inner.length - 1);
       return '$value.map<${_dartType(element)}>((_qe) => ${_readonlyGuard(element, '_qe')})';
     }
-    return value;
+    final declaration = readonlyClassFor(model, inner);
+    if (declaration != null && supportsReadonlyClass(model, declaration) ||
+        _openGenerics.contains(inner)) {
+      return '${_guardDescriptor(inner)}.protect($value)';
+    }
+    if (const {
+          'int',
+          'double',
+          'num',
+          'bool',
+          'String',
+          'Null',
+          'Never',
+          'BigInt',
+          'DateTime',
+          'Duration',
+          'Uri',
+          'RegExp',
+          'Type',
+          'Symbol',
+          'void'
+        }.contains(inner) ||
+        declaration?.kind == 'enum' ||
+        inner.contains('->')) return value;
+    return '${_guardDescriptor(inner)}.protect($value)';
+  }
+
+  void _requireReadonlyRuntime() {
+    _useReadonlyRuntime = true;
+    if (!_isPart)
+      _imports.add("import 'quds_readonly.dart' as $_readonlyRuntime;");
+  }
+
+  String _guardDescriptor(String type, {bool includeKnown = true}) {
+    _requireReadonlyRuntime();
+    type = stripReadonlyType(model.resolve(type));
+    if (isNullableType(type)) {
+      final inner = nonNullableType(type);
+      return '$_readonlyRuntime.NullableGuard<${_dartType(inner)}>(${_guardDescriptor(inner, includeKnown: false)})';
+    }
+    if (_openGenerics.contains(type)) {
+      final environment = _guardEnvironment ?? '$_knownGuardsName';
+      return '$_readonlyRuntime.guardFor<${_dartType(type)}>($environment)';
+    }
+    final bracket = type.indexOf('<');
+    final head = bracket < 0 ? type : type.substring(0, bracket);
+    final arguments = bracket < 0 || !type.endsWith('>')
+        ? <String>[]
+        : _splitTypeArgs(type.substring(bracket + 1, type.length - 1));
+    if (const {'List', 'Set', 'Iterable', 'Future', 'Stream'}.contains(head) &&
+        arguments.length == 1) {
+      return '$_readonlyRuntime.${head}Guard<${_dartType(arguments.single)}>(${_guardDescriptor(arguments.single, includeKnown: false)})';
+    }
+    if (head == 'Map' && arguments.length == 2) {
+      return '$_readonlyRuntime.MapGuard<${_dartType(arguments[0])}, ${_dartType(arguments[1])}>(${_guardDescriptor(arguments[0], includeKnown: false)}, ${_guardDescriptor(arguments[1], includeKnown: false)})';
+    }
+    final declaration = readonlyClassFor(model, type);
+    if (declaration != null && supportsReadonlyClass(model, declaration)) {
+      final guards = [
+        for (final argument in arguments)
+          _guardDescriptor(argument, includeKnown: false)
+      ];
+      final environment = _guardEnvironment;
+      return '$_readonlyRuntime.ModelGuard<${_dartType(type)}>($_readonlyRuntime.guardsOf(['
+          '${includeKnown ? '...$_knownGuardsName.values, ' : ''}'
+          '${environment == null ? '' : '...$environment.values, '}${guards.join(', ')}]))';
+    }
+    return '$_readonlyRuntime.AutoGuard<${_dartType(type)}>()';
+  }
+
+  void _emitKnownReadonlyGuards(Program program) {
+    final variables = <String>{
+      for (final type in model.classes.values)
+        for (final parameter in type.typeParameters) parameter.name,
+      ..._openGenerics,
+    };
+    walkAst(program, (node) {
+      if (node is FunctionDeclaration)
+        variables.addAll(node.typeParameters.map((p) => p.name));
+      if (node is ExtensionDeclaration)
+        variables.addAll(node.typeParameters.map((p) => p.name));
+    });
+    final selected = <String>{};
+    for (var type in model.types.values) {
+      type = nonNullableType(stripReadonlyType(model.resolve(type)));
+      if (!type.contains('<') ||
+          type.contains('->') ||
+          type.contains('@dart.') ||
+          type.contains('<infer>')) continue;
+      if (variables
+          .any((name) => RegExp('\\b${RegExp.escape(name)}\\b').hasMatch(type)))
+        continue;
+      if (type.contains('@') &&
+          readonlyClassFor(model, type)?.name.startsWith('_') == true) continue;
+      final declaration = readonlyClassFor(model, type);
+      final head = type.substring(0, type.indexOf('<'));
+      if (declaration != null && supportsReadonlyClass(model, declaration) ||
+          const {'List', 'Set', 'Map', 'Iterable', 'Future', 'Stream'}
+              .contains(head)) selected.add(type);
+    }
+    final saved = _guardEnvironment;
+    _guardEnvironment = null;
+    final descriptors = [
+      for (final type in selected.toList()..sort())
+        _guardDescriptor(type, includeKnown: false)
+    ];
+    line(
+        'final Map<Type, $_readonlyRuntime.ReadonlyGuard<dynamic>> $_knownGuardsName = $_readonlyRuntime.guardsOf([${descriptors.join(', ')}]);');
+    _guardEnvironment = saved;
+  }
+
+  String _readonlyProxyType(String type) {
+    final dart = _dartType(type);
+    final bracket = dart.indexOf('<');
+    final head = bracket < 0 ? dart : dart.substring(0, bracket);
+    final dot = head.lastIndexOf('.');
+    return '${dot < 0 ? '' : head.substring(0, dot + 1)}\$QudsReadonly${head.substring(dot + 1)}${bracket < 0 ? '' : dart.substring(bracket)}';
+  }
+
+  String _readonlyInstanceType(ClassDeclaration node) =>
+      '${node.name}${node.typeParameters.isEmpty ? '' : '<${node.typeParameters.map((p) => p.name).join(', ')}>'}';
+
+  void _emitReadonlyDispatch(ClassDeclaration node) {
+    _requireReadonlyRuntime();
+    final type = _readonlyInstanceType(node);
+    final proxy = _readonlyProxyType(type);
+    final environment = r'_$qudsGuards' + node.name;
+    line(
+        'Object \$qudsReadonlyView(Map<Type, $_readonlyRuntime.ReadonlyGuard<dynamic>> guards) {');
+    _depth++;
+    line(
+        "if (runtimeType != $type) throw UnsupportedError('Foreign subtype needs generated readonly metadata');");
+    line(
+        'final normalized = $_readonlyRuntime.guardsOf([...$_knownGuardsName.values, ...$_readonlyRuntime.guardsFor(this).values, ...guards.values]);');
+    final saved = _guardEnvironment;
+    _guardEnvironment = 'normalized';
+    final parent = node.superclass;
+    if (parent != null && parent.contains('<')) {
+      final arguments = _splitTypeArgs(
+          parent.substring(parent.indexOf('<') + 1, parent.length - 1));
+      for (final argument in arguments)
+        line(
+            '${_guardDescriptor(argument, includeKnown: false)}.install(normalized);');
+    }
+    line(
+        'final result = $_readonlyRuntime.cachedView<$type>(this, () => $proxy(this, normalized));');
+    line('(result as $proxy).$environment.addAll(normalized);');
+    line('return result;');
+    _guardEnvironment = saved;
+    _depth--;
+    line('}');
+    final slots = node.fields
+        .where((f) => f.lazyBody != null && !f.isStatic)
+        .map((f) => 'identical(slot, ${_lazySlotName(f)})')
+        .toList();
+    if (node.superclass != null) slots.add(r'super.$qudsIsLazySlot(slot)');
+    line(
+        'bool \$qudsIsLazySlot(Object slot) => ${slots.isEmpty ? 'false' : slots.join(' || ')};');
+  }
+
+  void _emitReadonlyProxy(ClassDeclaration node) {
+    _requireReadonlyRuntime();
+    final type = _readonlyInstanceType(node);
+    final plainProxy = '\$QudsReadonly${node.name}';
+    final source = r'_$qudsSource' + node.name;
+    final environment = r'_$qudsGuards' + node.name;
+    final parent =
+        node.superclass == null ? null : _readonlyProxyType(node.superclass!);
+    final modifier = node.modifiers.contains('final') || node.kind == 'final'
+        ? 'final'
+        : 'base';
+    line(
+        '$modifier class $plainProxy${_typeParameters(node.typeParameters)} ${parent == null ? '' : 'extends $parent '}with $_readonlyRuntime.ReadonlyView implements $type {');
+    _depth++;
+    line(
+        '$plainProxy($type source, Map<Type, $_readonlyRuntime.ReadonlyGuard<dynamic>> guards) : $source = source, $environment = Map.of(guards)${parent == null ? '' : ', super(source, guards)'};');
+    line('final $type $source;');
+    line(
+        'final Map<Type, $_readonlyRuntime.ReadonlyGuard<dynamic>> $environment;');
+    line('@override');
+    line(
+        'Object \$qudsReadonlyView(Map<Type, $_readonlyRuntime.ReadonlyGuard<dynamic>> guards) => this;');
+    line('@override');
+    line(
+        'bool \$qudsReadonlyMatches(Object? candidate) => $_readonlyRuntime.sameSourceEquals($source, candidate);');
+    line(
+        'bool \$qudsIsLazySlot(Object slot) => $source.\$qudsIsLazySlot(slot);');
+    final saved = _guardEnvironment;
+    final savedOwner = _proxyResultOwner;
+    _proxyResultOwner = source;
+    _guardEnvironment = environment;
+    for (final field in node.fields.where((f) => !f.isStatic)) {
+      _span = field.span;
+      final declared = model.declarations[field]?.type ?? field.type;
+      if (field.lazyBody != null) {
+        final slot = _lazySlotName(field);
+        line(
+            "$_readonlyRuntime.LazySlot<${_dartType(declared)}> get $slot => throw UnsupportedError('private lazy slot');");
+        line(
+            '${_dartType(declared)} get ${_fieldDart(field)} => $source.$slot.readonlyValue(() {');
+        _depth++;
+        final savedReturn = _returnView;
+        _returnView = null;
+        _hoistOnce(field.lazyBody);
+        statements(field.lazyBody!);
+        _returnView = savedReturn;
+        _depth--;
+        line('}, ${_guardDescriptor(declared)});');
+        continue;
+      }
+      if (field.isEvent) {
+        final payload = declared.substring(6, declared.length - 1);
+        line(
+            '$_readonlyRuntime.QudsEvent<${_dartType(payload)}> get ${_fieldDart(field)} => $_readonlyRuntime.EventGuard<${_dartType(payload)}>().protect($source.${_fieldDart(field)});');
+        continue;
+      }
+      final fieldType = declared;
+      final name = _fieldDart(field);
+      line('@override');
+      line(
+          '${_dartType(fieldType)} get $name => $_readonlyRuntime.protectResult($source, $source.$name, (_qvalue) => ${_guardDescriptor(fieldType)}.protect(_qvalue));');
+      if (field.mutable)
+        line(
+            "set $name(${_dartType(fieldType)} value) => throw UnsupportedError('readonly field');");
+    }
+    for (final property in node.properties) {
+      final name =
+          property.visibility == 'private' && !property.name.startsWith('_')
+              ? '_${property.name}'
+              : property.name;
+      _span = property.span;
+      final savedReturn = _returnView;
+      _returnView = _readonlyBoundary('readonly ${property.type}');
+      if (property.getter != null) {
+        line(
+            '${_dartType(property.type)} get $name => ${_wrapReturn(expression(property.getter!))};');
+      } else if (property.getterBody != null) {
+        line('${_dartType(property.type)} get $name {');
+        _depth++;
+        statements(property.getterBody!);
+        _depth--;
+        line('}');
+      }
+      _returnView = savedReturn;
+      if (property.setterBody != null)
+        line(
+            "set $name(${_dartType(property.type)} value) => throw UnsupportedError('readonly property');");
+    }
+    for (final method in node.methods.where((m) => !m.isStatic)) {
+      if (hasAnnotation(node.annotations, 'macro') && method.name == 'define')
+        continue;
+      if (method.readonlyMethod ||
+          method.name == 'toString' ||
+          method.isOperator && method.name == '==') {
+        emitFunction(method);
+      } else {
+        final symbol = model.declarations[method]!;
+        final parameters = [
+          for (final p in method.parameters)
+            '${_dartType(model.declarations[p]!.type)} ${model.declarations[p]!.dartName}'
+        ].join(', ');
+        final title =
+            method.isOperator ? 'operator ${method.name}' : symbol.dartName;
+        line(
+            "${_dartType(symbol.type)} $title${_typeParameters(method.typeParameters)}($parameters) => throw UnsupportedError('readonly method');");
+      }
+    }
+    if (node.kind == 'value' || node.modifiers.contains('value')) {
+      final fields = node.fields
+          .where((f) => !f.isStatic && !f.isEvent && f.lazyBody == null)
+          .toList();
+      if (fields.isNotEmpty) _emitCopyWith(node, fields, readonlyResult: true);
+    }
+    if (!node.methods.any((m) => m.name == 'toString') && parent == null)
+      line('String toString() => $source.toString();');
+    if (!node.methods.any((m) => m.isOperator && m.name == '==') &&
+        parent == null)
+      line('bool operator ==(Object other) => $source == other;');
+    if (!node.properties.any((p) => p.name == 'hashCode') && parent == null) {
+      if (node.kind == 'value' || node.modifiers.contains('value')) {
+        final fields = node.fields
+            .where((f) => !f.isStatic && !f.isEvent && f.lazyBody == null)
+            .map((f) => _fieldDart(f))
+            .join(', ');
+        line(
+            'int get hashCode => $_readonlyRuntime.valueHash(this, <Object?>[$fields]);');
+      } else {
+        line('int get hashCode => $source.hashCode;');
+      }
+    }
+    _guardEnvironment = saved;
+    _proxyResultOwner = savedOwner;
+    _depth--;
+    line('}');
   }
 
   List<String> _splitTypeArgs(String text) => splitTypeList(text);
 
   (String, String) _splitFunctionType(String type) => functionTypeParts(type)!;
 
+  String _dartImportPrefix(String name) => const {
+        'abstract',
+        'as',
+        'covariant',
+        'deferred',
+        'dynamic',
+        'export',
+        'extension',
+        'external',
+        'factory',
+        'Function',
+        'get',
+        'implements',
+        'import',
+        'interface',
+        'late',
+        'library',
+        'mixin',
+        'operator',
+        'part',
+        'required',
+        'set',
+        'static',
+        'typedef'
+      }.contains(name)
+          ? r'$qudsPrefix_' + name
+          : name;
+
   String _dartType(String type) {
+    for (final entry in model.moduleSymbols.entries) {
+      if (entry.value.namespace != null &&
+          _dartImportPrefix(entry.key) != entry.key) {
+        type = type.replaceAll(RegExp('\\b${RegExp.escape(entry.key)}\\.'),
+            '${_dartImportPrefix(entry.key)}.');
+      }
+    }
     final resolved = model.resolve(type);
     if (resolved != type) return _dartType(resolved);
     for (final entry in model.backendTypes.entries) {
@@ -1234,9 +1645,15 @@ class DartEmitter {
       return;
     }
     if (node.kind == 'interface') {
+      if (supportsReadonlyClass(model, node)) _requireReadonlyRuntime();
       line(
           'abstract interface class ${node.name}${_typeParameters(node.typeParameters)}${node.superclass == null ? '' : ' implements ${_dartType(node.superclass!)}'} {');
       _depth++;
+      if (supportsReadonlyClass(model, node)) {
+        line(
+            'Object \$qudsReadonlyView(Map<Type, $_readonlyRuntime.ReadonlyGuard<dynamic>> guards);');
+        line('bool \$qudsIsLazySlot(Object slot);');
+      }
       for (final field in node.fields) {
         line('${_dartType(field.type)} get ${field.name};');
       }
@@ -1248,9 +1665,15 @@ class DartEmitter {
         if (property.setterBody != null)
           line('set ${property.name}($type value);');
       }
+      final savedGenerics = _openGenerics;
+      _openGenerics = {
+        ...savedGenerics,
+        ...node.typeParameters.map((p) => p.name)
+      };
       for (final method in node.methods) {
         emitFunction(method);
       }
+      _openGenerics = savedGenerics;
       _depth--;
       line('}');
       return;
@@ -1359,14 +1782,14 @@ class DartEmitter {
         continue;
       }
       if (field.isEvent) {
-        _useEvent = true;
+        _requireReadonlyRuntime();
         final payload =
             field.type.startsWith('Event<') && field.type.endsWith('>')
                 ? field.type.substring(6, field.type.length - 1)
                 : '() -> void';
         final dart = _dartType(payload);
         line(
-            'final _QudsEvent<$dart> ${_fieldDart(field)} = _QudsEvent<$dart>();');
+            'final $_readonlyRuntime.QudsEvent<$dart> ${_fieldDart(field)} = $_readonlyRuntime.QudsEvent<$dart>();');
         continue;
       }
       _markProtected(field.visibility);
@@ -1387,6 +1810,9 @@ class DartEmitter {
           : '';
       line('$modifier${_dartType(field.type)} ${_fieldDart(field)}$initial;');
     }
+    final savedInstanceGuards = _guardEnvironment;
+    _guardEnvironment =
+        '$_readonlyRuntime.guardsOf([...$_knownGuardsName.values, ...$_readonlyRuntime.guardsFor(this).values])';
     for (final property in node.properties) {
       _emitProperty(property);
     }
@@ -1396,6 +1822,7 @@ class DartEmitter {
       }
       emitFunction(method);
     }
+    _guardEnvironment = savedInstanceGuards;
     final valueFields = node.fields
         .where((field) =>
             !field.isStatic && !field.isEvent && field.lazyBody == null)
@@ -1405,21 +1832,22 @@ class DartEmitter {
       _emitCopyWith(node, valueFields);
     }
     if (node.kind == 'value' || node.modifiers.contains('value')) {
+      _requireReadonlyRuntime();
       final names = valueFields.map(_fieldDart).join(', ');
-      final compare = valueFields
-          .map((field) => '${_fieldDart(field)} == other.${_fieldDart(field)}')
-          .join(' && ');
       if (!node.methods
           .any((method) => method.isOperator && method.name == '==')) {
         line('@override');
         line(
-            'bool operator ==(Object other) => other is ${node.name} && ${compare.isEmpty ? 'true' : compare};');
+            'bool operator ==(Object other) => other is ${node.name} && $_readonlyRuntime.valueEquals(this, other, <Object?>[$names], <Object?>[${valueFields.map((field) => 'other.${_fieldDart(field)}').join(', ')}]);');
       }
       line('@override');
-      line('int get hashCode => Object.hashAll(<Object?>[$names]);');
+      line(
+          'int get hashCode => $_readonlyRuntime.valueHash(this, <Object?>[$names]);');
     }
+    if (supportsReadonlyClass(model, node)) _emitReadonlyDispatch(node);
     _depth--;
     line('}');
+    if (supportsReadonlyClass(model, node)) _emitReadonlyProxy(node);
     if (model.reflectable.contains(node)) {
       final fields = node.fields
           .where((field) => field.visibility != 'private')
@@ -1595,7 +2023,28 @@ class DartEmitter {
     }
   }
 
+  String _lazySlotName(FieldDeclaration field) => r'_$qudsLazy_' + field.name;
+
   void _emitLazy(FieldDeclaration field) {
+    if (field.isStatic) {
+      _emitLegacyLazy(field);
+      return;
+    }
+    _requireReadonlyRuntime();
+    final declared = model.declarations[field]?.type ?? field.type;
+    final slot = _lazySlotName(field);
+    line(
+        'final $_readonlyRuntime.LazySlot<${_dartType(declared)}> $slot = $_readonlyRuntime.LazySlot<${_dartType(declared)}>();');
+    line(
+        '${_dartType(declared)} get ${_fieldDart(field)} => $slot.mutableValue(() {');
+    _depth++;
+    _hoistOnce(field.lazyBody);
+    statements(field.lazyBody!);
+    _depth--;
+    line('});');
+  }
+
+  void _emitLegacyLazy(FieldDeclaration field) {
     final declared = model.declarations[field]?.type ?? field.type;
     final dartType = _dartType(declared);
     final store = '_ql${_temps++}';
@@ -1734,7 +2183,8 @@ class DartEmitter {
     line('@${note.name}($args)');
   }
 
-  void _emitCopyWith(ClassDeclaration node, List<FieldDeclaration> fields) {
+  void _emitCopyWith(ClassDeclaration node, List<FieldDeclaration> fields,
+      {bool readonlyResult = false}) {
     _useOptional = true;
     final params = fields.map((field) {
       if (field.visibility == 'private') {
@@ -1746,10 +2196,11 @@ class DartEmitter {
     final tail = private.isEmpty
         ? ''
         : ' : ${private.map((field) => '${_fieldDart(field)} = ${field.name}').join(', ')}';
-    line('${node.name}._qudsCopy({$params})$tail;');
+    if (!readonlyResult) line('${node.name}._qudsCopy({$params})$tail;');
     final copy =
         fields.map((field) => 'Object? ${field.name} = missing').join(', ');
-    line('${node.name} copyWith({$copy}) {');
+    final type = _readonlyInstanceType(node);
+    line('$type copyWith({$copy}) {');
     _depth++;
     String argument(FieldDeclaration field) {
       final cast = _dartType(field.type);
@@ -1758,7 +2209,9 @@ class DartEmitter {
 
     final args =
         fields.map((field) => '${field.name}: ${argument(field)}').join(', ');
-    line('return ${node.name}._qudsCopy($args);');
+    final created = '$type._qudsCopy($args)';
+    line(
+        'return ${readonlyResult ? '${_guardDescriptor(type)}.protect($created)' : created};');
     _depth--;
     line('}');
   }
@@ -1876,7 +2329,11 @@ class DartEmitter {
       case RethrowStatement():
         line('rethrow;');
       case YieldStatement():
-        line('${node.star ? 'yield*' : 'yield'} ${expression(node.value)};');
+        final value = expression(node.value);
+        final guarded = node.star && _returnView != null
+            ? '($value).map((_qy) => ${_wrapReturn('_qy')})'
+            : _wrapReturn(value);
+        line('${node.star ? 'yield*' : 'yield'} $guarded;');
       case WatchStatement():
         _useState = true;
         _useWatch = true;
@@ -2554,8 +3011,25 @@ class DartEmitter {
       _useBoolHelper = true;
       return '_qBool(${expression(node, constantContext: constantContext)})';
     }
+    if (!constantContext && node is CallExpression) {
+      final declaration = model.references[node.callee]?.classDeclaration;
+      if (declaration != null &&
+          declaration.typeParameters.isNotEmpty &&
+          supportsReadonlyClass(model, declaration) &&
+          _registeringReadonly.add(node)) {
+        try {
+          final value = expression(node,
+              constantContext: constantContext, opaqueBool: opaqueBool);
+          final type = model.types[node]!;
+          return '$_readonlyRuntime.registerGuards<${_dartType(type)}>($value, [${_guardDescriptor(type, includeKnown: false)}])';
+        } finally {
+          _registeringReadonly.remove(node);
+        }
+      }
+    }
     final typedReadonly = model.types[node];
-    if (typedReadonly != null &&
+    if (!constantContext &&
+        typedReadonly != null &&
         _readonlyBoundary(typedReadonly) != null &&
         _typedReadonlyEmitting.add(node)) {
       try {
@@ -2666,6 +3140,15 @@ class DartEmitter {
       {required bool constantContext, required bool childOpaque}) {
     final leftType = model.types[node.left];
     final rightType = model.types[node.right];
+    if (!constantContext &&
+        (node.operator == '==' || node.operator == '!=') &&
+        ((leftType?.startsWith('readonly ') ?? false) ||
+            (rightType?.startsWith('readonly ') ?? false))) {
+      _requireReadonlyRuntime();
+      final code =
+          '$_readonlyRuntime.readonlyEquals(${expression(node.left)}, ${expression(node.right)})';
+      return node.operator == '!=' ? '(!$code)' : code;
+    }
     if (node.operator == '+') {
       final result = model.types[node];
       if (result != null &&
@@ -2852,6 +3335,7 @@ class DartEmitter {
       return _cell(symbol);
     }
     final dart = _use(node);
+    if (symbol?.namespace != null) return _dartImportPrefix(dart);
     return _names[dart] ?? dart;
   }
 
@@ -3757,9 +4241,8 @@ class DartEmitter {
 
   String _convert(ConversionExpression node) {
     final sourceType = model.types[node.operand]!;
-    final bareSource =
-        nonNullableType(sourceType.replaceFirst('readonly ', ''));
-    final bareTarget = nonNullableType(node.type.replaceFirst('readonly ', ''));
+    final bareSource = nonNullableType(stripReadonlyType(sourceType));
+    final bareTarget = nonNullableType(stripReadonlyType(node.type));
     if (bareSource == bareTarget &&
         !const {'int', 'double', 'num', 'String', 'bool'}
             .contains(bareSource)) {

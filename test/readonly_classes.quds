@@ -1,0 +1,98 @@
+use "fixtures/readonly_classes/base.quds" as external
+
+class ClassBox<T>:
+  var count: int = 1
+  values: List<T> required
+  var child: ClassBox<T>? = null
+  increment(value: int = 1):
+    count += value
+  readonly read() -> int = count
+  readonly items() -> readonly List<T> = values
+  readonly identity<U>(value: U) -> U = value
+  property doubled: int:
+    get = count * 2
+  property impure: int:
+    get:
+      count += 1
+      return count
+
+class ParentBox<T>:
+  private value: T required
+  readonly read() -> readonly T = value
+class ChildBox<U> extends ParentBox<List<U>>:
+  tag: String required
+
+value class ReadonlyValue:
+  values: List<int>
+
+class LazyBox:
+  values: List<int> required
+  cached: List<int> by lazy:
+    print "lazy computed"
+    result values
+
+interface ReadableBox<T>:
+  readonly read() -> readonly T:
+    throw "abstract"
+class ConcreteBox implements ReadableBox<List<int>>:
+  values: List<int> required
+  readonly read() -> readonly List<int> = values
+
+test "readonly class aliases preserve reads and mutable owners":
+  owner = ClassBox<int>(values: [1])
+  view: readonly ClassBox<int> = owner
+  expect(view.read(), 1)
+  owner.increment()
+  expect(view.read(), 2)
+  expect(view.doubled, 4)
+  expect(view.identity<int>(3), 3)
+
+test "readonly class graphs preserve cycles":
+  owner = ClassBox<int>(values: [1])
+  owner.child = owner
+  view: readonly ClassBox<int> = owner
+  expect(view.child!.child!.read(), 1)
+
+test "readonly generic parents retain specialized private fields":
+  owner = ChildBox<int>(value: [1], tag: "child")
+  view: readonly ChildBox<int> = owner
+  expect(view.read()[0], 1)
+  parent: readonly ParentBox<List<int>> = owner
+  expect(parent.read()[0], 1)
+
+test "readonly interfaces retain dynamic implementation behavior":
+  owner: ReadableBox<List<int>> = ConcreteBox(values: [4])
+  view: readonly ReadableBox<List<int>> = owner
+  expect(view.read()[0], 4)
+
+test "readonly lazy reads compute once without freezing mutable aliases":
+  owner = LazyBox(values: [1])
+  view: readonly LazyBox = owner
+  expect(view.cached[0], 1)
+  owner.cached.add(2)
+  expect(view.cached.length, 2)
+  expect(owner.values.length, 2)
+
+test "readonly generated copyWith retains nested protection":
+  owner = ReadonlyValue(values: [1])
+  view: readonly ReadonlyValue = owner
+  copied = view.copyWith()
+  expect(copied.values[0], 1)
+  owner.values[0] = 2
+  expect(copied.values[0], 2)
+
+class ExternalChild<T> extends external.ExternalParent<List<T>>:
+  tag: String required
+
+test "readonly parents retain private fields across libraries":
+  owner = ExternalChild<int>(value: [7], tag: "external")
+  view: readonly ExternalChild<int> = owner
+  expect(view.read()[0], 7)
+
+test "readonly value equality is structural across views":
+  first = ReadonlyValue(values: [1, 2])
+  second = ReadonlyValue(values: [1, 2])
+  view: readonly ReadonlyValue = first
+  expect(first == second, true)
+  expect(view == second, true)
+  expect(view == first, true)

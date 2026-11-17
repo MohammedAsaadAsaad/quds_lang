@@ -85,3 +85,11 @@ heap capacity, external backing stores and sampled allocation volume are distinc
 metrics. There are no brittle timing/heap-byte thresholds in CI.
 
 Final commands, pass counts and any debugger skip are in VALIDATION.md.
+
+## Class-guard follow-up
+
+The follow-up run in READONLY_CLASSES repeats both VM/V8 drivers after the class
+guard changes. The weak graph now also reads `view[0][0].value`, so it creates a
+HeapCell proxy before removal. VM live source counts remain 0 → 20000 → 0, and
+zero after removing the weak graph. Raw files were refreshed; allocation trace
+counts remain 8 → 109 → 110 Float64List and 100 view allocations.

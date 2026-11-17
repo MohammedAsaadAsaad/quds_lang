@@ -106,12 +106,14 @@ void main() {
     addTearDown(() => directory.deleteSync(recursive: true));
     final input = File('test/collection_interfaces_web.quds');
     final source = input.readAsStringSync();
-    final generated = compile(source, file: input.path).dart;
+    final compilation = compile(source, file: input.path);
+    final generated = compilation.dart;
     expect(generated, compile(source, file: input.path).dart);
     expect(generated,
         File('test/goldens/collection_interfaces.dart.txt').readAsStringSync());
     final output = File('${directory.path}/program.dart')
       ..writeAsStringSync(generated);
+    writeSdkBundles(directory.path, compilation);
     final analyze = await Process.run(
         Platform.resolvedExecutable, ['analyze', '--fatal-infos', output.path]);
     expect(analyze.exitCode, 0, reason: '${analyze.stdout}\n${analyze.stderr}');

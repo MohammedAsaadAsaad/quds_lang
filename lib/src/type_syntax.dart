@@ -72,3 +72,7 @@ String functionParameterType(String parameter) {
       ? parameter.trim()
       : parameter.substring(label.end).trim();
 }
+
+/// Remove only the outer qualifier, preserving nested readonly type arguments.
+String stripReadonlyType(String type) =>
+    type.startsWith('readonly ') ? type.substring(9) : type;

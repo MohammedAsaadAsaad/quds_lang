@@ -110,9 +110,11 @@ class Parser {
         errors.map((error) => '$error').join('\n'), errors.first.span);
   }
 
-  bool functionAhead() {
-    if (!at(TokenKind.identifier)) return false;
-    var open = index + 1;
+  bool functionAhead({int? from}) {
+    final start = from ?? index;
+    if (start >= tokens.length || tokens[start].kind != TokenKind.identifier)
+      return false;
+    var open = start + 1;
     if (open < tokens.length && tokens[open].kind == TokenKind.less) {
       final after = _skipAngles(open);
       if (after < 0) return false;
@@ -1323,15 +1325,14 @@ class Parser {
           fields.add(staticConstant());
           continue;
         }
-        if (!functionAhead()) {
+        if (!functionAhead() &&
+            !(word('readonly') && functionAhead(from: index + 1))) {
           fields.add(staticField());
           continue;
         }
       }
       var readonlyMethod = false;
-      if (word('readonly') &&
-          peek().kind == TokenKind.identifier &&
-          peek(2).kind == TokenKind.leftParen) {
+      if (word('readonly') && functionAhead(from: index + 1)) {
         take();
         readonlyMethod = true;
       }

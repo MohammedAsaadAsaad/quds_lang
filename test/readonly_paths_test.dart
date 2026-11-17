@@ -19,7 +19,6 @@ class Child extends Counter:
   tag: int = 0
 ''';
   final rejects = <String, String>{
-    'view: readonly Counter = Counter()\n  mutable: Object? = view': 'E300',
     'view: readonly Counter = Counter()\n  saved = () -> view\n  saved().increment()':
         'E307',
     'view: readonly Counter = Counter()\n  view.increment()': 'E307',
@@ -27,7 +26,6 @@ class Child extends Counter:
     'view: readonly Counter = Counter()\n  saved = view.increment\n  saved()':
         'E307',
     'view: readonly Counter = Counter()\n  mutable: Counter = view': 'E300',
-    'view: readonly Counter = Counter()\n  mutable: dynamic = view': 'E300',
     'view: readonly List<int> = [1]\n  mutable = view as List<int>\n  mutable[0] = 2':
         'E307',
     'view: readonly List<int> = [1]\n  mutable = view to List<int>\n  mutable[0] = 2':
@@ -66,10 +64,16 @@ class Child extends Counter:
       expect(error.span.line, 3);
     }
   });
-  test('unsupported class proxies are rejected at an erased Dart boundary', () {
+  test('generated class guards support erased Dart boundaries', () {
     expect(
         () => compile(
             'use dart:convert\n${prefix}main():\n  view: readonly Counter = Counter()\n  print jsonEncode(view)\n'),
+        returnsNormally);
+  });
+  test('unproxyable native class erasure remains explicit', () {
+    expect(
+        () => compile(
+            'use dart:io\nuse dart:convert\nmain():\n  view: readonly File = File("unused")\n  print jsonEncode(view)\n'),
         throwsA(predicate((e) => '$e'.contains('E910'))));
   });
   test('deep collection guards execute on VM and JavaScript', () async {
@@ -78,6 +82,7 @@ class Child extends Counter:
     final input = File('test/readonly_paths_web.quds');
     final result = compile(input.readAsStringSync(), file: input.path);
     File('${directory.path}/views.dart').writeAsStringSync(result.dart);
+    writeSdkBundles(directory.path, result);
     final driver = File('${directory.path}/driver.dart')..writeAsStringSync(r'''
 import 'views.dart' as q;
 void check(bool value) { if (!value) throw StateError('readonly assertion'); }

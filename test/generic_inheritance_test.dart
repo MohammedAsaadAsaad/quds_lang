@@ -111,7 +111,9 @@ void main() {
     addTearDown(() => directory.deleteSync(recursive: true));
     final input = File('test/generic_inheritance_web.quds');
     final source = input.readAsStringSync();
-    final generated = compile(source, file: input.path).dart;
+    final compilation = compile(source, file: input.path);
+    final generated = compilation.dart;
+    writeSdkBundles(directory.path, compilation);
     expect(generated, compile(source, file: input.path).dart);
     expect(generated,
         File('test/goldens/generic_inheritance.dart.txt').readAsStringSync());

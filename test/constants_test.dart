@@ -817,8 +817,10 @@ List<BinaryExpression> operators(Expression node, String op) {
 Future<void> execute(String source, String stdout) async {
   final directory = Directory.systemTemp.createTempSync('quds-const-exec-');
   try {
+    final compilation = compile(source);
     final output = File('${directory.path}/app.dart')
-      ..writeAsStringSync(compile(source).dart);
+      ..writeAsStringSync(compilation.dart);
+    writeSdkBundles(output.parent.path, compilation);
     final analysis = await Process.run(
         Platform.resolvedExecutable, ['analyze', output.path]);
     expect(analysis.exitCode, 0,

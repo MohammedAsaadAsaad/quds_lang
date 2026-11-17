@@ -814,3 +814,33 @@ No extra network domain is needed for the verified Docker-based SDK route.
 - Raw measurements: bench/results/heap_vm.json and heap_web.json. Definitions and known VM profiler initialization requirement are in HEAP_AND_READONLY_GRAPH.md.
 - New primary Quds suite: four declarations, plus three negative programs and an actual cross-library Dart/JS guard driver. The memory workload itself is Quds.
 - Generated-key lookup accepts readonly keys for reads without weakening insertion typing. Defaulted method bodies now retain declaring class scope.
+
+## 2026-11-17 — readonly class guards, async qualifications and debugger startup
+
+- `dart format .`, followed by `dart format --output=none --set-exit-if-changed .`:
+  **59 files, zero remaining formatting changes**.
+- `dart analyze`: **No issues found**.
+- `dart run bin/quds.dart test test/readonly_classes.quds`: **8 declarations pass**,
+  including generic/private cross-library parents, cycles, interface dispatch,
+  lazy cache aliases, copyWith and value equality.
+- `dart test test/readonly_classes_test.dart --reporter expanded`: **7 tests pass**,
+  including real VM/JavaScript mutation attempts, asynchronous delivery,
+  multi-directory CLI build, native-boundary diagnostics and artifact consistency.
+- `dart test test/compiler_test.dart --name 'debug hides|quds debug stops'
+  --reporter expanded`: **2 pass**. The real debugger test no longer skips empty
+  frames. A DAP transcript identified duplicate startup entry/breakpoint stops;
+  unrequested entry events are suppressed, explicit stopOnEntry remains visible.
+- Final `dart test --reporter expanded`: **479 pass, zero skipped, zero failures**, 
+  **6m10s**. Earlier diagnostic runs exposed missing bundle writes in old test
+  drivers, a sealed-exhaustiveness conflict and nested async-qualification loss;
+  those failures were fixed before this final source snapshot.
+- `dart run tool/profile_heap.dart` and `dart run tool/profile_web_memory.dart`:
+  both complete, checksum **213097200**. Updated raw results are committed under
+  bench/results. VM HeapCell counts **0 → 20000 → 0**, and **0** after the weak
+  graph removes an element whose readonly class proxy was actually accessed.
+  Allocation counts remain Float64List **8 → 109 → 110**, plus **100** view
+  allocations. V8 reports six phases; samples are estimates, not exact counts.
+
+See READONLY_CLASSES.md for standalone runtime bundling, runtime guard metadata,
+source identity versus Dart proxy identity, and explicit native/sealed/mixin
+limits. This package does not claim all 115 language features are complete.

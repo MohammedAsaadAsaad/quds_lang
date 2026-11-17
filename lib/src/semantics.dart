@@ -424,6 +424,46 @@ bool emitsSdkImport(ImportDeclaration node, SemanticModel model) {
   return model.usedSdk.contains(node.uri);
 }
 
+bool isReadonlyMethod(FunctionDeclaration method) =>
+    method.readonlyMethod ||
+    method.name == 'toString' ||
+    method.isOperator && method.name == '==';
+
+ClassDeclaration? readonlyClassFor(SemanticModel model, String type) {
+  type = stripReadonlyType(model.resolve(type));
+  type = nonNullableType(type);
+  final bracket = type.indexOf('<');
+  final head = bracket < 0 ? type : type.substring(0, bracket);
+  return model.classes[head] ??
+      model.internalTypes[head]?.classDeclaration ??
+      model.moduleSymbols[head]?.classDeclaration;
+}
+
+bool supportsReadonlyClass(SemanticModel model, ClassDeclaration node,
+    [Set<ClassDeclaration> seen = const {}]) {
+  if (seen.contains(node) ||
+      node.kind == 'sealed' ||
+      node.modifiers.contains('sealed')) return false;
+  if (!const {
+        'class',
+        'value',
+        'abstract',
+        'base',
+        'final',
+        'sealed',
+        'interface',
+        'mixinClass'
+      }.contains(node.kind) ||
+      node.mixins.isNotEmpty) return false;
+  if (node.superclass case final parentType?) {
+    final parent = readonlyClassFor(model, parentType);
+    if (parent == null ||
+        (node.kind != 'interface' && parent.kind == 'interface')) return false;
+    return supportsReadonlyClass(model, parent, {...seen, node});
+  }
+  return true;
+}
+
 class Analyzer {
   Analyzer({this.library = '<input>', String? file}) : _file = file ?? library;
   final model = SemanticModel();
@@ -724,7 +764,8 @@ class Analyzer {
                 : 'Stream<${statement.returnType}>')
             : statement.isAsync &&
                     statement.returnType != null &&
-                    !statement.returnType!.startsWith('Future<')
+                    !stripReadonlyType(statement.returnType!)
+                        .startsWith('Future<')
                 ? 'Future<${statement.returnType}>'
                 : type;
     final savedTypes = {..._typeNames};
@@ -842,7 +883,7 @@ class Analyzer {
               : '<infer>');
       final effective = method.isAsync &&
               method.returnType != null &&
-              !method.returnType!.startsWith('Future<')
+              !stripReadonlyType(method.returnType!).startsWith('Future<')
           ? 'Future<${method.returnType}>'
           : type;
       final added = method.typeParameters
@@ -1314,7 +1355,7 @@ class Analyzer {
         _typeBounds[parameter.name] = parameter.bound!;
       }
     }
-    _readonlyMethod = method.readonlyMethod;
+    _readonlyMethod = isReadonlyMethod(method);
     _installFields(type);
     analyzeFunction(method);
     _checkOverride(type, method);
@@ -1388,6 +1429,11 @@ class Analyzer {
     }
     final saved = _scope;
     final savedThis = _thisType;
+    final savedFunction = _function;
+    final savedReturn = _returnType;
+    _function = FunctionDeclaration(property.name, const [], property.type,
+        property.getterBody, property.getter, property.span);
+    _returnType = property.type;
     _scope = _Scope(_global);
     _thisType = type.name;
     _installFields(type);
@@ -1406,8 +1452,11 @@ class Analyzer {
       }
     } else if (property.getterBody case final body?) {
       statements(body);
+      if (!returns(body))
+        fail('A getter must explicitly return on every path', property);
     }
     if (property.setterBody case final body?) {
+      _returnType = 'void';
       final nested = _scope;
       _scope = _Scope(nested);
       final param = property.setter ?? 'value';
@@ -1417,6 +1466,8 @@ class Analyzer {
     }
     _thisType = savedThis;
     _scope = saved;
+    _function = savedFunction;
+    _returnType = savedReturn;
     _typeNames
       ..clear()
       ..addAll(savedTypes);
@@ -2328,7 +2379,7 @@ class Analyzer {
         statement.returnType ?? (statement.isAsync ? 'Future<void>' : 'void');
     final effective = statement.isAsync &&
             statement.returnType != null &&
-            !statement.returnType!.startsWith('Future<')
+            !stripReadonlyType(statement.returnType!).startsWith('Future<')
         ? 'Future<${statement.returnType}>'
         : type;
     final symbol = Symbol(statement.name, statement.name, effective,
@@ -2872,19 +2923,21 @@ class Analyzer {
     _scope = _Scope(parent);
     _function = function;
     final declared = model.declarations[function]!.type;
-    _returnType = function.generator == 'sync' &&
-            declared.startsWith('Iterable<') &&
-            declared.endsWith('>')
-        ? declared.substring(9, declared.length - 1)
-        : function.generator == 'async' &&
-                declared.startsWith('Stream<') &&
-                declared.endsWith('>')
-            ? declared.substring(7, declared.length - 1)
-            : function.isAsync &&
-                    declared.startsWith('Future<') &&
-                    declared.endsWith('>')
-                ? declared.substring(7, declared.length - 1)
-                : declared;
+    final bareReturn =
+        declared.startsWith('readonly ') ? declared.substring(9) : declared;
+    final container = function.generator == 'sync'
+        ? 'Iterable<'
+        : function.generator == 'async'
+            ? 'Stream<'
+            : function.isAsync
+                ? 'Future<'
+                : '';
+    _returnType = container.isNotEmpty &&
+            bareReturn.startsWith(container) &&
+            bareReturn.endsWith('>')
+        ? _readonlyView(declared,
+            bareReturn.substring(container.length, bareReturn.length - 1))
+        : declared;
     final parameterNames = <String>[];
     for (final parameter in function.parameters) {
       final stored =
@@ -3185,8 +3238,12 @@ class Analyzer {
           error('E803', 'await for is only valid inside async', node);
         }
         final element = node.awaiting
-            ? (type.startsWith('Stream<') && type.endsWith('>')
-                ? type.substring(7, type.length - 1)
+            ? (stripReadonlyType(type).startsWith('Stream<') &&
+                    type.endsWith('>')
+                ? _readonlyView(
+                    type,
+                    stripReadonlyType(type)
+                        .substring(7, stripReadonlyType(type).length - 1))
                 : fail('await for requires a Stream', node.iterable))
             : elementType(type, node.iterable);
         if (_scope.lookup(node.name) != null)
@@ -4480,7 +4537,7 @@ class Analyzer {
       Map<String, String> expectedClass) {
     if (actual.typeParameters.length != expected.typeParameters.length ||
         actual.isStatic != expected.isStatic ||
-        expected.readonlyMethod && !actual.readonlyMethod ||
+        isReadonlyMethod(expected) && !isReadonlyMethod(actual) ||
         actual.parameters.length != expected.parameters.length) return false;
     final actualMap = {...actualClass};
     final expectedMap = {...expectedClass};
@@ -5212,7 +5269,7 @@ class Analyzer {
       final readMethod = accessedMethod ?? accessedExtension;
       if (raw.startsWith('readonly ') &&
           readMethod != null &&
-          !readMethod.readonlyMethod) {
+          !isReadonlyMethod(readMethod)) {
         error('E307', 'A readonly reference cannot expose a mutating method',
             node);
       }
@@ -5761,9 +5818,10 @@ class Analyzer {
     } else if (_function == null || !_function!.isAsync) {
       fail('await is only valid inside async', node);
     }
-    final type = expression(node.operand);
+    final raw = expression(node.operand);
+    final type = stripReadonlyType(raw);
     if (type.startsWith('Future<') && type.endsWith('>')) {
-      return type.substring(7, type.length - 1);
+      return _readonlyView(raw, type.substring(7, type.length - 1));
     }
     return type;
   }
@@ -5911,15 +5969,36 @@ class Analyzer {
 
   // Only these shapes have a runtime view that can cross an erased boundary.
   bool _readonlyBoundarySafe(String type) {
-    type = model.resolve(type).replaceFirst('readonly ', '');
+    type = stripReadonlyType(model.resolve(type));
     if (isNullableType(type)) return _readonlyBoundarySafe(unwrap(type));
-    if (const {'int', 'double', 'num', 'bool', 'String', 'Null', 'Never'}
-        .contains(type)) return true;
+    if (const {
+      'int',
+      'double',
+      'num',
+      'bool',
+      'String',
+      'Null',
+      'Never',
+      'BigInt',
+      'DateTime',
+      'Duration',
+      'Uri',
+      'RegExp',
+      'Type',
+      'Symbol'
+    }.contains(type)) return true;
     if (_typedStorage(type)) return true;
+    final declaration = readonlyClassFor(model, type);
+    if (declaration != null)
+      return declaration.kind == 'enum' ||
+          supportsReadonlyClass(model, declaration);
     final head = _genericHead(type);
     if (head == type || !type.endsWith('>')) return false;
     final args = _splitTypes(type.substring(head.length + 1, type.length - 1));
-    if (head == 'List' || head == 'Iterable')
+    if (head == 'List' ||
+        head == 'Iterable' ||
+        head == 'Future' ||
+        head == 'Stream')
       return args.length == 1 && _readonlyBoundarySafe(args[0]);
     if (head == 'Set')
       return args.length == 1 && _readonlyBoundarySafe(args[0]);
@@ -6652,7 +6731,7 @@ class Analyzer {
           }
           model.references[callee] =
               Symbol('copyWith', 'copyWith', declaration.name);
-          return objectType;
+          return _readonlyView(rawObject, objectType);
         }
       }
       final objectTypeRaw = rawObject.startsWith('readonly ')
@@ -6780,7 +6859,7 @@ class Analyzer {
                 : 'Instance member ${callee.name} is used on the type',
             callee);
       }
-      if (rawObject.startsWith('readonly ') && !resolved.readonlyMethod) {
+      if (rawObject.startsWith('readonly ') && !isReadonlyMethod(resolved)) {
         error('E307', 'A readonly reference may only call readonly methods',
             callee);
       }
@@ -6879,7 +6958,7 @@ class Analyzer {
         if (resolved.isStatic) {
           fail('Static member ${callee.name} is used on an instance', callee);
         }
-        if (_readonlyMethod && !resolved.readonlyMethod) {
+        if (_readonlyMethod && !isReadonlyMethod(resolved)) {
           error('E307', 'A readonly method may only read this', callee);
         }
         model.implicitThis.add(callee);
@@ -8397,7 +8476,7 @@ class Analyzer {
 
   String conversion(ConversionExpression node) {
     final raw = expression(node.operand);
-    final source = unwrap(raw.replaceFirst('readonly ', ''));
+    final source = unwrap(stripReadonlyType(raw));
     final target = isNullableType(node.type)
         ? node.type.substring(0, node.type.length - 1)
         : node.type;

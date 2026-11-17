@@ -7,7 +7,7 @@ mixin _QudsReadonlyView {
 final _qReadonlyViews = Expando<Map<Type, Object>>();
 final _qReadonlySources = Expando<Object>();
 Object? _qReadonlyUnwrap(Object? value) {
-  if (value == null || value is num || value is bool || value is String) return value;
+  if (value == null || value is num || value is bool || value is String || value is Record) return value;
   return _qReadonlySources[value] ?? value;
 }
 bool _qReadonlyMatches(Object? source, Object? candidate) {
@@ -32,7 +32,7 @@ T _qReadonlyCached<T extends Object>(Object source, T Function() create) {
 const readonlyListHelpers = r'''
 List<E> _qReadonlyList<E>(List<E> source, E Function(E) read) =>
     _qReadonlyCached<List<E>>(source, () => _QudsReadonlyList<E>(source, read));
-class _QudsReadonlyList<E> extends ListBase<E> with _QudsReadonlyView {
+class _QudsReadonlyList<E> extends $qudsCollection.ListBase<E> with _QudsReadonlyView {
   _QudsReadonlyList(this._source, this._read);
   final List<E> _source;
   final E Function(E) _read;
@@ -47,7 +47,7 @@ class _QudsReadonlyList<E> extends ListBase<E> with _QudsReadonlyView {
 const readonlyMapHelpers = r'''
 Map<K, V> _qReadonlyMap<K, V>(Map<K, V> source, K Function(K) readKey, V Function(V) readValue) =>
     _qReadonlyCached<Map<K, V>>(source, () => _QudsReadonlyMap<K, V>(source, readKey, readValue));
-class _QudsReadonlyMap<K, V> extends MapBase<K, V> with _QudsReadonlyView {
+class _QudsReadonlyMap<K, V> extends $qudsCollection.MapBase<K, V> with _QudsReadonlyView {
   _QudsReadonlyMap(this._source, this._readKey, this._readValue);
   final Map<K, V> _source;
   final K Function(K) _readKey;
@@ -76,7 +76,7 @@ class _QudsReadonlyMap<K, V> extends MapBase<K, V> with _QudsReadonlyView {
 const readonlySetHelpers = r'''
 Set<E> _qReadonlySet<E>(Set<E> source, E Function(E) read) =>
     _qReadonlyCached<Set<E>>(source, () => _QudsReadonlySet<E>(source, read));
-class _QudsReadonlySet<E> extends SetBase<E> with _QudsReadonlyView {
+class _QudsReadonlySet<E> extends $qudsCollection.SetBase<E> with _QudsReadonlyView {
   _QudsReadonlySet(this._source, this._read);
   final Set<E> _source;
   final E Function(E) _read;

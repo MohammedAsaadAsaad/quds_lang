@@ -1,0 +1,3 @@
+class ExternalParent<T>:
+  private value: T required
+  readonly read() -> readonly T = value

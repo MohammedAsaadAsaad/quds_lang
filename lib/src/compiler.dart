@@ -7,6 +7,7 @@ import 'libraries.dart';
 import 'macros.dart';
 import 'parser.dart';
 import 'sdk.dart';
+import 'readonly_runtime_source.dart';
 import 'semantics.dart';
 import 'sourcemap.dart';
 
@@ -44,6 +45,34 @@ class Compilation {
 
   /// SDK libraries this program imports, as sibling Dart files.
   final List<SdkBundle> bundles;
+}
+
+/// Relocate the shared runtime when emitting a dependency graph into several
+/// directories. All modules must resolve to the same runtime library URI.
+Compilation relocateReadonlyRuntime(Compilation result, String relativeUri) {
+  if (relativeUri == 'quds_readonly.dart') return result;
+  final uri = Uri.parse(relativeUri);
+  if (uri.hasScheme ||
+      relativeUri.contains("'") ||
+      relativeUri.contains(r'$') ||
+      relativeUri.contains('\n')) {
+    throw ArgumentError.value(
+        relativeUri, 'relativeUri', 'Expected a relative generated-file URI');
+  }
+  String relocate(String source) =>
+      source.replaceAll("import 'quds_readonly.dart'", "import '$relativeUri'");
+  return Compilation(result.program, result.semantics, relocate(result.dart),
+      sourceMap: result.sourceMap,
+      dependencies: result.dependencies,
+      models: result.models,
+      bundles: [
+        for (final bundle in result.bundles)
+          SdkBundle(
+              bundle.fileName == 'quds_readonly.dart'
+                  ? uri.toFilePath()
+                  : bundle.fileName,
+              relocate(bundle.source))
+      ]);
 }
 
 /// Writes [result]'s SDK libraries into [directory].
@@ -97,7 +126,16 @@ Compilation compile(String source,
           program: program, source: source),
       dependencies: dependencies,
       models: _generatedModels(program, file),
-      bundles: _sdkBundles(semantics));
+      bundles: _compilationBundles(semantics, dart));
+}
+
+List<SdkBundle> _compilationBundles(SemanticModel semantics, String dart) {
+  final result = _sdkBundles(semantics);
+  if (dart.contains("import 'quds_readonly.dart'") ||
+      result.any((b) => b.source.contains("import 'quds_readonly.dart'"))) {
+    result.add(SdkBundle('quds_readonly.dart', readonlyRuntimeSource));
+  }
+  return result;
 }
 
 final _sdkDartCache = <String, String>{};

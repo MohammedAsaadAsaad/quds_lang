@@ -75,6 +75,7 @@ main():
   graph = makeWeakGraph()
   view: readonly List<List<HeapCell>> = graph
   check view[0].length == 1000
+  check view[0][0].value == 0
   graph.clear()
   developer.debugger()
   check view.length == 0

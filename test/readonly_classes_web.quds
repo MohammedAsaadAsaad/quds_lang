@@ -1,0 +1,26 @@
+class Box<T>:
+  var count: int = 1
+  values: List<T> required
+  var child: Box<T>? = null
+  increment():
+    count += 1
+  readonly read() -> int = count
+  readonly items() -> readonly List<T> = values
+  property impure: int:
+    get:
+      count += 1
+      return count
+class LazyBox:
+  values: List<int> required
+  cached: List<int> by lazy:
+    print "lazy computed"
+    result values
+value class Value:
+  values: List<int>
+expose(value: Box<int>) -> readonly Box<int> = value
+exposeGeneric<T>(value: Box<T>) -> readonly Box<T> = value
+lazyView(value: LazyBox) -> readonly LazyBox = value
+valueView(value: Value) -> readonly Value = value
+futureView(value: Future<List<int>>) -> readonly Future<List<int>> = value
+streamView(value: Stream<List<int>>) -> readonly Stream<List<int>> = value
+asyncView(value: List<int>) async -> readonly List<int> = value

@@ -1362,8 +1362,10 @@ main():
 ''';
     final directory = Directory.systemTemp.createTempSync('quds-web-');
     try {
+      final compilation = compile(source);
       final dartFile = File('${directory.path}/app.dart')
-        ..writeAsStringSync(compile(source).dart);
+        ..writeAsStringSync(compilation.dart);
+      writeSdkBundles(dartFile.parent.path, compilation);
       final script = '${directory.path}/app.js';
       final compiled = await Process.run(Platform.resolvedExecutable,
           ['compile', 'js', '-o', script, dartFile.path]);
@@ -1385,8 +1387,10 @@ main():
     await execute(source, '9007199254740993\n');
     final directory = Directory.systemTemp.createTempSync('quds-web-int-');
     try {
+      final compilation = compile(source);
       final dartFile = File('${directory.path}/app.dart')
-        ..writeAsStringSync(compile(source).dart);
+        ..writeAsStringSync(compilation.dart);
+      writeSdkBundles(dartFile.parent.path, compilation);
       final compiled = await Process.run(Platform.resolvedExecutable,
           ['compile', 'js', '-o', '${directory.path}/app.js', dartFile.path]);
       expect(compiled.exitCode, isNot(0));
@@ -1905,8 +1909,10 @@ main():
 ''';
     final directory = Directory.systemTemp.createTempSync('quds-config-');
     try {
+      final compilation = compile(source);
       final output = File('${directory.path}/app.dart')
-        ..writeAsStringSync(compile(source).dart);
+        ..writeAsStringSync(compilation.dart);
+      writeSdkBundles(output.parent.path, compilation);
       final analysis = await Process.run(
           Platform.resolvedExecutable, ['analyze', output.path]);
       expect(analysis.exitCode, 0,
@@ -2721,8 +2727,9 @@ main():
         throwsA(predicate((error) => '$error'.contains('E206'))));
     for (final source in [File('${directory.path}/math.quds'), app, child]) {
       final dartPath = source.path.replaceFirst(RegExp(r'\.quds$'), '.dart');
-      File(dartPath).writeAsStringSync(
-          compile(source.readAsStringSync(), file: source.path).dart);
+      final compilation = compile(source.readAsStringSync(), file: source.path);
+      File(dartPath).writeAsStringSync(compilation.dart);
+      writeSdkBundles(File(dartPath).parent.path, compilation);
     }
     File('${directory.path}/api.dart').writeAsStringSync(compile(
             File('${directory.path}/api.quds').readAsStringSync(),
@@ -2830,8 +2837,9 @@ main():
       File('${directory.path}/api.quds'),
     ]) {
       final dartPath = source.path.replaceFirst(RegExp(r'\.quds$'), '.dart');
-      File(dartPath).writeAsStringSync(
-          compile(source.readAsStringSync(), file: source.path).dart);
+      final compilation = compile(source.readAsStringSync(), file: source.path);
+      File(dartPath).writeAsStringSync(compilation.dart);
+      writeSdkBundles(File(dartPath).parent.path, compilation);
     }
     final shownDart = File('${directory.path}/shown.dart').readAsStringSync();
     expect(shownDart, contains("import 'math.dart' show doubleIt;"));
@@ -2897,8 +2905,9 @@ read() -> int = 1
         throwsA(predicate((error) => '$error'.contains('E903'))));
     for (final source in [parent, detail]) {
       final dartPath = source.path.replaceFirst(RegExp(r'\.quds$'), '.dart');
-      File(dartPath).writeAsStringSync(
-          compile(source.readAsStringSync(), file: source.path).dart);
+      final compilation = compile(source.readAsStringSync(), file: source.path);
+      File(dartPath).writeAsStringSync(compilation.dart);
+      writeSdkBundles(File(dartPath).parent.path, compilation);
     }
     final parentDart = File('${directory.path}/parent.dart');
     final detailDart = File('${directory.path}/detail.dart');
@@ -2943,7 +2952,8 @@ class Other:
 main():
   print Box<int>(value: 1, secret: 2).read()
 ''';
-    final dart = compile(source).dart;
+    final compilation = compile(source);
+    final dart = compilation.dart;
     expect(dart, contains("'fields': <String>['value']"));
     expect(dart, contains("'private': <String>['secret']"));
     expect(dart, contains("'typeParameters': <String>['T']"));
@@ -2954,6 +2964,7 @@ main():
     final directory = Directory.systemTemp.createTempSync('quds-reflect-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final output = File('${directory.path}/app.dart')..writeAsStringSync(dart);
+    writeSdkBundles(directory.path, compilation);
     final analysis = await Process.run(
         Platform.resolvedExecutable, ['analyze', output.path]);
     expect(analysis.exitCode, 0,
@@ -3410,9 +3421,13 @@ main():
 ''');
     expect(result.dart, contains("import 'quds_core.dart';"));
     expect(result.dart, isNot(contains("import 'quds:core'")));
-    expect(result.bundles, hasLength(1));
-    expect(result.bundles.single.fileName, 'quds_core.dart');
-    expect(result.bundles.single.source, contains('class Stack<'));
+    expect(result.bundles.map((b) => b.fileName),
+        containsAll(['quds_core.dart', 'quds_readonly.dart']));
+    expect(
+        result.bundles
+            .singleWhere((b) => b.fileName == 'quds_core.dart')
+            .source,
+        contains('class Stack<'));
     expect(compile('''
 use quds:core hide Ok
 main():

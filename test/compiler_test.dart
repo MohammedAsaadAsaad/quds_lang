@@ -654,6 +654,35 @@ other():
     expect(rewritten(2, '"piece"'), '"piece"');
   });
 
+  test('debug hides internal startup stops and preserves explicit entry stops',
+      () {
+    final translator = DebugTranslator();
+    final entry = <String, dynamic>{
+      'type': 'event',
+      'event': 'stopped',
+      'body': {'reason': 'entry', 'threadId': 1}
+    };
+    final breakpoint = <String, dynamic>{
+      'type': 'event',
+      'event': 'stopped',
+      'body': {'reason': 'breakpoint', 'threadId': 1}
+    };
+    expect(translator.shouldPresent(entry), isFalse);
+    expect(translator.shouldPresent(breakpoint), isTrue);
+    translator.accept({
+      'type': 'request',
+      'command': 'launch',
+      'arguments': {'program': 'app.dart', 'stopOnEntry': true}
+    });
+    expect(translator.shouldPresent(entry), isTrue);
+    translator.accept({
+      'type': 'request',
+      'command': 'launch',
+      'arguments': {'program': 'app.dart', 'stopOnEntry': false}
+    });
+    expect(translator.shouldPresent(entry), isFalse);
+  });
+
   test('quds debug stops on the quds line', () async {
     final directory = Directory.systemTemp.createTempSync('quds-debug-');
     addTearDown(() => directory.deleteSync(recursive: true));
@@ -749,11 +778,7 @@ other():
             .timeout(const Duration(seconds: 5), onTimeout: () => -1);
       }
     }
-    // The Dart debug adapter sometimes reports a breakpoint stop with no
-    // stack frames. Breakpoint mapping itself is covered by the translator
-    // unit test above; skip rather than fail the suite on that race.
-    markTestSkipped(
-        'debug adapter returned no stack frames after retries: $lastError');
+    fail('debug adapter returned no stack frames after retries: $lastError');
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('definition, rename, and breakpoint use the source span', () {
@@ -867,21 +892,18 @@ main():
     expect(compiled.dart, contains("import 'package:demo/src/util.dart';"));
     expect(compiled.dart,
         contains("import 'package:demo/generated/user_models.dart';"));
-    File('${root.path}/lib/demo.dart').writeAsStringSync(compile(
-            File('${root.path}/lib/demo.quds').readAsStringSync(),
-            file: '${root.path}/lib/demo.quds')
-        .dart);
-    File('${root.path}/lib/src/util.dart').writeAsStringSync(compile(
-            File('${root.path}/lib/src/util.quds').readAsStringSync(),
-            file: '${root.path}/lib/src/util.quds')
-        .dart);
-    File('${root.path}/lib/generated/user_models.dart').writeAsStringSync(
-        compile(
-                File('${root.path}/lib/generated/user_models.quds')
-                    .readAsStringSync(),
-                file: '${root.path}/lib/generated/user_models.quds')
-            .dart);
+    for (final relative in [
+      'lib/demo',
+      'lib/src/util',
+      'lib/generated/user_models'
+    ]) {
+      final input = File('${root.path}/$relative.quds');
+      final result = compile(input.readAsStringSync(), file: input.path);
+      File('${root.path}/$relative.dart').writeAsStringSync(result.dart);
+      writeSdkBundles(input.parent.path, result);
+    }
     File('${root.path}/bin/app.dart').writeAsStringSync(compiled.dart);
+    writeSdkBundles('${root.path}/bin', compiled);
     final run = await Process.run(
         Platform.resolvedExecutable, ['run', 'bin/app.dart'],
         workingDirectory: root.path);
@@ -3043,8 +3065,10 @@ File builtDart(File source) {
 Future<void> execute(String source, String stdout) async {
   final directory = Directory.systemTemp.createTempSync('quds-execution-');
   try {
+    final compiled = compile(source);
     final output = File('${directory.path}/app.dart')
-      ..writeAsStringSync(compile(source).dart);
+      ..writeAsStringSync(compiled.dart);
+    writeSdkBundles(directory.path, compiled);
     final analysis = await Process.run(
         Platform.resolvedExecutable, ['analyze', output.path]);
     expect(analysis.exitCode, 0,

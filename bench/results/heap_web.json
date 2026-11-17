@@ -9,187 +9,187 @@
     {
       "phase": "baseline",
       "heap": {
-        "total_heap_size": 7823360,
+        "total_heap_size": 7868416,
         "total_heap_size_executable": 262144,
-        "total_physical_size": 6799360,
-        "total_available_size": 4491068384,
-        "used_heap_size": 4851368,
+        "total_physical_size": 7049216,
+        "total_available_size": 4490902352,
+        "used_heap_size": 5020152,
         "heap_size_limit": 4496293888,
         "malloced_memory": 278592,
-        "peak_malloced_memory": 778760,
+        "peak_malloced_memory": 1008208,
         "does_zap_garbage": 0,
         "number_of_native_contexts": 1,
         "number_of_detached_contexts": 0,
         "total_global_handles_size": 8192,
-        "used_global_handles_size": 3296,
+        "used_global_handles_size": 3360,
         "external_memory": 7662788
       },
       "process": {
-        "rss": 32104448,
-        "heapTotal": 7823360,
-        "heapUsed": 4869368,
+        "rss": 33157120,
+        "heapTotal": 7868416,
+        "heapUsed": 5038152,
         "external": 7662788,
         "arrayBuffers": 137667
       },
       "allocation": {
-        "sampled_bytes": 95880,
+        "sampled_bytes": 104696,
         "program_stack_sampled_bytes": 0,
-        "sample_count": 157
+        "sample_count": 153
       }
     },
     {
       "phase": "retained",
       "heap": {
-        "total_heap_size": 10891264,
-        "total_heap_size_executable": 524288,
-        "total_physical_size": 7864320,
-        "total_available_size": 4489814752,
-        "used_heap_size": 5616824,
+        "total_heap_size": 10936320,
+        "total_heap_size_executable": 262144,
+        "total_physical_size": 7806976,
+        "total_available_size": 4489765120,
+        "used_heap_size": 5939712,
         "heap_size_limit": 4496293888,
         "malloced_memory": 278592,
-        "peak_malloced_memory": 778760,
+        "peak_malloced_memory": 1008208,
         "does_zap_garbage": 0,
         "number_of_native_contexts": 1,
         "number_of_detached_contexts": 0,
-        "total_global_handles_size": 122880,
-        "used_global_handles_size": 114528,
+        "total_global_handles_size": 163840,
+        "used_global_handles_size": 150592,
         "external_memory": 6089928
       },
       "process": {
-        "rss": 39706624,
-        "heapTotal": 10891264,
-        "heapUsed": 5617408,
+        "rss": 40497152,
+        "heapTotal": 10936320,
+        "heapUsed": 5940296,
         "external": 6089928,
         "arrayBuffers": 4331971
       },
       "allocation": {
-        "sampled_bytes": 1192392,
-        "program_stack_sampled_bytes": 1000656,
-        "sample_count": 3819
+        "sampled_bytes": 1358400,
+        "program_stack_sampled_bytes": 1178432,
+        "sample_count": 4910
       }
     },
     {
       "phase": "released",
       "heap": {
-        "total_heap_size": 10444800,
+        "total_heap_size": 10752000,
         "total_heap_size_executable": 262144,
-        "total_physical_size": 7417856,
-        "total_available_size": 4490304448,
-        "used_heap_size": 4955728,
+        "total_physical_size": 7622656,
+        "total_available_size": 4489997632,
+        "used_heap_size": 5134448,
         "heap_size_limit": 4496293888,
         "malloced_memory": 278592,
-        "peak_malloced_memory": 778760,
+        "peak_malloced_memory": 1008208,
         "does_zap_garbage": 0,
         "number_of_native_contexts": 1,
         "number_of_detached_contexts": 0,
-        "total_global_handles_size": 163840,
-        "used_global_handles_size": 5696,
+        "total_global_handles_size": 212992,
+        "used_global_handles_size": 5856,
         "external_memory": 6089928
       },
       "process": {
-        "rss": 40980480,
-        "heapTotal": 10444800,
-        "heapUsed": 4956312,
+        "rss": 41328640,
+        "heapTotal": 10752000,
+        "heapUsed": 5135032,
         "external": 6089928,
         "arrayBuffers": 137667
       },
       "allocation": {
-        "sampled_bytes": 1616480,
-        "program_stack_sampled_bytes": 1000656,
-        "sample_count": 5278
+        "sampled_bytes": 1906048,
+        "program_stack_sampled_bytes": 1178432,
+        "sample_count": 6729
       }
     },
     {
       "phase": "copies",
       "heap": {
-        "total_heap_size": 9920512,
+        "total_heap_size": 10227712,
         "total_heap_size_executable": 262144,
-        "total_physical_size": 6893568,
-        "total_available_size": 4490568032,
-        "used_heap_size": 4957488,
+        "total_physical_size": 7098368,
+        "total_available_size": 4490435040,
+        "used_heap_size": 5132096,
         "heap_size_limit": 4496293888,
         "malloced_memory": 278592,
-        "peak_malloced_memory": 778760,
+        "peak_malloced_memory": 1008208,
         "does_zap_garbage": 0,
         "number_of_native_contexts": 1,
         "number_of_detached_contexts": 0,
-        "total_global_handles_size": 163840,
-        "used_global_handles_size": 6112,
+        "total_global_handles_size": 212992,
+        "used_global_handles_size": 6208,
         "external_memory": 54848712
       },
       "process": {
-        "rss": 43098112,
-        "heapTotal": 9920512,
-        "heapUsed": 4958072,
+        "rss": 44015616,
+        "heapTotal": 10227712,
+        "heapUsed": 5132680,
         "external": 54848712,
         "arrayBuffers": 137667
       },
       "allocation": {
-        "sampled_bytes": 2249784,
-        "program_stack_sampled_bytes": 1007824,
-        "sample_count": 7547
+        "sampled_bytes": 2669680,
+        "program_stack_sampled_bytes": 1186232,
+        "sample_count": 9400
       }
     },
     {
       "phase": "views",
       "heap": {
-        "total_heap_size": 9920512,
+        "total_heap_size": 10227712,
         "total_heap_size_executable": 262144,
-        "total_physical_size": 6893568,
-        "total_available_size": 4490601368,
-        "used_heap_size": 4966536,
+        "total_physical_size": 7098368,
+        "total_available_size": 4490429936,
+        "used_heap_size": 5141944,
         "heap_size_limit": 4496293888,
         "malloced_memory": 278592,
-        "peak_malloced_memory": 778760,
+        "peak_malloced_memory": 1008208,
         "does_zap_garbage": 0,
         "number_of_native_contexts": 1,
         "number_of_detached_contexts": 0,
-        "total_global_handles_size": 163840,
-        "used_global_handles_size": 6752,
+        "total_global_handles_size": 212992,
+        "used_global_handles_size": 7008,
         "external_memory": 2419912
       },
       "process": {
-        "rss": 43356160,
-        "heapTotal": 9920512,
-        "heapUsed": 4967120,
+        "rss": 44015616,
+        "heapTotal": 10227712,
+        "heapUsed": 5142528,
         "external": 2419912,
-        "arrayBuffers": 137667
+        "arrayBuffers": 661955
       },
       "allocation": {
-        "sampled_bytes": 3137656,
-        "program_stack_sampled_bytes": 1018368,
-        "sample_count": 10675
+        "sampled_bytes": 3733000,
+        "program_stack_sampled_bytes": 1195776,
+        "sample_count": 13082
       }
     },
     {
       "phase": "weak_cache_after_removal",
       "heap": {
-        "total_heap_size": 10182656,
+        "total_heap_size": 10227712,
         "total_heap_size_executable": 262144,
-        "total_physical_size": 7507968,
-        "total_available_size": 4490514656,
-        "used_heap_size": 5069632,
+        "total_physical_size": 8114176,
+        "total_available_size": 4490331896,
+        "used_heap_size": 5317128,
         "heap_size_limit": 4496293888,
         "malloced_memory": 278592,
-        "peak_malloced_memory": 778760,
+        "peak_malloced_memory": 1008208,
         "does_zap_garbage": 0,
         "number_of_native_contexts": 1,
         "number_of_detached_contexts": 0,
-        "total_global_handles_size": 253952,
-        "used_global_handles_size": 24480,
+        "total_global_handles_size": 385024,
+        "used_global_handles_size": 29696,
         "external_memory": 1895624
       },
       "process": {
-        "rss": 44335104,
-        "heapTotal": 10182656,
-        "heapUsed": 5070216,
+        "rss": 46149632,
+        "heapTotal": 10227712,
+        "heapUsed": 5317712,
         "external": 1895624,
         "arrayBuffers": 137667
       },
       "allocation": {
-        "sampled_bytes": 5143248,
-        "program_stack_sampled_bytes": 1141032,
-        "sample_count": 18361
+        "sampled_bytes": 6658792,
+        "program_stack_sampled_bytes": 1413000,
+        "sample_count": 24670
       }
     }
   ]

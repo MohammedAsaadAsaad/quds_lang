@@ -541,6 +541,10 @@ bool _writeTree(File input, Set<String> seen) {
 bool _emitGenerated(File input, Compilation result,
     {bool announce = true, File? destination}) {
   final output = destination ?? _outputFile(input);
+  final root = _packageRoot(input.absolute.parent);
+  final runtime = File('${root.path}/.dart_tool/quds/out/quds_readonly.dart');
+  result = relocateReadonlyRuntime(
+      result, _relativeGeneratedUri(output.parent, runtime));
   final existing = output.existsSync() ? output.readAsStringSync() : null;
   if (existing != null && !existing.startsWith(_generatedHeader)) {
     stderr.writeln('Refusing to overwrite non-generated file: ${output.path}');
@@ -1163,6 +1167,26 @@ File _flutterGenerated(File input, Directory root) {
   return File(_join(root.path, under));
 }
 
+String _relativeGeneratedUri(Directory from, File to) {
+  final left = from.absolute.uri
+      .normalizePath()
+      .pathSegments
+      .where((s) => s.isNotEmpty)
+      .toList();
+  final right = to.absolute.uri
+      .normalizePath()
+      .pathSegments
+      .where((s) => s.isNotEmpty)
+      .toList();
+  var shared = 0;
+  while (shared < left.length &&
+      shared < right.length &&
+      left[shared] == right[shared]) shared++;
+  return [...List.filled(left.length - shared, '..'), ...right.skip(shared)]
+      .map((s) => s == '..' ? s : Uri.encodeComponent(s))
+      .join('/');
+}
+
 String _relativePosix(Directory root, File file) {
   final prefix = root.path.endsWith(Platform.pathSeparator)
       ? root.path
@@ -1564,7 +1588,7 @@ Future<void> _debug(List<String> arguments) async {
 
   var inbound = Future<void>.value();
   final fromAdapter = _readFrames(child.stdout).listen((message) {
-    write(translator.present(message));
+    if (translator.shouldPresent(message)) write(translator.present(message));
   });
   final fromEditor = _readFrames(stdin).listen((message) {
     final action = translator.accept(message);

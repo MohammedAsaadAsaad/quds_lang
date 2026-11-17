@@ -28,6 +28,7 @@ jobs:
           dart run bin/quds.dart test test/math_foundations_reference.quds
           dart run bin/quds.dart test test/math_foundations_imports.quds
           dart run bin/quds.dart test test/generic_methods.quds
+          dart run bin/quds.dart test test/readonly_classes.quds
           dart run bin/quds.dart test test/readonly_graph.quds
           dart run bin/quds.dart test test/readonly_paths.quds
           dart run bin/quds.dart test test/math_symbolic.quds

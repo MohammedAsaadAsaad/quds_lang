@@ -83,6 +83,17 @@ class DebugTranslator {
   final _refFile = <int, String>{};
   final _variablesRef = <int, int>{};
   var _sequence = 1;
+  var _stopOnEntry = false;
+
+  /// Dart can report the startup pause while resolving pending breakpoints,
+  /// followed by a real breakpoint stop before it handles the client's next
+  /// request. Exposing that internal entry pause invites a stale continue.
+  /// Explicit stopOnEntry requests still expose the entry stop.
+  bool shouldPresent(Map<String, dynamic> message) =>
+      _stopOnEntry ||
+      message['type'] != 'event' ||
+      message['event'] != 'stopped' ||
+      (message['body'] as Map?)?['reason'] != 'entry';
 
   void bind(DebugBinary binary) {
     final positions = binary.sourceMap.isEmpty
@@ -147,6 +158,7 @@ class DebugTranslator {
 
   DebugAction _launch(Map<String, dynamic> message) {
     final arguments = _map(message['arguments']);
+    _stopOnEntry = arguments['stopOnEntry'] == true;
     final program = arguments['program'];
     if (program is! String || !program.endsWith('.quds')) {
       return DebugAction.forward(message);

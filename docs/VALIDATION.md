@@ -915,3 +915,38 @@ visual VS Code-host performance test.
   extension visibility, negative structural cases, cross-part source mappings,
   generated Dart analysis, VM and JavaScript execution.
 - `git diff --check`: clean.
+
+## 2026-11-17 — class/augment conversions and exact Fraction casts
+
+- `dart format --output=none --set-exit-if-changed .`: **68 files, zero changes**.
+- `dart analyze`: **No issues found**.
+- `dart test test/conversions_test.dart --reporter expanded`: **31 pass**, 1m02s
+  in the final focused run (concurrent with an earlier full development run).
+  Seven drivers execute **14 Quds tests** across local/imported/generic/native/
+  part/math/external augmentation suites. Additional tests cover static rejection,
+  source-coordinate ambiguity, unused duplicate declarations, deterministic Dart
+  golden output, actual CLI builds and VM/JavaScript execution with Dart analysis.
+- Actual SDK Fraction cases include int-to-Fraction contextual conversions,
+  both operand orders, whole/non-whole/non-normalized fractions, zero denominator,
+  platform minimum integers and VM overflow. The VM and JavaScript programs pass.
+- `dart test test/memory_profiling_test.dart --reporter expanded`: **3 pass**,
+  12s. The controller now waits for PauseStart and counts distinct workload pause
+  locations from its own isolate. A deterministic replay/isolate regression is
+  included alongside actual VM/Node retain/release/weak-cache measurements.
+- Final frozen-source `dart test --reporter expanded`: **560 pass, zero skipped,
+  zero failures**, **6m04s**. This includes all previous lexer/parser/compiler,
+  math, memory, editor, debugger, interoperability and CLI test groups.
+- VS Code syntax grammar JSON parses successfully.
+- `git diff --check` and `git diff --cached --check`: clean.
+
+A development run overlapping SDK source edits reported the embedded-source
+comparison; an earlier full run also exposed a VM-service disconnect in the heap
+profiler. The final gate above ran after SDK synchronization and the checkpoint
+controller fix, without compiler/tool source edits during execution. No retries
+were added to conceal profiler failures.
+
+The owner-approved syntax amendment is recorded in QUDS_LANGUAGE_SPECIFICATION.md
+and LANGUAGE_DECISIONS.md. AUGMENT_AND_CONVERSIONS_AR.md provides the Arabic
+handoff, executable commands, examples and precise unsupported contexts. This
+milestone does not claim complete implicit conversion inference for every
+collection/callback/variadic form or external structural/static augmentation.

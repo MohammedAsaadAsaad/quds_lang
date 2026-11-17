@@ -24,6 +24,8 @@ class FunctionDeclaration extends Statement {
       this.isOperator = false,
       this.readonlyMethod = false,
       this.isStatic = false,
+      this.conversionKind = '',
+      this.conversionOwner = '',
       this.typeParameters = const [],
       this.documentation});
   final String name;
@@ -43,6 +45,8 @@ class FunctionDeclaration extends Statement {
   final bool isOperator;
   final bool readonlyMethod;
   final bool isStatic;
+  final String conversionKind;
+  final String conversionOwner;
 
   /// `#` or `///` lines immediately above this declaration.
   final String? documentation;

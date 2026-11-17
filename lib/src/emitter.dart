@@ -7,6 +7,7 @@ import 'constants.dart';
 import 'libraries.dart';
 import 'semantics.dart';
 import 'source.dart';
+import 'sdk.dart';
 import 'walk.dart';
 
 class _ConfigGroup {
@@ -41,6 +42,7 @@ class DartEmitter {
   var _useResult = false;
   var _usePropagate = false;
   var _useConversion = false;
+  final _emittingConversions = <Expression>{};
   var _useReturn = false;
   final _onceFlags = <OnceStatement, String>{};
   var _openGenerics = <String>{};
@@ -515,11 +517,8 @@ class DartEmitter {
       }
     }
     if (_useConversion) {
-      helpers.writeln('class ConversionError implements Exception {\n'
-          '  ConversionError(this.message);\n'
-          '  final String message;\n'
-          '  String toString() => \'ConversionError: \$message\';\n'
-          '}\n'
+      _requireReadonlyRuntime();
+      helpers.writeln(
           'Object? _qConvert(Object? value, String target, bool safe) {\n'
           '  try {\n'
           '    switch (target) {\n'
@@ -544,11 +543,11 @@ class DartEmitter {
           '        if (value is String) return num.parse(value);\n'
           '        break;\n'
           '    }\n'
-          '    throw ConversionError(\'\$value to \$target\');\n'
+          '    throw $_readonlyRuntime.ConversionError(\'\$value to \$target\');\n'
           '  } catch (error) {\n'
           '    if (safe) return null;\n'
-          '    if (error is ConversionError) throw error;\n'
-          '    throw ConversionError(\'\$value to \$target\');\n'
+          '    if (error is $_readonlyRuntime.ConversionError) throw error;\n'
+          '    throw $_readonlyRuntime.ConversionError(\'\$value to \$target\');\n'
           '  }\n'
           '}');
     }
@@ -1508,6 +1507,10 @@ class DartEmitter {
           : name;
 
   String _dartType(String type) {
+    if (type == 'ConversionError') {
+      _requireReadonlyRuntime();
+      return '$_readonlyRuntime.ConversionError';
+    }
     for (final entry in model.moduleSymbols.entries) {
       if (entry.value.namespace != null &&
           _dartImportPrefix(entry.key) != entry.key) {
@@ -2240,6 +2243,11 @@ class DartEmitter {
 
   void emitExtension(ExtensionDeclaration node) {
     _span = node.span;
+    final savedGenerics = _openGenerics;
+    _openGenerics = {
+      ..._openGenerics,
+      ...node.typeParameters.map((p) => p.name)
+    };
     final generics = _typeParameters(node.typeParameters);
     final title = node.name == null
         ? 'extension$generics'
@@ -2254,6 +2262,7 @@ class DartEmitter {
     }
     _depth--;
     line('}');
+    _openGenerics = savedGenerics;
   }
 
   void statement(Statement node) {
@@ -2999,6 +3008,17 @@ class DartEmitter {
       return expression(replacement,
           constantContext: constantContext, opaqueBool: opaqueBool);
     }
+    final conversion = model.implicitConversions[node];
+    if (conversion != null && _emittingConversions.add(node)) {
+      if (constantContext)
+        throw CompilerException(
+            'E401', 'Custom conversion in const context', node.span);
+      try {
+        return '${_conversionTarget(conversion)}(${expression(node, opaqueBool: opaqueBool)})';
+      } finally {
+        _emittingConversions.remove(node);
+      }
+    }
     // Folding only logical const operators avoids Dart's dead_code warning
     // while leaving other const operations for Dart to evaluate again.
     if (constantContext &&
@@ -3692,8 +3712,8 @@ class DartEmitter {
     for (var i = 0; i < node.arguments.length; i++) {
       final value = '_qna${_temps++}';
       values.add(value);
-      parameters
-          .add('${_dartType(model.types[node.arguments[i].value]!)} $value');
+      parameters.add(
+          '${_dartType(model.implicitConversions[node.arguments[i].value]?.resultType ?? model.types[node.arguments[i].value]!)} $value');
       inputs.add(expression(node.arguments[i].value));
     }
     return '((${parameters.join(', ')}) => $target(${arguments((i) => values[i])}))(${inputs.join(', ')})';
@@ -3710,6 +3730,11 @@ class DartEmitter {
       return '($callee)($arguments)';
     }
     final targetSymbol = model.references[node.callee]!;
+    if (targetSymbol.name == 'ConversionError' &&
+        targetSymbol.function == null) {
+      _requireReadonlyRuntime();
+      return '$_readonlyRuntime.ConversionError(${expression(node.arguments.single.value)})';
+    }
     if (targetSymbol.library == 'check') _useChecks = true;
     if (targetSymbol.name == 'missing') _useOptional = true;
     if (targetSymbol.library == 'check' &&
@@ -4097,7 +4122,7 @@ class DartEmitter {
           : '${caught.dartName}, ${trace.dartName}';
       line(clause.type == null
           ? '} catch ($names) {'
-          : '} on ${clause.type} catch ($names) {');
+          : '} on ${_dartType(clause.type!)} catch ($names) {');
       _depth++;
       if (flag != null) line('$flag = false;');
       statements(clause.body);
@@ -4301,7 +4326,50 @@ class DartEmitter {
     return '(() { $saved return () => (${expression(node.body)}); })()';
   }
 
+  String _conversionTarget(ConversionPlan plan) {
+    var target = model.declarations[plan.function]!.dartName;
+    // Root converters have generated private implementation names. Imported
+    // providers expose stable public tear-offs from their original library.
+    if (plan.library.isNotEmpty && plan.library != model.library) {
+      final prefix =
+          '_qCast${sha256Hex(utf8.encode(plan.library)).substring(0, 10)}';
+      final sdk = sdkLibraryName(plan.library);
+      final uri = model.backendTypeImports[prefix] ??
+          (sdk == null
+              ? Uri.file(plan.library.replaceFirst(RegExp(r'\.quds$'), '.dart'))
+                  .toString()
+              : sdkDartFileName(sdk));
+      _imports.add("import '$uri' as $prefix;");
+      target = '$prefix.${plan.function.name}';
+      for (final directive in model.imports) {
+        if (directive.export ||
+            directive.uri.startsWith('quds:') ||
+            directive.show.isNotEmpty ||
+            librarySection(directive.uri) != null) continue;
+        final home = resolveLibraryPath(directive.span.file, directive.uri);
+        if (home != plan.library) continue;
+        _imports.remove("import '$uri' as $prefix;");
+        target = directive.prefix == null
+            ? plan.function.name
+            : '${_dartImportPrefix(directive.prefix!)}.${plan.function.name}';
+        break;
+      }
+    }
+    final types = plan.typeArguments.isEmpty
+        ? ''
+        : '<${plan.typeArguments.map(_dartType).join(', ')}>';
+    return '$target$types';
+  }
+
   String _convert(ConversionExpression node) {
+    final custom = model.explicitConversions[node];
+    if (custom != null) {
+      final target = _conversionTarget(custom);
+      final operand = expression(node.operand);
+      if (!node.safe) return '$target($operand)';
+      _requireReadonlyRuntime();
+      return '$_readonlyRuntime.safeConvert($operand, $target)';
+    }
     final sourceType = model.types[node.operand]!;
     final bareSource = nonNullableType(stripReadonlyType(sourceType));
     final bareTarget = nonNullableType(stripReadonlyType(node.type));

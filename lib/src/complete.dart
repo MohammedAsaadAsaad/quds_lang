@@ -84,7 +84,8 @@ List<Map<String, Object?>> completeAt({
     _namedArguments(resolved, source, scope, argument, range, add);
   }
   for (final entry in scope.names.entries) {
-    if (entry.key == '_') continue;
+    if (entry.key == '_' ||
+        entry.value.function?.conversionKind.isNotEmpty == true) continue;
     for (final item in _symbolItems(resolved, entry.value, range)) {
       add(item);
     }
@@ -198,6 +199,10 @@ const _keywords = [
   'and',
   'as',
   'async',
+  'augment',
+  'cast',
+  'explicit',
+  'implicit',
   'await',
   'break',
   'catch',

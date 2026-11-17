@@ -1,0 +1,4 @@
+part "addition.quds"
+class Secret:
+  private value: int required
+  readonly read() -> int = value

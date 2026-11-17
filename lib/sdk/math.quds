@@ -773,6 +773,17 @@ _bicgstabUnit(rows: List<List<double>>, values: List<double>) -> List<double>:
 value class Fraction:
   numerator: int required
   denominator: int required
+  # Every integer has an exact fractional representation.
+  implicit cast(value: int) -> Fraction = fraction(value, 1)
+  # Conversion is exact: fractional values need an explicit rounding operation.
+  explicit cast(value: Fraction) -> int:
+    if value.denominator == 0:
+      throw ConversionError("Fraction denominator is zero")
+    if value.numerator % value.denominator != 0:
+      throw ConversionError("Fraction is not a whole number")
+    if value.denominator == -1 and value.numerator < 0 - _maxInt():
+      throw ConversionError("Fraction is outside int range")
+    return value.numerator ~/ value.denominator
   operator +(other: Fraction) -> Fraction:
     return _fractionAdd(this, other, false)
   operator -(other: Fraction) -> Fraction:

@@ -2,6 +2,22 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:typed_data';
 
+/// Shared identity across generated libraries, including conversion providers.
+class ConversionError implements Exception {
+  ConversionError(this.message);
+  final String message;
+  @override
+  String toString() => 'ConversionError: $message';
+}
+
+T? safeConvert<S, T>(S value, T Function(S) conversion) {
+  try {
+    return conversion(value);
+  } on ConversionError {
+    return null;
+  }
+}
+
 mixin ReadonlyView {
   bool get $qudsReadonly => true;
   bool $qudsReadonlyMatches(Object? candidate);

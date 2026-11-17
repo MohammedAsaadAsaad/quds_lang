@@ -5,6 +5,25 @@ import 'package:quds_lang/quds_lang.dart';
 import 'package:vm_service/vm_service.dart';
 import 'package:vm_service/vm_service_io.dart';
 
+/// The workload has six distinct debugger call sites. A service can replay a
+/// pause while inspecting/collecting a paused isolate; a replay must never count
+/// as the next workload phase and let the controller resume past its last stop.
+class HeapPauseCheckpoints {
+  HeapPauseCheckpoints(this.isolate);
+  final String isolate;
+  final _seen = <(String?, int?)>{};
+  int get count => _seen.length;
+  bool accept(Event event) {
+    if (event.kind != EventKind.kPauseBreakpoint ||
+        event.isolate?.id != isolate) return false;
+    final location = event.topFrame?.location;
+    if (location?.script?.id == null || location?.tokenPos == null) {
+      throw StateError('Heap checkpoint has no source location');
+    }
+    return _seen.add((location!.script!.id, location.tokenPos));
+  }
+}
+
 // VM-service measurements on actual compiled Quds. Diagnostic, not CI budgets.
 Future<void> main() async {
   final directory = Directory.systemTemp.createTempSync('quds-heap-');
@@ -44,19 +63,24 @@ Future<void> main() async {
     service = await vmServiceConnectUri(
         uri.replace(scheme: 'ws', path: '${uri.path}ws').toString());
     final pauses = StreamController<Event>();
-    final subscription = service.onDebugEvent.listen((event) {
-      if (event.kind == EventKind.kPauseBreakpoint) pauses.add(event);
-    });
     await service.streamListen(EventStreams.kDebug);
     final iterator = StreamIterator(pauses.stream);
     final vm = await service.getVM();
     final isolate = vm.isolates!.singleWhere((i) => i.name == 'main').id!;
     final startupDeadline = DateTime.now().add(const Duration(seconds: 30));
-    while ((await service.getIsolate(isolate)).runnable != true) {
+    while (true) {
+      final state = await service.getIsolate(isolate);
+      if (state.runnable == true &&
+          state.pauseEvent?.kind == EventKind.kPauseStart) break;
       if (DateTime.now().isAfter(startupDeadline))
         throw StateError('Isolate did not become runnable');
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
+
+    final checkpoints = HeapPauseCheckpoints(isolate);
+    final subscription = service.onDebugEvent.listen((event) {
+      if (checkpoints.accept(event)) pauses.add(event);
+    });
 
     Future<void> advance() async {
       await service!.resume(isolate).timeout(const Duration(seconds: 30));
@@ -113,6 +137,9 @@ Future<void> main() async {
     final views = await service.getAllocationProfile(isolate, gc: true);
     await advance();
     final weakCache = await service.getAllocationProfile(isolate, gc: true);
+    if (checkpoints.count != 6)
+      throw StateError(
+          'Unexpected heap checkpoint count: ${checkpoints.count}');
     await service.resume(isolate);
     final code = await process.exitCode.timeout(const Duration(seconds: 30));
     if (code != 0 || !lines.contains('213097200'))

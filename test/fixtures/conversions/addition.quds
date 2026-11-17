@@ -1,0 +1,4 @@
+part of "owner.quds"
+augment Secret:
+  implicit cast(value: int) -> Secret = Secret(value: value)
+  explicit cast(value: Secret) -> int = value.value

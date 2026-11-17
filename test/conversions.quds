@@ -1,0 +1,106 @@
+class Ratio:
+  numerator: int required
+  denominator: int required
+  implicit cast(value: int) -> Ratio = Ratio(numerator: value, denominator: 1)
+  explicit cast(value: Ratio) -> int:
+    if value.denominator != 1:
+      throw ConversionError("Not a whole number")
+    return value.numerator
+  operator +(other: Ratio) -> Ratio = Ratio(numerator: numerator * other.denominator + other.numerator * denominator, denominator: denominator * other.denominator)
+
+augment Ratio:
+  explicit cast(value: String) -> Ratio = Ratio(numerator: value to int, denominator: 1)
+
+readRatio(value: Ratio) -> int = value.numerator
+returnRatio() -> Ratio = 8
+choose(value: int) -> String = "int"
+choose(value: Ratio) -> String = "ratio"
+
+test "implicit bindings assignments returns calls operators":
+  var ratio: Ratio = 5
+  expect(ratio.numerator, 5)
+  ratio = 7
+  expect(ratio.numerator, 7)
+  expect(readRatio(9), 9)
+  expect(returnRatio().numerator, 8)
+  expect((ratio + 3).numerator, 10)
+  expect((3 + ratio).numerator, 10)
+  expect(choose(4), "int")
+
+test "explicit and safe custom conversions":
+  ratio = 6 to Ratio
+  expect(ratio to int, 6)
+  expect(("12" to Ratio).numerator, 12)
+  half = Ratio(numerator: 1, denominator: 2)
+  expect(half to? int, null)
+  expect(ratio to? int, 6)
+
+class GenericBox<T>:
+  value: T required
+  implicit cast(value: T) -> GenericBox<T> = GenericBox<T>(value: value)
+  explicit cast(value: GenericBox<T>) -> T = value.value
+
+class Holder:
+  var ratio: Ratio required
+
+class Buggy:
+  value: int = 0
+  explicit cast(value: Buggy) -> int:
+    throw "programming bug"
+
+test "generic conversions and assignment contexts":
+  box: GenericBox<int> = 13
+  expect(box.value, 13)
+  expect(box to int, 13)
+  holder = Holder(ratio: 1)
+  holder.ratio = 2
+  expect(holder.ratio.numerator, 2)
+  items: List<Ratio> = [Ratio(numerator: 1, denominator: 1)]
+  items[0] = 4
+  expect(items[0].numerator, 4)
+  var ratio: Ratio = 2
+  ratio += 5
+  expect(ratio.numerator, 7)
+
+test "safe conversion does not swallow programming errors":
+  buggy = Buggy()
+  var observed = false
+  try:
+    print buggy to? int
+  catch problem:
+    observed = true
+  expect(observed, true)
+
+class Probe:
+  events: List<int> required
+  next(mark: int) -> int:
+    events.add(mark)
+    return mark
+
+combine(first: Ratio, second: Ratio) -> int = first.numerator * 10 + second.numerator
+
+test "conversion inputs evaluate once in written argument order":
+  events: List<int> = []
+  probe = Probe(events: events)
+  combined = combine(second: probe.next(2), first: probe.next(1))
+  expect(combined, 12)
+  expect(events, [2, 1])
+
+test "strict conversion error keeps a common identity and readable message":
+  var observed = false
+  try:
+    print Ratio(numerator: 1, denominator: 2) to int
+  catch problem: ConversionError:
+    observed = problem.message == "Not a whole number"
+  expect(observed, true)
+
+defaultRatio(value: Ratio = 19) -> int = value.numerator
+
+test "implicit nullable assignments and computed defaults":
+  var optional: Ratio? = null
+  optional = 11
+  expect(optional.numerator, 11)
+  var other: Ratio? = null
+  other ??= 12
+  expect(other.numerator, 12)
+  expect(defaultRatio(), 19)

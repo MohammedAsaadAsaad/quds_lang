@@ -1,0 +1,11 @@
+class Ticket:
+  code: int required
+  implicit cast(value: int) -> Ticket = Ticket(code: value)
+  explicit cast(value: Ticket) -> int:
+    if value.code < 0: throw ConversionError("Negative ticket")
+    return value.code
+
+class GenericTicket<T: num>:
+  code: T required
+  implicit cast(value: T) -> GenericTicket<T> = GenericTicket<T>(code: value)
+  explicit cast(value: GenericTicket<T>) -> T = value.code

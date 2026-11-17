@@ -109,7 +109,8 @@ Compilation compile(String source,
       library = Uri.file(sourcePath).resolve(ofs.single.uri).toFilePath();
     }
   }
-  final normalized = normalizeAugments({...libraries, sourcePath: program});
+  final normalized = normalizeConversions(
+      normalizeAugments({...libraries, sourcePath: program}));
   libraries
     ..clear()
     ..addAll(normalized);

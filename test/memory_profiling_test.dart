@@ -1,8 +1,31 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:test/test.dart';
+import 'package:vm_service/vm_service.dart';
+import '../tool/profile_heap.dart' show HeapPauseCheckpoints;
 
 void main() {
+  test('heap measurements ignore replayed pauses and other isolates', () {
+    final checkpoints = HeapPauseCheckpoints('main');
+    Event pause(String isolate, int position, int timestamp) => Event(
+        kind: EventKind.kPauseBreakpoint,
+        timestamp: timestamp,
+        isolate: IsolateRef(id: isolate, name: isolate),
+        topFrame: Frame(
+            index: 0,
+            location: SourceLocation(
+                script: ScriptRef(id: 'memory', uri: 'memory.dart'),
+                tokenPos: position)));
+    expect(checkpoints.accept(pause('other', 10, 1)), isFalse);
+    expect(checkpoints.accept(pause('main', 10, 2)), isTrue);
+    expect(checkpoints.accept(pause('main', 10, 3)), isFalse);
+    for (final position in [20, 30, 40, 50, 60]) {
+      expect(checkpoints.accept(pause('main', position, position)), isTrue);
+      expect(
+          checkpoints.accept(pause('main', position, position + 1)), isFalse);
+    }
+    expect(checkpoints.count, 6);
+  });
   test(
       'VM heap profiler observes Quds retain release and weak cache collection',
       () async {

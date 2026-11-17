@@ -1,0 +1,5 @@
+use "fixtures/conversions/owner.quds"
+test "conversions in part augment retain library privacy":
+  value: Secret = 23
+  expect(value.read(), 23)
+  expect(value to int, 23)

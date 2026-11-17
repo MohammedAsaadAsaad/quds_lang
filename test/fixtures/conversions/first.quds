@@ -1,0 +1,3 @@
+use "token.quds" as types
+augment types.Token:
+  implicit cast(value: int) -> types.Token = types.Token(value: value)

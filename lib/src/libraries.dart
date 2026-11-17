@@ -410,3 +410,25 @@ String _join(String root, String relative) {
   if (root.endsWith(separator)) return '$root$tail';
   return '$root$separator$tail';
 }
+
+/// A generated Quds library mirrors its source directory under the output root.
+/// Keep internal compiler imports relative too, rather than pointing at a Dart
+/// file beside the original source which the CLI deliberately never writes.
+String qudsBackendLibraryUri(String from, String home) {
+  final source = File(from).absolute.parent.uri.normalizePath();
+  final target = File(home.replaceFirst(RegExp(r'\.quds$'), '.dart'))
+      .absolute
+      .uri
+      .normalizePath();
+  final left = source.pathSegments.where((s) => s.isNotEmpty).toList();
+  final right = target.pathSegments.where((s) => s.isNotEmpty).toList();
+  var shared = 0;
+  while (shared < left.length &&
+      shared < right.length &&
+      left[shared] == right[shared]) {
+    shared++;
+  }
+  return [...List.filled(left.length - shared, '..'), ...right.skip(shared)]
+      .map((s) => s == '..' ? s : Uri.encodeComponent(s))
+      .join('/');
+}

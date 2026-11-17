@@ -1,0 +1,6 @@
+augment List<T>:
+  readonly firstAugmented() -> readonly T = this[0]
+
+test "external generic readonly augment retains its formal type":
+  values = [4, 5]
+  expect(values.firstAugmented(), 4)

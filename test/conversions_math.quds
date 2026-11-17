@@ -1,0 +1,35 @@
+use quds:math::number show Fraction, fraction
+use quds:math as math
+
+augment Fraction:
+  doubled() -> Fraction = this * 2
+
+acceptFraction(value: Fraction) -> int = value.numerator
+
+test "SDK integer and Fraction conversions are exact":
+  value: Fraction = 7
+  expect(value.numerator, 7)
+  expect(value.denominator, 1)
+  expect(value.doubled().numerator, 14)
+  expect(math.fraction(1, 1) to int, 1)
+  expect(acceptFraction(8), 8)
+  expect((value + 2).numerator, 9)
+  expect((2 + value).numerator, 9)
+  expect(value to int, 7)
+  expect(fraction(6, 3) to int, 2)
+  expect(Fraction(numerator: -6, denominator: -3) to int, 2)
+  expect(fraction(1, 2) to? int, null)
+  expect(Fraction(numerator: 1, denominator: 0) to? int, null)
+
+  safe = 9007199254740991
+  var smallest = 0 - safe
+  if safe + 1 != safe + 2:
+    largest = safe * 1024 + 1023
+    smallest = 0 - largest - 1
+  expect(Fraction(numerator: 1, denominator: smallest) to? int, null)
+  expect(Fraction(numerator: smallest, denominator: smallest) to int, 1)
+  expect(Fraction(numerator: smallest, denominator: 1) to int, smallest)
+  if smallest < 0 - safe:
+    expect(Fraction(numerator: smallest, denominator: -1) to? int, null)
+  else:
+    expect(Fraction(numerator: smallest, denominator: -1) to int, safe)

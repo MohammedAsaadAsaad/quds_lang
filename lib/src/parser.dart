@@ -1307,6 +1307,23 @@ class Parser {
         }
         continue;
       }
+      if ((word('implicit') || word('explicit')) && peek().lexeme == 'cast') {
+        final mode = take().lexeme;
+        final method = function(const [], conversionKind: mode);
+        if (method.parameters.length != 1 ||
+            method.returnType == null ||
+            method.isAsync ||
+            method.generator.isNotEmpty ||
+            method.parameters.any((p) =>
+                p.defaultValue != null || p.variadic || p.type == '<infer>')) {
+          throw CompilerException(
+              'E300',
+              'A cast requires one typed parameter, an explicit result and a synchronous body',
+              method.span);
+        }
+        methods.add(method);
+        continue;
+      }
       var visibility = '';
       if (word('private') || word('protected')) {
         visibility = take().lexeme;
@@ -2104,6 +2121,7 @@ class Parser {
 
   FunctionDeclaration function(List<Metadata> notes,
       {String visibility = '',
+      String conversionKind = '',
       bool readonlyMethod = false,
       String? operatorName,
       SourceSpan? operatorSpan,
@@ -2148,6 +2166,7 @@ class Parser {
           generator: generator,
           visibility: visibility,
           isOperator: operatorName != null,
+          conversionKind: conversionKind,
           readonlyMethod: readonlyMethod,
           isStatic: isStatic,
           typeParameters: typeParameters,
@@ -2160,6 +2179,7 @@ class Parser {
         generator: generator,
         visibility: visibility,
         isOperator: operatorName != null,
+        conversionKind: conversionKind,
         readonlyMethod: readonlyMethod,
         isStatic: isStatic,
         typeParameters: typeParameters,

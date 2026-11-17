@@ -1,0 +1,3 @@
+use "provider.quds" as source
+augment double:
+  explicit cast(value: double) -> source.Ticket = source.Ticket(code: (value to int) * 2)

@@ -1,0 +1,6 @@
+use "token.quds"
+use "first.quds"
+use "second.quds"
+main():
+  token: Token = 1
+  print token.value

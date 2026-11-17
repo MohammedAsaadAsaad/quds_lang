@@ -107,7 +107,19 @@ class _LoopFrame {
   String? breakType;
 }
 
+class ConversionPlan {
+  const ConversionPlan(
+      this.function, this.library, this.typeArguments, this.resultType);
+  final FunctionDeclaration function;
+  final String library;
+  final List<String> typeArguments;
+  final String resultType;
+}
+
 class SemanticModel {
+  String library = '';
+  final implicitConversions = <Expression, ConversionPlan>{};
+  final explicitConversions = <ConversionExpression, ConversionPlan>{};
   final references = <Node, Symbol>{};
   final declarations = <Node, Symbol>{};
   final assignments = <Binding>{};
@@ -485,6 +497,7 @@ bool supportsReadonlyClass(SemanticModel model, ClassDeclaration node,
 class Analyzer {
   Analyzer({this.library = '<input>', String? file}) : _file = file ?? library;
   final model = SemanticModel();
+  final _conversionDefinitions = <FunctionDeclaration, String>{};
 
   /// Privacy scope. A part file uses its parent's path.
   final String library;
@@ -577,6 +590,7 @@ class Analyzer {
 
   SemanticModel analyze(Program program,
       {Map<String, Program> libraries = const {}}) {
+    model.library = library;
     _libraries = libraries;
     _global.symbols['print'] = Symbol('print', 'print', 'void');
     _installChecks();
@@ -609,7 +623,13 @@ class Analyzer {
         Symbol('Ok', 'Ok', 'Result', parameterTypes: const ['*']);
     _global.symbols['Error'] =
         Symbol('Error', 'Error', 'Result', parameterTypes: const ['*']);
+    _global.symbols['ConversionError'] = Symbol(
+        'ConversionError', 'ConversionError', 'ConversionError',
+        parameterTypes: const ['String']);
     _installLog();
+    for (final f in program.statements.whereType<FunctionDeclaration>()) {
+      if (f.conversionKind.isNotEmpty) _conversionDefinitions[f] = library;
+    }
     for (final statement in program.statements) {
       if (statement is AliasDeclaration) {
         model.aliases[statement.name] = statement.target;
@@ -679,12 +699,14 @@ class Analyzer {
             if (!compatible(type, parameter.type)) {
               fail('Cannot initialize ${parameter.type} with $type', value);
             }
+            _rejectConstantConversion(value);
             _constants.ensureConstant(value);
           }
         default:
           break;
       }
     }
+    _validateConversionDefinitions();
     for (final statement in functions) {
       analyzeFunction(statement);
     }
@@ -1502,6 +1524,7 @@ class Analyzer {
     if (value == null) fail('A static field needs an initializer', field);
     final String type;
     if (field.isConst) {
+      _rejectConstantConversion(value);
       final constant = _constants.evaluate(value);
       type = switch (constant) {
         ConstInt() => 'int',
@@ -1778,7 +1801,8 @@ class Analyzer {
     'present',
     'Result',
     'Ok',
-    'Error'
+    'Error',
+    'ConversionError'
   ];
 
   void _bindQuds(ImportDeclaration node) {
@@ -2314,6 +2338,11 @@ class Analyzer {
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
           _importClass(statement, home: home, qualify: qualify);
+        case FunctionDeclaration() when statement.conversionKind.isNotEmpty:
+          if (_keeps(statement.conversionOwner.split('<').first, filter)) {
+            _conversionDefinitions[statement] = home;
+            _importFunction(statement, library: home);
+          }
         case FunctionDeclaration()
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
@@ -2411,7 +2440,8 @@ class Analyzer {
   void _importExtension(ExtensionDeclaration statement,
       {required String home, String? qualify}) {
     if (model.extensions.contains(statement)) return;
-    if (qualify != null) return;
+    if (qualify != null &&
+        !(statement.name?.startsWith(r'$QudsAugment') ?? false)) return;
     registerExtension(statement, library: home);
   }
 
@@ -2633,7 +2663,8 @@ class Analyzer {
       'String',
       'Null',
       'Object',
-      'StackTrace'
+      'StackTrace',
+      'ConversionError'
     }.contains(type)) {
       return;
     }
@@ -2786,9 +2817,8 @@ class Analyzer {
     _libraryTypes[home] = names;
     final prefix = '_qImportedType${_libraryTypes.length - 1}';
     final sdk = sdkLibraryName(home);
-    model.backendTypeImports[prefix] = sdk == null
-        ? Uri.file(home.replaceFirst(RegExp(r'\.quds$'), '.dart')).toString()
-        : sdkDartFileName(sdk);
+    model.backendTypeImports[prefix] =
+        sdk == null ? qudsBackendLibraryUri(_file, home) : sdkDartFileName(sdk);
     for (final declaration
         in program.statements.whereType<ClassDeclaration>()) {
       scope.symbols[declaration.name] = Symbol(
@@ -2799,6 +2829,26 @@ class Analyzer {
       final key = '@${_libraryTypes.length - 1}.${declaration.name}';
       names[declaration.name] = key;
       model.backendTypes[key] = '$prefix.${declaration.name}';
+    }
+    // Signatures in this library keep their lexical imported type identities,
+    // even when the caller uses a different prefix or imports no such type.
+    for (final directive in program.statements.whereType<ImportDeclaration>()) {
+      if (directive.export ||
+          directive.uri.startsWith('dart:') ||
+          _isLocalDart(directive)) continue;
+      final target = _resolveLibrary(home, directive.uri);
+      if (!_libraries.containsKey(target) || target == home) continue;
+      _libraryScope(target);
+      for (final entry
+          in (_libraryTypes[target] ?? <String, String>{}).entries.toList()) {
+        if (entry.key.contains('.') ||
+            entry.key.startsWith('_') ||
+            !_keeps(entry.key, directive)) continue;
+        final local = directive.prefix == null
+            ? entry.key
+            : '${directive.prefix}.${entry.key}';
+        names.putIfAbsent(local, () => entry.value);
+      }
     }
     final saved = _scope;
     final savedAliasShadows = {...model.activeAliasShadows};
@@ -3018,7 +3068,7 @@ class Analyzer {
         restrictDefault(value, parameterNames.toSet(),
             function.parameters.map((item) => item.name).toSet());
         final type = expression(value);
-        if (!compatible(type, parameter.type)) {
+        if (!_acceptExpected(value, type, parameter.type)) {
           fail('Default type $type is incompatible with ${parameter.type}',
               value);
         }
@@ -3042,7 +3092,7 @@ class Analyzer {
                 : function.isAsync
                     ? 'Future<$type>'
                     : type;
-      } else if (!compatible(type, _returnType!)) {
+      } else if (!_acceptExpected(value, type, _returnType!)) {
         fail('Return type $type is incompatible with $_returnType', value);
       }
     } else {
@@ -3171,7 +3221,7 @@ class Analyzer {
           }
           final target = node.type ?? type;
           validateType(target, node, allowVoid: false);
-          if (!compatible(type, target)) {
+          if (!_acceptExpected(node.value, type, target)) {
             fail('Cannot initialize $target with $type', node);
           }
           symbol.type = target;
@@ -3205,7 +3255,7 @@ class Analyzer {
           model.declarations[node] = symbol;
           return;
         }
-        final type = expression(node.value);
+        var type = expression(node.value);
         _expected = savedExpected;
         if (type == 'void')
           fail('A void expression cannot initialize a binding', node);
@@ -3221,16 +3271,38 @@ class Analyzer {
           if (node.operator == '??=') {
             _checkIfNull(existing.type, type, node);
           } else {
+            if (node.operator != '=' && node.operator != '??=') {
+              final owner =
+                  _typeSymbol(_genericHead(existing.type))?.classDeclaration;
+              final method = owner == null
+                  ? null
+                  : _method(owner, node.operator[0], arity: 1);
+              if (method != null &&
+                  method.isOperator &&
+                  method.parameters.isNotEmpty) {
+                final expected = _qualifyType(_genericHead(existing.type),
+                    method.parameters.first.type, owner!.name);
+                if (_acceptExpected(node.value, type, expected))
+                  type =
+                      model.implicitConversions[node.value]?.resultType ?? type;
+              }
+            }
             final result = node.operator == '='
                 ? type
                 : binaryType(existing.type, node.operator[0], type, node);
-            if (!compatible(result, existing.type)) {
+            if (!(node.operator == '='
+                ? _acceptExpected(node.value, result, existing.type)
+                : compatible(result, existing.type))) {
               fail('Cannot assign $result to ${existing.type}', node);
             }
           }
           model.references[node] = existing;
           model.assignments.add(node);
-          _afterAssignment(node.name, existing.type, type, node.operator);
+          _afterAssignment(
+              node.name,
+              existing.type,
+              model.implicitConversions[node.value]?.resultType ?? type,
+              node.operator);
           return;
         }
         if (node.operator != '=')
@@ -3247,7 +3319,7 @@ class Analyzer {
         }
         final target = node.type ?? type;
         validateType(target, node, allowVoid: false);
-        if (!compatible(type, target))
+        if (!_acceptExpected(node.value, type, target))
           fail('Cannot initialize $target with $type', node);
         var stored = target;
         var readonly = false;
@@ -3260,6 +3332,7 @@ class Analyzer {
         }
         ConstValue? constantValue;
         if (node.mode == BindingMode.constant) {
+          _rejectConstantConversion(node.value);
           constantValue = _constants.evaluate(node.value);
           checkConstShape(target, constantValue);
         }
@@ -3509,7 +3582,9 @@ class Analyzer {
           _expected = savedExpected;
         }
         if (_returnType == '<infer>') break;
-        if (!compatible(type, _returnType!))
+        if (!(node.value == null
+            ? compatible(type, _returnType!)
+            : _acceptExpected(node.value!, type, _returnType!)))
           fail('Return type $type is incompatible with $_returnType', node);
       case ExpressionStatement():
         final valueType = expression(node.expression);
@@ -3903,12 +3978,12 @@ class Analyzer {
     _expected = saved;
     if (node.operator == '??=') {
       if (isMap) {
-        if (!compatible(value, target))
+        if (!_acceptExpected(node.value, value, target))
           fail('Cannot assign $value to $target', node.value);
       } else {
         if (!isNullableType(target) && target != 'Null')
           fail('??= requires a nullable binding', node);
-        if (!compatible(value, target))
+        if (!_acceptExpected(node.value, value, target))
           fail('Cannot assign $value to $target', node.value);
       }
       return;
@@ -3917,7 +3992,9 @@ class Analyzer {
         ? value
         : binaryType(readType,
             node.operator.substring(0, node.operator.length - 1), value, node);
-    if (!compatible(written, target)) {
+    if (!(node.operator == '='
+        ? _acceptExpected(node.value, written, target)
+        : compatible(written, target))) {
       fail('Cannot assign $written to $target', node.value);
     }
   }
@@ -3957,7 +4034,9 @@ class Analyzer {
               value,
               node);
       if (node.operator == '??=') _checkIfNull(targetType, value, node);
-      if (!compatible(written, targetType)) {
+      if (!(node.operator == '=' || node.operator == '??='
+          ? _acceptExpected(node.value, written, targetType)
+          : compatible(written, targetType))) {
         fail('Cannot assign $value to ${targetType}', node);
       }
       _checkMember(declaration, node.name, node);
@@ -3981,15 +4060,17 @@ class Analyzer {
     final value = expression(node.value);
     if (node.operator == '??=') {
       _checkIfNull(targetType, value, node);
-    } else if (!compatible(
-        node.operator == '='
-            ? value
-            : binaryType(
-                targetType,
-                node.operator.substring(0, node.operator.length - 1),
-                value,
-                node),
-        targetType)) {
+    } else if (node.operator == '='
+        ? !_acceptExpected(node.value, value, targetType)
+        : !compatible(
+            node.operator == '='
+                ? value
+                : binaryType(
+                    targetType,
+                    node.operator.substring(0, node.operator.length - 1),
+                    value,
+                    node),
+            targetType)) {
       fail('Cannot assign $value to ${targetType}', node);
     }
     if (type == '_QudsLog' && fields.first.name == 'minimum') {
@@ -4343,7 +4424,10 @@ class Analyzer {
       return _sameType(unwrap(from), unwrap(to));
     final left = _genericHead(from);
     final right = _genericHead(to);
-    if (left == right &&
+    if ((left == right ||
+            (_typeSymbol(left)?.classDeclaration != null &&
+                identical(_typeSymbol(left)?.classDeclaration,
+                    _typeSymbol(right)?.classDeclaration))) &&
         left != from &&
         right != to &&
         from.endsWith('>') &&
@@ -4409,6 +4493,20 @@ class Analyzer {
     if (from.startsWith('readonly ')) return false;
     final fromHead = _genericHead(from);
     final toHead = _genericHead(to);
+    final sourceOwner = _typeSymbol(fromHead)?.classDeclaration;
+    final targetOwner = _typeSymbol(toHead)?.classDeclaration;
+    if (sourceOwner != null &&
+        identical(sourceOwner, targetOwner) &&
+        from.endsWith('>') &&
+        to.endsWith('>')) {
+      final sourceArgs =
+          splitTypeList(from.substring(fromHead.length + 1, from.length - 1));
+      final targetArgs =
+          splitTypeList(to.substring(toHead.length + 1, to.length - 1));
+      return sourceArgs.length == targetArgs.length &&
+          List.generate(sourceArgs.length,
+              (i) => _sameType(sourceArgs[i], targetArgs[i])).every((v) => v);
+    }
     if ((fromHead == toHead ||
             toHead == 'Iterable' && const {'List', 'Set'}.contains(fromHead)) &&
         const {'List', 'Set', 'Iterable', 'Map', 'Future', 'Stream'}
@@ -4801,6 +4899,7 @@ class Analyzer {
           fail('Argument type $type is incompatible with ${parameter.type}',
               argument);
         }
+        _rejectConstantConversion(argument.value);
         _constants.ensureConstant(argument.value);
       }
       for (final parameter in shape.parameters) {
@@ -5432,6 +5531,7 @@ class Analyzer {
 
   String? memberType(String type, String name,
       [Set<String> visited = const {}]) {
+    if (type == 'ConversionError' && name == 'message') return 'String';
     final head = _genericHead(type);
     if (visited.contains(head)) return null;
     final nextVisited = {...visited, head};
@@ -6020,7 +6120,16 @@ class Analyzer {
       fail('??= requires a nullable binding', node);
     }
     final inner = unwrap(target);
-    if (!compatible(value, inner)) {
+    final expression = switch (node) {
+      Binding() => node.value,
+      MemberAssignment() => node.value,
+      IndexAssignment() => node.value,
+      AssignExpression() => node.value,
+      _ => null,
+    };
+    if (!(expression == null
+        ? compatible(value, inner)
+        : _acceptExpected(expression, value, inner))) {
       fail('Cannot assign $value to $inner', node);
     }
   }
@@ -6128,8 +6237,81 @@ class Analyzer {
       final right = _withPromoted(facts, () => expression(node.right));
       return binaryType(left, node.operator, right, node);
     }
-    return binaryType(
-        expression(node.left), node.operator, expression(node.right), node);
+    final left = expression(node.left), right = expression(node.right);
+    try {
+      return binaryType(left, node.operator, right, node);
+    } on CompilerException catch (failure) {
+      if (failure.code != 'E300' ||
+          !const {
+            '+',
+            '-',
+            '*',
+            '/',
+            '~/',
+            '%',
+            '<',
+            '<=',
+            '>',
+            '>=',
+            '&',
+            '|',
+            '^',
+            '<<',
+            '>>',
+            '>>>'
+          }.contains(node.operator)) rethrow;
+      final options = <(Expression, ConversionPlan, String)>[];
+      final owner = _typeSymbol(_genericHead(unwrap(left)))?.classDeclaration;
+      final method =
+          owner == null ? null : _method(owner, node.operator, arity: 1);
+      final native = _sdkMember(left, node.operator);
+      final expected =
+          method != null && method.isOperator && method.parameters.length == 1
+              ? _qualifyType(_genericHead(unwrap(left)),
+                  method.parameters.single.type, owner!.name)
+              : numeric(left)
+                  ? 'num'
+                  : native?.parameters.length == 1
+                      ? native!.parameters.single.$2
+                      : null;
+      if (expected != null) {
+        final plan = _customConversion(right, expected, node.right);
+        if (plan != null) {
+          try {
+            options.add((
+              node.right,
+              plan,
+              binaryType(left, node.operator, plan.resultType, node)
+            ));
+          } on CompilerException catch (e) {
+            if (e.code != 'E300') rethrow;
+          }
+        }
+      }
+      final other = _typeSymbol(_genericHead(unwrap(right)))?.classDeclaration;
+      final otherMethod =
+          other == null ? null : _method(other, node.operator, arity: 1);
+      if (numeric(right) || otherMethod?.isOperator == true) {
+        final plan =
+            _customConversion(left, numeric(right) ? 'num' : right, node.left);
+        if (plan != null) {
+          try {
+            options.add((
+              node.left,
+              plan,
+              binaryType(plan.resultType, node.operator, right, node)
+            ));
+          } on CompilerException catch (e) {
+            if (e.code != 'E300') rethrow;
+          }
+        }
+      }
+      if (options.isEmpty) rethrow;
+      if (options.length != 1)
+        error('E310', 'Ambiguous implicit operator conversion', node);
+      model.implicitConversions[options.single.$1] = options.single.$2;
+      return options.single.$3;
+    }
   }
 
   String binaryType(String left, String op, String right, Node node) {
@@ -6186,7 +6368,7 @@ class Analyzer {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
     }
-    final owner = _typeSymbol(unwrap(left))?.classDeclaration;
+    final owner = _typeSymbol(_genericHead(unwrap(left)))?.classDeclaration;
     final method = owner == null ? null : _method(owner, op, arity: 1);
     if (owner != null && method != null && method.isOperator) {
       if (method.parameters.isNotEmpty) {
@@ -6328,7 +6510,8 @@ class Analyzer {
     _Scope? scope = _scope;
     while (scope != null) {
       for (final entry in scope.symbols.entries) {
-        if (!seen.add(entry.key)) continue;
+        if (!seen.add(entry.key) ||
+            entry.value.function?.conversionKind.isNotEmpty == true) continue;
         if (entry.key.startsWith('_') && entry.value.library.isNotEmpty) {
           continue;
         }
@@ -7031,7 +7214,8 @@ class Analyzer {
       }
       for (var i = 0; i < expected.length; i++) {
         final argument = expression(node.arguments[i].value);
-        if (expected[i].isNotEmpty && !compatible(argument, expected[i])) {
+        if (expected[i].isNotEmpty &&
+            !_acceptExpected(node.arguments[i].value, argument, expected[i])) {
           fail('Argument type $argument is incompatible with ${expected[i]}',
               node.arguments[i]);
         }
@@ -7157,7 +7341,8 @@ class Analyzer {
       }
       for (var i = 0; i < expected.length; i++) {
         final argument = expression(node.arguments[i].value);
-        if (expected[i].isNotEmpty && !compatible(argument, expected[i])) {
+        if (expected[i].isNotEmpty &&
+            !_acceptExpected(node.arguments[i].value, argument, expected[i])) {
           fail('Argument type $argument is incompatible with ${expected[i]}',
               node.arguments[i]);
         }
@@ -7194,6 +7379,22 @@ class Analyzer {
         if (selected == null || (selectedVariadic && !candidateVariadic)) {
           selected = candidate;
         }
+      }
+    }
+    if (selected == null) {
+      for (final candidate in candidates) {
+        final trial = _CheckedArguments();
+        if (!argumentsMatch(node, candidate.parameters,
+            commit: false,
+            allowConversions: true,
+            function: candidate,
+            checked: trial)) continue;
+        if (selected != null) fail('Ambiguous overload: ${callee.name}', node);
+        selected = candidate;
+      }
+      if (selected != null) {
+        model.references[callee] = model.declarations[selected]!;
+        return applyArguments(node, selected.parameters, selected);
       }
     }
     if (selected == null) fail('No overload matches this call', node);
@@ -7301,11 +7502,15 @@ class Analyzer {
               RegExp('\\b${RegExp.escape(key)}\\b').hasMatch(expected))
           ? null
           : expected;
-      final String type;
+      String type;
       try {
         type = expression(argument.value);
       } finally {
         _expected = saved;
+      }
+      if (!compatible(type, expected) &&
+          _acceptExpected(argument.value, type, expected)) {
+        type = model.implicitConversions[argument.value]?.resultType ?? type;
       }
       _checkReadonlyEscape(type, argument);
       if (explicitTypes == null &&
@@ -7749,11 +7954,15 @@ class Analyzer {
         final element = _nativeShape(source)?.listElement;
         if (element != null) source = '$head<$element>';
       }
-      if (_genericHead(source) == head && source.endsWith('>')) {
+      if ((_genericHead(source) == head ||
+              (_typeSymbol(head)?.classDeclaration != null &&
+                  identical(_typeSymbol(head)?.classDeclaration,
+                      _typeSymbol(_genericHead(source))?.classDeclaration))) &&
+          source.endsWith('>')) {
         final left =
             _splitTypes(pattern.substring(head.length + 1, pattern.length - 1));
-        final right =
-            _splitTypes(source.substring(head.length + 1, source.length - 1));
+        final right = _splitTypes(source.substring(
+            _genericHead(source).length + 1, source.length - 1));
         if (left.length != right.length) return false;
         for (var i = 0; i < left.length; i++) {
           if (!_inferGeneric(left[i], right[i], found, parameters))
@@ -7793,6 +8002,7 @@ class Analyzer {
 
   bool argumentsMatch(CallExpression node, List<Parameter> parameters,
       {required bool commit,
+      bool allowConversions = false,
       FunctionDeclaration? function,
       _CheckedArguments? checked,
       Map<String, String> typeArguments = const {},
@@ -7847,13 +8057,23 @@ class Analyzer {
           _expected = null;
         }
       }
-      final type = expression(argument.value);
+      var type = expression(argument.value);
       _expected = savedExpected;
-      if (function == null) {
-        if (!compatible(type, parameters[target].type)) return false;
-      } else if (!_inferGeneric(
-          parameters[target].type, type, inferred, function.typeParameters))
-        return false;
+      final natural = function == null
+          ? compatible(type, parameters[target].type)
+          : _inferGeneric(
+              parameters[target].type, type, inferred, function.typeParameters);
+      if (!natural) {
+        if (!allowConversions) return false;
+        final expected = _substitute(parameters[target].type, inferred);
+        final plan = _customConversion(type, expected, argument.value);
+        if (plan == null) return false;
+        checked?.conversions[argument.value] = plan;
+        type = plan.resultType;
+        if (function != null &&
+            !_inferGeneric(parameters[target].type, type, inferred,
+                function.typeParameters)) return false;
+      }
       types[target] = type;
       if (checked != null) checked.types[argument.value] = type;
       order[target] = i;
@@ -7933,6 +8153,7 @@ class Analyzer {
     if (checked == null &&
         !argumentsMatch(node, parameters,
             commit: true,
+            allowConversions: true,
             function: function,
             checked: verified,
             typeArguments: typeArguments,
@@ -7940,6 +8161,7 @@ class Analyzer {
             declaredReturnType: declaredReturnType)) {
       fail('No overload matches this call', node);
     }
+    model.implicitConversions.addAll(verified.conversions);
     final inferred = {...verified.inferred, ...typeArguments};
     final order = List<int>.filled(parameters.length, -1);
     final rest = <int>[];
@@ -7997,8 +8219,11 @@ class Analyzer {
       if (parameters[i].variadic || order[i] != -1) continue;
       final fallback = parameters[i].defaultValue;
       if (fallback == null) fail('Missing required argument', node);
-      final type =
-          _callResult(model.types[fallback] ?? expression(fallback), function);
+      final type = _callResult(
+          model.implicitConversions[fallback]?.resultType ??
+              model.types[fallback] ??
+              expression(fallback),
+          function);
       if (!compatible(type, parameters[i].type)) {
         fail('Default type $type is incompatible with ${parameters[i].type}',
             fallback);
@@ -8711,6 +8936,134 @@ class Analyzer {
     return '() -> $type';
   }
 
+  void _validateConversionDefinitions() {
+    final signatures = <String>{};
+    for (final entry in _conversionDefinitions.entries) {
+      final f = entry.key;
+      var signature = '${f.parameters.single.type} -> ${f.returnType}';
+      for (var i = 0; i < f.typeParameters.length; i++) {
+        signature = signature.replaceAll(
+            RegExp(
+                '(?<![a-zA-Z0-9_])${RegExp.escape(f.typeParameters[i].name)}(?![a-zA-Z0-9_])'),
+            '@$i');
+      }
+      if (!signatures.add('${entry.value}:$signature')) {
+        error('E201', 'Duplicate conversion declaration: $signature', f);
+      }
+    }
+  }
+
+  void _rejectConstantConversion(Expression value) {
+    walkAst(value, (node) {
+      if (model.implicitConversions.containsKey(node) ||
+          model.explicitConversions.containsKey(node)) {
+        error(
+            'E401', 'Custom conversions are not compile-time constants', node);
+      }
+    });
+  }
+
+  String _conversionSignatureType(
+      String raw, String home, Set<String> shadows) {
+    final saved = {...model.activeAliasShadows};
+    model.activeAliasShadows.addAll(shadows);
+    try {
+      if (home == library || home.isEmpty) return model.resolve(raw);
+      _libraryScope(home);
+      final aliases =
+          _libraries[home]?.statements.whereType<AliasDeclaration>().toList() ??
+              <AliasDeclaration>[];
+      for (var pass = 0; pass <= aliases.length; pass++) {
+        final previous = raw;
+        for (final alias in aliases) {
+          if (shadows.contains(alias.name)) continue;
+          raw = raw.replaceAll(
+              RegExp('(?<![\\w.])${RegExp.escape(alias.name)}\\b'),
+              alias.target);
+        }
+        if (raw == previous) break;
+      }
+      // Resolve the provider's lexical names before caller aliases. Otherwise
+      // a caller's `type Ticket = String` can steal an imported Ticket cast.
+      return model.resolve(_libraryType(raw, home, shadows: shadows));
+    } finally {
+      model.activeAliasShadows
+        ..clear()
+        ..addAll(saved);
+    }
+  }
+
+  ConversionPlan? _customConversion(String from, String to, Node at,
+      {bool implicitOnly = true}) {
+    final candidates = <(ConversionPlan, int)>[];
+    for (final entry in _conversionDefinitions.entries.toList()) {
+      final f = entry.key;
+      if (implicitOnly && f.conversionKind != 'implicit') continue;
+      final home = entry.value;
+      if (home != library && home.isNotEmpty) _libraryScope(home);
+      final shadows = f.typeParameters.map((p) => p.name).toSet();
+      final source =
+          _conversionSignatureType(f.parameters.single.type, home, shadows);
+      final result = _conversionSignatureType(f.returnType!, home, shadows);
+      final inferred = <String, String>{};
+      if (!_inferGeneric(source, from, inferred, f.typeParameters)) continue;
+      if (f.typeParameters.any((p) => !inferred.containsKey(p.name))) {
+        if (!_inferGeneric(result, to, inferred, f.typeParameters)) continue;
+      }
+      if (f.typeParameters.any((p) => !inferred.containsKey(p.name))) continue;
+      final instantiatedSource = _substitute(source, inferred);
+      final instantiatedResult = _substitute(result, inferred);
+      if (!compatible(from, instantiatedSource) ||
+          !compatible(instantiatedResult, to)) continue;
+      if (f.typeParameters.any((p) =>
+          p.bound != null &&
+          !_satisfiesTypeBound(
+              inferred[p.name]!,
+              _substitute(_conversionSignatureType(p.bound!, home, shadows),
+                  inferred)))) continue;
+      final score = (compatible(instantiatedSource, from) ? 2 : 0) +
+          (compatible(to, instantiatedResult) ? 2 : 0) +
+          (f.typeParameters.isEmpty ? 1 : 0);
+      candidates.add((
+        ConversionPlan(
+            f,
+            home,
+            [for (final p in f.typeParameters) inferred[p.name]!],
+            instantiatedResult),
+        score
+      ));
+    }
+    if (candidates.isEmpty) return null;
+    final best = candidates.map((c) => c.$2).reduce((a, b) => a > b ? a : b);
+    final winners = candidates.where((c) => c.$2 == best).toList();
+    if (winners.length != 1)
+      error('E310', 'Ambiguous conversion from $from to $to', at);
+    final plan = winners.single.$1;
+    if (plan.library.isNotEmpty && plan.library != library) {
+      final prefix =
+          '_qCast${sha256Hex(utf8.encode(plan.library)).substring(0, 10)}';
+      final sdk = sdkLibraryName(plan.library);
+      model.backendTypeImports[prefix] = sdk == null
+          ? qudsBackendLibraryUri(_file, plan.library)
+          : sdkDartFileName(sdk);
+    }
+    if (sdkLibraryName(plan.library) != null) {
+      model.usedSdk.add(plan.library);
+      model.usedSdkNames
+          .putIfAbsent(plan.library, () => <String>{})
+          .add(plan.function.name);
+    }
+    return plan;
+  }
+
+  bool _acceptExpected(Expression value, String actual, String expected) {
+    if (compatible(actual, expected)) return true;
+    final plan = _customConversion(actual, expected, value);
+    if (plan == null) return false;
+    model.implicitConversions[value] = plan;
+    return true;
+  }
+
   String conversion(ConversionExpression node) {
     final raw = expression(node.operand);
     final source = unwrap(stripReadonlyType(raw));
@@ -8719,7 +9072,10 @@ class Analyzer {
         : node.type;
     validateType(target, node, allowVoid: false);
     if (source != target && !_convertible(source, target)) {
-      error('E300', 'Cannot convert $source to $target', node);
+      final plan = _customConversion(raw, node.type, node, implicitOnly: false);
+      if (plan == null)
+        error('E300', 'Cannot convert $source to $target', node);
+      model.explicitConversions[node] = plan;
     }
     final result = node.safe ? nullableType(node.type) : node.type;
     return source == target ? _readonlyView(raw, result) : result;
@@ -8748,7 +9104,7 @@ class Analyzer {
         error('E300', 'No field ${node.fields[i]} on $bare', node);
       }
       final value = expression(node.values[i]);
-      if (!compatible(value, fields.single.type)) {
+      if (!_acceptExpected(node.values[i], value, fields.single.type)) {
         error(
             'E300', 'Cannot set ${node.fields[i]} from $value', node.values[i]);
       }
@@ -8823,11 +9179,17 @@ class Analyzer {
       final result = node.operator == '='
           ? type
           : binaryType(symbol.type, node.operator[0], type, node);
-      if (!compatible(result, symbol.type)) {
+      if (!(node.operator == '='
+          ? _acceptExpected(node.value, result, symbol.type)
+          : compatible(result, symbol.type))) {
         fail('Cannot assign $result to ${symbol.type}', node);
       }
     }
-    _afterAssignment(node.name, symbol.type, type, node.operator);
+    _afterAssignment(
+        node.name,
+        symbol.type,
+        model.implicitConversions[node.value]?.resultType ?? type,
+        node.operator);
     return _promoted[node.name] ?? symbol.type;
   }
 
@@ -9242,4 +9604,5 @@ class _CheckedArguments {
   final inferred = <String, String>{};
   final types = <Expression, String>{};
   final variadics = <Argument>{};
+  final conversions = <Expression, ConversionPlan>{};
 }

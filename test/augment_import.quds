@@ -1,4 +1,4 @@
-use "fixtures/augment/external.quds"
+use "fixtures/augment/external.quds" as extras
 test "external augment behavior is visible through imports":
   value = 3
   expect(value.fourth(), 81)

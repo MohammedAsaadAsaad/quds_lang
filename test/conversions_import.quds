@@ -1,0 +1,15 @@
+use "fixtures/conversions/provider.quds" as tickets
+
+type Ticket = String
+
+test "imported prefixed class conversion":
+  ticket: tickets.Ticket = 42
+  expect(ticket.code, 42)
+  expect(ticket to int, 42)
+  negative = tickets.Ticket(code: -1)
+  expect(negative to? int, null)
+
+test "imported generic conversion preserves its bound and type identity":
+  ticket: tickets.GenericTicket<int> = 21
+  expect(ticket.code, 21)
+  expect(ticket to int, 21)

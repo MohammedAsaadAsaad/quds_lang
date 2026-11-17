@@ -130,7 +130,7 @@
         },
         {
           "name": "keyword.other.quds",
-          "match": "\\b(?:var|const|shadow|label|class|sealed|use|export|part|type|annotation|config|do|result|repeat|when|task|group|spawn|defer|using|late|enum|mixin|interface|extend|abstract|base|final|value|singleton|property|operator|private|protected|init|factory|static|readonly|capture|state|computed|watch|require|check|assert)\\b"
+          "match": "\\b(?:var|const|shadow|label|class|sealed|use|export|part|type|annotation|config|do|result|repeat|when|task|group|spawn|defer|using|late|enum|mixin|interface|extend|augment|implicit|explicit|cast|abstract|base|final|value|singleton|property|operator|private|protected|init|factory|static|readonly|capture|state|computed|watch|require|check|assert)\\b"
         },
         {
           "name": "keyword.operator.quds",

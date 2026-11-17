@@ -2804,3 +2804,60 @@ Repository: `MohammedAsaadAsaad/quds_lang`.
 Recommended files: `AGENTS.md`, `docs/LANGUAGE_DECISIONS.md`, `docs/OPEN_QUESTIONS.md`, this full specification, `docs/IMPLEMENTATION_PLAN.md`, source under `lib/src/`, tests under `test/`, examples under `examples/`.
 
 **Do not mark a rule implemented merely because it appears in this document.** Every feature requires compiler support, diagnostics, documentation, and tests.
+## Owner-approved amendment: augmentation and custom conversions (2026-11-17)
+
+This appendix records the owner's explicit post-1.2 approval. It extends the
+original grammar; it does not reinterpret the original 115 decisions or imply
+that every backend form is implemented. `partial` is not introduced.
+
+```quds
+class Distance:
+  meters: int required
+  implicit cast(value: int) -> Distance = Distance(meters: value)
+  explicit cast(value: Distance) -> int = value.meters
+
+augment Distance:
+  readonly doubled() -> int = meters * 2
+
+main():
+  distance: Distance = 3
+  print distance.doubled()
+  print distance to int
+```
+
+`augment Type:` merges declarations into an owned Quds class, including its
+explicit `part` files, before symbols, constructors and bodies are checked.
+It preserves class identity and inheritance; duplicate members are errors.
+An augment outside the owning library, including one targeting a Dart type,
+adds behavioral members or conversions without storage, constructors or private
+access privileges. Imported additions use static resolution and ambiguous
+members are errors. Visibility continues to use existing Quds modifiers; this
+appendix introduces no new accessibility mechanism.
+
+`implicit cast(value: Source) -> Target` and `explicit cast(...) -> Target`
+appear inside a class or augment. They are type-level operations, not virtual
+instance methods, and have no `this`. In this implementation, qualify static
+member access inside a converter as `Type.member`. Require exactly one typed, non-variadic
+parameter without a default, an explicit return annotation and a synchronous
+body. One endpoint must name the containing type. Generic parameters retain
+their bounds. Built-in primitive conversions and identity conversions cannot
+be redefined. Duplicate source/target declarations in one library are errors.
+
+An implicit declaration can also be invoked explicitly. `to Target` invokes
+an applicable custom conversion when no built-in conversion applies;
+`to? Target` returns null on the shared `ConversionError` only. Other exceptions
+propagate. `ConversionError(message)` is a core compiler-provided exception,
+with a String `message` and one positional String constructor argument.
+`as` and `is` remain runtime type operations and never invoke converters.
+
+Implicit resolution operates at supported expected-type boundaries, not in
+the subtype relation. A naturally applicable call wins before conversion-based
+candidates are considered. A conversion consumes a naturally compatible source
+and produces a naturally compatible result: at most one user conversion per
+boundary, with no chains, qualifier erasure or const execution. Concrete exact
+conversion signatures rank above broader/generic matches; equally ranked
+converters or calls produce `E310`. Evaluation remains source-order and
+exactly once. An unannotated `number = 5` remains int.
+
+See [AUGMENT_AND_CONVERSIONS_AR.md](AUGMENT_AND_CONVERSIONS_AR.md) for implemented
+contexts, Quds conformance suites, backend checks and explicit limitations.

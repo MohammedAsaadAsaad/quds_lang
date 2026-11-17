@@ -98,3 +98,11 @@ augmentation, preserving member spans and rejecting structural conflicts.
 All 528 tests pass, analyzer clean. Stage 2 adds typed custom conversion
 resolution and runtime behavior; it is not included in the stage-1 claim.
 See AUGMENT_AND_CONVERSIONS_AR.md for the explicit owner-approved syntax amendment.
+
+Stage 2 now implements the approved class/augment conversion declarations,
+static one-hop contextual resolution, imported/generic/part identities,
+ConversionError-safe `to?`, and ordinary SDK Fraction conversions. The feature
+handoff and exact scope are in AUGMENT_AND_CONVERSIONS_AR.md; final gate evidence
+is recorded in VALIDATION.md. Unsupported container-wide transformations,
+third-type operator searches and external structural/static changes are not
+claimed. QUDS-082 type operations retain their meaning.

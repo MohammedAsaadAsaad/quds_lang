@@ -1,0 +1,9 @@
+use "fixtures/conversions/native.dart" as native
+class TextValue:
+  text: String required
+  implicit cast(value: TextValue) -> String = value.text
+
+test "implicit conversions into Dart named parameters":
+  first = TextValue(text: "one")
+  second = TextValue(text: "two")
+  expect(native.join(second: second, first: first), "one:two")

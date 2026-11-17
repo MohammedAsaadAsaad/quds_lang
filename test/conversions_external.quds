@@ -1,0 +1,7 @@
+use "fixtures/conversions/provider.quds" as tickets hide Ticket
+use "fixtures/conversions/behavior.quds"
+use "fixtures/conversions/provider.quds" as types show Ticket
+
+test "external int augment conversion retains provider lexical types":
+  ticket = 5.0 to types.Ticket
+  expect(ticket.code, 10)

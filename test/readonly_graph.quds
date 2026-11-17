@@ -1,0 +1,47 @@
+test "readonly mutable set elements retain membership and lookup identity":
+  item = [1]
+  source: Set<List<int>> = set:
+    item
+  view: readonly Set<List<int>> = source
+  element = view.first
+  expect(view.contains(element), true)
+  expect(view.contains(item), true)
+  expect(view.lookup(element), element)
+  item[0] = 2
+  expect(element[0], 2)
+  source.add([3])
+  expect(view.length, 2)
+
+test "readonly mutable map keys remain usable for lookups":
+  key = [1]
+  source: Map<List<int>, List<int>> = map:
+    key: [2]
+  view: readonly Map<List<int>, List<int>> = source
+  element = view.keys.first
+  expect(view.containsKey(element), true)
+  expect(view[element]![0], 2)
+  expect(view[key]![0], 2)
+  key[0] = 3
+  source[key]![0] = 4
+  expect(element[0], 3)
+  expect(view[element]![0], 4)
+
+test "nested collection views are stable for repeated reads":
+  source = [[1]]
+  view: readonly List<List<int>> = source
+  expect(view[0] == view[0], true)
+  copy = view.toList()
+  expect(copy[0] == view[0], true)
+  source[0][0] = 2
+  expect(copy[0][0], 2)
+
+class CounterWithDefault:
+  var total: int = 0
+  add(value: int = 1):
+    total += value
+
+test "method defaults are checked in their declaring class scope":
+  counter = CounterWithDefault()
+  counter.add()
+  counter.add(4)
+  expect(counter.total, 5)

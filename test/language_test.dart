@@ -1348,7 +1348,7 @@ ab
 5
 ''');
     final dart = compile(source).dart;
-    expect(dart, contains('UnmodifiableListView<int>'));
+    expect(dart, contains('_qReadonlyList<int>'));
     expect(dart, contains('Percentage._(50)'));
     expect(dart, isNot(contains("import 'package:quds_lang")));
   });

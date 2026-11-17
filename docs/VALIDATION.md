@@ -800,3 +800,17 @@ No extra network domain is needed for the verified Docker-based SDK route.
 - Numerical refinements before final runs: preserve the small Kalman prior weight when gain rounds to one; apply Markov normalization tolerance consistently on repeated transitions. Euler now rejects repeated abstract triangle faces; contract change is explicit in MATH_FOUNDATIONS.
 - Compiler analysis exposed generated private bridge aliases and automatically selected nominal section names. Standalone private aliases are omitted, part bridges retained, and the generated automatic combinator warning is scoped away. Final source-map/part/module tests passed.
 - Full remaining-domain status and limitations: MATH_20_DOMAIN_STATUS_AR and MATH_FOUNDATIONS. No claim of complete mathematics, all 115 language features, or arbitrary custom-class runtime readonly proxies.
+
+## 2026-11-17 — heap profiling and readonly collection graphs
+
+- Baseline: 50 focused readonly/generic-method tests passed before changes.
+- `dart format .`: 56 files, zero changes in final pass (see formatter output).
+- `dart analyze`: no issues.
+- Focused readonly/native/generic/memory runners: **89 passed**, zero failures/skips, **29s**.
+- `dart test --reporter expanded`: **471 passed, 1 skipped**, zero failures, **5m06s**. The pre-existing debugger race returned empty stackFrames under load.
+- `dart test test/compiler_test.dart --name 'quds debug stops on the quds line' --reporter expanded`: **1 passed**, zero failures/skips, **3s**. This does not claim that the race is fixed.
+- `dart run tool/profile_heap.dart`: checksum 213097200; 20000 retained HeapCell objects return to zero after release/GC; weak-cache removed graph elements return to zero. Cumulative typed allocation traces: 8 → 109 → 110 Float64List allocations and 0 → 0 → 100 Float64ArrayView allocations.
+- `dart run tool/profile_web_memory.dart`: same checksum and six synchronous phase observations; V8 heap/process/backing-store statistics and allocation samples are archived separately. VM trace counts are not conflated with sampled V8 allocation sizes.
+- Raw measurements: bench/results/heap_vm.json and heap_web.json. Definitions and known VM profiler initialization requirement are in HEAP_AND_READONLY_GRAPH.md.
+- New primary Quds suite: four declarations, plus three negative programs and an actual cross-library Dart/JS guard driver. The memory workload itself is Quds.
+- Generated-key lookup accepts readonly keys for reads without weakening insertion typing. Defaulted method bodies now retain declaring class scope.

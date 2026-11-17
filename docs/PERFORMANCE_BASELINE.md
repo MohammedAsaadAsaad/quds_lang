@@ -77,3 +77,10 @@ This metric includes fork/exec and the pre-exec high-water mark: it can have a
 launcher RSS floor. It is not an isolated Dart heap, allocation count, or payload
 size, and cannot establish per-kernel memory efficiency. Python standard library
 only; the script explicitly requires Linux for the KiB convention.
+
+## Subsequent heap measurements
+
+HEAP_AND_READONLY_GRAPH.md and bench/results/heap_vm.json / heap_web.json add
+VM Service live heap/class counts/allocation traces and separate V8 allocation
+sampling. They supersede the earlier absence of heap measurements, while keeping
+RSS, payload, live heap and allocation-volume meanings distinct.

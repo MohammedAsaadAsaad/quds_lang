@@ -1,0 +1,3 @@
+setView(values: Set<List<int>>) -> readonly Set<List<int>> = values
+mapView(values: Map<List<int>, Set<List<int>>>) -> readonly Map<List<int>, Set<List<int>>> = values
+listView(values: List<List<int>>) -> readonly List<List<int>> = values

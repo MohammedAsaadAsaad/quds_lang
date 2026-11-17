@@ -58,3 +58,10 @@ negative programs, original coordinates, and an actual VM/JavaScript driver
 that attempts mutation through nested views, callbacks and dynamic results.
 Existing indexed-write and native-storage suites remain regression gates.
 Exact final commands/results are in [VALIDATION.md](VALIDATION.md).
+
+## Subsequent collection completion
+
+HEAP_AND_READONLY_GRAPH.md supersedes the scalar-only Map-key/Set-element
+limit above. Identity-aware deep collection guards now support recursive safe
+collection keys/elements, with stable views and weak-cache GC validation.
+Custom-class proxies are a separate pending package.

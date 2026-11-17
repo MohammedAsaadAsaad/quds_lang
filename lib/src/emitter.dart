@@ -1,4 +1,5 @@
 import 'type_syntax.dart';
+import 'readonly_helpers.dart';
 import 'ast.dart';
 import 'constants.dart';
 import 'libraries.dart';
@@ -74,6 +75,7 @@ class DartEmitter {
   var _useReadonly = false;
   var _useReadonlyList = false;
   var _useReadonlyMap = false;
+  var _useReadonlySet = false;
   String? _returnView;
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
@@ -679,32 +681,11 @@ class DartEmitter {
         ..writeln("import 'dart:core';")
         ..writeln("import 'dart:core' as _quds_core;");
     }
-    if (_useReadonlyList) {
-      helpers.writeln(r'''class _QudsReadonlyList<E> extends ListBase<E> {
-  _QudsReadonlyList(this._source, this._read);
-  final List<E> _source;
-  final E Function(E) _read;
-  int get length => _source.length;
-  set length(int value) => throw UnsupportedError('readonly list');
-  E operator [](int index) => _read(_source[index]);
-  void operator []=(int index, E value) => throw UnsupportedError('readonly list');
-}''');
-    }
-    if (_useReadonlyMap) {
-      helpers.writeln(r'''class _QudsReadonlyMap<K, V> extends MapBase<K, V> {
-  _QudsReadonlyMap(this._source, this._read);
-  final Map<K, V> _source;
-  final V Function(V) _read;
-  Iterable<K> get keys => _source.keys;
-  V? operator [](Object? key) {
-    final value = _source[key];
-    return value == null ? null : _read(value);
-  }
-  void operator []=(K key, V value) => throw UnsupportedError('readonly map');
-  V? remove(Object? key) => throw UnsupportedError('readonly map');
-  void clear() => throw UnsupportedError('readonly map');
-}''');
-    }
+    if (_useReadonlyList || _useReadonlyMap || _useReadonlySet)
+      helpers.writeln(readonlyGraphHelpers);
+    if (_useReadonlyList) helpers.writeln(readonlyListHelpers);
+    if (_useReadonlyMap) helpers.writeln(readonlyMapHelpers);
+    if (_useReadonlySet) helpers.writeln(readonlySetHelpers);
     if (_useReadonly) {
       prelude.writeln("import 'dart:collection';");
     }
@@ -1078,21 +1059,25 @@ class DartEmitter {
       _useReadonly = true;
       final element = inner.substring(5, inner.length - 1);
       final read = _readonlyGuard(element, '_qe');
-      if (read == '_qe')
-        return 'UnmodifiableListView<${_dartType(element)}>($value)';
+      if (read == '_qe') {
+        _useReadonlyList = true;
+        return '_qReadonlyList<${_dartType(element)}>($value, (_qe) => _qe)';
+      }
       _useReadonlyList = true;
-      return '_QudsReadonlyList<${_dartType(element)}>($value, (_qe) => $read)';
+      return '_qReadonlyList<${_dartType(element)}>($value, (_qe) => $read)';
     }
     if (inner.startsWith('Map<') && inner.endsWith('>')) {
       final parts = _splitTypeArgs(inner.substring(4, inner.length - 1));
       _useReadonly = true;
       _useReadonlyMap = true;
-      return '_QudsReadonlyMap<${_dartType(parts[0])}, ${_dartType(parts[1])}>($value, '
-          '(_qe) => ${_readonlyGuard(parts[1], '_qe')})';
+      return '_qReadonlyMap<${_dartType(parts[0])}, ${_dartType(parts[1])}>($value, '
+          '(_qk) => ${_readonlyGuard(parts[0], '_qk')}, (_qe) => ${_readonlyGuard(parts[1], '_qe')})';
     }
     if (inner.startsWith('Set<') && inner.endsWith('>')) {
       _useReadonly = true;
-      return 'UnmodifiableSetView<${_dartType(inner.substring(4, inner.length - 1))}>($value)';
+      _useReadonlySet = true;
+      final element = inner.substring(4, inner.length - 1);
+      return '_qReadonlySet<${_dartType(element)}>($value, (_qe) => ${_readonlyGuard(element, '_qe')})';
     }
     if (inner.startsWith('Iterable<') && inner.endsWith('>')) {
       final element = inner.substring(9, inner.length - 1);

@@ -1,0 +1,82 @@
+use quds:core::typed
+use dart:developer as developer
+
+class HeapCell:
+  value: int required
+
+class MemoryState:
+  held: List<HeapCell> required
+  buffers: List<Float64List> required
+  var checksum: int = 0
+
+  allocateCells(count: int):
+    var index = 0
+    while index < count:
+      held.add(HeapCell(value: index))
+      checksum += index
+      index += 1
+
+  retainBuffers():
+    var index = 0
+    while index < 8:
+      values = Float64List(65536)
+      values[0] = 1.0
+      buffers.add(values)
+      index += 1
+
+  copyWork(count: int = 100):
+    values = Float64List(65536)
+    values[0] = 3.0
+    var index = 0
+    while index < count:
+      copied = Float64List.fromList(values)
+      check copied[0] == 3.0
+      checksum += copied.length
+      index += 1
+
+  viewWork(count: int = 100):
+    values = Float64List(65536)
+    values[0] = 3.0
+    var index = 0
+    while index < count:
+      view = Float64List.view(values.buffer)
+      check view[0] == 3.0
+      checksum += view.length
+      index += 1
+
+makeWeakGraph() -> List<List<HeapCell>>:
+  items: List<HeapCell> = []
+  var index = 0
+  while index < 1000:
+    items.add(HeapCell(value: index))
+    index += 1
+  return [items]
+
+main():
+  memory = MemoryState(held: [], buffers: [])
+  memory.allocateCells(100)
+  memory.held.clear()
+  memory.retainBuffers()
+  memory.buffers.clear()
+  memory.copyWork(1)
+  memory.viewWork(1)
+  memory.checksum = 0
+  developer.debugger()
+  memory.allocateCells(20000)
+  memory.retainBuffers()
+  developer.debugger()
+  memory.held.clear()
+  memory.buffers.clear()
+  developer.debugger()
+  memory.copyWork()
+  developer.debugger()
+  memory.viewWork()
+  developer.debugger()
+  graph = makeWeakGraph()
+  view: readonly List<List<HeapCell>> = graph
+  check view[0].length == 1000
+  graph.clear()
+  developer.debugger()
+  check view.length == 0
+  check memory.checksum == 213097200
+  print memory.checksum

@@ -452,6 +452,7 @@ class Analyzer {
   final _pendingClasses = <String>{};
   final _typeBounds = <String, String>{};
   final _checkingBounds = <(String, String)>{};
+  final _methodOwners = <FunctionDeclaration, ClassDeclaration>{};
   FunctionDeclaration? _function;
   String? _returnType;
   var _lambdaDepth = 0;
@@ -824,6 +825,7 @@ class Analyzer {
       analyzeStaticField(field);
     }
     for (final method in statement.methods) {
+      _methodOwners[method] = statement;
       _checkBoundCycles(method.typeParameters, method);
       if (hasAnnotation(statement.annotations, 'macro') &&
           method.name == 'define') {
@@ -2854,7 +2856,9 @@ class Analyzer {
     // and that library's prefixes stay visible.
     final home = model.declarations[function]?.library ?? '';
     final _Scope parent;
-    if (home.isNotEmpty && home != library) {
+    if (_methodOwners.containsKey(function)) {
+      parent = savedScope;
+    } else if (home.isNotEmpty && home != library) {
       parent = _libraryScope(home);
     } else if (_declaredAtTopLevel(function)) {
       parent = _global;
@@ -5523,7 +5527,10 @@ class Analyzer {
       final parts = _splitTypes(inner);
       final key = parts[0];
       final value = parts[1];
-      if (!compatible(indexType, key)) fail('Map key type is $key', node.index);
+      if (!compatible(indexType, key) &&
+          !(indexType.startsWith('readonly ') &&
+              compatible(indexType, 'readonly $key')))
+        fail('Map key type is $key', node.index);
       final lookup = nullableType(value);
       return _readonlyView(raw, lookup);
     }
@@ -5915,12 +5922,10 @@ class Analyzer {
     if (head == 'List' || head == 'Iterable')
       return args.length == 1 && _readonlyBoundarySafe(args[0]);
     if (head == 'Set')
-      return args.length == 1 &&
-          const {'int', 'double', 'num', 'bool', 'String'}.contains(args[0]);
+      return args.length == 1 && _readonlyBoundarySafe(args[0]);
     if (head == 'Map')
       return args.length == 2 &&
-          const {'int', 'double', 'num', 'bool', 'String'}
-              .contains(unwrap(args[0])) &&
+          _readonlyBoundarySafe(args[0]) &&
           _readonlyBoundarySafe(args[1]);
     return false;
   }
@@ -7613,7 +7618,12 @@ class Analyzer {
     parameters = _callParameters(parameters, function);
     if (function != null &&
         parameters.any((parameter) => parameter.defaultValue != null)) {
-      analyzeFunction(function);
+      final owner = _methodOwners[function];
+      if (owner == null) {
+        analyzeFunction(function);
+      } else {
+        analyzeMethod(owner, function);
+      }
     }
     final verified = checked ?? _CheckedArguments();
     if (checked == null &&
@@ -7849,6 +7859,7 @@ class Analyzer {
           'Iterable<T>'
         ),
       ('List', 'indexOf') => ([('value', 'T')], 'int'),
+      ('Set', 'lookup') => ([('value', 'Object?')], 'T?'),
       ('Set', 'add') => ([('value', 'T')], 'bool'),
       ('Set', 'addAll') => ([('values', 'Iterable<T>')], 'void'),
       ('Set' || 'List', 'remove') => ([('value', 'Object?')], 'bool'),

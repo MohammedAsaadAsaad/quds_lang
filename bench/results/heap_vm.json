@@ -1,0 +1,4639 @@
+{
+  "schema": 1,
+  "dart": "3.13.7 (stable) (Thu Oct 22 14:28:57 2026 -0700) on \"linux_x64\"",
+  "mode": "JIT, VM Service, paused isolate, requested full GC",
+  "allocation_tracking": "HeapCell and Float64 runtime classes traced after warmup; cumulative allocation traces include collected objects",
+  "allocation_trace_counts_cumulative": {
+    "retained": {
+      "_Float64List": 8,
+      "_Float64ArrayView": 0,
+      "_ExternalFloat64Array": 0
+    },
+    "copies": {
+      "_Float64List": 109,
+      "_Float64ArrayView": 0,
+      "_ExternalFloat64Array": 0
+    },
+    "views": {
+      "_Float64List": 110,
+      "_Float64ArrayView": 100,
+      "_ExternalFloat64Array": 0
+    }
+  },
+  "payload_bytes_retained": 4194304,
+  "checksum": 213097200,
+  "baseline": {
+    "memory": {
+      "type": "MemoryUsage",
+      "externalUsage": 0,
+      "heapCapacity": 12496896,
+      "heapUsage": 4684544
+    },
+    "cell": {
+      "type": "ClassHeapStats",
+      "class": {
+        "type": "@Class",
+        "id": "classes/1237",
+        "fixedId": true,
+        "name": "HeapCell",
+        "library": {
+          "type": "@Library",
+          "id": "libraries/@21418431",
+          "fixedId": true,
+          "name": "",
+          "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+        },
+        "location": {
+          "type": "SourceLocation",
+          "script": {
+            "type": "@Script",
+            "id": "libraries/@21418431/scripts/file%3A%2F%2F%2Ftmp%2Fquds-heap-SBXNHX%2Fmemory.dart/1a1e7c14828",
+            "fixedId": true,
+            "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+          },
+          "tokenPos": 2157,
+          "endTokenPos": 2228,
+          "line": 53,
+          "column": 1
+        }
+      },
+      "accumulatedSize": 0,
+      "bytesCurrent": 0,
+      "instancesAccumulated": 0,
+      "instancesCurrent": 0
+    },
+    "typed_data": [
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/66",
+          "fixedId": true,
+          "name": "_Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 121552,
+            "endTokenPos": 124389,
+            "line": 4180,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/153",
+          "fixedId": true,
+          "name": "_Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/154",
+          "fixedId": true,
+          "name": "_Float64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/155",
+          "fixedId": true,
+          "name": "_ExternalFloat64Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/156",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 168735,
+            "endTokenPos": 169590,
+            "line": 5757,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/165",
+          "fixedId": true,
+          "name": "_Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/166",
+          "fixedId": true,
+          "name": "_Float64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/167",
+          "fixedId": true,
+          "name": "_ExternalFloat64x2Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/168",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 171329,
+            "endTokenPos": 172203,
+            "line": 5844,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/182",
+          "fixedId": true,
+          "name": "Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 160517,
+            "endTokenPos": 162235,
+            "line": 4685,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/842",
+          "fixedId": true,
+          "name": "Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 83170,
+            "endTokenPos": 87847,
+            "line": 2097,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/845",
+          "fixedId": true,
+          "name": "Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 99015,
+            "endTokenPos": 104182,
+            "line": 2512,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/853",
+          "fixedId": true,
+          "name": "_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 45420,
+            "endTokenPos": 55140,
+            "line": 1598,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/865",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/868",
+          "fixedId": true,
+          "name": "__Float64x2List&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/879",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/882",
+          "fixedId": true,
+          "name": "__ExternalFloat64x2Array&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/895",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/898",
+          "fixedId": true,
+          "name": "__Float64x2ArrayView&_TypedListView&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/910",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/921",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/932",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      }
+    ]
+  },
+  "retained": {
+    "memory": {
+      "type": "MemoryUsage",
+      "externalUsage": 0,
+      "heapCapacity": 11223040,
+      "heapUsage": 9455696
+    },
+    "cell": {
+      "type": "ClassHeapStats",
+      "class": {
+        "type": "@Class",
+        "id": "classes/1237",
+        "fixedId": true,
+        "name": "HeapCell",
+        "library": {
+          "type": "@Library",
+          "id": "libraries/@21418431",
+          "fixedId": true,
+          "name": "",
+          "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+        },
+        "location": {
+          "type": "SourceLocation",
+          "script": {
+            "type": "@Script",
+            "id": "libraries/@21418431/scripts/file%3A%2F%2F%2Ftmp%2Fquds-heap-SBXNHX%2Fmemory.dart/1a1e7c14828",
+            "fixedId": true,
+            "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+          },
+          "tokenPos": 2157,
+          "endTokenPos": 2228,
+          "line": 53,
+          "column": 1
+        }
+      },
+      "accumulatedSize": 320000,
+      "bytesCurrent": 320000,
+      "instancesAccumulated": 20000,
+      "instancesCurrent": 20000
+    },
+    "typed_data": [
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/66",
+          "fixedId": true,
+          "name": "_Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 121552,
+            "endTokenPos": 124389,
+            "line": 4180,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/153",
+          "fixedId": true,
+          "name": "_Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 4194560,
+        "bytesCurrent": 4194560,
+        "instancesAccumulated": 8,
+        "instancesCurrent": 8
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/154",
+          "fixedId": true,
+          "name": "_Float64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/155",
+          "fixedId": true,
+          "name": "_ExternalFloat64Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/156",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 168735,
+            "endTokenPos": 169590,
+            "line": 5757,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/165",
+          "fixedId": true,
+          "name": "_Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/166",
+          "fixedId": true,
+          "name": "_Float64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/167",
+          "fixedId": true,
+          "name": "_ExternalFloat64x2Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/168",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 171329,
+            "endTokenPos": 172203,
+            "line": 5844,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/182",
+          "fixedId": true,
+          "name": "Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 160517,
+            "endTokenPos": 162235,
+            "line": 4685,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/842",
+          "fixedId": true,
+          "name": "Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 83170,
+            "endTokenPos": 87847,
+            "line": 2097,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/845",
+          "fixedId": true,
+          "name": "Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 99015,
+            "endTokenPos": 104182,
+            "line": 2512,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/853",
+          "fixedId": true,
+          "name": "_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 45420,
+            "endTokenPos": 55140,
+            "line": 1598,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/865",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/868",
+          "fixedId": true,
+          "name": "__Float64x2List&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/879",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/882",
+          "fixedId": true,
+          "name": "__ExternalFloat64x2Array&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/895",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/898",
+          "fixedId": true,
+          "name": "__Float64x2ArrayView&_TypedListView&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/910",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/921",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/932",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      }
+    ]
+  },
+  "released": {
+    "memory": {
+      "type": "MemoryUsage",
+      "externalUsage": 0,
+      "heapCapacity": 11223040,
+      "heapUsage": 4679184
+    },
+    "cell": {
+      "type": "ClassHeapStats",
+      "class": {
+        "type": "@Class",
+        "id": "classes/1237",
+        "fixedId": true,
+        "name": "HeapCell",
+        "library": {
+          "type": "@Library",
+          "id": "libraries/@21418431",
+          "fixedId": true,
+          "name": "",
+          "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+        },
+        "location": {
+          "type": "SourceLocation",
+          "script": {
+            "type": "@Script",
+            "id": "libraries/@21418431/scripts/file%3A%2F%2F%2Ftmp%2Fquds-heap-SBXNHX%2Fmemory.dart/1a1e7c14828",
+            "fixedId": true,
+            "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+          },
+          "tokenPos": 2157,
+          "endTokenPos": 2228,
+          "line": 53,
+          "column": 1
+        }
+      },
+      "accumulatedSize": 0,
+      "bytesCurrent": 0,
+      "instancesAccumulated": 0,
+      "instancesCurrent": 0
+    },
+    "typed_data": [
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/66",
+          "fixedId": true,
+          "name": "_Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 121552,
+            "endTokenPos": 124389,
+            "line": 4180,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/153",
+          "fixedId": true,
+          "name": "_Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/154",
+          "fixedId": true,
+          "name": "_Float64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/155",
+          "fixedId": true,
+          "name": "_ExternalFloat64Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/156",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 168735,
+            "endTokenPos": 169590,
+            "line": 5757,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/165",
+          "fixedId": true,
+          "name": "_Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/166",
+          "fixedId": true,
+          "name": "_Float64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/167",
+          "fixedId": true,
+          "name": "_ExternalFloat64x2Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/168",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 171329,
+            "endTokenPos": 172203,
+            "line": 5844,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/182",
+          "fixedId": true,
+          "name": "Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 160517,
+            "endTokenPos": 162235,
+            "line": 4685,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/842",
+          "fixedId": true,
+          "name": "Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 83170,
+            "endTokenPos": 87847,
+            "line": 2097,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/845",
+          "fixedId": true,
+          "name": "Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 99015,
+            "endTokenPos": 104182,
+            "line": 2512,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/853",
+          "fixedId": true,
+          "name": "_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 45420,
+            "endTokenPos": 55140,
+            "line": 1598,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/865",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/868",
+          "fixedId": true,
+          "name": "__Float64x2List&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/879",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/882",
+          "fixedId": true,
+          "name": "__ExternalFloat64x2Array&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/895",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/898",
+          "fixedId": true,
+          "name": "__Float64x2ArrayView&_TypedListView&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/910",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/921",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/932",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      }
+    ]
+  },
+  "copies": {
+    "memory": {
+      "type": "MemoryUsage",
+      "externalUsage": 0,
+      "heapCapacity": 9371648,
+      "heapUsage": 4680176
+    },
+    "cell": {
+      "type": "ClassHeapStats",
+      "class": {
+        "type": "@Class",
+        "id": "classes/1237",
+        "fixedId": true,
+        "name": "HeapCell",
+        "library": {
+          "type": "@Library",
+          "id": "libraries/@21418431",
+          "fixedId": true,
+          "name": "",
+          "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+        },
+        "location": {
+          "type": "SourceLocation",
+          "script": {
+            "type": "@Script",
+            "id": "libraries/@21418431/scripts/file%3A%2F%2F%2Ftmp%2Fquds-heap-SBXNHX%2Fmemory.dart/1a1e7c14828",
+            "fixedId": true,
+            "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+          },
+          "tokenPos": 2157,
+          "endTokenPos": 2228,
+          "line": 53,
+          "column": 1
+        }
+      },
+      "accumulatedSize": 0,
+      "bytesCurrent": 0,
+      "instancesAccumulated": 0,
+      "instancesCurrent": 0
+    },
+    "typed_data": [
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/66",
+          "fixedId": true,
+          "name": "_Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 121552,
+            "endTokenPos": 124389,
+            "line": 4180,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/153",
+          "fixedId": true,
+          "name": "_Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/154",
+          "fixedId": true,
+          "name": "_Float64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/155",
+          "fixedId": true,
+          "name": "_ExternalFloat64Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/156",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 168735,
+            "endTokenPos": 169590,
+            "line": 5757,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/165",
+          "fixedId": true,
+          "name": "_Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/166",
+          "fixedId": true,
+          "name": "_Float64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/167",
+          "fixedId": true,
+          "name": "_ExternalFloat64x2Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/168",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 171329,
+            "endTokenPos": 172203,
+            "line": 5844,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/182",
+          "fixedId": true,
+          "name": "Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 160517,
+            "endTokenPos": 162235,
+            "line": 4685,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/842",
+          "fixedId": true,
+          "name": "Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 83170,
+            "endTokenPos": 87847,
+            "line": 2097,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/845",
+          "fixedId": true,
+          "name": "Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 99015,
+            "endTokenPos": 104182,
+            "line": 2512,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/853",
+          "fixedId": true,
+          "name": "_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 45420,
+            "endTokenPos": 55140,
+            "line": 1598,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/865",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/868",
+          "fixedId": true,
+          "name": "__Float64x2List&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/879",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/882",
+          "fixedId": true,
+          "name": "__ExternalFloat64x2Array&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/895",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/898",
+          "fixedId": true,
+          "name": "__Float64x2ArrayView&_TypedListView&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/910",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/921",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/932",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      }
+    ]
+  },
+  "views": {
+    "memory": {
+      "type": "MemoryUsage",
+      "externalUsage": 0,
+      "heapCapacity": 7258112,
+      "heapUsage": 4681200
+    },
+    "cell": {
+      "type": "ClassHeapStats",
+      "class": {
+        "type": "@Class",
+        "id": "classes/1237",
+        "fixedId": true,
+        "name": "HeapCell",
+        "library": {
+          "type": "@Library",
+          "id": "libraries/@21418431",
+          "fixedId": true,
+          "name": "",
+          "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+        },
+        "location": {
+          "type": "SourceLocation",
+          "script": {
+            "type": "@Script",
+            "id": "libraries/@21418431/scripts/file%3A%2F%2F%2Ftmp%2Fquds-heap-SBXNHX%2Fmemory.dart/1a1e7c14828",
+            "fixedId": true,
+            "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+          },
+          "tokenPos": 2157,
+          "endTokenPos": 2228,
+          "line": 53,
+          "column": 1
+        }
+      },
+      "accumulatedSize": 0,
+      "bytesCurrent": 0,
+      "instancesAccumulated": 0,
+      "instancesCurrent": 0
+    },
+    "typed_data": [
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/66",
+          "fixedId": true,
+          "name": "_Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 121552,
+            "endTokenPos": 124389,
+            "line": 4180,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/153",
+          "fixedId": true,
+          "name": "_Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/154",
+          "fixedId": true,
+          "name": "_Float64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/155",
+          "fixedId": true,
+          "name": "_ExternalFloat64Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/156",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 168735,
+            "endTokenPos": 169590,
+            "line": 5757,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/165",
+          "fixedId": true,
+          "name": "_Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/166",
+          "fixedId": true,
+          "name": "_Float64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/167",
+          "fixedId": true,
+          "name": "_ExternalFloat64x2Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/168",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 171329,
+            "endTokenPos": 172203,
+            "line": 5844,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/182",
+          "fixedId": true,
+          "name": "Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 160517,
+            "endTokenPos": 162235,
+            "line": 4685,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/842",
+          "fixedId": true,
+          "name": "Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 83170,
+            "endTokenPos": 87847,
+            "line": 2097,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/845",
+          "fixedId": true,
+          "name": "Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 99015,
+            "endTokenPos": 104182,
+            "line": 2512,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/853",
+          "fixedId": true,
+          "name": "_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 45420,
+            "endTokenPos": 55140,
+            "line": 1598,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/865",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/868",
+          "fixedId": true,
+          "name": "__Float64x2List&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/879",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/882",
+          "fixedId": true,
+          "name": "__ExternalFloat64x2Array&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/895",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/898",
+          "fixedId": true,
+          "name": "__Float64x2ArrayView&_TypedListView&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/910",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/921",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/932",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      }
+    ]
+  },
+  "weak_cache_after_removal": {
+    "memory": {
+      "type": "MemoryUsage",
+      "externalUsage": 0,
+      "heapCapacity": 6729728,
+      "heapUsage": 4792576
+    },
+    "cell": {
+      "type": "ClassHeapStats",
+      "class": {
+        "type": "@Class",
+        "id": "classes/1237",
+        "fixedId": true,
+        "name": "HeapCell",
+        "library": {
+          "type": "@Library",
+          "id": "libraries/@21418431",
+          "fixedId": true,
+          "name": "",
+          "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+        },
+        "location": {
+          "type": "SourceLocation",
+          "script": {
+            "type": "@Script",
+            "id": "libraries/@21418431/scripts/file%3A%2F%2F%2Ftmp%2Fquds-heap-SBXNHX%2Fmemory.dart/1a1e7c14828",
+            "fixedId": true,
+            "uri": "file:///tmp/quds-heap-SBXNHX/memory.dart"
+          },
+          "tokenPos": 2157,
+          "endTokenPos": 2228,
+          "line": 53,
+          "column": 1
+        }
+      },
+      "accumulatedSize": 0,
+      "bytesCurrent": 0,
+      "instancesAccumulated": 0,
+      "instancesCurrent": 0
+    },
+    "typed_data": [
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/66",
+          "fixedId": true,
+          "name": "_Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 121552,
+            "endTokenPos": 124389,
+            "line": 4180,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/153",
+          "fixedId": true,
+          "name": "_Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/154",
+          "fixedId": true,
+          "name": "_Float64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/155",
+          "fixedId": true,
+          "name": "_ExternalFloat64Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/156",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 168735,
+            "endTokenPos": 169590,
+            "line": 5757,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/165",
+          "fixedId": true,
+          "name": "_Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/166",
+          "fixedId": true,
+          "name": "_Float64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/167",
+          "fixedId": true,
+          "name": "_ExternalFloat64x2Array",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/168",
+          "fixedId": true,
+          "name": "_UnmodifiableFloat64x2ArrayView",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 171329,
+            "endTokenPos": 172203,
+            "line": 5844,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/182",
+          "fixedId": true,
+          "name": "Float64x2",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 160517,
+            "endTokenPos": 162235,
+            "line": 4685,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/842",
+          "fixedId": true,
+          "name": "Float64List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 83170,
+            "endTokenPos": 87847,
+            "line": 2097,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/845",
+          "fixedId": true,
+          "name": "Float64x2List",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data/0",
+              "fixedId": true,
+              "uri": "dart:typed_data"
+            },
+            "tokenPos": 99015,
+            "endTokenPos": 104182,
+            "line": 2512,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/853",
+          "fixedId": true,
+          "name": "_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 45420,
+            "endTokenPos": 55140,
+            "line": 1598,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/865",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/868",
+          "fixedId": true,
+          "name": "__Float64x2List&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 90119,
+            "endTokenPos": 91288,
+            "line": 3131,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/879",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/882",
+          "fixedId": true,
+          "name": "__ExternalFloat64x2Array&_TypedList&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 106703,
+            "endTokenPos": 107892,
+            "line": 3726,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/895",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin&_TypedDoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/898",
+          "fixedId": true,
+          "name": "__Float64x2ArrayView&_TypedListView&_Float64x2ListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 145406,
+            "endTokenPos": 146835,
+            "line": 5029,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/910",
+          "fixedId": true,
+          "name": "__Float64List&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 85487,
+            "endTokenPos": 86717,
+            "line": 2960,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/921",
+          "fixedId": true,
+          "name": "__ExternalFloat64Array&_TypedList&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 103148,
+            "endTokenPos": 104350,
+            "line": 3600,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      },
+      {
+        "type": "ClassHeapStats",
+        "class": {
+          "type": "@Class",
+          "id": "classes/932",
+          "fixedId": true,
+          "name": "__Float64ArrayView&_TypedListView&_DoubleListMixin",
+          "library": {
+            "type": "@Library",
+            "id": "libraries/@8027147",
+            "fixedId": true,
+            "name": "dart.typed_data",
+            "uri": "dart:typed_data"
+          },
+          "location": {
+            "type": "SourceLocation",
+            "script": {
+              "type": "@Script",
+              "id": "libraries/@8027147/scripts/dart%3Atyped_data-patch%2Ftyped_data_patch.dart/0",
+              "fixedId": true,
+              "uri": "dart:typed_data-patch/typed_data_patch.dart"
+            },
+            "tokenPos": 141101,
+            "endTokenPos": 142571,
+            "line": 4872,
+            "column": 1
+          }
+        },
+        "accumulatedSize": 0,
+        "bytesCurrent": 0,
+        "instancesAccumulated": 0,
+        "instancesCurrent": 0
+      }
+    ]
+  }
+}

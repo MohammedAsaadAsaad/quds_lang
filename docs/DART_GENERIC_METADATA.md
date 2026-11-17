@@ -1,30 +1,82 @@
-# Native Dart generic metadata — execution plan
+# Native Dart generic metadata
 
-This is the next package after READONLY_CLASSES. It preserves approved Quds
-calls and generic syntax; Dart remains the backend ABI.
+This package follows READONLY_CLASSES and preserves approved Quds generic and
+unified-call syntax. Dart remains the backend ABI. The original execution plan
+is retained in git history; this file describes the resulting implementation.
 
-The current importer simplifies native formal parameters to bounds, defaults an
-unbounded parameter to num, and drops some generic class arguments. That loses
-information before type checking. The correction must retain class/method
-formal parameters and bounds, parameter names and named/optional layout, and
-instantiated superclass edges. An inherited Base<List<U>> member must be checked
-as List<int> through Derived<int>, not as a raw head or a numeric placeholder.
+The importer previously replaced native formal variables with their bounds,
+defaulted unbounded variables to num, and erased some class arguments. It now
+retains class/method formals and bounds, parameter names, named/optional layout,
+and instantiated superclass edges. Source file/line/column/offset metadata is
+preserved. Hover signatures display retained generic parameters.
 
-Implementation order and review gates:
+```quds
+use "fixtures/dart_generics/api.dart"
+owner = NativeChild<int>([1, 2])
+parent: NativeParent<List<int>> = owner
+value: String = owner.identity<String>("typed")
+```
 
-1. Extend DartTop/DartMember/DartShape metadata without replacing their source
-   locations. Preserve bounds and method-local variable shadowing.
-2. Instantiate each superclass edge and specialize members at the receiver;
-   retain both nominal heads and actual supertype arguments for subtyping.
-3. Check explicit/inferred native function, constructor and method calls. Check
-   generic arity and bounds at original Quds spans; infer through nested generic
-   containers and ordinary positional callbacks.
-4. Preserve Dart's positional/named ABI while accepting Quds unified calls. If
-   arguments must be rearranged, evaluate the receiver then written arguments
-   exactly once, left to right. Never manufacture Dart default expressions.
-5. Add native fixtures split across Dart files and primary .quds conformance,
-   negative arity/bound/type/named cases, deterministic output and VM/JS runs.
-6. Re-run format/analyze/the entire suite, document unsupported signatures
-   explicitly, and push the completed package to main.
+## Instantiation and nominal identity
 
-This file records intended work, not an implementation or validation claim.
+Members of `Derived<U> extends Base<List<U>>` retain List<U> until the receiver
+is instantiated, then become List<int> through Derived<int>. Method-local
+formals shadow class formals rather than being substituted as class variables.
+Subtype checks retain actual generic supertype arguments. Mixin implementation
+signatures override earlier superclass/mixin signatures in Dart order;
+interfaces supply fallback signatures, and `on` constraints are not invented
+as nominal supertypes.
+
+Local/package Dart classes have declaration identities independent of caller
+names and import prefixes. Re-exporting the same declaration through another
+file retains its identity. A same-named Quds class cannot impersonate it. Within
+a package, generated alias hashes use package identity plus declaration-relative
+path, not checkout location. Backend imports use original declaration URIs;
+existing temporary-module staging preserves access to those Dart files.
+
+Nongeneric shapes reuse their immutable metadata. Generic instantiated shapes
+are cached within one analyzer, keyed by the resolved nonnullable receiver type;
+no process-wide cache retains individual compilation models.
+
+## Calls and defaults
+
+Direct native function, constructor and instance-method calls support explicit
+and inferred generic arguments, arity/bound checking and inference through
+nested containers and ordinary positional callbacks. A declared constructor
+result supplies context for an empty list argument. Initializing-formal types
+are resolved after fields have been read, including fields declared after the
+constructor. Implicit accessible constructors are represented; abstract classes
+without a callable unnamed constructor are rejected.
+
+Quds unified arguments map to Dart's positional/named ABI. When a rearrangement
+is needed, a typed immediate closure receives the receiver first and written
+arguments in their original order, each once. Await operands stay outside that
+closure in their original async scope. Future results are not accidentally
+flattened. The runtime tests exercise a receiver with effects, reordered effectful
+arguments, and awaited arguments to a Future-returning native function.
+
+Omitted Dart arguments stay omitted. No default expression is manufactured or
+copied from native source. A sentinel default therefore stays distinguishable
+from an explicitly supplied null. Omitting an earlier optional positional value
+while supplying a later one requires the earlier value explicitly (E910), since
+the importer does not execute or duplicate Dart defaults.
+
+## Validation and scope
+
+Primary suites: dart_generics.quds (seven declarations) and
+ dart_generics_prefix.quds (one). The driver adds invalid arity/bound/argument/
+constructor/tear-off/signature programs at original Quds coordinates, a nominal
+identity rejection, normalized deterministic golden output, actual Dart analysis,
+and VM/JavaScript execution. The golden normalizes only the checkout URI; it
+keeps generated type arguments, calls, order and stable aliases intact.
+
+This is direct-call conformance, not complete Dart-language parity. Unsupported
+record signatures and generic, optional or named callback signatures report E910
+rather than being guessed as dynamic. Native generic/optional/named function
+tear-offs and native method tear-offs likewise retain explicit limits. Typedef,
+record, extension-type, recursive instantiate-to-bound and every possible
+foreign-source grammar combination are not claimed complete. Unknown package
+APIs retain the existing dynamic interop path; it is not a static safety promise.
+Readonly native final/sealed classes retain the limits in READONLY_CLASSES.
+
+Exact final commands and counts are recorded in VALIDATION.md.

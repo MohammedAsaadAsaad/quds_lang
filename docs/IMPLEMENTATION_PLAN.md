@@ -66,3 +66,15 @@ results. Const initializers in that subset, including top-level consts, are
 evaluated in Quds, and failures are reported at the original `.quds` span.
 Generated bool conditions stay analyzable without changing short-circuit
 behavior. The approved language decisions remain unchanged.
+
+
+## 2026-11-17 language and memory handoff closure
+
+The finite follow-up in LANGUAGE_MEMORY_COMPLETION_AR.md is complete: actual
+VM/V8 heap/allocation measurements, deep readonly collection and supported class
+guards, a debugger startup race fix, and preserved/instantiated native Dart
+generic metadata with direct-call conformance. The final suite reports 501 pass,
+zero failures and zero skips. See VALIDATION.md for exact commands and the linked
+feature documents for unsupported native/readonly shapes. This supersedes the
+old MVP-only progress snapshot above without changing approved language syntax
+or claiming complete implementation of every approved feature.

@@ -1,3 +1,5 @@
+import 'type_syntax.dart';
+
 import 'dart:io';
 
 /// A public name read from a Dart SDK library source.
@@ -7,6 +9,9 @@ class DartTop {
     required this.type,
     this.parameters = const [],
     this.optional = 0,
+    this.typeParameters = const {},
+    this.namedParameters = const {},
+    this.optionalNames = const {},
     this.constant = false,
     this.number,
     this.integer,
@@ -23,6 +28,9 @@ class DartTop {
   final String type;
   final List<(String, String)> parameters;
   final int optional;
+  final Map<String, String> typeParameters;
+  final Set<String> namedParameters;
+  final Set<String> optionalNames;
   final bool constant;
   final double? number;
   final int? integer;
@@ -39,13 +47,18 @@ class DartTop {
 String describeDartTop(DartTop top) =>
     _withDoc(dartTopHead(top), top.documentation);
 
+String _formalHead(Map<String, String> formals) => formals.isEmpty
+    ? ''
+    : '<${formals.entries.map((p) => '${p.key}${p.value == 'Object?' ? '' : ' extends ${p.value}'}').join(', ')}>';
+
 String dartTopHead(DartTop top) {
-  if (top.isType) return 'class ${top.name}';
+  if (top.isType) return 'class ${top.name}${_formalHead(top.typeParameters)}';
   if (top.callable) {
     final parameters = [
-      for (final parameter in top.parameters) '${parameter.$1}: ${parameter.$2}'
+      for (final parameter in top.parameters)
+        '${parameter.$1}: ${parameter.$2}',
     ].join(', ');
-    return '${top.name}($parameters) -> ${top.type}';
+    return '${top.name}${_formalHead(top.typeParameters)}($parameters) -> ${top.type}';
   }
   if (top.constant) return 'const ${top.name}: ${top.type}';
   return '${top.name}: ${top.type}';
@@ -58,6 +71,9 @@ class DartMember {
     required this.type,
     this.parameters = const [],
     this.optional = 0,
+    this.typeParameters = const {},
+    this.namedParameters = const {},
+    this.optionalNames = const {},
     this.getter = false,
     this.documentation,
     this.file = '',
@@ -70,6 +86,9 @@ class DartMember {
   final String type;
   final List<(String, String)> parameters;
   final int optional;
+  final Map<String, String> typeParameters;
+  final Set<String> namedParameters;
+  final Set<String> optionalNames;
   final bool getter;
   final String? documentation;
   final String file;
@@ -86,9 +105,9 @@ String dartMemberHead(DartMember member) {
   if (member.getter) return 'get ${member.name}: ${member.type}';
   final parameters = [
     for (final parameter in member.parameters)
-      '${parameter.$1}: ${parameter.$2}'
+      '${parameter.$1}: ${parameter.$2}',
   ].join(', ');
-  return '${member.name}($parameters) -> ${member.type}';
+  return '${member.name}${_formalHead(member.typeParameters)}($parameters) -> ${member.type}';
 }
 
 String _withDoc(String head, String? documentation) {
@@ -100,20 +119,101 @@ String _withDoc(String head, String? documentation) {
 /// Public members of one Dart SDK class, including names inherited from its
 /// sources in the same library.
 class DartShape {
-  const DartShape(this.members, this.constructors, this.statics,
-      {this.listElement, this.supertypes = const {}, this.name = ''});
+  const DartShape(
+    this.members,
+    this.constructors,
+    this.statics, {
+    this.listElement,
+    this.supertypes = const {},
+    this.name = '',
+    this.typeParameters = const {},
+    this.instantiatedSupertypes = const {},
+  });
 
   final String name;
+  final Map<String, String> typeParameters;
+  final Set<String> instantiatedSupertypes;
   bool get typedStorage =>
       name == 'TypedData' ||
       name == 'ByteBuffer' ||
-      supertypes
-          .any((item) => item == 'TypedData' || item.endsWith('.TypedData'));
+      supertypes.any(
+        (item) => item == 'TypedData' || item.endsWith('.TypedData'),
+      );
   final String? listElement;
   final Set<String> supertypes;
   final Map<String, DartMember> members;
   final Map<String, DartMember> constructors;
   final Map<String, DartMember> statics;
+}
+
+String substituteDartType(String type, Map<String, String> arguments) =>
+    type.replaceAllMapped(
+      RegExp(r'[A-Za-z_][A-Za-z0-9_]*'),
+      (match) => arguments[match[0]] ?? match[0]!,
+    );
+
+DartMember instantiateDartMember(
+  DartMember member,
+  Map<String, String> arguments,
+) {
+  final scoped = Map<String, String>.of(arguments)
+    ..removeWhere((key, _) => member.typeParameters.containsKey(key));
+  String type(String raw) => substituteDartType(raw, scoped);
+  return DartMember(
+    name: member.name,
+    type: type(member.type),
+    parameters: [for (final p in member.parameters) (p.$1, type(p.$2))],
+    optional: member.optional,
+    getter: member.getter,
+    typeParameters: {
+      for (final p in member.typeParameters.entries) p.key: type(p.value),
+    },
+    namedParameters: member.namedParameters,
+    optionalNames: member.optionalNames,
+    documentation: member.documentation,
+    file: member.file,
+    line: member.line,
+    column: member.column,
+    offset: member.offset,
+  );
+}
+
+Map<String, String> dartClassArguments(DartShape shape, String instance) {
+  final open = instance.indexOf('<');
+  final arguments = open < 0
+      ? <String>[]
+      : splitTypeList(instance.substring(open + 1, instance.length - 1));
+  final result = <String, String>{};
+  var index = 0;
+  for (final parameter in shape.typeParameters.entries) {
+    result[parameter.key] = index < arguments.length
+        ? arguments[index]
+        : substituteDartType(parameter.value, result);
+    index++;
+  }
+  return result;
+}
+
+DartShape instantiateDartShape(DartShape shape, String instance) {
+  final arguments = dartClassArguments(shape, instance);
+  Map<String, DartMember> members(Map<String, DartMember> source) => {
+        for (final e in source.entries)
+          e.key: instantiateDartMember(e.value, arguments),
+      };
+  return DartShape(
+    members(shape.members),
+    members(shape.constructors),
+    members(shape.statics),
+    name: shape.name,
+    typeParameters: shape.typeParameters,
+    listElement: shape.listElement == null
+        ? null
+        : substituteDartType(shape.listElement!, arguments),
+    supertypes: shape.supertypes,
+    instantiatedSupertypes: shape.instantiatedSupertypes
+        .map((s) => substituteDartType(s, arguments))
+        .toSet(),
+  );
 }
 
 /// The public surface of one `dart:` library.
@@ -126,29 +226,45 @@ class DartSurface {
 
 /// Preserve source metadata while giving external signature types a library identity.
 DartSurface mapDartSurfaceTypes(
-    DartSurface surface, String Function(String) type) {
+  DartSurface surface,
+  String Function(String) type,
+) {
   DartMember member(DartMember source) => DartMember(
-      name: source.name,
-      type: type(source.type),
-      parameters: [for (final p in source.parameters) (p.$1, type(p.$2))],
-      optional: source.optional,
-      getter: source.getter,
-      documentation: source.documentation,
-      file: source.file,
-      line: source.line,
-      column: source.column,
-      offset: source.offset);
-  Map<String, DartMember> members(Map<String, DartMember> source) =>
-      {for (final entry in source.entries) entry.key: member(entry.value)};
-  return DartSurface({
-    for (final entry in surface.names.entries)
-      entry.key: DartTop(
+        name: source.name,
+        type: type(source.type),
+        parameters: [for (final p in source.parameters) (p.$1, type(p.$2))],
+        optional: source.optional,
+        typeParameters: {
+          for (final e in source.typeParameters.entries) e.key: type(e.value),
+        },
+        namedParameters: source.namedParameters,
+        optionalNames: source.optionalNames,
+        getter: source.getter,
+        documentation: source.documentation,
+        file: source.file,
+        line: source.line,
+        column: source.column,
+        offset: source.offset,
+      );
+  Map<String, DartMember> members(Map<String, DartMember> source) => {
+        for (final entry in source.entries) entry.key: member(entry.value),
+      };
+  return DartSurface(
+    {
+      for (final entry in surface.names.entries)
+        entry.key: DartTop(
           name: entry.value.name,
           type: type(entry.value.type),
           parameters: [
-            for (final p in entry.value.parameters) (p.$1, type(p.$2))
+            for (final p in entry.value.parameters) (p.$1, type(p.$2)),
           ],
           optional: entry.value.optional,
+          typeParameters: {
+            for (final e in entry.value.typeParameters.entries)
+              e.key: type(e.value),
+          },
+          namedParameters: entry.value.namedParameters,
+          optionalNames: entry.value.optionalNames,
           constant: entry.value.constant,
           number: entry.value.number,
           integer: entry.value.integer,
@@ -158,17 +274,29 @@ DartSurface mapDartSurfaceTypes(
           file: entry.value.file,
           line: entry.value.line,
           column: entry.value.column,
-          offset: entry.value.offset),
-  }, {
-    for (final entry in surface.types.entries)
-      entry.key: DartShape(members(entry.value.members),
-          members(entry.value.constructors), members(entry.value.statics),
+          offset: entry.value.offset,
+        ),
+    },
+    {
+      for (final entry in surface.types.entries)
+        entry.key: DartShape(
+          members(entry.value.members),
+          members(entry.value.constructors),
+          members(entry.value.statics),
           name: entry.value.name,
+          typeParameters: {
+            for (final e in entry.value.typeParameters.entries)
+              e.key: type(e.value),
+          },
+          instantiatedSupertypes:
+              entry.value.instantiatedSupertypes.map(type).toSet(),
           listElement: entry.value.listElement == null
               ? null
               : type(entry.value.listElement!),
-          supertypes: entry.value.supertypes.map(type).toSet()),
-  });
+          supertypes: entry.value.supertypes.map(type).toSet(),
+        ),
+    },
+  );
 }
 
 class _Cached {
@@ -325,14 +453,41 @@ _Loaded _load(File entry) {
   final visiting = <String>{};
   void inherit(_Class type) {
     if (!visiting.add(type.name)) return;
+    final declaredMembers = type.members.keys.toSet();
     for (final parent in type.supers) {
-      final base = classes[parent];
+      final open = parent.indexOf('<');
+      final name = open < 0 ? parent : parent.substring(0, open);
+      final base = classes[name];
       if (base == null) continue;
       inherit(base);
-      type.listElement ??= base.listElement;
+      final arguments = open < 0
+          ? <String>[]
+          : splitTypeList(parent.substring(open + 1, parent.length - 1));
+      final substitution = <String, String>{};
+      var index = 0;
+      for (final parameter in base.typeParameters.entries) {
+        substitution[parameter.key] = index < arguments.length
+            ? arguments[index]
+            : substituteDartType(parameter.value, substitution);
+        index++;
+      }
+      if (base.listElement != null)
+        type.listElement ??= substituteDartType(
+          base.listElement!,
+          substitution,
+        );
       type.superNames.addAll(base.superNames);
+      type.instantiatedSupers.addAll(
+        base.instantiatedSupers.map((s) => substituteDartType(s, substitution)),
+      );
       for (final entry in base.members.entries) {
-        type.members.putIfAbsent(entry.key, () => entry.value);
+        final member = instantiateDartMember(entry.value, substitution);
+        if (type.implementationSupers.contains(parent) &&
+            !declaredMembers.contains(entry.key)) {
+          type.members[entry.key] = member;
+        } else {
+          type.members.putIfAbsent(entry.key, () => member);
+        }
       }
     }
   }
@@ -348,6 +503,8 @@ _Loaded _load(File entry) {
           Map<String, DartMember>.of(type.constructors),
           Map<String, DartMember>.of(type.statics),
           name: type.name,
+          typeParameters: type.typeParameters,
+          instantiatedSupertypes: type.instantiatedSupers,
           listElement: type.listElement,
           supertypes: Set<String>.of(type.superNames),
         ),
@@ -360,7 +517,11 @@ class _Class {
 
   final String name;
   final bool public;
+  final typeParameters = <String, String>{};
   final supers = <String>[];
+  final implementationSupers = <String>{};
+  var hasConstructor = false;
+  final instantiatedSupers = <String>{};
   final superNames = <String>{};
   String? listElement;
   final members = <String, DartMember>{};
@@ -634,6 +795,9 @@ class _Parser {
     String? doc, {
     List<(String, String)> parameters = const [],
     int optional = 0,
+    Map<String, String> typeParameters = const {},
+    Set<String> namedParameters = const {},
+    Set<String> optionalNames = const {},
     bool getter = false,
   }) {
     return DartMember(
@@ -641,6 +805,9 @@ class _Parser {
       type: type,
       parameters: parameters,
       optional: optional,
+      typeParameters: typeParameters,
+      namedParameters: namedParameters,
+      optionalNames: optionalNames,
       getter: getter,
       documentation: doc,
       file: file,
@@ -685,7 +852,7 @@ class _Parser {
     }
     final modifiers = _modifiers();
     if (peek == 'class' || peek == 'mixin') {
-      _type();
+      _type(modifiers);
       return;
     }
     _value(modifiers);
@@ -728,8 +895,13 @@ class _Parser {
       if (isIdent && !peek.startsWith('_')) {
         final at = _here;
         final value = take();
-        type.statics[value] =
-            _noted(value, name, at, _declarationDoc, getter: true);
+        type.statics[value] = _noted(
+          value,
+          name,
+          at,
+          _declarationDoc,
+          getter: true,
+        );
       }
       while (i < tokens.length && peek != ',' && peek != ';' && peek != '}') {
         if (peek == '(') {
@@ -759,8 +931,8 @@ class _Parser {
     }
   }
 
-  void _type() {
-    take();
+  void _type(Set<String> modifiers) {
+    final kind = take();
     if (!isIdent) {
       _skipBody();
       return;
@@ -770,12 +942,13 @@ class _Parser {
     final type = _Class(name, !name.startsWith('_'));
     classes[name] = type;
     final params = peek == '<' ? _typeParameters() : <String, String>{};
+    type.typeParameters.addAll(params);
     while (i < tokens.length && peek != '{' && peek != ';') {
       if (peek == 'extends' ||
           peek == 'with' ||
           peek == 'on' ||
           peek == 'implements') {
-        take();
+        final edgeKind = take();
         while (i < tokens.length &&
             peek != '{' &&
             peek != ';' &&
@@ -784,8 +957,11 @@ class _Parser {
             peek != 'on') {
           final raw = _rawType();
           final head = _head(raw);
-          if (head.isNotEmpty) {
-            type.supers.add(head);
+          if (head.isNotEmpty && edgeKind != 'on') {
+            if (edgeKind == 'extends' || edgeKind == 'with')
+              type.implementationSupers.add(raw);
+            type.supers.add(raw);
+            type.instantiatedSupers.add(raw);
             type.superNames.add(head);
           }
           final list =
@@ -807,6 +983,37 @@ class _Parser {
       _members(type, params);
     }
     if (peek == '}') i++;
+    if (!type.hasConstructor &&
+        kind == 'class' &&
+        !modifiers.contains('abstract') &&
+        !modifiers.contains('sealed'))
+      type.constructors[''] = _noted(type.name, type.name, at, _declarationDoc);
+    for (final entry in type.constructors.entries.toList()) {
+      final m = entry.value;
+      type.constructors[entry.key] = DartMember(
+          name: m.name,
+          type: m.type,
+          parameters: [
+            for (final p in m.parameters)
+              (
+                p.$1,
+                p.$2.startsWith('@field.')
+                    ? type.fields[p.$2.substring(7)] ??
+                        '@unsupported.initializingFormal'
+                    : p.$2
+              )
+          ],
+          optional: m.optional,
+          typeParameters: m.typeParameters,
+          namedParameters: m.namedParameters,
+          optionalNames: m.optionalNames,
+          getter: m.getter,
+          documentation: m.documentation,
+          file: m.file,
+          line: m.line,
+          column: m.column,
+          offset: m.offset);
+    }
     if (!type.public) return;
     final unnamed = type.constructors[''];
     names[name] = DartTop(
@@ -816,6 +1023,9 @@ class _Parser {
       callable: unnamed != null,
       parameters: unnamed?.parameters ?? const [],
       optional: unnamed?.optional ?? 0,
+      typeParameters: params,
+      namedParameters: unnamed?.namedParameters ?? const {},
+      optionalNames: unnamed?.optionalNames ?? const {},
       documentation: _declarationDoc,
       file: file,
       line: at?.line ?? 0,
@@ -862,8 +1072,13 @@ class _Parser {
           final key =
               operator == '-' && signature.$1.isEmpty ? 'unary-' : operator;
           type.members[key] = _noted(
-              operator, _simplify(leading, params), at, doc,
-              parameters: signature.$1, optional: signature.$2);
+            operator,
+            _simplify(leading, params),
+            at,
+            doc,
+            parameters: signature.$1,
+            optional: signature.$2,
+          );
         }
         _skipMember();
         if (i == before) i++;
@@ -906,6 +1121,8 @@ class _Parser {
       final own = peek == '<' ? _typeParameters() : const <String, String>{};
       final scope = {...params, ...own};
       if (member.startsWith('_')) {
+        if (peek != '(' && !isStatic)
+          type.fields[member] = _simplify(leading, scope);
         _skipMember();
         if (i == before) i++;
         continue;
@@ -917,8 +1134,11 @@ class _Parser {
           _simplify(leading, scope),
           at,
           doc,
+          typeParameters: own,
           parameters: signature.$1,
           optional: signature.$2,
+          namedParameters: signature.$3,
+          optionalNames: signature.$4,
         );
         if (isStatic) {
           type.statics[member] = dart;
@@ -961,6 +1181,7 @@ class _Parser {
       i = saved;
       return false;
     }
+    type.hasConstructor = true;
     if (name.startsWith('_')) {
       _skipMember();
       return true;
@@ -973,6 +1194,8 @@ class _Parser {
       doc,
       parameters: signature.$1,
       optional: signature.$2,
+      namedParameters: signature.$3,
+      optionalNames: signature.$4,
     );
     _skipMember();
     return true;
@@ -997,8 +1220,11 @@ class _Parser {
       names[name] = DartTop(
         name: name,
         type: _simplify(raw, params),
+        typeParameters: params,
         parameters: signature.$1,
         optional: signature.$2,
+        namedParameters: signature.$3,
+        optionalNames: signature.$4,
         callable: true,
         documentation: _declarationDoc,
         file: file,
@@ -1064,10 +1290,10 @@ class _Parser {
         continue;
       }
       final name = take();
-      var bound = 'num';
+      var bound = 'Object?';
       if (peek == 'extends') {
         i++;
-        bound = _simplify(_rawType(), map);
+        bound = _rawType();
       }
       map[name] = bound;
       if (peek == ',') i++;
@@ -1076,14 +1302,15 @@ class _Parser {
     return map;
   }
 
-  (List<(String, String)>, int) _parameters(
-    Map<String, String> params,
-    Map<String, String> fields,
-  ) {
-    if (peek != '(') return (const [], 0);
+  (List<(String, String)>, int, Set<String>, Set<String>) _parameters(
+      Map<String, String> params, Map<String, String> fields,
+      {bool allowUnnamed = false}) {
+    if (peek != '(') return (const [], 0, const {}, const {});
     i++;
     final list = <(String, String)>[];
     var optional = 0;
+    final named = <String>{};
+    final optionalNames = <String>{};
     var bracket = 0;
     var brace = 0;
     while (i < tokens.length && !(peek == ')' && bracket == 0 && brace == 0)) {
@@ -1125,20 +1352,25 @@ class _Parser {
         i++;
         if (peek == '.') i++;
         name = isIdent ? take() : '';
-        type = fields[name] ?? 'dynamic';
+        type = fields[name] ?? '@field.$name';
       } else {
         type = _simplify(_rawType(), params);
         name = isIdent ? take() : '';
       }
+      if (allowUnnamed && name.isEmpty) name = '_p${list.length}';
       if (peek == '=') _skipDefault();
-      if (name.isNotEmpty && !name.startsWith('_')) {
+      if (name.isNotEmpty) {
         list.add((name, type));
-        if (bracket > 0 || (brace > 0 && !required)) optional++;
+        if (brace > 0) named.add(name);
+        if (bracket > 0 || (brace > 0 && !required)) {
+          optional++;
+          optionalNames.add(name);
+        }
       }
       if (i == before) i++;
     }
     if (peek == ')') i++;
-    return (list, optional);
+    return (list, optional, named, optionalNames);
   }
 
   String _rawType() {
@@ -1151,7 +1383,7 @@ class _Parser {
         if (peek == '(') _group('(', ')');
       }
       if (peek == '?') i++;
-      return 'dynamic';
+      return '@unsupported.record';
     }
     if (!isIdent) return 'dynamic';
     final buffer = StringBuffer(take());
@@ -1163,10 +1395,16 @@ class _Parser {
     if (peek == '?') buffer.write(take());
     if (peek == 'Function') {
       take();
-      if (peek == '<') _group('<', '>');
-      if (peek == '(') _group('(', ')');
-      if (peek == '?') i++;
-      return 'dynamic';
+      final generic = peek == '<';
+      if (generic) _group('<', '>');
+      final signature = _parameters(const {}, const {}, allowUnnamed: true);
+      final function =
+          '(${signature.$1.map((p) => p.$2).join(', ')}) -> $buffer';
+      final nullable = peek == '?';
+      if (nullable) i++;
+      if (generic || signature.$2 > 0 || signature.$3.isNotEmpty)
+        return '@unsupported.function';
+      return nullable ? nullableType(function) : function;
     }
     return buffer.toString();
   }
@@ -1180,19 +1418,13 @@ class _Parser {
 
   String _simplify(String raw, Map<String, String> params) {
     if (raw.isEmpty) return 'dynamic';
-    final replaced = params.isEmpty
-        ? raw
-        : raw.replaceAllMapped(RegExp(r'[A-Za-z_][A-Za-z0-9_]*'), (match) {
-            return params[match.group(0)!] ?? match.group(0)!;
-          });
+    final replaced = raw;
     final parsed =
         RegExp(r'^([A-Za-z_][A-Za-z0-9_.]*)(<.*>)?(\?)?$').firstMatch(replaced);
     if (parsed == null) return replaced;
     final name = parsed.group(1)!;
     final args = parsed.group(2);
     final nullable = parsed.group(3) ?? '';
-    final head = name.contains('.') ? name.split('.').last : name;
-    if (args != null && classes.containsKey(head)) return '$head$nullable';
     return '$name${args ?? ''}$nullable';
   }
 
@@ -1208,7 +1440,7 @@ class _Parser {
       'interface',
       'sealed',
       'final',
-      'mixin'
+      'mixin',
     };
     const words = {
       'external',
@@ -1223,7 +1455,7 @@ class _Parser {
     final found = <String>{};
     while (true) {
       if (header.contains(peek) && _introducesType()) {
-        take();
+        found.add(take());
         continue;
       }
       if (!words.contains(peek)) break;
@@ -1234,14 +1466,7 @@ class _Parser {
 
   bool _introducesType() {
     var k = i + 1;
-    const skip = {
-      'abstract',
-      'base',
-      'interface',
-      'sealed',
-      'mixin',
-      'final',
-    };
+    const skip = {'abstract', 'base', 'interface', 'sealed', 'mixin', 'final'};
     while (k < tokens.length && skip.contains(tokens[k].text)) {
       k++;
     }

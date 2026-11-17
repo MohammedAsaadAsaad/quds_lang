@@ -31,6 +31,10 @@ class Symbol {
       this.namespace,
       this.external = false,
       this.callable = false,
+      this.nativeTop,
+      this.nativeMember,
+      this.nativeClass,
+      this.nativeConstructor = false,
       this.optionalParameters = 0,
       this.documentation,
       this.signature,
@@ -47,6 +51,10 @@ class Symbol {
 
   /// A Dart function or unnamed constructor read from an SDK source.
   final bool callable;
+  final DartTop? nativeTop;
+  final DartMember? nativeMember;
+  final DartShape? nativeClass;
+  final bool nativeConstructor;
 
   /// How many trailing [parameterTypes] may be omitted.
   final int optionalParameters;
@@ -113,6 +121,7 @@ class SemanticModel {
   final argumentOrder = <CallExpression, List<int>>{};
   final inferredTypeArguments = <CallExpression, List<String>>{};
   final instantiatedParameterTypes = <CallExpression, List<String>>{};
+  final nativeArguments = <CallExpression, List<(String?, int)>>{};
 
   /// Const expressions that were evaluated. Short-circuited operands are absent.
   final constants = <Expression, ConstValue>{};
@@ -171,7 +180,7 @@ class SemanticModel {
   String displayType(String text) {
     var result = text;
     for (final entry in backendTypes.entries) {
-      if (!entry.key.startsWith('@dart.typed.')) continue;
+      if (!entry.key.startsWith('@dart.')) continue;
       final visible = aliases.entries
           .where((alias) => alias.value == entry.key)
           .firstOrNull;
@@ -241,7 +250,8 @@ Symbol symbolForDart(DartTop top, [DartShape? shape, String library = '']) {
     final constructors = shape?.constructors ?? const <String, DartMember>{};
     for (final entry in constructors.entries) {
       if (entry.key.isEmpty) continue;
-      namespace[entry.key] = _dartMemberSymbol(entry.value, top.type);
+      namespace[entry.key] = _dartMemberSymbol(entry.value, top.type,
+          owner: shape, constructor: true);
     }
     final statics = shape?.statics ?? const <String, DartMember>{};
     for (final entry in statics.entries) {
@@ -254,6 +264,9 @@ Symbol symbolForDart(DartTop top, [DartShape? shape, String library = '']) {
       top.name,
       top.type,
       external: true,
+      nativeTop: top,
+      nativeClass: shape,
+      nativeConstructor: true,
       callable: unnamed != null,
       parameterTypes: unnamed == null
           ? const []
@@ -278,6 +291,7 @@ Symbol symbolForDart(DartTop top, [DartShape? shape, String library = '']) {
     top.type,
     external: top.callable,
     callable: top.callable,
+    nativeTop: top,
     constant: top.constant,
     constantValue: value,
     parameterTypes: [for (final parameter in top.parameters) parameter.$2],
@@ -292,13 +306,17 @@ Symbol symbolForDart(DartTop top, [DartShape? shape, String library = '']) {
   );
 }
 
-Symbol _dartMemberSymbol(DartMember member, String type) {
+Symbol _dartMemberSymbol(DartMember member, String type,
+    {DartShape? owner, bool constructor = false}) {
   return Symbol(
     member.name,
     member.name,
     member.getter ? member.type : type,
     external: true,
     callable: !member.getter,
+    nativeMember: member,
+    nativeClass: owner,
+    nativeConstructor: constructor,
     parameterTypes: [for (final parameter in member.parameters) parameter.$2],
     optionalParameters: member.optional,
     documentation: member.documentation,
@@ -2014,6 +2032,36 @@ class Analyzer {
   final _typedTypeNames = <String, String>{};
 
   DartSurface _nativeSurface(String uri, DartSurface surface) {
+    if (!uri.startsWith('dart:')) {
+      final names = <String, String>{};
+      for (final name in surface.types.keys) {
+        final top = surface.names[name];
+        if (top == null || top.file.isEmpty) continue;
+        final origin = File(top.file).absolute.uri.normalizePath();
+        final package = packageRoot(top.file);
+        final packageUri =
+            package == null ? null : Directory(package.directory).absolute.uri;
+        final identity = packageUri != null &&
+                origin.toString().startsWith(packageUri.toString())
+            ? '${package!.name}:${origin.toString().substring(packageUri.toString().length)}'
+            : origin.toString();
+        final digest = sha256Hex(utf8.encode(identity)).substring(0, 12);
+        final prefix = '_qNative$digest';
+        final key = '@dart.native.$digest.$name';
+        names[name] = key;
+        model.backendTypes[key] = '$prefix.$name';
+        model.backendTypeImports[prefix] =
+            File(top.file).absolute.uri.toString();
+        model.internalTypes[key] =
+            Symbol(key, '$prefix.$name', key, external: true);
+      }
+      String canonical(String source) => source.replaceAllMapped(
+          RegExp(r'[A-Za-z_][A-Za-z0-9_]*'), (m) => names[m[0]] ?? m[0]!);
+      final mapped = mapDartSurfaceTypes(surface, canonical);
+      for (final name in names.keys)
+        model.dartShapes[names[name]!] = mapped.types[name]!;
+      return mapped;
+    }
     if (uri != 'dart:typed_data') return surface;
     final cached = _typedSurface;
     if (cached != null) return cached;
@@ -2044,7 +2092,7 @@ class Analyzer {
   }
 
   void _bindNativeAlias(String name, DartTop top, String? prefix) {
-    if (!top.isType || !top.type.startsWith('@dart.typed.')) return;
+    if (!top.isType || !top.type.startsWith('@dart.')) return;
     model.aliases[prefix == null ? name : '$prefix.$name'] = top.type;
   }
 
@@ -2672,6 +2720,20 @@ class Analyzer {
       final head = type.substring(0, open);
       final symbol = _typeSymbol(head);
       final declaration = symbol?.classDeclaration;
+      final native = _nativeShape(head);
+      if (native != null) {
+        final args = _splitTypes(type.substring(open + 1, type.length - 1));
+        _checkTypeArguments(
+            head,
+            [
+              for (final p in native.typeParameters.entries)
+                TypeParameter(p.key, node.span, bound: p.value)
+            ],
+            args,
+            node);
+        if (symbol != null) _touch(symbol);
+        return;
+      }
       if (declaration != null) {
         _touch(symbol!);
         final args = _splitTypes(type.substring(open + 1, type.length - 1));
@@ -4397,7 +4459,9 @@ class Analyzer {
     if (native != null &&
         !from.startsWith('readonly ') &&
         !isNullableType(from)) {
-      if (native.supertypes.contains(to)) return true;
+      if (native.instantiatedSupertypes.any((parent) => compatible(parent, to)))
+        return true;
+      if (!to.contains('<') && native.supertypes.contains(to)) return true;
       final element = native.listElement;
       for (final prefix in ['List<', 'Iterable<']) {
         if (element != null &&
@@ -5313,6 +5377,10 @@ class Analyzer {
       return _readonlyView(raw, foundType);
     }
     final sdk = _sdkMember(base, node.name);
+    if (sdk != null && model.references[node.object]?.nativeTop?.isType == true)
+      fail('Instance member ${node.name} is used on the type', node);
+    if (sdk != null && !sdk.getter)
+      error('E910', 'Native method tear-offs need further conformance', node);
     if (sdk != null && sdk.getter) {
       model.references[node] = _dartMemberSymbol(sdk, sdk.type);
       final dartGetter = sdk.type;
@@ -6374,6 +6442,15 @@ class Analyzer {
     model.references[node] = symbol;
     _touch(symbol);
     if (symbol.function != null) return functionType(symbol.function!);
+    final native = symbol.nativeTop;
+    if (native != null &&
+        (native.typeParameters.isNotEmpty ||
+            native.namedParameters.isNotEmpty ||
+            native.optionalNames.isNotEmpty))
+      error(
+          'E910',
+          'Native generic or optional/named function tear-offs need further conformance',
+          node);
     if (symbol.parameterTypes.isNotEmpty) {
       return '(${symbol.parameterTypes.join(', ')}) -> ${symbol.type}';
     }
@@ -6602,6 +6679,8 @@ class Analyzer {
   String _passExternal(CallExpression node, Symbol symbol) {
     model.references[node.callee] = symbol;
     _touch(symbol);
+    if (symbol.nativeTop != null || symbol.nativeMember != null)
+      return _nativeCall(node, symbol);
     for (final argument in node.arguments) {
       _checkReadonlyEscape(expression(argument.value), argument);
     }
@@ -6675,6 +6754,11 @@ class Analyzer {
       final owner = _scope.lookup((callee.object as Identifier).name);
       if (owner?.namespace != null) {
         return _callPrefixed(node, callee, owner!);
+      }
+      if (owner?.nativeTop?.isType == true &&
+          _nativeShape(owner!.type)?.members.containsKey(callee.name) == true) {
+        model.references[callee.object] = owner;
+        fail('Instance member ${callee.name} is used on the type', callee);
       }
       final type = owner?.classDeclaration;
       final named = type?.constructors
@@ -6807,11 +6891,22 @@ class Analyzer {
             return found.isEmpty ? null : found.single;
           }();
       if (resolved == null) {
-        if (explicitMethodTypes != null)
+        if (explicitMethodTypes != null) {
+          final native = _dartCall(objectType, callee.name, node,
+              explicitTypes: explicitMethodTypes);
+          if (native != null) {
+            if (rawObject.startsWith('readonly '))
+              error(
+                  'E307',
+                  'A readonly reference cannot call an unclassified Dart method',
+                  callee);
+            return native;
+          }
           error(
               'E910',
-              'Explicit generic native or collection methods need further conformance',
+              'No supported generic native signature for ${callee.name}',
               callee);
+        }
         if (_typedStorage(objectType) &&
             _sdkMember(objectType, callee.name) != null) {
           final result = _dartCall(objectType, callee.name, node);
@@ -7143,7 +7238,130 @@ class Analyzer {
     return symbol.type;
   }
 
+  String _nativeCall(CallExpression node, Symbol symbol,
+      {List<String>? explicitTypes}) {
+    final top = symbol.nativeTop;
+    final member = symbol.nativeMember;
+    if (top?.isType == true && !top!.callable)
+      fail('Class ${symbol.name} has no accessible unnamed constructor', node);
+    final parameters = top?.parameters ?? member!.parameters;
+    if (symbol.type.contains('@unsupported.') ||
+        parameters.any((p) => p.$2.contains('@unsupported.')))
+      error('E910', 'This Dart callback signature needs additional conformance',
+          node);
+    final named = top?.namedParameters ?? member!.namedParameters;
+    final optional = top?.optionalNames ?? member!.optionalNames;
+    final formals = symbol.nativeConstructor
+        ? symbol.nativeClass?.typeParameters ??
+            top?.typeParameters ??
+            const <String, String>{}
+        : top?.typeParameters ?? member!.typeParameters;
+    final typeParameters = [
+      for (final p in formals.entries)
+        TypeParameter(p.key, node.span, bound: p.value)
+    ];
+    final inferred = <String, String>{};
+    if (explicitTypes != null) {
+      inferred.addAll(_checkTypeArguments(
+          symbol.name, typeParameters, explicitTypes, node));
+    } else if (_expected != null && formals.isNotEmpty) {
+      final resultPattern = symbol.nativeConstructor
+          ? '${symbol.type}<${formals.keys.join(', ')}>'
+          : symbol.type;
+      _inferGeneric(resultPattern, _expected!, inferred, typeParameters);
+    }
+    final order = List<int>.filled(parameters.length, -1);
+    var positional = 0;
+    var sawNamed = false;
+    final actual = <int, String>{};
+    for (var i = 0; i < node.arguments.length; i++) {
+      final argument = node.arguments[i];
+      final int target;
+      if (argument.name == null) {
+        if (sawNamed)
+          fail('Positional arguments must precede named arguments', argument);
+        target = positional++;
+      } else {
+        sawNamed = true;
+        target = parameters.indexWhere((p) => p.$1 == argument.name);
+        if (target < 0) fail('Unknown argument: ${argument.name}', argument);
+      }
+      if (target >= parameters.length)
+        fail('Too many arguments for ${symbol.name}', argument);
+      if (order[target] >= 0)
+        fail('Duplicate argument: ${parameters[target].$1}', argument);
+      final pattern = parameters[target].$2;
+      final saved = _expected;
+      final expected = _substitute(pattern, inferred);
+      _expected = formals.keys.any((key) =>
+              !inferred.containsKey(key) &&
+              RegExp('\\b${RegExp.escape(key)}\\b').hasMatch(expected))
+          ? null
+          : expected;
+      final String type;
+      try {
+        type = expression(argument.value);
+      } finally {
+        _expected = saved;
+      }
+      _checkReadonlyEscape(type, argument);
+      if (explicitTypes == null &&
+          !_inferGeneric(pattern, type, inferred, typeParameters)) {
+        fail('Argument type $type is incompatible with $pattern', argument);
+      }
+      actual[target] = type;
+      order[target] = i;
+    }
+    for (var i = 0; i < parameters.length; i++) {
+      if (order[i] < 0 && !optional.contains(parameters[i].$1))
+        fail('Missing required argument: ${parameters[i].$1}', node);
+    }
+    for (final formal in formals.entries) {
+      inferred.putIfAbsent(
+          formal.key, () => _substitute(formal.value, inferred));
+    }
+    if (formals.isNotEmpty) {
+      final arguments = [for (final key in formals.keys) inferred[key]!];
+      _checkTypeArguments(symbol.name, typeParameters, arguments, node);
+      model.inferredTypeArguments[node] = arguments;
+    }
+    for (final entry in actual.entries) {
+      final expected = _substitute(parameters[entry.key].$2, inferred);
+      if (!compatible(entry.value, expected))
+        fail('Argument type ${entry.value} is incompatible with $expected',
+            node.arguments[order[entry.key]]);
+    }
+    var omittedPositional = false;
+    final layout = <(String?, int)>[];
+    for (var i = 0; i < parameters.length; i++) {
+      final name = parameters[i].$1;
+      if (order[i] < 0) {
+        if (!named.contains(name)) omittedPositional = true;
+        continue;
+      }
+      if (!named.contains(name) && omittedPositional)
+        error(
+            'E910',
+            'A later optional Dart positional argument requires earlier values explicitly',
+            node);
+      layout.add((named.contains(name) ? name : null, order[i]));
+    }
+    model.nativeArguments[node] = layout;
+    model.argumentOrder[node] = order;
+    model.references[node.callee] = symbol;
+    _touch(symbol);
+    final returned = _substitute(symbol.type, inferred);
+    return symbol.nativeConstructor &&
+            formals.isNotEmpty &&
+            !returned.contains('<')
+        ? '$returned<${formals.keys.map((key) => inferred[key]).join(', ')}>'
+        : returned;
+  }
+
   String externalCall(CallExpression node, Symbol symbol) {
+    if (symbol.nativeTop != null || symbol.nativeMember != null)
+      return _nativeCall(node, symbol);
+
     if (symbol.name == 'present') {
       if (node.arguments.length != 1)
         fail('present expects one argument', node);
@@ -7267,6 +7485,10 @@ class Analyzer {
           symbol.dartName, symbol.dartName, qualified,
           classDeclaration: symbol.classDeclaration);
       return qualified;
+    }
+    if (symbol.external &&
+        (symbol.nativeTop != null || symbol.nativeMember != null)) {
+      return _nativeCall(node, symbol, explicitTypes: applied.arguments);
     }
     final candidates = symbol.overloads.isEmpty && symbol.function != null
         ? [symbol.function!]
@@ -7858,10 +8080,15 @@ class Analyzer {
     'Pointer',
   };
 
+  final _nativeInstantiations = <String, DartShape>{};
   DartShape? _nativeShape(String type) {
-    final head = _dartHead(model.resolve(type));
+    final instance = nonNullableType(stripReadonlyType(model.resolve(type)));
+    final head = _dartHead(instance);
     if (_typeSymbol(head)?.classDeclaration != null) return null;
-    return model.dartShapes[head];
+    final shape = model.dartShapes[head];
+    if (shape == null || shape.typeParameters.isEmpty) return shape;
+    return _nativeInstantiations.putIfAbsent(
+        instance, () => instantiateDartShape(shape, instance));
   }
 
   bool _typedStorage(String type) {
@@ -7999,15 +8226,22 @@ class Analyzer {
   }
 
   DartMember? _sdkMember(String type, String name) {
-    return model.dartShapes[_dartHead(type)]?.members[name];
+    return _nativeShape(type)?.members[name];
   }
 
-  String? _dartCall(String type, String name, CallExpression node) {
+  String? _dartCall(String type, String name, CallExpression node,
+      {List<String>? explicitTypes}) {
     final member = _sdkMember(type, name);
     if (member == null || member.getter) return null;
+    final callee = node.callee is TypeApplication
+        ? (node.callee as TypeApplication).callee
+        : node.callee;
+    if (callee is MemberAccess &&
+        model.references[callee.object]?.nativeTop?.isType == true)
+      fail('Instance member $name is used on the type', callee);
     final symbol = _dartMemberSymbol(member, member.type);
     model.references[node.callee] = symbol;
-    return externalCall(node, symbol);
+    return _nativeCall(node, symbol, explicitTypes: explicitTypes);
   }
 
   String? _collectionGetter(String type, String name) {

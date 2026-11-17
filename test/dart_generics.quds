@@ -1,0 +1,54 @@
+use "fixtures/dart_generics/api.dart"
+
+test "Dart generic functions retain explicit and inferred types":
+  expect(nativeIdentity<String>("Quds"), "Quds")
+  value: String = nativeIdentity("typed")
+  expect(value, "typed")
+  expect(nativeBounded<int>(4), 4)
+  expect(nativeNamed<String>(value: "named"), "named")
+
+test "Dart inherited members retain nested class specialization":
+  owner = NativeChild<int>([1, 2])
+  expect(owner.read()[0], 1)
+  expect(owner.value[1], 2)
+  expect(owner.identity<String>("method"), "method")
+  expect(owner.identity(7), 7)
+  expect(owner.bounded<double>(2.5), 2.5)
+
+test "Dart unified calls preserve written evaluation order":
+  history: List<int> = []
+  mark(value: int) -> int:
+    history.add(value)
+    return value
+  combined = nativePair<int>(second: mark(2), first: mark(1), suffix: "ok")
+  expect(combined, "1,2ok")
+  expect(history[0], 2)
+  expect(history[1], 1)
+
+test "Dart callback inference and instantiated supertype checks":
+  owner = NativeChild<int>([3])
+  parent: NativeParent<List<int>> = owner
+  mapped = parent.mapped((items: List<int>) -> "value={items[0]}")
+  expect(mapped[0], "value=3")
+  inferred = NativeChild([4])
+  expect(inferred.read()[0], 4)
+  number = NativeNumbers<int>(5)
+  expect(number.value, 5)
+
+test "native initializing formals preserve fields declared after constructors":
+  value = NativeField("field")
+  expect(value.value, "field")
+  number = NativeNumbers<num>(5)
+  expect(number is NativeNumbers<int>, false)
+  expect(nativeIdentity<String?>(null), null)
+
+test "native mixin signatures follow Dart implementation order":
+  owner = NativeMixed()
+  chosen: int = owner.narrow(2.5)
+  expect(chosen, 2)
+
+test "native constructor inference uses its declared result context":
+  owner: NativeField<List<int>> = NativeField([])
+  expect(owner.value.length, 0)
+  empty = NativeEmpty<String>()
+  expect(empty.values.length, 0)

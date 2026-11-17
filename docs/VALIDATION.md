@@ -844,3 +844,31 @@ No extra network domain is needed for the verified Docker-based SDK route.
 See READONLY_CLASSES.md for standalone runtime bundling, runtime guard metadata,
 source identity versus Dart proxy identity, and explicit native/sealed/mixin
 limits. This package does not claim all 115 language features are complete.
+
+## 2026-11-17 — native Dart generic metadata and final language/memory gate
+
+- `dart format --output=none --set-exit-if-changed .`: **62 files, zero changes**.
+- `dart analyze`: **No issues found**.
+- `dart run bin/quds.dart test test/dart_generics.quds`: **7 declarations pass**.
+- `dart run bin/quds.dart test test/dart_generics_prefix.quds`: **1 declaration
+  passes**, including one declaration reached through two export/import paths.
+- `dart test test/dart_generics_test.dart --reporter expanded`: **22 pass**.
+  This includes original-source diagnostic spans, rejected unsupported native
+  signatures, nominal identity, a normalized deterministic golden and actual
+  Dart analysis plus VM/JavaScript execution. Receiver/argument effects, await,
+  Future results, implicit constructors and omitted-versus-null defaults are
+  exercised by Quds programs.
+- Final frozen-source `dart test --reporter expanded`: **501 pass, zero skipped,
+  zero failures**, **5m59s**. The real breakpoint/locals/evaluate test passes.
+- Repeated `dart run tool/profile_heap.dart` and
+  `dart run tool/profile_web_memory.dart`: **both complete**, checksum
+  **213097200**, refreshed raw JSON under bench/results. VM source HeapCell
+  counts are **0 → 20000 → 0**, and **0** after removing the accessed readonly
+  graph. Float64 allocation traces remain **8 → 109 → 110**, plus **100** views.
+  V8 records all six phases; allocation samples remain estimates.
+- `git diff --check`: clean.
+
+DART_GENERIC_METADATA.md records the implemented direct-call subset and explicit
+E910 limits. LANGUAGE_MEMORY_COMPLETION_AR.md closes the finite handoff plan;
+it does not assert that all 115 language decisions or arbitrary Dart source
+forms have complete implementation parity.

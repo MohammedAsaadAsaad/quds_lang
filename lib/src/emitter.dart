@@ -3648,6 +3648,44 @@ class DartEmitter {
     return '$helper(${[...positional, ...named].join(', ')})';
   }
 
+  String _nativeInvocation(CallExpression node, String target,
+      MemberAccess? member, bool constantContext) {
+    final layout = model.nativeArguments[node]!;
+    final reordered =
+        List.generate(layout.length, (i) => layout[i].$2 != i).any((v) => v);
+    String arguments(String Function(int) value) => layout
+        .map((slot) =>
+            '${slot.$1 == null ? '' : '${slot.$1}: '}${value(slot.$2)}')
+        .join(', ');
+    if (!reordered || constantContext) {
+      return '$target(${arguments((i) => expression(node.arguments[i].value, constantContext: constantContext))})';
+    }
+    // Invocation operands remain outside the closure: await stays in its
+    // original async scope and a Future result is not accidentally flattened.
+    final parameters = <String>[];
+    final inputs = <String>[];
+    if (member != null &&
+        model.types[member.object] != 'prefix' &&
+        model.references[member.object]?.namespace == null) {
+      final receiver = '_qnr${_temps++}';
+      parameters.add('${_dartType(model.types[member.object]!)} $receiver');
+      inputs.add(expression(member.object));
+      final generic = model.inferredTypeArguments[node];
+      final suffix =
+          generic == null ? '' : '<${generic.map(_dartType).join(', ')}>';
+      target = '$receiver.${member.name}$suffix';
+    }
+    final values = <String>[];
+    for (var i = 0; i < node.arguments.length; i++) {
+      final value = '_qna${_temps++}';
+      values.add(value);
+      parameters
+          .add('${_dartType(model.types[node.arguments[i].value]!)} $value');
+      inputs.add(expression(node.arguments[i].value));
+    }
+    return '((${parameters.join(', ')}) => $target(${arguments((i) => values[i])}))(${inputs.join(', ')})';
+  }
+
   String call(CallExpression node, {bool constantContext = false}) {
     if (model.references[node.callee] == null) {
       final callee = expression(node.callee, constantContext: constantContext);
@@ -3758,7 +3796,12 @@ class DartEmitter {
           .join(', ');
       return '${expression(member.object, constantContext: constantContext)}.copyWith($args)';
     }
-    final constructed = _constructed(node, targetSymbol.name);
+    final constructed = targetSymbol.nativeConstructor &&
+            (node.callee is Identifier ||
+                node.callee is TypeApplication &&
+                    (node.callee as TypeApplication).callee is Identifier)
+        ? _dartType(model.types[node]!)
+        : _constructed(node, targetSymbol.name);
     var target = member != null
         ? '${expression(member.object, constantContext: constantContext)}.${model.references[member]?.dartName ?? member.name}'
         : node.callee is Identifier &&
@@ -3771,11 +3814,15 @@ class DartEmitter {
                 : targetSymbol.dartName;
     if (node.callee case TypeApplication applied) {
       final original = model.references[applied.callee];
-      if (original?.function != null && original?.classDeclaration == null) {
+      if (original?.function != null && original?.classDeclaration == null ||
+          targetSymbol.external &&
+              model.nativeArguments.containsKey(node) &&
+              (!targetSymbol.nativeConstructor || member != null)) {
         target += '<${applied.arguments.map(_dartType).join(', ')}>';
       }
     } else if (model.inferredTypeArguments[node] case final arguments?) {
-      target += '<${arguments.map(_dartType).join(', ')}>';
+      if (!targetSymbol.nativeConstructor || member != null)
+        target += '<${arguments.map(_dartType).join(', ')}>';
     }
     if ((targetSymbol.dartName == 'min' || targetSymbol.dartName == 'max') &&
         !targetSymbol.external &&
@@ -3799,6 +3846,8 @@ class DartEmitter {
       return '$helper(${expression(node.arguments[0].value, constantContext: constantContext)}, ${expression(node.arguments[1].value, constantContext: constantContext)}, true)';
     }
     if (targetSymbol.external) {
+      if (model.nativeArguments.containsKey(node))
+        return _nativeInvocation(node, target, member, constantContext);
       final parts = [
         for (final argument in node.arguments)
           argument.name == null

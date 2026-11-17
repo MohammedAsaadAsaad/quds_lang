@@ -1,0 +1,11 @@
+use "fixtures/dart_generics/api.dart" as native
+use "fixtures/dart_generics/base.dart" as base
+
+test "prefixed native generics share declaration identities across exports":
+  owner = native.NativeChild<int>([1])
+  parent: base.NativeParent<List<int>> = owner
+  empty = native.NativeEmpty<String>()
+  expect(empty.values.length, 0)
+  expect(parent.read()[0], 1)
+  expect(native.nativeIdentity<String>("prefixed"), "prefixed")
+  expect(parent.identity<String>("method"), "method")

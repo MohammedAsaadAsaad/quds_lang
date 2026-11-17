@@ -1,8 +1,9 @@
 # Heap measurements and identity-aware readonly collections
 
 This package closes the collection and measurement gaps recorded in
-LANGUAGE_MEMORY_COMPLETION_AR. Custom-class guards and Dart generic metadata
-remain the next packages; this file does not claim they are complete.
+LANGUAGE_MEMORY_COMPLETION_AR. This originally shipped before the custom-class
+and native-generic packages; their subsequent completion is documented in
+READONLY_CLASSES.md and DART_GENERIC_METADATA.md.
 
 ## Primary Quds behavior
 

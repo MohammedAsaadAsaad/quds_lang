@@ -1,0 +1,39 @@
+use "fixtures/dart_generics/api.dart"
+
+main() async:
+  owner = NativeChild<int>([3])
+  parent: NativeParent<List<int>> = owner
+  check parent.read()[0] == 3
+  mapped = parent.mapped((values: List<int>) -> "value={values[0]}")
+  check mapped[0] == "value=3"
+  check owner.identity<String>("method") == "method"
+  check nativeIdentity<String>("Quds") == "Quds"
+  check nativeIdentity("inferred") == "inferred"
+  check nativeNamed<int>(5) == 5
+  check nativeOmitted<int>()
+  check not nativeOmitted<int>(value: null)
+  history: List<int> = []
+  mark(value: int) -> int:
+    history.add(value)
+    return value
+  combined = nativePair<int>(second: mark(2), first: mark(1), suffix: "ok")
+  check combined == "1,2ok"
+  check history[0] == 2
+  check history[1] == 1
+  makeOwner() -> NativeChild<int>:
+    history.add(0)
+    return owner
+  history.clear()
+  check makeOwner().pair<int>(second: mark(2), first: mark(1)) == "1,2"
+  check history[0] == 0
+  check history[1] == 2
+  check history[2] == 1
+  read(value: int) async -> int:
+    history.add(value)
+    return value
+  history.clear()
+  pending: Future<String> = nativeFuturePair<int>(second: await read(2), first: await read(1))
+  check (await pending) == "1,2"
+  check history[0] == 2
+  check history[1] == 1
+  print "DART GENERICS OK"

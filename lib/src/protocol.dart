@@ -11,6 +11,7 @@ import 'libraries.dart';
 import 'navigate.dart';
 import 'parser.dart';
 import 'sdk.dart';
+import 'source_index.dart';
 
 /// One LSP or DAP message with a `Content-Length` header.
 String encodeFrame(Object? message) {
@@ -42,6 +43,7 @@ class LspSession {
   Isolate? _isolate;
   final _queued = <String, _AnalysisRequest>{};
   bool _busy = false;
+  _AnalysisRequest? _activeAnalysis;
   var _closed = false;
 
   void dispose() {
@@ -189,7 +191,9 @@ class LspSession {
     final changes = params['contentChanges'];
     if (changes is List) {
       for (final change in changes) {
-        opened.text = _applyChange(opened.text, _map(change));
+        final next = _applyChange(opened.text, _map(change));
+        opened.editingLine = _changedLine(opened.text, next);
+        opened.text = next;
       }
     }
     if (version != null) opened.version = version;
@@ -239,18 +243,39 @@ class LspSession {
     final replies = ReceivePort();
     _replies = replies;
     replies.listen(_onWorkerMessage);
-    Isolate.spawn(_analysisWorker, replies.sendPort).then((isolate) {
-      if (_closed) {
+    Isolate.spawn(_analysisWorker, replies.sendPort,
+            onError: replies.sendPort, onExit: replies.sendPort)
+        .then((isolate) {
+      if (_closed || !identical(_replies, replies)) {
         isolate.kill(priority: Isolate.immediate);
         return;
       }
       _isolate = isolate;
+    }).catchError((Object error) {
+      if (_closed || !identical(_replies, replies)) return;
+      final requests = _queued.values.toList();
+      _queued.clear();
+      _onWorkerMessage(const <Object>[]);
+      for (final request in requests) {
+        final document = _documents[request.uri];
+        if (document == null || document.text != request.source) continue;
+        document.apply(_AnalysisResult(
+            request.uri,
+            request.source,
+            null,
+            [
+              _Diag('E300', 'Cannot start background analyzer: $error', 1, 1, 0,
+                  0, request.file)
+            ],
+            analysisSource: request.source));
+        emit?.call(_publish(document));
+      }
     });
   }
 
   void _sendAnalysis(_OpenDocument document) {
-    _queued[document.uri] =
-        _AnalysisRequest(document.uri, document.text, document.file);
+    _queued[document.uri] = _AnalysisRequest(
+        document.uri, document.text, document.file, document.editingLine);
     _ensureWorker();
     _pumpAnalysis();
   }
@@ -264,11 +289,38 @@ class LspSession {
       return;
     }
     _busy = true;
+    _activeAnalysis = request;
     _worker!.send(request);
   }
 
   void _onWorkerMessage(Object? message) {
     if (_closed) return;
+    if (message == null || message is List) {
+      final failed = _activeAnalysis;
+      _busy = false;
+      _activeAnalysis = null;
+      _worker = null;
+      _isolate = null;
+      _replies?.close();
+      _replies = null;
+      if (failed != null) {
+        final document = _documents[failed.uri];
+        if (document != null && document.text == failed.source) {
+          document.apply(_AnalysisResult(
+              failed.uri,
+              failed.source,
+              null,
+              [
+                _Diag('E300', 'Background analyzer stopped; edit to retry', 1,
+                    1, 0, 0, failed.file)
+              ],
+              analysisSource: failed.source));
+          emit?.call(_publish(document));
+        }
+      }
+      if (_queued.isNotEmpty) _ensureWorker();
+      return;
+    }
     if (message is SendPort) {
       _worker = message;
       _pumpAnalysis();
@@ -276,6 +328,7 @@ class LspSession {
     }
     if (message is! _AnalysisResult) return;
     _busy = false;
+    _activeAnalysis = null;
     final document = _documents[message.uri];
     if (document != null && document.text == message.source) {
       document.apply(message);
@@ -416,6 +469,10 @@ class LspSession {
   }
 
   Map<String, Object> _semanticTokens(Map<String, dynamic> params) {
+    final opened = _document(params);
+    if (opened != null && opened.live) {
+      return {'data': opened.isCurrent ? opened.semanticData : const <int>[]};
+    }
     final located = _tryCompile(params);
     if (located == null) return {'data': const []};
     return {'data': semanticTokenData(located.$1, located.$3)};
@@ -540,9 +597,10 @@ class LspSession {
   }
 
   Map<String, dynamic> _publish(_OpenDocument document) {
+    final positions = SourceIndex(document.text);
     final diagnostics = document.diagnostics().map((error) {
       return {
-        'range': _range(document.text, error.span),
+        'range': _range(document.text, error.span, index: positions),
         'severity': error.code.startsWith('W') ? 2 : 1,
         'code': error.code,
         'source': 'quds',
@@ -552,7 +610,11 @@ class LspSession {
     return {
       'jsonrpc': '2.0',
       'method': 'textDocument/publishDiagnostics',
-      'params': {'uri': document.uri, 'diagnostics': diagnostics},
+      'params': {
+        'uri': document.uri,
+        'version': document.version,
+        'diagnostics': diagnostics
+      },
     };
   }
 
@@ -603,6 +665,8 @@ class _OpenDocument {
 
   /// A live document serves completion from [_good] and analyzes off the request.
   var live = false;
+  int? editingLine;
+  List<int> semanticData = const [];
   final _recovered = <String, Compilation?>{};
   List<CompilerException> _diagnostics = const [];
 
@@ -646,10 +710,11 @@ class _OpenDocument {
   void apply(_AnalysisResult result) {
     _recovered.clear();
     final compiled = result.compilation;
+    _compilation = compiled;
+    semanticData = result.tokens;
     if (compiled != null) {
-      _compilation = compiled;
       _good = compiled;
-      _goodText = result.source;
+      _goodText = result.analysisSource;
     }
     _diagnostics = [
       for (final error in result.diagnostics)
@@ -883,14 +948,20 @@ Map<String, Object> _spanRange(SourceSpan span) {
   };
 }
 
-Map<String, Object> _range(String source, SourceSpan span) {
+Map<String, Object> _range(String source, SourceSpan span,
+    {SourceIndex? index}) {
   return {
-    'start': _position(source, span.offset),
-    'end': _position(source, span.offset + span.length),
+    'start': _position(source, span.offset, index: index),
+    'end': _position(source, span.offset + span.length, index: index),
   };
 }
 
-Map<String, int> _position(String source, int byteOffset) {
+Map<String, int> _position(String source, int byteOffset,
+    {SourceIndex? index}) {
+  if (index != null) {
+    final position = index.position(index.stringIndex(byteOffset));
+    return {'line': position.$1, 'character': position.$2};
+  }
   final bytes = utf8.encode(source);
   final end = byteOffset < 0
       ? 0
@@ -923,10 +994,11 @@ Map<String, dynamic> _error(Object? id, int code, String message) => {
     };
 
 class _AnalysisRequest {
-  _AnalysisRequest(this.uri, this.source, this.file);
+  _AnalysisRequest(this.uri, this.source, this.file, this.editingLine);
   final String uri;
   final String source;
   final String file;
+  final int? editingLine;
 }
 
 class _Diag {
@@ -942,7 +1014,10 @@ class _Diag {
 }
 
 class _AnalysisResult {
-  _AnalysisResult(this.uri, this.source, this.compilation, this.diagnostics);
+  _AnalysisResult(this.uri, this.source, this.compilation, this.diagnostics,
+      {required this.analysisSource, this.tokens = const []});
+  final String analysisSource;
+  final List<int> tokens;
   final String uri;
   final String source;
   final Compilation? compilation;
@@ -959,45 +1034,119 @@ void _analysisWorker(SendPort main) {
   });
 }
 
+// All editor recovery stays on the background isolate. An exception during a
+// recovery/diagnostic pass must also produce a result, never strand _busy.
 _AnalysisResult _analyzeRequest(_AnalysisRequest request) {
+  try {
+    return _analyzeBuffer(request);
+  } catch (error) {
+    return _AnalysisResult(request.uri, request.source, null,
+        [_Diag('E300', '$error', 1, 1, 0, 0, request.file)],
+        analysisSource: request.source);
+  }
+}
+
+int _changedLine(String previous, String current) {
+  var prefix = 0;
+  while (prefix < previous.length &&
+      prefix < current.length &&
+      previous.codeUnitAt(prefix) == current.codeUnitAt(prefix)) prefix++;
+  var oldEnd = previous.length, end = current.length;
+  while (oldEnd > prefix &&
+      end > prefix &&
+      previous.codeUnitAt(oldEnd - 1) == current.codeUnitAt(end - 1)) {
+    oldEnd--;
+    end--;
+  }
+  while (end > 0 &&
+      (current.codeUnitAt(end - 1) == 10 || current.codeUnitAt(end - 1) == 13))
+    end--;
+  return '\n'.allMatches(current.substring(0, end)).length;
+}
+
+String? _trimEditingMember(String source, int line) {
+  final start = _lineStart(source, line);
+  final stop = source.indexOf('\n', start);
+  final end = stop < 0 ? source.length : stop;
+  final row = source.substring(start, end);
+  final dot = row.lastIndexOf('.');
+  if (dot < 0 || dot > 0 && row[dot - 1] == '.') return null;
+  final tail = row.substring(dot + 1).trim();
+  if (tail.isNotEmpty &&
+      !tail.runes
+          .every((r) => Lexer.identifierPart.hasMatch(String.fromCharCode(r))))
+    return null;
+  final prefix = row.substring(0, dot);
+  final replacement =
+      prefix + ' ' * (utf8.encode(row).length - utf8.encode(prefix).length);
+  return source.substring(0, start) + replacement + source.substring(end);
+}
+
+String _maskEditingLine(String source, int line) {
+  final start = _lineStart(source, line);
+  final end = source.indexOf('\n', start);
+  final stop = end < 0 ? source.length : end;
+  final original = source.substring(start, stop);
+  final indent = RegExp(r'^ *').stringMatch(original)!;
+  final replacement = indent.isEmpty ? '' : '${indent}print 0';
+  // Preserve following AST offsets when possible; cache prefix checks still
+  // exclude this line, so a masked declaration is never treated as real.
+  final width = utf8.encode(original).length;
+  return source.substring(0, start) +
+      replacement.padRight(width) +
+      source.substring(stop);
+}
+
+_AnalysisResult _analyzeBuffer(_AnalysisRequest request) {
   Compilation? compiled;
+  var analysisSource = request.source;
   List<CompilerException> errors;
   try {
     compiled = compile(request.source, file: request.file, emitDart: false);
     errors = compiled.semantics.warnings;
-  } on CompilerException {
-    try {
-      compiled = compile(request.source,
-          file: request.file, partial: true, emitDart: false);
-    } on CompilerException {
-      compiled = null;
+  } on CompilerException catch (failure) {
+    errors = failure.code == 'E100'
+        ? diagnose(request.source, file: request.file, emitDart: false)
+        : [failure];
+    final lines = <int>{
+      request.editingLine ?? _changedLine('', request.source),
+      if (failure.span.file == request.file) failure.span.line - 1,
+    };
+    for (final line in lines) {
+      final variants = [
+        if (_trimEditingMember(request.source, line) case final source?) source,
+        _maskEditingLine(request.source, line),
+      ];
+      for (final recovered in variants) {
+        try {
+          compiled = compile(recovered,
+              file: request.file, partial: true, emitDart: false);
+          analysisSource = recovered;
+          break;
+        } on CompilerException {/* Keep diagnostics from the actual buffer. */}
+      }
+      if (compiled != null) break;
     }
-    errors = diagnose(request.source, file: request.file, emitDart: false);
-  } catch (error) {
-    compiled = null;
-    errors = [
-      CompilerException(
-        'E300',
-        '$error',
-        SourceSpan(1, 1, 0, file: request.file),
-      ),
-    ];
+    if (compiled == null) {
+      try {
+        compiled = compile(request.source,
+            file: request.file, partial: true, emitDart: false);
+      } on CompilerException {
+        /* Previous successful analysis remains cached. */
+      }
+    }
   }
   return _AnalysisResult(
-    request.uri,
-    request.source,
-    compiled,
-    [
-      for (final error in errors)
-        _Diag(
-          error.code,
-          error.message,
-          error.span.line,
-          error.span.column,
-          error.span.length,
-          error.span.offset,
-          error.span.file,
-        ),
-    ],
-  );
+      request.uri,
+      request.source,
+      compiled,
+      [
+        for (final error in errors)
+          _Diag(error.code, error.message, error.span.line, error.span.column,
+              error.span.length, error.span.offset, error.span.file)
+      ],
+      analysisSource: analysisSource,
+      tokens: compiled == null
+          ? const []
+          : semanticTokenData(compiled, analysisSource));
 }

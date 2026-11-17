@@ -1,0 +1,46 @@
+const fs=require('node:fs');
+const vm=require('node:vm');
+const assert=require('node:assert/strict');
+const fake={EventEmitter:class{ constructor(){this.count=0;} fire(){this.count++;} dispose(){} },
+ Uri:{parse(s){return s;}}, CompletionList:class{constructor(items){this.items=items;}}};
+const filename='editors/vscode/extension.js';
+const box={module:{exports:{}},require(n){return n==='vscode'?fake:require(n);},console,process,Buffer,setTimeout,clearTimeout,__dirname:require('node:path').resolve('editors/vscode')};
+vm.runInNewContext(fs.readFileSync(filename,'utf8')+'\nmodule.exports.Client=QudsClient;',box,{filename});
+(async()=>{
+ const client=new box.module.exports.Client({set(){}},{appendLine(){}});
+ const messages=[];
+ client.send=(m)=>messages.push(m);
+ let cancel;
+ let disposed=0;
+ const token={isCancellationRequested:false,onCancellationRequested(fn){cancel=fn;return{dispose(){disposed++;}};}};
+ const pending=client.request('textDocument/completion',{}, {token});
+ assert.equal(client.pending.size,1);
+ cancel();
+ assert.equal(await pending,undefined);
+ assert.equal(client.pending.size,0);
+ assert.equal(disposed,1);
+ assert.equal(messages.at(-1).method,'$/cancelRequest');
+ client.onMessage({id:messages[0].id,result:{items:[]}}); // late responses ignored
+ await assert.rejects(client.request('slow',{}, {timeoutMs:10}), /timed out/);
+ assert.equal(client.pending.size,0);
+ const success=client.request('working',{});
+ client.onMessage({id:messages.at(-1).id,result:42});
+ assert.equal(await success,42);
+ assert.equal(client.pending.size,0);
+ client.sync=async()=>{};
+ const document={version:1,uri:{toString(){return 'file:///test.quds';}}};
+ let resolve;
+ client.request=()=>new Promise(r=>{resolve=r;});
+ const completion=client.complete(document,{line:0,character:0});
+ await new Promise(setImmediate);
+ document.version=2;
+ resolve({items:[]});
+ assert.equal(await completion,undefined);
+ client.documents.set('file:///test.quds',document);
+ client.showDiagnostics({uri:'file:///test.quds',version:1,diagnostics:[]});
+ assert.equal(client.semanticRefresh.count,0);
+ client.showDiagnostics({uri:'file:///test.quds',version:2,diagnostics:[]});
+ assert.equal(client.semanticRefresh.count,1);
+ client.dispose();
+ console.log('VSCODE REQUESTS OK');
+})().catch(e=>{console.error(e);process.exitCode=1;});

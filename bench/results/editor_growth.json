@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "baseline_commit": "6435682",
+  "baseline_scope": "Navigation semantic-token implementation at the baseline, same generated binding workload and compiler; ordered single-process size samples, no VS Code rendering.",
+  "before": [
+    {
+      "bindings": 100,
+      "source_utf16": 3078,
+      "analysis_ms": 99.017,
+      "semantic_tokens_ms": 8.744,
+      "completion_ms": 17.405,
+      "tokens": 301,
+      "items": 270
+    },
+    {
+      "bindings": 1000,
+      "source_utf16": 33678,
+      "analysis_ms": 208.387,
+      "semantic_tokens_ms": 177.613,
+      "completion_ms": 19.366,
+      "tokens": 3001,
+      "items": 1170
+    },
+    {
+      "bindings": 5000,
+      "source_utf16": 181678,
+      "analysis_ms": 316.675,
+      "semantic_tokens_ms": 4626.412,
+      "completion_ms": 59.993,
+      "tokens": 15001,
+      "items": 5170
+    }
+  ],
+  "after_index": [
+    {
+      "bindings": 100,
+      "source_utf16": 3078,
+      "analysis_ms": 90.389,
+      "semantic_tokens_ms": 6.306,
+      "completion_ms": 21.496,
+      "tokens": 301,
+      "items": 270
+    },
+    {
+      "bindings": 1000,
+      "source_utf16": 33678,
+      "analysis_ms": 172.175,
+      "semantic_tokens_ms": 16.778,
+      "completion_ms": 13.765,
+      "tokens": 3001,
+      "items": 1170
+    },
+    {
+      "bindings": 5000,
+      "source_utf16": 181678,
+      "analysis_ms": 334.894,
+      "semantic_tokens_ms": 68.124,
+      "completion_ms": 53.555,
+      "tokens": 15001,
+      "items": 5170
+    }
+  ],
+  "stdio": {
+    "schema": 1,
+    "bindings": 5000,
+    "lines": 10002,
+    "samples": 10,
+    "pipeline_p50_ms": 75.37367100000029,
+    "pipeline_p95_ms": 178.7265739999998,
+    "last_edit_ready_and_completion_ms": 387.6553350000004,
+    "scope": "real stdio, semantic request then completion, includes framing and JSON decoding; excludes VS Code rendering"
+  }
+}

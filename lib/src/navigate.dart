@@ -1,3 +1,4 @@
+import 'source_index.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -185,6 +186,7 @@ const semanticTokenModifiers = ['declaration', 'readonly'];
 /// Encoded `textDocument/semanticTokens/full` data for [source].
 List<int> semanticTokenData(Compilation compilation, String source) {
   final tokens = <_Token>[];
+  final positions = SourceIndex(source);
   final methods = <FunctionDeclaration>{};
   walkAst(compilation.program, (node) {
     if (node is ClassDeclaration) methods.addAll(node.methods);
@@ -202,6 +204,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           node.name,
           methods.contains(node) ? _method : _function,
           _bits(declaration: true),
+          index: positions,
         );
         if (token != null) tokens.add(token);
       case PropertyDeclaration():
@@ -212,6 +215,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           node.name,
           _property,
           _bits(declaration: true, readonly: !writes),
+          index: positions,
         );
         if (token != null) tokens.add(token);
       case FieldDeclaration():
@@ -221,6 +225,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           node.name,
           _property,
           _bits(declaration: true, readonly: !node.mutable),
+          index: positions,
         );
         if (token != null) tokens.add(token);
       case ClassDeclaration():
@@ -230,6 +235,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           node.name,
           _classType,
           _bits(declaration: true),
+          index: positions,
         );
         if (token != null) tokens.add(token);
       case Parameter():
@@ -239,6 +245,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           node.name,
           _parameter,
           _bits(declaration: true, readonly: !node.mutable),
+          index: positions,
         );
         if (token != null) tokens.add(token);
       case Binding():
@@ -253,6 +260,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
             declaration: compilation.semantics.declarations.containsKey(node),
             readonly: symbol?.mutable != true,
           ),
+          index: positions,
         );
         if (token != null) tokens.add(token);
       case ForStatement():
@@ -263,6 +271,7 @@ List<int> semanticTokenData(Compilation compilation, String source) {
           node.name,
           _variable,
           _bits(declaration: true, readonly: symbol?.mutable != true),
+          index: positions,
         );
         if (token != null) tokens.add(token);
         final index = node.index;
@@ -273,19 +282,22 @@ List<int> semanticTokenData(Compilation compilation, String source) {
             index,
             _variable,
             _bits(declaration: true, readonly: true),
+            index: positions,
           );
           if (indexToken != null) tokens.add(indexToken);
         }
       case Identifier():
         final kind = _identifierKind(compilation, node, methods, parameters);
         if (kind == null) break;
-        final index = _stringIndex(source, node.span.offset);
-        final token =
-            _tokenAt(source, index, node.name.length, kind.$1, kind.$2);
+        final start = positions.stringIndex(node.span.offset);
+        final token = _tokenAt(
+            source, start, node.name.length, kind.$1, kind.$2,
+            index: positions);
         if (token != null) tokens.add(token);
       case MemberAccess():
         final kind = _memberKind(compilation.semantics, node);
-        final token = _memberNameToken(source, node, kind.$1, kind.$2);
+        final token =
+            _memberNameToken(source, node, kind.$1, kind.$2, index: positions);
         if (token != null) tokens.add(token);
       default:
         break;
@@ -746,50 +758,63 @@ class _Token {
 }
 
 _Token? _nameToken(
-    String source, SourceSpan span, String name, int type, int modifiers) {
-  final start = _stringIndex(source, span.offset);
-  final end = _stringIndex(source, span.offset + span.length);
+    String source, SourceSpan span, String name, int type, int modifiers,
+    {SourceIndex? index}) {
+  final start =
+      index?.stringIndex(span.offset) ?? _stringIndex(source, span.offset);
+  final end = index?.stringIndex(span.offset + span.length) ??
+      _stringIndex(source, span.offset + span.length);
   if (start < 0 || end > source.length || start > end) return null;
   final match = RegExp('\\b${RegExp.escape(name)}\\b')
       .firstMatch(source.substring(start, end));
   if (match == null) return null;
-  return _tokenAt(source, start + match.start, name.length, type, modifiers);
+  return _tokenAt(source, start + match.start, name.length, type, modifiers,
+      index: index);
 }
 
 _Token? _memberNameToken(
-    String source, MemberAccess node, int type, int modifiers) {
-  final start = _stringIndex(source, node.span.offset);
-  final end = _stringIndex(source, node.span.offset + node.span.length);
+    String source, MemberAccess node, int type, int modifiers,
+    {SourceIndex? index}) {
+  final start = index?.stringIndex(node.span.offset) ??
+      _stringIndex(source, node.span.offset);
+  final end = index?.stringIndex(node.span.offset + node.span.length) ??
+      _stringIndex(source, node.span.offset + node.span.length);
   if (start < 0 || end > source.length || start > end) return null;
   final text = source.substring(start, end);
   final dot = node.nullAware ? '?.${node.name}' : '.${node.name}';
   final at = text.lastIndexOf(dot);
   if (at < 0) return null;
   return _tokenAt(source, start + at + dot.length - node.name.length,
-      node.name.length, type, modifiers);
+      node.name.length, type, modifiers,
+      index: index);
 }
 
 _Token? _tokenAt(
-    String source, int stringIndex, int length, int type, int modifiers) {
+    String source, int stringIndex, int length, int type, int modifiers,
+    {SourceIndex? index}) {
   if (stringIndex < 0 || length <= 0 || stringIndex > source.length) {
     return null;
   }
+  if (index != null) {
+    final position = index.position(stringIndex);
+    return _Token(position.$1, position.$2, length, type, modifiers);
+  }
   var line = 0;
   var column = 0;
-  var index = 0;
-  while (index < stringIndex) {
-    final unit = source.codeUnitAt(index);
+  var cursor = 0;
+  while (cursor < stringIndex) {
+    final unit = source.codeUnitAt(cursor);
     if (unit == 13) {
-      index++;
-      if (index < source.length && source.codeUnitAt(index) == 10) index++;
+      cursor++;
+      if (cursor < source.length && source.codeUnitAt(cursor) == 10) cursor++;
       line++;
       column = 0;
     } else if (unit == 10) {
-      index++;
+      cursor++;
       line++;
       column = 0;
     } else {
-      index++;
+      cursor++;
       column++;
     }
   }

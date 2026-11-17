@@ -1,3 +1,4 @@
+import 'source_index.dart';
 import 'lexer.dart';
 import 'type_syntax.dart';
 import 'dart:convert';
@@ -314,7 +315,13 @@ int? _dotBefore(String source, int wordStart) {
   while (previous > 0 && _space(source.codeUnitAt(previous - 1))) {
     previous--;
   }
-  if (previous > 0 && _digit(source.codeUnitAt(previous - 1))) return null;
+  if (previous > 0 && _digit(source.codeUnitAt(previous - 1))) {
+    var start = previous;
+    while (start > 0 && _ident(source.codeUnitAt(start - 1))) start--;
+    // A decimal literal is unfinished at `12.`; a variable such as values12
+    // still needs member completion as the file grows.
+    if (start < previous && _digit(source.codeUnitAt(start))) return null;
+  }
   return index - 1;
 }
 
@@ -875,7 +882,7 @@ void _members(
     }
     return;
   }
-  final referenced = _bestSymbol(compilation, source, dot);
+  final referenced = symbol ?? _bestSymbol(compilation, source, dot);
   if (referenced != null &&
       referenced.namespace != null &&
       referenced.type != 'prefix') {
@@ -1104,25 +1111,34 @@ int _lineStart(String source, int index) {
   return start;
 }
 
-String? _expressionType(Compilation compilation, String source, int dot) {
-  final end = _bytes(source, dot);
+Expression? _receiverExpression(
+    Compilation compilation, String source, int dot) {
+  final positions = SourceIndex(source);
+  final end = positions.byteOffset(dot);
+  // Only an expression ending in the contiguous suffix of ')' or whitespace
+  // can be the receiver. Reject other AST nodes before any offset conversion.
+  var suffix = dot;
+  final closing = RegExp(r'^[)\s]$');
+  while (suffix > 0 && closing.hasMatch(source.substring(suffix - 1, suffix)))
+    suffix--;
+  final earliest = positions.byteOffset(suffix);
   Expression? best;
   var size = 1 << 30;
   walkAst(compilation.program, (node) {
     if (node is! Expression) return;
     final stop = node.span.offset + node.span.length;
-    if (stop > end) return;
-    final gap = source.substring(
-        _stringIndexForByte(source, stop), _stringIndexForByte(source, end));
-    if (!RegExp(r'^[)\s]*$').hasMatch(gap)) return;
-    if (end - stop > size) return;
+    if (stop > end || stop < earliest || end - stop > size) return;
     if (end - stop < size ||
         node.span.length < (best?.span.length ?? 1 << 30)) {
       size = end - stop;
       best = node;
     }
   });
-  final node = best;
+  return best;
+}
+
+String? _expressionType(Compilation compilation, String source, int dot) {
+  final node = _receiverExpression(compilation, source, dot);
   if (node == null) return null;
   if (node is Identifier) {
     final symbol = compilation.semantics.references[node];
@@ -1132,26 +1148,8 @@ String? _expressionType(Compilation compilation, String source, int dot) {
 }
 
 Symbol? _bestSymbol(Compilation compilation, String source, int dot) {
-  final end = _bytes(source, dot);
-  Expression? best;
-  var size = 1 << 30;
-  walkAst(compilation.program, (node) {
-    if (node is! Expression) return;
-    final stop = node.span.offset + node.span.length;
-    if (stop > end) return;
-    final gap = source.substring(
-        _stringIndexForByte(source, stop), _stringIndexForByte(source, end));
-    if (!RegExp(r'^[)\s]*$').hasMatch(gap)) return;
-    if (end - stop > size) return;
-    if (end - stop < size ||
-        node.span.length < (best?.span.length ?? 1 << 30)) {
-      size = end - stop;
-      best = node;
-    }
-  });
-  final node = best;
-  if (node == null) return null;
-  return compilation.semantics.references[node];
+  final node = _receiverExpression(compilation, source, dot);
+  return node == null ? null : compilation.semantics.references[node];
 }
 
 Map<String, String>? _extensionArgs(

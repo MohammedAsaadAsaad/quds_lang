@@ -950,3 +950,36 @@ and LANGUAGE_DECISIONS.md. AUGMENT_AND_CONVERSIONS_AR.md provides the Arabic
 handoff, executable commands, examples and precise unsupported contexts. This
 milestone does not claim complete implicit conversion inference for every
 collection/callback/variadic form or external structural/static augmentation.
+
+## 2026-11-17 — completion responsiveness as documents grow
+
+- `dart format .`: **71 files**, one formatted during the gate.
+- `dart analyze`: **No issues found**.
+- `node --check editors/vscode/extension.js`: passes.
+- `dart test test/editor_test.dart test/editor_growth_test.dart --reporter expanded`:
+  **21 pass**, **7s**. Covers new symbols after repeated incomplete growing edits,
+  truthful diagnostics, numbered receivers, Unicode/UTF-8/UTF-16/CRLF indexing,
+  reused background semantic-token arrays for 5,000 bindings, continued analysis
+  after a deep failed input, real stdio LSP traffic, and mocked VS Code request
+  cancellation/timeout/late responses/stale versions/semantic refresh.
+- Final frozen-source `dart test --reporter expanded`: **566 pass, zero skipped,
+  zero failures**, **5m58s**, including compiler, math, memory, debugger and CLI
+  regressions.
+- Actual coordinate-conversion baseline from commit 6435682 on the generated
+  5,000-binding workload: semantic-token computation **4626.412ms**. Indexed
+  implementation: **68.124ms**, now computed in the analysis worker for live
+  documents instead of blocking the input isolate.
+- `node test/editor/lsp_growth.cjs /workspace/toolchains/dart/bin/dart`: passes.
+  Real stdio, 10 samples, initial document approximately 10,000 lines: paired
+  semantic-token/completion requests p50 **75.374ms**, p95 **178.727ms**, including
+  pipe framing and JSON decoding. Last incomplete edit through background-ready
+  diagnostics and member completion: **387.655ms**. These measurements exclude
+  VS Code rendering and process startup; raw data and scope are recorded in
+  bench/results/editor_growth.json.
+- `git diff --check`: clean.
+
+EDITOR_COMPLETION_GROWTH_AR.md records the reproduced quadratic paths, recovery,
+worker/request handling and extension reload instructions. This supersedes use
+of the earlier tiny-buffer benchmark as evidence for large-document behavior.
+No approved language syntax changed and no visual VS Code-host latency claim
+is made.

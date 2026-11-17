@@ -157,8 +157,9 @@ function activate(context) {
     vscode.languages.registerDocumentSemanticTokensProvider(
       languageId,
       {
-        provideDocumentSemanticTokens(document) {
-          return client.semanticTokens(document);
+        onDidChangeSemanticTokens: client.semanticRefresh.event,
+        provideDocumentSemanticTokens(document, _previousResultId, token) {
+          return client.semanticTokens(document, token);
         },
       },
       new vscode.SemanticTokensLegend(
@@ -763,6 +764,7 @@ class QudsClient {
     this.diagnostics = diagnostics;
     this.output = output;
     this.pending = new Map();
+    this.semanticRefresh = new vscode.EventEmitter();
     this.nextId = 1;
     this.buffer = Buffer.alloc(0);
     this.documents = new Map();
@@ -853,6 +855,7 @@ class QudsClient {
 
   dispose() {
     for (const timer of this.timers.values()) clearTimeout(timer);
+    this.semanticRefresh.dispose();
     this.stop();
   }
 
@@ -892,14 +895,15 @@ class QudsClient {
   }
 
   async complete(document, position, token) {
+    const version = document.version;
     try {
       await this.sync(document);
       if (token && token.isCancellationRequested) return undefined;
       const result = await this.request('textDocument/completion', {
         textDocument: { uri: document.uri.toString() },
         position: { line: position.line, character: position.character },
-      });
-      if (token && token.isCancellationRequested) return undefined;
+      }, { token, timeoutMs: 5000 });
+      if (document.version !== version || (token && token.isCancellationRequested)) return undefined;
       const raw = result && Array.isArray(result.items) ? result.items : [];
       const items = raw.map((entry) => completionItem(entry));
       return new vscode.CompletionList(items, !!(result && result.isIncomplete));
@@ -910,14 +914,15 @@ class QudsClient {
   }
 
   async signatureHelp(document, position, token) {
+    const version = document.version;
     try {
       await this.sync(document);
       if (token && token.isCancellationRequested) return undefined;
       const result = await this.request('textDocument/signatureHelp', {
         textDocument: { uri: document.uri.toString() },
         position: { line: position.line, character: position.character },
-      });
-      if (!result || (token && token.isCancellationRequested)) return undefined;
+      }, { token });
+      if (document.version !== version || !result || (token && token.isCancellationRequested)) return undefined;
       const help = new vscode.SignatureHelp();
       help.signatures = (result.signatures || []).map((entry) => {
         const signature = new vscode.SignatureInformation(entry.label);
@@ -1018,12 +1023,14 @@ class QudsClient {
     }
   }
 
-  async semanticTokens(document) {
+  async semanticTokens(document, token) {
+    const version = document.version;
     try {
       await this.sync(document);
       const result = await this.request('textDocument/semanticTokens/full', {
         textDocument: { uri: document.uri.toString() },
-      });
+      }, { token });
+      if (document.version !== version) return new vscode.SemanticTokens(new Uint32Array());
       const data = result && result.data;
       if (!Array.isArray(data)) return new vscode.SemanticTokens(new Uint32Array());
       return new vscode.SemanticTokens(new Uint32Array(data));
@@ -1102,13 +1109,38 @@ class QudsClient {
     });
   }
 
-  request(method, params) {
+  request(method, params, { token, timeoutMs = 15000 } = {}) {
     const id = this.nextId++;
-    const promise = new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+    return new Promise((resolve, reject) => {
+      if (token && token.isCancellationRequested) { resolve(undefined); return; }
+      let timer;
+      let cancellation;
+      const finish = (callback, value) => {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        if (cancellation) cancellation.dispose();
+        callback(value);
+      };
+      const pending = {
+        resolve: (value) => finish(resolve, value),
+        reject: (error) => finish(reject, error),
+      };
+      this.pending.set(id, pending);
+      timer = setTimeout(() => {
+        if (!this.pending.has(id)) return;
+        this.notify('$/cancelRequest', { id });
+        pending.reject(new Error(`Quds ${method} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      if (token && typeof token.onCancellationRequested === 'function') {
+        cancellation = token.onCancellationRequested(() => {
+          if (!this.pending.has(id)) return;
+          this.notify('$/cancelRequest', { id });
+          pending.resolve(undefined);
+        });
+        if (!this.pending.has(id)) cancellation.dispose();
+      }
+      if (this.pending.has(id)) this.send({ jsonrpc: '2.0', id, method, params });
     });
-    this.send({ jsonrpc: '2.0', id, method, params });
-    return promise;
   }
 
   notify(method, params) {
@@ -1164,6 +1196,8 @@ class QudsClient {
   }
 
   showDiagnostics(params) {
+    const document = this.documents.get(params.uri);
+    if (document && params.version != null && params.version !== document.version) return;
     let uri;
     try {
       uri = vscode.Uri.parse(params.uri);
@@ -1189,6 +1223,7 @@ class QudsClient {
       return diagnostic;
     });
     this.diagnostics.set(uri, items);
+    this.semanticRefresh.fire();
   }
 
   failPending(message) {

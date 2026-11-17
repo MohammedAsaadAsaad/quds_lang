@@ -106,3 +106,14 @@ handoff and exact scope are in AUGMENT_AND_CONVERSIONS_AR.md; final gate evidenc
 is recorded in VALIDATION.md. Unsupported container-wide transformations,
 third-type operator searches and external structural/static changes are not
 claimed. QUDS-082 type operations retain their meaning.
+
+## 2026-11-17 — completion degradation as files grow
+
+Reproduced quadratic semantic-token coordinate conversion and receiver searches,
+plus digit-suffixed receivers incorrectly treated as decimal literals. Added a
+shared source-coordinate index, background/cached live semantic tokens, bounded
+incomplete-line recovery with truthful diagnostics, worker failure handling,
+and cancellation/timeouts/stale-version checks in VS Code. Regression coverage
+includes repeated growing edits, 5,000 bindings, deep failed analysis and actual
+stdio LSP traffic. See EDITOR_COMPLETION_GROWTH_AR.md for measurements, reload
+instructions and scope; VALIDATION.md records the final complete test gate.

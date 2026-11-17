@@ -1238,6 +1238,8 @@ class Analyzer {
   void analyzeExtension(ExtensionDeclaration type, FunctionDeclaration method) {
     final saved = _scope;
     final savedThis = _thisType;
+    final savedReadonly = _readonlyMethod;
+    _readonlyMethod = isReadonlyMethod(method);
     _scope = _Scope(_global);
     _thisType = type.target;
     final savedTypes = {..._typeNames};
@@ -1246,6 +1248,7 @@ class Analyzer {
     _typeNames
       ..clear()
       ..addAll(savedTypes);
+    _readonlyMethod = savedReadonly;
     _thisType = savedThis;
     _scope = saved;
   }
@@ -6410,7 +6413,7 @@ class Analyzer {
       }
       final member = memberType(_thisType!, node.name);
       if (member != null) {
-        final current = _global.symbols[_thisType!]?.classDeclaration;
+        final current = _typeSymbol(_genericHead(_thisType!))?.classDeclaration;
         if (current != null) _checkMember(current, node.name, node);
         model.implicitThis.add(node);
         model.references[node] =
@@ -6433,7 +6436,7 @@ class Analyzer {
     }
     if (symbol.namespace != null) fail('A prefix is not a value', node);
     if (symbol.field && _thisType != null) {
-      final current = _global.symbols[_thisType!]?.classDeclaration;
+      final current = _typeSymbol(_genericHead(_thisType!))?.classDeclaration;
       if (current != null) _checkMember(current, node.name, node);
     }
     if (symbol.overloads.length > 1) {
@@ -9161,7 +9164,9 @@ class Analyzer {
 
   String thisExpression(ThisExpression node) {
     if (_thisType == null) fail('this is outside a type', node);
-    return _readonlyMethod ? 'readonly ${_thisType!}' : _thisType!;
+    return _readonlyMethod
+        ? _readonlyView('readonly this', _thisType!)
+        : _thisType!;
   }
 
   String tryExpression(TryExpression node) {

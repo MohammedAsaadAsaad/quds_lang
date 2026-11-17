@@ -1,0 +1,3 @@
+part "addition.quds"
+class Counter:
+  private var value: int = 0

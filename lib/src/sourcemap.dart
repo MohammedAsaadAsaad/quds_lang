@@ -14,6 +14,8 @@ String encodeSourceMap(
     byLine.putIfAbsent(line, () => span);
   }
   final lines = <String>[];
+  final sources = <String>[sourceFile];
+  var previousSourceIndex = 0;
   var previousGenerated = 0;
   var previousSourceLine = 0;
   var previousSourceColumn = 0;
@@ -27,7 +29,14 @@ String encodeSourceMap(
     final buffer = StringBuffer();
     buffer.write(_vlq(0 - previousGenerated));
     previousGenerated = 0;
-    buffer.write(_vlq(0));
+    final file = span.file == '<input>' ? sourceFile : span.file;
+    var sourceIndex = sources.indexOf(file);
+    if (sourceIndex < 0) {
+      sourceIndex = sources.length;
+      sources.add(file);
+    }
+    buffer.write(_vlq(sourceIndex - previousSourceIndex));
+    previousSourceIndex = sourceIndex;
     buffer.write(_vlq(span.line - 1 - previousSourceLine));
     previousSourceLine = span.line - 1;
     buffer.write(_vlq(span.column - 1 - previousSourceColumn));
@@ -37,7 +46,7 @@ String encodeSourceMap(
   return jsonEncode({
     'version': 3,
     'file': generatedFile,
-    'sources': [sourceFile],
+    'sources': sources,
     'names': <String>[],
     'mappings': lines.join(';'),
   });

@@ -303,6 +303,8 @@ class Parser {
     if (topLevel && word('part')) return partDirective(span);
     if (word('annotation')) return annotationDeclaration(span);
     if (topLevel && word('config')) return configDeclaration(span);
+    if (topLevel && word('augment') && peek().kind == TokenKind.identifier)
+      return typeDeclaration(span, notes, forced: 'augment');
     if (word('extend')) return extensionDeclaration(span, notes);
     if (word('type') && peek().kind == TokenKind.identifier) {
       return typeForm(span);
@@ -1241,12 +1243,18 @@ class Parser {
     if (kind == 'sealedType') {
       if (!word('type')) fail('Expected type');
       take();
+    } else if (kind == 'augment') {
+      take();
     } else if (kind != 'interface') {
       if (!word('class')) fail('Expected class');
       take();
     }
-    final typeNameToken = name();
-    final typeParameters = typeParameterList();
+    final typeNameToken = kind == 'augment'
+        ? Token(TokenKind.identifier, typeName(), span)
+        : name();
+    final typeParameters = kind == 'augment'
+        ? extensionParameters(typeNameToken.lexeme, span)
+        : typeParameterList();
     String? superclass;
     final mixins = <String>[];
     final interfaces = <String>[];

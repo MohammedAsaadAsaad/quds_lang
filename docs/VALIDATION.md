@@ -904,3 +904,14 @@ EDITOR_PERFORMANCE_DEBUG_AR.md documents the queue, diagnostic parity, coverage,
 measurement scope and extension reload instructions. No approved language syntax
 was changed. This is not a claim of complete Flutter/Dart analyzer parity or a
 visual VS Code-host performance test.
+
+## 2026-11-17 — augment stage 1
+
+- `dart format .`: 66 files formatted; one changed during the gate.
+- `dart analyze`: No issues found.
+- `dart test test/augment_test.dart --reporter expanded`: 11 pass.
+- `dart test --reporter expanded`: 528 pass, zero skipped/failing, 5m30s.
+- Coverage includes Quds local/generic/part/native augmentation, imported
+  extension visibility, negative structural cases, cross-part source mappings,
+  generated Dart analysis, VM and JavaScript execution.
+- `git diff --check`: clean.

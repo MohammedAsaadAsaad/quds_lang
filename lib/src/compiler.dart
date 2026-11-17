@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'ast.dart';
+import 'augment.dart';
 import 'emitter.dart';
 import 'lexer.dart';
 import 'libraries.dart';
@@ -92,7 +93,7 @@ Compilation compile(String source,
   if (partial && parser.errors.isNotEmpty && parsed.statements.isEmpty) {
     throw parser.errors.first;
   }
-  final program = expandMacros(parsed);
+  var program = expandMacros(parsed);
   final sourcePath = file == '<input>' ? file : File(file).absolute.path;
   if (sourcePath != '<input>') _checkLanguage(sourcePath);
   final libraries = <String, Program>{};
@@ -108,6 +109,12 @@ Compilation compile(String source,
       library = Uri.file(sourcePath).resolve(ofs.single.uri).toFilePath();
     }
   }
+  final normalized = normalizeAugments({...libraries, sourcePath: program});
+  libraries
+    ..clear()
+    ..addAll(normalized);
+  program = normalized[sourcePath]!;
+  if (sourcePath == '<input>') libraries.remove(sourcePath);
   final semantics = Analyzer(library: library, file: sourcePath)
       .analyze(program, libraries: libraries);
   semantics.protectWithMeta =

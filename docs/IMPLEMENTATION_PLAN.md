@@ -90,3 +90,11 @@ and const-comment insertion now adjusts source maps. Real DAP execution verifies
 Quds breakpoints, original/nested variable names and Watch evaluation. Final gate:
 517 pass, zero skipped/failing; analysis and formatting clean. See VALIDATION.md
 and bench/results/editor_latency.json for exact evidence and measurement limits.
+
+## 2026-11-17 — approved augment and conversions follow-up
+
+Stage 1 implements local/part class augmentation and imported behavioral
+augmentation, preserving member spans and rejecting structural conflicts.
+All 528 tests pass, analyzer clean. Stage 2 adds typed custom conversion
+resolution and runtime behavior; it is not included in the stage-1 claim.
+See AUGMENT_AND_CONVERSIONS_AR.md for the explicit owner-approved syntax amendment.

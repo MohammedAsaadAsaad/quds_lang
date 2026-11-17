@@ -2244,7 +2244,7 @@ class DartEmitter {
     final title = node.name == null
         ? 'extension$generics'
         : 'extension ${node.name}$generics';
-    line('$title on ${node.target} {');
+    line('$title on ${_dartType(node.target)} {');
     _depth++;
     for (final property in node.properties) {
       _emitProperty(property);

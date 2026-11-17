@@ -1,0 +1,26 @@
+class Person:
+  name: String required
+augment Person:
+  var age: int = 0
+  birthday():
+    age += 1
+  readonly greeting() -> String = "Hello {name}"
+augment int:
+  readonly squared() -> int = this * this
+class Box<T>:
+  value: T required
+augment Box<T>:
+  readonly read() -> readonly T = value
+
+test "augment merges fields and methods into one Quds class":
+  person = Person(name: "Ali", age: 20)
+  person.birthday()
+  expect(person.age, 21)
+  expect(person.greeting(), "Hello Ali")
+test "augment adds behavior to native int":
+  value = 5
+  expect(value.squared(), 25)
+test "augment preserves generic class identity and readonly behavior":
+  box = Box<int>(value: 3)
+  view: readonly Box<int> = box
+  expect(view.read(), 3)

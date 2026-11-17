@@ -1,0 +1,2 @@
+augment int:
+  readonly fourth() -> int = this * this * this * this

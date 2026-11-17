@@ -153,3 +153,11 @@ main():
 ```
 
 Do not infer that the examples are already executable; implement and validate incrementally.
+
+## Owner-approved amendment — 2026-11-17
+
+The owner approves unified `augment Type:` (no `partial`) and type-level
+`implicit cast(value: Source) -> Target` / `explicit cast(...) -> Target`
+declarations inside classes or augments. This is an explicit amendment to 1.2.
+QUDS-082 `to`/`to?` and type-checking `as`/`is` remain distinct.
+See AUGMENT_AND_CONVERSIONS_AR.md for the agreement, implemented stages and limits.

@@ -1,0 +1,5 @@
+part of "owner.quds"
+augment Counter:
+  increment():
+    value += 1
+  readonly read() -> int = value

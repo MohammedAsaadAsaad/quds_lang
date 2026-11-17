@@ -1,0 +1,5 @@
+use "fixtures/augment/owner.quds"
+test "augment parts share storage and library privacy":
+  value = Counter()
+  value.increment()
+  expect(value.read(), 1)

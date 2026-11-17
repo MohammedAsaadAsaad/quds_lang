@@ -127,3 +127,13 @@ lowering checks still run; provisional syntax never clears semantic errors or
 feeds unchecked completion types. Serialize stdio frames to prevent notification/
 flush races. See EDITOR_DIAGNOSTICS_LATENCY_AR.md and editor_diagnostics.json for
 before/after phase timings, continuous-typing coverage and full-check costs.
+
+## 2026-11-17 — exported SDK conversions in run/debug output graphs
+
+Reproduced the user's src.some re-export of quds:math with an external explicit
+int-to-Fraction cast. Run and DAP now prepare dependencies before VM startup;
+indirectly used SDK libraries are bundled and routed to a shared project output
+directory. Cache validity includes bundle/map hashes and is rechecked after a
+dependency rebuild. Existing Flutter output preparation uses the same graph
+builder. Source syntax, explicit/implicit selection and E310 ambiguity rules
+remain unchanged. See SDK_EXPORT_RUN_DEBUG_AR.md for the reproduction and tests.

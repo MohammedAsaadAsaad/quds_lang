@@ -76,6 +76,44 @@ Compilation relocateReadonlyRuntime(Compilation result, String relativeUri) {
       ]);
 }
 
+/// Route generated SDK libraries to one directory for the entire output graph.
+/// All SDK bundles remain siblings there, preserving Dart type/error identity.
+Compilation relocateGeneratedLibraries(Compilation result, String directory) {
+  if (directory.isEmpty) return result;
+  final uri = Uri.parse(directory);
+  if (uri.hasScheme ||
+      uri.hasAuthority ||
+      !directory.endsWith('/') ||
+      directory.contains("'") ||
+      directory.contains(r'$') ||
+      directory.contains('\n')) {
+    throw ArgumentError.value(
+        directory, 'directory', 'Expected a relative directory URI');
+  }
+  final names = {
+    'quds_readonly.dart',
+    ...sdkLibraryNames().map(sdkDartFileName)
+  };
+  String relocate(String source) => source.split('\n').map((line) {
+        for (final name in names) {
+          for (final kind in ['import', 'export']) {
+            final prefix = "$kind '$name'";
+            if (line.startsWith(prefix))
+              return "$kind '$directory$name'${line.substring(prefix.length)}";
+          }
+        }
+        return line;
+      }).join('\n');
+  return Compilation(result.program, result.semantics, relocate(result.dart),
+      sourceMap: result.sourceMap,
+      dependencies: result.dependencies,
+      models: result.models,
+      bundles: [
+        for (final bundle in result.bundles)
+          SdkBundle('$directory${bundle.fileName}', bundle.source)
+      ]);
+}
+
 /// Writes [result]'s SDK libraries into [directory].
 void writeSdkBundles(String directory, Compilation result) {
   for (final bundle in result.bundles) {
@@ -176,9 +214,15 @@ String? _sdkDart(String name) {
 List<SdkBundle> _sdkBundles(SemanticModel semantics) {
   final bundles = <SdkBundle>[];
   final seen = <String>{};
-  for (final node in semantics.imports) {
-    if (!emitsSdkImport(node, semantics)) continue;
-    final name = sdkLibraryName(node.uri);
+  final uris = <String>{
+    for (final node in semantics.imports)
+      if (emitsSdkImport(node, semantics)) node.uri,
+    // A converter or type reached through a local export still needs its SDK
+    // artifact even when the caller has no direct `use quds:...` directive.
+    ...semantics.usedSdk,
+  };
+  for (final uri in uris) {
+    final name = sdkLibraryName(uri);
     if (name == null || !seen.add(name)) continue;
     final dart = _sdkDart(name);
     if (dart == null) continue;

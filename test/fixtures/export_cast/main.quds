@@ -1,0 +1,15 @@
+use src.some
+
+main():
+  print "test_lang_quds"
+  f: Fraction = 1
+  check f.numerator == 1
+  check f.denominator == 1
+  check acceptFraction(f) == 1
+  var caught = false
+  try:
+    print strictInt(Fraction(1, 2))
+  catch error: ConversionError:
+    caught = error.message == "Fraction is not a whole number"
+  check caught
+  print f

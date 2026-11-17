@@ -1,0 +1,8 @@
+use "fixtures/export_cast/src/some.quds"
+
+test "local module exports SDK types and conversions":
+  value: Fraction = 1
+  expect(value.numerator, 1)
+  expect(value.denominator, 1)
+  expect(acceptFraction(value), 1)
+  expect(Fraction(4, 2) to int, 2)

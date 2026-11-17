@@ -1,0 +1,9 @@
+use quds:math
+export quds:math
+
+augment int:
+  explicit cast (value: int) -> Fraction:
+    return Fraction(value, 1)
+
+acceptFraction(value: Fraction) -> int = value.numerator
+strictInt(value: Fraction) -> int = value to int

@@ -511,20 +511,29 @@ String _baseline() {
   return buffer.toString();
 }
 
-bool _writeTree(File input, Set<String> seen) {
-  final path = input.absolute.path;
+bool _writeTree(File input, Set<String> seen,
+    {bool announce = true, bool flutter = false, Compilation? initial}) {
+  final path = input.absolute.uri.normalizePath().toFilePath();
   if (!seen.add(path)) return exitCode == 0;
   try {
     final bytes = input.readAsBytesSync();
     _compiledHash[path] = sha256Hex(bytes);
-    final result = compile(utf8.decode(bytes), file: input.path);
-    if (!_emitGenerated(input, result)) return false;
+    final result = initial ?? compile(utf8.decode(bytes), file: input.path);
+    final root = _packageRoot(input.absolute.parent);
+    final artifactRoot =
+        flutter ? Directory('${root.path}/lib/quds_gen') : null;
+    final destination = flutter ? _flutterGenerated(input, root) : null;
+    if (!_emitGenerated(input, result,
+        announce: announce,
+        destination: destination,
+        artifactRoot: artifactRoot)) return false;
     _watched.add(path);
     for (final dependency in result.dependencies) {
       if (!dependency.endsWith('.quds')) continue;
       _watched.add(dependency);
       if (dependency == path) continue;
-      if (!_writeTree(File(dependency), seen)) return false;
+      if (!_writeTree(File(dependency), seen,
+          announce: announce, flutter: flutter)) return false;
     }
     return exitCode == 0;
   } on CompilerException catch (error) {
@@ -539,12 +548,14 @@ bool _writeTree(File input, Set<String> seen) {
 }
 
 bool _emitGenerated(File input, Compilation result,
-    {bool announce = true, File? destination}) {
+    {bool announce = true, File? destination, Directory? artifactRoot}) {
   final output = destination ?? _outputFile(input);
   final root = _packageRoot(input.absolute.parent);
-  final runtime = File('${root.path}/.dart_tool/quds/out/quds_readonly.dart');
-  result = relocateReadonlyRuntime(
-      result, _relativeGeneratedUri(output.parent, runtime));
+  final shared = artifactRoot ?? Directory('${root.path}/.dart_tool/quds/out');
+  final runtime = File('${shared.path}/quds_readonly.dart');
+  final runtimeUri = _relativeGeneratedUri(output.parent, runtime);
+  final directory = runtimeUri.substring(0, runtimeUri.lastIndexOf('/') + 1);
+  result = relocateGeneratedLibraries(result, directory);
   final existing = output.existsSync() ? output.readAsStringSync() : null;
   if (existing != null && !existing.startsWith(_generatedHeader)) {
     stderr.writeln('Refusing to overwrite non-generated file: ${output.path}');
@@ -572,6 +583,17 @@ bool _emitGenerated(File input, Compilation result,
   cache.writeAsStringSync(jsonEncode({
     'sources': sources,
     'output': outputDigest,
+    'artifacts': {
+      if (result.sourceMap != null)
+        '${output.absolute.path}.map':
+            sha256Hex(utf8.encode(result.sourceMap!)),
+      for (final bundle in result.bundles)
+        File('${output.parent.path}/${bundle.fileName}')
+            .absolute
+            .uri
+            .normalizePath()
+            .toFilePath(): sha256Hex(utf8.encode(bundle.source)),
+    },
     'paths': paths,
     'generated': [for (final model in result.models) model.fileName],
   }));
@@ -619,7 +641,20 @@ bool _cacheFresh(File cache, String sources, String output) {
   final saved = jsonDecode(cache.readAsStringSync());
   return saved is Map &&
       saved['sources'] == sources &&
-      saved['output'] == output;
+      saved['output'] == output &&
+      _artifactsFresh(saved);
+}
+
+bool _artifactsFresh(Map saved) {
+  final artifacts = saved['artifacts'];
+  if (artifacts is! Map) return false; // invalidate pre-graph caches once
+  for (final entry in artifacts.entries) {
+    if (entry.key is! String || entry.value is! String) return false;
+    final file = File(entry.key as String);
+    if (!file.existsSync() || sha256Hex(file.readAsBytesSync()) != entry.value)
+      return false;
+  }
+  return true;
 }
 
 void _writeModels(File input, Compilation result) {
@@ -684,17 +719,37 @@ bool _cachedOutput(File input, File output) {
   final listed = [for (final path in paths) '$path'];
   final digest = _digestListed(listed, input);
   final outputDigest = sha256Hex(utf8.encode(output.readAsStringSync()));
-  return saved['sources'] == digest && saved['output'] == outputDigest;
+  return saved['sources'] == digest &&
+      saved['output'] == outputDigest &&
+      _artifactsFresh(saved);
 }
 
-File? _ensureOutput(File input) {
+File? _ensureOutput(File input, [Set<String>? visited]) {
+  final seen = visited ?? <String>{};
+  final path = input.absolute.uri.normalizePath().toFilePath();
   final output = _outputFile(input);
-  if (_cachedOutput(input, output) && File('${output.path}.map').existsSync()) {
-    return output;
+  if (!seen.add(path)) return output;
+  final List<String> dependencies;
+  final cached = _cachedOutput(input, output);
+  if (cached) {
+    final saved = jsonDecode(_cacheFile(input).readAsStringSync()) as Map;
+    dependencies = (saved['paths'] as List).cast<String>();
+  } else {
+    final result = compile(input.readAsStringSync(), file: input.path);
+    if (!_emitGenerated(input, result, announce: false, destination: output))
+      return null;
+    dependencies = result.dependencies;
   }
-  final result = compile(input.readAsStringSync(), file: input.path);
-  if (!_emitGenerated(input, result, announce: false, destination: output)) {
-    return null;
+  for (final dependency in dependencies) {
+    if (!dependency.endsWith('.quds') || dependency == path) continue;
+    if (_ensureOutput(File(dependency), seen) == null) return null;
+  }
+  // A rebuilt dependency may replace a shared SDK bundle. Revalidate a cached
+  // caller afterwards so it never calls helper names from the previous bundle.
+  if (cached && !_cachedOutput(input, output)) {
+    final result = compile(input.readAsStringSync(), file: input.path);
+    if (!_emitGenerated(input, result, announce: false, destination: output))
+      return null;
   }
   return output;
 }
@@ -1081,11 +1136,13 @@ Future<void> _runFlutter(File input, Compilation result) async {
   final suffix = relative.contains('quds_gen/')
       ? relative.substring(relative.indexOf('quds_gen/'))
       : relative;
+  if (!_writeTree(input, <String>{},
+      announce: false, flutter: true, initial: result)) return;
+  final generated = target.readAsStringSync();
   final guarded = result.sourceMap == null
-      ? result.dart
-      : _guardGeneratedMain(result.dart, result.sourceMap!, suffix);
+      ? generated
+      : _guardGeneratedMain(generated, result.sourceMap!, suffix);
   target.writeAsStringSync(guarded);
-  writeSdkBundles(target.parent.path, result);
   if (result.sourceMap != null) {
     File('${target.path}.map').writeAsStringSync(result.sourceMap!);
   }
@@ -1621,12 +1678,18 @@ DebugBinary? _debugBuild(String qudsPath, void Function(String message) fail) {
     final root = _packageRoot(File(absolute).parent);
     final generated =
         flutter ? _flutterGenerated(input, root) : _outputFile(input);
-    if (!_emitGenerated(input, result,
-        announce: false, destination: generated)) {
-      fail('Quds could not write the generated Dart for $absolute');
+    exitCode = 0;
+    final bool built;
+    try {
+      built = _writeTree(input, <String>{},
+          announce: false, flutter: flutter, initial: result);
+    } finally {
+      exitCode = saved;
+    }
+    if (!built) {
+      fail('Quds could not build the generated dependency graph for $absolute');
       return null;
     }
-    exitCode = saved;
     final map = result.sourceMap ?? '';
     return DebugBinary(absolute, generated.path, map,
         cwd: flutter ? root.path : null);

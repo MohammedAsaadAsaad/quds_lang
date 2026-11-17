@@ -1021,3 +1021,34 @@ error publication, serial stdio writes, reproductions and extension reloads.
 The full compiler remains authoritative; provisional colors do not feed types
 into completion and syntax success does not clear semantic errors. No approved
 language syntax changed.
+
+## 2026-11-17 — SDK re-exports, run/debug graph construction and cache repair
+
+- Reproduced the user's exact source and missing some.dart/quds_math.dart errors
+  on a new temporary package. The original program now runs and prints
+  `test_lang_quds` and `Instance of 'Fraction'`.
+- The reduced export-only example, including contextual `f: Fraction = 1` and
+  explicit `1 to Fraction`, executes through the CLI and prints **1/1** and **1**.
+- `dart test --reporter expanded`: **576 pass, zero skipped/failing**, **7m23s**.
+  Includes the new Quds re-export driver, fresh CLI run with Dart analysis,
+  SDK/error identity across directories, missing/damaged artifact repair,
+  imported-body diagnostics, explicit/implicit conflict checks, and a fresh
+  real DAP launch stopping at original Quds line 5.
+- A cache-upgrade regression was added while that full run was in progress:
+  `dart test test/export_cast_test.dart --plain-name 'rebuilding a dependency' --reporter expanded`:
+  **1 pass**, **18s**. It first executes a valid older generated bundle/caller,
+  then forces a dependency rebuild and verifies the cached caller is revalidated
+  against the replacement SDK. The final cache revalidation change was covered
+  by this targeted test rather than claiming it was part of the earlier full
+  run's test discovery.
+- `dart test test/export_cast_test.dart --plain-name 'fresh run builds dependencies' --reporter expanded`:
+  **1 pass**, **28s** under concurrent full-suite load. Generated entry and nested
+  module analyze without warnings; Fraction and ConversionError identities agree.
+- After the final cache change, `dart format --output=none --set-exit-if-changed .`:
+  **74 files, zero changes**; `dart analyze`: **No issues found**.
+- `git diff --check`: clean.
+
+SDK_EXPORT_RUN_DEBUG_AR.md explains why the user's import/export/constructor
+syntax was valid, why the binding uses SDK implicit conversion rather than the
+new explicit declaration, the reduced working example and duplicate-conversion
+E310 behavior. No approved syntax or conversion precedence was redesigned.

@@ -54,7 +54,6 @@ class Parser {
       'while',
       'break',
       'continue',
-      'label',
       'match',
       'switch',
       'class',
@@ -2383,8 +2382,13 @@ class Parser {
         if (at(TokenKind.newline)) {
           value = indentedBlock();
         } else {
-          value = expression(bare: true);
-          endLine();
+          final expressionValue = expression(bare: true);
+          if (at(TokenKind.colon)) {
+            value = namedBlock(expressionValue);
+          } else {
+            value = expressionValue;
+            endLine();
+          }
         }
         arguments.add(Argument(argument.lexeme, value, argument.span));
       }
@@ -3203,7 +3207,8 @@ class Parser {
   }
 
   Expression string(Token token) {
-    final text = token.lexeme;
+    final raw = token.lexeme.startsWith('r');
+    final text = raw ? token.lexeme.substring(1) : token.lexeme;
     final width = text.startsWith(text[0] * 3) ? 3 : 1;
     final content = text.substring(width, text.length - width);
     final parts = <Expression>[];
@@ -3216,6 +3221,14 @@ class Parser {
     }
 
     final skips = width == 3 ? _closingDedent(content, token.span) : null;
+    if (raw) {
+      return Literal(
+          [
+            for (var i = 0; i < content.length; i++)
+              if (skips == null || !skips.contains(i)) content[i]
+          ].join(),
+          token.span);
+    }
     for (var i = 0; i < content.length; i++) {
       if (skips != null && skips.contains(i)) continue;
       final ch = content[i];

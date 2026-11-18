@@ -1755,7 +1755,7 @@ class Analyzer {
       final library = packageDartFile(_file, node.uri);
       if (library != null) {
         try {
-          final surface = readDartFile(library);
+          final surface = readDartFile(library, from: _file);
           if (surface != null) _bindSurface(node, surface);
         } catch (_) {
           // The file stays an external library. Unknown names remain dynamic.
@@ -2060,11 +2060,20 @@ class Analyzer {
 
   DartSurface _nativeSurface(String uri, DartSurface surface) {
     if (!uri.startsWith('dart:')) {
+      if (_typedSurface == null) {
+        final typed = readDartLibrary('dart:typed_data');
+        if (typed != null) _nativeSurface('dart:typed_data', typed);
+      }
       final names = <String, String>{};
       for (final name in surface.types.keys) {
         final top = surface.names[name];
         if (top == null || top.file.isEmpty) continue;
         final origin = File(top.file).absolute.uri.normalizePath();
+        if (_typedTypeNames.containsKey(name) &&
+            origin.path.contains('/typed_data/')) {
+          names[name] = _typedTypeNames[name]!;
+          continue;
+        }
         final package = packageRoot(top.file);
         final packageUri =
             package == null ? null : Directory(package.directory).absolute.uri;
@@ -2077,13 +2086,27 @@ class Analyzer {
         final key = '@dart.native.$digest.$name';
         names[name] = key;
         model.backendTypes[key] = '$prefix.$name';
-        model.backendTypeImports[prefix] =
-            File(top.file).absolute.uri.toString();
+        final declaredLibrary =
+            surface.declarationLibraries[origin.toFilePath()] ?? top.file;
+        final importFile = File(declaredLibrary).absolute.uri.normalizePath();
+        var importUri = surface.libraryUris[importFile.toFilePath()] ??
+            importFile.toString();
+        for (final library in packageLibraries(_file)) {
+          final directory = Directory(library.libDirectory).absolute.uri;
+          if (!importUri.startsWith('dart:') &&
+              importFile.toString().startsWith(directory.toString())) {
+            importUri =
+                'package:${library.name}/${importFile.toString().substring(directory.toString().length)}';
+            break;
+          }
+        }
+        model.backendTypeImports[prefix] = importUri;
         model.internalTypes[key] =
             Symbol(key, '$prefix.$name', key, external: true);
       }
       String canonical(String source) => source.replaceAllMapped(
-          RegExp(r'[A-Za-z_][A-Za-z0-9_]*'), (m) => names[m[0]] ?? m[0]!);
+          RegExp(r'[A-Za-z_][A-Za-z0-9_]*'),
+          (m) => names[m[0]] ?? _typedTypeNames[m[0]] ?? m[0]!);
       final mapped = mapDartSurfaceTypes(surface, canonical);
       for (final name in names.keys)
         model.dartShapes[names[name]!] = mapped.types[name]!;
@@ -2881,8 +2904,10 @@ class Analyzer {
           case ImportDeclaration()
               when !statement.export &&
                   (statement.uri.startsWith('dart:') ||
+                      statement.uri.startsWith('package:') &&
+                          statement.uri.endsWith('.dart') ||
                       _isLocalDart(statement)):
-            _bindDartScope(scope, statement);
+            _bindDartScope(scope, statement, home: home);
           default:
             break;
         }
@@ -2951,24 +2976,38 @@ class Analyzer {
     return _libraryType(type, home);
   }
 
-  void _bindDartScope(_Scope scope, ImportDeclaration node) {
+  void _bindDartScope(_Scope scope, ImportDeclaration node, {String? home}) {
     final prefix = node.prefix;
     if (prefix != null && scope.symbols.containsKey(prefix)) return;
     DartSurface? surface;
     try {
       surface = _isLocalDart(node)
           ? _localDartSurface(node)
-          : readDartLibrary(node.uri);
+          : node.uri.startsWith('package:')
+              ? (() {
+                  final from =
+                      node.span.file == '<input>' ? _file : node.span.file;
+                  final file = packageDartFile(from, node.uri);
+                  return file == null ? null : readDartFile(file, from: from);
+                })()
+              : readDartLibrary(node.uri);
     } catch (_) {
       surface = null;
     }
     if (surface == null) return;
+    surface = _nativeSurface(node.uri, surface);
     final space = prefix == null ? scope.symbols : <String, Symbol>{};
     for (final name in surface.names.keys) {
       if (!_keeps(name, node) || space.containsKey(name)) continue;
       final top = surface.names[name];
       if (top == null) continue;
-      if (top.isType) model.activeAliasShadows.add(prefix ?? name);
+      if (top.isType) {
+        model.activeAliasShadows.add(prefix ?? name);
+        if (home != null && top.type.startsWith('@dart.')) {
+          _libraryTypes[home]?[prefix == null ? name : '$prefix.$name'] =
+              top.type;
+        }
+      }
       final shape = surface.types[name];
       if (shape != null) model.dartShapes[name] = shape;
       space[name] = symbolForDart(top, shape);
@@ -3067,7 +3106,14 @@ class Analyzer {
       if (parameter.defaultValue case final value?) {
         restrictDefault(value, parameterNames.toSet(),
             function.parameters.map((item) => item.name).toSet());
-        final type = expression(value);
+        final savedDefaultExpected = _expected;
+        _expected = parameter.type;
+        final String type;
+        try {
+          type = expression(value);
+        } finally {
+          _expected = savedDefaultExpected;
+        }
         if (!_acceptExpected(value, type, parameter.type)) {
           fail('Default type $type is incompatible with ${parameter.type}',
               value);
@@ -3132,6 +3178,12 @@ class Analyzer {
       if (statement is GuardedStatement &&
           statement.alternate != null &&
           statement.statement is ReturnStatement) {
+        return true;
+      }
+      if (statement is TryStatement &&
+          (returns(statement.finallyBody) ||
+              (returns([...statement.body, ...statement.elseBody]) &&
+                  statement.catches.every((clause) => returns(clause.body))))) {
         return true;
       }
       if (statement is IfStatement &&
@@ -4592,6 +4644,7 @@ class Analyzer {
       final parent =
           _substitute(_classMemberType(edge, declaration), substitution);
       if (_sameType(parent, to) ||
+          (_nativeShape(parent) != null && compatible(parent, to)) ||
           _implementsType(parent, to, {...visited, _genericHead(from)}))
         return true;
     }
@@ -5530,7 +5583,7 @@ class Analyzer {
   }
 
   String? memberType(String type, String name,
-      [Set<String> visited = const {}]) {
+      [Set<String> visited = const {}, bool inheritedNative = false]) {
     if (type == 'ConversionError' && name == 'message') return 'String';
     final head = _genericHead(type);
     if (visited.contains(head)) return null;
@@ -5551,14 +5604,20 @@ class Analyzer {
         if (method.name == name) return instantiate(functionType(method));
       }
       for (final mixin in declaration.mixins.reversed) {
-        final inherited = memberType(instantiate(mixin), name, nextVisited);
+        final inherited =
+            memberType(instantiate(mixin), name, nextVisited, true);
         if (inherited != null) return inherited;
       }
       if (declaration.superclass != null) {
-        final inherited =
-            memberType(instantiate(declaration.superclass!), name, nextVisited);
+        final inherited = memberType(
+            instantiate(declaration.superclass!), name, nextVisited, true);
         if (inherited != null) return inherited;
       }
+    }
+    final native = inheritedNative ? _nativeShape(type)?.members[name] : null;
+    if (native != null) {
+      if (native.getter) return native.type;
+      return '(${native.parameters.map((p) => p.$2).join(', ')}) -> ${native.type}';
     }
     final extensions = _extensions(type, name);
     final properties = _extensionProperties(type, name);
@@ -6731,8 +6790,7 @@ class Analyzer {
           expected.endsWith('>')) {
         return expected;
       }
-      error('E302', 'Empty lists require contextual typing (not supported yet)',
-          node);
+      error('E302', 'Empty lists require a contextual List<T> type', node);
     }
     final expected = _expected;
     final wanted = expected != null &&
@@ -8219,11 +8277,17 @@ class Analyzer {
       if (parameters[i].variadic || order[i] != -1) continue;
       final fallback = parameters[i].defaultValue;
       if (fallback == null) fail('Missing required argument', node);
-      final type = _callResult(
-          model.implicitConversions[fallback]?.resultType ??
-              model.types[fallback] ??
-              expression(fallback),
-          function);
+      final savedDefaultExpected = _expected;
+      _expected = parameters[i].type;
+      final String fallbackType;
+      try {
+        fallbackType = model.implicitConversions[fallback]?.resultType ??
+            model.types[fallback] ??
+            expression(fallback);
+      } finally {
+        _expected = savedDefaultExpected;
+      }
+      final type = _callResult(fallbackType, function);
       if (!compatible(type, parameters[i].type)) {
         fail('Default type $type is incompatible with ${parameters[i].type}',
             fallback);
@@ -9536,10 +9600,43 @@ class Analyzer {
   }
 
   String joinTypes(String left, String right, Node node) {
+    left = model.resolve(left);
+    right = model.resolve(right);
+    if (left == 'dynamic' || right == 'dynamic') return 'dynamic';
+    if (left == 'Null') return nullableType(right);
+    if (right == 'Null') return nullableType(left);
     if (left == right) return left;
     if (numeric(left) && numeric(right)) return 'num';
     if (left == '$right?') return left;
     if (right == '$left?') return right;
+    if (compatible(left, right)) return right;
+    if (compatible(right, left)) return left;
+    final expected = _expected;
+    if (expected != null &&
+        compatible(left, expected) &&
+        compatible(right, expected)) return expected;
+    final pending = <String>[left];
+    final seen = <String>{};
+    while (pending.isNotEmpty) {
+      final current = pending.removeAt(0);
+      if (!seen.add(current)) continue;
+      final declaration = _typeSymbol(_genericHead(current))?.classDeclaration;
+      final parents = declaration == null
+          ? (_nativeShape(current)?.instantiatedSupertypes ?? const <String>{})
+          : <String>[
+              if (declaration.superclass != null) declaration.superclass!,
+              ...declaration.interfaces,
+            ].map((parent) => _substitute(_classMemberType(parent, declaration),
+              _genericSubstitution(current, declaration)));
+      for (final parent in parents) {
+        final candidate = model.resolve(parent);
+        if (const {'Object', 'Object?', 'dynamic'}.contains(candidate))
+          continue;
+        if (compatible(left, candidate) && compatible(right, candidate))
+          return candidate;
+        pending.add(candidate);
+      }
+    }
     fail('Branches must share a type', node);
   }
 

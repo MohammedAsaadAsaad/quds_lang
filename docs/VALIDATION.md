@@ -1129,3 +1129,31 @@ Final verification on Dart 3.13.7:
   **7m36s**, wall **7m37.897s**. Includes existing quoted-part compatibility,
   conversion/debug/CLI, editor-growth and Quds math suites.
 - `git diff --check`: clean.
+
+### Quds Academy and native pub/Flutter source interop (2026-11-18)
+
+- `dart format .`: **84 files, zero changes** on final formatting check.
+- `dart analyze`: **No issues found**.
+- `dart test test/academy_interop_test.dart --reporter expanded`: **8 pass**,
+  **18s**. Includes actual Dart execution of native package imports, part-owned
+  types, generic function aliases, super formals, typed-data boundaries, fresh
+  defaults, raw strings and nested constructor argument blocks.
+- `python3 examples/flutter_app/quds_academy/tool/check_core.py`: **3 Quds suites
+  pass** against actual pub `sqlite_plus` **0.1.14**, after Quds source formatting.
+  Covers parameterized SQL/Unicode, duplicate completion, export/reopen, preference
+  preservation, reset, all twelve lesson outputs and 111 bilingual keyword entries.
+- `python3 examples/flutter_app/quds_academy/tool/sync_keywords.py --check`: pass.
+- Source-only UI build against official Flutter stable source **ab291203**:
+  all **4 Quds modules** generated. Dart analysis of generated `main.dart` found
+  **zero errors**, one unused typed-data import warning and two informational
+  deprecations in Flutter 3.50 (`material.dart` / `GlobalMaterialLocalizations`).
+  A subsequent explicit byte-image type annotation addresses the unused import.
+- This source check uses actual SDK/API source and actual pub dependencies; it
+  **does not run the Flutter engine**. Flutter pub resolution, widget tests, web
+  build, browser rendering and screenshots remain **unverified** because the
+  managed proxy returns **403** for `storage.googleapis.com`. The domain is saved
+  in a configuration draft but not active in the runtime. No environment published.
+- See `docs/QUDS_ACADEMY.md` and the application's README for continuation steps.
+- `dart test --reporter expanded`: **605 pass, zero failures/skips**, runner
+  **7m56s**. Final focused rerun after typed-data re-export correction: **8 pass,
+  9s**; final root `dart analyze`: **No issues found**.

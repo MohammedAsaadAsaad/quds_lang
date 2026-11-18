@@ -1924,6 +1924,16 @@ class DartEmitter {
 
   String _constructorParameter(
       FieldDeclaration field, List<String> initializers) {
+    final initializer = field.initializer;
+    if (initializer != null && initializer is! Literal) {
+      // Collection and call defaults run afresh for every construction. A
+      // sentinel also keeps an explicit nullable value distinct from omission.
+      _useOptional = true;
+      final type = _dartType(field.type);
+      initializers.add(
+          '${_fieldDart(field)} = identical(${field.name}, missing) ? ${expression(initializer)} : ${field.name} as $type');
+      return 'Object? ${field.name} = missing';
+    }
     final required =
         field.requiredField && field.initializer == null ? 'required ' : '';
     final value =

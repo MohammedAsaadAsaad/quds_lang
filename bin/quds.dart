@@ -198,8 +198,37 @@ String? _packageConfigPath() {
   return null;
 }
 
-List<String> _withPackages(List<String> args) {
-  final config = _packageConfigPath();
+List<String> _withPackages(List<String> args, {File? input}) {
+  var config = _packageConfigPath();
+  if (input != null) {
+    final root = _packageRoot(input.absolute.parent);
+    final project = File('${root.path}/.dart_tool/package_config.json');
+    if (project.existsSync() && project.path != config) {
+      // The program's pub resolution wins. Matcher and other tool helpers are
+      // available to temporary Quds test drivers without replacing app packages.
+      final packages = <String, Map<String, dynamic>>{};
+      for (final file in [if (config != null) File(config), project]) {
+        final decoded = jsonDecode(file.readAsStringSync()) as Map;
+        for (final raw in decoded['packages'] as List) {
+          final entry = Map<String, dynamic>.from(raw as Map);
+          entry['rootUri'] =
+              file.uri.resolve(entry['rootUri'] as String).toString();
+          packages[entry['name'] as String] = entry;
+        }
+      }
+      final output = File('${root.path}/.dart_tool/quds/package_config.json');
+      final names = packages.keys.toList()..sort();
+      final text = jsonEncode({
+        'configVersion': 2,
+        'packages': [for (final name in names) packages[name]]
+      });
+      output.parent.createSync(recursive: true);
+      if (!output.existsSync() || output.readAsStringSync() != text) {
+        output.writeAsStringSync(text);
+      }
+      config = output.path;
+    }
+  }
   if (config == null) return args;
   return ['--packages=$config', ...args];
 }
@@ -794,7 +823,7 @@ Future<void> _run(List<String> arguments) async {
     final qudsSource = input.existsSync() ? input.readAsStringSync() : null;
     final process = await Process.start(
       _dartExecutable(),
-      _withPackages([output.path]),
+      _withPackages([output.path], input: input),
       workingDirectory: _packageRoot(input.absolute.parent).path,
     );
     final streams = Future.wait([
@@ -917,8 +946,8 @@ void _analyze(List<String> arguments) {
     final directory = Directory.systemTemp.createTempSync('quds-analyze-');
     try {
       final (output, staged) = _temporaryDartTree(input, result, directory);
-      final analysis = Process.runSync(
-          _dartExecutable(), _withPackages(['analyze', output.path]));
+      final analysis = Process.runSync(_dartExecutable(),
+          _withPackages(['analyze', output.path], input: input));
       _writeQuds(analysis.stdout, analysis.stderr, staged.sourceMap,
           output.uri.pathSegments.last);
       exitCode = analysis.exitCode;
@@ -992,8 +1021,8 @@ void _test(List<String> arguments) {
             'import $suiteUri as suite;\n'
             'Future<void> main() async {\n'
             '  io.exitCode = await suite.$entry();\n}\n');
-      final run =
-          Process.runSync(_dartExecutable(), _withPackages([output.path]));
+      final run = Process.runSync(
+          _dartExecutable(), _withPackages([output.path], input: input));
       _writeQuds(run.stdout, run.stderr, staged.sourceMap,
           suite.uri.pathSegments.last);
       exitCode = run.exitCode;
@@ -1408,9 +1437,11 @@ void _benchmark(List<String> arguments) {
       final (dart, staged) = _temporaryDartTree(input, result, directory);
       stageWatch.stop();
       final debug = Process.runSync(_dartExecutable(),
-          _withPackages(['run', '--enable-asserts', dart.path]));
-      final release = Process.runSync(_dartExecutable(),
-          _withPackages(['run', '--no-enable-asserts', dart.path]));
+          _withPackages(['run', '--enable-asserts', dart.path], input: input));
+      final release = Process.runSync(
+          _dartExecutable(),
+          _withPackages(['run', '--no-enable-asserts', dart.path],
+              input: input));
       if (debug.exitCode != 0 || release.exitCode != 0) {
         stderr.write(_atQuds(
             debug.exitCode != 0 ? debug.stderr : release.stderr,
@@ -1571,8 +1602,8 @@ void _docTest(File input) {
       writeSdkBundles(directory.path, compiled);
       final output = File('${directory.path}/doc.dart')
         ..writeAsStringSync(compiled.dart);
-      final run =
-          Process.runSync(_dartExecutable(), _withPackages([output.path]));
+      final run = Process.runSync(
+          _dartExecutable(), _withPackages([output.path], input: input));
       if (run.exitCode != 0) {
         stderr.write(run.stdout);
         stderr.write(run.stderr);

@@ -432,3 +432,20 @@ String qudsBackendLibraryUri(String from, String home) {
       .map((s) => s == '..' ? s : Uri.encodeComponent(s))
       .join('/');
 }
+
+/// Embedded Dart libraries supplied by an SDK package (for example dart:ui).
+File? embeddedDartFile(String from, String uri) {
+  if (!uri.startsWith('dart:')) return null;
+  for (final library in packageLibraries(from)) {
+    final configuration = File.fromUri(
+        Directory(library.libDirectory).absolute.uri.resolve('_embedder.yaml'));
+    if (!configuration.existsSync()) continue;
+    final expression = RegExp(
+        r"""["']""" + RegExp.escape(uri) + r"""["']\s*:\s*["']([^"']+)["']""");
+    final match = expression.firstMatch(configuration.readAsStringSync());
+    if (match == null) continue;
+    final file = File.fromUri(configuration.uri.resolve(match.group(1)!));
+    if (file.existsSync()) return file;
+  }
+  return null;
+}

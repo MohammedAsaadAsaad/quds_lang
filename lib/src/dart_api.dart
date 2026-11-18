@@ -1,4 +1,5 @@
 import 'type_syntax.dart';
+import 'libraries.dart';
 
 import 'dart:io';
 
@@ -218,10 +219,13 @@ DartShape instantiateDartShape(DartShape shape, String instance) {
 
 /// The public surface of one `dart:` library.
 class DartSurface {
-  const DartSurface(this.names, this.types);
+  const DartSurface(this.names, this.types,
+      {this.declarationLibraries = const {}, this.libraryUris = const {}});
 
   final Map<String, DartTop> names;
   final Map<String, DartShape> types;
+  final Map<String, String> declarationLibraries;
+  final Map<String, String> libraryUris;
 }
 
 /// Preserve source metadata while giving external signature types a library identity.
@@ -296,6 +300,8 @@ DartSurface mapDartSurfaceTypes(
           supertypes: entry.value.supertypes.map(type).toSet(),
         ),
     },
+    declarationLibraries: surface.declarationLibraries,
+    libraryUris: surface.libraryUris,
   );
 }
 
@@ -386,14 +392,15 @@ DartSurface? readDartLibrary(String uri, {String? sdkRoot}) {
 }
 
 /// Public names of one Dart library file, including its `part` and `export` files.
-DartSurface? readDartFile(File file) {
+DartSurface? readDartFile(File file, {String? from}) {
   if (!file.existsSync()) return null;
-  final key = file.absolute.path;
+  final key =
+      '${file.absolute.path}|${from == null ? "" : packageRoot(from)?.directory ?? from}';
   final cached = _cache[key];
   if (cached != null && _stamp(cached.files) == cached.stamp) {
     return cached.surface;
   }
-  final loaded = _load(file);
+  final loaded = _load(file, from: from);
   _cache[key] = _Cached(_stamp(loaded.files), loaded.surface, loaded.files);
   return loaded.surface;
 }
@@ -419,33 +426,128 @@ class _Loaded {
   final List<String> files;
 }
 
-_Loaded _load(File entry) {
+_Loaded _load(File entry, {String? from}) {
   final classes = <String, _Class>{};
   final names = <String, DartTop>{};
+  final aliases = <String, (Map<String, String>, String)>{};
+  final declarationLibraries = <String, String>{};
+  final libraryUris = <String, String>{};
   final files = <String>[];
+  final contextRoot = from == null ? null : packageRoot(from);
+  if (contextRoot != null) {
+    final config =
+        File('${contextRoot.directory}/.dart_tool/package_config.json');
+    if (config.existsSync()) files.add(config.path);
+  }
   final seen = <String>{};
+  final visibleNames = <String, Map<String, DartTop>>{};
+  final visibleClasses = <String, Map<String, _Class>>{};
 
-  void load(File file) {
-    final path = file.absolute.path;
-    if (!seen.add(path) || !file.existsSync()) return;
+  void load(File file, {String? owner}) {
+    final path = file.absolute.uri.normalizePath().toFilePath();
+    declarationLibraries[path] = owner ?? path;
+    if (!file.existsSync()) return;
+    if (!seen.add(path)) {
+      names.addAll(visibleNames[path] ?? const {});
+      classes.addAll(visibleClasses[path] ?? const {});
+      return;
+    }
     files.add(path);
+    final priorNames = Map<String, DartTop>.of(names);
+    final priorClasses = Map<String, _Class>.of(classes);
     final _Parser parser;
     try {
       parser = _Parser(
         _scan(file.readAsStringSync()),
         classes,
         names,
-        file.absolute.path,
+        path,
+        aliases,
       )..parse();
     } catch (_) {
       return;
     }
-    final directory = file.parent.path;
+    final exportedNames = <String, DartTop>{
+      for (final entry in names.entries)
+        if (!identical(priorNames[entry.key], entry.value))
+          entry.key: entry.value,
+    };
+    final exportedClasses = <String, _Class>{
+      for (final entry in classes.entries)
+        if (!identical(priorClasses[entry.key], entry.value))
+          entry.key: entry.value,
+    };
+    visibleNames[path] = exportedNames;
+    visibleClasses[path] = exportedClasses;
+    final directory = File(path).parent.path;
     for (final part in parser.parts) {
-      load(File('$directory/$part'));
+      final target =
+          File('$directory/$part').absolute.uri.normalizePath().toFilePath();
+      load(File(target), owner: owner ?? path);
+      exportedNames.addAll(visibleNames[target] ?? const {});
+      exportedClasses.addAll(visibleClasses[target] ?? const {});
     }
-    for (final exported in parser.exports) {
-      load(File('$directory/$exported'));
+    for (final directive in parser.exports) {
+      final exported = directive.$1;
+      final beforeNames = Map<String, DartTop>.of(names);
+      final beforeClasses = Map<String, _Class>.of(classes);
+      File? resolved;
+      if (exported.startsWith('dart:')) {
+        final target = embeddedDartFile(from ?? path, exported);
+        resolved = target;
+        if (target != null) {
+          libraryUris[target.absolute.uri.normalizePath().toFilePath()] =
+              exported;
+          load(target);
+        }
+      } else if (exported.startsWith('package:')) {
+        var target = packageDartFile(from ?? path, exported);
+        final root = packageRoot(path);
+        final rest = exported.substring('package:'.length);
+        final slash = rest.indexOf('/');
+        if (target == null &&
+            root != null &&
+            slash > 0 &&
+            rest.substring(0, slash) == root.name) {
+          target = File('${root.directory}/lib/${rest.substring(slash + 1)}');
+        }
+        resolved = target;
+        if (target != null) load(target);
+      } else {
+        resolved = File('$directory/$exported');
+        load(resolved);
+      }
+      bool keeps(String name) =>
+          (directive.$2.isEmpty || directive.$2.contains(name)) &&
+          !directive.$3.contains(name);
+      if (resolved != null) {
+        final target = resolved.absolute.uri.normalizePath().toFilePath();
+        exportedNames.addAll({
+          for (final entry
+              in (visibleNames[target] ?? <String, DartTop>{}).entries)
+            if (keeps(entry.key)) entry.key: entry.value
+        });
+        exportedClasses.addAll({
+          for (final entry
+              in (visibleClasses[target] ?? <String, _Class>{}).entries)
+            if (keeps(entry.key)) entry.key: entry.value
+        });
+      }
+      if (directive.$2.isNotEmpty || directive.$3.isNotEmpty) {
+        for (final name in names.keys.toList()) {
+          if (keeps(name) || identical(names[name], beforeNames[name]))
+            continue;
+          if (beforeNames.containsKey(name))
+            names[name] = beforeNames[name]!;
+          else
+            names.remove(name);
+        }
+        // Hidden bases still provide inherited signatures, but cannot replace
+        // an already visible, unrelated class with the same spelling.
+        for (final name in beforeClasses.keys) {
+          if (!keeps(name)) classes[name] = beforeClasses[name]!;
+        }
+      }
     }
   }
 
@@ -457,8 +559,15 @@ _Loaded _load(File entry) {
     for (final parent in type.supers) {
       final open = parent.indexOf('<');
       final name = open < 0 ? parent : parent.substring(0, open);
-      final base = classes[name];
+      final base = classes[name] ?? classes[name.split('.').last];
       if (base == null) continue;
+      if (name.contains('.')) {
+        final normalized =
+            '${base.name}${open < 0 ? '' : parent.substring(open)}';
+        type.instantiatedSupers.remove(parent);
+        type.instantiatedSupers.add(normalized);
+        type.superNames.add(base.name);
+      }
       inherit(base);
       final arguments = open < 0
           ? <String>[]
@@ -480,6 +589,50 @@ _Loaded _load(File entry) {
       type.instantiatedSupers.addAll(
         base.instantiatedSupers.map((s) => substituteDartType(s, substitution)),
       );
+      for (final entry in type.constructors.entries.toList()) {
+        final source = entry.value;
+        final defaults =
+            base.constructors['']?.parameters ?? const <(String, String)>[];
+        var superPosition = 0;
+        final positionalDefaults = defaults
+            .where((p) =>
+                !(base.constructors['']?.namedParameters.contains(p.$1) ??
+                    false))
+            .toList();
+        String forwarded(String raw, bool named) {
+          if (!raw.startsWith('@super.')) return raw;
+          final name = raw.substring('@super.'.length);
+          String? resolved;
+          if (!named && superPosition < positionalDefaults.length) {
+            resolved = positionalDefaults[superPosition++].$2;
+          }
+          for (final parameter in defaults) {
+            if (named && parameter.$1 == name) resolved = parameter.$2;
+          }
+          resolved ??= base.fields[name];
+          return resolved == null
+              ? raw
+              : substituteDartType(resolved, substitution);
+        }
+
+        type.constructors[entry.key] = DartMember(
+            name: source.name,
+            type: source.type,
+            parameters: [
+              for (final p in source.parameters)
+                (p.$1, forwarded(p.$2, source.namedParameters.contains(p.$1)))
+            ],
+            optional: source.optional,
+            getter: source.getter,
+            typeParameters: source.typeParameters,
+            namedParameters: source.namedParameters,
+            optionalNames: source.optionalNames,
+            documentation: source.documentation,
+            file: source.file,
+            line: source.line,
+            column: source.column,
+            offset: source.offset);
+      }
       for (final entry in base.members.entries) {
         final member = instantiateDartMember(entry.value, substitution);
         if (type.implementationSupers.contains(parent) &&
@@ -495,6 +648,30 @@ _Loaded _load(File entry) {
   for (final type in classes.values) {
     inherit(type);
   }
+  // Top-level class calls must use the finalized constructor signature too.
+  for (final type in classes.values) {
+    final top = names[type.name];
+    final constructor = type.constructors[''];
+    if (!type.public || top == null || constructor == null) continue;
+    names[type.name] = DartTop(
+        name: top.name,
+        type: top.type,
+        parameters: constructor.parameters,
+        optional: constructor.optional,
+        typeParameters: top.typeParameters,
+        namedParameters: constructor.namedParameters,
+        optionalNames: constructor.optionalNames,
+        constant: top.constant,
+        number: top.number,
+        integer: top.integer,
+        isType: top.isType,
+        callable: top.callable,
+        documentation: top.documentation,
+        file: top.file,
+        line: top.line,
+        column: top.column,
+        offset: top.offset);
+  }
   final types = <String, DartShape>{
     for (final type in classes.values)
       if (type.public)
@@ -509,7 +686,38 @@ _Loaded _load(File entry) {
           supertypes: Set<String>.of(type.superNames),
         ),
   };
-  return _Loaded(DartSurface(names, types), files);
+  final expandedTypes = <String, String>{};
+  String expand(String type, [Set<String> active = const {}]) {
+    if (active.isEmpty && expandedTypes.containsKey(type))
+      return expandedTypes[type]!;
+    var result = type;
+    for (final entry in aliases.entries) {
+      if (active.contains(entry.key) || !result.contains(entry.key)) continue;
+      final pattern = RegExp(
+          '\\b${RegExp.escape(entry.key)}(?:<([^<>]*(?:<[^<>]*>[^<>]*)*)>)?(\\?)?');
+      result = result.replaceAllMapped(pattern, (match) {
+        final supplied = match.group(1) == null
+            ? <String>[]
+            : splitTypeList(match.group(1)!);
+        final substitutions = <String, String>{};
+        var index = 0;
+        for (final p in entry.value.$1.entries) {
+          substitutions[p.key] =
+              index < supplied.length ? supplied[index] : p.value;
+          index++;
+        }
+        final resolved = expand(
+            substituteDartType(entry.value.$2, substitutions),
+            {...active, entry.key});
+        return match.group(2) == null ? resolved : nullableType(resolved);
+      });
+    }
+    return result;
+  }
+
+  final surface = DartSurface(names, types,
+      declarationLibraries: declarationLibraries, libraryUris: libraryUris);
+  return _Loaded(mapDartSurfaceTypes(surface, expand), files);
 }
 
 class _Class {
@@ -764,14 +972,15 @@ List<_Tok> _scan(String source) {
 }
 
 class _Parser {
-  _Parser(this.tokens, this.classes, this.names, this.file);
+  _Parser(this.tokens, this.classes, this.names, this.file, this.aliases);
+  final Map<String, (Map<String, String>, String)> aliases;
 
   final List<_Tok> tokens;
   final Map<String, _Class> classes;
   final Map<String, DartTop> names;
   final String file;
   final parts = <String>[];
-  final exports = <String>[];
+  final exports = <(String, Set<String>, Set<String>)>[];
   var i = 0;
 
   String get peek => i < tokens.length ? tokens[i].text : '';
@@ -839,6 +1048,16 @@ class _Parser {
       return;
     }
     if (peek == 'typedef') {
+      take();
+      final name = isIdent ? take() : '';
+      final parameters = peek == '<' ? _typeParameters() : <String, String>{};
+      if (peek == '=') {
+        take();
+        final type = _rawType();
+        if (name.isNotEmpty && !type.startsWith('@unsupported')) {
+          aliases[name] = (parameters, type);
+        }
+      }
       _skipStatement();
       return;
     }
@@ -865,14 +1084,27 @@ class _Parser {
       return;
     }
     String? uri;
+    final shown = <String>{};
+    final hidden = <String>{};
+    Set<String>? filter;
     while (i < tokens.length && peek != ';') {
-      if (tokens[i].kind == 's' && uri == null) uri = tokens[i].text;
+      if (tokens[i].kind == 's' && uri == null)
+        uri = tokens[i].text;
+      else if (peek == 'show')
+        filter = shown;
+      else if (peek == 'hide')
+        filter = hidden;
+      else if (filter != null && isIdent) filter.add(peek);
       i++;
     }
     if (peek == ';') i++;
-    if (uri == null || uri.contains(':') || uri.contains('\\')) return;
+    if (uri == null ||
+        (uri.contains(':') &&
+            !uri.startsWith('package:') &&
+            !uri.startsWith('dart:')) ||
+        uri.contains('\\')) return;
     if (kind == 'part') parts.add(uri);
-    if (kind == 'export') exports.add(uri);
+    if (kind == 'export') exports.add((uri, shown, hidden));
   }
 
   void _enum() {
@@ -1348,14 +1580,19 @@ class _Parser {
       if (peek == 'covariant' || peek == 'final') i++;
       String type;
       String name;
-      if (peek == 'this') {
+      if (peek == 'this' || peek == 'super') {
+        final forwarded = peek == 'super';
         i++;
         if (peek == '.') i++;
         name = isIdent ? take() : '';
-        type = fields[name] ?? '@field.$name';
+        type = forwarded ? '@super.$name' : fields[name] ?? '@field.$name';
       } else {
         type = _simplify(_rawType(), params);
         name = isIdent ? take() : '';
+        if ((name == 'this' || name == 'super') && peek == '.') {
+          take();
+          name = isIdent ? take() : '';
+        }
       }
       if (allowUnnamed && name.isEmpty) name = '_p${list.length}';
       if (peek == '=') _skipDefault();
@@ -1493,7 +1730,9 @@ class _Parser {
     if (peek != open) return;
     var depth = 0;
     while (i < tokens.length) {
-      final text = tokens[i++].text;
+      final token = tokens[i++];
+      if (token.kind == 's') continue;
+      final text = token.text;
       if (text == open) {
         depth++;
       } else if (text == close) {
@@ -1533,6 +1772,10 @@ class _Parser {
     var brace = 0;
     var bracket = 0;
     while (i < tokens.length) {
+      if (tokens[i].kind == 's') {
+        i++;
+        continue;
+      }
       final text = tokens[i].text;
       if (text == '(') {
         paren++;
@@ -1575,6 +1818,10 @@ class _Parser {
     var paren = 0;
     var brace = 0;
     while (i < tokens.length) {
+      if (tokens[i].kind == 's') {
+        i++;
+        continue;
+      }
       final text = tokens[i].text;
       if (text == '(') {
         paren++;

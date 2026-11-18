@@ -264,6 +264,14 @@ class _Scanner {
         continue;
       }
       final start = i, sl = line, sc = column;
+      if (ch == 'r' &&
+          i + 1 < source.length &&
+          (source[i + 1] == '"' || source[i + 1] == "'")) {
+        advance();
+        scanString(raw: true);
+        emit(TokenKind.string, start, sl, sc);
+        continue;
+      }
       if (ch == '"' || ch == "'") {
         scanString();
         emit(TokenKind.string, start, sl, sc);
@@ -454,7 +462,7 @@ class _Scanner {
     return tokens;
   }
 
-  void scanString() {
+  void scanString({bool raw = false}) {
     final location = here, quote = ch;
     final triple = at(quote * 3);
     final delimiter = quote * (triple ? 3 : 1);
@@ -468,7 +476,7 @@ class _Scanner {
         }
         return;
       }
-      if (ch == '{') {
+      if (!raw && ch == '{') {
         advance();
         var depth = 1;
         while (!end && depth > 0) {
@@ -487,7 +495,7 @@ class _Scanner {
           }
         }
         if (depth != 0) fail('E004', 'Unclosed interpolation', location);
-      } else if (ch == '\\') {
+      } else if (!raw && ch == '\\') {
         advance();
         if (end) break;
         if (!'nrt\\\'"{}\$'.contains(ch)) {

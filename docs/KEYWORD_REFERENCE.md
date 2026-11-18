@@ -664,18 +664,18 @@ use dart:io when platform == "vm"
 
 ## `part`
 
-Includes a source part in one library. Parts share privacy and must declare a matching `part of`.
+Includes a source part in one library. Write an unquoted module path, as with use/export: `details` means `details.quds`, and `src.details` means `src/details.quds`. Parts share privacy and must declare a matching `part of`. Quoted literal file paths remain accepted for compatibility.
 
 ```quds
-part "details.quds"
+part src.details
 ```
 
 ## `of`
 
-Completes a `part of` directive that identifies the owning library. It is contextual, not a general operator.
+Completes a `part of` directive that identifies the owning library. Use an unquoted module path; `^.main` names `../main.quds`. Local path completion is available after both `part` and `part of`. The word is contextual, not a general operator.
 
 ```quds
-part of "main.quds"
+part of ^.main
 ```
 
 ## `async`

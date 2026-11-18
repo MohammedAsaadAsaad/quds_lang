@@ -1,0 +1,9 @@
+part nested.details
+
+class Secret:
+  private value: int = 7
+
+read() -> int = fromPart(Secret())
+
+main():
+  print read()

@@ -136,9 +136,9 @@ const keywordDocumentation = <String, String>{
   "when":
       "### when\n\nGuards a match arm or selects a compile-time library branch. Library conditions must be constant booleans; standalone `when condition:` selects a compile-time block.\n\n```quds\nuse dart:io when platform == \"vm\"\n```",
   "part":
-      "### part\n\nIncludes a source part in one library. Parts share privacy and must declare a matching `part of`.\n\n```quds\npart \"details.quds\"\n```",
+      "### part\n\nIncludes a source part in one library. Write an unquoted module path, as with use/export: `details` means `details.quds`, and `src.details` means `src/details.quds`. Parts share privacy and must declare a matching `part of`. Quoted literal file paths remain accepted for compatibility.\n\n```quds\npart src.details\n```",
   "of":
-      "### of\n\nCompletes a `part of` directive that identifies the owning library. It is contextual, not a general operator.\n\n```quds\npart of \"main.quds\"\n```",
+      "### of\n\nCompletes a `part of` directive that identifies the owning library. Use an unquoted module path; `^.main` names `../main.quds`. Local path completion is available after both `part` and `part of`. The word is contextual, not a general operator.\n\n```quds\npart of ^.main\n```",
   "async":
       "### async\n\nMarks an asynchronous function or async disposal. Combine with * for an asynchronous generator. Await operations require an async context.\n\n```quds\nload() async -> int:\n  return await fetch()\n```",
   "await":

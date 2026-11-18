@@ -1,0 +1,4 @@
+use fixtures.parts_bare.owner
+
+test "unquoted nested parts share library privacy":
+  expect(read(), 7)

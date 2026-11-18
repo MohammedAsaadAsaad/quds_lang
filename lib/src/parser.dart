@@ -1166,23 +1166,28 @@ class Parser {
     take();
     final of = word('of');
     if (of) take();
-    final uri = readUri();
+    // Quoted paths retain their literal spelling for backward compatibility.
+    // Unquoted module paths follow the same dotted normalization as use/export.
+    final quoted = at(TokenKind.string);
+    final raw = readUri(combinators: false);
+    final uri = quoted ? raw : normalizeImportUri(raw);
     endLine();
     return PartDirective(uri, of, extent(span));
   }
 
-  String readUri() {
+  String readUri({bool combinators = true}) {
     if (at(TokenKind.string)) {
       final token = take().lexeme;
       return token.length >= 2 ? token.substring(1, token.length - 1) : token;
     }
     final buffer = StringBuffer();
     while (!at(TokenKind.newline) && !at(TokenKind.eof)) {
-      if (buffer.isNotEmpty &&
+      if (combinators &&
+          buffer.isNotEmpty &&
           (word('as') || word('when') || word('show') || word('hide'))) {
         break;
       }
-      if (buffer.isEmpty && (word('as') || word('when'))) break;
+      if (combinators && buffer.isEmpty && (word('as') || word('when'))) break;
       buffer.write(take().lexeme);
     }
     if (buffer.isEmpty) fail('Expected a uri');

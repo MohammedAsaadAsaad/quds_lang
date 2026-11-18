@@ -1092,3 +1092,40 @@ without compiling or loading SDK metadata on its request path. VS Code rendering
 was tested through its adapter harness; a manual interactive editor session was
 not performed. Update/reinstall the extension with `quds install`, then reload
 the editor window to load both new client and server behavior.
+
+## 2026-11-18 — Unquoted part module paths and local completion
+
+The owner clarified that `part` and `part of` should use unquoted paths and offer
+completion like `use`/`export`. The specification now uses `uri` rather than
+requiring a string literal for `part`; PART_PATHS.md explains the clarification,
+examples and compatibility. Existing quoted file paths remain literal.
+
+- Unquoted part paths use import/export normalization: `src.details` becomes
+  `src/details.quds`, and `^.owner` becomes `../owner.quds`. URI components such
+  as `src.show` are read as paths rather than import combinators.
+- Completion offers local Quds files/directories and `of `, supports parent
+  traversal, and excludes self, SDK/package schemes and sections. URI completion
+  does not invoke semantic compilation. LSP edit ranges are tested directly.
+- Definition navigation follows the same bare/literal interpretation as parsing;
+  formatting retains unquoted paths. Ownership and shared privacy are preserved.
+- The English keyword reference and generated tooltip catalog now show
+  unquoted `part`/`part of` examples.
+
+Final verification on Dart 3.13.7:
+
+- `dart format .`: **77 files**; final changes formatted before the full run.
+- `dart analyze`: **No issues found**.
+- `python3 tool/sync_keyword_docs.py --check`: pass.
+- `dart test test/parts_paths_test.dart test/keyword_docs_test.dart --reporter expanded`:
+  **20 pass**, **7s**. Nine part regressions cover normalization, missing paths,
+  formatting, completion, actual LSP edits, definition navigation, mismatched
+  ownership, executable Quds conformance, and a fresh CLI run with generated Dart
+  analysis. The other eleven tests cover shared keyword documentation.
+- The primary Quds suite `test/parts_paths.quds` imports a bare-path owner with a
+  nested part and checks private-field access through their shared library.
+- Fresh CLI execution in a `quds.yaml` project prints **7**; generated owner/part
+  directives use matching Dart file paths and `dart analyze` exits **0**.
+- `dart test --reporter expanded`: **597 pass, zero failures/skips**; runner
+  **7m36s**, wall **7m37.897s**. Includes existing quoted-part compatibility,
+  conversion/debug/CLI, editor-growth and Quds math suites.
+- `git diff --check`: clean.

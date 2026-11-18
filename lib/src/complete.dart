@@ -2431,7 +2431,7 @@ const _retrigger = {
   'title': 'Suggest',
 };
 
-/// Completion for the URI of a `use` or `export` line, or null outside one.
+/// Completion for a library directive URI, or null outside one.
 List<Map<String, Object?>>? _importCompletion(
     String source, int cursor, String? file) {
   final lineStart = cursor == 0 ? 0 : source.lastIndexOf('\n', cursor - 1) + 1;
@@ -2441,7 +2441,9 @@ List<Map<String, Object?>>? _importCompletion(
       ? 'export'
       : trimmed.startsWith('use')
           ? 'use'
-          : null;
+          : trimmed.startsWith('part')
+              ? 'part'
+              : null;
   if (keyword == null) return null;
   if (trimmed.length > keyword.length &&
       _ident(trimmed.codeUnitAt(keyword.length))) {
@@ -2450,6 +2452,28 @@ List<Map<String, Object?>>? _importCompletion(
   var index = lineStart + (line.length - trimmed.length) + keyword.length;
   while (index < cursor && _space(source.codeUnitAt(index))) {
     index++;
+  }
+  if (keyword == 'part') {
+    if (trimmed == 'part') return null;
+    final rest = source.substring(index, cursor);
+    final of = RegExp(r'^of[ \t]+').firstMatch(rest);
+    if (of != null) index += of.end;
+    final uri = source.substring(index, cursor);
+    final items = uri == 'of' && of == null
+        ? <Map<String, Object?>>[]
+        : _relativeCompletion(source, cursor, index, uri, file,
+            partsOnly: true);
+    if (of == null && 'of'.startsWith(uri)) {
+      items.insert(0, {
+        ..._importItem(source, index, cursor, 'of', 'of ', 'part of', 14,
+            retrigger: true),
+        'documentation': {
+          'kind': 'markdown',
+          'value': keywordDocumentation['of']!
+        },
+      });
+    }
+    return items;
   }
   final uri = source.substring(index, cursor);
   if (RegExp(r'\s+(?:as|show|hide|when)\b').hasMatch(uri)) return null;
@@ -2693,9 +2717,11 @@ Directory? _packageDirectory(PackageLibrary? library, String? current,
 }
 
 List<Map<String, Object?>> _relativeCompletion(
-    String source, int cursor, int uriStart, String uri, String? file) {
+    String source, int cursor, int uriStart, String uri, String? file,
+    {bool partsOnly = false}) {
   final marker = uri.indexOf('::');
   if (marker >= 0) {
+    if (partsOnly) return const [];
     final library = uri.substring(0, marker);
     final path = _importedQudsFile(file, library);
     if (path == null) return const [];
@@ -2717,8 +2743,11 @@ List<Map<String, Object?>> _relativeCompletion(
   if (!uri.startsWith('.')) from = cursor - partial.length;
   final directory = _relativeDirectory(file, parts);
   final items = _relativeEntries(source, from, cursor, partial, parts, file,
-      directory: directory);
-  if (parts.isEmpty && !uri.startsWith('.') && !uri.contains('^')) {
+      directory: directory, partsOnly: partsOnly);
+  if (!partsOnly &&
+      parts.isEmpty &&
+      !uri.startsWith('.') &&
+      !uri.contains('^')) {
     if ('dart:'.startsWith(uri)) {
       items.insert(
           0,
@@ -2753,7 +2782,7 @@ Directory? _relativeDirectory(String? file, List<String> parts) {
 
 List<Map<String, Object?>> _relativeEntries(String source, int start, int end,
     String partial, List<String> parts, String? file,
-    {Directory? directory}) {
+    {Directory? directory, bool partsOnly = false}) {
   final dir = directory ?? _relativeDirectory(file, parts);
   if (dir == null || !dir.existsSync()) return const [];
   final items = <Map<String, Object?>>[];
@@ -2765,11 +2794,14 @@ List<Map<String, Object?>> _relativeEntries(String source, int start, int end,
           retrigger: true,
           filter: _importFilter(source, start, end, partial, name)));
     } else if (entity is File && name.endsWith('.quds')) {
+      if (partsOnly &&
+          file != null &&
+          entity.absolute.path == File(file).absolute.path) continue;
       final stem = name.substring(0, name.length - 5);
       if (stem.isEmpty || !stem.startsWith(partial)) continue;
       items.add(_importItem(source, start, end, stem, stem, name, 17,
           filter: _importFilter(source, start, end, partial, stem)));
-      if (fileSectionNames(entity.path).isNotEmpty) {
+      if (!partsOnly && fileSectionNames(entity.path).isNotEmpty) {
         items.add(_importItem(
             source, start, end, '$stem::', '$stem::', name, 17,
             retrigger: true,

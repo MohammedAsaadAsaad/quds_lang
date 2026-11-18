@@ -1,0 +1,3 @@
+part of ^.owner
+
+fromPart(item: Secret) -> int = item.value

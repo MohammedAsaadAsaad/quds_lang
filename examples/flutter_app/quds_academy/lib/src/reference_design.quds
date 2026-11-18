@@ -1,0 +1,29 @@
+# Curated learning categories; every reference entry belongs to one category.
+class KeywordCategory:
+  id: String required
+  english: String required
+  arabic: String required
+  purposeEn: String required
+  purposeAr: String required
+  words: List<String> required
+
+keywordCategories() -> List<KeywordCategory>:
+  return [
+    KeywordCategory(r'''bindings''', r'''Bindings & scope''', r'''الارتباطات والنطاق''', r'''Control what changes and make scope intentional.''', r'''تحكّم بما يتغير واجعل النطاق واضحًا ومقصودًا.''', [r'''var''', r'''const''', r'''shadow''', r'''late''', r'''let''', r'''lazy''', r'''by''']),
+    KeywordCategory(r'''flow''', r'''Decisions & loops''', r'''القرارات والحلقات''', r'''Express decisions, iteration and value-producing blocks.''', r'''عبّر عن القرارات والتكرار والكتل التي تنتج قيمًا.''', [r'''if''', r'''else''', r'''for''', r'''in''', r'''while''', r'''repeat''', r'''step''', r'''break''', r'''continue''', r'''label''', r'''return''', r'''do''', r'''result''']),
+    KeywordCategory(r'''values''', r'''Values & operators''', r'''القيم والمعاملات''', r'''Combine conditions, inspect types and name values safely.''', r'''اربط الشروط وافحص الأنواع وتعامل مع القيم بوضوح.''', [r'''and''', r'''or''', r'''not''', r'''true''', r'''false''', r'''null''', r'''is''', r'''as''', r'''nameof''']),
+    KeywordCategory(r'''types''', r'''Types & composition''', r'''الأنواع والتركيب''', r'''Model your domain with classes, contracts and algebraic types.''', r'''صمّم مجال عملك بالكلاسات والعقود والأنواع الجبرية.''', [r'''class''', r'''abstract''', r'''base''', r'''interface''', r'''final''', r'''sealed''', r'''value''', r'''singleton''', r'''extends''', r'''implements''', r'''mixin''', r'''on''', r'''enum''', r'''type''', r'''wraps''', r'''out''', r'''where''', r'''new''']),
+    KeywordCategory(r'''members''', r'''Members & access''', r'''الأعضاء والوصول''', r'''Define expressive APIs with constructors, properties and explicit access.''', r'''صمّم واجهات واضحة بالبواني والخصائص والتحكم الصريح بالوصول.''', [r'''this''', r'''super''', r'''init''', r'''factory''', r'''static''', r'''private''', r'''protected''', r'''required''', r'''property''', r'''get''', r'''set''', r'''operator''', r'''annotation''']),
+    KeywordCategory(r'''conversion''', r'''Conversions & augmentation''', r'''التحويلات والإضافة''', r'''Extend existing types and declare intentional conversions inside type bodies.''', r'''أضف تعريفات للأنواع الموجودة وعرّف تحويلات مقصودة داخل أجسام الأنواع.''', [r'''to''', r'''to?''', r'''extend''', r'''augment''', r'''implicit''', r'''explicit''', r'''cast''']),
+    KeywordCategory(r'''modules''', r'''Libraries & interoperability''', r'''المكتبات والتكامل''', r'''Organize libraries and connect Quds to Dart, Flutter and pub packages.''', r'''نظّم المكتبات واربط قدس بدارت وفلاتر وباكجات pub.''', [r'''use''', r'''export''', r'''show''', r'''hide''', r'''deferred''', r'''when''', r'''part''', r'''of''']),
+    KeywordCategory(r'''async''', r'''Async & concurrency''', r'''العمليات غير المتزامنة والتزامن''', r'''Coordinate futures, streams and structured concurrent work.''', r'''نسّق العمليات المستقبلية والتدفقات والعمل المتزامن المنظّم.''', [r'''async''', r'''await''', r'''sync''', r'''yield''', r'''all''', r'''isolate''', r'''task''', r'''group''', r'''spawn''']),
+    KeywordCategory(r'''safety''', r'''Safety & resources''', r'''الأمان وإدارة الموارد''', r'''Handle failures, enforce contracts and release resources predictably.''', r'''عالج الأخطاء وافرض العقود وحرّر الموارد بطريقة متوقعة.''', [r'''try''', r'''catch''', r'''finally''', r'''throw''', r'''rethrow''', r'''assert''', r'''require''', r'''check''', r'''defer''', r'''using''', r'''readonly''', r'''capture''']),
+    KeywordCategory(r'''patterns''', r'''Patterns & queries''', r'''الأنماط والاستعلامات''', r'''Describe matching and transformations instead of repetitive plumbing.''', r'''عبّر عن المطابقة والتحويلات بدل تكرار تفاصيل التنفيذ.''', [r'''with''', r'''with?''', r'''match''', r'''switch''', r'''map''']),
+    KeywordCategory(r'''reactive''', r'''State & events''', r'''الحالة والأحداث''', r'''Describe state, derived values and observable events explicitly.''', r'''عرّف الحالة والقيم المشتقة والأحداث القابلة للمراقبة بوضوح.''', [r'''state''', r'''computed''', r'''watch''', r'''batch''', r'''event''', r'''raise''', r'''once''']),
+    KeywordCategory(r'''quality''', r'''Configuration & tests''', r'''الإعدادات والاختبارات''', r'''Keep configuration, secrets and executable expectations intentional.''', r'''اجعل الإعدادات والأسرار والتوقعات القابلة للاختبار واضحة.''', [r'''config''', r'''secret''', r'''test''']),
+  ]
+
+keywordCategory(name: String) -> String:
+  for category in keywordCategories():
+    if category.words.contains(name): return category.id
+  return ""

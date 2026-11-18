@@ -1725,10 +1725,14 @@ main():
       }
     });
     final deadline = DateTime.now().add(const Duration(seconds: 5));
-    while (published.isEmpty && DateTime.now().isBefore(deadline)) {
+    bool analyzed() => published.any((message) =>
+        message['method'] == 'textDocument/publishDiagnostics' &&
+        (message['params'] as Map)['qudsAnalysisComplete'] == true);
+    while (!analyzed() && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
-    expect(published, isNotEmpty);
+    expect(analyzed(), isTrue,
+        reason: 'Wait for the semantic completion cache');
     final dotted = source.replaceFirst('  print stack', '  print stack.');
     final changed = session.handle({
       'method': 'textDocument/didChange',

@@ -97,6 +97,21 @@ void main() {
     expect(find.text('1 of 12 lessons completed'), findsOneWidget);
     await tester.tap(find.text('Reference'));
     await tester.pumpAndSettle();
+    expect(find.text('Conversions & augmentation'), findsOneWidget);
+    await tester.ensureVisible(find.text('Conversions & augmentation'));
+    await tester.tap(find.text('Conversions & augmentation'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ChoiceChip, 'augment'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'while'), findsNothing);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'augment'));
+    await tester.pumpAndSettle();
+    final code =
+        tester.widget<SelectableText>(find.byType(SelectableText).first);
+    expect(code.textSpan, isNotNull);
+    expect(code.textSpan!.children!.length, greaterThan(1));
+    await tester.ensureVisible(find.text('All categories'));
+    await tester.tap(find.text('All categories'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'augment');
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, 'augment'));
@@ -126,6 +141,18 @@ void main() {
       await tester.tap(find.text(title).last);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: title);
+      if (title == 'المرجع') {
+        final category = find.text('التحويلات والإضافة');
+        await tester.ensureVisible(category);
+        await tester.tap(category);
+        await tester.pumpAndSettle();
+        final word = find.widgetWithText(ChoiceChip, 'to?');
+        await tester.ensureVisible(word);
+        await tester.tap(word);
+        await tester.pumpAndSettle();
+        expect(find.byType(SelectableText), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
     }
   });
 

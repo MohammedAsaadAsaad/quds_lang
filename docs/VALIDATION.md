@@ -1159,3 +1159,54 @@ Final verification on Dart 3.13.7:
 - `dart test --reporter expanded`: **605 pass, zero failures/skips**, runner
   **7m56s**. Final focused rerun after typed-data re-export correction: **8 pass,
   9s**; final root `dart analyze`: **No issues found**.
+
+### Academy colored examples and categorized reference (2026-11-18)
+
+- Added twelve bilingual purpose-oriented categories. All 111 keyword entries
+  appear exactly once. Search supports the complete catalog from the overview
+  and the selected category after navigation. Unsupported `deferred` remains
+  explicitly identified; example fragments are identified as such.
+- Quds code panels use selectable rich text with distinct lexical colors. The
+  pure-Quds display scanner preserves original characters, including Unicode,
+  escapes, raw/triple strings, line comments and nested block comments. It does
+  not parse or execute user code. Interpolation keeps its surrounding string color.
+- `python3 examples/flutter_app/quds_academy/tool/check_core.py`: **5 Quds suites
+  pass**, including source reconstruction for every reference example, incomplete
+  snippets, lexical distinctions, and exact category membership.
+- `dart test test/academy_interop_test.dart --reporter expanded`: **8 pass**, **26s**.
+  Extended native String coverage with actual Arabic and UTF-16 surrogate
+  `codeUnitAt` execution. Its signature and completion entry were missing and
+  are now registered; the approved syntax is unchanged.
+- All **6 Quds UI/content modules** generate against real Flutter source APIs.
+  Generated main Dart source analysis: **zero errors**, the existing unused
+  unprefixed typed-data import warning and two Flutter 3.50 deprecation infos;
+  exit **2**. This is source verification, not engine execution.
+- Desktop and phone widget scenarios now cover category selection, filtered
+  words, rich spans, Arabic and text scaling. They remain **unexecuted here**:
+  the Flutter engine artifact download is unavailable. No visual/browser/device
+  validation is claimed. The project owner separately reported the previous
+  application version running successfully on their own setup.
+- The first full suite exposed an existing test synchronization defect: the live
+  completion test treated the early `quds/semanticTokensReady` notification as
+  completed semantic analysis. It now waits for `publishDiagnostics` with
+  `qudsAnalysisComplete: true` before editing. Completion content and the <200ms
+  response requirement remain unchanged. The focused corrected test passes.
+- The complete affected compiler test file was rerun after correcting that
+  synchronization: `dart test test/compiler_test.dart --reporter expanded`:
+  **70 pass, 3m40s**. No completion-content or latency assertion was removed.
+- Supplementary web-target check: compile a Quds program importing the actual
+  display scanner with `dart compile js`, then execute with Node. Result:
+  **`Quds colors JS OK`**, preserving Arabic, keyword tokens and source text.
+- Analysis of all six generated application modules (with generated SDK bundles
+  resolved at their actual relative paths): **zero errors**, **3 warnings**
+  (redundant typed-data imports and a non-null assertion), **2 deprecation infos**,
+  exit **2**. These existing warnings are distinct from the clean compiler-root
+  `dart analyze` result.
+- Final `dart format .`: **84 files, zero changes**. Final compiler-root
+  `dart analyze`: **No issues found**. Keyword synchronization check and
+  `git diff --check`: pass.
+- Full sweep `dart test --reporter expanded`: **604 pass, 1 failure**, **9m48s**.
+  The sole failure is the synchronization issue described above; the entire
+  affected **70-test file subsequently passes** with the correction. All other
+  tests in that sweep passed, including executable Quds SDK/math conformance.
+  A second full 605-test sweep was not performed after the test-only correction.

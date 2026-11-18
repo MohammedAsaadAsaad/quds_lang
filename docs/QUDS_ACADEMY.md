@@ -37,8 +37,9 @@ claim that all 115 language rules have been implemented.
 
 ## Verification and continuation
 
-Three executable Quds suites independently validate real SQL behavior, all lesson
-demonstration results and bilingual keyword coverage without Flutter. The root
+Five executable Quds suites independently validate real SQL behavior, all lesson
+demonstration results, bilingual keyword/category coverage and lossless syntax colors
+without Flutter. The root
 Dart suite runs compiler and SDK conformance, including existing Quds math suites.
 Exact recorded results are in `docs/VALIDATION.md`.
 
@@ -58,3 +59,24 @@ and any target native platform before asserting visual or platform readiness.
 
 Keep changes incremental: fix any compiler regression with a reproducing Quds
 case; do not replace the interface or SQL implementation with Dart to bypass it.
+
+## Guided reference and syntax colors
+
+The next UI iteration adds twelve purpose-oriented categories covering all 111
+reference entries exactly once. The flow is category → word → explanation and
+colored example, with a category return action and scoped bilingual search.
+Conversion/augmentation, safe resources, concurrency, composition and reactive
+state have dedicated categories, making advanced facilities discoverable alongside
+basics. Existing unsupported markers remain visible; this is documentation
+organization, not a change to approved language syntax or support status.
+
+All code panels use `SelectableText.rich` with Quds-generated spans. The small
+pure-Quds display scanner preserves the original characters, supports ordinary,
+raw and triple strings, line and nested block comments, numeric and keyword
+styles, and tolerates fragments. It is deliberately a presentation component,
+not a second compiler/interpreter. Interpolation remains string-colored.
+
+This exposed missing metadata for Dart's `String.codeUnitAt(int)`. Its actual
+native signature is now registered in the language's string member surface and
+completion list. Executable compiler regressions cover Arabic and UTF-16 surrogate
+code units; no new Quds syntax was introduced.

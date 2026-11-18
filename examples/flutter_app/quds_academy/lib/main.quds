@@ -6,6 +6,8 @@ use dart:typed_data
 use src.catalog
 use src.keywords
 use src.progress
+use src.code_colors
+use src.reference_design
 
 
 
@@ -107,6 +109,7 @@ class AcademyState extends State<Academy>:
   var page: int = 0
   var currentLesson: int = 0
   var currentKeyword: int = 0
+  var currentCategory: String = ""
   var choice: int = -1
   var query: String = ""
   var output: String = ""
@@ -453,9 +456,26 @@ class AcademyState extends State<Academy>:
     onTap: () -> openLesson(index),
     child: Row(children: [Icon((if (done): (Icons.check_circle_rounded) else: (Icons.play_circle_outline_rounded)), color: (if (done): (brand()) else: (muted(context))), size: 23.0), SizedBox(width: 12.0), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text((if (arabic): (lesson.titleAr) else: (lesson.titleEn)), style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.0, color: ink(context))), SizedBox(height: 3.0), Text(tr("{lesson.minutes} min", "{lesson.minutes} دقائق"), style: TextStyle(fontSize: 10.0, color: muted(context)))]))])))
 
+  codeText(code: String) -> TextSpan:
+    names: List<String> = []
+    for entry in reference:
+      names.add(entry.name)
+    spans: List<InlineSpan> = []
+    for piece in colorizeCode(code, names):
+      var color = Color(0xFFD3EDDF)
+      if piece.kind == "keyword": color = Color(0xFFC4ABFF)
+      else if piece.kind == "string": color = Color(0xFFF0CE8B)
+      else if piece.kind == "number": color = Color(0xFFF5A8BC)
+      else if piece.kind == "comment": color = Color(0xFF91ADA7)
+      else if piece.kind == "type": color = Color(0xFF7CDBD5)
+      else if piece.kind == "function": color = Color(0xFF9AD3FF)
+      else if piece.kind == "operator": color = Color(0xFFB5C8EB)
+      spans.add(TextSpan(text: piece.text, style: TextStyle(color: color)))
+    return TextSpan(children: spans)
+
   codePanel(context: BuildContext, code: String) -> Widget:
     return Container(decoration: BoxDecoration(color: night(),
-    borderRadius: BorderRadius.circular(18.0)), padding: EdgeInsets.all(20.0), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.code_rounded, color: Color(0xFF9BCAB3), size: 18.0), SizedBox(width: 9.0), Text("QUDS", style: TextStyle(fontFamily: "JetBrainsMono", color: Color(0xFF9BCAB3), fontSize: 10.0, letterSpacing: 1.8)), Spacer(), IconButton(tooltip: tr("Copy example", "نسخ المثال"), onPressed: () -> Clipboard.setData(ClipboardData(text: code)), icon: Icon(Icons.copy_rounded, size: 16.0, color: Color(0xFFA5BDB1)))]), SizedBox(height: 10.0), SingleChildScrollView(scrollDirection: Axis.horizontal, child: SelectableText(code, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 12.0, color: Color(0xFFD3EDDF), height: 1.9)))])))
+    borderRadius: BorderRadius.circular(18.0)), padding: EdgeInsets.all(20.0), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.code_rounded, color: Color(0xFF9BCAB3), size: 18.0), SizedBox(width: 9.0), Text("QUDS", style: TextStyle(fontFamily: "JetBrainsMono", color: Color(0xFF9BCAB3), fontSize: 10.0, letterSpacing: 1.8)), Spacer(), IconButton(tooltip: tr("Copy example", "نسخ المثال"), onPressed: () -> Clipboard.setData(ClipboardData(text: code)), icon: Icon(Icons.copy_rounded, size: 16.0, color: Color(0xFFA5BDB1)))]), SizedBox(height: 10.0), SingleChildScrollView(scrollDirection: Axis.horizontal, child: SelectableText.rich(codeText(code), style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 12.0, color: Color(0xFFD3EDDF), height: 1.9)))])))
 
   lessonContent(context: BuildContext) -> Widget:
     lesson = catalog[currentLesson]
@@ -503,38 +523,44 @@ class AcademyState extends State<Academy>:
     decoration: InputDecoration(labelText: tr("Choose a lesson", "اختر درسًا"),
     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.0))), items: [for index in 0..<catalog.length: DropdownMenuItem<int>(value: index, child: Text((if (arabic): (catalog[index].titleAr) else: (catalog[index].titleEn)), overflow: TextOverflow.ellipsis))], onChanged: onLessonSelected), SizedBox(height: 24.0), AnimatedSwitcher(duration: motion(context, 220), child: lessonContent(context))])
 
+  chooseCategory(id: String) -> void:
+    update = () -> :
+      currentCategory = id
+      query = ""
+      search.clear()
+    setState(update)
+
   referencePage(context: BuildContext, width: double) -> Widget:
+    categories = keywordCategories()
+    categoryCards: List<Widget> = []
+    var categoryTitle = tr("All categories", "كل التصنيفات")
+    var categoryPurpose = tr("Discover what each part of Quds makes possible.", "اكتشف ما الذي يتيحه كل جانب من قدس.")
+    for category in categories:
+      if category.id == currentCategory:
+        categoryTitle = (if (arabic): (category.arabic) else: (category.english))
+        categoryPurpose = (if (arabic): (category.purposeAr) else: (category.purposeEn))
+      preview = category.words.take(4).join(" · ")
+      card = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.auto_awesome_outlined, color: brand()), Spacer(), Text("{category.words.length}", style: TextStyle(color: muted(context), fontFamily: "JetBrainsMono"))]), SizedBox(height: 14.0), heading(context, (if (arabic): (category.arabic) else: (category.english)), 18.0), SizedBox(height: 8.0), prose(context, (if (arabic): (category.purposeAr) else: (category.purposeEn))), SizedBox(height: 14.0), Text(preview, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 11.0, color: brand()))])
+      categoryCards.add(SizedBox(width: (if (width > 1000.0): ((width - 32.0) / 3.0) else: ((if (width > 620.0): ((width - 16.0) / 2.0) else: (width)))), child: InteractivePanel(onTap: () -> chooseCategory(category.id), child: card)))
     filtered: List<int> = []
     for index in 0..<reference.length:
       entry = reference[index]
-      if (entry.name + entry.english + entry.arabic).toLowerCase().contains(query): filtered.add(index)
+      if currentCategory.isEmpty or keywordCategory(entry.name) == currentCategory:
+        if (entry.name + entry.english + entry.arabic).toLowerCase().contains(query): filtered.add(index)
     chosen = currentKeyword if filtered.contains(currentKeyword) or filtered.isEmpty else filtered.first
     selected = reference[chosen]
     chips: List<Widget> = []
     for index in filtered:
       entry = reference[index]
       choose = () -> :
-        change29 = () -> :
+        updateKeyword = () -> :
           currentKeyword = index
-        setState(change29)
-      chips.add(ChoiceChip(label: Text(entry.name,
-      textDirection: TextDirection.ltr,
-      style: TextStyle(fontFamily: "JetBrainsMono",
-      fontSize: 11.0)), selected: index == chosen, onSelected: (value: bool) -> choose()))
-    details = panel(context,
-    Column(crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [Row(children: [Container(padding: EdgeInsets.all(10.0),
-    decoration: BoxDecoration(color: brand().withValues(alpha: 0.08),
-    borderRadius: BorderRadius.circular(12.0)), child: Icon(Icons.bookmark_border_rounded, color: brand())), SizedBox(width: 14.0), Expanded(child: Text(selected.name, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 29.0, fontWeight: FontWeight.w700, color: ink(context))))]), SizedBox(height: 20.0), prose(context, (if (arabic): (selected.arabic) else: (selected.english))), SizedBox(height: 22.0), Text(tr("IN PRACTICE", "في التطبيق"), style: TextStyle(fontSize: 10.0, letterSpacing: 1.3, color: brand(), fontWeight: FontWeight.w700)), SizedBox(height: 12.0), codePanel(context, selected.example)]))
-    library = Column(crossAxisAlignment: CrossAxisAlignment.start,
-    children: [Text(tr("{filtered.length} keywords", "{filtered.length} كلمة"),
-    style: TextStyle(fontSize: 12.0,
-    color: muted(context))), SizedBox(height: 14.0), Wrap(spacing: 7.0,
-    runSpacing: 8.0, children: chips)])
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [heading(context, tr("A word. A whole possibility.",
-    "كلمة، وإمكانية كاملة."), 30.0), SizedBox(height: 8.0), prose(context,
-    tr("111 words and forms, with explanations and examples. Search in either language.", "111 كلمة وصيغة، مع شرح وأمثلة. ابحث بأي من اللغتين.")), SizedBox(height: 24.0), searchBox(context), SizedBox(height: 24.0), if filtered.isEmpty: emptySearch(context), if filtered.isNotEmpty: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [if width > 800.0: SizedBox(width: 280.0, child: library), if width > 800.0: SizedBox(width: 26.0), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [if width <= 800.0: library, if width <= 800.0: SizedBox(height: 24.0), AnimatedSwitcher(duration: motion(context, 180), child: KeyedSubtree(key: ValueKey(selected.name), child: details))]))])])
+        setState(updateKeyword)
+      chips.add(ChoiceChip(label: Text(entry.name, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 12.0)), selected: index == chosen, onSelected: (value: bool) -> choose()))
+    details = panel(context, Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Text(tr("UNDERSTAND THE WORD", "افهم الكلمة"), style: TextStyle(color: brand(), fontSize: 11.0, fontWeight: FontWeight.w700)), SizedBox(height: 12.0), Text(selected.name, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 30.0, fontWeight: FontWeight.w700, color: ink(context))), SizedBox(height: 18.0), prose(context, (if (arabic): (selected.arabic) else: (selected.english))), if selected.name == "deferred": Padding(padding: EdgeInsets.only(top: 14.0), child: prose(context, tr("Design preview: this directive suffix is not yet accepted by the compiler.", "معاينة للتصميم: لاحقة هذا التوجيه غير مدعومة في المترجم حاليًا."))), SizedBox(height: 24.0), heading(context, tr("See it in Quds", "شاهدها بقدس"), 18.0), SizedBox(height: 8.0), prose(context, tr("A focused syntax example; imports and surrounding declarations may be omitted.", "مثال يركّز على الصياغة؛ قد تُحذف الاستيرادات والتعريفات المحيطة للاختصار.")), SizedBox(height: 12.0), codePanel(context, selected.example)]))
+    library = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(tr("{filtered.length} words · choose one", "{filtered.length} كلمة · اختر كلمة"), style: TextStyle(fontSize: 12.0, color: muted(context))), SizedBox(height: 14.0), Wrap(spacing: 7.0, runSpacing: 8.0, children: chips)])
+    browsing = currentCategory.isNotEmpty or query.isNotEmpty
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [heading(context, tr("Small words. Powerful ideas.", "كلمات موجزة. إمكانيات واسعة."), 30.0), SizedBox(height: 8.0), prose(context, tr("Explore 12 categories and 111 words and forms. Choose a category, then a word, then see it in practice.", "استكشف 12 تصنيفًا و111 كلمة وصيغة. اختر التصنيف، ثم الكلمة، وشاهد كيف تُستخدم.")), SizedBox(height: 24.0), searchBox(context), SizedBox(height: 20.0), if currentCategory.isNotEmpty: Align(alignment: AlignmentDirectional.centerStart, child: TextButton.icon(onPressed: () -> chooseCategory(""), icon: Icon(Icons.grid_view_rounded), label: Text(tr("All categories", "كل التصنيفات")))), if browsing: heading(context, categoryTitle, 22.0), if browsing: SizedBox(height: 6.0), if browsing: prose(context, categoryPurpose), SizedBox(height: 18.0), if not browsing: Wrap(spacing: 16.0, runSpacing: 16.0, children: categoryCards), if browsing and filtered.isEmpty: emptySearch(context), if browsing and filtered.isNotEmpty: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [if width > 800.0: SizedBox(width: 260.0, child: library), if width > 800.0: SizedBox(width: 24.0), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [if width <= 800.0: library, if width <= 800.0: SizedBox(height: 24.0), AnimatedSwitcher(duration: motion(context, 180), child: KeyedSubtree(key: ValueKey(selected.name), child: details))]))])])
 
   progressPage(context: BuildContext) -> Widget:
     rate = completed.length / catalog.length
@@ -579,7 +605,8 @@ class AcademyState extends State<Academy>:
     if page == 1: content = learn(context, available)
     if page == 2: content = referencePage(context, available)
     if page == 3: content = progressPage(context)
-    return SingleChildScrollView(key: PageStorageKey("page-{page}"),
+    scrollSection = currentCategory if page == 2 else ""
+    return SingleChildScrollView(key: PageStorageKey("page-{page}-{scrollSection}"),
     padding: EdgeInsets.all(padding),
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [if notice.isNotEmpty: Container(margin: EdgeInsets.only(bottom: 16.0), padding: EdgeInsets.all(16.0), decoration: BoxDecoration(color: Color(0xFFF8EBDD), borderRadius: BorderRadius.circular(12.0)), child: Text(notice, style: TextStyle(color: Color(0xFF895D36), height: 1.7))), AnimatedSwitcher(duration: motion(context, 240), child: KeyedSubtree(key: ValueKey(page), child: content)), SizedBox(height: 20.0)]))

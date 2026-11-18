@@ -1,0 +1,94 @@
+# Display-only scanner: preserves every source character and tolerates snippets.
+# It neither parses nor executes code. Categories are supplied by the shared guide.
+class CodePiece:
+  text: String required
+  kind: String required
+
+codeLetter(character: String) -> bool:
+  return character == "_" or "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(character) or character.codeUnitAt(0) > 127
+
+codeDigit(character: String) -> bool:
+  return "0123456789".contains(character)
+
+codeStarts(source: String, pattern: String, offset: int) -> bool:
+  return source.substring(offset).startsWith(pattern)
+
+colorizeCode(source: String, keywords: List<String>) -> List<CodePiece>:
+  pieces: List<CodePiece> = []
+  var cursor = 0
+  while cursor < source.length:
+    start = cursor
+    character = source[cursor]
+    var kind = "plain"
+    if character == "#" or codeStarts(source, "//", cursor):
+      kind = "comment"
+      while cursor < source.length and source[cursor] != "\n":
+        cursor += 1
+    else if codeStarts(source, "/*", cursor):
+      kind = "comment"
+      cursor += 2
+      var depth = 1
+      while cursor < source.length and depth > 0:
+        if codeStarts(source, "/*", cursor):
+          depth += 1
+          cursor += 2
+        else if codeStarts(source, "*/", cursor):
+          depth -= 1
+          cursor += 2
+        else: cursor += 1
+    else if character == "\"" or character == "'" or (character == "r" and cursor + 1 < source.length and (source[cursor + 1] == "\"" or source[cursor + 1] == "'")):
+      kind = "string"
+      raw = character == "r"
+      if raw: cursor += 1
+      quote = source[cursor]
+      delimiter = quote * 3 if codeStarts(source, quote * 3, cursor) else quote
+      cursor += delimiter.length
+      var closed = false
+      while cursor < source.length and not closed:
+        if codeStarts(source, delimiter, cursor):
+          cursor += delimiter.length
+          closed = true
+        else if not raw and source[cursor] == "\\":
+          cursor += 1
+          if cursor < source.length: cursor += 1
+        else: cursor += 1
+    else if codeDigit(character):
+      kind = "number"
+      if codeStarts(source, "0x", cursor) or codeStarts(source, "0X", cursor):
+        cursor += 2
+        while cursor < source.length and "0123456789abcdefABCDEF_".contains(source[cursor]):
+          cursor += 1
+      else:
+        cursor += 1
+        while cursor < source.length and (codeDigit(source[cursor]) or source[cursor] == "_"):
+          cursor += 1
+        if cursor + 1 < source.length and source[cursor] == "." and codeDigit(source[cursor + 1]):
+          cursor += 1
+          while cursor < source.length and (codeDigit(source[cursor]) or source[cursor] == "_"):
+            cursor += 1
+        if cursor < source.length and "eE".contains(source[cursor]):
+          var exponent = cursor + 1
+          if exponent < source.length and "+-".contains(source[exponent]): exponent += 1
+          if exponent < source.length and codeDigit(source[exponent]):
+            cursor = exponent + 1
+            while cursor < source.length and (codeDigit(source[cursor]) or source[cursor] == "_"):
+              cursor += 1
+    else if codeLetter(character):
+      cursor += 1
+      while cursor < source.length and (codeLetter(source[cursor]) or codeDigit(source[cursor])):
+        cursor += 1
+      word = source.substring(start, cursor)
+      if cursor < source.length and source[cursor] == "?" and keywords.contains(word + "?"): cursor += 1
+      token = source.substring(start, cursor)
+      if keywords.contains(token): kind = "keyword"
+      else if "ABCDEFGHIJKLMNOPQRSTUVWXYZ".contains(character): kind = "type"
+      else:
+        var next = cursor
+        while next < source.length and " \t".contains(source[next]):
+          next += 1
+        if next < source.length and source[next] == "(": kind = "function"
+    else:
+      cursor += 1
+      if "+-*/%=<>!?:|&.~".contains(character): kind = "operator"
+    pieces.add(CodePiece(source.substring(start, cursor), kind))
+  return pieces

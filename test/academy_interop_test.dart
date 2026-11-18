@@ -14,6 +14,8 @@ void main() {
     \t stays
     """
   print text
+  print "قدس".codeUnitAt(0)
+  print "😀".codeUnitAt(1)
 ''';
     final tokens = const Lexer().tokenize(source);
     expect(tokens.where((t) => t.kind == TokenKind.string).first.lexeme,
@@ -26,7 +28,8 @@ void main() {
       ..writeAsStringSync(compilation.dart);
     final run = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
-    expect(run.stdout, '\\q\\n{unknown}\n{unclosed\nhello {name}\n\\t stays\n');
+    expect(run.stdout,
+        '\\q\\n{unknown}\n{unclosed\nhello {name}\n\\t stays\n1602\n56832\n');
   });
 
   test('nested constructor argument blocks and contextual label compose',

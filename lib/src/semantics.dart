@@ -350,6 +350,7 @@ const _stringMembers = [
   'startsWith',
   'endsWith',
   'substring',
+  'codeUnitAt',
   'toUpperCase',
   'toLowerCase',
   'trim',
@@ -8482,6 +8483,7 @@ class Analyzer {
           'bool'
         ),
       ('String', 'substring') => ([('start', 'int')], 'String'),
+      ('String', 'codeUnitAt') => ([('index', 'int')], 'int'),
       ('String', 'toUpperCase' || 'toLowerCase' || 'trim') => (
           <(String, String)>[],
           'String'

@@ -135,6 +135,7 @@ class SemanticModel {
   final argumentOrder = <CallExpression, List<int>>{};
   final inferredTypeArguments = <CallExpression, List<String>>{};
   final instantiatedParameterTypes = <CallExpression, List<String>>{};
+  final contextualFunctionArguments = <Expression, List<String>>{};
   final instantiatedFunctionValues = <TypeApplication>{};
   final functionValueCalls = <CallExpression>{};
   final nativeArguments = <CallExpression, List<(String?, int)>>{};
@@ -6766,12 +6767,22 @@ class Analyzer {
     final named = top?.namedParameters ?? method!.namedParameters;
     final optional = top?.optionalNames ?? method!.optionalNames;
     final parameters = top?.parameters ?? method!.parameters;
-    final explicit = identical(node, _nativeInstantiationTarget)
+    var explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
         : null;
-    if (formals.isNotEmpty && explicit == null ||
-        symbol.type.contains('@unsupported.') ||
-        parameters.any((p) => p.$2.contains('@unsupported.'))) {
+    if (symbol.type.contains('@unsupported.') ||
+        parameters.any((p) => p.$2.contains('@unsupported.')))
+      error('E910', 'This native function value needs additional conformance',
+          node);
+    final contextual = explicit == null &&
+        formals.isNotEmpty &&
+        _expected != null &&
+        functionTypeParts(nonNullableType(model.resolve(_expected!))) != null;
+    if (contextual) {
+      explicit = _inferNativeFunctionValue(
+          symbol, node, parameters, named, optional, formals);
+    }
+    if (formals.isNotEmpty && explicit == null) {
       error('E910', 'This native function value needs additional conformance',
           node);
     }
@@ -6788,7 +6799,77 @@ class Analyzer {
     final specialized = [
       for (final p in parameters) (p.$1, _substitute(p.$2, substitution))
     ];
-    return '(${nativeFunctionParameters(specialized, named, optional)}) -> ${_substitute(symbol.type, substitution)}';
+    final type =
+        '(${nativeFunctionParameters(specialized, named, optional)}) -> ${_substitute(symbol.type, substitution)}';
+    if (contextual) {
+      final expected = nonNullableType(model.resolve(_expected!));
+      if (!compatible(type, expected))
+        fail('Inferred function type $type is incompatible with $expected',
+            node);
+      model.contextualFunctionArguments[node as Expression] = explicit!;
+    }
+    return type;
+  }
+
+  List<String> _inferNativeFunctionValue(
+      Symbol symbol,
+      Node node,
+      List<(String, String)> parameters,
+      Set<String> named,
+      Set<String> optional,
+      Map<String, String> formals) {
+    final expected =
+        functionTypeParts(nonNullableType(model.resolve(_expected!)))!;
+    final encoded = nativeFunctionParameters(parameters, named, optional);
+    if (!functionParametersCompatible(
+        encoded, expected.$1, (_source, _target) => true))
+      fail(
+          'Function parameter forms do not match the expected signature', node);
+    final source = functionParameters(encoded);
+    final target = functionParameters(expected.$1);
+    final positions = source.where((p) => !p.named).toList();
+    final labels = {for (final p in source.where((p) => p.named)) p.name: p};
+    final fresh = <String, String>{};
+    var freshIndex = 0;
+    for (final name in formals.keys) {
+      String key;
+      do {
+        key = '_QudsContext${freshIndex++}';
+      } while (model.aliases.containsKey(key) ||
+          _scope.lookup(key) != null ||
+          formals.containsKey(key));
+      fresh[name] = key;
+    }
+    final typeParameters = [
+      for (final name in fresh.values) TypeParameter(name, node.span)
+    ];
+    final inferred = <String, String>{};
+    var position = 0;
+    void infer(String pattern, String actual, {bool fromReturn = false}) {
+      pattern = _substitute(pattern, fresh);
+      // Parameter positions supply lower constraints. A wider result context
+      // must not widen an already inferred input type; it is checked afterward.
+      if (fromReturn) pattern = _substitute(pattern, inferred);
+      if (!fresh.values.any(
+          (name) => RegExp('\\b${RegExp.escape(name)}\\b').hasMatch(pattern)))
+        return;
+      if (!_inferGeneric(pattern, actual, inferred, typeParameters))
+        fail('Conflicting contextual types for ${symbol.name}', node);
+    }
+
+    for (final parameter in target) {
+      final original =
+          parameter.named ? labels[parameter.name]! : positions[position++];
+      infer(original.type, parameter.type);
+    }
+    if (expected.$2 != 'void')
+      infer(symbol.type, expected.$2, fromReturn: true);
+    if (fresh.values.any((name) => !inferred.containsKey(name)))
+      error(
+          'E302',
+          'The expected signature does not determine every type argument',
+          node);
+    return [for (final name in formals.keys) inferred[fresh[name]]!];
   }
 
   String functionType(FunctionDeclaration function) {

@@ -3017,6 +3017,7 @@ class DartEmitter {
   }
 
   String quote(String value) => quoteDartString(value);
+  final _emittingContextualFunction = <Expression>{};
   String expression(Expression node,
       {bool constantContext = false, bool opaqueBool = false}) {
     if (identical(node, _replace) && _replaceWith != null) {
@@ -3035,6 +3036,14 @@ class DartEmitter {
         return '${_conversionTarget(conversion)}(${expression(node, opaqueBool: opaqueBool)})';
       } finally {
         _emittingConversions.remove(node);
+      }
+    }
+    final functionArguments = model.contextualFunctionArguments[node];
+    if (functionArguments != null && _emittingContextualFunction.add(node)) {
+      try {
+        return _instantiateNativeValue(node, functionArguments);
+      } finally {
+        _emittingContextualFunction.remove(node);
       }
     }
     // Folding only logical const operators avoids Dart's dead_code warning
@@ -3310,8 +3319,12 @@ class DartEmitter {
   String _functionInstantiation(TypeApplication node) {
     if (!model.instantiatedFunctionValues.contains(node))
       return expression(node.callee);
-    final types = node.arguments.map(_dartType).join(', ');
-    if (node.callee case MemberAccess member when member.nullAware) {
+    return _instantiateNativeValue(node.callee, node.arguments);
+  }
+
+  String _instantiateNativeValue(Expression callee, List<String> arguments) {
+    final types = arguments.map(_dartType).join(', ');
+    if (callee case MemberAccess member when member.nullAware) {
       // Dart cannot instantiate a nullable generic function value. Capture the
       // receiver once, then instantiate the non-null bound method in its arm.
       final receiver = '_qgi${_temps++}';
@@ -3319,7 +3332,7 @@ class DartEmitter {
       final name = model.references[member]?.dartName ?? member.name;
       return '(($type $receiver) => $receiver == null ? null : $receiver.$name<$types>)(${expression(member.object)})';
     }
-    return '${expression(node.callee)}<$types>';
+    return '${expression(callee)}<$types>';
   }
 
   String _member(MemberAccess node, {bool constantContext = false}) {

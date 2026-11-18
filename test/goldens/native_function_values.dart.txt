@@ -5,7 +5,8 @@ import 'fixtures/function_values/api.dart' as native;
 import '<repo>/test/fixtures/function_values/api.dart' as _qNative7de5377ac1bc;
 
 
-void main() {
+
+void main() async {
   final int Function(int) _q0 = native.increment;
   final int Function(int) _q1 = native.makeCounter().add;
   final int Function() _q2 = native.Box<int>(4).read;
@@ -32,4 +33,21 @@ void main() {
   print(_q6("generic"));
   print(_q7(14));
   print(((_q9!))(15));
+  final int Function(int) _q10 = native.identity<int>;
+  final int Function(int) _q11 = native.makeCounter().identity<int>;
+  final int? Function([int?]) _q12 = native.genericOptional<int>;
+  final int Function({required int value}) _q13 = native.genericNamed<int>;
+  final int Function(int)? _q14 = ((_qNative7de5377ac1bc.Counter? _qgi1) => _qgi1 == null ? null : _qgi1.identity<int>)(_q8);
+  final Future<int> Function(int) _q15 = native.genericFuture<int>;
+  print(_q10(16));
+  print(_q11(17));
+  print(_q12());
+  print(_q13(value: 18));
+  print(native.invokeRequired(native.identity<int>));
+  print(((_q14!))(19));
+  print((await _q15(20)));
+  final num Function(int) _q16 = native.identity<int>;
+  print(_q16(21));
+  final int? Function() _q17 = native.genericAbsent<int>;
+  print(_q17());
 }

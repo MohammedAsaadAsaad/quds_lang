@@ -18,7 +18,7 @@ A program that can be parsed in two ways is a compiler bug or a required rejecti
 
 Use [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md) for the active nine-track
 plan and [LANGUAGE_READINESS.md](LANGUAGE_READINESS.md) for the 115-rule evidence
-inventory. Remaining work includes bare foreign generic function values and polymorphic callbacks,
+inventory. Remaining work includes unconstrained foreign generic function values, full contextual constraint solving and polymorphic callbacks,
 full callback/record metadata, foreign readonly boundaries, deferred libraries,
 project-wide refactorings, target context in the editor, actual engine/platform
 certification and release gates. A configured CI job is not a passed run.

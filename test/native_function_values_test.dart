@@ -8,7 +8,7 @@ void main() {
         ['run', 'bin/quds.dart', 'test', 'test/native_function_values.quds']);
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     expect('${result.stdout}'.split('\n').where((l) => l.startsWith('ok ')),
-        hasLength(10));
+        hasLength(13));
   });
   for (final expression in ['native.identity']) {
     test('unrepresented native signature stays rejected: $expression', () {
@@ -21,6 +21,16 @@ void main() {
     });
   }
   final invalidCalls = <String, String>{
+    'saved: (num) -> int = native.identity': 'E300',
+    'saved: (int) -> String = native.identity': 'E300',
+    'saved: (String) -> String = native.bounded': 'E300',
+    'saved: (String) -> String = native.Box<num>(1).select': 'E300',
+    'saved: (value: int required) -> int = native.identity': 'E300',
+    'saved: () -> void = native.unused': 'E302',
+    'receiver: native.Counter? = null\n  saved: (int) -> int = receiver?.identity':
+        'E300',
+    'view: readonly native.Counter = native.Counter(1)\n  saved: (int) -> int = view.identity':
+        'E307',
     'saved = native.Counter(1).callback<int>': 'E910',
     'saved = native.bounded<String>': 'E300',
     'saved = native.identity<int, String>': 'E300',
@@ -99,7 +109,7 @@ main():
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
     expect(vm.stdout,
-        '2\n12\n4\n1\n5\n1:7:3:9\n8\n4\n1:7:3:9\n1:2:3:9\nCABD\n13\ngeneric\n14\n15\n');
+        '2\n12\n4\n1\n5\n1:7:3:9\n8\n4\n1:7:3:9\n1:2:3:9\nCABD\n13\ngeneric\n14\n15\n16\n17\nnull\n18\n8\n19\n20\n21\nnull\n');
     final build = await Process.run(Platform.resolvedExecutable,
         ['compile', 'js', output.path, '-o', '${root.path}/program.js']);
     expect(build.exitCode, 0, reason: '${build.stdout}${build.stderr}');

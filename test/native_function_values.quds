@@ -99,3 +99,45 @@ test "explicit generic method values capture receivers and class bounds":
   availableReceiver: native.Counter? = native.Counter(2)
   presentMethod = availableReceiver?.identity<int>
   expect(presentMethod!(11), 11)
+
+test "context specializes generic functions and methods with checked bounds":
+  top: (int) -> int = identity
+  prefixed: (String) -> String = native.identity
+  staticValue: (String) -> String = native.Counter.staticIdentity
+  before = native.receiverCount()
+  bound: (int) -> int = native.makeCounter().identity
+  selected: (int) -> int = native.Box<num>(1).select
+  fixed: (String) -> num = native.fixedResult
+  widenedResult: (int) -> num = native.identity
+  expect(top(12), 12)
+  expect(prefixed("context"), "context")
+  expect(staticValue("static"), "static")
+  expect(bound(3), 3)
+  expect(bound(4), 4)
+  expect(native.receiverCount(), before + 1)
+  expect(selected(5), 5)
+  expect(fixed("input"), 7)
+  expect(widenedResult(21), 21)
+
+test "callback contexts preserve named optional and reordered labels":
+  optional: ([value: int?]) -> int? = native.genericOptional
+  named: (value: int required) -> int = native.genericNamed
+  empty: () -> int? = native.genericAbsent
+  reordered: (second: int required, first: int required) -> int = native.genericPair
+  expect(optional(), null)
+  expect(optional(6), 6)
+  expect(named(value: 7), 7)
+  expect(empty(), null)
+  expect(reordered(first: 1, second: 2), 2)
+  expect(native.invokeRequired(native.identity), 8)
+  expect(native.invokeNamed(native.genericNamed), 4)
+
+test "contextual nullable methods and Future returns keep their types" async:
+  absent: native.Counter? = null
+  absentMethod: ((int) -> int)? = absent?.identity
+  expect(absentMethod, null)
+  receiver: native.Counter? = native.Counter(1)
+  availableMethod: ((int) -> int)? = receiver?.identity
+  expect(availableMethod!(9), 9)
+  future: (int) -> Future<int> = native.genericFuture
+  expect(await future(10), 10)

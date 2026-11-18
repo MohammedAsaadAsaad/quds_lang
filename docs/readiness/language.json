@@ -735,7 +735,7 @@
         "test/native_function_values_test.dart"
       ],
       "known_limits": [
-        "Native required/optional/named values and explicit generic instantiation are covered; bare generic values and polymorphic callback signatures remain restricted."
+        "Native values support explicit and concrete contextual specialization; unconstrained generic values, full constraint solving and polymorphic callback signatures remain restricted."
       ],
       "completion_evidence": {
         "positive": [],

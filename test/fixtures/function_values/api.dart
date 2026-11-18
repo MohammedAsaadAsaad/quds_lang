@@ -61,3 +61,10 @@ String Function(int, {required int last, int middle, int? nullable})
 T bounded<T extends num>(T value) => value;
 T? genericOptional<T>([T? value]) => value;
 T genericNamed<T>({required T value}) => value;
+
+int invokeRequired(int Function(int) callback) => callback(8);
+T genericPair<T>({required T first, required T second}) => second;
+int fixedResult<T>(T value) => 7;
+void unused<T>() {}
+Future<T> genericFuture<T>(T value) async => value;
+T? genericAbsent<T>() => null;

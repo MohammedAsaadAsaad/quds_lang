@@ -1,5 +1,35 @@
 # Compiler validation — latest 2026-11-18
 
+## Contextual native generic function values — 2026-11-18
+
+Handoff updated before coding: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | **13 declarations passed**: explicit and contextual values, checked bounds, required/optional/named callbacks, label reordering, nullable methods and Future results |
+| Focused parser/semantics/native/nullability regressions | **120 passed in 18s** |
+| Generated Dart | Deterministic golden matched; analysis passed; actual VM and JavaScript/Node agreed on 24 output lines |
+| Hygiene and variance | Caller alias `T = String` did not capture native T; broader result context kept the inferred input type; incompatible narrowing was rejected |
+| Negative cases | Missing context remains E910; an undetermined formal in a function context reports E302; conflicts, wrong forms, bad bounds, nullable misuse and readonly receivers rejected at Quds spans |
+| Documentation example | Actual `quds run`: `(int, int) -> int = math.max` printed `7` without explicit type arguments |
+| `dart format .` | 98 files; zero changes |
+| `dart analyze` | No issues found |
+| Full compiler suite | **661 passed; zero failures; zero skips in 9m44s** |
+| Readiness inventory and whitespace | Regenerated, checked, and `git diff --check` passed |
+
+Inferred arguments are emitted explicitly in Dart and use the same nullable
+receiver-capture path as explicit instantiation. Native formal names are
+freshened so inference cannot resolve them through caller aliases. Parameter
+constraints are gathered first; return context fills unresolved parameters and
+the final specialized signature must satisfy function subtyping and all bounds.
+
+This remains conservative structural inference. Full mixed-variance constraint
+solving, recursive instantiate-to-bound, polymorphic callback types and Quds
+function/overload specialization are unfinished. Explicit type arguments remain
+available. No complete language-rule certification or actual Flutter engine
+execution is claimed by these compiler tests.
+
+
 ## Explicit native generic function values — 2026-11-18
 
 The active handoff was updated before implementation in

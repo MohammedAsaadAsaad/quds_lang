@@ -1,6 +1,8 @@
 use fixtures/function_values/api.dart as native
 
-main():
+type T = String
+
+main() async:
   next = native.increment
   add = native.makeCounter().add
   read = native.Box<int>(4).read
@@ -27,3 +29,20 @@ main():
   print staticGeneric("generic")
   print boundedMethod(14)
   print nullableMethod!(15)
+  contextual: (int) -> int = native.identity
+  contextualBound: (int) -> int = native.makeCounter().identity
+  contextualOptional: ([value: int?]) -> int? = native.genericOptional
+  contextualNamed: (value: int required) -> int = native.genericNamed
+  contextualNullable: ((int) -> int)? = nullableReceiver?.identity
+  contextualFuture: (int) -> Future<int> = native.genericFuture
+  print contextual(16)
+  print contextualBound(17)
+  print contextualOptional()
+  print contextualNamed(value: 18)
+  print native.invokeRequired(native.identity)
+  print contextualNullable!(19)
+  print await contextualFuture(20)
+  contextualReturn: (int) -> num = native.identity
+  print contextualReturn(21)
+  contextualAbsent: () -> int? = native.genericAbsent
+  print contextualAbsent()

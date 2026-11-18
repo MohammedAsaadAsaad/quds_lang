@@ -129,8 +129,45 @@ check invalid bounds/arity, applying arguments to a non-generic function, wrong
 call arguments and incompatible annotations. The Dart golden and VM/JavaScript
 program cover specialization and nullable bound methods too.
 
-This does not implement polymorphic generic callback types, inference of bare
-native generic function values from an expected type, or explicit specialization
+This does not implement polymorphic generic callback types, unconstrained bare
+native generic function values, or explicit specialization
 of Quds overload/function values. Those cases remain explicit limitations. The
 approved `name<Type>` grammar is preserved; no new keyword or conversion syntax
 was added. For active handoff state, see LANGUAGE_READINESS_AR.md.
+
+
+## Contextual native function instantiation — 2026-11-18
+
+A concrete expected function signature now supplies native generic arguments:
+
+```quds
+use dart:math as math
+
+main():
+  larger: (int, int) -> int = math.max
+  print larger(3, 7)
+```
+
+This also works in checked callback argument positions, for static/bound methods,
+optional/named signatures, nullable receivers and Future results. Parameter
+constraints are collected by position or label, not named-parameter declaration
+order. An already inferred input type is not widened just because the result
+context is broader. The complete specialized function must still be assignable
+to the expected type, and all declared bounds must hold.
+
+Native formal names are freshened during inference so a caller's `type T =
+String` cannot capture the native function's own T. The emitter records and emits
+explicit type arguments, including nullable bound-method capture, rather than
+asking Dart to independently infer a potentially different instantiation.
+
+Every formal needs evidence. No context retains E910 for unsupported polymorphic
+values; a function context that leaves a formal undetermined reports E302.
+Conflicting signatures, bad bounds or incompatible variance are rejected in
+Quds coordinates. Type aliases and nullable expected function types are resolved
+before matching. Quds generic/overload values and polymorphic callback types are
+still separate unfinished work.
+
+This is structural contextual inference with a final subtype check, not a full
+Dart constraint solver or recursive instantiate-to-bound. More complex mixed
+variance and bound-only solutions can still require explicit type arguments.
+The handoff lists these limits; no complete QUDS-014/045 certification is claimed.

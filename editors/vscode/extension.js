@@ -2,6 +2,7 @@ const vscode = require('vscode');
 const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { URL, fileURLToPath, pathToFileURL } = require('url');
 
 const languageId = 'quds';
 
@@ -150,6 +151,7 @@ function activate(context) {
       },
     }, '(', ','),
     vscode.languages.registerCodeLensProvider(languageId, {
+      onDidChangeCodeLenses: client.semanticRefresh.event,
       provideCodeLenses(document) {
         return client.codeLenses(document);
       },
@@ -378,16 +380,16 @@ function serverCommand(documentPath) {
     return { command: configured.map(String), cwd: undefined, env: process.env };
   }
   const starts = [];
+  if (documentPath) starts.push(path.dirname(documentPath));
   for (const folder of vscode.workspace.workspaceFolders ?? []) {
     starts.push(folder.uri.fsPath);
   }
-  if (documentPath) starts.push(path.dirname(documentPath));
   const dart = resolveDart();
   for (const start of starts) {
     const root = packageRoot(start);
     if (!root || !dart) continue;
     const binary = cliBinary(root);
-    if (fs.existsSync(binary)) {
+    if (freshCli(root)) {
       return {
         command: [binary, 'lsp'],
         cwd: root,
@@ -520,6 +522,27 @@ function packageRoot(start) {
     if (fs.existsSync(bin) && fs.existsSync(pubspec)) {
       const text = fs.readFileSync(pubspec, 'utf8');
       if (/^name:\s*quds_lang\s*$/m.test(text)) return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  dir = path.resolve(start);
+  seen.clear();
+  while (dir && !seen.has(dir)) {
+    seen.add(dir);
+    const config = path.join(dir, '.dart_tool', 'package_config.json');
+    if (fs.existsSync(config)) {
+      try {
+        const entry = JSON.parse(fs.readFileSync(config, 'utf8')).packages
+          .find((item) => item.name === 'quds_lang');
+        if (entry) {
+          const root = fileURLToPath(new URL(entry.rootUri, pathToFileURL(config)));
+          const spec = path.join(root, 'pubspec.yaml');
+          if (fs.existsSync(path.join(root, 'bin', 'quds.dart')) &&
+              fs.existsSync(spec) && /^name:\s*quds_lang\s*$/m.test(fs.readFileSync(spec, 'utf8'))) return root;
+        }
+      } catch (_) { /* Unresolved pub config falls back to the installed CLI. */ }
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
@@ -1012,12 +1035,13 @@ class QudsClient {
   }
 
   async codeLenses(document) {
+    const version = document.version;
     try {
       await this.sync(document);
       const lenses = await this.request('textDocument/codeLens', {
         textDocument: { uri: document.uri.toString() },
       });
-      if (!Array.isArray(lenses)) return [];
+      if (document.version !== version || !Array.isArray(lenses)) return [];
       return lenses.map((lens) => {
         const command = lens.command || {};
         return new vscode.CodeLens(

@@ -1244,3 +1244,35 @@ Final verification on Dart 3.13.7:
   not establish real widget state preservation or renderer behavior. The
   implementation is scoped to `quds run` / VS Code **Quds: Run**; the existing
   F5/debug-adapter path remains separate. See `docs/FLUTTER_LIVE_UPDATES.md`.
+
+### Academy editor launch actions and compiler selection (2026-11-18)
+
+- `dart test test/editor_actions_test.dart --reporter expanded`: **4 pass**,
+  runner **under 1s**. The actual Academy entry parses in recovery mode with
+  **zero parser errors**, including its nested named argument blocks. All three
+  launch actions are available immediately with background analysis enabled.
+- The same suite verifies actions despite missing packages/type errors and
+  unrelated syntax errors, removes them when `main` is removed, and handles
+  unopened files without resolving their imports.
+- The Node fixture selects an external project's `quds_lang` compiler using
+  absolute/relative package URIs and Unicode/space paths, rejects stale compiled
+  executables in favor of current sources, reuses fresh executables, tolerates
+  invalid package configs, and ignores obsolete CodeLens responses. Direct
+  `node test/editor/vscode_actions.cjs`: **VSCODE ACTIONS OK**.
+- `dart test test/editor_growth_test.dart test/editor_diagnostics_test.dart
+  test/editor_test.dart --reporter expanded`: **25 pass**, **12s**, including
+  actual LSP requests and existing VS Code request/diagnostic fixtures.
+- `dart analyze`: **No issues found**. `dart format .`: **87 files, zero changes**.
+  `node --check editors/vscode/extension.js` and `git diff --check`: pass.
+- CodeLens now depends on current source syntax rather than successful semantic
+  analysis. Analysis diagnostics remain enabled independently. VS Code refreshes
+  actions after analysis, prefers the active document's compiler context, and
+  uses source execution while stale executables rebuild in the background.
+- The screenshot alone does not identify the user's installed server version.
+  Current source parsing is verified; an outdated global/custom server remains
+  a plausible explanation for its E100 diagnostics. Updating installed compiler
+  and extension and reloading the window is documented in
+  `docs/EDITOR_RUN_ACTIONS.md`. No desktop VS Code UI execution is claimed.
+- `dart test --reporter expanded`: **612 pass, zero failures**, **7m24s**.
+  Includes the new four action/compiler-selection regressions, existing live
+  Flutter protocol tests, actual LSP/editor suites and Quds math conformance.

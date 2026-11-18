@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'ast.dart' show Program;
 import 'compiler.dart';
 import 'semantics.dart';
 import 'complete.dart';
@@ -486,11 +487,28 @@ class LspSession {
   }
 
   List<Map<String, Object?>> _codeLenses(Map<String, dynamic> params) {
-    final located = _tryCompile(params);
-    if (located == null) return const [];
+    // Launch actions depend on syntax, not successful pub/type analysis. They
+    // must be available immediately while the background analyzer is busy.
+    final opened = _document(params);
+    final uri = opened?.uri ?? _map(params['textDocument'])['uri'];
+    if (uri is! String) return const [];
+    final parsed = Uri.tryParse(uri);
+    if (parsed == null || parsed.scheme != 'file') return const [];
+    final path = parsed.toFilePath();
+    final String text;
+    final Program program;
+    try {
+      text = opened?.text ?? File(path).readAsStringSync();
+      program = Parser(Lexer().tokenize(text, file: path)).parse(partial: true);
+    } on CompilerException {
+      return const [];
+    } on FileSystemException {
+      return const [];
+    }
+    final syntax = Compilation(program, SemanticModel(), '');
     final lenses = <Map<String, Object?>>[];
-    for (final span in mainSpans(located.$1, located.$3)) {
-      final range = _range(located.$3, span);
+    for (final span in mainSpans(syntax, text)) {
+      final range = _range(text, span);
       for (final action in const [
         ('Run', 'quds.run'),
         ('Debug', 'quds.debug'),
@@ -501,7 +519,7 @@ class LspSession {
           'command': {
             'title': action.$1,
             'command': action.$2,
-            'arguments': [located.$2],
+            'arguments': [uri],
           },
         });
       }

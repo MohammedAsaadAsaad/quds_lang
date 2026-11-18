@@ -2,7 +2,16 @@
 
 Highlights `.quds` files, formats the open buffer, and shows compiler diagnostics. A `.quds` file uses the Quds mark in the explorer, the same way a Dart file uses the Dart mark. `#region Title` folds through `#end region`, and the title stays on the collapsed line. Enter on a blank line stays at that column. Enter after a line that ends with `:` indents to the start of the body. Hovering a name or expression shows its type. F12 and Ctrl+click open its declaration in the `.quds` file. Above `main`, Run, Debug, and Profile start the program, stop on a breakpoint in the `.quds` file, and benchmark it. F5 debugs the open file from `main`.
 
-The extension starts the compiled `quds lsp` binary when one is already built for this package, and rebuilds that binary in the background when its sources are newer. Until the first binary exists it starts `dart run bin/quds.dart lsp`. Outside this package it starts `quds lsp`. It walks up from the file when no folder is open. On Linux and macOS it also checks `~/.pub-cache/bin/quds` when that directory is not on `PATH`. On Windows it checks `%LOCALAPPDATA%\Pub\Cache\bin` for `quds.bat`, and `PATH` is split on `;`. It looks for `dart` on `PATH` and in the usual Flutter install locations. Set `quds.serverCommand` to replace that, for example `["dart", "run", "/path/to/bin/quds.dart", "lsp"]`.
+The extension uses a fresh compiled `quds lsp` executable when available. If
+that executable is stale, it starts the current Dart sources immediately and
+rebuilds the executable in the background. An external project can select its
+compiler through `quds_lang` in `.dart_tool/package_config.json`; otherwise the
+extension falls back to the installed `quds` command. An explicit
+`quds.serverCommand` setting takes precedence. The active document's compiler
+context is checked before other workspace folders. On Linux and macOS it also
+checks `~/.pub-cache/bin/quds` when it is not on `PATH`. On Windows it checks
+`%LOCALAPPDATA%\Pub\Cache\bin` for `quds.bat` and splits `PATH` on `;`.
+It looks for Dart on `PATH` and in common Flutter installation locations.
 
 On Linux, `bash install.sh` from the repository root installs Dart if needed, activates the `quds` command, and installs this extension. After `quds` is on `PATH`, `quds install` does that editor step on Linux, macOS, and Windows, including the other VS Code-family editors it finds, Quds highlighting in Android Studio and other JetBrains IDEs, and a Claude Code skill when Claude Code is installed. You can also install the folder with **Developer: Install Extension from Location**. Then open a `.quds` file and run **Format Document**. **Quds: Restart Language Server** starts the server again.
 
@@ -42,3 +51,9 @@ Reload Window** so both the extension and server use the new files. With an
 up-to-date extension already loaded, **Quds: Restart Language Server** reloads the
 server alone. Other LSP clients can render the same Markdown; JetBrains receives
 highlighting from the installer and is not claimed to have this LSP integration.
+
+
+Run / Debug / Profile CodeLens actions appear above `main()` without waiting for
+pub/type analysis. The provider refreshes after analysis and ignores responses
+for older buffer versions. If building succeeds but the editor reports parser
+errors or hides actions, see [editor launch troubleshooting](../../docs/EDITOR_RUN_ACTIONS.md).

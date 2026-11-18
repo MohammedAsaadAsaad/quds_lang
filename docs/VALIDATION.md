@@ -8,7 +8,11 @@ reasons. Golden files checked out with `\r\n`, and
 compiler's backslash dependency. `.gitattributes` now checks text out as LF.
 The portable golden, stdout, and path comparisons also ignore a carriage return
 or separator difference. Ubuntu and macOS portable jobs were already green.
-The Windows job after this commit is the evidence; it is not claimed here.
+On commit `2ba4643`, CI completed with no failing checks. `portable
+(windows-latest)` succeeded and finished at 22:04 Asia/Gaza, as did
+`portable (ubuntu-latest)`, `test`, and `flutter-engine`. One macOS portable
+run succeeded and the duplicate run was cancelled. Run:
+https://github.com/MohammedAsaadAsaad/quds_lang/actions/runs/44386812148
 
 
 ## Quds value adapters, imported overloads, and deferred imports — 2026-11-18

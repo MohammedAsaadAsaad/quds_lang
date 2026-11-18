@@ -210,12 +210,7 @@ void main() {
     expect(retry.exitCode, 73);
     expect(app.file('boot').existsSync(), false,
         reason: 'An invalid initial graph must not launch Flutter');
-    for (final option in [
-      '--release',
-      '--no-hot',
-      '--target=other.dart',
-      '-tother.dart'
-    ]) {
+    for (final option in ['--target=other.dart', '-tother.dart']) {
       final invalid = await Process.run(Platform.resolvedExecutable, [
         File('bin/quds.dart').absolute.path,
         'run',

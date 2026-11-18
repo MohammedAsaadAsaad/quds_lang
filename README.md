@@ -44,6 +44,12 @@ The first command puts `quds` on your `PATH` through the pub cache bin directory
 
 A Flutter app also needs Flutter installed.
 
+Inside a project, `quds pub get` (and all other native pub subcommands) selects
+Dart or Flutter automatically. `quds create . --platforms=linux,web,android` adds
+Flutter platforms in place while preserving Quds sources and existing user files.
+`quds run -d linux` selects `lib/main.quds` automatically; `--debug`, `--profile`
+and `--release` are supported. See [project commands](docs/PROJECT_CLI.md).
+
 [Quds Academy](examples/flutter_app/quds_academy/README.md) is an Arabic/English
 learning application written in Quds, with animated Flutter screens and direct
 `sqlite_plus` integration. Its README records the run commands and the remaining

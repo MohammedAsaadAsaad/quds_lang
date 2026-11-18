@@ -6,8 +6,8 @@ After `flutter pub get` in a Flutter project:
 
 ```sh
 quds run lib/main.quds
-quds run lib/main.quds -- -d chrome
-quds run lib/main.quds -- -d linux
+quds run -d chrome
+quds run -d linux
 ```
 
 The source entry point stays `.quds`. Quds generates the complete dependency
@@ -26,8 +26,11 @@ or build watcher is necessary.
 | `h` | Show keyboard help |
 
 Keys work without Enter in an interactive terminal. Flutter device/tool arguments
-follow `--`. The generated target, machine transport and debug execution mode
-are controlled by Quds; release/profile or target overrides are rejected.
+can be supplied directly; the older `--` separator also works. The generated
+Dart target and machine transport are controlled by Quds. Quds entry targets can
+be selected with `-t`/`--target`. Debug remains the live mode; `--release`,
+`--profile` and `--no-hot` use ordinary Flutter execution without source watching.
+See `docs/PROJECT_CLI.md` for full project commands.
 
 ## What happens on save
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'package:yaml_edit/yaml_edit.dart';
 
 import 'package:quds_lang/quds_lang.dart';
 import 'package:quds_lang/src/flutter_project.dart';
@@ -30,12 +31,14 @@ Future<void> main(List<String> arguments) async {
       _format(arguments);
     case 'create':
       _create(arguments);
+    case 'pub':
+      await _pubCommand(arguments.skip(1).toList());
     case 'add':
-      _pub('add', arguments);
+      await _pub('add', arguments);
     case 'remove':
-      _pub('remove', arguments);
+      await _pub('remove', arguments);
     case 'get':
-      _pub('get', arguments);
+      await _pub('get', arguments);
     case 'doc':
       _doc(arguments);
     case 'migrate':
@@ -109,7 +112,7 @@ String? _helpText(String? topic) {
   const entries = <String, String>{
     'build': 'quds build [--watch] <input.quds>\n'
         '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n',
-    'run': 'quds run <input.quds> [-- <flutter arguments>]\n'
+    'run': 'quds run [input.quds] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
         '    Run the program. An unchanged file reuses the previous build. A Flutter package watches saved Quds files and hot reloads. r: reload, R: restart, q: quit.\n',
     'analyze': 'quds analyze <input.quds>\n'
         '    Compile and run dart analyze on the generated Dart.\n',
@@ -117,13 +120,21 @@ String? _helpText(String? topic) {
         '    Run the test declarations in the file.\n',
     'format': 'quds format <input.quds>\n'
         '    Rewrite the file with the Quds formatter.\n',
-    'create': 'quds create <name>\n'
-        '    Create a directory containing a Quds program.\n'
-        'quds create flutter <name>\n'
-        '    Create a Flutter app whose program is lib/main.quds.\n',
-    'add': 'quds add <package>\n    Forward to dart pub add.\n',
-    'remove': 'quds remove <package>\n    Forward to dart pub remove.\n',
-    'get': 'quds get\n    Forward to dart pub get.\n',
+    'create':
+        'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
+            '    Add Flutter platform support in the current project, preserving Quds sources.\n'
+            'quds create <name>\n'
+            '    Create a directory containing a Quds program.\n'
+            'quds create flutter <name>\n'
+            '    Create a Flutter app whose program is lib/main.quds.\n',
+    'pub':
+        'quds pub [arguments]\n    Forward all pub commands to Dart, or Flutter in a Flutter project.\n',
+    'add':
+        'quds add <package>\n    Forward to native pub add (Flutter in Flutter projects).\n',
+    'remove':
+        'quds remove <package>\n    Forward to native pub remove (Flutter in Flutter projects).\n',
+    'get':
+        'quds get\n    Forward to native pub get (Flutter in Flutter projects).\n',
     'doc': 'quds doc <input.quds>\n'
         '    Print /// documentation.\n'
         'quds doc test <input.quds>\n'
@@ -807,13 +818,87 @@ String _stamp(List<String> paths) {
 }
 
 Future<void> _run(List<String> arguments) async {
-  final separator = arguments.indexOf('--');
-  final flutterArguments =
-      separator < 0 ? <String>[] : arguments.sublist(separator + 1);
-  final command = separator < 0 ? arguments : arguments.sublist(0, separator);
-  _requireQuds(command);
-  if (exitCode != 0) return;
-  final input = File(command[1]);
+  final options = <String>[];
+  String? entry;
+  final rest = arguments.skip(1).toList();
+  if (rest.contains('--help') || rest.contains('-h')) {
+    _help(['help', 'run']);
+    return;
+  }
+  const valued = {
+    '-d',
+    '--device-id',
+    '--dart-define',
+    '--dart-define-from-file',
+    '--flavor',
+    '--web-port',
+    '--web-hostname',
+    '--web-renderer',
+    '--route',
+    '--device-timeout',
+    '--target-platform',
+    '--dds-port',
+    '--host-vmservice-port'
+  };
+  for (var i = 0; i < rest.length; i++) {
+    final arg = rest[i];
+    if (arg == '--') {
+      options.addAll(rest.skip(i + 1));
+      break;
+    }
+    if (arg == '-t' ||
+        arg == '--target' ||
+        arg.startsWith('--target=') ||
+        (arg.startsWith('-t') && !arg.startsWith('--'))) {
+      final String target;
+      if (arg == '-t' || arg == '--target') {
+        if (++i >= rest.length) {
+          stderr.writeln('Missing Quds target.');
+          exitCode = 64;
+          return;
+        }
+        target = rest[i];
+      } else {
+        target =
+            arg.startsWith('--target=') ? arg.substring(9) : arg.substring(2);
+      }
+      if (entry != null || !target.endsWith('.quds')) {
+        stderr.writeln('Specify one .quds entry point.');
+        exitCode = 64;
+        return;
+      }
+      entry = target;
+    } else if (valued.contains(arg)) {
+      options.add(arg);
+      if (++i >= rest.length) {
+        stderr.writeln('Missing value for $arg.');
+        exitCode = 64;
+        return;
+      }
+      options.add(rest[i]);
+    } else if (!arg.startsWith('-') && arg.endsWith('.quds')) {
+      if (entry != null) {
+        stderr.writeln('Specify one .quds entry point.');
+        exitCode = 64;
+        return;
+      }
+      entry = arg;
+    } else {
+      options.add(arg);
+    }
+  }
+  final root = _packageRoot(Directory.current);
+  final input = entry != null
+      ? File(entry)
+      : File(
+          '${root.path}/${File('${root.path}/lib/main.quds').existsSync() ? 'lib/main.quds' : 'main.quds'}');
+  if (entry == null && !input.existsSync()) {
+    stderr.writeln(
+        'No lib/main.quds or main.quds found. Specify a .quds entry point.');
+    exitCode = 64;
+    return;
+  }
+  final flutterArguments = options;
   try {
     if (_flutterPackage(input)) {
       await _runFlutter(input, flutterArguments);
@@ -1066,6 +1151,10 @@ void _format(List<String> arguments) {
 }
 
 void _create(List<String> arguments) {
+  if (arguments.length >= 2 && arguments[1] == '.') {
+    _createPlatforms(arguments.skip(2).toList());
+    return;
+  }
   if (arguments.length >= 2 && arguments[1] == 'flutter') {
     if (arguments.length != 3) {
       stderr.writeln('Usage: quds create flutter <name>');
@@ -1094,6 +1183,105 @@ void _create(List<String> arguments) {
       '  sdk: ">=3.3.0 <4.0.0"\n');
   File('$name/main.quds').writeAsStringSync('main():\n  print "$name"\n');
   stdout.writeln('Created $name');
+}
+
+void _createPlatforms(List<String> arguments) {
+  if (arguments
+      .any((arg) => arg == '--overwrite' || arg == '--overwrite=true')) {
+    stderr.writeln(
+        'create . preserves existing project files; --overwrite is not supported.');
+    exitCode = 64;
+    return;
+  }
+  final flutter = _flutterExecutable();
+  if (flutter == null) {
+    stderr.writeln('Flutter was not found. Install Flutter and retry.');
+    exitCode = 1;
+    return;
+  }
+  final root = Directory.current;
+  final spec = File('${root.path}/pubspec.yaml');
+  String? updatedSpec;
+  String? name;
+  if (spec.existsSync()) {
+    try {
+      final editor = YamlEditor(spec.readAsStringSync());
+      final values = editor.parseAt([]).value as Map;
+      name = values['name'] as String?;
+      final dependencies = values['dependencies'];
+      if (dependencies == null)
+        editor.update(['dependencies'], <String, Object?>{});
+      if (dependencies != null && dependencies is! Map)
+        throw FormatException('dependencies must be a mapping');
+      if (dependencies is! Map ||
+          dependencies['flutter'] is! Map ||
+          dependencies['flutter']['sdk'] != 'flutter') {
+        editor.update(['dependencies', 'flutter'], {'sdk': 'flutter'});
+      }
+      updatedSpec = editor.toString();
+    } catch (error) {
+      stderr.writeln('Cannot update pubspec.yaml: $error');
+      exitCode = 65;
+      return;
+    }
+  }
+  final saved = <String, List<int>?>{
+    for (final path in [
+      'pubspec.yaml',
+      'pubspec.lock',
+      'quds.yaml',
+      'lib/main.dart',
+      'test/widget_test.dart'
+    ])
+      path: File('${root.path}/$path').existsSync()
+          ? File('${root.path}/$path').readAsBytesSync()
+          : null,
+  };
+  final forwarded =
+      arguments.where((arg) => arg != '--pub' && arg != '--no-pub').toList();
+  if (name != null &&
+      !arguments.any(
+          (a) => a == '--project-name' || a.startsWith('--project-name='))) {
+    forwarded.addAll(['--project-name', name]);
+  }
+  final result =
+      Process.runSync(flutter, ['create', ...forwarded, '--no-pub', '.']);
+  stdout.write(result.stdout);
+  stderr.write(result.stderr);
+  for (final entry in saved.entries) {
+    final file = File('${root.path}/${entry.key}');
+    if (entry.value != null) {
+      file.parent.createSync(recursive: true);
+      file.writeAsBytesSync(entry.value!);
+    } else if ({'lib/main.dart', 'test/widget_test.dart'}.contains(entry.key) &&
+        file.existsSync()) {
+      file.deleteSync();
+    }
+  }
+  if (result.exitCode != 0) {
+    exitCode = result.exitCode;
+    return;
+  }
+  if (updatedSpec != null) spec.writeAsStringSync(updatedSpec);
+  final entry = File('${root.path}/lib/main.quds');
+  if (!entry.existsSync()) {
+    entry.parent.createSync(recursive: true);
+    entry.writeAsStringSync(flutterApp);
+  }
+  final configuration = File('${root.path}/quds.yaml');
+  if (!configuration.existsSync())
+    configuration.writeAsStringSync('language: 1.2\n');
+  _ignoreGenerated(root.path);
+  if (!arguments.contains('--no-pub')) {
+    final resolved = Process.runSync(flutter, ['pub', 'get']);
+    stdout.write(resolved.stdout);
+    stderr.write(resolved.stderr);
+    if (resolved.exitCode != 0) {
+      exitCode = resolved.exitCode;
+      return;
+    }
+  }
+  stdout.writeln('Flutter platforms configured. Run: quds run -d <device>');
 }
 
 void _createFlutter(String name) {
@@ -1150,27 +1338,47 @@ bool _flutterPackage(File input) {
   final root = _packageRoot(input.absolute.parent);
   final pubspec = File('${root.path}${Platform.pathSeparator}pubspec.yaml');
   if (!pubspec.existsSync()) return false;
-  return RegExp(r'^\s*sdk:\s*flutter\s*(?:#.*)?$', multiLine: true)
-      .hasMatch(pubspec.readAsStringSync());
+  try {
+    final values = YamlEditor(pubspec.readAsStringSync()).parseAt([]).value;
+    if (values is! Map) return false;
+    for (final section in [
+      'dependencies',
+      'dev_dependencies',
+      'dependency_overrides'
+    ]) {
+      final dependencies = values[section];
+      if (dependencies is Map &&
+          dependencies.values
+              .any((value) => value is Map && value['sdk'] == 'flutter'))
+        return true;
+    }
+  } catch (_) {
+    /* The delegated tool reports malformed project configuration. */
+  }
+  return false;
 }
 
 Future<void> _runFlutter(File input, List<String> arguments) async {
   if (arguments.any((arg) =>
       (arg.startsWith('-t') && !arg.startsWith('--')) ||
-      {
-        '-t',
-        '--target',
-        '--machine',
-        '--no-machine',
-        '--no-hot',
-        '--release',
-        '--profile'
-      }.contains(arg.split('=').first))) {
+      {'-t', '--target', '--machine', '--no-machine'}
+          .contains(arg.split('=').first))) {
     stderr.writeln(
-        'Quds live Flutter runs require debug mode, machine protocol and the generated target.');
+        'Quds controls the generated target and machine protocol. Use a .quds entry point.');
     exitCode = 64;
     return;
   }
+  final modes = arguments
+      .where((arg) => {'--debug', '--profile', '--release'}.contains(arg))
+      .toSet();
+  if (modes.length > 1) {
+    stderr.writeln('Choose one of --debug, --profile or --release.');
+    exitCode = 64;
+    return;
+  }
+  final live = !arguments.contains('--release') &&
+      !arguments.contains('--profile') &&
+      !arguments.contains('--no-hot');
   final flutter = _flutterExecutable();
   if (flutter == null) {
     stderr.writeln('Flutter was not found. Install Flutter and retry.');
@@ -1286,6 +1494,16 @@ Future<void> _runFlutter(File input, List<String> arguments) async {
     return;
   }
   stdout.writeln('Built $relative');
+  if (!live) {
+    final process = await Process.start(
+        flutter, ['run', '-t', relative, ...arguments],
+        workingDirectory: root.path,
+        environment: desktopLaunchEnvironment(Platform.environment),
+        includeParentEnvironment: false,
+        mode: ProcessStartMode.inheritStdio);
+    exitCode = await process.exitCode;
+    return;
+  }
   final process = await Process.start(
     flutter,
     ['run', '--machine', '-t', relative, ...arguments],
@@ -1423,18 +1641,16 @@ String _join(String root, String relative) {
 }
 
 String? _flutterExecutable() {
-  final found = Process.runSync('which', ['flutter']);
-  if (found.exitCode == 0) {
-    final path = (found.stdout as String).trim();
-    if (path.isNotEmpty) return path.split('\n').first;
-  }
+  final found = commandOnPath('flutter');
+  if (found != null) return found;
   final root = Platform.environment['FLUTTER_ROOT'];
-  final home = Platform.environment['HOME'];
+  final home = homeDirectory();
+  final executable = Platform.isWindows ? 'flutter.bat' : 'flutter';
   final candidates = [
-    if (root != null && root.isNotEmpty) '$root/bin/flutter',
+    if (root != null && root.isNotEmpty) '$root/bin/$executable',
     if (home != null && home.isNotEmpty)
-      '$home/development/flutter/bin/flutter',
-    if (home != null && home.isNotEmpty) '$home/flutter/bin/flutter',
+      '$home/development/flutter/bin/$executable',
+    if (home != null && home.isNotEmpty) '$home/flutter/bin/$executable',
     '/snap/bin/flutter',
   ];
   for (final path in candidates) {
@@ -1443,17 +1659,30 @@ String? _flutterExecutable() {
   return null;
 }
 
-void _pub(String command, List<String> arguments) {
-  final args = ['pub', command, ...arguments.skip(1)];
-  if (command != 'get' && arguments.length < 2) {
-    stderr.writeln('Usage: quds $command <package>');
-    exitCode = 64;
+Future<void> _pub(String command, List<String> arguments) async {
+  await _pubCommand([command, ...arguments.skip(1)]);
+}
+
+Future<void> _pubCommand(List<String> arguments) async {
+  var directory = Directory.current.path;
+  for (var i = 0; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if ((arg == '-C' || arg == '--directory') && i + 1 < arguments.length)
+      directory = arguments[++i];
+    else if (arg.startsWith('-C') && arg.length > 2)
+      directory = arg.substring(2);
+    else if (arg.startsWith('--directory=')) directory = arg.substring(12);
+  }
+  final flutter = _flutterPackage(File('$directory/_pub.quds'));
+  final executable = flutter ? _flutterExecutable() : _dartExecutable();
+  if (executable == null) {
+    stderr.writeln('Flutter was not found. Install Flutter and retry.');
+    exitCode = 1;
     return;
   }
-  final result = Process.runSync(_dartExecutable(), args);
-  stdout.write(result.stdout);
-  stderr.write(result.stderr);
-  exitCode = result.exitCode;
+  final result = await Process.start(executable, ['pub', ...arguments],
+      mode: ProcessStartMode.inheritStdio);
+  exitCode = await result.exitCode;
 }
 
 void _doc(List<String> arguments) {

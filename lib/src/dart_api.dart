@@ -1636,11 +1636,10 @@ class _Parser {
       if (generic) _group('<', '>');
       final signature = _parameters(const {}, const {}, allowUnnamed: true);
       final function =
-          '(${signature.$1.map((p) => p.$2).join(', ')}) -> $buffer';
+          '(${nativeFunctionParameters(signature.$1, signature.$3, signature.$4)}) -> $buffer';
       final nullable = peek == '?';
       if (nullable) i++;
-      if (generic || signature.$2 > 0 || signature.$3.isNotEmpty)
-        return '@unsupported.function';
+      if (generic) return '@unsupported.function';
       return nullable ? nullableType(function) : function;
     }
     return buffer.toString();

@@ -28,3 +28,41 @@ test "null-aware native method values preserve null":
   maybe: native.Counter? = null
   saved = maybe?.add
   expect(saved, null)
+
+test "optional values preserve native defaults and explicit null":
+  saved: ([value: int = 0]) -> int = native.optional
+  nullable: ([value: int? = null]) -> int? = native.nullableOptional
+  one: (int) -> int = native.optional
+  noArgs: () -> int = native.optional
+  expect(one(8), 8)
+  expect(noArgs(), 5)
+  expect(saved(), 5)
+  expect(saved(12), 12)
+  expect(nullable(), 9)
+  expect(nullable(null), null)
+
+test "named function values and bound methods preserve labels":
+  selected: (value: int required) -> int = native.named
+  mixed: (int, last: int required, middle: int = 0, nullable: int? = null) -> String = native.combine
+  counter = native.Counter(10)
+  positional = counter.optionalAdd
+  named = counter.namedAdd
+  expect(selected(value: 6), 6)
+  expect(mixed(1, last: 3), "1:7:3:9")
+  expect(mixed(1, nullable: null, last: 3), "1:7:3:null")
+  expect(positional(), 15)
+  reduced: (other: int required) -> int = counter.namedAdd
+  expect(reduced(other: 4), 16)
+  expect(named(other: 4), 16)
+  expect(named(extra: 8, other: 4), 22)
+
+test "native callback metadata retains optional and named parameters":
+  expect(native.invokeOptional(native.optional), 8)
+  expect(native.invokeNamed(native.named), 4)
+  expect(native.invokeCombined(native.combine), "1:7:3:9")
+
+test "function expression and reordered arguments execute once in source order":
+  native.resetTrace()
+  answer = native.makeNamed()(native.tick("A", 1), last: native.tick("B", 3), middle: native.tick("D", 2))
+  expect(answer, "1:2:3:9")
+  expect(native.trace(), "CABD")

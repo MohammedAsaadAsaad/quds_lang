@@ -54,7 +54,7 @@ No row is declared complete merely because a sample or the full test suite passe
 | QUDS-042 | static and class const. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-043 | Native Quds code generation targeting .quds. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-044 | Generated file management and optional part/part of. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
-| QUDS-045 | Function types (Args) -> Return. | partial | [test/native_function_values.quds](../test/native_function_values.quds), [test/native_function_values_test.dart](../test/native_function_values_test.dart) — Required positional native values are covered; generic, named and optional function values remain E910. |
+| QUDS-045 | Function types (Args) -> Return. | partial | [test/native_function_values.quds](../test/native_function_values.quds), [test/native_function_values_test.dart](../test/native_function_values_test.dart) — Non-generic native required/optional/named function values are covered; generic function values remain E910. |
 | QUDS-046 | Callable classes via call. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-047 | with and with? replace Dart cascades. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-048 | assert (dev), require (input), check (state). | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
@@ -123,7 +123,7 @@ No row is declared complete merely because a sample or the full test suite passe
 | QUDS-111 | Left-to-right, exactly-once evaluation including defaults. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-112 | Deterministic name resolution; reject ambiguous symbols/extensions. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-113 | Type compatibility with no unsafe implicit conversions, union/generic/readonly checks. | partial | [test/generic_methods_test.dart](../test/generic_methods_test.dart), [test/generic_constraints_test.dart](../test/generic_constraints_test.dart), [test/dart_generics_test.dart](../test/dart_generics_test.dart) — Readonly/foreign/generic boundary certification remains partial. |
-| QUDS-114 | Dart-facing API compatibility and explicit wrappers for Quds-only features. | partial | [test/native_function_values.quds](../test/native_function_values.quds), [test/native_function_values_test.dart](../test/native_function_values_test.dart) — Native callbacks with generic, named or optional parameter shapes remain restricted. |
+| QUDS-114 | Dart-facing API compatibility and explicit wrappers for Quds-only features. | partial | [test/native_function_values.quds](../test/native_function_values.quds), [test/native_function_values_test.dart](../test/native_function_values_test.dart) — Generic native callbacks remain restricted; non-generic optional/named callback metadata has executable coverage. |
 | QUDS-115 | Uniform syntax and unambiguous parser for calls, properties, blocks. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 
 ## Current explicit E910 boundaries
@@ -131,13 +131,14 @@ No row is declared complete merely because a sample or the full test suite passe
 This is a source inventory, not a claim that every deliberate rejection is a missing feature.
 Readonly erasure constraints and unsupported signatures must remain rejected until proved safe.
 
-- [lib/src/semantics.dart:1061](../lib/src/semantics.dart#L1061): `'E910', 'A generic superclass needs explicit type arguments in this subset', type); }`
-- [lib/src/semantics.dart:1068](../lib/src/semantics.dart#L1068): `'E910', 'Synthesizing a constructor over explicit parent constructors needs further conformance', type); }`
-- [lib/src/semantics.dart:6282](../lib/src/semantics.dart#L6282): `'E910', 'This readonly shape has no runtime guard for an erased or Dart boundary', node); }`
-- [lib/src/semantics.dart:6745](../lib/src/semantics.dart#L6745): `error('E910', 'This native function value needs additional conformance', node); } return '(${parameters.map((p) => p.$2).join(', ')}) -> ${symbol.type}';`
-- [lib/src/semantics.dart:7193](../lib/src/semantics.dart#L7193): `'E910', 'No supported generic native signature for ${callee.name}', callee); }`
-- [lib/src/semantics.dart:7555](../lib/src/semantics.dart#L7555): `error('E910', 'This Dart callback signature needs additional conformance', node); final named = top?.namedParameters ?? member!.namedParameters; final optional = top?.optionalNames ?? member!.optionalNames;`
-- [lib/src/semantics.dart:7653](../lib/src/semantics.dart#L7653): `'E910', 'A later optional Dart positional argument requires earlier values explicitly', node); layout.add((named.contains(name) ? name : null, order[i]));`
+- [lib/src/semantics.dart:1062](../lib/src/semantics.dart#L1062): `'E910', 'A generic superclass needs explicit type arguments in this subset', type); }`
+- [lib/src/semantics.dart:1069](../lib/src/semantics.dart#L1069): `'E910', 'Synthesizing a constructor over explicit parent constructors needs further conformance', type); }`
+- [lib/src/semantics.dart:6284](../lib/src/semantics.dart#L6284): `'E910', 'This readonly shape has no runtime guard for an erased or Dart boundary', node); }`
+- [lib/src/semantics.dart:6744](../lib/src/semantics.dart#L6744): `error('E910', 'This native function value needs additional conformance', node); } return '(${nativeFunctionParameters(parameters, named, optional)}) -> ${symbol.type}';`
+- [lib/src/semantics.dart:7192](../lib/src/semantics.dart#L7192): `'E910', 'No supported generic native signature for ${callee.name}', callee); }`
+- [lib/src/semantics.dart:7559](../lib/src/semantics.dart#L7559): `'E910', 'A later optional positional argument requires earlier values explicitly', node); layout.add((p.named ? p.name : null, order[i]));`
+- [lib/src/semantics.dart:7580](../lib/src/semantics.dart#L7580): `error('E910', 'This Dart callback signature needs additional conformance', node); final named = top?.namedParameters ?? member!.namedParameters; final optional = top?.optionalNames ?? member!.optionalNames;`
+- [lib/src/semantics.dart:7678](../lib/src/semantics.dart#L7678): `'E910', 'A later optional Dart positional argument requires earlier values explicitly', node); layout.add((named.contains(name) ? name : null, order[i]));`
 - [lib/src/emitter.dart:1135](../lib/src/emitter.dart#L1135): `'E910', 'No sound runtime readonly boundary for $type', _span ?? const SourceSpan(1, 1, 1)); }`
 
 ## Exit gate

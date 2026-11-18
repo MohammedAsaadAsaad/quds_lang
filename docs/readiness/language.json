@@ -735,7 +735,7 @@
         "test/native_function_values_test.dart"
       ],
       "known_limits": [
-        "Required positional native values are covered; generic, named and optional function values remain E910."
+        "Non-generic native required/optional/named function values are covered; generic function values remain E910."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1894,7 +1894,7 @@
         "test/native_function_values_test.dart"
       ],
       "known_limits": [
-        "Native callbacks with generic, named or optional parameter shapes remain restricted."
+        "Generic native callbacks remain restricted; non-generic optional/named callback metadata has executable coverage."
       ],
       "completion_evidence": {
         "positive": [],

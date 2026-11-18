@@ -1,5 +1,28 @@
 # Compiler validation — latest 2026-11-18
 
+## Optional/named native function values — 2026-11-18
+
+- Primary Quds suite expanded to eight declarations, with omission/null,
+  bound methods, native callbacks, reduced compatible signatures and exactly-once
+  callee/argument evaluation in source order.
+- Focused parser/semantics/native-generic/value suite: **86 passed in 15s**.
+- Full `dart test --reporter expanded`: **645 passed, one golden mismatch in
+  10m17s**. The new function-value call path added unnecessary parentheses to
+  existing identifier calls. Preserved the previous rendering rather than
+  rewriting the existing golden.
+- After that correction, `dart test test/function_nullability_test.dart
+  test/native_function_values_test.dart --reporter expanded`: **37 passed in
+  10s**, including the previously failing deterministic golden, real Dart
+  analysis and VM/JavaScript execution. The complete suite was not rerun after
+  this rendering-only correction.
+- `dart analyze`: no issues; `dart format .`: 98 files, zero changes before
+  the correction; changed emitter formatted afterward. Readiness audit and
+  `git diff --check` passed.
+- Generic native function values and complete Quds declaration/lambda optional
+  parameter parity are not claimed. Type-level defaults describe optionality;
+  native declaration defaults remain authoritative at runtime.
+
+
 ## Language readiness, target environments and Flutter tooling — 2026-11-18
 
 Working plan: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md). Inventory:

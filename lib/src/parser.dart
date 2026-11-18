@@ -967,14 +967,40 @@ class Parser {
   String groupedType() {
     expect(TokenKind.leftParen, '(');
     final parameters = <String>[];
+    String functionParameter({bool optional = false}) {
+      String? label;
+      if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+        label = name().lexeme;
+        take();
+      }
+      if (optional && label == null)
+        fail('An optional positional parameter needs name: Type');
+      final type = typeName();
+      var rendered = label == null ? type : '$label: $type';
+      if (word('required')) {
+        if (label == null || optional) fail('required needs a named parameter');
+        take();
+        rendered += ' required';
+      }
+      if (match(TokenKind.equals)) {
+        if (label == null || rendered.endsWith(' required'))
+          fail('A default needs an optional parameter');
+        expression();
+        // A type records omission, not a replacement declaration default.
+        if (!optional) rendered += ' = missing';
+      }
+      return optional ? '[$rendered]' : rendered;
+    }
+
     if (!at(TokenKind.rightParen)) {
       do {
-        if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
-          final parameter = name();
-          take();
-          parameters.add('${parameter.lexeme}: ${typeName()}');
+        if (match(TokenKind.leftBracket)) {
+          do {
+            parameters.add(functionParameter(optional: true));
+          } while (match(TokenKind.comma) && !at(TokenKind.rightBracket));
+          expect(TokenKind.rightBracket, ']');
         } else {
-          parameters.add(typeName());
+          parameters.add(functionParameter());
         }
       } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
     }

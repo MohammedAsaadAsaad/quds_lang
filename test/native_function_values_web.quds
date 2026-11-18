@@ -8,3 +8,13 @@ main():
   print add(2)
   print read()
   print native.receiverCount()
+  optional: ([value: int]) -> int = native.optional
+  mixed: (int, last: int required, middle: int = 0, nullable: int? = null) -> String = native.combine
+  print optional()
+  print mixed(1, last: 3)
+  print native.invokeOptional(native.optional)
+  print native.invokeNamed(native.named)
+  print native.invokeCombined(native.combine)
+  native.resetTrace()
+  print native.makeNamed()(native.tick("A", 1), last: native.tick("B", 3), middle: native.tick("D", 2))
+  print native.trace()

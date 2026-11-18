@@ -135,6 +135,7 @@ class SemanticModel {
   final argumentOrder = <CallExpression, List<int>>{};
   final inferredTypeArguments = <CallExpression, List<String>>{};
   final instantiatedParameterTypes = <CallExpression, List<String>>{};
+  final functionValueCalls = <CallExpression>{};
   final nativeArguments = <CallExpression, List<(String?, int)>>{};
 
   /// Const expressions that were evaluated. Short-circuited operands are absent.
@@ -2688,9 +2689,28 @@ class Analyzer {
     if (functionTypeParts(type) != null) {
       final (parameters, returns) = _functionParts(type);
       if (parameters.trim().isNotEmpty) {
-        for (final part in _splitTypes(parameters)) {
-          final declared = functionParameterType(part);
-          validateType(declared, node, allowVoid: false);
+        final names = <String>{};
+        var optionalPosition = false, namedPosition = false;
+        for (final part in functionParameters(parameters)) {
+          if (part.name != null && !names.add(part.name!))
+            error('E503', 'Duplicate function-type parameter: ${part.name}',
+                node);
+          if (part.named) {
+            if (optionalPosition)
+              error(
+                  'E503',
+                  'Optional positional and named parameters cannot be combined',
+                  node);
+            namedPosition = true;
+          } else {
+            if (namedPosition || optionalPosition && !part.optional)
+              error(
+                  'E503',
+                  'Required positional parameters must precede optional/named parameters',
+                  node);
+            optionalPosition |= part.optional;
+          }
+          validateType(part.type, node, allowVoid: false);
         }
       }
       validateType(returns, node, allowVoid: true);
@@ -4607,22 +4627,8 @@ class Analyzer {
       if (functionTypeParts(from) != null && functionTypeParts(to) != null) {
         final (fromParams, fromReturn) = _functionParts(from);
         final (toParams, toReturn) = _functionParts(to);
-        final fromList = _splitTypes(fromParams);
-        final toList = _splitTypes(toParams);
-        if (fromList.length == toList.length) {
-          var paramsOk = true;
-          for (var i = 0; i < fromList.length; i++) {
-            if (!compatible(
-                _parameterType(toList[i]), _parameterType(fromList[i]))) {
-              paramsOk = false;
-              break;
-            }
-          }
-          if (paramsOk &&
-              (toReturn == 'void' || compatible(fromReturn, toReturn))) {
-            return true;
-          }
-        }
+        return functionParametersCompatible(fromParams, toParams, compatible) &&
+            (toReturn == 'void' || compatible(fromReturn, toReturn));
       }
       return false;
     }
@@ -4834,12 +4840,8 @@ class Analyzer {
     final left = functionTypeParts(from);
     final right = functionTypeParts(to);
     if (left != null && right != null) {
-      final a = _splitTypes(left.$1).map(functionParameterType).toList();
-      final b = _splitTypes(right.$1).map(functionParameterType).toList();
-      if (a.length != b.length) return false;
-      for (var i = 0; i < a.length; i++) {
-        if (!_contractTypeCompatible(b[i], a[i], bounds, next)) return false;
-      }
+      if (!functionParametersCompatible(left.$1, right.$1,
+          (a, b) => _contractTypeCompatible(a, b, bounds, next))) return false;
       return right.$2 == 'void' ||
           _contractTypeCompatible(left.$2, right.$2, bounds, next);
     }
@@ -6737,15 +6739,12 @@ class Analyzer {
     final optional = top?.optionalNames ?? method!.optionalNames;
     final parameters = top?.parameters ?? method!.parameters;
     if (formals.isNotEmpty ||
-        named.isNotEmpty ||
-        optional.isNotEmpty ||
-        symbol.optionalParameters != 0 ||
         symbol.type.contains('@unsupported.') ||
         parameters.any((p) => p.$2.contains('@unsupported.'))) {
       error('E910', 'This native function value needs additional conformance',
           node);
     }
-    return '(${parameters.map((p) => p.$2).join(', ')}) -> ${symbol.type}';
+    return '(${nativeFunctionParameters(parameters, named, optional)}) -> ${symbol.type}';
   }
 
   String functionType(FunctionDeclaration function) {
@@ -7306,23 +7305,7 @@ class Analyzer {
       }
       if (functionTypeParts(type) == null)
         fail('Value is not callable', callee);
-      final (parameters, returns) = _functionParts(type);
-      final expected = parameters.isEmpty
-          ? <String>[]
-          : splitTypeList(parameters).map(functionParameterType).toList();
-      if (node.arguments.length != expected.length) {
-        fail('Callable expects ${expected.length} arguments', node);
-      }
-      for (var i = 0; i < expected.length; i++) {
-        final argument = expression(node.arguments[i].value);
-        if (expected[i].isNotEmpty &&
-            !_acceptExpected(node.arguments[i].value, argument, expected[i])) {
-          fail('Argument type $argument is incompatible with ${expected[i]}',
-              node.arguments[i]);
-        }
-      }
-      model.argumentOrder[node] = List.generate(expected.length, (i) => i);
-      return returns;
+      return _functionValueCall(node, type);
     }
     final symbol = _scope.lookup(callee.name);
     if (symbol == null && _thisType != null) {
@@ -7433,23 +7416,7 @@ class Analyzer {
             'E308',
             'A nullable value is used where a non-null value is required',
             callee);
-      final (parameters, returns) = _functionParts(callable);
-      final expected = parameters.trim().isEmpty
-          ? <String>[]
-          : splitTypeList(parameters).map(functionParameterType).toList();
-      if (node.arguments.length != expected.length) {
-        fail('Callable expects ${expected.length} arguments', node);
-      }
-      for (var i = 0; i < expected.length; i++) {
-        final argument = expression(node.arguments[i].value);
-        if (expected[i].isNotEmpty &&
-            !_acceptExpected(node.arguments[i].value, argument, expected[i])) {
-          fail('Argument type $argument is incompatible with ${expected[i]}',
-              node.arguments[i]);
-        }
-      }
-      model.argumentOrder[node] = List.generate(expected.length, (i) => i);
-      return returns;
+      return _functionValueCall(node, callable);
     }
     final invoked = _instanceCall(symbol);
     if (invoked != null) {
@@ -7541,6 +7508,64 @@ class Analyzer {
       }
     }
     return symbol.type;
+  }
+
+  String _functionValueCall(CallExpression node, String type) {
+    final (text, returns) = _functionParts(type);
+    final parameters = functionParameters(text);
+    final order = List<int>.filled(parameters.length, -1);
+    final positional = [
+      for (var i = 0; i < parameters.length; i++)
+        if (!parameters[i].named) i
+    ];
+    var position = 0;
+    var sawNamed = false;
+    for (var i = 0; i < node.arguments.length; i++) {
+      final argument = node.arguments[i];
+      int target;
+      if (argument.name == null) {
+        if (sawNamed)
+          fail('Positional arguments must precede named arguments', argument);
+        if (position >= positional.length)
+          fail('Too many positional arguments', argument);
+        target = positional[position++];
+      } else {
+        sawNamed = true;
+        target = parameters.indexWhere((p) => p.name == argument.name);
+        if (target < 0) fail('Unknown argument: ${argument.name}', argument);
+      }
+      if (order[target] >= 0) fail('Duplicate argument', argument);
+      final expected = parameters[target].type;
+      final saved = _expected;
+      _expected = expected;
+      final actual = expression(argument.value);
+      _expected = saved;
+      if (!_acceptExpected(argument.value, actual, expected))
+        fail('Argument type $actual is incompatible with $expected', argument);
+      order[target] = i;
+    }
+    var omitted = false;
+    final layout = <(String?, int)>[];
+    for (var i = 0; i < parameters.length; i++) {
+      final p = parameters[i];
+      if (order[i] < 0) {
+        if (!p.optional)
+          fail('Missing required argument: ${p.name ?? i + 1}', node);
+        if (!p.named) omitted = true;
+        continue;
+      }
+      if (!p.named && omitted)
+        error(
+            'E910',
+            'A later optional positional argument requires earlier values explicitly',
+            node);
+      layout.add((p.named ? p.name : null, order[i]));
+    }
+    model.types[node.callee] = type;
+    model.functionValueCalls.add(node);
+    model.nativeArguments[node] = layout;
+    model.argumentOrder[node] = order;
+    return returns;
   }
 
   String _nativeCall(CallExpression node, Symbol symbol,
@@ -8035,6 +8060,7 @@ class Analyzer {
     final expectedFunction = functionTypeParts(pattern);
     final actualFunction = functionTypeParts(actual);
     if (expectedFunction != null && actualFunction != null) {
+      if (parameters.isEmpty) return compatible(actual, pattern);
       final left = _splitTypes(expectedFunction.$1);
       final right = _splitTypes(actualFunction.$1);
       if (left.length != right.length) return false;

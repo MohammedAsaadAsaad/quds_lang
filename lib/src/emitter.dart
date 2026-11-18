@@ -1537,11 +1537,19 @@ class DartEmitter {
     }
     if (functionTypeParts(type) != null) {
       final (parameters, returns) = _splitFunctionType(type);
-      final args = parameters.trim().isEmpty
-          ? ''
-          : splitTypeList(parameters)
-              .map((item) => _dartType(functionParameterType(item)))
-              .join(', ');
+      final shapes = functionParameters(parameters);
+      final parts = <String>[
+        for (final p in shapes.where((p) => !p.named && !p.optional))
+          _dartType(p.type),
+      ];
+      final optional = shapes.where((p) => !p.named && p.optional).toList();
+      final named = shapes.where((p) => p.named).toList();
+      if (optional.isNotEmpty)
+        parts.add('[${optional.map((p) => _dartType(p.type)).join(', ')}]');
+      if (named.isNotEmpty)
+        parts.add(
+            '{${named.map((p) => '${p.optional ? '' : 'required '}${_dartType(p.type)} ${p.name}').join(', ')}}');
+      final args = parts.join(', ');
       return '${_dartType(returns)} Function($args)';
     }
     if (type.startsWith('(') && type.endsWith(')')) {
@@ -3707,6 +3715,13 @@ class DartEmitter {
     // original async scope and a Future result is not accidentally flattened.
     final parameters = <String>[];
     final inputs = <String>[];
+    if (model.functionValueCalls.contains(node)) {
+      final callable = '_qnf${_temps++}';
+      parameters.add('${_dartType(model.types[node.callee]!)} $callable');
+      inputs.add(target);
+      target = callable;
+      member = null;
+    }
     if (member != null &&
         model.types[member.object] != 'prefix' &&
         model.references[member.object]?.namespace == null) {
@@ -3730,6 +3745,14 @@ class DartEmitter {
   }
 
   String call(CallExpression node, {bool constantContext = false}) {
+    if (model.functionValueCalls.contains(node)) {
+      final target = expression(node.callee);
+      return _nativeInvocation(
+          node,
+          node.callee is Identifier ? target : '($target)',
+          null,
+          constantContext);
+    }
     if (model.references[node.callee] == null) {
       final callee = expression(node.callee, constantContext: constantContext);
       final arguments = node.arguments.map((argument) {

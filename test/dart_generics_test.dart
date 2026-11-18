@@ -19,7 +19,7 @@ void main() {
     'NativeAbstract<int>()': 'E300',
     'nativeRecord()': 'E910',
     'nativeGenericCallback((value: int) -> value)': 'E910',
-    'nativeOptionalCallback((value: int) -> value)': 'E910',
+    'nativeOptionalCallback((value: int) -> value)': 'E300',
     'saved = nativeIdentity': 'E910',
     'saved = NativeChild<int>([1]).identity': 'E910',
     'nativeBounded<String>("wrong")': 'E300',

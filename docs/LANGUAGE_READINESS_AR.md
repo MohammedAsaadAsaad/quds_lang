@@ -174,3 +174,20 @@ dart test --reporter expanded
 
 النتائج الدقيقة في [VALIDATION.md](VALIDATION.md). ارفع كل دفعة مختبرة إلى
 `origin/main` وفق تعليمات المستودع، ولا تنشر البيئة أو الحزمة ضمنيًا.
+
+
+## Function-value metadata follow-up — 2026-11-18
+
+Native non-generic function and method values now preserve optional positional
+and required/optional named parameters, including nested native callback types.
+Structural annotations use the approved parameter grammar, for example
+`([value: int = 0]) -> int` and `(value: int required) -> int`.
+A default in a function type records optionality; it does not replace the
+underlying callable's default. Native defaults execute in Dart when omitted;
+explicit null remains explicit null. Function subtyping checks parameter kinds,
+labels, omission and contravariance. Reordered calls capture the callable and
+arguments exactly once in source order. Earlier optional/named limitations in
+this document are superseded for this slice. Generic function values, richer
+record signatures and full Quds declaration/lambda parameter-form parity remain
+unfinished. Tests: native_function_values.quds (eight declarations), fourteen
+negative cases, deterministic Dart golden, actual Dart analysis and VM/JS runs.

@@ -23,3 +23,22 @@ integration test expands a Quds list/object and evaluates an Arabic-named bindin
 After updating the installed extension, use **Developer: Reload Window**. Detailed
 measurement scope and current limits are in `docs/EDITOR_PERFORMANCE_DEBUG_AR.md`
 in the repository; raw measurements are under `bench/results/editor_latency.json`.
+
+## English keyword help
+
+Hover over a recognized keyword to see its purpose, constraints and a Quds
+example. The same Markdown appears in the completion details pane for keywords
+and statement snippets. The source is
+[docs/KEYWORD_REFERENCE.md](../../docs/KEYWORD_REFERENCE.md).
+
+The server handles this help from its bundled catalog, including in incomplete
+buffers, without compiling or loading SDK metadata. Contextual identifier names
+retain symbol hover; comments, strings and member access are excluded. The
+approved but currently unsupported `deferred` directive is explicitly labeled in
+its documentation. Keyword help does not add language syntax.
+
+Update the installed compiler and run `quds install`, then use **Developer:
+Reload Window** so both the extension and server use the new files. With an
+up-to-date extension already loaded, **Quds: Restart Language Server** reloads the
+server alone. Other LSP clients can render the same Markdown; JetBrains receives
+highlighting from the installer and is not claimed to have this LSP integration.

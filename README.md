@@ -65,7 +65,7 @@ In VS Code, **Quds: Show Generated Dart** opens the source and the generated fil
 
 ## Editor
 
-The [`editors/vscode`](editors/vscode) extension highlights `.quds` files, formats the open buffer, and shows compiler diagnostics. Hover shows a name's type. F12 and Ctrl+click open its declaration. Above `main`, Run, Debug, and Profile start the program, stop on a `.quds` line, and benchmark it.
+The [`editors/vscode`](editors/vscode) extension highlights `.quds` files, formats the open buffer, and shows compiler diagnostics. Hover shows a name's type. Keywords show an English purpose, constraints, and Quds example in hover and completion details; see the [keyword reference](docs/KEYWORD_REFERENCE.md). F12 and Ctrl+click open its declaration. Above `main`, Run, Debug, and Profile start the program, stop on a `.quds` line, and benchmark it.
 
 Inside this repository the editor starts `dart run bin/quds.dart lsp`. Elsewhere it starts `quds lsp`. `quds.serverCommand` replaces that command.
 

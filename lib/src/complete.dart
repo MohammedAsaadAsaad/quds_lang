@@ -1,4 +1,5 @@
 import 'source_index.dart';
+import 'keyword_docs_data.dart';
 import 'lexer.dart';
 import 'type_syntax.dart';
 import 'dart:convert';
@@ -102,9 +103,15 @@ List<Map<String, Object?>> completeAt({
     add(_plain(type, 7, 'type', range, sort: '1'));
   }
   final atStatement = _statementStart(source, word.start);
-  for (final keyword in _keywords) {
+  for (final keyword in keywordDocumentation.keys) {
     if (atStatement && _snippets.containsKey(keyword)) continue;
-    add(_plain(keyword, 14, 'keyword', range, sort: '3', commit: false));
+    add({
+      ..._plain(keyword, 14, 'keyword', range, sort: '3', commit: false),
+      'documentation': {
+        'kind': 'markdown',
+        'value': keywordDocumentation[keyword]!
+      },
+    });
   }
   if (atStatement) {
     final indent = _indent(source, word.start);
@@ -114,6 +121,10 @@ List<Map<String, Object?>> completeAt({
         'label': entry.key,
         'kind': 15,
         'detail': 'snippet',
+        'documentation': {
+          'kind': 'markdown',
+          'value': keywordDocumentation[entry.key]!
+        },
         'filterText': entry.key,
         'sortText': '0${entry.key}',
         'insertTextFormat': 2,
@@ -122,6 +133,211 @@ List<Map<String, Object?>> completeAt({
     }
   }
   return items.values.toList();
+}
+
+/// Keyword help works on incomplete buffers without invoking semantic analysis.
+/// Contextual words are recognized only in their grammatical surroundings.
+Map<String, Object?>? keywordHoverAt(String source, int line, int character) {
+  final cursor = _stringIndexAt(source, line, character);
+  final word = _word(source, cursor);
+  if (word.start == word.end || !_inCode(source, word.start)) return null;
+  final dot = _dotBefore(source, word.start);
+  if (dot != null) {
+    final receiverPrefix =
+        source.substring(_lineStart(source, dot), dot).trimRight();
+    if (word.read(source) != 'new' ||
+        receiverPrefix.isNotEmpty &&
+            RegExp(r'[\w\p{L}\p{N}?)\]]$', unicode: true)
+                .hasMatch(receiverPrefix)) return null;
+  }
+  var end = word.end;
+  var key = source.substring(word.start, end);
+  if ((key == 'to' || key == 'with') &&
+      end < source.length &&
+      source[end] == '?') {
+    key += '?';
+    end++;
+  }
+  final documentation = keywordDocumentation[key];
+  if (documentation == null) return null;
+  final before =
+      source.substring(_lineStart(source, word.start), word.start).trim();
+  final lineEnd = source.indexOf('\n', end);
+  final after =
+      source.substring(end, lineEnd < 0 ? source.length : lineEnd).trim();
+  if (!_keywordContext(key, before, after)) return null;
+  if ((key == 'get' || key == 'set' && after.startsWith('(')) &&
+      !_insideProperty(source, word.start)) return null;
+  return {
+    'contents': {'kind': 'markdown', 'value': documentation},
+    'range': _range(source, word.start, end)['range'],
+  };
+}
+
+bool _insideProperty(String source, int start) {
+  final currentLine = _lineStart(source, start);
+  final indent = start - currentLine;
+  var end = currentLine;
+  while (end > 0) {
+    final previous = _lineStart(source, end - 1);
+    final line = source.substring(previous, end).trimRight();
+    final text = line.trimLeft();
+    if (text.isNotEmpty &&
+        !text.startsWith('#') &&
+        !text.startsWith('//') &&
+        line.length - text.length < indent) {
+      return RegExp(r'^(?:(?:private|protected)\s+)?property\s+')
+          .hasMatch(text);
+    }
+    end = previous;
+  }
+  return false;
+}
+
+bool _keywordContext(String key, String before, String after) {
+  // Reserved words have no identifier interpretation. All remaining words are
+  // contextual: in particular value/get/map may be names of user symbols.
+  const reserved = {
+    'and',
+    'as',
+    'async',
+    'await',
+    'break',
+    'catch',
+    'class',
+    'const',
+    'continue',
+    'do',
+    'else',
+    'enum',
+    'false',
+    'for',
+    'if',
+    'in',
+    'is',
+    'late',
+    'match',
+    'not',
+    'null',
+    'or',
+    'return',
+    'super',
+    'switch',
+    'this',
+    'throw',
+    'true',
+    'try',
+    'var',
+    'while',
+    'with',
+    'with?',
+    'yield',
+  };
+  if (reserved.contains(key)) return true;
+  bool starts(String pattern) =>
+      RegExp('^(?:$pattern)', unicode: true).hasMatch(after);
+  bool follows(String pattern) => RegExp('(?:$pattern)\u0024').hasMatch(before);
+  // An assignment, type annotation, call or bare reference to a contextual
+  // identifier must not be mistaken for a keyword declaration.
+  switch (key) {
+    case 'to':
+    case 'to?':
+      return before.isNotEmpty &&
+          starts(r'[\p{L}_$]') &&
+          !follows(r'(?:^|\s)(?:var|const|return|print)|[=(:,]');
+    case 'map':
+    case 'set':
+      return (after == ':' || starts(r':\s*(?:#|//|/\*)')) ||
+          key == 'set' && before.isEmpty && starts(r'\(');
+    case 'get':
+      return before.isEmpty && starts(r'(?:=|:)');
+    case 'cast':
+      return follows(r'\b(?:implicit|explicit)') && starts(r'\(');
+    case 'implicit':
+    case 'explicit':
+      return before.isEmpty && starts(r'cast\b');
+    case 'value':
+    case 'abstract':
+    case 'base':
+    case 'final':
+    case 'singleton':
+      return RegExp(
+              r'^(?:(?:abstract|base|interface|final|sealed|mixin|value|singleton)\s+)*class\b')
+          .hasMatch(after);
+    case 'sealed':
+      return starts(r'(?:class|type)\b');
+    case 'interface':
+    case 'mixin':
+    case 'augment':
+    case 'extend':
+    case 'annotation':
+    case 'type':
+      return before.isEmpty && starts(r'[\p{L}_$]');
+    case 'all':
+    case 'isolate':
+      return follows(r'\bawait') && starts(':');
+    case 'of':
+      return before == 'part' && after.isNotEmpty;
+    case 'show':
+    case 'hide':
+    case 'deferred':
+      return RegExp(r'^(?:use|export)\s+').hasMatch(before);
+    case 'wraps':
+      return RegExp(r'^type\s+').hasMatch(before) && starts(r'[\p{L}_$]');
+    case 'extends':
+    case 'implements':
+    case 'on':
+      return RegExp(r'\b(?:class|interface|mixin)\s+').hasMatch(before);
+    case 'out':
+      return follows(r'[<,]') && starts(r'[\p{L}_$]');
+    case 'sync':
+      return follows(r'\)') && starts(r'\*');
+    case 'required':
+      return before.contains(':') && (after.isEmpty || starts(r'[,)=]'));
+    case 'by':
+      return starts(r'lazy\s*:') && before.contains(':');
+    case 'lazy':
+      return follows(r'\bby') && starts(':');
+    case 'capture':
+      return starts(r'\([^)]*\)\s*->');
+    case 'nameof':
+      return after.isNotEmpty && !starts(r'(?:=|:|,|\))');
+    case 'new':
+      return follows(r'\.') && starts(r'\(');
+    case 'group':
+      return before == 'task' && starts(':') ||
+          before.isEmpty && starts('["\u0027]');
+    case 'test':
+      return before.isEmpty && starts('["\u0027]');
+    case 'task':
+      return before.isEmpty && starts(r'group\s*:');
+    case 'once':
+    case 'batch':
+      return before.isEmpty && starts(':');
+    case 'let':
+      return follows(r'\b(?:if|while)') && starts(r'[\p{L}_$]');
+    case 'step':
+      return before.startsWith('for ') && before.contains(' while ');
+    case 'secret':
+      return before == 'config' && starts(r'[\p{L}_$]');
+    case 'where':
+      return before.isNotEmpty &&
+          !follows(r'[=(:,]') &&
+          (starts(':') ||
+              RegExp(r'^[\p{L}_$][^=]*=', unicode: true).hasMatch(after) ||
+              RegExp(r'^[\p{L}_$]\w*\s+is\s+', unicode: true).hasMatch(after));
+    case 'when':
+      return after.isNotEmpty && !starts(r'[=:(]');
+    case 'readonly':
+      return starts(r'[\p{L}_$]');
+    default:
+      // Statement/declaration introductions (including member modifiers).
+      return (before.isEmpty ||
+              RegExp(r'^(?:(?:private|protected|static|const|factory|shadow)\s*)+$')
+                  .hasMatch(before)) &&
+          after.isNotEmpty &&
+          !starts(r'[=:(,]');
+  }
 }
 
 /// Signature information uses the same cached scope and native metadata as completion.
@@ -195,54 +411,6 @@ Map<String, Object?>? signatureHelpAt(
     'activeParameter': active
   };
 }
-
-const _keywords = [
-  'and',
-  'as',
-  'async',
-  'augment',
-  'cast',
-  'explicit',
-  'implicit',
-  'await',
-  'break',
-  'catch',
-  'class',
-  'const',
-  'continue',
-  'do',
-  'else',
-  'enum',
-  'event',
-  'false',
-  'for',
-  'if',
-  'in',
-  'is',
-  'late',
-  'match',
-  'nameof',
-  'not',
-  'null',
-  'once',
-  'or',
-  'private',
-  'protected',
-  'raise',
-  'readonly',
-  'required',
-  'return',
-  'shadow',
-  'switch',
-  'throw',
-  'true',
-  'try',
-  'use',
-  'var',
-  'while',
-  'with',
-  'yield',
-];
 
 const _snippets = {
   'if': 'if \${1:condition}:\n  \$0',
@@ -2173,6 +2341,7 @@ bool _inCode(String source, int index) {
         continue;
       }
       if (triple &&
+          unit == quote &&
           cursor + 2 < source.length &&
           source.codeUnitAt(cursor + 1) == quote &&
           source.codeUnitAt(cursor + 2) == quote) {

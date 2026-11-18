@@ -1052,3 +1052,43 @@ SDK_EXPORT_RUN_DEBUG_AR.md explains why the user's import/export/constructor
 syntax was valid, why the binding uses SDK implicit conversion rather than the
 new explicit declaration, the reduced working example and duplicate-conversion
 E310 behavior. No approved syntax or conversion precedence was redesigned.
+
+## 2026-11-18 — English keyword reference and editor tooltips
+
+The English guide was prepared and linked to the owner before editor changes.
+`KEYWORD_REFERENCE.md` contains **111 entries** shared by keyword hover and
+keyword/snippet completion. `KEYWORD_TOOLTIPS_IMPLEMENTATION.md` documents the
+maintenance path, behavior, tests and limits.
+
+Validation on Dart 3.13.7 / Node 24.22.1:
+
+- `python3 tool/sync_keyword_docs.py --check`: pass; generated Markdown matches
+  the guide and every parser `word(...)` spelling has an entry.
+- `dart format .`: **76 files**; final formatting was applied before testing.
+- `dart analyze`: **No issues found**.
+- `dart test test/keyword_docs_test.dart --reporter expanded`: **11 pass**.
+  Covers exact completion/hover Markdown, contextual identifiers and ordinary
+  symbol fallback, UTF-16/safe suffix ranges, strings/comments/member exclusion,
+  triple-string closure, malformed buffers and a 15,000-line buffer. All 110
+  supported example fragments parse; the approved `deferred` example is checked
+  for the current rejection and is explicitly labeled unsupported in its help.
+- `node --check editors/vscode/extension.js`: pass.
+- `node test/editor/vscode_keyword_docs.cjs`: **VSCODE KEYWORD DOCS OK**;
+  Markdown/plain-text completion documentation is preserved without enabling
+  Markdown trust.
+- `dart test --reporter expanded`: **588 pass, zero failures/skips**, runner
+  **6m50s**, wall **6m52.842s**. Includes actual LSP growth/diagnostic tests,
+  Quds math conformance, compiler/CLI execution, conversion/import/debug
+  regressions, memory tests, and the new keyword documentation tests.
+- `git diff --check`: clean.
+
+An earlier full run was intentionally interrupted to include a discovered
+triple-string editor-scanner fix and its regression. The complete result above
+is the subsequent run on the final code, not the interrupted run.
+
+No approved syntax was redesigned. Hover recognition is conservative for
+ambiguous contextual syntax. Keyword help uses bundled data and lexical scanning,
+without compiling or loading SDK metadata on its request path. VS Code rendering
+was tested through its adapter harness; a manual interactive editor session was
+not performed. Update/reinstall the extension with `quds install`, then reload
+the editor window to load both new client and server behavior.

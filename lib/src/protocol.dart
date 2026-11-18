@@ -459,6 +459,11 @@ class LspSession {
     final position = _map(params['position']);
     final line = (position['line'] as num?)?.toInt() ?? 0;
     final character = (position['character'] as num?)?.toInt() ?? 0;
+    final opened = _document(params);
+    if (opened != null) {
+      final keyword = keywordHoverAt(opened.text, line, character);
+      if (keyword != null) return keyword;
+    }
     final located = _tryCompile(params);
     if (located != null) {
       final text = hoverAt(located.$1, located.$3, line + 1, character + 1);
@@ -472,7 +477,6 @@ class LspSession {
         };
       }
     }
-    final opened = _document(params);
     if (opened == null) return null;
     final place = dartPlaceAt(opened.text, line + 1, character + 1);
     if (place == null) return null;

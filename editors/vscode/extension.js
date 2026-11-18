@@ -337,6 +337,13 @@ function completionItem(entry) {
   const kind = Math.max(0, Number(entry.kind || 1) - 1);
   const item = new vscode.CompletionItem(entry.label, kind);
   if (entry.detail) item.detail = entry.detail;
+  if (typeof entry.documentation === 'string') {
+    item.documentation = entry.documentation;
+  } else if (entry.documentation && typeof entry.documentation.value === 'string') {
+    item.documentation = entry.documentation.kind === 'markdown'
+      ? new vscode.MarkdownString(entry.documentation.value)
+      : entry.documentation.value;
+  }
   if (entry.filterText) item.filterText = entry.filterText;
   if (entry.sortText) item.sortText = entry.sortText;
   if (entry.commitCharacters) item.commitCharacters = entry.commitCharacters;

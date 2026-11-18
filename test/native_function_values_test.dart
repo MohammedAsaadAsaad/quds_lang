@@ -92,7 +92,8 @@ main():
     expect(
         normalized,
         File('test/goldens/native_function_values.dart.txt')
-            .readAsStringSync());
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n'));
     expect(compilation.dart,
         compile(input.readAsStringSync(), file: input.path).dart);
     final root = Directory.systemTemp.createTempSync('quds-native-values-web-');
@@ -108,7 +109,7 @@ main():
         reason: '${analysis.stdout}${analysis.stderr}');
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
-    expect(vm.stdout,
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'),
         '2\n12\n4\n1\n5\n1:7:3:9\n8\n4\n1:7:3:9\n1:2:3:9\nCABD\n13\ngeneric\n14\n15\n16\n17\nnull\n18\n8\n19\n20\n21\nnull\n');
     final build = await Process.run(Platform.resolvedExecutable,
         ['compile', 'js', output.path, '-o', '${root.path}/program.js']);
@@ -119,6 +120,7 @@ main():
       '${root.path}/program.js'
     ]);
     expect(js.exitCode, 0, reason: '${js.stderr}');
-    expect(js.stdout, vm.stdout);
+    expect('${js.stdout}'.replaceAll('\r\n', '\n'),
+        '${vm.stdout}'.replaceAll('\r\n', '\n'));
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

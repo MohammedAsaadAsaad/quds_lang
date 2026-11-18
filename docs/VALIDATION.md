@@ -1,5 +1,16 @@
 # Compiler validation — latest 2026-11-18
 
+## Windows portable line endings and import paths — 2026-11-18
+
+`portable (windows-latest)` failed on `91f1ba7` and on this branch for the same
+reasons. Golden files checked out with `\r\n`, and
+`test/target_platform_test.dart` compared a forward-slash temp path with the
+compiler's backslash dependency. `.gitattributes` now checks text out as LF.
+The portable golden, stdout, and path comparisons also ignore a carriage return
+or separator difference. Ubuntu and macOS portable jobs were already green.
+The Windows job after this commit is the evidence; it is not claimed here.
+
+
 ## Quds value adapters, imported overloads, and deferred imports — 2026-11-18
 
 This batch is the cloud-agent work on `cursor/language-completion-b792`, cut from

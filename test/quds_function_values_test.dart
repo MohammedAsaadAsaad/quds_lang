@@ -57,8 +57,11 @@ void main() {
     final result = compile(input.readAsStringSync(), file: input.path);
     expect(
         result.dart, compile(input.readAsStringSync(), file: input.path).dart);
-    expect(result.dart,
-        File('test/goldens/quds_function_values.dart.txt').readAsStringSync());
+    expect(
+        result.dart,
+        File('test/goldens/quds_function_values.dart.txt')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n'));
     final root = Directory.systemTemp.createTempSync('quds-own-values-');
     addTearDown(() => root.deleteSync(recursive: true));
     final output = File('${root.path}/program.dart')
@@ -80,7 +83,7 @@ void main() {
         reason: '${analysis.stdout}${analysis.stderr}');
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
-    expect(vm.stdout,
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'),
         '3\nQuds\n4\n9\ninteger\ntext\n5\nsecond\n6\n7\n8\n10\ninteger\n11\n');
     final js = '${root.path}/program.js';
     final build = await Process.run(
@@ -89,6 +92,7 @@ void main() {
     final node = await Process.run('node',
         ['-e', 'globalThis.self = globalThis; require(process.argv[1]);', js]);
     expect(node.exitCode, 0, reason: '${node.stderr}');
-    expect(node.stdout, vm.stdout);
+    expect('${node.stdout}'.replaceAll('\r\n', '\n'),
+        '${vm.stdout}'.replaceAll('\r\n', '\n'));
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

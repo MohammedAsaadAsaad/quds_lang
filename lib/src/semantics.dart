@@ -118,6 +118,8 @@ class ConversionPlan {
 
 class SemanticModel {
   String library = '';
+  String targetPlatform = 'vm';
+  bool flutter = false;
   final implicitConversions = <Expression, ConversionPlan>{};
   final explicitConversions = <ConversionExpression, ConversionPlan>{};
   final references = <Node, Symbol>{};
@@ -496,7 +498,18 @@ bool supportsReadonlyClass(SemanticModel model, ClassDeclaration node,
 }
 
 class Analyzer {
-  Analyzer({this.library = '<input>', String? file}) : _file = file ?? library;
+  Analyzer(
+      {this.library = '<input>',
+      String? file,
+      this.targetPlatform = 'vm',
+      this.flutter = false})
+      : _file = file ?? library {
+    model.targetPlatform = targetPlatform;
+    model.flutter = flutter;
+  }
+  final String targetPlatform;
+  final bool flutter;
+  bool? compileTimeCondition(Expression node) => _constBool(node);
   final model = SemanticModel();
   final _conversionDefinitions = <FunctionDeclaration, String>{};
 
@@ -1690,7 +1703,7 @@ class Analyzer {
 
   String? _constText(Expression node) {
     if (node is Literal && node.value is String) return node.value as String;
-    if (node is Identifier && node.name == 'platform') return 'vm';
+    if (node is Identifier && node.name == 'platform') return targetPlatform;
     return null;
   }
 
@@ -1699,12 +1712,16 @@ class Analyzer {
     if (path == null || !path.startsWith('dart.library.')) return null;
     const enabled = {
       'dart.library.core',
-      'dart.library.io',
       'dart.library.async',
       'dart.library.collection',
       'dart.library.convert',
       'dart.library.typed_data',
     };
+    if (path == 'dart.library.io') return targetPlatform != 'web';
+    if (path == 'dart.library.html' || path == 'dart.library.js_interop')
+      return targetPlatform == 'web';
+    if (path == 'dart.library.ui')
+      return flutter || targetPlatform == 'flutter';
     return enabled.contains(path);
   }
 
@@ -5399,7 +5416,7 @@ class Analyzer {
         }
         model.references[node] = found;
         _touch(found);
-        return found.type;
+        return _nativeFunctionValue(found, node) ?? found.type;
       }
     }
     final raw = expression(node.object);
@@ -5408,7 +5425,7 @@ class Analyzer {
     if (nested != null && owner?.type != 'prefix') {
       if (owner != null) _touch(owner);
       model.references[node] = nested;
-      return nested.type;
+      return _nativeFunctionValue(nested, node) ?? nested.type;
     }
     final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
     final nullableExtension = isNullableType(type) &&
@@ -5535,8 +5552,18 @@ class Analyzer {
     final sdk = _sdkMember(base, node.name);
     if (sdk != null && model.references[node.object]?.nativeTop?.isType == true)
       fail('Instance member ${node.name} is used on the type', node);
-    if (sdk != null && !sdk.getter)
-      error('E910', 'Native method tear-offs need further conformance', node);
+    if (sdk != null && !sdk.getter) {
+      if (raw.startsWith('readonly ')) {
+        error(
+            'E307',
+            'A readonly reference cannot expose an unchecked native method',
+            node);
+      }
+      final symbol = _dartMemberSymbol(sdk, sdk.type);
+      model.references[node] = symbol;
+      final value = _nativeFunctionValue(symbol, node)!;
+      return node.nullAware ? nullableType(value) : value;
+    }
     if (sdk != null && sdk.getter) {
       model.references[node] = _dartMemberSymbol(sdk, sdk.type);
       final dartGetter = sdk.type;
@@ -6688,15 +6715,8 @@ class Analyzer {
     model.references[node] = symbol;
     _touch(symbol);
     if (symbol.function != null) return functionType(symbol.function!);
-    final native = symbol.nativeTop;
-    if (native != null &&
-        (native.typeParameters.isNotEmpty ||
-            native.namedParameters.isNotEmpty ||
-            native.optionalNames.isNotEmpty))
-      error(
-          'E910',
-          'Native generic or optional/named function tear-offs need further conformance',
-          node);
+    final nativeValue = _nativeFunctionValue(symbol, node);
+    if (nativeValue != null) return nativeValue;
     if (symbol.parameterTypes.isNotEmpty) {
       return '(${symbol.parameterTypes.join(', ')}) -> ${symbol.type}';
     }
@@ -6704,6 +6724,28 @@ class Analyzer {
     if (_readonlyMethod && symbol.field)
       return _readonlyView('readonly this', visible);
     return symbol.readonly ? 'readonly $visible' : visible;
+  }
+
+  String? _nativeFunctionValue(Symbol symbol, Node node) {
+    final top = symbol.nativeTop;
+    final method = symbol.nativeMember;
+    if (top != null && (!top.callable || top.isType)) return null;
+    if (method != null && method.getter) return null;
+    if (top == null && method == null) return null;
+    final formals = top?.typeParameters ?? method!.typeParameters;
+    final named = top?.namedParameters ?? method!.namedParameters;
+    final optional = top?.optionalNames ?? method!.optionalNames;
+    final parameters = top?.parameters ?? method!.parameters;
+    if (formals.isNotEmpty ||
+        named.isNotEmpty ||
+        optional.isNotEmpty ||
+        symbol.optionalParameters != 0 ||
+        symbol.type.contains('@unsupported.') ||
+        parameters.any((p) => p.$2.contains('@unsupported.'))) {
+      error('E910', 'This native function value needs additional conformance',
+          node);
+    }
+    return '(${parameters.map((p) => p.$2).join(', ')}) -> ${symbol.type}';
   }
 
   String functionType(FunctionDeclaration function) {

@@ -1,0 +1,10 @@
+use fixtures/function_values/api.dart as native
+
+main():
+  next = native.increment
+  add = native.makeCounter().add
+  read = native.Box<int>(4).read
+  print next(1)
+  print add(2)
+  print read()
+  print native.receiverCount()

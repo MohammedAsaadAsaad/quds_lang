@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:yaml_edit/yaml_edit.dart';
 
 class PackageRoot {
   const PackageRoot(this.directory, this.name);
@@ -448,4 +449,27 @@ File? embeddedDartFile(String from, String uri) {
     if (file.existsSync()) return file;
   }
   return null;
+}
+
+/// SDK dependency detection shared by compiler, CLI and editor entry points.
+bool packageUsesFlutter(String file) {
+  final root = packageRoot(file);
+  if (root == null) return false;
+  final spec = File('${root.directory}/pubspec.yaml');
+  try {
+    final values = YamlEditor(spec.readAsStringSync()).parseAt([]).value;
+    if (values is! Map) return false;
+    for (final section in [
+      'dependencies',
+      'dev_dependencies',
+      'dependency_overrides'
+    ]) {
+      final dependencies = values[section];
+      if (dependencies is Map &&
+          dependencies.values
+              .any((value) => value is Map && value['sdk'] == 'flutter'))
+        return true;
+    }
+  } catch (_) {/* Project tools report malformed YAML separately. */}
+  return false;
 }

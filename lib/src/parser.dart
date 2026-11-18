@@ -414,7 +414,7 @@ class Parser {
     if (word('when') && !assignments.contains(peek().kind)) {
       take();
       final condition = expression();
-      return WhenStatement(condition, block(), extent(span));
+      return WhenStatement(condition, block(topLevel: topLevel), extent(span));
     }
     if (word('using')) return usingStatement(span);
     if (word('defer') && !assignments.contains(peek().kind)) {
@@ -2351,7 +2351,7 @@ class Parser {
     return line;
   }
 
-  List<Statement> block({bool colonTaken = false}) {
+  List<Statement> block({bool colonTaken = false, bool topLevel = false}) {
     if (!colonTaken) expect(TokenKind.colon, ':');
     endLine();
     expect(TokenKind.indent, 'indented block');
@@ -2359,7 +2359,7 @@ class Parser {
     while (
         _pending.isNotEmpty || (!at(TokenKind.dedent) && !at(TokenKind.eof))) {
       try {
-        body.add(statement());
+        body.add(statement(topLevel: topLevel));
       } on CompilerException catch (error) {
         _record(error);
       }

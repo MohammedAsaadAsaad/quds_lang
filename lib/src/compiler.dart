@@ -125,7 +125,11 @@ void writeSdkBundles(String directory, Compilation result) {
 }
 
 Compilation compile(String source,
-    {String file = '<input>', bool partial = false, bool emitDart = true}) {
+    {String file = '<input>',
+    bool partial = false,
+    bool emitDart = true,
+    String? targetPlatform,
+    bool? flutter}) {
   final parser = Parser(Lexer().tokenize(source, file: file));
   final parsed = parser.parse(partial: partial);
   if (partial && parser.errors.isNotEmpty && parsed.statements.isEmpty) {
@@ -134,12 +138,19 @@ Compilation compile(String source,
   var program = expandMacros(parsed);
   final sourcePath = file == '<input>' ? file : File(file).absolute.path;
   if (sourcePath != '<input>') _checkLanguage(sourcePath);
+  final framework =
+      flutter ?? (sourcePath != '<input>' && packageUsesFlutter(sourcePath));
+  final target = targetPlatform ?? (framework ? 'flutter' : 'vm');
+  if (!{'vm', 'web', 'flutter'}.contains(target))
+    throw ArgumentError.value(target, 'targetPlatform');
+  final selector =
+      Analyzer(file: sourcePath, targetPlatform: target, flutter: framework);
   final libraries = <String, Program>{};
   var library = sourcePath;
-  _loadSdkImports(program, libraries);
+  _loadSdkImports(program, libraries, selector);
   if (sourcePath != '<input>') {
     libraries[sourcePath] = program;
-    _loadLibraries(program, sourcePath, libraries);
+    _loadLibraries(program, sourcePath, libraries, selector);
     final parts = program.statements.whereType<PartDirective>().toList();
     final ofs = parts.where((item) => item.of).toList();
     final owned = parts.where((item) => !item.of).toList();
@@ -154,7 +165,11 @@ Compilation compile(String source,
     ..addAll(normalized);
   program = normalized[sourcePath]!;
   if (sourcePath == '<input>') libraries.remove(sourcePath);
-  final semantics = Analyzer(library: library, file: sourcePath)
+  final semantics = Analyzer(
+          library: library,
+          file: sourcePath,
+          targetPlatform: target,
+          flutter: framework)
       .analyze(program, libraries: libraries);
   semantics.protectWithMeta =
       sourcePath != '<input>' && packageDependsOnMeta(sourcePath);
@@ -193,18 +208,23 @@ List<SdkBundle> _compilationBundles(SemanticModel semantics, String dart) {
 final _sdkDartCache = <String, String>{};
 var _compilingSdk = false;
 
-String? _sdkDart(String name) {
+String? _sdkDart(String name,
+    {String targetPlatform = 'vm', bool flutter = false}) {
   final source = readSdk(name);
   if (source == null) return null;
-  final cached = _sdkDartCache[source];
+  final cacheKey = '$targetPlatform:$flutter:$source';
+  final cached = _sdkDartCache[cacheKey];
   if (cached != null) return cached;
   if (_compilingSdk) return null;
   _compilingSdk = true;
   try {
     final path = sdkPath(name);
-    final dart =
-        (path == null ? compile(source) : compile(source, file: path)).dart;
-    _sdkDartCache[source] = dart;
+    final dart = compile(source,
+            file: path ?? '<input>',
+            targetPlatform: targetPlatform,
+            flutter: flutter)
+        .dart;
+    _sdkDartCache[cacheKey] = dart;
     return dart;
   } finally {
     _compilingSdk = false;
@@ -224,15 +244,33 @@ List<SdkBundle> _sdkBundles(SemanticModel semantics) {
   for (final uri in uris) {
     final name = sdkLibraryName(uri);
     if (name == null || !seen.add(name)) continue;
-    final dart = _sdkDart(name);
+    final dart = _sdkDart(name,
+        targetPlatform: semantics.targetPlatform, flutter: semantics.flutter);
     if (dart == null) continue;
     bundles.add(SdkBundle(sdkDartFileName(name), dart));
   }
   return bundles;
 }
 
-void _loadSdkImports(Program program, Map<String, Program> libraries) {
-  for (final statement in program.statements) {
+Iterable<Statement> _activeStatements(
+    List<Statement> statements, Analyzer selector) sync* {
+  for (final statement in statements) {
+    if (statement is WhenStatement) {
+      if (selector.compileTimeCondition(statement.condition) == true)
+        yield* _activeStatements(statement.body, selector);
+    } else if (statement is ImportDeclaration &&
+        statement.condition != null &&
+        selector.compileTimeCondition(statement.condition!) == false) {
+      continue;
+    } else {
+      yield statement;
+    }
+  }
+}
+
+void _loadSdkImports(
+    Program program, Map<String, Program> libraries, Analyzer selector) {
+  for (final statement in _activeStatements(program.statements, selector)) {
     if (statement is! ImportDeclaration) continue;
     final name = sdkLibraryName(statement.uri);
     if (name == null || libraries.containsKey(statement.uri)) continue;
@@ -251,7 +289,7 @@ void _loadSdkImports(Program program, Map<String, Program> libraries) {
     final loaded = expandMacros(parsed);
     libraries[target] = loaded;
     libraries[statement.uri] = loaded;
-    _loadSdkImports(loaded, libraries);
+    _loadSdkImports(loaded, libraries, selector);
   }
 }
 
@@ -335,9 +373,9 @@ String _snake(String name) {
   return buffer.toString();
 }
 
-void _loadLibraries(
-    Program program, String from, Map<String, Program> libraries) {
-  for (final statement in program.statements) {
+void _loadLibraries(Program program, String from,
+    Map<String, Program> libraries, Analyzer selector) {
+  for (final statement in _activeStatements(program.statements, selector)) {
     final uri = switch (statement) {
       ImportDeclaration()
           when libraryTarget(statement.uri).endsWith('.quds') ||
@@ -356,8 +394,8 @@ void _loadLibraries(
         Parser(Lexer().tokenize(file.readAsStringSync(), file: path)).parse();
     final loaded = expandMacros(parsed);
     libraries[path] = loaded;
-    _loadSdkImports(loaded, libraries);
-    _loadLibraries(loaded, path, libraries);
+    _loadSdkImports(loaded, libraries, selector);
+    _loadLibraries(loaded, path, libraries, selector);
   }
 }
 

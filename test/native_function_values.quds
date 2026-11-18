@@ -1,0 +1,30 @@
+use fixtures/function_values/api.dart as native
+use fixtures/function_values/api.dart show increment, zero
+
+apply(callback: (int) -> int, value: int) -> int:
+  return callback(value)
+
+test "native function values preserve required signatures":
+  next = increment
+  readZero = zero
+  twice = native.Counter.twice
+  expect(apply(next, 3), 4)
+  expect(readZero(), 7)
+  expect(twice(6), 12)
+
+test "bound native receivers are evaluated and captured once":
+  add = native.makeCounter().add
+  expect(native.receiverCount(), 1)
+  expect(add(2), 12)
+  expect(add(3), 13)
+  expect(native.receiverCount(), 1)
+
+test "native generic class substitution survives method values":
+  box = native.Box<int>(9)
+  read = box.read
+  expect(read(), 9)
+
+test "null-aware native method values preserve null":
+  maybe: native.Counter? = null
+  saved = maybe?.add
+  expect(saved, null)

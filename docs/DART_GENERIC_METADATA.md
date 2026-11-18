@@ -73,7 +73,12 @@ keeps generated type arguments, calls, order and stable aliases intact.
 This is direct-call conformance, not complete Dart-language parity. Unsupported
 record signatures and generic, optional or named callback signatures report E910
 rather than being guessed as dynamic. Native generic/optional/named function
-tear-offs and native method tear-offs likewise retain explicit limits. Typedef,
+tear-offs retain explicit limits. Required-positional native function and method
+values (including zero arguments, static/bound receivers, generic-class
+substitution and null-aware access) are now supported; generic methods and
+optional/named method values still report E910. Bound receivers are captured once.
+`test/native_function_values.quds` is the primary executable suite, supplemented
+by generated Dart analysis and VM/JavaScript execution. Typedef,
 record, extension-type, recursive instantiate-to-bound and every possible
 foreign-source grammar combination are not claimed complete. Unknown package
 APIs retain the existing dynamic interop path; it is not a static safety promise.

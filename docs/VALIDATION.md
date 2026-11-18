@@ -1147,7 +1147,9 @@ Final verification on Dart 3.13.7:
   all **4 Quds modules** generated. Dart analysis of generated `main.dart` found
   **zero errors**, one unused typed-data import warning and two informational
   deprecations in Flutter 3.50 (`material.dart` / `GlobalMaterialLocalizations`).
-  A subsequent explicit byte-image type annotation addresses the unused import.
+  The final source build with an explicit byte-image type annotation also passes;
+  generated Dart still carries the redundant unprefixed typed-data import, so the
+  final source analysis exits 2 with the same warning and two infos (zero errors).
 - This source check uses actual SDK/API source and actual pub dependencies; it
   **does not run the Flutter engine**. Flutter pub resolution, widget tests, web
   build, browser rendering and screenshots remain **unverified** because the

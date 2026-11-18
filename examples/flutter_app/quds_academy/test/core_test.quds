@@ -1,0 +1,40 @@
+use ^.lib.src.progress
+use ^.lib.src.catalog
+use ^.lib.src.keywords
+
+test "sqlite_plus executes SQL from Quds and preserves Unicode and bound values" async:
+  store = await openProgress(null)
+  await store.complete("hello")
+  await store.complete("hello")
+  await store.complete("قدس'; DROP TABLE progress; --")
+  await store.setSetting("locale", "ar")
+  ids = await store.completedIds()
+  expect(ids.length, 2)
+  expect(ids.contains("hello"), true)
+  expect(ids.contains("قدس'; DROP TABLE progress; --"), true)
+  expect(await store.setting("locale"), "ar")
+  expect(await store.setting("unknown"), null)
+  bytes = store.image()
+  await store.close()
+  reopened = await openProgress(bytes)
+  expect((await reopened.completedIds()).length, 2)
+  expect(await reopened.setting("locale"), "ar")
+  await reopened.reset()
+  expect((await reopened.completedIds()).length, 0)
+  expect(await reopened.setting("locale"), "ar")
+  await reopened.close()
+
+test "every runnable lesson matches its displayed output" async:
+  for lesson in lessons():
+    expect(await runLesson(lesson.id), lesson.output, reason: lesson.id)
+    expect(lesson.titleAr.isNotEmpty and lesson.bodyAr.isNotEmpty, true)
+    expect(lesson.correct >= 0 and lesson.correct < lesson.optionsEn.length,
+    true)
+    expect(lesson.optionsAr.length, lesson.optionsEn.length)
+  expect(await databaseDemo(), "42")
+
+test "offline keyword reference has complete bilingual coverage":
+  entries = keywordEntries()
+  expect(entries.length, 111)
+  for entry in entries:
+    expect(entry.english.isNotEmpty and entry.arabic.isNotEmpty and entry.example.isNotEmpty, true)

@@ -44,6 +44,11 @@ The first command puts `quds` on your `PATH` through the pub cache bin directory
 
 A Flutter app also needs Flutter installed.
 
+[Quds Academy](examples/flutter_app/quds_academy/README.md) is an Arabic/English
+learning application written in Quds, with animated Flutter screens and direct
+`sqlite_plus` integration. Its README records the run commands and the remaining
+Flutter engine validation requirement.
+
 ## Run
 
 ```sh

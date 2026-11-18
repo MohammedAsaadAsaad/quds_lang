@@ -1,0 +1,161 @@
+use progress
+use quds:math show gcd
+
+class Lesson:
+  id: String required
+  track: int required
+  titleEn: String required
+  titleAr: String required
+  descriptionEn: String required
+  descriptionAr: String required
+  bodyEn: String required
+  bodyAr: String required
+  code: String required
+  output: String required
+  questionEn: String required
+  questionAr: String required
+  optionsEn: List<String> required
+  optionsAr: List<String> required
+  correct: int required
+  minutes: int required
+
+class KeywordEntry:
+  name: String required
+  english: String required
+  arabic: String required
+  example: String required
+
+trackName(index: int, arabic: bool) -> String:
+  english = ["The foundations", "Think in Quds", "Model your world",
+  "Build beyond syntax"]
+  translated = ["الأساسيات", "فكّر بقدس", "صمّم عالمك", "ما بعد الصياغة"]
+  return translated[index] if arabic else english[index]
+
+lessons() -> List<Lesson>:
+  return [
+    Lesson("hello", 0, "Your first hello", "أول مرحبًا",
+    "Meet a language that reads like an idea.",
+    "تعرّف إلى لغة تقرأها كما تفكّر.",
+    "A Quds program starts at main(). A colon and indentation open a block. print is an ordinary function; a simple call can omit parentheses. Zero-argument calls still use ().", "يبدأ البرنامج من main(). تفتح النقطتان والمسافة البادئة جسم الدالة. print دالة عادية ويمكن حذف أقواسها عند تمرير معامل بسيط، أما الاستدعاء بلا معاملات فيحتاج ().", r'''main():
+  name = "Quds"
+  print "Hello {name}"''', "Hello Quds", "What opens an indented block?", "ما الذي يفتح كتلة ذات مسافة بادئة؟", ["A colon :", "A semicolon ;", "Curly braces"], ["النقطتان :", "الفاصلة المنقوطة ;", "الأقواس المعقوفة"], 0, 4),
+    Lesson("bindings", 0, "Names with intention", "أسماء بمعنى واضح",
+    "Know what can change, and what cannot.",
+    "اعرف ما يمكن تغييره وما يبقى ثابتًا.",
+    "A new name = value introduces a non-reassignable binding. var permits reassignment, and const requires a compile-time value. An immutable binding does not freeze the object it references.", "يعرّف name = value ارتباطًا لا يمكن إعادة إسناده. تسمح var بإعادة الإسناد، وتحتاج const إلى قيمة وقت الترجمة. ثبات الارتباط لا يعني تجميد محتويات الكائن.", r'''main():
+  language = "Quds"
+  var total = 2
+  total += 3
+  print total''', "5", "Which binding permits reassignment?", "أي ارتباط يسمح بإعادة الإسناد؟", ["name = value", "var name = value", "const name = value"], ["name = value", "var name = value", "const name = value"], 1, 5),
+    Lesson("strings", 0, "Words, with values", "نصوص تنبض بالقيم",
+    "Let your data join the conversation.", "دع بياناتك تدخل الحوار.",
+    r"Interpolation uses {expression}, not a dollar sign. Raw strings do not interpolate. Double braces produce literal braces, and triple quotes allow multiline text.", r"تستخدم قدس {expression} للتضمين، وليس علامة الدولار. لا تضمّن النصوص الخام قيمًا. تنتج الأقواس المزدوجة أقواسًا حرفية وتسمح علامات الاقتباس الثلاثية بالنصوص متعددة الأسطر.", r'''main():
+  score = 21
+  print "Score: {score * 2}"''', "Score: 42", "Which form interpolates a value?", "أي صيغة تضمّن قيمة؟", [r'"$score"', r'r"{score}"', r'"{score}"'], [r'"$score"', r'r"{score}"', r'"{score}"'], 2, 4),
+    Lesson("functions", 1, "One idea, one function", "فكرة واحدة، دالة واحدة",
+    "Small functions make big programs clear.",
+    "الدوال الصغيرة تجعل البرامج الكبيرة واضحة.",
+    "Typed parameters use name: Type. The arrow introduces the result type. A multiline function returns explicitly; an expression body uses =. Quds dual parameters can be supplied by position or by name.", "تكتب المعاملات name: Type ويقدّم السهم نوع النتيجة. تحتاج الدوال متعددة الأسطر إلى return صريح، وتستخدم الأجسام التعبيرية =. يمكن تمرير المعاملات الثنائية بالترتيب أو بالاسم.", r'''sum(a: int, b: int) -> int:
+  return a + b
+
+main():
+  print sum(5, 7)''', "12", "A multiline function returns with…", "تعيد الدالة متعددة الأسطر قيمة باستخدام…", ["return", "A bare last expression", "yield"], ["return", "آخر تعبير وحده", "yield"], 0, 6),
+    Lesson("branches", 1, "Choose a path", "اختر مسارك",
+    "Express decisions without the noise.", "عبّر عن القرارات دون تعقيد.",
+    "if branches on a non-null bool. and/or short-circuit; not negates a boolean. Expression branches require an alternative. A trailing if can guard a single statement.", "تتفرع if بناءً على bool غير قابل لـnull. تختصر and وor التقييم وتنفي not القيمة. تحتاج التفرعات التعبيرية إلى بديل، ويمكن أن تحرس if اللاحقة تعليمة واحدة.", r'''main():
+  total = 60
+  if total > 50:
+    print "Ready"
+  else:
+    print "Keep going"''', "Ready", "Which word joins two boolean requirements?", "أي كلمة تجمع شرطين منطقيين؟", ["or", "and", "as"], ["or", "and", "as"], 1, 5),
+    Lesson("loops", 1, "Make repetition elegant", "تكرار بأناقة",
+    "Turn a collection into a result.", "حوّل مجموعة إلى نتيجة.",
+    "for … in creates a fresh binding each iteration. A reassigned accumulator needs var. break exits a loop; continue skips an iteration. A loop else runs only on completion without break.", "ينشئ for … in ارتباطًا جديدًا لكل دورة. يحتاج المتغير التجميعي المتغيّر إلى var. تنهي break الحلقة وتتخطى continue دورة. تعمل else الخاصة بالحلقة فقط إذا انتهت دون break.", r'''main():
+  var total = 0
+  for number in [10, 20, 30]:
+    total += number
+  print total''', "60", "When does a loop else run?", "متى تعمل else الخاصة بالحلقة؟", ["After every iteration", "Only after break", "On completion without break"], ["بعد كل دورة", "بعد break فقط", "عند الانتهاء دون break"], 2, 7),
+    Lesson("collections", 2, "Give data a home", "منزل لبياناتك",
+    "Lists, maps and sets, with clear shapes.",
+    "قوائم وخرائط ومجموعات بصياغة واضحة.",
+    "Lists use square brackets. map: rows are key/value pairs. set: builds unique elements. Collection for and if construct values without a separate mutation loop.", "تستخدم القوائم الأقواس المربعة. تحتوي أسطر map: على أزواج مفتاح وقيمة وتنتج set: عناصر فريدة. تبني for وif داخل المجموعات القيم دون حلقة تعديل منفصلة.", r'''main():
+  squares = [n * n for n in [1, 2, 3]]
+  print squares''', "[1, 4, 9]", "Which literal introduces a map?", "أي صيغة تنشئ خريطة؟", ["map:", "set:", "[]"], ["map:", "set:", "[]"], 0, 6),
+    Lesson("classes", 2, "Objects with a purpose", "كائنات لهدف واضح",
+    "Describe what belongs together.", "صف الأشياء التي تنتمي إلى بعضها.",
+    "Classes contain fields and behavior. Fields can synthesize a constructor. required fields must be supplied. private is library-private; a part shares that same privacy scope. Public members need no public keyword.", "تجمع الكلاسات الحقول والسلوك ويمكن للحقول توليد باني تلقائي. يجب تمرير الحقول required. تعني private خصوصية المكتبة وتشارك ملفات part النطاق نفسه. لا تحتاج الأعضاء العامة إلى public.", r'''class Point:
+  x: int required
+  y: int required
+
+main():
+  point = Point(3, 4)
+  print point.x''', "3", "What does private restrict access to?", "إلى أي نطاق تقصر private الوصول؟", ["Only one object", "The library", "The entire project"], ["كائن واحد فقط", "المكتبة", "كل المشروع"], 1, 7),
+    Lesson("nullability", 2, "Absence, made explicit", "غياب القيم بوضوح",
+    "Make missing values part of the type.", "اجعل غياب القيمة جزءًا من النوع.",
+    "A trailing ? makes a type nullable. ?? provides a fallback, and ?. accesses a member only when a receiver exists. null differs from missing, the omitted-argument sentinel in quds:core.", "تجعل ? اللاحقة النوع قابلًا لـnull. توفّر ?? بديلًا وتصل ?. إلى العضو فقط عند وجود الكائن. تختلف null عن missing التي تمثّل المعامل المحذوف في quds:core.", r'''main():
+  name: String? = null
+  print name ?? "Guest"''', "Guest", "Which operator supplies a null fallback?", "أي عامل يوفّر بديلًا لـnull؟", ["?.", "!", "??"], ["?.", "!", "??"], 2, 5),
+    Lesson("modules", 3, "Build in small pieces", "ابنِ بأجزاء صغيرة",
+    "A library is more than one file.", "المكتبة أوسع من ملف واحد.",
+    "use imports names; export re-exports them. Dotted module paths become relative .quds paths. part src.details and part of ^.main share a library instead of creating another one. Package imports connect to pub libraries.", "تستورد use الأسماء وتعيد export تصديرها. تتحول المسارات النقطية إلى مسارات .quds نسبية. يشترك part src.details وpart of ^.main في مكتبة واحدة بدل إنشاء مكتبة أخرى. تتصل استيرادات package بمكتبات pub.", r'''use quds:math
+
+main():
+  print gcd(12, 8)''', "4", "Which directive re-exports a library?", "أي توجيه يعيد تصدير مكتبة؟", ["export", "part of", "using"], ["export", "part of", "using"], 0, 6),
+    Lesson("conversions", 3, "Convert with intention", "تحويل بنية واضحة",
+    "Keep type checks distinct from conversion.",
+    "ميّز فحص النوع عن تحويل القيمة.",
+    "as checks a cast without invoking a conversion. to converts or throws ConversionError; to? yields null on conversion failure. Custom implicit/explicit cast declarations live inside a class or augment. Resolution is static and one hop.", "تفحص as ملاءمة النوع دون استدعاء تحويل. تحوّل to أو ترمي ConversionError وتعيد to? قيمة null عند فشل التحويل. توضع تعريفات implicit/explicit cast داخل الكلاس أو augment ويكون اختيارها ساكنًا وبخطوة واحدة.", r'''main():
+  print "42" to int
+  print "invalid" to? int''', "42\nnull", "Which conversion safely yields null on failure?", "أي تحويل يعيد null بأمان عند الفشل؟", ["as", "to?", "to"], ["as", "to?", "to"], 1, 7),
+    Lesson("packages", 3, "Real packages. Real data.",
+    "حزم حقيقية، بيانات حقيقية", "Meet the database behind your progress.",
+    "تعرّف إلى قاعدة بيانات تقدّمك.",
+    "A package: import reads the public Dart API resolved by pub. This app directly calls sqlite_plus from Quds: it creates tables, binds SQL parameters, reads typed rows, and saves a database image. await waits for asynchronous operations.", "يقرأ استيراد package: واجهة Dart العامة التي يحلّها pub. يستدعي التطبيق sqlite_plus مباشرة من قدس لإنشاء الجداول وربط معاملات SQL وقراءة الصفوف وحفظ صورة قاعدة البيانات. تنتظر await العمليات غير المتزامنة.", r'''use package:sqlite_plus/sqlite_plus.dart
+
+main() async:
+  db = await openInMemory()
+  result = await db.query("SELECT 6 * 7 AS answer")
+  print result.rows[0][0]
+  await db.close()''', "42", "Why use bound SQL parameters?", "لماذا نستخدم معاملات SQL المربوطة؟", ["To change Quds syntax", "To remove async", "To keep values separate from SQL"], ["لتغيير صياغة قدس", "لإزالة async", "لفصل القيم عن صياغة SQL"], 2, 8)
+  ]
+
+runLesson(id: String) async -> String:
+  if id == "hello":
+    name = "Quds"
+    return "Hello {name}"
+  if id == "bindings":
+    var total = 2
+    total += 3
+    return "{total}"
+  if id == "strings":
+    score = 21
+    return "Score: {score * 2}"
+  if id == "functions": return "{demoSum(5, 7)}"
+  if id == "branches": return "Ready" if 60 > 50 else "Keep going"
+  if id == "loops":
+    var total = 0
+    for number in [10, 20, 30]:
+      total += number
+    return "{total}"
+  if id == "collections":
+    squares = [n * n for n in [1, 2, 3]]
+    return "{squares}"
+  if id == "classes":
+    point = DemoPoint(3, 4)
+    return "{point.x}"
+  if id == "nullability":
+    name: String? = null
+    return name ?? "Guest"
+  if id == "modules": return "{gcd(12, 8)}"
+  if id == "conversions":
+    value = "42" to int
+    absent = "invalid" to? int
+    return "{value}\n{absent}"
+  if id == "packages": return await databaseDemo()
+  throw "Unknown lesson"
+
+class DemoPoint:
+  x: int required
+  y: int required
+
+demoSum(a: int, b: int) -> int = a + b

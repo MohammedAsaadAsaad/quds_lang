@@ -1,0 +1,619 @@
+use package:flutter.material
+use package:flutter/services.dart
+use package:flutter_localizations/flutter_localizations.dart
+use package:quds_academy/platform/storage.dart
+use dart:typed_data
+use src.catalog
+use src.keywords
+use src.progress
+
+
+
+brand() -> Color = Color(0xFF147D64)
+
+night() -> Color = Color(0xFF102C29)
+
+main():
+  runApp(Academy())
+
+ink(context: BuildContext) -> Color:
+  return (if (Theme.of(context).brightness == Brightness.dark): (Color(0xFFEAF4EF)) else: (Color(0xFF182D29)))
+
+muted(context: BuildContext) -> Color:
+  return (if (Theme.of(context).brightness == Brightness.dark): (Color(0xFFA4BBB1)) else: (Color(0xFF73817B)))
+
+surface(context: BuildContext) -> Color:
+  return (if (Theme.of(context).brightness == Brightness.dark): (Color(0xFF162B27)) else: (Colors.white))
+
+lineColor(context: BuildContext) -> Color:
+  return (if (Theme.of(context).brightness == Brightness.dark): (Color(0xFF2D443C)) else: (Color(0xFFE5EBE6)))
+
+motion(context: BuildContext, milliseconds: int) -> Duration:
+  return (if (MediaQuery.disableAnimationsOf(context)): (Duration.zero) else: (Duration(milliseconds: milliseconds)))
+
+heading(context: BuildContext, text: String, size: double) -> Widget:
+  return Text(text, style: TextStyle(fontSize: size,
+  fontWeight: FontWeight.w700, height: 1.4, letterSpacing: -0.7,
+  color: ink(context)))
+
+prose(context: BuildContext, text: String) -> Widget:
+  return Text(text, style: TextStyle(fontSize: 14.0, height: 1.9,
+  color: muted(context)))
+
+panel(context: BuildContext, child: Widget) -> Widget:
+  return Container(padding: EdgeInsets.all(24.0),
+  decoration: BoxDecoration(color: surface(context),
+  borderRadius: BorderRadius.circular(22.0),
+  border: Border.all(color: lineColor(context))), child: child)
+
+trackIcon(index: int) -> IconData:
+  icons = [Icons.terminal_rounded, Icons.alt_route_rounded,
+  Icons.view_in_ar_rounded, Icons.rocket_launch_rounded]
+  return icons[index]
+
+class Entrance extends StatelessWidget:
+  child: Widget required
+  order: int = 0
+  build(context: BuildContext) -> Widget:
+    return TweenAnimationBuilder<double>(tween: Tween<double>(begin: 0.0,
+    end: 1.0), duration: motion(context,
+    420 + order * 70), curve: Curves.easeOutCubic, child: child, builder: (animationContext: BuildContext, amount: double, content: Widget?) -> Opacity(opacity: amount, child: Transform.translate(offset: Offset(0.0, (1.0 - amount) * 14.0), child: content)))
+
+class InteractivePanel extends StatefulWidget:
+  child: Widget required
+  onTap: () -> void required
+  selected: bool = false
+  createState() -> State<InteractivePanel> = InteractivePanelState()
+
+class InteractivePanelState extends State<InteractivePanel>:
+  var active: bool = false
+  hover(value: bool) -> void:
+    change1 = () -> :
+      active = value
+    setState(change1)
+  build(context: BuildContext) -> Widget:
+    border = (if (widget.selected or active): (brand()) else: (lineColor(context)))
+    built = AnimatedScale:
+      scale: (if (active): (1.012) else: (1.0))
+      duration: motion(context, 170)
+      child: AnimatedContainer:
+        duration: motion(context, 180)
+        decoration: BoxDecoration(color: surface(context),
+        borderRadius: BorderRadius.circular(20.0),
+        border: Border.all(color: border, width: 1.0))
+        child: Material:
+          color: Colors.transparent
+          child: InkWell:
+            onTap: widget.onTap
+            onHover: hover
+            onFocusChange: hover
+            borderRadius: BorderRadius.circular(20.0)
+            child: Padding(padding: EdgeInsets.all(20.0), child: widget.child)
+
+    return built
+
+class Academy extends StatefulWidget:
+  storage: AcademyStorage? = null
+  createState() -> State<Academy> = AcademyState()
+
+class AcademyState extends State<Academy>:
+  var arabic: bool = true
+  var dark: bool = false
+  var loading: bool = true
+  var failed: bool = false
+  var saving: bool = false
+  var running: bool = false
+  var confirmReset: bool = false
+  var page: int = 0
+  var currentLesson: int = 0
+  var currentKeyword: int = 0
+  var choice: int = -1
+  var query: String = ""
+  var output: String = ""
+  var notice: String = ""
+  var completed: List<String> = []
+  var store: ProgressStore? = null
+  var storage: AcademyStorage? = null
+  catalog: List<Lesson> = lessons()
+  reference: List<KeywordEntry> = keywordEntries()
+  search: TextEditingController = TextEditingController()
+
+  tr(english: String, translated: String) -> String:
+    return (if (arabic): (translated) else: (english))
+
+  initState() -> void:
+    super.initState()
+    initialize()
+
+  initialize() async -> void:
+    change2 = () -> :
+      loading = true
+      failed = false
+    setState(change2)
+    try:
+      backend = widget.storage ?? await openAcademyStorage()
+      bytes: Uint8List? = await backend.load()
+      opened = await openProgress(bytes)
+      ids = await opened.completedIds()
+      language = await opened.setting("locale")
+      appearance = await opened.setting("theme")
+      if not mounted:
+        await opened.close()
+        return
+      change3 = () -> :
+        storage = backend
+        store = opened
+        completed = ids
+        arabic = language != "en"
+        dark = appearance == "dark"
+        loading = false
+      setState(change3)
+    catch error:
+      if not mounted: return
+      change4 = () -> :
+        loading = false
+        failed = true
+      setState(change4)
+
+  dispose() -> void:
+    search.dispose()
+    if store != null: store!.close()
+    super.dispose()
+
+  selectPage(index: int) -> void:
+    search.clear()
+    change5 = () -> :
+      page = index
+      query = ""
+      confirmReset = false
+      notice = ""
+    setState(change5)
+
+  updateSearch(value: String) -> void:
+    change6 = () -> :
+      query = value.trim().toLowerCase()
+    setState(change6)
+
+  openLesson(index: int) -> void:
+    change7 = () -> :
+      currentLesson = index
+      page = 1
+      choice = -1
+      output = ""
+      notice = ""
+    setState(change7)
+
+  switchLanguage() async -> void:
+    if saving or store == null: return
+    change8 = () -> :
+      saving = true
+    setState(change8)
+    try:
+      await store!.setSetting("locale", (if (arabic): ("en") else: ("ar")))
+      await storage!.save(store!.image())
+      if not mounted: return
+      change9 = () -> :
+        arabic = not arabic
+      setState(change9)
+    catch error:
+      if mounted:
+        change10 = () -> :
+          notice = tr("Could not save your preference. Please try again.",
+          "تعذّر حفظ التفضيل. حاول مرة أخرى.")
+        setState(change10)
+    finally:
+      if mounted:
+        change11 = () -> :
+          saving = false
+        setState(change11)
+
+  switchTheme() async -> void:
+    if saving or store == null: return
+    change12 = () -> :
+      saving = true
+    setState(change12)
+    try:
+      await store!.setSetting("theme", (if (dark): ("light") else: ("dark")))
+      await storage!.save(store!.image())
+      if not mounted: return
+      change13 = () -> :
+        dark = not dark
+      setState(change13)
+    catch error:
+      if mounted:
+        change14 = () -> :
+          notice = tr("Could not save your preference. Please try again.",
+          "تعذّر حفظ التفضيل. حاول مرة أخرى.")
+        setState(change14)
+    finally:
+      if mounted:
+        change15 = () -> :
+          saving = false
+        setState(change15)
+
+  runCurrent() async -> void:
+    if running: return
+    id = catalog[currentLesson].id
+    change16 = () -> :
+      running = true
+    setState(change16)
+    try:
+      value = await runLesson(id)
+      if not mounted: return
+      if catalog[currentLesson].id == id:
+        change17 = () -> :
+          output = value
+        setState(change17)
+    catch error:
+      if mounted:
+        change18 = () -> :
+          notice = tr("The example could not run. Try again.",
+          "تعذّر تشغيل المثال. حاول مجددًا.")
+        setState(change18)
+    finally:
+      if mounted:
+        change19 = () -> :
+          running = false
+        setState(change19)
+
+  finishLesson() async -> void:
+    if saving or store == null: return
+    lesson = catalog[currentLesson]
+    if choice != lesson.correct: return
+    change20 = () -> :
+      saving = true
+    setState(change20)
+    try:
+      await store!.complete(lesson.id)
+      await storage!.save(store!.image())
+      ids = await store!.completedIds()
+      if not mounted: return
+      change21 = () -> :
+        completed = ids
+      setState(change21)
+    catch error:
+      if mounted:
+        change22 = () -> :
+          notice = tr("Progress was not saved. Please retry before leaving.",
+          "لم يُحفظ التقدّم. أعد المحاولة قبل المغادرة.")
+        setState(change22)
+    finally:
+      if mounted:
+        change23 = () -> :
+          saving = false
+        setState(change23)
+
+  resetProgress() async -> void:
+    if saving or store == null: return
+    change24 = () -> :
+      saving = true
+    setState(change24)
+    try:
+      await store!.reset()
+      await storage!.save(store!.image())
+      if not mounted: return
+      change25 = () -> :
+        completed = []
+        confirmReset = false
+      setState(change25)
+    catch error:
+      if mounted:
+        change26 = () -> :
+          notice = tr("Could not reset progress. Please try again.",
+          "تعذّرت إعادة ضبط التقدّم. حاول مجددًا.")
+        setState(change26)
+    finally:
+      if mounted:
+        change27 = () -> :
+          saving = false
+        setState(change27)
+
+  cancelReset() -> void:
+    change = () -> :
+      confirmReset = false
+    setState(change)
+
+  askReset() -> void:
+    change = () -> :
+      confirmReset = true
+    setState(change)
+
+  nextLesson() -> int:
+    for index in 0..<catalog.length:
+      if not completed.contains(catalog[index].id): return index
+    return 0
+
+  pageTitle() -> String:
+    titles = [tr("Your learning studio", "مساحتك للتعلّم"),
+    tr("The learning path", "مسار التعلّم"), tr("The language, at a glance",
+    "اللغة أمامك بوضوح"), tr("Every step counts", "كل خطوة تصنع فرقًا")]
+    return titles[page]
+
+  brandMark(context: BuildContext) -> Widget:
+    name = Column(crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min, children: [Text(tr("Quds Academy",
+    "أكاديمية قدس"), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 17.0, fontWeight: FontWeight.w800, color: ink(context))), Text("LEARN. BUILD. BECOME.", maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 8.0, letterSpacing: 1.8, color: muted(context)))])
+    logo = Container(width: 40.0, height: 40.0,
+    decoration: BoxDecoration(color: brand(),
+    borderRadius: BorderRadius.circular(13.0)), child: Icon(Icons.code_rounded,
+    color: Colors.white, size: 25.0))
+    return Row(children: [logo, SizedBox(width: 10.0), Expanded(child: name)])
+
+  navigation(context: BuildContext) -> Widget:
+    labels = [tr("Overview", "نظرة عامة"), tr("Learn", "تعلّم"), tr("Reference",
+    "المرجع"), tr("My progress", "تقدّمي")]
+    icons = [Icons.grid_view_rounded, Icons.route_rounded,
+    Icons.auto_stories_rounded, Icons.insights_rounded]
+    entries: List<Widget> = []
+    for index in 0..<labels.length:
+      selected = page == index
+      entries.add(Padding(padding: EdgeInsets.only(bottom: 9.0),
+      child: Material(color: (if (selected): (brand().withValues(alpha: 0.09)) else: (Colors.transparent)), borderRadius: BorderRadius.circular(13.0), child: ListTile(dense: true, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13.0)), leading: Icon(icons[index], color: (if (selected): (brand()) else: (muted(context))), size: 21.0), title: Text(labels[index], style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14.0, color: (if (selected): (brand()) else: (ink(context))))), onTap: () -> selectPage(index)))))
+    return Container(width: 248.0,
+    decoration: BoxDecoration(color: surface(context),
+    border: BorderDirectional(end: BorderSide(color: lineColor(context)))), padding: EdgeInsets.fromLTRB(24.0, 30.0, 24.0, 24.0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [brandMark(context), SizedBox(height: 46.0), Text(tr("YOUR WORKSPACE", "مساحتك الخاصة"), style: TextStyle(fontSize: 10.0, letterSpacing: 1.4, fontWeight: FontWeight.w600, color: muted(context))), SizedBox(height: 18.0), ...entries, Spacer(), Container(padding: EdgeInsets.all(18.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.07), borderRadius: BorderRadius.circular(18.0)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.eco_outlined, color: brand(), size: 25.0), SizedBox(height: 10.0), Text(tr("A little, every day.", "قليلٌ، كل يوم."), style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14.0, color: ink(context))), SizedBox(height: 5.0), prose(context, tr("Big ideas grow from small, consistent steps.", "تنمو الأفكار الكبيرة بخطوات صغيرة مستمرة."))])), SizedBox(height: 22.0), Text(tr("Made with Quds + Flutter", "بُني بقدس + Flutter"), style: TextStyle(fontSize: 10.0, color: muted(context)))]))
+
+  header(context: BuildContext, wide: bool) -> Widget:
+    return Container(padding: EdgeInsets.symmetric(horizontal: 24.0,
+    vertical: 16.0), decoration: BoxDecoration(border: Border(bottom: BorderSide(color: lineColor(context)))), child: Row(children: [if not wide: Expanded(child: brandMark(context)), if wide: Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(tr("A fresh page. A new possibility.", "صفحة جديدة، وإمكانية جديدة."), style: TextStyle(fontSize: 12.0, color: muted(context))), SizedBox(height: 3.0), heading(context, pageTitle(), 19.0)])), Tooltip(message: tr("Change language", "تغيير اللغة"), child: OutlinedButton(onPressed: (if (saving): (null) else: (switchLanguage)), style: OutlinedButton.styleFrom(side: BorderSide(color: lineColor(context)), padding: EdgeInsets.symmetric(horizontal: 13.0, vertical: 11.0)), child: Text((if (arabic): ("EN") else: ("عربي")), style: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w700)))), SizedBox(width: 8.0), IconButton(tooltip: tr("Toggle appearance", "تبديل المظهر"), onPressed: (if (saving): (null) else: (switchTheme)), icon: Icon((if (dark): (Icons.light_mode_outlined) else: (Icons.dark_mode_outlined)), size: 21.0))]))
+
+  searchBox(context: BuildContext) -> Widget:
+    return TextField(controller: search, onChanged: updateSearch,
+    decoration: InputDecoration(hintText: tr("Find a lesson or a keyword…",
+    "ابحث عن درس أو كلمة…"), prefixIcon: Icon(Icons.search_rounded,
+    size: 21.0), filled: true, fillColor: surface(context), hintStyle: TextStyle(fontSize: 13.0, color: muted(context)), border: OutlineInputBorder(borderRadius: BorderRadius.circular(14.0), borderSide: BorderSide(color: lineColor(context))), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14.0), borderSide: BorderSide(color: lineColor(context))), contentPadding: EdgeInsets.symmetric(horizontal: 18.0, vertical: 17.0)))
+
+  hero(context: BuildContext, width: double) -> Widget:
+    intro = Column(crossAxisAlignment: CrossAxisAlignment.start,
+    children: [Container(padding: EdgeInsets.symmetric(horizontal: 12.0,
+    vertical: 6.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.11), borderRadius: BorderRadius.circular(30.0)), child: Text(tr("YOUR NEXT CHAPTER STARTS HERE", "فصلك القادم يبدأ هنا"), style: TextStyle(fontSize: 10.0, letterSpacing: 1.2, fontWeight: FontWeight.w700, color: brand()))), SizedBox(height: 22.0), Text(tr("Small syntax.\nBig possibilities.", "ابدأ صغيرًا.\nوابنِ بلا حدود."), style: TextStyle(fontSize: (if (width > 700.0): (43.0) else: (32.0)), height: 1.35, fontWeight: FontWeight.w800, letterSpacing: -1.5, color: ink(context))), SizedBox(height: 16.0), prose(context, tr("Learn Quds by making things. Clear lessons, real examples, and a little discovery at every step.", "تعلّم قدس بالبناء. دروس واضحة وأمثلة حقيقية، واكتشاف صغير مع كل خطوة.")), SizedBox(height: 25.0), FilledButton.icon(onPressed: () -> openLesson(nextLesson()), icon: Icon(Icons.arrow_forward_rounded, size: 19.0), label: Text((if (completed.isEmpty): (tr("Start learning", "ابدأ التعلّم")) else: (tr("Continue your journey", "أكمل رحلتك")))), style: FilledButton.styleFrom(backgroundColor: brand(), padding: EdgeInsets.symmetric(horizontal: 22.0, vertical: 20.0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0))))])
+    demo = Container(padding: EdgeInsets.all(23.0),
+    decoration: BoxDecoration(color: night(),
+    borderRadius: BorderRadius.circular(20.0),
+    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.10),
+    blurRadius: 28.0, offset: Offset(0.0,
+    14.0))]), child: Directionality(textDirection: TextDirection.ltr,
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+    children: [Row(children: [for color in [Color(0xFFF1A89F),
+    Color(0xFFF0D898),
+    Color(0xFFA4D2B0)]: Padding(padding: EdgeInsets.only(right: 6.0),
+    child: Container(width: 8.0, height: 8.0,
+    decoration: BoxDecoration(color: color,
+    shape: BoxShape.circle))), Spacer(), Text("hello.quds",
+    style: TextStyle(color: Color(0xFFA2BAB0), fontFamily: "JetBrainsMono",
+    fontSize: 10.0))]), SizedBox(height: 29.0), SelectableText(r'''main():
+  dream = "something great"
+  print "Let's build {dream}"''', style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 12.0, height: 2.0, color: Color(0xFFC5E8D4))), SizedBox(height: 22.0), Divider(color: Color(0xFF314B40)), SizedBox(height: 8.0), Row(children: [Icon(Icons.play_arrow_rounded, size: 15.0, color: Color(0xFF91D5AE)), SizedBox(width: 8.0), Expanded(child: Text("Let's build something great", style: TextStyle(color: Color(0xFF91D5AE), fontFamily: "JetBrainsMono", fontSize: 10.0)))] )])))
+    content = (if (width > 820.0): (Row(crossAxisAlignment: CrossAxisAlignment.center, children: [Expanded(child: intro), SizedBox(width: 34.0), SizedBox(width: 330.0, child: AnimatedRotation(turns: (if (arabic): (-0.012) else: (0.012)), duration: motion(context, 500), curve: Curves.easeOutCubic, child: demo))])) else: (Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [intro, SizedBox(height: 28.0), demo])))
+    return Entrance(child: Container(padding: EdgeInsets.all((if (width > 600.0): (32.0) else: (22.0))), decoration: BoxDecoration(color: (if (dark): (Color(0xFF1C3931)) else: (Color(0xFFEDF3E8))), borderRadius: BorderRadius.circular(26.0)), child: content))
+
+  metric(context: BuildContext, value: String, title: String,
+  icon: IconData) -> Widget:
+    return Expanded(child: Row(children: [Container(padding: EdgeInsets.all(10.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12.0)), child: Icon(icon, color: brand(), size: 21.0)), SizedBox(width: 12.0), Flexible(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(value, style: TextStyle(fontSize: 21.0, fontWeight: FontWeight.w800, color: ink(context))), Text(title, style: TextStyle(fontSize: 11.0, color: muted(context)))]))]))
+
+  courseCard(context: BuildContext, index: int) -> Widget:
+    var done = 0
+    for lesson in catalog:
+      if lesson.track == index:
+        done += (if (completed.contains(lesson.id)): (1) else: (0))
+    icons = [Icons.terminal_rounded, Icons.alt_route_rounded,
+    Icons.view_in_ar_rounded, Icons.rocket_launch_rounded]
+    descriptionsEn = ["Meet the syntax. Find your voice.",
+    "Functions, decisions, and flow.", "Collections, objects, and safe types.",
+    "Libraries, conversions, and real SQL."]
+    descriptionsAr = ["تعرّف إلى الصياغة، واعثر على أسلوبك.",
+    "دوال وقرارات ومسار تنفيذ واضح.", "مجموعات وكائنات وأنواع آمنة.",
+    "مكتبات وتحويلات وقواعد بيانات حقيقية."]
+    open = () -> :
+      for position in 0..<catalog.length:
+        if catalog[position].track == index:
+          openLesson(position)
+          break
+    child = Column(crossAxisAlignment: CrossAxisAlignment.start,
+    children: [Row(children: [Container(padding: EdgeInsets.all(13.0),
+    decoration: BoxDecoration(color: [Color(0xFFEEF2E3), Color(0xFFE8EEF7),
+    Color(0xFFF7EEE4),
+    Color(0xFFF0EAF5)][index], borderRadius: BorderRadius.circular(14.0)), child: Icon(icons[index], color: [brand(), Color(0xFF557CAB), Color(0xFFB8834B), Color(0xFF9070AB)][index], size: 26.0)), Spacer(), Text("0{index + 1}", style: TextStyle(color: muted(context), fontSize: 12.0, fontFamily: "JetBrainsMono"))]), SizedBox(height: 19.0), heading(context, trackName(index, arabic), 20.0), SizedBox(height: 5.0), prose(context, (if (arabic): (descriptionsAr[index]) else: (descriptionsEn[index]))), SizedBox(height: 21.0), Row(children: [Icon(Icons.menu_book_outlined, size: 14.0, color: muted(context)), SizedBox(width: 5.0), Text(tr("3 lessons", "3 دروس"), style: TextStyle(fontSize: 11.0, color: muted(context))), SizedBox(width: 13.0), Text(tr("~18 min", "نحو 18 دقيقة"), style: TextStyle(fontSize: 11.0, color: muted(context))), Spacer(), Icon(Icons.arrow_forward_rounded, size: 20.0, color: brand())]), SizedBox(height: 14.0), ClipRRect(borderRadius: BorderRadius.circular(20.0), child: LinearProgressIndicator(value: done / 3.0, minHeight: 4.0, color: brand(), backgroundColor: brand().withValues(alpha: 0.08)))])
+    return Entrance(order: index + 1, child: InteractivePanel(onTap: open,
+    child: child))
+
+  overview(context: BuildContext, width: double) -> Widget:
+    visible: List<int> = []
+    for index in 0..<catalog.length:
+      lesson = catalog[index]
+      if (lesson.titleEn + lesson.titleAr + lesson.descriptionEn + lesson.descriptionAr).toLowerCase().contains(query): visible.add(index)
+    cards: List<Widget> = []
+    if query.isEmpty:
+      for index in 0..<4:
+        cards.add(SizedBox(width: (if (width > 650.0): ((width - 16.0) / 2.0) else: (width)), child: courseCard(context, index)))
+    else:
+      for index in visible:
+        cards.add(SizedBox(width: width, child: lessonTile(context, index)))
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [hero(context, width), SizedBox(height: 24.0), panel(context,
+    Row(children: [metric(context, "12", tr("crafted lessons", "درسًا متقنًا"),
+    Icons.auto_stories_outlined), metric(context, "{completed.length}",
+    tr("completed", "دروس مكتملة"),
+    Icons.check_circle_outline_rounded), if width > 450.0: metric(context,
+    "{completed.length * 25}", tr("learning points", "نقطة تعلّم"),
+    Icons.bolt_outlined)])), SizedBox(height: 36.0), Row(children: [Expanded(child: heading(context, tr("A path worth following", "مسار يستحق أن تسلكه"), 24.0)), TextButton(onPressed: () -> selectPage(1), child: Text(tr("Explore all", "استكشف الكل")))]), SizedBox(height: 6.0), prose(context, tr("From your first line to your next big idea.", "من أول سطر إلى فكرتك الكبيرة القادمة.")), SizedBox(height: 20.0), searchBox(context), SizedBox(height: 20.0), if cards.isEmpty: emptySearch(context), Wrap(spacing: 16.0, runSpacing: 16.0, children: cards), SizedBox(height: 28.0), Container(padding: EdgeInsets.all(22.0), decoration: BoxDecoration(border: Border.all(color: lineColor(context)), borderRadius: BorderRadius.circular(18.0)), child: Row(children: [Icon(Icons.auto_awesome_outlined, color: brand()), SizedBox(width: 14.0), Expanded(child: prose(context, tr("Clarity is a feature. Take your time; your progress stays with you.", "الوضوح ميزة. تعلّم على مهل، فتقدّمك يبقى معك.")))]))])
+
+  emptySearch(context: BuildContext) -> Widget:
+    return panel(context, Column(children: [Icon(Icons.search_off_rounded,
+    size: 34.0, color: muted(context)), SizedBox(height: 12.0), heading(context,
+    tr("Nothing here yet", "لا توجد نتائج"), 19.0), prose(context,
+    tr("Try another word in Arabic or English.",
+    "جرّب كلمة أخرى بالعربية أو الإنجليزية."))]))
+
+  lessonTile(context: BuildContext, index: int) -> Widget:
+    lesson = catalog[index]
+    done = completed.contains(lesson.id)
+    return Padding(padding: EdgeInsets.only(bottom: 9.0),
+    child: InteractivePanel(selected: page == 1 and currentLesson == index,
+    onTap: () -> openLesson(index),
+    child: Row(children: [Icon((if (done): (Icons.check_circle_rounded) else: (Icons.play_circle_outline_rounded)), color: (if (done): (brand()) else: (muted(context))), size: 23.0), SizedBox(width: 12.0), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text((if (arabic): (lesson.titleAr) else: (lesson.titleEn)), style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.0, color: ink(context))), SizedBox(height: 3.0), Text(tr("{lesson.minutes} min", "{lesson.minutes} دقائق"), style: TextStyle(fontSize: 10.0, color: muted(context)))]))])))
+
+  codePanel(context: BuildContext, code: String) -> Widget:
+    return Container(decoration: BoxDecoration(color: night(),
+    borderRadius: BorderRadius.circular(18.0)), padding: EdgeInsets.all(20.0), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.code_rounded, color: Color(0xFF9BCAB3), size: 18.0), SizedBox(width: 9.0), Text("QUDS", style: TextStyle(fontFamily: "JetBrainsMono", color: Color(0xFF9BCAB3), fontSize: 10.0, letterSpacing: 1.8)), Spacer(), IconButton(tooltip: tr("Copy example", "نسخ المثال"), onPressed: () -> Clipboard.setData(ClipboardData(text: code)), icon: Icon(Icons.copy_rounded, size: 16.0, color: Color(0xFFA5BDB1)))]), SizedBox(height: 10.0), SingleChildScrollView(scrollDirection: Axis.horizontal, child: SelectableText(code, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 12.0, color: Color(0xFFD3EDDF), height: 1.9)))])))
+
+  lessonContent(context: BuildContext) -> Widget:
+    lesson = catalog[currentLesson]
+    answers = (if (arabic): (lesson.optionsAr) else: (lesson.optionsEn))
+    options: List<Widget> = []
+    for index in 0..<answers.length:
+      selected = choice == index
+      correct = selected and index == lesson.correct
+      color = (if (correct): (brand()) else: ((if (selected): (Color(0xFFBA7253)) else: (lineColor(context)))))
+      tap = () -> :
+        change28 = () -> :
+          choice = index
+        setState(change28)
+      options.add(Padding(padding: EdgeInsets.only(bottom: 10.0),
+      child: Material(color: (if (selected): (color.withValues(alpha: 0.07)) else: (surface(context))), borderRadius: BorderRadius.circular(12.0), child: InkWell(onTap: tap, borderRadius: BorderRadius.circular(12.0), child: Container(padding: EdgeInsets.all(16.0), decoration: BoxDecoration(borderRadius: BorderRadius.circular(12.0), border: Border.all(color: color)), child: Row(children: [Icon((if (correct): (Icons.check_circle_rounded) else: ((if (selected): (Icons.radio_button_checked_rounded) else: (Icons.radio_button_off_rounded)))), size: 19.0, color: (if (selected): (color) else: (muted(context)))), SizedBox(width: 12.0), Expanded(child: Text(answers[index], style: TextStyle(fontSize: 14.0, color: ink(context))))]))))))
+    done = completed.contains(lesson.id)
+    return Column(key: ValueKey(lesson.id),
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [Text(trackName(lesson.track, arabic).toUpperCase(),
+    style: TextStyle(fontSize: 11.0, letterSpacing: 1.4,
+    fontWeight: FontWeight.w700,
+    color: brand())), SizedBox(height: 9.0), heading(context,
+    (if (arabic): (lesson.titleAr) else: (lesson.titleEn)),
+    32.0), SizedBox(height: 10.0), prose(context,
+    (if (arabic): (lesson.descriptionAr) else: (lesson.descriptionEn))), SizedBox(height: 24.0), panel(context, prose(context, (if (arabic): (lesson.bodyAr) else: (lesson.bodyEn)))), SizedBox(height: 22.0), codePanel(context, lesson.code), SizedBox(height: 12.0), Align(alignment: AlignmentDirectional.centerEnd, child: FilledButton.icon(onPressed: (if (running): (null) else: (runCurrent)), icon: Icon(Icons.play_arrow_rounded, size: 19.0), label: Text((if (running): (tr("Running…", "جارٍ التشغيل…")) else: (tr("Run lesson demo", "شغّل مثال الدرس")))))), if output.isNotEmpty: AnimatedSize(duration: motion(context, 240), child: Container(margin: EdgeInsets.only(top: 12.0), padding: EdgeInsets.all(20.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14.0)), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("OUTPUT", style: TextStyle(fontSize: 10.0, letterSpacing: 1.5, color: brand())), SizedBox(height: 8.0), SelectableText(output, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 13.0, color: ink(context)))])))), SizedBox(height: 9.0), Text(tr("Curated demos run the Quds code compiled into this app. Copy examples to your editor for free-form changes.", "تعمل أمثلة الدروس بكود قدس المترجم داخل التطبيق. انسخ المثال إلى محررك لتعديله بحرية."), style: TextStyle(fontSize: 10.0, height: 1.8, color: muted(context))), SizedBox(height: 29.0), panel(context, Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Row(children: [Icon(Icons.psychology_alt_outlined, color: brand(), size: 23.0), SizedBox(width: 9.0), heading(context, tr("Make it click", "ثبّت الفكرة"), 21.0)]), SizedBox(height: 12.0), Text((if (arabic): (lesson.questionAr) else: (lesson.questionEn)), style: TextStyle(fontSize: 15.0, fontWeight: FontWeight.w600, color: ink(context))), SizedBox(height: 18.0), ...options, if choice >= 0: Padding(padding: EdgeInsets.symmetric(vertical: 9.0), child: Text((if (choice == lesson.correct): (tr("Exactly. You're ready for the next step.", "صحيح! أنت مستعد للخطوة التالية.")) else: (tr("Not quite. Revisit the explanation and try again.", "ليست الإجابة الصحيحة. راجع الشرح وحاول مجددًا."))), style: TextStyle(color: (if (choice == lesson.correct): (brand()) else: (Color(0xFFBA7253))), fontSize: 12.0, height: 1.8))), SizedBox(height: 8.0), FilledButton.icon(onPressed: (if (saving or done or choice != lesson.correct): (null) else: (finishLesson)), icon: Icon(Icons.check_rounded, size: 18.0), label: Text((if (done): (tr("Lesson completed", "أكملت الدرس")) else: ((if (saving): (tr("Saving…", "جارٍ الحفظ…")) else: (tr("Complete lesson · +25 points", "أكمل الدرس · +25 نقطة"))))))), if done and currentLesson < catalog.length - 1: TextButton(onPressed: () -> openLesson(currentLesson + 1), child: Text(tr("Continue to next lesson →", "انتقل إلى الدرس التالي ←")))]))])
+
+  learn(context: BuildContext, width: double) -> Widget:
+    navigationItems: List<Widget> = []
+    for index in 0..<catalog.length:
+      lesson = catalog[index]
+      if (lesson.titleAr + lesson.titleEn).toLowerCase().contains(query): navigationItems.add(lessonTile(context, index))
+    selector = Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [searchBox(context), SizedBox(height: 16.0),
+    if navigationItems.isEmpty: emptySearch(context), ...navigationItems])
+    if width > 850.0:
+      return Row(crossAxisAlignment: CrossAxisAlignment.start,
+      children: [SizedBox(width: 245.0, child: selector), SizedBox(width: 28.0),
+      Expanded(child: AnimatedSwitcher(duration: motion(context, 220),
+      child: lessonContent(context)))])
+    onLessonSelected = (value: int?) -> :
+      if value != null: openLesson(value)
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [DropdownButtonFormField<int>(initialValue: currentLesson,
+    key: ValueKey(currentLesson), isExpanded: true,
+    decoration: InputDecoration(labelText: tr("Choose a lesson", "اختر درسًا"),
+    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12.0))), items: [for index in 0..<catalog.length: DropdownMenuItem<int>(value: index, child: Text((if (arabic): (catalog[index].titleAr) else: (catalog[index].titleEn)), overflow: TextOverflow.ellipsis))], onChanged: onLessonSelected), SizedBox(height: 24.0), AnimatedSwitcher(duration: motion(context, 220), child: lessonContent(context))])
+
+  referencePage(context: BuildContext, width: double) -> Widget:
+    filtered: List<int> = []
+    for index in 0..<reference.length:
+      entry = reference[index]
+      if (entry.name + entry.english + entry.arabic).toLowerCase().contains(query): filtered.add(index)
+    chosen = currentKeyword if filtered.contains(currentKeyword) or filtered.isEmpty else filtered.first
+    selected = reference[chosen]
+    chips: List<Widget> = []
+    for index in filtered:
+      entry = reference[index]
+      choose = () -> :
+        change29 = () -> :
+          currentKeyword = index
+        setState(change29)
+      chips.add(ChoiceChip(label: Text(entry.name,
+      textDirection: TextDirection.ltr,
+      style: TextStyle(fontFamily: "JetBrainsMono",
+      fontSize: 11.0)), selected: index == chosen, onSelected: (value: bool) -> choose()))
+    details = panel(context,
+    Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [Row(children: [Container(padding: EdgeInsets.all(10.0),
+    decoration: BoxDecoration(color: brand().withValues(alpha: 0.08),
+    borderRadius: BorderRadius.circular(12.0)), child: Icon(Icons.bookmark_border_rounded, color: brand())), SizedBox(width: 14.0), Expanded(child: Text(selected.name, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 29.0, fontWeight: FontWeight.w700, color: ink(context))))]), SizedBox(height: 20.0), prose(context, (if (arabic): (selected.arabic) else: (selected.english))), SizedBox(height: 22.0), Text(tr("IN PRACTICE", "في التطبيق"), style: TextStyle(fontSize: 10.0, letterSpacing: 1.3, color: brand(), fontWeight: FontWeight.w700)), SizedBox(height: 12.0), codePanel(context, selected.example)]))
+    library = Column(crossAxisAlignment: CrossAxisAlignment.start,
+    children: [Text(tr("{filtered.length} keywords", "{filtered.length} كلمة"),
+    style: TextStyle(fontSize: 12.0,
+    color: muted(context))), SizedBox(height: 14.0), Wrap(spacing: 7.0,
+    runSpacing: 8.0, children: chips)])
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [heading(context, tr("A word. A whole possibility.",
+    "كلمة، وإمكانية كاملة."), 30.0), SizedBox(height: 8.0), prose(context,
+    tr("111 words and forms, with explanations and examples. Search in either language.", "111 كلمة وصيغة، مع شرح وأمثلة. ابحث بأي من اللغتين.")), SizedBox(height: 24.0), searchBox(context), SizedBox(height: 24.0), if filtered.isEmpty: emptySearch(context), if filtered.isNotEmpty: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [if width > 800.0: SizedBox(width: 280.0, child: library), if width > 800.0: SizedBox(width: 26.0), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [if width <= 800.0: library, if width <= 800.0: SizedBox(height: 24.0), AnimatedSwitcher(duration: motion(context, 180), child: KeyedSubtree(key: ValueKey(selected.name), child: details))]))])])
+
+  progressPage(context: BuildContext) -> Widget:
+    rate = completed.length / catalog.length
+    rows: List<Widget> = []
+    for index in 0..<4:
+      var done = 0
+      for lesson in catalog:
+        if lesson.track == index and completed.contains(lesson.id): done += 1
+      rows.add(Padding(padding: EdgeInsets.only(bottom: 22.0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [Row(children: [Icon(trackIcon(index), color: brand(),
+      size: 20.0), SizedBox(width: 12.0), Expanded(child: Text(trackName(index,
+      arabic), style: TextStyle(color: ink(context),
+      fontWeight: FontWeight.w600))), Text("{done} / 3",
+      textDirection: TextDirection.ltr, style: TextStyle(color: muted(context),
+      fontFamily: "JetBrainsMono",
+      fontSize: 12.0))]), SizedBox(height: 12.0), ClipRRect(borderRadius: BorderRadius.circular(20.0), child: LinearProgressIndicator(value: done / 3.0, minHeight: 7.0, color: brand(), backgroundColor: brand().withValues(alpha: 0.09)))])))
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [heading(context, tr("Look how far you've come.",
+    "انظر إلى ما حققته."), 31.0), SizedBox(height: 10.0), prose(context,
+    tr("One clear idea at a time. Every completed challenge moves you forward.",
+    "فكرة واضحة في كل مرة. كل تحدٍّ تكمله يأخذك إلى الأمام.")), SizedBox(height: 26.0), panel(context, Column(children: [SizedBox(height: 15.0), SizedBox(width: 142.0, height: 142.0, child: Stack(alignment: Alignment.center, children: [SizedBox(width: 142.0, height: 142.0, child: TweenAnimationBuilder<double>(tween: Tween<double>(begin: 0.0, end: rate), duration: motion(context, 800), curve: Curves.easeOutCubic, builder: (animationContext: BuildContext, value: double, child: Widget?) -> CircularProgressIndicator(value: value, strokeWidth: 9.0, strokeCap: StrokeCap.round, color: brand(), backgroundColor: brand().withValues(alpha: 0.09)))), Column(mainAxisSize: MainAxisSize.min, children: [heading(context, "{(rate * 100).round}%", 32.0), Text(tr("of your journey", "من رحلتك"), style: TextStyle(fontSize: 10.0, color: muted(context)))])])), SizedBox(height: 26.0), heading(context, tr("{completed.length} of 12 lessons completed", "أكملت {completed.length} من 12 درسًا"), 21.0), SizedBox(height: 10.0), Text(tr("{completed.length * 25} learning points", "{completed.length * 25} نقطة تعلّم"), style: TextStyle(color: brand(), fontWeight: FontWeight.w700)), SizedBox(height: 25.0), ...rows])), SizedBox(height: 20.0), panel(context, Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(Icons.storage_rounded, color: brand()), SizedBox(width: 16.0), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [heading(context, tr("Your progress, on your device", "تقدّمك، على جهازك"), 18.0), SizedBox(height: 8.0), prose(context, tr("Stored locally using sqlite_plus 0.1.14. No account. No tracking. Learning stays yours.", "محفوظ محليًا باستخدام sqlite_plus 0.1.14. بلا حساب وبلا تتبع؛ رحلتك ملكك.")), SizedBox(height: 10.0), Text((if (storage!.persistent): (tr("Local storage connected", "التخزين المحلي متصل")) else: (tr("Session-only storage: this browser could not provide persistent storage.", "تخزين الجلسة فقط: لم يوفّر المتصفح تخزينًا مستمرًا."))), style: TextStyle(fontSize: 11.0, height: 1.8, color: brand()))]))])), SizedBox(height: 18.0), if confirmReset: panel(context, Column(crossAxisAlignment: CrossAxisAlignment.start, children: [heading(context, tr("Start fresh?", "تبدأ من جديد؟"), 19.0), prose(context, tr("This clears completed lessons on this device. Your language and theme preferences stay.", "سيُمسح تقدّم الدروس على هذا الجهاز، وتبقى تفضيلات اللغة والمظهر.")), SizedBox(height: 14.0), Wrap(spacing: 12.0, children: [FilledButton(onPressed: (if (saving): (null) else: (resetProgress)), child: Text(tr("Yes, reset progress", "نعم، امسح التقدّم"))), TextButton(onPressed: cancelReset, child: Text(tr("Cancel", "إلغاء")))])])), if not confirmReset: Align(alignment: AlignmentDirectional.centerStart, child: TextButton.icon(onPressed: askReset, icon: Icon(Icons.restart_alt_rounded, size: 18.0), label: Text(tr("Reset progress", "إعادة ضبط التقدّم"))))])
+
+  workspace(context: BuildContext, width: double) -> Widget:
+    if loading:
+      return Center(child: Column(mainAxisSize: MainAxisSize.min,
+      children: [CircularProgressIndicator(color: brand()),
+      SizedBox(height: 20.0), Text(tr("Opening your learning studio…",
+      "نجهّز مساحتك للتعلّم…"))]))
+    if failed:
+      return Center(child: Padding(padding: EdgeInsets.all(30.0),
+      child: Column(mainAxisSize: MainAxisSize.min,
+      children: [Icon(Icons.cloud_off_rounded, size: 42.0, color: brand()),
+      SizedBox(height: 18.0), heading(context,
+      tr("We couldn't open your progress", "تعذّر فتح تقدّمك"),
+      22.0), SizedBox(height: 12.0), prose(context,
+      tr("Your saved data has not been replaced. Retry when local storage is available.", "لم نستبدل بياناتك المحفوظة. أعد المحاولة عندما يتاح التخزين المحلي.")), SizedBox(height: 20.0), FilledButton(onPressed: initialize, child: Text(tr("Try again", "حاول مجددًا")))])))
+    padding = (if (width > 700.0): (32.0) else: (18.0))
+    available = width - padding * 2.0
+    var content: Widget = SizedBox()
+    if page == 0: content = overview(context, available)
+    if page == 1: content = learn(context, available)
+    if page == 2: content = referencePage(context, available)
+    if page == 3: content = progressPage(context)
+    return SingleChildScrollView(key: PageStorageKey("page-{page}"),
+    padding: EdgeInsets.all(padding),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [if notice.isNotEmpty: Container(margin: EdgeInsets.only(bottom: 16.0), padding: EdgeInsets.all(16.0), decoration: BoxDecoration(color: Color(0xFFF8EBDD), borderRadius: BorderRadius.circular(12.0)), child: Text(notice, style: TextStyle(color: Color(0xFF895D36), height: 1.7))), AnimatedSwitcher(duration: motion(context, 240), child: KeyedSubtree(key: ValueKey(page), child: content)), SizedBox(height: 20.0)]))
+
+  frame(context: BuildContext) -> Widget:
+    layout = (layoutContext: BuildContext, constraints: BoxConstraints) -> :
+      wide = constraints.maxWidth >= 1000.0
+      mainColumn = Column(children: [header(layoutContext, wide),
+      Expanded(child: workspace(layoutContext,
+      (if (wide): (constraints.maxWidth - 248.0) else: (constraints.maxWidth))))])
+      bottom = NavigationBar(selectedIndex: page,
+      onDestinationSelected: selectPage,
+      backgroundColor: surface(layoutContext),
+      destinations: [NavigationDestination(icon: Icon(Icons.grid_view_outlined),
+      selectedIcon: Icon(Icons.grid_view_rounded), label: tr("Home",
+      "الرئيسية")), NavigationDestination(icon: Icon(Icons.route_outlined),
+      selectedIcon: Icon(Icons.route_rounded), label: tr("Learn",
+      "تعلّم")), NavigationDestination(icon: Icon(Icons.auto_stories_outlined),
+      selectedIcon: Icon(Icons.auto_stories_rounded), label: tr("Reference",
+      "المرجع")), NavigationDestination(icon: Icon(Icons.insights_outlined),
+      selectedIcon: Icon(Icons.insights_rounded), label: tr("Progress",
+      "تقدّمي"))])
+      return Scaffold(body: SafeArea(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [if wide: navigation(layoutContext), Expanded(child: mainColumn)])), bottomNavigationBar: (if (wide): (null) else: (bottom)))
+    return LayoutBuilder(builder: layout)
+
+  build(context: BuildContext) -> Widget:
+    brightness = (if (dark): (Brightness.dark) else: (Brightness.light))
+    palette = ColorScheme.fromSeed(seedColor: brand(), brightness: brightness)
+    theme = ThemeData(useMaterial3: true, colorScheme: palette,
+    brightness: brightness, fontFamily: "Cairo",
+    scaffoldBackgroundColor: (if (dark): (Color(0xFF10221E)) else: (Color(0xFFF7F8F4))), visualDensity: VisualDensity.standard)
+    return MaterialApp(title: "Quds Academy · أكاديمية قدس",
+    debugShowCheckedModeBanner: false,
+    locale: Locale((if (arabic): ("ar") else: ("en"))),
+    supportedLocales: [Locale("ar"), Locale("en")],
+    localizationsDelegates: GlobalMaterialLocalizations.delegates, theme: theme,
+    home: Builder(builder: frame))

@@ -1,0 +1,50 @@
+use package:sqlite_plus/sqlite_plus.dart
+use dart:typed_data
+
+class ProgressStore:
+  db: MutableSqliteDatabase required
+
+  initialize() async -> void:
+    await db.execute("CREATE TABLE IF NOT EXISTS progress (lesson TEXT PRIMARY KEY, completed INTEGER NOT NULL)")
+    await db.execute("CREATE TABLE IF NOT EXISTS preferences (name TEXT PRIMARY KEY, value TEXT NOT NULL)")
+
+  completedIds() async -> List<String>:
+    queryResult = await db.query("SELECT lesson FROM progress WHERE completed = ? ORDER BY lesson", [1])
+    ids: List<String> = []
+    for row in queryResult.rows:
+      ids.add(row[0] as String)
+    return ids
+
+  complete(lesson: String) async -> void:
+    await db.execute("INSERT OR REPLACE INTO progress(lesson, completed) VALUES (?, ?)", [lesson, 1])
+
+  reset() async -> void:
+    await db.execute("DELETE FROM progress")
+
+  setting(name: String) async -> String?:
+    queryResult = await db.query("SELECT value FROM preferences WHERE name = ?",
+    [name])
+    if queryResult.rows.isEmpty: return null
+    return queryResult.rows[0][0] as String
+
+  setSetting(name: String, value: String) async -> void:
+    await db.execute("INSERT OR REPLACE INTO preferences(name, value) VALUES (?, ?)", [name, value])
+
+  image() -> Uint8List = db.exportImage()
+
+  close() async -> void:
+    await db.close()
+
+openProgress(image: Uint8List?) async -> ProgressStore:
+  database = await openInMemory() if image == null else await MutableSqliteDatabase.fromImage(image!)
+  store = ProgressStore(database)
+  await store.initialize()
+  return store
+
+databaseDemo() async -> String:
+  db = await openInMemory()
+  try:
+    queryResult = await db.query("SELECT 6 * 7 AS answer")
+    return "{queryResult.rows[0][0]}"
+  finally:
+    await db.close()

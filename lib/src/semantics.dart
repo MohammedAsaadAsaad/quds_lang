@@ -136,6 +136,7 @@ class SemanticModel {
   final inferredTypeArguments = <CallExpression, List<String>>{};
   final instantiatedParameterTypes = <CallExpression, List<String>>{};
   final contextualFunctionArguments = <Expression, List<String>>{};
+  final validatedQudsFunctionValues = <Expression>{};
   final instantiatedFunctionValues = <TypeApplication>{};
   final functionValueCalls = <CallExpression>{};
   final nativeArguments = <CallExpression, List<(String?, int)>>{};
@@ -3975,7 +3976,8 @@ class Analyzer {
     final method = symbol?.nativeMember;
     final nativeCallable = top != null && top.callable && !top.isType ||
         method != null && !method.getter;
-    if ((!nativeCallable && symbol?.function == null) ||
+    if ((!nativeCallable &&
+            !model.validatedQudsFunctionValues.contains(node.callee)) ||
         functionTypeParts(nonNullableType(type)) == null) {
       error(
           'E910',
@@ -4011,8 +4013,7 @@ class Analyzer {
     final staticMember = callee is MemberAccess &&
         _isTypeReference(callee.object) &&
         () {
-          final owner = _global
-              .symbols[(callee.object as Identifier).name]?.classDeclaration;
+          final owner = model.references[callee.object]?.classDeclaration;
           final method = owner == null ? null : _method(owner, callee.name);
           return method != null && method.isStatic;
         }();
@@ -5546,6 +5547,11 @@ class Analyzer {
         error('E307', 'A readonly reference cannot expose a mutating method',
             node);
       }
+      if (accessedMethod != null && declaration != null) {
+        final methodValue =
+            _qudsMethodValue(node, raw, look, declaration, accessedMethod);
+        if (methodValue != null) return methodValue;
+      }
       final extensionSymbol =
           extensions.length == 1 ? model.declarations[extensions.single] : null;
       if (extensionSymbol != null) {
@@ -5614,8 +5620,98 @@ class Analyzer {
         node);
   }
 
+  String? _qudsMethodValue(MemberAccess node, String raw, String receiverType,
+      ClassDeclaration declaration, FunctionDeclaration method) {
+    final explicit = identical(node, _nativeInstantiationTarget)
+        ? _nativeInstantiationArguments
+        : null;
+    if (method.parameters.any((p) =>
+        p.defaultValue != null || p.variadic || p.type.contains(' & '))) {
+      if (method.typeParameters.isNotEmpty || explicit != null)
+        error(
+            'E910',
+            'This Quds method value needs a default/variadic/intersection adapter',
+            node);
+      return null;
+    }
+    final owner = _methodReceiver(receiverType, method);
+    if (owner == null ||
+        owner.$2.methods.where((m) => m.name == method.name).length != 1)
+      error('E910', 'This method value needs unambiguous owner metadata', node);
+    final ownerDeclaration = owner.$2;
+    if (method.isStatic && ownerDeclaration != declaration)
+      error(
+          'E910',
+          'An inherited static method value currently requires its declaring type',
+          node);
+    final classArguments = {
+      ..._genericSubstitution(owner.$1, ownerDeclaration)
+    }..removeWhere((key, _) => method.typeParameters.any((p) => p.name == key));
+    final declared = model.declarations[method]!;
+    if (declared.type == '<infer>' && !_checking.contains(method))
+      analyzeMethod(ownerDeclaration, method);
+    if (declared.type == '<infer>')
+      error('E302', 'A method value needs an inferred or declared result type',
+          node);
+    String specialize(String type) => _selfType(
+        _substitute(_qualifiedMethodType(type, ownerDeclaration, method),
+            classArguments),
+        declaration,
+        receiverType);
+    final parameters = [
+      for (final p in method.parameters) (p.name, specialize(p.type))
+    ];
+    final returned = specialize(declared.type);
+    final bounds = {
+      for (final p in method.typeParameters)
+        if (p.bound != null) p.name: specialize(p.bound!)
+    };
+    final expected =
+        _expected == null ? null : nonNullableType(model.resolve(_expected!));
+    final contextual = expected != null && functionTypeParts(expected) != null;
+    List<String> arguments;
+    if (explicit != null) {
+      arguments = explicit;
+    } else if (method.typeParameters.isEmpty) {
+      arguments = const [];
+    } else {
+      if (!contextual)
+        error(
+            'E302',
+            'A generic method value needs type arguments or a function context',
+            node);
+      arguments = _inferNativeFunctionValue(
+          Symbol(method.name, declared.dartName, returned),
+          node,
+          parameters, const {}, const {}, {
+        for (final p in method.typeParameters)
+          p.name: bounds[p.name] ?? 'Object?'
+      });
+    }
+    final substitution = _checkTypeArguments(
+        method.name, method.typeParameters, arguments, node,
+        bounds: bounds);
+    final result = _substitute(returned, substitution);
+    if (_readonlyView(raw, result) != result)
+      error(
+          'E910',
+          'This readonly method value needs a transitive result adapter; declare its readonly result explicitly',
+          node);
+    final signature =
+        '(${parameters.map((p) => '${p.$1}: ${_substitute(p.$2, substitution)}').join(', ')}) -> $result';
+    if (contextual && !compatible(signature, expected))
+      fail('Method value $signature is incompatible with $expected', node);
+    model.references[node] = Symbol(method.name, declared.dartName, result,
+            library: declared.library, documentation: method.documentation)
+        .withFunction(method);
+    model.validatedQudsFunctionValues.add(node);
+    if (explicit == null && arguments.isNotEmpty)
+      model.contextualFunctionArguments[node] = arguments;
+    return node.nullAware ? nullableType(signature) : signature;
+  }
+
   bool _isTypeReference(Expression node) {
-    if (node is! Identifier) return false;
+    if (node is! Identifier && node is! MemberAccess) return false;
     final symbol = model.references[node];
     return symbol?.classDeclaration != null && symbol!.classCase == null;
   }
@@ -6841,6 +6937,7 @@ class Analyzer {
           node);
     final selected = matches.single;
     model.references[node] = selected.$1;
+    model.validatedQudsFunctionValues.add(node);
     _touch(selected.$1);
     if (explicit == null && selected.$3.isNotEmpty)
       model.contextualFunctionArguments[node] = selected.$3;

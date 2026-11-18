@@ -257,7 +257,10 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/quds_method_values.quds",
+        "test/quds_method_values_test.dart"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -388,7 +391,9 @@
       ],
       "verified_slice_files": [
         "test/quds_function_values.quds",
-        "test/quds_function_values_test.dart"
+        "test/quds_function_values_test.dart",
+        "test/quds_method_values.quds",
+        "test/quds_method_values_test.dart"
       ],
       "known_limits": [
         "Some generic/native combinations remain explicitly rejected."
@@ -737,7 +742,9 @@
         "test/native_function_values.quds",
         "test/native_function_values_test.dart",
         "test/quds_function_values.quds",
-        "test/quds_function_values_test.dart"
+        "test/quds_function_values_test.dart",
+        "test/quds_method_values.quds",
+        "test/quds_method_values_test.dart"
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization; unconstrained generic values, full constraint solving and polymorphic callback signatures remain restricted."
@@ -1531,7 +1538,10 @@
         "test/readonly_graph_test.dart",
         "test/readonly_paths_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/quds_method_values.quds",
+        "test/quds_method_values_test.dart"
+      ],
       "known_limits": [
         "Some foreign final/sealed or erased readonly shapes intentionally report E910."
       ],
@@ -1903,7 +1913,9 @@
         "test/native_function_values.quds",
         "test/native_function_values_test.dart",
         "test/quds_function_values.quds",
-        "test/quds_function_values_test.dart"
+        "test/quds_function_values_test.dart",
+        "test/quds_method_values.quds",
+        "test/quds_method_values_test.dart"
       ],
       "known_limits": [
         "Generic native callbacks remain restricted; non-generic optional/named callback metadata has executable coverage."

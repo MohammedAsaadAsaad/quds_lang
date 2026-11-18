@@ -1,5 +1,39 @@
 # Compiler validation — latest 2026-11-18
 
+## Quds bound/static generic method values — 2026-11-18
+
+Handoff updated before coding: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Contract and limits: [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | **5 declarations passed**: receiver once, class/method scopes and inheritance, static/import/private/protected/interface dispatch, nullable/Future values and readonly aliases |
+| Negative conformance | **20 cases plus readonly-this escape** verify bounds/types, static/instance misuse, nullable access, private/protected access, readonly writes/return erasure and adapter rejections |
+| Focused method/function/native/generic/readonly regressions | **121 passed in 24s** |
+| Generated Dart | Golden deterministic; entry analysis passed; imported provider staged; actual VM and JavaScript/Node agreed on 19 output lines |
+| Qualified static regression | Imported class prefix emitted once; direct static call and method value executed |
+| Qualified static isolate regression | Reproduced an unchecked MemberAccess-to-Identifier cast; replaced with owner reference lookup; actual primary-suite VM isolate returned 14 |
+| Documentation example | Actual `quds run` printed `3`, `Quds`, `4` |
+| `dart format .` | 100 files; zero changes |
+| `dart analyze` | No issues found |
+| Final full suite | **700 passed; zero failures; zero skips in 10m40s** |
+| Readiness/whitespace | Inventory regenerated and checked; `git diff --check` passed |
+
+The initial full run was interrupted after the additional qualified-static
+isolate regression exposed a dependent code path. A fresh complete run uses the
+corrected source; the interrupted run is not claimed as a passing result.
+
+Required positional methods retain their declaring owner's generic arguments,
+method-parameter shadowing, visibility and readonly checks. Nullable generic
+method values share the existing single receiver capture. Transitive readonly
+result adapters, defaults/variadics/intersections, extension values, method
+overloads and inherited-static owner lowering remain explicitly limited.
+
+CI adds the primary method suite directly and the driver to its portable subset.
+This configures Windows/macOS coverage; no unobserved remote success or actual
+Flutter engine execution is claimed.
+
+
 ## Quds generic function values and local overload contexts — 2026-11-18
 
 Active handoff updated before implementation:

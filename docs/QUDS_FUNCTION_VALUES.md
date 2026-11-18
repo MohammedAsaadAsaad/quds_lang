@@ -64,8 +64,8 @@ Further work:
 
 - Adapters for computed defaults, optional/variadic parameters and the extra Dart
   type parameters introduced by intersection lowering.
-- Quds class/extension method values with generic receiver substitution,
-  visibility and readonly guarantees.
+- Class-method adapters beyond the required-positional slice now documented in
+  [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md), and extension method values.
 - Imported overload sets: library registration currently rejects duplicate names
   with E204; stable exported overload names and metadata need their own contract.
 - Propagation of inferred return metadata from imported providers.

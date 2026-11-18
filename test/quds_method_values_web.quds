@@ -1,0 +1,85 @@
+use fixtures.quds_method_values.helpers as helpers
+
+class Box<T>:
+  stored: T required
+  echo<U>(value: U) -> U = value
+  keep<U: T>(value: U) -> U = value
+  asyncEcho<U>(value: U) async -> U = value
+  private hidden<U>(value: U) -> U = value
+  reveal() -> (int) -> int = this.hidden<int>
+class Child<X> extends Box<List<X>>:
+  tag: int = 1
+class Shadow<T>:
+  echo<T>(value: T) -> T = value
+class Utility:
+  static echo<U>(value: U) -> U = value
+interface Transformer:
+  echo<T>(value: T) -> T = value
+class Identity implements Transformer:
+  echo<U>(value: U) -> U = value
+class VaultChild extends helpers.Vault:
+  expose() -> (int) -> int = this.guarded<int>
+class Tracker:
+  var calls: int = 0
+makeBox(tracker: Tracker) -> Box<num>:
+  tracker.calls += 1
+  return Box<num>(stored: 1)
+class Counter:
+  var count: int = 1
+  change<U>(value: U) -> U:
+    count += 1
+    return value
+  readonly read() -> int = count
+  readonly echo<U>(value: U) -> U = value
+class ListBox<T>:
+  values: List<T> required
+  readonly read() -> readonly List<T> = values
+
+main() async:
+  tracker = Tracker()
+  explicit = makeBox(tracker).echo<int>
+  contextual: (int) -> int = makeBox(tracker).echo
+  print explicit(3)
+  print contextual(4)
+  print tracker.calls
+  child = Child<int>(stored: [1])
+  inherited = child.keep<List<int>>
+  print inherited([5])[0]
+  shadowed = Shadow<int>().echo<String>
+  print shadowed("shadow")
+  staticValue = Utility.echo<int>
+  print staticValue(6)
+  imported = helpers.Vault(stored: 1).echo<int>
+  print imported(7)
+  staticImported = helpers.Vault.staticEcho<int>
+  print staticImported(8)
+  hidden = Box<num>(stored: 1).reveal()
+  print hidden(9)
+  face: Transformer = Identity()
+  interfaceValue = face.echo<int>
+  print interfaceValue(10)
+  absent: Box<num>? = null
+  missingMethod = absent?.echo<int>
+  print missingMethod
+  available: Box<num>? = Box<num>(stored: 1)
+  nullableValue: ((int) -> int)? = available?.echo
+  print nullableValue!(11)
+  owner = Counter()
+  view: readonly Counter = owner
+  read = view.read
+  print read()
+  owner.change<int>(0)
+  print read()
+  items = [3]
+  listOwner = ListBox<int>(values: items)
+  listView: readonly ListBox<int> = listOwner
+  saved = listView.read
+  print saved()[0]
+  items[0] = 4
+  print saved()[0]
+  future: (int) -> Future<int> = Box<num>(stored: 1).asyncEcho
+  print await future(12)
+  allowedProtected = VaultChild(stored: 1).expose()
+  print allowedProtected(13)
+  readonlyEcho = view.echo<int>
+  print readonlyEcho(14)

@@ -1,0 +1,105 @@
+use fixtures.quds_method_values.helpers as helpers
+
+class Box<T>:
+  stored: T required
+  echo<U>(value: U) -> U = value
+  keep<U: T>(value: U) -> U = value
+  asyncEcho<U>(value: U) async -> U = value
+  private hidden<U>(value: U) -> U = value
+  reveal() -> (int) -> int = this.hidden<int>
+class Child<X> extends Box<List<X>>:
+  tag: int = 1
+class Shadow<T>:
+  echo<T>(value: T) -> T = value
+class Utility:
+  static echo<U>(value: U) -> U = value
+interface Transformer:
+  echo<T>(value: T) -> T = value
+class Identity implements Transformer:
+  echo<U>(value: U) -> U = value
+class VaultChild extends helpers.Vault:
+  expose() -> (int) -> int = this.guarded<int>
+class Tracker:
+  var calls: int = 0
+makeBox(tracker: Tracker) -> Box<num>:
+  tracker.calls += 1
+  return Box<num>(stored: 1)
+class Counter:
+  var count: int = 1
+  change<U>(value: U) -> U:
+    count += 1
+    return value
+  readonly read() -> int = count
+  readonly echo<U>(value: U) -> U = value
+class ListBox<T>:
+  values: List<T> required
+  readonly read() -> readonly List<T> = values
+
+test "bound generic method values evaluate receivers once":
+  tracker = Tracker()
+  explicit = makeBox(tracker).echo<int>
+  contextual: (int) -> int = makeBox(tracker).echo
+  expect(tracker.calls, 2)
+  expect(explicit(value: 3), 3)
+  expect(explicit(4), 4)
+  expect(contextual(5), 5)
+  expect(tracker.calls, 2)
+
+test "class arguments method arguments and inheritance remain separate":
+  child = Child<int>(stored: [1])
+  explicit = child.keep<List<int>>
+  contextual: (List<int>) -> List<int> = child.keep
+  shadowed = Shadow<int>().echo<String>
+  expect(explicit([2])[0], 2)
+  expect(contextual([3])[0], 3)
+  expect(shadowed("shadow"), "shadow")
+
+test "static imported private and interface method values retain dispatch":
+  explicit = Utility.echo<int>
+  contextual: (String) -> String = Utility.echo
+  imported = helpers.Vault(stored: 1).echo<int>
+  staticImported = helpers.Vault.staticEcho<int>
+  privateValue = Box<num>(stored: 1).reveal()
+  face: Transformer = Identity()
+  viaInterface = face.echo<int>
+  expect(explicit(4), 4)
+  expect(contextual("static"), "static")
+  expect(imported(5), 5)
+  expect(staticImported(6), 6)
+  expect(helpers.Vault.staticEcho<int>(7), 7)
+  expect(privateValue(8), 8)
+  expect(viaInterface(9), 9)
+  allowedProtected = VaultChild(stored: 1).expose()
+  expect(allowedProtected(13), 13)
+
+test "nullable bound method values and Future signatures stay typed" async:
+  absent: Box<num>? = null
+  missingMethod = absent?.echo<int>
+  expect(missingMethod, null)
+  available: Box<num>? = Box<num>(stored: 1)
+  explicit = available?.echo<int>
+  contextual: ((int) -> int)? = available?.echo
+  expect(explicit!(9), 9)
+  expect(contextual!(10), 10)
+  future: (int) -> Future<int> = Box<num>(stored: 1).asyncEcho
+  expect(await future(11), 11)
+  isolated = await isolate:
+    helpers.Vault.twice(7)
+  expect(isolated, 14)
+
+test "readonly method values preserve safe reads and nested aliases":
+  owner = Counter()
+  view: readonly Counter = owner
+  read = view.read
+  expect(read(), 1)
+  expect(owner.change<int>(2), 2)
+  expect(read(), 2)
+  readonlyEcho = view.echo<int>
+  expect(readonlyEcho(14), 14)
+  items = [3]
+  listOwner = ListBox<int>(values: items)
+  listView: readonly ListBox<int> = listOwner
+  saved = listView.read
+  expect(saved()[0], 3)
+  items[0] = 4
+  expect(saved()[0], 4)

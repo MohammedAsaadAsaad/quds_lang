@@ -147,3 +147,7 @@ slices, pending conformance and real-platform release gates.
 Quds functions also support explicit/contextual generic values and local overload
 selection from an expected signature; ambiguous values report E311. See
 [Quds function values](docs/QUDS_FUNCTION_VALUES.md) for examples and limits.
+
+Required-positional Quds class method values support class/method substitution,
+static and inherited instance methods, nullable access and checked readonly
+results. See [method values](docs/QUDS_METHOD_VALUES.md) for examples and limits.

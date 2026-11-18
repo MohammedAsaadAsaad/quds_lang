@@ -17,7 +17,9 @@ Actual remote CI/engine evidence and the remaining tracks stay explicit gates;
 this is not a claim of complete Dart parity.
 
 The Quds-side function-value slice and remaining adapters/import contracts are
-tracked in [QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md).
+tracked in [QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md). Required-positional
+class method values and receiver/visibility contracts are tracked separately in
+[QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md).
 
 ## Architecture
 

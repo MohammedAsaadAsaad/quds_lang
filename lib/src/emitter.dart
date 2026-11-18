@@ -3339,6 +3339,14 @@ class DartEmitter {
     final dart = model.references[node]?.dartName ?? node.name;
     final access = node.nullAware ? '?.' : '.';
     var object = expression(node.object, constantContext: constantContext);
+    final referenced = model.references[node];
+    if (model.types[node.object] == 'prefix' &&
+        referenced?.classDeclaration != null &&
+        referenced?.classCase == null) {
+      // Imported Quds type symbols may already carry their namespace. The
+      // expression's receiver supplies that prefix, including escaped aliases.
+      return '$object.${dart.split('.').last}';
+    }
     final type = model.types[node.object];
     final bare = _bareType(type);
     final builtin = model.references[node]?.dartName == node.name;

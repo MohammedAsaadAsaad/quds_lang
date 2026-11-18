@@ -1,0 +1,7 @@
+class Vault:
+  stored: int required
+  echo<U>(value: U) -> U = value
+  static twice(value: int) -> int = value * 2
+  static staticEcho<U>(value: U) -> U = value
+  private secret<U>(value: U) -> U = value
+  protected guarded<U>(value: U) -> U = value

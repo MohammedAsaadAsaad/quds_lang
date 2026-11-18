@@ -1,5 +1,5 @@
 use fixtures/function_values/api.dart as native
-use fixtures/function_values/api.dart show increment, zero
+use fixtures/function_values/api.dart show increment, zero, identity
 
 apply(callback: (int) -> int, value: int) -> int:
   return callback(value)
@@ -66,3 +66,36 @@ test "function expression and reordered arguments execute once in source order":
   answer = native.makeNamed()(native.tick("A", 1), last: native.tick("B", 3), middle: native.tick("D", 2))
   expect(answer, "1:2:3:9")
   expect(native.trace(), "CABD")
+
+test "explicit native generic function values retain specialized signatures":
+  top = identity<int>
+  prefixed = native.identity<String>
+  sequence = native.identity<List<int>>
+  bounded = native.bounded<int>
+  optional = native.genericOptional<int>
+  named = native.genericNamed<String>
+  expect(top(12), 12)
+  expect(sequence([1, 2]), [1, 2])
+  expect(prefixed("Quds"), "Quds")
+  expect(bounded(4), 4)
+  expect(optional(), null)
+  expect(optional(5), 5)
+  expect(named(value: "typed"), "typed")
+  expect(native.invokeNamed(native.genericNamed<int>), 4)
+
+test "explicit generic method values capture receivers and class bounds":
+  before = native.receiverCount()
+  bound = native.makeCounter().identity<int>
+  staticValue = native.Counter.staticIdentity<String>
+  selected = native.Box<num>(1).select<int>
+  expect(bound(7), 7)
+  expect(bound(8), 8)
+  expect(native.receiverCount(), before + 1)
+  expect(staticValue("static"), "static")
+  expect(selected(9), 9)
+  absent: native.Counter? = null
+  absentMethod = absent?.identity<int>
+  expect(absentMethod, null)
+  availableReceiver: native.Counter? = native.Counter(2)
+  presentMethod = availableReceiver?.identity<int>
+  expect(presentMethod!(11), 11)

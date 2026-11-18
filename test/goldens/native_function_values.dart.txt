@@ -2,6 +2,7 @@
 // ignore_for_file: type=lint
 
 import 'fixtures/function_values/api.dart' as native;
+import '<repo>/test/fixtures/function_values/api.dart' as _qNative7de5377ac1bc;
 
 
 void main() {
@@ -22,4 +23,13 @@ void main() {
   native.resetTrace();
   print((native.makeNamed())(native.tick("A", 1), last: native.tick("B", 3), middle: native.tick("D", 2)));
   print(native.trace());
+  final int Function(int) _q5 = native.identity<int>;
+  final String Function(String) _q6 = native.Counter.staticIdentity<String>;
+  final int Function(int) _q7 = native.Box<num>(1).select<int>;
+  final _qNative7de5377ac1bc.Counter? _q8 = native.Counter(2);
+  final int Function(int)? _q9 = ((_qNative7de5377ac1bc.Counter? _qgi0) => _qgi0 == null ? null : _qgi0.identity<int>)(_q8);
+  print(_q5(13));
+  print(_q6("generic"));
+  print(_q7(14));
+  print(((_q9!))(15));
 }

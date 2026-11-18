@@ -1,5 +1,35 @@
 # Compiler validation — latest 2026-11-18
 
+## Explicit native generic function values — 2026-11-18
+
+The active handoff was updated before implementation in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md); older handoffs link to it.
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | **10 declarations passed**, including explicit top-level/prefixed/static/bound values, nested type arguments, optional/named specialization, class bounds and nullable receivers |
+| Focused parser/semantics/native regressions | **93 passed in 23s** |
+| Generated Dart | Deterministic golden matched; Dart analysis passed; VM and JavaScript/Node agreed on all 15 output lines |
+| Documentation example | Actual `quds run` of `math.max<int>` printed `7` |
+| Invalid specializations | Arity/bound violations, non-generic targets, getter-returned ordinary functions, wrong arguments and incompatible binding annotations rejected at Quds source coordinates |
+| Full compiler suite | **653 passed; zero failures; zero skips in 10m03s** |
+| `dart analyze` | No issues found |
+| Format/audit/diff | Changed files formatted; 115-rule inventory regenerated and checked; diff whitespace check passed |
+
+Dart rejects direct instantiation of a nullable generic function value. The
+emitter captures the nullable receiver once and instantiates its non-null bound
+method in the selected arm. Both null and present receivers execute in Quds;
+the generated nullable-method program also analyzes and runs on VM and JS.
+An initial full run began before the final getter-target guard was added and
+reported that newly added rejection against the earlier compiled library. It was
+stopped and replaced with a fresh full run of the final compiler. The focused
+93-test run already verified that guard.
+
+Bare native generic values, polymorphic callback types and explicit Quds
+function/overload specialization remain limited; this does not certify all
+function-type rules or Dart parity. No actual Flutter engine run is claimed.
+
+
 ## Optional/named native function values — 2026-11-18
 
 - Primary Quds suite expanded to eight declarations, with omission/null,

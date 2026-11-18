@@ -735,7 +735,7 @@
         "test/native_function_values_test.dart"
       ],
       "known_limits": [
-        "Non-generic native required/optional/named function values are covered; generic function values remain E910."
+        "Native required/optional/named values and explicit generic instantiation are covered; bare generic values and polymorphic callback signatures remain restricted."
       ],
       "completion_evidence": {
         "positive": [],

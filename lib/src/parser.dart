@@ -789,7 +789,14 @@ class Parser {
     if (!at(TokenKind.less)) return false;
     final after = _skipAngles(index);
     if (after < 0 || after >= tokens.length) return false;
-    return tokens[after].kind == TokenKind.leftParen;
+    return {
+      TokenKind.leftParen,
+      TokenKind.newline,
+      TokenKind.eof,
+      TokenKind.comma,
+      TokenKind.rightParen,
+      TokenKind.rightBracket,
+    }.contains(tokens[after].kind);
   }
 
   AnnotationDeclaration annotationDeclaration(SourceSpan span) {

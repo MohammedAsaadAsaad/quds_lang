@@ -10,6 +10,8 @@ The nine-track working plan and next-agent handoff are in
 verified slices and full certification. This milestone adds native required
 function/method values, target-aware conditional dependency loading, native
 Flutter build commands, F5 live updates and cross-host/Flutter CI configuration.
+Native function values now include optional/named metadata and explicit generic
+instantiation; bare polymorphic values and generic callback types remain limited.
 Actual remote CI/engine evidence and the remaining tracks stay explicit gates;
 this is not a claim of complete Dart parity.
 

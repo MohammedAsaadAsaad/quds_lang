@@ -102,3 +102,35 @@ this document are superseded for this slice. Generic function values, richer
 record signatures and full Quds declaration/lambda parameter-form parity remain
 unfinished. Tests: native_function_values.quds (eight declarations), fourteen
 negative cases, deterministic Dart golden, actual Dart analysis and VM/JS runs.
+
+
+## Explicit native generic function values — 2026-11-18
+
+A native function can now be instantiated before storing or passing its value:
+
+```quds
+use dart:math as math
+
+main():
+  larger = math.max<int>
+  print larger(3, 7)
+```
+
+The same path supports imported unprefixed functions, prefixed functions,
+static methods and bound methods, including methods on generic classes. Every
+explicit type argument is validated against arity and substituted bounds before
+the required/optional/named function signature is constructed. A bound receiver
+is evaluated once. A nullable receiver's `?.method<Type>` is emitted through a
+single receiver capture and null branch, because Dart cannot instantiate the
+nullable generic function value directly.
+
+`test/native_function_values.quds` now has ten declarations. Negative fixtures
+check invalid bounds/arity, applying arguments to a non-generic function, wrong
+call arguments and incompatible annotations. The Dart golden and VM/JavaScript
+program cover specialization and nullable bound methods too.
+
+This does not implement polymorphic generic callback types, inference of bare
+native generic function values from an expected type, or explicit specialization
+of Quds overload/function values. Those cases remain explicit limitations. The
+approved `name<Type>` grammar is preserved; no new keyword or conversion syntax
+was added. For active handoff state, see LANGUAGE_READINESS_AR.md.

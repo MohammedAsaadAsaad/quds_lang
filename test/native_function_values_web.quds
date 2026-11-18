@@ -18,3 +18,12 @@ main():
   native.resetTrace()
   print native.makeNamed()(native.tick("A", 1), last: native.tick("B", 3), middle: native.tick("D", 2))
   print native.trace()
+  generic = native.identity<int>
+  staticGeneric = native.Counter.staticIdentity<String>
+  boundedMethod = native.Box<num>(1).select<int>
+  nullableReceiver: native.Counter? = native.Counter(2)
+  nullableMethod = nullableReceiver?.identity<int>
+  print generic(13)
+  print staticGeneric("generic")
+  print boundedMethod(14)
+  print nullableMethod!(15)

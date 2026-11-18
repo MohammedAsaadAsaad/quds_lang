@@ -3151,7 +3151,7 @@ class DartEmitter {
       NullAwareElement() => '?(${expression(node.value)})',
       CollectionIf() => _piece(node, 'Object', false),
       CollectionFor() => _piece(node, 'Object', false),
-      TypeApplication() => expression(node.callee),
+      TypeApplication() => _functionInstantiation(node),
       AwaitAllExpression() => _awaitAll(node),
       AwaitIsolateExpression() => _awaitIsolate(node),
       SymbolExpression() => _symbol(node.text),
@@ -3305,6 +3305,21 @@ class DartEmitter {
       lines.add('final $end = $value');
     }
     return '(() { ${lines.join('; ')}; return $object.$method($start, $end); })()';
+  }
+
+  String _functionInstantiation(TypeApplication node) {
+    if (!model.instantiatedFunctionValues.contains(node))
+      return expression(node.callee);
+    final types = node.arguments.map(_dartType).join(', ');
+    if (node.callee case MemberAccess member when member.nullAware) {
+      // Dart cannot instantiate a nullable generic function value. Capture the
+      // receiver once, then instantiate the non-null bound method in its arm.
+      final receiver = '_qgi${_temps++}';
+      final type = _dartType(nullableType(model.types[member.object]!));
+      final name = model.references[member]?.dartName ?? member.name;
+      return '(($type $receiver) => $receiver == null ? null : $receiver.$name<$types>)(${expression(member.object)})';
+    }
+    return '${expression(node.callee)}<$types>';
   }
 
   String _member(MemberAccess node, {bool constantContext = false}) {

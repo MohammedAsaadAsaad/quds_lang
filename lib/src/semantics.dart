@@ -135,6 +135,7 @@ class SemanticModel {
   final argumentOrder = <CallExpression, List<int>>{};
   final inferredTypeArguments = <CallExpression, List<String>>{};
   final instantiatedParameterTypes = <CallExpression, List<String>>{};
+  final instantiatedFunctionValues = <TypeApplication>{};
   final functionValueCalls = <CallExpression>{};
   final nativeArguments = <CallExpression, List<(String?, int)>>{};
 
@@ -3953,8 +3954,35 @@ class Analyzer {
           ? type.substring(7, type.length - 1)
           : type;
 
+  Node? _nativeInstantiationTarget;
+  List<String>? _nativeInstantiationArguments;
+
   String typeApplication(TypeApplication node) {
-    fail('Type arguments belong to a call', node);
+    final previousTarget = _nativeInstantiationTarget;
+    final previousArguments = _nativeInstantiationArguments;
+    _nativeInstantiationTarget = node.callee;
+    _nativeInstantiationArguments = node.arguments;
+    late String type;
+    try {
+      type = expression(node.callee);
+    } finally {
+      _nativeInstantiationTarget = previousTarget;
+      _nativeInstantiationArguments = previousArguments;
+    }
+    final symbol = model.references[node.callee];
+    final top = symbol?.nativeTop;
+    final method = symbol?.nativeMember;
+    final nativeCallable = top != null && top.callable && !top.isType ||
+        method != null && !method.getter;
+    if (!nativeCallable || functionTypeParts(nonNullableType(type)) == null) {
+      error(
+          'E910',
+          'Explicit function values currently require a native function or method',
+          node);
+    }
+    model.references[node] = symbol!;
+    model.instantiatedFunctionValues.add(node);
+    return type;
   }
 
   String awaitAll(AwaitAllExpression node) {
@@ -6738,13 +6766,29 @@ class Analyzer {
     final named = top?.namedParameters ?? method!.namedParameters;
     final optional = top?.optionalNames ?? method!.optionalNames;
     final parameters = top?.parameters ?? method!.parameters;
-    if (formals.isNotEmpty ||
+    final explicit = identical(node, _nativeInstantiationTarget)
+        ? _nativeInstantiationArguments
+        : null;
+    if (formals.isNotEmpty && explicit == null ||
         symbol.type.contains('@unsupported.') ||
         parameters.any((p) => p.$2.contains('@unsupported.'))) {
       error('E910', 'This native function value needs additional conformance',
           node);
     }
-    return '(${nativeFunctionParameters(parameters, named, optional)}) -> ${symbol.type}';
+    final substitution = explicit == null
+        ? <String, String>{}
+        : _checkTypeArguments(
+            symbol.name,
+            [
+              for (final p in formals.entries)
+                TypeParameter(p.key, node.span, bound: p.value)
+            ],
+            explicit,
+            node);
+    final specialized = [
+      for (final p in parameters) (p.$1, _substitute(p.$2, substitution))
+    ];
+    return '(${nativeFunctionParameters(specialized, named, optional)}) -> ${_substitute(symbol.type, substitution)}';
   }
 
   String functionType(FunctionDeclaration function) {

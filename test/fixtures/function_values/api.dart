@@ -10,6 +10,9 @@ Counter makeCounter() {
 class Counter {
   Counter(this.base);
   final int base;
+  int Function(int) get callback => increment;
+  T identity<T>(T value) => value;
+  static T staticIdentity<T>(T value) => value;
   int add(int other) => base + other;
   int optionalAdd([int other = 5]) => base + other;
   int namedAdd({required int other, int extra = 2}) => base + other + extra;
@@ -20,6 +23,7 @@ class Box<T> {
   Box(this.value);
   final T value;
   T read() => value;
+  U select<U extends T>(U selected) => selected;
 }
 
 int optional([int value = 5]) => value;
@@ -53,3 +57,7 @@ String Function(int, {required int last, int middle, int? nullable})
   _trace += 'C';
   return combine;
 }
+
+T bounded<T extends num>(T value) => value;
+T? genericOptional<T>([T? value]) => value;
+T genericNamed<T>({required T value}) => value;

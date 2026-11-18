@@ -138,6 +138,8 @@ sessions; see [live updates](docs/FLUTTER_LIVE_UPDATES.md) for validation limits
 
 Imported Dart functions and methods with required positional parameters can be
 stored and passed as typed function values, including bound methods and zero-arg
-functions. Generic/optional/named function values remain explicitly limited.
+functions. Optional/named signatures and explicit native generic specialization such as
+`math.max<int>` are supported. Bare generic values and polymorphic callback
+signatures remain limited.
 The [readiness handoff](docs/LANGUAGE_READINESS_AR.md) separates implemented
 slices, pending conformance and real-platform release gates.

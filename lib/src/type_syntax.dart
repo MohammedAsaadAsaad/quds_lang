@@ -82,19 +82,32 @@ String stripReadonlyType(String type) =>
 /// their values belong to the callable declaration, never to this type.
 class FunctionParameterShape {
   const FunctionParameterShape(this.type,
-      {this.name, this.named = false, this.optional = false});
+      {this.name,
+      this.named = false,
+      this.optional = false,
+      this.variadic = false});
   final String type;
   final String? name;
   final bool named;
   final bool optional;
+
+  /// `...name: Type` collects the remaining positional arguments.
+  final bool variadic;
 }
 
 List<FunctionParameterShape> functionParameters(String text) {
   final result = <FunctionParameterShape>[];
   for (final part in splitTypeList(text)) {
+    if (part.startsWith('...')) {
+      final parsed = functionParameters(part.substring(3).trim()).single;
+      result.add(FunctionParameterShape(parsed.type,
+          name: parsed.name, variadic: true));
+      continue;
+    }
     if (part.startsWith('[') && part.endsWith(']')) {
       result.addAll(functionParameters(part.substring(1, part.length - 1)).map(
-          (p) => FunctionParameterShape(p.type, name: p.name, optional: true)));
+          (p) => FunctionParameterShape(p.type,
+              name: p.name, optional: true, variadic: p.variadic)));
       continue;
     }
     final label = RegExp(r'^([^\s():,<>]+)\s*:').firstMatch(part);
@@ -113,9 +126,10 @@ List<FunctionParameterShape> functionParameters(String text) {
 String nativeFunctionParameters(List<(String, String)> parameters,
     Set<String> named, Set<String> optional) {
   return parameters.map((p) {
+    if (p.$2.startsWith('...')) return '...${p.$1}: ${p.$2.substring(3)}';
     if (named.contains(p.$1))
       return '${p.$1}: ${p.$2}${optional.contains(p.$1) ? ' = missing' : ' required'}';
-    return optional.contains(p.$1) ? '[${p.$2}]' : p.$2;
+    return optional.contains(p.$1) ? '[${p.$1}: ${p.$2}]' : p.$2;
   }).join(', ');
 }
 
@@ -123,7 +137,16 @@ String nativeFunctionParameters(List<(String, String)> parameters,
 /// admitted by the destination (including omission and required named labels).
 bool functionParametersCompatible(String source, String destination,
     bool Function(String, String) compatible) {
-  final from = functionParameters(source), to = functionParameters(destination);
+  var from = functionParameters(source), to = functionParameters(destination);
+  if (from.any((p) => p.variadic) || to.any((p) => p.variadic)) {
+    if (from.isEmpty ||
+        to.isEmpty ||
+        !from.last.variadic ||
+        !to.last.variadic ||
+        !compatible(to.last.type, from.last.type)) return false;
+    from = from.sublist(0, from.length - 1);
+    to = to.sublist(0, to.length - 1);
+  }
   final a = from.where((p) => !p.named).toList();
   final b = to.where((p) => !p.named).toList();
   if (a.where((p) => !p.optional).length > b.where((p) => !p.optional).length ||

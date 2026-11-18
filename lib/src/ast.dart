@@ -283,10 +283,14 @@ class ImportDeclaration extends Statement {
   const ImportDeclaration(this.uri, this.prefix, super.span,
       {this.condition,
       this.export = false,
+      this.deferred = false,
       this.show = const [],
       this.hide = const []});
   final String uri;
   final String? prefix;
+
+  /// `use uri as prefix deferred` loads the library through `prefix.loadLibrary`.
+  final bool deferred;
 
   /// `use uri when condition`. The import is kept only when the condition is true.
   final Expression? condition;

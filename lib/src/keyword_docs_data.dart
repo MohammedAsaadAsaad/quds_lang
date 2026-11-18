@@ -132,7 +132,7 @@ const keywordDocumentation = <String, String>{
   "hide":
       "### hide\n\nExcludes listed names from an import or export. Explicit core filters also apply to prelude names.\n\n```quds\nuse quds:math hide Fraction\n```",
   "deferred":
-      "### deferred\n\nApproved design: loads an imported library lazily through its prefix and loadLibrary operation. **Current limitation:** the compiler does not yet accept this directive suffix; the example documents approved syntax, not executable support.\n\n```quds\nuse dart:math as math deferred\n```",
+      "### deferred\n\nLoads an imported library lazily. The import needs a prefix. `prefix.loadLibrary()` returns `Future<void>` and completes before the prefix's names are used.\n\n```quds\nuse dart:math as math deferred\nmain() async:\n  await math.loadLibrary()\n  print math.min(1, 2)\n```",
   "when":
       "### when\n\nGuards a match arm or selects a compile-time library branch. Library conditions must be constant booleans; standalone `when condition:` selects a compile-time block.\n\n```quds\nuse dart:io when platform == \"vm\"\n```",
   "part":

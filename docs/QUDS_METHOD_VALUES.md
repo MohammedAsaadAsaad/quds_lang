@@ -58,10 +58,10 @@ readonly collection results keep their qualifications and observe mutable aliase
 A readonly collection result cannot be assigned to a mutable-return signature or
 mutated through the saved callback.
 
-When a method value would need additional transitive result protection beyond
-its declared type, this slice reports E910 rather than erasing the qualification.
-Declare a readonly result when that is the method's actual contract; more general
-return adapters remain work.
+A zero-parameter method whose readonly view is wider than its declared result
+stores a guard around the tear-off. A method with parameters that would need
+the same transitive protection still reports E910; declare the readonly result
+explicitly. The qualification is not erased.
 
 | Invalid case | Diagnostic |
 | --- | --- |
@@ -70,23 +70,27 @@ return adapters remain work.
 | Nullable receiver without safe access | E308 |
 | Cross-library private/protected access | E206 / E207 |
 | Mutating method exposed through readonly or mutation of its readonly result | E307 |
-| Unsupported default/variadic/intersection/owner/result adaptation | E910 |
+| Required or variadic parameter after a default, ambiguous owner, or a readonly result adapter on a method with parameters | E910 |
 
 ## Limits and handoff
 
-This slice covers required positional class/interface methods, local and imported
-static methods, inherited instance methods, explicit/contextual specialization,
-nullable access and checked readonly cases. It does not certify class method
-overloads, generic extension values, default/variadic/intersection adapters or
-all mixed-variance constraints.
+Required positional class/interface methods, local and imported static methods,
+inherited instance methods, explicit/contextual specialization, nullable access
+and checked readonly cases remain covered. The value-adapter batch adds trailing
+defaults, variadic methods, generic extension values, and a zero-argument
+readonly result guard.
 
-Dart does not expose a parent's static method through the child type. Inherited
-static values currently report E910 and require the declaring type until
-owner-qualified lowering has its own contract. This is an implementation limit,
-not a replacement language inheritance rule. Explicit instantiation requires
-verified callable metadata; a function-looking getter alone is insufficient.
+Dart does not inherit static methods. A child-type reference to a parent static,
+whether stored or called, lowers to the declaring type (`Utility.echo`, not
+`Derived.echo`). That is an implementation lowering, not a change to the
+language inheritance rule. Class method overloads are still unresolved: the
+checker returns the first method of that name. A required or variadic parameter
+after a default remains E910. Full mixed-variance constraint solving is not
+part of this slice. Explicit instantiation requires verified callable metadata;
+a function-looking getter alone is insufficient.
 
-Evidence: `test/quds_method_values.quds` (five declarations), twenty rejection
-cases plus readonly-this escape, a deterministic Dart golden, entry analysis and
-VM/JavaScript execution. Exact results and active next-agent steps live in
-[VALIDATION.md](VALIDATION.md) and [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Evidence: `test/quds_method_values.quds` (five declarations), the current
+rejection map in its driver, `test/quds_value_adapters.quds`, a deterministic
+Dart golden, entry analysis and VM/JavaScript execution. Exact results and the
+active next-agent steps live in [VALIDATION.md](VALIDATION.md) and
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).

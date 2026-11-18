@@ -15,6 +15,8 @@ class Fresh:
   readonly read() -> List<int> = [1]
 class DerivedUtility extends Utility:
   tag: int = 0
+class Awkward:
+  keep<U>(value: U = 1, other: int) -> int = other
 ''';
 
 void main() {
@@ -43,10 +45,7 @@ void main() {
     'saved = helpers.Vault(stored: 1).guarded<int>': 'E207',
     'view: readonly ListBox<int> = ListBox<int>(values: [1])\n  saved = view.read\n  saved()[0] = 2':
         'E307',
-    'saved = Limited().keep<int>': 'E910',
-    'saved = Limited().first<int>': 'E910',
-    'view: readonly Fresh = Fresh()\n  saved = view.read': 'E910',
-    'saved = DerivedUtility.echo<int>': 'E910',
+    'saved = Awkward().keep<int>': 'E910',
     'saved = Box<num>(stored: 1).echo<int>\n  print saved("bad")': 'E300',
     'saved = helpers.Vault.echo<int>': 'E300',
   };

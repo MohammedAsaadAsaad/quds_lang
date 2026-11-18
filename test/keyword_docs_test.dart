@@ -36,12 +36,6 @@ void main() {
       final example = RegExp(r'```quds\n(.*?)\n```', dotAll: true)
           .firstMatch(entry.value)!
           .group(1)!;
-      if (entry.key == 'deferred') {
-        expect(() => Parser(const Lexer().tokenize('$example\n')).parse(),
-            throwsA(isA<CompilerException>()));
-        expect(entry.value, contains('Current limitation'));
-        continue;
-      }
       try {
         Parser(const Lexer().tokenize('$example\n')).parse();
       } catch (error) {

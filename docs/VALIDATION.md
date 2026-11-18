@@ -1,5 +1,41 @@
 # Compiler validation — latest 2026-11-18
 
+## Quds value adapters, imported overloads, and deferred imports — 2026-11-18
+
+This batch is the cloud-agent work on `cursor/language-completion-b792`, cut from
+`91f1ba7`. Review it from [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Contracts: [QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md) and
+[QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Spec 1.2 is unchanged. No rule
+was marked complete.
+
+| Check | Observed result |
+| --- | --- |
+| Quds adapter suite | **5 declarations passed**: default omission versus explicit null, variadic pack/spread, intersection and generic method/extension/import values, a zero-argument readonly result guard, deferred `loadLibrary` |
+| Negative adapter cases | Non-deferred `loadLibrary` is E300; a deferred import without a prefix is rejected; mutating a guarded readonly result is E307; a required parameter after a default stays E910 |
+| Focused value regressions | **71 passed** across adapter, Quds function, Quds method, and native function value drivers |
+| Generated Dart | Adapter web program analyzed; VM and JavaScript/Node agreed. Function-value golden now includes `choose$1` and the other public overload aliases. Inherited static calls emit the declaring type |
+| Conversion aliases | The first full run missed `$QudsCast…` public aliases because conversion functions were skipped. Restoring unique-name aliases made `test/conversions_test.dart` and `test/export_cast_test.dart` pass |
+| `dart analyze` | No issues found |
+| Package format | `dart format --output=none --set-exit-if-changed lib test bin tool examples editors`: 100 files, zero pending changes |
+| Final full suite | **698 passed; 1 failed; 5m35s** |
+| Inventory and catalogs | `tool/audit_language.py --check`, `tool/sync_keyword_docs.py --check`, academy `tool/sync_keywords.py --check`, and `git diff --check` passed |
+
+The single full-suite failure is `quds create flutter writes the app in quds`.
+Generated Flutter types use a `_qNative…` prefix, so the source does not contain
+the literal `extends StatelessWidget`. The same assertion fails on unmodified
+`91f1ba7` in this environment. It is not a regression of this batch, and this
+run is not a fully green suite.
+
+Default, variadic, and intersection adapters apply when a function or method is
+stored. Direct calls still fill defaults at the call site. A required or variadic
+parameter after a default, a readonly result guard on a method with parameters,
+class method overloads, full constraint solving, polymorphic callbacks,
+parent-constructor synthesis, editor refactoring, a real device Flutter session,
+and certification of the `needs_certification` rules remain open.
+
+
+## Quds bound/static generic method values — 2026-11-18
+
 ## Quds bound/static generic method values — 2026-11-18
 
 Handoff updated before coding: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).

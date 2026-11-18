@@ -1,0 +1,2 @@
+pick(value: int) -> String = "integer"
+pick(value: String) -> String = "text"

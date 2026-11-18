@@ -261,22 +261,25 @@ class DartEmitter {
   }
 
   void _emitPublicNames(Program program) {
-    final counts = <String, int>{};
-    for (final node in program.statements) {
-      if (node is FunctionDeclaration) {
-        counts[node.name] = (counts[node.name] ?? 0) + 1;
-      }
-    }
+    final groups = <String, List<FunctionDeclaration>>{};
     for (final node in program.statements) {
       if (node is! FunctionDeclaration || node.name == 'main') continue;
-      // Private bridge names are needed between Quds parts, not as unused
-      // source-name aliases in a standalone generated Dart library.
       if (node.name.startsWith('_') &&
           !program.statements.any((item) => item is PartDirective)) continue;
-      if (counts[node.name] != 1) continue;
-      final symbol = model.declarations[node];
-      if (symbol == null || symbol.dartName == node.name) continue;
-      line('final ${node.name} = ${symbol.dartName};');
+      groups.putIfAbsent(node.name, () => []).add(node);
+    }
+    for (final entry in groups.entries) {
+      if (entry.value.length == 1) {
+        final symbol = model.declarations[entry.value.single];
+        if (symbol == null || symbol.dartName == entry.key) continue;
+        line('final ${entry.key} = ${symbol.dartName};');
+        continue;
+      }
+      for (var i = 0; i < entry.value.length; i++) {
+        final symbol = model.declarations[entry.value[i]];
+        if (symbol == null) continue;
+        line('final ${entry.key}\$${i + 1} = ${symbol.dartName};');
+      }
     }
   }
 
@@ -322,7 +325,7 @@ class DartEmitter {
           }
           final prefix = node.prefix == null
               ? ''
-              : ' as ${_dartImportPrefix(node.prefix!)}';
+              : '${node.deferred ? ' deferred' : ''} as ${_dartImportPrefix(node.prefix!)}';
           // Inferred nominal results may use a backend type alias while the
           // automatically selected section still records that type dependency.
           final ignore = sectioned ? '// ignore: unused_shown_name\n' : '';
@@ -348,8 +351,9 @@ class DartEmitter {
           _imports.add("export '$uri'$combinator;");
           continue;
         }
-        final prefix =
-            node.prefix == null ? '' : ' as ${_dartImportPrefix(node.prefix!)}';
+        final prefix = node.prefix == null
+            ? ''
+            : '${node.deferred ? ' deferred' : ''} as ${_dartImportPrefix(node.prefix!)}';
         // An explicit filtered/prefixed dart:core import disables Dart's
         // implicit import. Quds primitive types and generated helpers still
         // need core; source-level show/hide remains enforced by semantics.
@@ -1528,10 +1532,11 @@ class DartEmitter {
       type = type.replaceAll(pattern, entry.value);
     }
     if (type.startsWith('readonly ')) return _dartType(type.substring(9));
-    if (type.contains(' & ')) {
+    if (type.contains(' & ') && functionTypeParts(type) == null) {
       return _dartType(type.split(' & ').first.trim());
     }
-    if (type.contains(' | ')) return _unionClass(type);
+    if (type.contains(' | ') && functionTypeParts(type) == null)
+      return _unionClass(type);
     if (isNullableType(type)) {
       return '${_dartType(nonNullableType(type))}?';
     }
@@ -1539,16 +1544,22 @@ class DartEmitter {
       final (parameters, returns) = _splitFunctionType(type);
       final shapes = functionParameters(parameters);
       final parts = <String>[
-        for (final p in shapes.where((p) => !p.named && !p.optional))
+        for (final p
+            in shapes.where((p) => !p.named && !p.optional && !p.variadic))
           _dartType(p.type),
       ];
-      final optional = shapes.where((p) => !p.named && p.optional).toList();
-      final named = shapes.where((p) => p.named).toList();
+      final optional =
+          shapes.where((p) => !p.named && p.optional && !p.variadic).toList();
+      final named = shapes.where((p) => p.named && !p.variadic).toList();
+      final variadic = shapes.where((p) => p.variadic).toList();
       if (optional.isNotEmpty)
         parts.add('[${optional.map((p) => _dartType(p.type)).join(', ')}]');
       if (named.isNotEmpty)
         parts.add(
             '{${named.map((p) => '${p.optional ? '' : 'required '}${_dartType(p.type)} ${p.name}').join(', ')}}');
+      for (final parameter in variadic) {
+        parts.add('List<${_dartType(parameter.type)}>');
+      }
       final args = parts.join(', ');
       return '${_dartType(returns)} Function($args)';
     }
@@ -3018,6 +3029,8 @@ class DartEmitter {
 
   String quote(String value) => quoteDartString(value);
   final _emittingContextualFunction = <Expression>{};
+  final _emittingValueLowering = <Expression>{};
+  final _emittingValueGuard = <Expression>{};
   String expression(Expression node,
       {bool constantContext = false, bool opaqueBool = false}) {
     if (identical(node, _replace) && _replaceWith != null) {
@@ -3036,6 +3049,14 @@ class DartEmitter {
         return '${_conversionTarget(conversion)}(${expression(node, opaqueBool: opaqueBool)})';
       } finally {
         _emittingConversions.remove(node);
+      }
+    }
+    if (model.qudsValueLowerings.containsKey(node) &&
+        _emittingValueLowering.add(node)) {
+      try {
+        return _finishValue(node, _emitQudsValueLowering(node));
+      } finally {
+        _emittingValueLowering.remove(node);
       }
     }
     final functionArguments = model.contextualFunctionArguments[node];
@@ -3103,69 +3124,72 @@ class DartEmitter {
     final logic = node is BinaryExpression &&
         (node.operator == 'and' || node.operator == 'or');
     final childOpaque = !constantContext && (opaqueBool || logic);
-    return switch (node) {
-      Literal() =>
-        node.value is String ? quote(node.value as String) : '${node.value}',
-      Identifier() => _identifier(node),
-      // Dart has no prefix +. Quds unary + is numeric identity.
-      UnaryExpression() => switch (node.operator) {
-          'not' =>
-            '(!${expression(node.operand, constantContext: constantContext, opaqueBool: childOpaque)})',
-          '+' => expression(node.operand, constantContext: constantContext),
-          '!' =>
-            '(${expression(node.operand, constantContext: constantContext)}!)',
-          _ =>
-            '(${node.operator}${expression(node.operand, constantContext: constantContext)})',
-        },
-      BinaryExpression() => _binary(node,
-          constantContext: constantContext, childOpaque: childOpaque),
-      ChainComparison() => _chain(node),
-      SliceExpression() => _slice(node),
-      TypeTestExpression() =>
-        '(${expression(node.operand, constantContext: constantContext)} ${node.operator} ${_dartType(node.type)})',
-      ListExpression() => _list(node),
-      CallExpression() => call(node, constantContext: constantContext),
-      InterpolatedString() =>
-        '[${node.parts.map((part) => expression(part, constantContext: constantContext)).join(', ')}].join()',
-      ShownExpression() =>
-        "('${_quote(node.text)}=' + (${expression(node.value, constantContext: constantContext)}).toString())",
-      Lambda() => _lambda(node),
-      MemberAccess() => _member(node, constantContext: constantContext),
-      IndexExpression() => _index(node, constantContext: constantContext),
-      MapExpression() => _map(node),
-      SetExpression() => _set(node),
-      RecordExpression() =>
-        '(${node.fields.map((field) => expression(field)).join(', ')})',
-      RangeExpression() => _range(node),
-      AwaitExpression() =>
-        '(await ${expression(node.operand, constantContext: constantContext)})',
-      PropagateExpression() => _propagate(node),
-      DoExpression() => _do(node),
-      CaptureExpression() => _capture(node),
-      ConversionExpression() => _convert(node),
-      WithExpression() => _with(node),
-      DotShorthand() => _dot(node),
-      AssignExpression() =>
-        '${_cell(model.references[node]!)} ${node.operator} ${expression(node.value, constantContext: constantContext)}',
-      ThisExpression() => 'this',
-      SpreadElement() =>
-        '${node.nullAware ? '...?' : '...'}${expression(node.operand, constantContext: constantContext)}',
-      IfExpression() => _if(node),
-      MatchExpression() => _match(node),
-      TryExpression() =>
-        '(() { try { return ${expression(node.operand)}; } catch (error) { return ${expression(node.fallback)}; } })()',
-      LoopExpression() => _loopValue(node),
-      WhereExpression() => _where(node),
-      MapComprehension() => _mapEntry(node, node, 'Object', 'Object'),
-      NullAwareElement() => '?(${expression(node.value)})',
-      CollectionIf() => _piece(node, 'Object', false),
-      CollectionFor() => _piece(node, 'Object', false),
-      TypeApplication() => _functionInstantiation(node),
-      AwaitAllExpression() => _awaitAll(node),
-      AwaitIsolateExpression() => _awaitIsolate(node),
-      SymbolExpression() => _symbol(node.text),
-      NameofExpression() => "'${_quote(node.text)}'",
-    };
+    return _finishValue(
+        node,
+        switch (node) {
+          Literal() => node.value is String
+              ? quote(node.value as String)
+              : '${node.value}',
+          Identifier() => _identifier(node),
+          // Dart has no prefix +. Quds unary + is numeric identity.
+          UnaryExpression() => switch (node.operator) {
+              'not' =>
+                '(!${expression(node.operand, constantContext: constantContext, opaqueBool: childOpaque)})',
+              '+' => expression(node.operand, constantContext: constantContext),
+              '!' =>
+                '(${expression(node.operand, constantContext: constantContext)}!)',
+              _ =>
+                '(${node.operator}${expression(node.operand, constantContext: constantContext)})',
+            },
+          BinaryExpression() => _binary(node,
+              constantContext: constantContext, childOpaque: childOpaque),
+          ChainComparison() => _chain(node),
+          SliceExpression() => _slice(node),
+          TypeTestExpression() =>
+            '(${expression(node.operand, constantContext: constantContext)} ${node.operator} ${_dartType(node.type)})',
+          ListExpression() => _list(node),
+          CallExpression() => call(node, constantContext: constantContext),
+          InterpolatedString() =>
+            '[${node.parts.map((part) => expression(part, constantContext: constantContext)).join(', ')}].join()',
+          ShownExpression() =>
+            "('${_quote(node.text)}=' + (${expression(node.value, constantContext: constantContext)}).toString())",
+          Lambda() => _lambda(node),
+          MemberAccess() => _member(node, constantContext: constantContext),
+          IndexExpression() => _index(node, constantContext: constantContext),
+          MapExpression() => _map(node),
+          SetExpression() => _set(node),
+          RecordExpression() =>
+            '(${node.fields.map((field) => expression(field)).join(', ')})',
+          RangeExpression() => _range(node),
+          AwaitExpression() =>
+            '(await ${expression(node.operand, constantContext: constantContext)})',
+          PropagateExpression() => _propagate(node),
+          DoExpression() => _do(node),
+          CaptureExpression() => _capture(node),
+          ConversionExpression() => _convert(node),
+          WithExpression() => _with(node),
+          DotShorthand() => _dot(node),
+          AssignExpression() =>
+            '${_cell(model.references[node]!)} ${node.operator} ${expression(node.value, constantContext: constantContext)}',
+          ThisExpression() => 'this',
+          SpreadElement() =>
+            '${node.nullAware ? '...?' : '...'}${expression(node.operand, constantContext: constantContext)}',
+          IfExpression() => _if(node),
+          MatchExpression() => _match(node),
+          TryExpression() =>
+            '(() { try { return ${expression(node.operand)}; } catch (error) { return ${expression(node.fallback)}; } })()',
+          LoopExpression() => _loopValue(node),
+          WhereExpression() => _where(node),
+          MapComprehension() => _mapEntry(node, node, 'Object', 'Object'),
+          NullAwareElement() => '?(${expression(node.value)})',
+          CollectionIf() => _piece(node, 'Object', false),
+          CollectionFor() => _piece(node, 'Object', false),
+          TypeApplication() => _functionInstantiation(node),
+          AwaitAllExpression() => _awaitAll(node),
+          AwaitIsolateExpression() => _awaitIsolate(node),
+          SymbolExpression() => _symbol(node.text),
+          NameofExpression() => "'${_quote(node.text)}'",
+        });
   }
 
   bool _opaqueBoolLeaf(Expression node) {
@@ -3319,7 +3343,89 @@ class DartEmitter {
   String _functionInstantiation(TypeApplication node) {
     if (!model.instantiatedFunctionValues.contains(node))
       return expression(node.callee);
+    if (model.qudsValueLowerings.containsKey(node.callee))
+      return expression(node.callee);
     return _instantiateNativeValue(node.callee, node.arguments);
+  }
+
+  String _finishValue(Expression node, String value) {
+    final guard = model.qudsValueResultGuards[node];
+    if (guard == null || !_emittingValueGuard.add(node)) return value;
+    try {
+      final call = '($value)()';
+      return '(() => ${_readonlyGuard(guard, call)})';
+    } finally {
+      _emittingValueGuard.remove(node);
+    }
+  }
+
+  String _emitQudsValueLowering(Expression node) {
+    final lowering = model.qudsValueLowerings[node]!;
+    final function = lowering.function;
+    final declared = model.declarations[function]!;
+    String target;
+    if (node is MemberAccess) {
+      final method = declared.dartName;
+      if (lowering.staticOwner != null) {
+        target = '${_dartType(lowering.staticOwner!)}.$method';
+      } else if (node.nullAware) {
+        final receiver = '_qrecv${_temps++}';
+        final type = _dartType(nullableType(model.types[node.object]!));
+        final body = _valueAdapter('$receiver.$method', lowering);
+        return '(($type $receiver) => $receiver == null ? null : $body)(${expression(node.object)})';
+      } else {
+        final receiver = '_qrecv${_temps++}';
+        final body = _valueAdapter('$receiver.$method', lowering);
+        return '((${_dartType(model.types[node.object]!)} $receiver) => $body)(${expression(node.object)})';
+      }
+    } else {
+      target = node is Identifier
+          ? _identifier(node)
+          : expression(node is TypeApplication ? node.callee : node);
+    }
+    return _valueAdapter(target, lowering);
+  }
+
+  String _valueAdapter(String target, QudsValueLowering lowering) {
+    final function = lowering.function;
+    final hidden = <String>[];
+    for (var i = 0; i < function.parameters.length; i++) {
+      if (!function.parameters[i].type.contains(' & ')) continue;
+      hidden.add(lowering.parameterTypes[i].split(' & ').first.trim());
+    }
+    final arguments = [...lowering.typeArguments, ...hidden];
+    if (arguments.isNotEmpty)
+      target = '$target<${arguments.map(_dartType).join(', ')}>';
+    if (function.parameters
+        .every((parameter) => parameter.defaultValue == null)) return target;
+    final required = <String>[];
+    final optional = <String>[];
+    final passed = <String>[];
+    for (var i = 0; i < function.parameters.length; i++) {
+      final parameter = function.parameters[i];
+      final dartName = model.declarations[parameter]!.dartName;
+      final raw = lowering.parameterTypes[i];
+      final type = raw.contains(' & ') ? raw.split(' & ').first.trim() : raw;
+      final dartType = _dartType(type);
+      if (parameter.variadic) {
+        required.add('List<$dartType> $dartName');
+        passed.add(dartName);
+      } else if (parameter.defaultValue != null) {
+        _useOptional = true;
+        optional.add('Object? $dartName = missing');
+        final fallback = expression(parameter.defaultValue!);
+        passed.add(
+            'identical($dartName, missing) ? $fallback : $dartName as $dartType');
+      } else {
+        required.add('$dartType $dartName');
+        passed.add(dartName);
+      }
+    }
+    final signature = [
+      ...required,
+      if (optional.isNotEmpty) '[${optional.join(', ')}]',
+    ].join(', ');
+    return '($signature) => $target(${passed.join(', ')})';
   }
 
   String _instantiateNativeValue(Expression callee, List<String> arguments) {
@@ -3337,6 +3443,9 @@ class DartEmitter {
 
   String _member(MemberAccess node, {bool constantContext = false}) {
     final dart = model.references[node]?.dartName ?? node.name;
+    if (model.staticValueOwners[node] case final owner?) {
+      return '${_dartType(owner)}.$dart';
+    }
     final access = node.nullAware ? '?.' : '.';
     var object = expression(node.object, constantContext: constantContext);
     final referenced = model.references[node];
@@ -3735,15 +3844,32 @@ class DartEmitter {
     return '$helper(${[...positional, ...named].join(', ')})';
   }
 
+  String? _functionValueVariadicList(
+      CallExpression node, String Function(int) value) {
+    final element = model.functionValueVariadicElements[node];
+    if (element == null) return null;
+    final pieces = [
+      for (final index in model.variadicArguments[node] ?? const <int>[])
+        value(index)
+    ];
+    return '<${_dartType(element)}>[${pieces.join(', ')}]';
+  }
+
   String _nativeInvocation(CallExpression node, String target,
       MemberAccess? member, bool constantContext) {
     final layout = model.nativeArguments[node]!;
     final reordered =
         List.generate(layout.length, (i) => layout[i].$2 != i).any((v) => v);
-    String arguments(String Function(int) value) => layout
-        .map((slot) =>
-            '${slot.$1 == null ? '' : '${slot.$1}: '}${value(slot.$2)}')
-        .join(', ');
+    String arguments(String Function(int) value) {
+      final head = layout
+          .map((slot) =>
+              '${slot.$1 == null ? '' : '${slot.$1}: '}${value(slot.$2)}')
+          .join(', ');
+      final tail = _functionValueVariadicList(node, value);
+      if (tail == null) return head;
+      return [if (head.isNotEmpty) head, tail].join(', ');
+    }
+
     if (!reordered || constantContext) {
       return '$target(${arguments((i) => expression(node.arguments[i].value, constantContext: constantContext))})';
     }
@@ -3909,8 +4035,10 @@ class DartEmitter {
                     (node.callee as TypeApplication).callee is Identifier)
         ? _dartType(model.types[node]!)
         : _constructed(node, targetSymbol.name);
+    final inheritedStatic =
+        member == null ? null : model.staticValueOwners[member];
     var target = member != null
-        ? '${expression(member.object, constantContext: constantContext)}.${model.references[member]?.dartName ?? member.name}'
+        ? '${inheritedStatic == null ? expression(member.object, constantContext: constantContext) : _dartType(inheritedStatic)}.${model.references[member]?.dartName ?? member.name}'
         : node.callee is Identifier &&
                 model.implicitThis.contains(node.callee as Identifier)
             ? 'this.${targetSymbol.dartName}'

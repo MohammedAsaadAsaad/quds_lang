@@ -141,6 +141,18 @@ class SemanticModel {
   final functionValueCalls = <CallExpression>{};
   final nativeArguments = <CallExpression, List<(String?, int)>>{};
 
+  /// Closures that restore Quds defaults or hide intersection type parameters.
+  final qudsValueLowerings = <Expression, QudsValueLowering>{};
+
+  /// Element type packed into the list argument of a variadic function value.
+  final functionValueVariadicElements = <CallExpression, String>{};
+
+  /// Declaring type used when an inherited static method is torn off.
+  final staticValueOwners = <Expression, String>{};
+
+  /// Return type whose readonly view must wrap a torn-off method.
+  final qudsValueResultGuards = <Expression, String>{};
+
   /// Const expressions that were evaluated. Short-circuited operands are absent.
   final constants = <Expression, ConstValue>{};
 
@@ -983,9 +995,18 @@ class Analyzer {
     final savedTypes = {..._typeNames};
     _typeNames.addAll(statement.typeParameters.map((item) => item.name));
     for (final method in statement.methods) {
+      final added = method.typeParameters.map((item) => item.name).toList();
+      _typeNames.addAll(added);
       final type = method.returnType ??
           (method.expressionBody == null ? 'void' : '<infer>');
       if (type != '<infer>') validateType(type, method);
+      for (final parameter in method.parameters) {
+        validateType(
+            parameter.variadic ? 'List<${parameter.type}>' : parameter.type,
+            parameter,
+            allowVoid: false);
+      }
+      _typeNames.removeAll(added);
       final symbol = Symbol(method.name, method.name, type,
               function: method,
               library: library,
@@ -2498,9 +2519,6 @@ class Analyzer {
             ? _global.symbols[statement.name]
             : _space(qualify, statement)[statement.name];
     if (existing?.function == statement) return;
-    if (existing != null) {
-      error('E204', 'Two imports define ${statement.name}', statement);
-    }
     final type =
         statement.returnType ?? (statement.isAsync ? 'Future<void>' : 'void');
     final effective = statement.isAsync &&
@@ -2508,6 +2526,41 @@ class Analyzer {
             !stripReadonlyType(statement.returnType!).startsWith('Future<')
         ? 'Future<${statement.returnType}>'
         : type;
+    if (existing != null &&
+        existing.classDeclaration == null &&
+        existing.overloads.isNotEmpty &&
+        existing.overloads.every((other) => !sameSignature(other, statement))) {
+      if (existing.overloads.length == 1) {
+        final first = existing.overloads.single;
+        final previous = model.declarations[first]!;
+        model.declarations[first] = Symbol(
+                first.name, _importedOverloadName(first.name, 1), previous.type,
+                function: first,
+                library: previous.library,
+                documentation: previous.documentation)
+            .withFunction(first);
+      }
+      final symbol = Symbol(
+              statement.name,
+              _importedOverloadName(
+                  statement.name, existing.overloads.length + 1),
+              effective,
+              function: statement,
+              library: library,
+              documentation: statement.documentation)
+          .withFunction(statement);
+      model.declarations[statement] = symbol;
+      existing.overloads.add(statement);
+      for (final parameter in statement.parameters) {
+        model.declarations[parameter] = Symbol(
+            parameter.name, parameter.name, parameter.type,
+            mutable: parameter.mutable);
+      }
+      return;
+    }
+    if (existing != null) {
+      error('E204', 'Two imports define ${statement.name}', statement);
+    }
     final symbol = Symbol(statement.name, statement.name, effective,
             function: statement,
             library: library,
@@ -2525,6 +2578,12 @@ class Analyzer {
     }
     _space(qualify, statement)[statement.name] = symbol;
   }
+
+  /// Stable public name of an imported overload, in source order.
+  String _importedOverloadName(String name, int index) => '$name\$$index';
+
+  bool _deferredPrefix(String name) => model.imports
+      .any((directive) => directive.deferred && directive.prefix == name);
 
   void _bindParts(Program program) {
     if (_file == '<input>') return;
@@ -2671,7 +2730,7 @@ class Analyzer {
         type == 'Invocation') {
       return;
     }
-    if (type.contains(' & ')) {
+    if (type.contains(' & ') && functionTypeParts(type) == null) {
       final parts = type.split(' & ').map((part) => part.trim()).toList();
       _checkIntersection(parts, node);
       for (final part in parts) {
@@ -2679,7 +2738,7 @@ class Analyzer {
       }
       return;
     }
-    if (type.contains(' | ')) {
+    if (type.contains(' | ') && functionTypeParts(type) == null) {
       for (final part in type.split(' | ')) {
         validateType(part.trim(), node, allowVoid: false);
       }
@@ -5430,6 +5489,13 @@ class Analyzer {
         _touch(owner);
         model.references[node.object] = owner;
         model.types[node.object] = 'prefix';
+        if (node.name == 'loadLibrary') {
+          if (!_deferredPrefix((node.object as Identifier).name))
+            error('E300', 'loadLibrary requires a deferred import', node);
+          final symbol = Symbol('loadLibrary', 'loadLibrary', 'Future<void>');
+          model.references[node] = symbol;
+          return '() -> Future<void>';
+        }
         final found = owner.namespace![node.name];
         if (found == null) {
           if (!owner.external) {
@@ -5552,6 +5618,14 @@ class Analyzer {
             _qudsMethodValue(node, raw, look, declaration, accessedMethod);
         if (methodValue != null) return methodValue;
       }
+      if (accessedExtension != null &&
+          (accessedExtension.typeParameters.isNotEmpty ||
+              _valueNeedsLowering(accessedExtension) ||
+              identical(node, _nativeInstantiationTarget))) {
+        final extensionValue =
+            _qudsExtensionValue(node, raw, look, accessedExtension);
+        if (extensionValue != null) return extensionValue;
+      }
       final extensionSymbol =
           extensions.length == 1 ? model.declarations[extensions.single] : null;
       if (extensionSymbol != null) {
@@ -5625,25 +5699,18 @@ class Analyzer {
     final explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
         : null;
-    if (method.parameters.any((p) =>
-        p.defaultValue != null || p.variadic || p.type.contains(' & '))) {
-      if (method.typeParameters.isNotEmpty || explicit != null)
-        error(
-            'E910',
-            'This Quds method value needs a default/variadic/intersection adapter',
-            node);
-      return null;
-    }
+    if (_awkwardValueParameters(method))
+      error(
+          'E910',
+          'A required or variadic parameter follows a default, so this method value has no adapter yet',
+          node);
     final owner = _methodReceiver(receiverType, method);
     if (owner == null ||
         owner.$2.methods.where((m) => m.name == method.name).length != 1)
       error('E910', 'This method value needs unambiguous owner metadata', node);
     final ownerDeclaration = owner.$2;
     if (method.isStatic && ownerDeclaration != declaration)
-      error(
-          'E910',
-          'An inherited static method value currently requires its declaring type',
-          node);
+      model.staticValueOwners[node] = _genericHead(owner.$1);
     final classArguments = {
       ..._genericSubstitution(owner.$1, ownerDeclaration)
     }..removeWhere((key, _) => method.typeParameters.any((p) => p.name == key));
@@ -5658,8 +5725,8 @@ class Analyzer {
             classArguments),
         declaration,
         receiverType);
-    final parameters = [
-      for (final p in method.parameters) (p.name, specialize(p.type))
+    final parameterTypes = [
+      for (final p in method.parameters) specialize(p.type)
     ];
     final returned = specialize(declared.type);
     final bounds = {
@@ -5681,9 +5748,18 @@ class Analyzer {
             'A generic method value needs type arguments or a function context',
             node);
       arguments = _inferNativeFunctionValue(
-          Symbol(method.name, declared.dartName, returned),
-          node,
-          parameters, const {}, const {}, {
+          Symbol(method.name, declared.dartName, returned), node, [
+        for (var i = 0; i < method.parameters.length; i++)
+          (
+            method.parameters[i].name,
+            method.parameters[i].variadic
+                ? '...${parameterTypes[i]}'
+                : parameterTypes[i]
+          )
+      ], const {}, {
+        for (final parameter in method.parameters)
+          if (parameter.defaultValue != null) parameter.name
+      }, {
         for (final p in method.typeParameters)
           p.name: bounds[p.name] ?? 'Object?'
       });
@@ -5692,19 +5768,118 @@ class Analyzer {
         method.name, method.typeParameters, arguments, node,
         bounds: bounds);
     final result = _substitute(returned, substitution);
-    if (_readonlyView(raw, result) != result)
-      error(
-          'E910',
-          'This readonly method value needs a transitive result adapter; declare its readonly result explicitly',
-          node);
+    final specialized = [
+      for (final type in parameterTypes) _substitute(type, substitution)
+    ];
+    final viewed = _readonlyView(raw, result);
+    if (viewed != result) {
+      if (method.parameters.isNotEmpty)
+        error(
+            'E910',
+            'This readonly method value needs a transitive result adapter; declare its readonly result explicitly',
+            node);
+      model.qudsValueResultGuards[node] = viewed;
+    }
+    final exposed = viewed;
     final signature =
-        '(${parameters.map((p) => '${p.$1}: ${_substitute(p.$2, substitution)}').join(', ')}) -> $result';
+        _callableSignature(method.parameters, specialized, exposed);
     if (contextual && !compatible(signature, expected))
       fail('Method value $signature is incompatible with $expected', node);
+    model.references[node] = Symbol(method.name, declared.dartName, exposed,
+            library: declared.library, documentation: method.documentation)
+        .withFunction(method);
+    model.validatedQudsFunctionValues.add(node);
+    _rememberValueLowering(node, method, arguments, specialized,
+        staticOwner: model.staticValueOwners[node]);
+    if (explicit == null && arguments.isNotEmpty)
+      model.contextualFunctionArguments[node] = arguments;
+    if (method.parameters.any((p) => p.defaultValue != null) &&
+        !_checking.contains(method)) analyzeMethod(ownerDeclaration, method);
+    return node.nullAware ? nullableType(signature) : signature;
+  }
+
+  String? _qudsExtensionValue(MemberAccess node, String raw,
+      String receiverType, FunctionDeclaration method) {
+    if (_awkwardValueParameters(method))
+      error(
+          'E910',
+          'A required or variadic parameter follows a default, so this method value has no adapter yet',
+          node);
+    final explicit = identical(node, _nativeInstantiationTarget)
+        ? _nativeInstantiationArguments
+        : null;
+    ExtensionDeclaration? extension;
+    for (final item in model.extensions) {
+      if (item.methods.contains(method)) extension = item;
+    }
+    if (extension != null &&
+        method.parameters.any((parameter) => parameter.defaultValue != null) &&
+        !_checking.contains(method)) analyzeExtension(extension, method);
+    final declared = model.declarations[method]!;
+    if (declared.type == '<infer>')
+      error('E302', 'A method value needs an inferred or declared result type',
+          node);
+    final classArguments = _extensionSubstitution(receiverType, method);
+    String specialize(String type) => _substitute(type, classArguments);
+    final parameterTypes = [
+      for (final parameter in method.parameters) specialize(parameter.type)
+    ];
+    final returned = specialize(declared.type);
+    final bounds = {
+      for (final parameter in method.typeParameters)
+        if (parameter.bound != null)
+          parameter.name: specialize(parameter.bound!)
+    };
+    final expected =
+        _expected == null ? null : nonNullableType(model.resolve(_expected!));
+    final contextual = expected != null && functionTypeParts(expected) != null;
+    List<String> arguments;
+    if (explicit != null) {
+      arguments = explicit;
+    } else if (method.typeParameters.isEmpty) {
+      arguments = const [];
+    } else {
+      if (!contextual)
+        error(
+            'E302',
+            'A generic method value needs type arguments or a function context',
+            node);
+      arguments = _inferNativeFunctionValue(
+          Symbol(method.name, declared.dartName, returned), node, [
+        for (var i = 0; i < method.parameters.length; i++)
+          (
+            method.parameters[i].name,
+            method.parameters[i].variadic
+                ? '...${parameterTypes[i]}'
+                : parameterTypes[i]
+          )
+      ], const {}, {
+        for (final parameter in method.parameters)
+          if (parameter.defaultValue != null) parameter.name
+      }, {
+        for (final parameter in method.typeParameters)
+          parameter.name: bounds[parameter.name] ?? 'Object?'
+      });
+    }
+    final substitution = _checkTypeArguments(
+        method.name, method.typeParameters, arguments, node,
+        bounds: bounds);
+    final result = _substitute(returned, substitution);
+    final specialized = [
+      for (final type in parameterTypes) _substitute(type, substitution)
+    ];
+    final signature =
+        _callableSignature(method.parameters, specialized, result);
+    if (contextual && !compatible(signature, expected))
+      fail('Method value $signature is incompatible with $expected', node);
+    if (raw.startsWith('readonly ') && !isReadonlyMethod(method))
+      error(
+          'E307', 'A readonly reference cannot expose a mutating method', node);
     model.references[node] = Symbol(method.name, declared.dartName, result,
             library: declared.library, documentation: method.documentation)
         .withFunction(method);
     model.validatedQudsFunctionValues.add(node);
+    _rememberValueLowering(node, method, arguments, specialized);
     if (explicit == null && arguments.isNotEmpty)
       model.contextualFunctionArguments[node] = arguments;
     return node.nullAware ? nullableType(signature) : signature;
@@ -6865,14 +7040,17 @@ class Analyzer {
         : null;
     if (candidates.length == 1 &&
         candidates.single.typeParameters.isEmpty &&
-        explicit == null) return null;
-    if (candidates.any((f) =>
-        _methodOwners.containsKey(f) ||
-        f.parameters.any((p) =>
-            p.defaultValue != null || p.variadic || p.type.contains(' & '))))
+        explicit == null &&
+        !_valueNeedsLowering(candidates.single)) return null;
+    if (candidates.any(_methodOwners.containsKey))
       error(
           'E910',
           'These Quds function values need a method/default/variadic adapter',
+          node);
+    if (candidates.any(_awkwardValueParameters))
+      error(
+          'E910',
+          'A required or variadic parameter follows a default, so this function value has no adapter yet',
           node);
     final expected =
         _expected == null ? null : nonNullableType(model.resolve(_expected!));
@@ -6880,7 +7058,7 @@ class Analyzer {
     if (candidates.length > 1 && explicit == null && !contextual)
       error('E311', 'An overload value needs one expected function signature',
           node);
-    final matches = <(Symbol, String, List<String>)>[];
+    final matches = <(Symbol, String, List<String>, List<String>)>[];
     for (final candidate in candidates) {
       if (explicit != null &&
           candidate.typeParameters.length != explicit.length &&
@@ -6903,16 +7081,24 @@ class Analyzer {
                 node);
           arguments = _inferNativeFunctionValue(
               Symbol(candidate.name, declaration.dartName, returned), node, [
-            for (final p in candidate.parameters) (p.name, p.type)
-          ], const {}, const {}, {
+            for (final p in candidate.parameters)
+              (p.name, p.variadic ? '...${p.type}' : p.type)
+          ], const {}, {
+            for (final p in candidate.parameters)
+              if (p.defaultValue != null) p.name
+          }, {
             for (final p in candidate.typeParameters)
               p.name: p.bound ?? 'Object?'
           });
         }
         final substitution = _checkTypeArguments(
             candidate.name, candidate.typeParameters, arguments, node);
-        final signature =
-            '(${candidate.parameters.map((p) => '${p.name}: ${_substitute(p.type, substitution)}').join(', ')}) -> ${_substitute(returned, substitution)}';
+        final specialized = [
+          for (final parameter in candidate.parameters)
+            _substitute(parameter.type, substitution)
+        ];
+        final signature = _callableSignature(candidate.parameters, specialized,
+            _substitute(returned, substitution));
         if (contextual && !compatible(signature, expected)) {
           if (candidates.length == 1)
             fail('Function value $signature is incompatible with $expected',
@@ -6921,13 +7107,16 @@ class Analyzer {
         }
         final selected = Symbol(
                 symbol.name,
-                symbol.library.isEmpty ? declaration.dartName : symbol.dartName,
+                symbol.library.isEmpty
+                    ? declaration.dartName
+                    : model.declarations[candidate]?.dartName ??
+                        symbol.dartName,
                 returned,
                 function: candidate,
                 library: symbol.library,
                 documentation: candidate.documentation)
             .withFunction(candidate);
-        matches.add((selected, signature, arguments));
+        matches.add((selected, signature, arguments, specialized));
       } on CompilerException {
         if (candidates.length == 1) rethrow;
       }
@@ -6939,9 +7128,60 @@ class Analyzer {
     model.references[node] = selected.$1;
     model.validatedQudsFunctionValues.add(node);
     _touch(selected.$1);
+    _rememberValueLowering(
+        node, selected.$1.function!, selected.$3, selected.$4);
+    if (selected.$1.function!.parameters.any((p) => p.defaultValue != null) &&
+        !_checking.contains(selected.$1.function))
+      analyzeFunction(selected.$1.function!);
     if (explicit == null && selected.$3.isNotEmpty)
       model.contextualFunctionArguments[node] = selected.$3;
     return selected.$2;
+  }
+
+  bool _valueNeedsLowering(FunctionDeclaration function) =>
+      function.parameters.any((parameter) =>
+          parameter.defaultValue != null ||
+          parameter.variadic ||
+          parameter.type.contains(' & '));
+
+  /// Optional parameters must form a trailing group. A later required or
+  /// variadic parameter cannot be represented by one Dart positional closure.
+  bool _awkwardValueParameters(FunctionDeclaration function) {
+    var optional = false;
+    for (final parameter in function.parameters) {
+      if (parameter.defaultValue != null) {
+        optional = true;
+      } else if (optional) return true;
+    }
+    return false;
+  }
+
+  String _callableSignature(
+      List<Parameter> parameters, List<String> types, String returned) {
+    final parts = <String>[];
+    for (var i = 0; i < parameters.length; i++) {
+      final parameter = parameters[i];
+      final type = types[i];
+      if (parameter.variadic) {
+        parts.add('...${parameter.name}: $type');
+      } else if (parameter.defaultValue != null) {
+        parts.add('[${parameter.name}: $type]');
+      } else {
+        parts.add('${parameter.name}: $type');
+      }
+    }
+    return '(${parts.join(', ')}) -> $returned';
+  }
+
+  void _rememberValueLowering(Expression node, FunctionDeclaration function,
+      List<String> typeArguments, List<String> parameterTypes,
+      {String? staticOwner}) {
+    final adapt = function.parameters.any((parameter) =>
+        parameter.defaultValue != null || parameter.type.contains(' & '));
+    if (!adapt) return;
+    model.qudsValueLowerings[node] = QudsValueLowering(
+        function, typeArguments, parameterTypes,
+        staticOwner: staticOwner);
   }
 
   String? _nativeFunctionValue(Symbol symbol, Node node) {
@@ -7291,6 +7531,19 @@ class Analyzer {
     final id = callee.object as Identifier;
     model.references[id] = owner;
     model.types[id] = 'prefix';
+    if (callee.name == 'loadLibrary') {
+      if (!_deferredPrefix(owner.name))
+        error('E300', 'loadLibrary requires a deferred import', callee);
+      if (node.arguments.isNotEmpty)
+        fail('loadLibrary takes no arguments', node);
+      model.references[callee] =
+          Symbol('loadLibrary', 'loadLibrary', 'Future<void>');
+      model.types[callee] = '() -> Future<void>';
+      model.functionValueCalls.add(node);
+      model.nativeArguments[node] = const [];
+      model.argumentOrder[node] = const [];
+      return 'Future<void>';
+    }
     final found = owner.namespace![callee.name];
     if (found == null) {
       if (!owner.external) {
@@ -7303,6 +7556,39 @@ class Analyzer {
           node, Symbol(callee.name, callee.name, 'dynamic', external: true));
     }
     _touch(found);
+    if (found.overloads.length > 1) {
+      FunctionDeclaration? selected;
+      var selectedVariadic = false;
+      for (final candidate in found.overloads) {
+        if (!argumentsMatch(node, candidate.parameters,
+            commit: false, function: candidate)) continue;
+        final variadic =
+            candidate.parameters.any((parameter) => parameter.variadic);
+        if (selected != null && selectedVariadic == variadic)
+          fail('Ambiguous overload: ${callee.name}', node);
+        if (selected == null || (selectedVariadic && !variadic)) {
+          selected = candidate;
+          selectedVariadic = variadic;
+        }
+      }
+      if (selected == null) {
+        for (final candidate in found.overloads) {
+          final trial = _CheckedArguments();
+          if (!argumentsMatch(node, candidate.parameters,
+              commit: false,
+              allowConversions: true,
+              function: candidate,
+              checked: trial)) continue;
+          if (selected != null)
+            fail('Ambiguous overload: ${callee.name}', node);
+          selected = candidate;
+        }
+      }
+      if (selected == null) fail('No overload matches this call', node);
+      final symbol = model.declarations[selected]!;
+      model.references[callee] = symbol;
+      return applyArguments(node, selected.parameters, selected);
+    }
     if (found.classDeclaration != null) {
       final declaration = found.classDeclaration!;
       final returned = constructClass(node, declaration);
@@ -7561,6 +7847,11 @@ class Analyzer {
       _touch(model.references[callee]!);
       final methodOwner = _methodReceiver(objectType, functionResolved);
       final ownerDeclaration = methodOwner?.$2 ?? declaration;
+      if (functionResolved.isStatic &&
+          declaration != null &&
+          ownerDeclaration != null &&
+          ownerDeclaration != declaration)
+        model.staticValueOwners[callee] = _genericHead(methodOwner!.$1);
       final classArguments = {
         ..._genericSubstitution(
             methodOwner?.$1 ?? objectType, ownerDeclaration),
@@ -7825,25 +8116,55 @@ class Analyzer {
   String _functionValueCall(CallExpression node, String type) {
     final (text, returns) = _functionParts(type);
     final parameters = functionParameters(text);
+    final variadicAt = parameters.indexWhere((p) => p.variadic);
     final order = List<int>.filled(parameters.length, -1);
     final positional = [
       for (var i = 0; i < parameters.length; i++)
-        if (!parameters[i].named) i
+        if (!parameters[i].named && !parameters[i].variadic) i
     ];
+    final variadicArgs = <int>[];
     var position = 0;
     var sawNamed = false;
     for (var i = 0; i < node.arguments.length; i++) {
       final argument = node.arguments[i];
+      if (argument.value is SpreadElement) {
+        if (variadicAt < 0 || position < positional.length)
+          fail('A spread belongs in the variadic argument', argument);
+        final spread = argument.value as SpreadElement;
+        final collection = expression(spread.operand);
+        final element = _collectionElement(
+            spread.nullAware ? unwrap(collection) : collection);
+        if (element == null ||
+            !compatible(element, parameters[variadicAt].type))
+          fail(
+              'Spread element is incompatible with ${parameters[variadicAt].type}',
+              argument);
+        variadicArgs.add(i);
+        continue;
+      }
       int target;
       if (argument.name == null) {
         if (sawNamed)
           fail('Positional arguments must precede named arguments', argument);
-        if (position >= positional.length)
-          fail('Too many positional arguments', argument);
+        if (position >= positional.length) {
+          if (variadicAt < 0) fail('Too many positional arguments', argument);
+          final saved = _expected;
+          _expected = parameters[variadicAt].type;
+          final actual = expression(argument.value);
+          _expected = saved;
+          if (!_acceptExpected(
+              argument.value, actual, parameters[variadicAt].type))
+            fail(
+                'Argument type $actual is incompatible with ${parameters[variadicAt].type}',
+                argument);
+          variadicArgs.add(i);
+          continue;
+        }
         target = positional[position++];
       } else {
         sawNamed = true;
-        target = parameters.indexWhere((p) => p.name == argument.name);
+        target = parameters
+            .indexWhere((p) => p.name == argument.name && !p.variadic);
         if (target < 0) fail('Unknown argument: ${argument.name}', argument);
       }
       if (order[target] >= 0) fail('Duplicate argument', argument);
@@ -7860,6 +8181,7 @@ class Analyzer {
     final layout = <(String?, int)>[];
     for (var i = 0; i < parameters.length; i++) {
       final p = parameters[i];
+      if (p.variadic) continue;
       if (order[i] < 0) {
         if (!p.optional)
           fail('Missing required argument: ${p.name ?? i + 1}', node);
@@ -7877,6 +8199,10 @@ class Analyzer {
     model.functionValueCalls.add(node);
     model.nativeArguments[node] = layout;
     model.argumentOrder[node] = order;
+    if (variadicAt >= 0) {
+      model.functionValueVariadicElements[node] = parameters[variadicAt].type;
+      model.variadicArguments[node] = variadicArgs;
+    }
     return returns;
   }
 
@@ -10079,6 +10405,21 @@ class Analyzer {
 }
 
 // Local to one successful argument check; never reused between overload trials.
+/// A Quds callable stored as a value when its Dart tear-off is not the Quds signature.
+class QudsValueLowering {
+  const QudsValueLowering(
+      this.function, this.typeArguments, this.parameterTypes,
+      {this.staticOwner});
+  final FunctionDeclaration function;
+  final List<String> typeArguments;
+
+  /// Parameter types after class and method specialization, in source order.
+  final List<String> parameterTypes;
+
+  /// Declaring type of an inherited static method. Null for instance tear-offs.
+  final String? staticOwner;
+}
+
 class _CheckedArguments {
   final inferred = <String, String>{};
   final types = <Expression, String>{};

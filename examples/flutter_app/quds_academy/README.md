@@ -132,8 +132,8 @@ continue to apply, and examples remain LTR in Arabic.
 `lib/src/reference_design.quds` owns the category descriptions and membership.
 Every one of the 111 entries must appear exactly once. English explanations and
 examples still come from the shared repository guide; Arabic explanations remain
-in `assets/keywords_ar.json`. The `deferred` entry explicitly identifies its
-current compiler limitation. Examples can omit imports/surrounding declarations,
+in `assets/keywords_ar.json`. The `deferred` entry documents a prefixed import
+and `prefix.loadLibrary()`. Examples can omit imports/surrounding declarations,
 which is stated in the detail panel rather than presented as runnable programs.
 
 The five core Quds suites include exact catalog coverage and source preservation

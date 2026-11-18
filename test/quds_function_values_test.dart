@@ -12,6 +12,7 @@ shape<T>(value: T) -> T = value
 shape<T>(value: List<T>) -> T = value[0]
 withDefault<T>(value: T? = null) -> T? = value
 variadic<T>(...items: T) -> int = items.length
+awkward<T>(value: T? = null, other: int) -> int = other
 unused<T>():
   print "unused"
 ordinary(value: int) -> int = value
@@ -35,8 +36,7 @@ void main() {
     'saved = identity<int, String>': 'E300',
     'saved: (String) -> int = identity<int>': 'E300',
     'saved = shape<int>': 'E311',
-    'saved = withDefault<int>': 'E910',
-    'saved = variadic<int>': 'E910',
+    'saved = awkward<int>': 'E910',
     'saved = ordinary<int>': 'E300',
     'saved: () -> void = unused': 'E302',
     'saved: (int) -> int = identity\n  print saved("wrong")': 'E300',

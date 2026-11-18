@@ -58,6 +58,12 @@ void main() async {
 T _q11<T>(T _q35) => _q35;
 final identity = _q0;
 final bounded = _q1;
+final choose$1 = _q2;
+final choose$2 = _q3;
+final select$1 = _q4;
+final select$2 = _q5;
+final shape$1 = _q6;
+final shape$2 = _q7;
 final delayed = _q8;
 final applyChoice = _q9;
 final apply = _q10;

@@ -43,8 +43,8 @@ and statement snippets. The source is
 The server handles this help from its bundled catalog, including in incomplete
 buffers, without compiling or loading SDK metadata. Contextual identifier names
 retain symbol hover; comments, strings and member access are excluded. The
-approved but currently unsupported `deferred` directive is explicitly labeled in
-its documentation. Keyword help does not add language syntax.
+`deferred` import is documented as a prefixed library load followed by
+`prefix.loadLibrary()`. Keyword help does not add language syntax.
 
 Update the installed compiler and run `quds install`, then use **Developer:
 Reload Window** so both the extension and server use the new files. With an

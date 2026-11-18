@@ -46,7 +46,7 @@ public reference, including a prefix. The executable VM/JavaScript fixture impor
 | Overload without enough context, no compatible overload, or multiple compatible declarations | E311 |
 | Single generic function without type arguments/function context, or with undetermined formals | E302 |
 | Wrong arity/bounds, incompatible signature or later call argument | E300 |
-| Generic/overloaded default, variadic, intersection or method adaptation requiring further work | E910 |
+| A required or variadic parameter follows a default, so the stored value has no single Dart closure | E910 |
 
 If `(int) -> int` accepts both an `(int) -> int` and a `(num) -> int` declaration,
 selection is ambiguous and reports E311. An explicit type list can also leave
@@ -55,23 +55,34 @@ overload behavior follows its existing call-resolution path.
 
 ## Supported slice and next work
 
-This milestone certifies ordinary Quds functions with required positional
-parameters, local overload sets, explicit/contextual generic specialization,
-callback contexts, local inferred returns and single-function imports with
-declared return types. It preserves the approved syntax and E311 contract.
+Ordinary Quds functions with required positional parameters, local overload sets,
+explicit/contextual generic specialization, callback contexts, local inferred
+returns and single-function imports with declared return types remain covered.
+The later value-adapter batch also stores functions that have defaults, variadic
+parameters, or intersection parameters.
+
+A stored default becomes a Dart closure. Omission is the sentinel `missing`,
+which is distinct from an explicit null. A computed default may still refer only
+to earlier parameters. A variadic value has the Quds type `(...items: T) -> R`
+and the Dart type `R Function(List<T>)`; call sites pack arguments and spreads.
+An intersection parameter keeps its hidden Dart type parameter and runtime
+check. Direct calls still fill defaults at the call site; the closure exists
+only when the function is stored or passed as a value.
+
+Imported overloads with different signatures keep the holder name and publish
+`name$1`, `name$2`, and so on, in source order. The same signature, or a class
+with the same name, is still E204. A required or variadic parameter that follows
+a default has no adapter and reports E910.
 
 Further work:
 
-- Adapters for computed defaults, optional/variadic parameters and the extra Dart
-  type parameters introduced by intersection lowering.
-- Class-method adapters beyond the required-positional slice now documented in
-  [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md), and extension method values.
-- Imported overload sets: library registration currently rejects duplicate names
-  with E204; stable exported overload names and metadata need their own contract.
+- One value that combines a default with a variadic parameter.
+- Class method overloads. Required-positional, default, and variadic method
+  values are documented in [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md).
 - Propagation of inferred return metadata from imported providers.
 - Full mixed-variance constraint solving and polymorphic generic callback types.
 
-Passing this slice does not certify all QUDS-024/045/085 behavior. Evidence lives
-in `test/quds_function_values.quds`, its negative/golden/VM/JS driver, and
-[VALIDATION.md](VALIDATION.md). The active next-agent handoff is
+Passing these slices does not certify all QUDS-024/045/085 behavior. Evidence
+lives in `test/quds_function_values.quds`, `test/quds_value_adapters.quds`, their
+drivers, and [VALIDATION.md](VALIDATION.md). The active next-agent handoff is
 [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).

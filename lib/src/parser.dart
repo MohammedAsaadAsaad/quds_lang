@@ -975,11 +975,14 @@ class Parser {
     expect(TokenKind.leftParen, '(');
     final parameters = <String>[];
     String functionParameter({bool optional = false}) {
+      final variadic = match(TokenKind.spread);
       String? label;
       if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
         label = name().lexeme;
         take();
       }
+      if (variadic && (label == null || optional))
+        fail('A variadic parameter needs name: Type');
       if (optional && label == null)
         fail('An optional positional parameter needs name: Type');
       final type = typeName();
@@ -996,6 +999,7 @@ class Parser {
         // A type records omission, not a replacement declaration default.
         if (!optional) rendered += ' = missing';
       }
+      if (variadic) rendered = '...$rendered';
       return optional ? '[$rendered]' : rendered;
     }
 
@@ -1141,7 +1145,11 @@ class Parser {
     final buffer = StringBuffer();
     while (!at(TokenKind.newline) && !at(TokenKind.eof)) {
       if (buffer.isNotEmpty &&
-          (word('as') || word('when') || word('show') || word('hide'))) {
+          (word('as') ||
+              word('when') ||
+              word('show') ||
+              word('hide') ||
+              word('deferred'))) {
         break;
       }
       if (buffer.isEmpty && (word('as') || word('when'))) break;
@@ -1153,6 +1161,11 @@ class Parser {
       prefix = name().lexeme;
     }
     final filters = _combinators();
+    final deferred = word('deferred');
+    if (deferred) {
+      take();
+      if (prefix == null) fail('A deferred import needs a prefix');
+    }
     Expression? condition;
     if (word('when')) {
       take();
@@ -1162,7 +1175,10 @@ class Parser {
     if (buffer.isEmpty) fail('Expected import uri', span);
     return ImportDeclaration(
         normalizeImportUri(_stripUri(buffer.toString())), prefix, extent(span),
-        condition: condition, show: filters.$1, hide: filters.$2);
+        condition: condition,
+        deferred: deferred,
+        show: filters.$1,
+        hide: filters.$2);
   }
 
   ImportDeclaration exportDirective(SourceSpan span) {

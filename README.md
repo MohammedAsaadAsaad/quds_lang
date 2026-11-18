@@ -64,7 +64,7 @@ quds create flutter hello
 quds run hello/lib/main.quds
 ```
 
-`lib/main.quds` is the program. The platform folders stay as Flutter created them. `quds run` compiles the file to `lib/quds_gen/` and launches it with `flutter run`.
+`lib/main.quds` is the program. The platform folders stay as Flutter created them. `quds run` compiles the file to `lib/quds_gen/` and launches it with `flutter run`. Saved Quds files now trigger compilation and hot reload automatically. In the running terminal, `r` reloads, `R` hot restarts, and `q` quits. Select a device with `quds run lib/main.quds -- -d chrome`. See [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md) for behavior, validation and debug-adapter scope.
 
 In VS Code, **Quds: Show Generated Dart** opens the source and the generated file together.
 

@@ -37,6 +37,22 @@ Keep `lib/main.quds` as the editable entry point. The build helper generates
 `flutter create` supplies the standard platform scaffolding. Additional native
 platforms can be generated with the corresponding Flutter command and toolchains.
 
+## Live development from Quds
+
+After `flutter pub get`, use the Quds runner to reload saved source automatically:
+
+```sh
+quds run lib/main.quds -- -d chrome
+# From this checkout, without installing the CLI globally:
+dart run ../../../bin/quds.dart run lib/main.quds -- -d chrome
+```
+
+Save a `.quds` file for hot reload. In the terminal, `r` reloads, `R` hot restarts,
+and `q` quits. Invalid Quds leaves the last valid generated output running; save a
+correction to retry. Direct `flutter run` does not watch Quds sources. The build
+helper remains useful for widget tests and ordinary Flutter builds. Details and
+current F5/debug-adapter scope are in `docs/FLUTTER_LIVE_UPDATES.md` at repo root.
+
 ## Tests without Flutter
 
 From the repository root, with Dart on PATH:

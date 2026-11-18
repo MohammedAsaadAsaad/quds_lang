@@ -1210,3 +1210,37 @@ Final verification on Dart 3.13.7:
   affected **70-test file subsequently passes** with the correction. All other
   tests in that sweep passed, including executable Quds SDK/math conformance.
   A second full 605-test sweep was not performed after the test-only correction.
+
+### Flutter save-to-reload development runner (2026-11-18)
+
+- `quds run <entry.quds>` in a Flutter project now runs the official Flutter
+  machine transport, monitors saved Quds sources and imported dependencies,
+  preflights the whole graph, and requests `app.restart` with
+  `fullRestart: false` only after a valid build. `R` requests a hot restart;
+  repeated saves/startup updates are coalesced and serialized. Unchanged source
+  compilations are cached against dependency content. Source maps are retained.
+- Device arguments are forwarded after `--`; target/protocol/release/profile/
+  no-hot overrides are rejected. Non-generated output is protected, with initial
+  ownership errors retaining exit code **73**. Compilation failure does not end
+  a running Flutter session or request a reload.
+- `dart test --reporter expanded`: **608 pass, zero failures**, **7m37s**.
+  Includes the existing primary Quds SDK/math suites and the new live-run tests.
+- `dart test test/flutter_live_test.dart --reporter expanded`: **3 pass** in
+  repeated focused checks. The fixtures compile actual Quds files, use actual
+  subprocess IO and a simulated Flutter machine peer, and cover imported edits,
+  error/recovery, no partial graph writes on compile failure, atomic replacement,
+  new imports, startup queuing, overlapping saves, explicit restart, rejected
+  updates/retry, device arguments and generated-file ownership. Final checks also
+  exercise rejection of flags that bypass the generated target or live mode.
+- Existing `quds run launches flutter with the generated target` regression:
+  **1 pass**, **2s**, now expects `run --machine -t lib/quds_gen/main.dart`.
+- Compiler-root `dart analyze`: **No issues found**. `dart format .` and
+  `git diff --check` pass; the formatter now covers **86 files**.
+- The final argument guard and startup-baseline refinements were additionally
+  checked by the focused live-run suite after the full run. No language syntax
+  changes are introduced.
+- No Flutter engine/device execution is claimed: official engine artifact
+  downloads remain unavailable in this managed environment. Protocol tests do
+  not establish real widget state preservation or renderer behavior. The
+  implementation is scoped to `quds run` / VS Code **Quds: Run**; the existing
+  F5/debug-adapter path remains separate. See `docs/FLUTTER_LIVE_UPDATES.md`.

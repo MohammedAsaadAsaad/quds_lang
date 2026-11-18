@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:quds_lang/quds_lang.dart';
 import 'package:quds_lang/src/flutter_project.dart';
+import 'package:quds_lang/src/flutter_live.dart';
 import 'package:quds_lang/src/libraries.dart'
     show libraryTarget, resolveLibraryPath;
 import 'package:quds_lang/src/walk.dart';
@@ -108,8 +109,8 @@ String? _helpText(String? topic) {
   const entries = <String, String>{
     'build': 'quds build [--watch] <input.quds>\n'
         '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n',
-    'run': 'quds run <input.quds>\n'
-        '    Run the program. An unchanged file reuses the previous build. A Flutter package is launched with flutter run.\n',
+    'run': 'quds run <input.quds> [-- <flutter arguments>]\n'
+        '    Run the program. An unchanged file reuses the previous build. A Flutter package watches saved Quds files and hot reloads. r: reload, R: restart, q: quit.\n',
     'analyze': 'quds analyze <input.quds>\n'
         '    Compile and run dart analyze on the generated Dart.\n',
     'test': 'quds test <input.quds>\n'
@@ -806,13 +807,21 @@ String _stamp(List<String> paths) {
 }
 
 Future<void> _run(List<String> arguments) async {
-  _requireQuds(arguments);
+  final separator = arguments.indexOf('--');
+  final flutterArguments =
+      separator < 0 ? <String>[] : arguments.sublist(separator + 1);
+  final command = separator < 0 ? arguments : arguments.sublist(0, separator);
+  _requireQuds(command);
   if (exitCode != 0) return;
-  final input = File(arguments[1]);
+  final input = File(command[1]);
   try {
     if (_flutterPackage(input)) {
-      final result = compile(input.readAsStringSync(), file: input.path);
-      await _runFlutter(input, result);
+      await _runFlutter(input, flutterArguments);
+      return;
+    }
+    if (flutterArguments.isNotEmpty) {
+      stderr.writeln('Arguments after -- require a Flutter project.');
+      exitCode = 64;
       return;
     }
     final output = _ensureOutput(input);
@@ -1145,7 +1154,23 @@ bool _flutterPackage(File input) {
       .hasMatch(pubspec.readAsStringSync());
 }
 
-Future<void> _runFlutter(File input, Compilation result) async {
+Future<void> _runFlutter(File input, List<String> arguments) async {
+  if (arguments.any((arg) =>
+      (arg.startsWith('-t') && !arg.startsWith('--')) ||
+      {
+        '-t',
+        '--target',
+        '--machine',
+        '--no-machine',
+        '--no-hot',
+        '--release',
+        '--profile'
+      }.contains(arg.split('=').first))) {
+    stderr.writeln(
+        'Quds live Flutter runs require debug mode, machine protocol and the generated target.');
+    exitCode = 64;
+    return;
+  }
   final flutter = _flutterExecutable();
   if (flutter == null) {
     stderr.writeln('Flutter was not found. Install Flutter and retry.');
@@ -1154,37 +1179,145 @@ Future<void> _runFlutter(File input, Compilation result) async {
   }
   final root = _packageRoot(input.absolute.parent);
   final target = _flutterGenerated(input, root);
-  if (target.existsSync() &&
-      !target.readAsStringSync().startsWith(_generatedHeader)) {
-    stderr.writeln('Refusing to overwrite non-generated file: ${target.path}');
-    exitCode = 73;
-    return;
-  }
-  target.parent.createSync(recursive: true);
   final relative = _relativePosix(root, target);
-  final suffix = relative.contains('quds_gen/')
-      ? relative.substring(relative.indexOf('quds_gen/'))
-      : relative;
-  if (!_writeTree(input, <String>{},
-      announce: false, flutter: true, initial: result)) return;
-  final generated = target.readAsStringSync();
-  final guarded = result.sourceMap == null
-      ? generated
-      : _guardGeneratedMain(generated, result.sourceMap!, suffix);
-  target.writeAsStringSync(guarded);
-  if (result.sourceMap != null) {
-    File('${target.path}.map').writeAsStringSync(result.sourceMap!);
+  final tracked = <String>{input.absolute.path};
+  final compiledCache = <String, (String, Compilation)>{};
+  late String Function() currentSources;
+  var buildFailure = 65;
+  bool build() {
+    final saved = exitCode;
+    exitCode = 0;
+    buildFailure = 65;
+    try {
+      // Validate the entire dependency graph before touching running output.
+      final plan = <(File, Compilation)>[];
+      final seen = <String>{};
+      void prepare(File file) {
+        final path = file.absolute.uri.normalizePath().toFilePath();
+        if (!seen.add(path)) return;
+        tracked.add(path);
+        final cached = compiledCache[path];
+        final Compilation compiled;
+        if (cached != null &&
+            cached.$1 == _stamp({...cached.$2.dependencies, path}.toList())) {
+          compiled = cached.$2;
+        } else {
+          final before = currentSources();
+          compiled = compile(file.readAsStringSync(), file: path);
+          tracked
+              .addAll(compiled.dependencies.where((p) => p.endsWith('.quds')));
+          if (before == currentSources()) {
+            compiledCache[path] =
+                (_stamp({...compiled.dependencies, path}.toList()), compiled);
+          }
+        }
+        plan.add((file, compiled));
+        for (final dependency in compiled.dependencies) {
+          if (dependency.endsWith('.quds')) prepare(File(dependency));
+        }
+      }
+
+      prepare(input);
+      for (final (file, _) in plan) {
+        final output =
+            _flutterGenerated(file, _packageRoot(file.absolute.parent));
+        if (output.existsSync() &&
+            !output.readAsStringSync().startsWith(_generatedHeader)) {
+          stderr.writeln(
+              'Refusing to overwrite non-generated file: ${output.path}');
+          buildFailure = 73;
+          return false;
+        }
+      }
+      for (final (file, compiled) in plan) {
+        if (!_emitGenerated(file, compiled,
+            announce: false,
+            destination:
+                _flutterGenerated(file, _packageRoot(file.absolute.parent)),
+            artifactRoot: Directory('${root.path}/lib/quds_gen'))) {
+          buildFailure = exitCode == 0 ? 65 : exitCode;
+          return false;
+        }
+      }
+      final main = plan.first.$2;
+      final generated = target.readAsStringSync();
+      if (main.sourceMap != null) {
+        final suffix = relative.substring(relative.indexOf('quds_gen/'));
+        target.writeAsStringSync(
+            _guardGeneratedMain(generated, main.sourceMap!, suffix));
+      }
+      tracked.addAll(seen);
+      return true;
+    } on CompilerException catch (error) {
+      stderr.writeln(error);
+      return false;
+    } on FileSystemException catch (error) {
+      stderr.writeln(error);
+      buildFailure = 74;
+      return false;
+    } finally {
+      exitCode = saved;
+    }
+  }
+
+  String snapshot() {
+    final paths = <String>{...tracked};
+    void scan(Directory directory) {
+      if (!directory.existsSync()) return;
+      for (final entity in directory.listSync(followLinks: false)) {
+        if (entity is Directory) {
+          final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
+          if (!{'.git', '.dart_tool', 'build', 'quds_gen'}.contains(name))
+            scan(entity);
+        } else if (entity is File && entity.path.endsWith('.quds')) {
+          paths.add(entity.absolute.path);
+        }
+      }
+    }
+
+    scan(root);
+    return _stamp(paths.toList());
+  }
+
+  currentSources = snapshot;
+  final initialSnapshot = snapshot();
+  if (!build()) {
+    exitCode = buildFailure;
+    return;
   }
   stdout.writeln('Built $relative');
   final process = await Process.start(
     flutter,
-    ['run', '-t', relative],
+    ['run', '--machine', '-t', relative, ...arguments],
     workingDirectory: root.path,
     environment: desktopLaunchEnvironment(Platform.environment),
     includeParentEnvironment: false,
-    mode: ProcessStartMode.inheritStdio,
   );
-  exitCode = await process.exitCode;
+  final terminal = stdin.hasTerminal;
+  final echo = terminal ? stdin.echoMode : true;
+  final line = terminal ? stdin.lineMode : true;
+  final interrupt = ProcessSignal.sigint
+      .watch()
+      .listen((_) => process.kill(ProcessSignal.sigint));
+  try {
+    if (terminal) {
+      stdin.echoMode = false;
+      stdin.lineMode = false;
+    }
+    exitCode = await FlutterLiveSession(
+            process: process,
+            snapshot: snapshot,
+            build: build,
+            input: stdin,
+            initialSnapshot: initialSnapshot)
+        .run();
+  } finally {
+    await interrupt.cancel();
+    if (terminal) {
+      stdin.echoMode = echo;
+      stdin.lineMode = line;
+    }
+  }
 }
 
 /// Renames generated `main` and reports an escaped error on the Quds line.

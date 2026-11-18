@@ -1287,7 +1287,7 @@ exit 0
     expect(generatedText, contains('main.quds'));
     expect(File('${root.path}/lib/main.dart').existsSync(), isFalse);
     expect(File('${root.path}/flutter-args').readAsStringSync().trim(),
-        'run -t lib/quds_gen/main.dart');
+        'run --machine -t lib/quds_gen/main.dart');
   });
 
   test('declare adds a function and define adds a field', () async {

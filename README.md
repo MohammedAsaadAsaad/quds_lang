@@ -1,6 +1,6 @@
 # Quds
 
-Quds is a general-purpose, statically typed, indentation-based language that compiles to Dart. The language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md). The compiler implements the MVP-0 subset.
+Quds is a general-purpose, statically typed, indentation-based language that compiles to Dart. The language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md). Compiler coverage and remaining certification work are tracked in the [language readiness inventory](docs/LANGUAGE_READINESS.md) and [working plan](docs/LANGUAGE_READINESS_AR.md); not all 115 decisions are certified.
 
 ## Example
 
@@ -70,7 +70,7 @@ quds create flutter hello
 quds run hello/lib/main.quds
 ```
 
-`lib/main.quds` is the program. The platform folders stay as Flutter created them. `quds run` compiles the file to `lib/quds_gen/` and launches it with `flutter run`. Saved Quds files now trigger compilation and hot reload automatically. In the running terminal, `r` reloads, `R` hot restarts, and `q` quits. Select a device with `quds run lib/main.quds -- -d chrome`. See [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md) for behavior, validation and debug-adapter scope.
+`lib/main.quds` is the program. The platform folders stay as Flutter created them. `quds run` compiles the file to `lib/quds_gen/` and launches it with `flutter run`. Saved Quds files trigger compilation and hot reload automatically in Run and Flutter F5 debug sessions. In the running terminal, `r` reloads, `R` hot restarts, and `q` quits. Select a device with `quds run lib/main.quds -- -d chrome`. See [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md) for behavior, validation and debug-adapter scope.
 
 In VS Code, **Quds: Show Generated Dart** opens the source and the generated file together.
 
@@ -127,3 +127,17 @@ documents the L3.2c subset and its remaining constructor/interop limits.
 Native Dart/Flutter hover examples can be previewed as Quds without changing
 upstream documentation. An optional background worker converts supported snippets
 and preserves unsupported Dart examples. See [tooltip previews](docs/DART_TOOLTIP_PREVIEWS.md).
+
+## Readiness and native builds
+
+`quds build apk --release`, `quds build web` and `quds build linux` compile
+`lib/main.quds` and its dependencies before invoking Flutter. Native toolchains
+remain necessary. [Project commands](docs/PROJECT_CLI.md) cover all platforms.
+VS Code offers **Quds: Hot Reload** and **Quds: Hot Restart** during Quds debug
+sessions; see [live updates](docs/FLUTTER_LIVE_UPDATES.md) for validation limits.
+
+Imported Dart functions and methods with required positional parameters can be
+stored and passed as typed function values, including bound methods and zero-arg
+functions. Generic/optional/named function values remain explicitly limited.
+The [readiness handoff](docs/LANGUAGE_READINESS_AR.md) separates implemented
+slices, pending conformance and real-platform release gates.

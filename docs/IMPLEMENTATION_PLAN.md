@@ -2,6 +2,17 @@
 
 Language design 1.2 is complete in `QUDS_LANGUAGE_SPECIFICATION.md`. The milestones below are implementation work. A compiler that has not reached a milestone rejects those constructs with `E910` instead of inventing a meaning.
 
+## Current readiness work — 2026-11-18
+
+The nine-track working plan and next-agent handoff are in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md). The machine-checked
+[115-rule inventory](LANGUAGE_READINESS.md) distinguishes candidate evidence,
+verified slices and full certification. This milestone adds native required
+function/method values, target-aware conditional dependency loading, native
+Flutter build commands, F5 live updates and cross-host/Flutter CI configuration.
+Actual remote CI/engine evidence and the remaining tracks stay explicit gates;
+this is not a claim of complete Dart parity.
+
 ## Architecture
 
 Source manager → indentation-aware lexer → token stream → parser → typed AST → symbol table/name resolution → type checking → lowering IR → Dart emitter → diagnostics/source maps.

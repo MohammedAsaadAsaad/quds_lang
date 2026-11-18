@@ -11,6 +11,7 @@ jobs:
       - run: dart pub get --enforce-lockfile
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze
+      - run: python3 tool/audit_language.py --check
       - name: Quds math tests
         run: |
           set -euo pipefail
@@ -76,3 +77,39 @@ jobs:
           reject test/math_reject_hide.quds "E200"
       - name: Compiler and platform integration tests
         run: dart test --reporter expanded
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.13.7'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: dart pub get --enforce-lockfile
+      - run: python tool/audit_language.py --check
+      - run: dart test test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/target_platform_test.dart --reporter expanded
+  flutter-engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/flutter_app/quds_academy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --platforms=web --project-name quds_academy .
+      - run: flutter pub get
+      - run: dart run tool/build.dart
+      - run: flutter test
+      - run: dart run ../../../bin/quds.dart build web --no-web-resources-cdn

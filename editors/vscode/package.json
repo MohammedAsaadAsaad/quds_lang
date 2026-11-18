@@ -84,6 +84,16 @@
         "title": "Quds: Debug"
       },
       {
+        "command": "quds.hotReload",
+        "title": "Quds: Hot Reload",
+        "enablement": "debugType == quds && inDebugMode"
+      },
+      {
+        "command": "quds.hotRestart",
+        "title": "Quds: Hot Restart",
+        "enablement": "debugType == quds && inDebugMode"
+      },
+      {
         "command": "quds.profile",
         "title": "Quds: Profile"
       },

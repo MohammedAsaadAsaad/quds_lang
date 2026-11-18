@@ -1,4 +1,44 @@
-# Compiler validation — latest 2026-11-16
+# Compiler validation — latest 2026-11-18
+
+## Language readiness, target environments and Flutter tooling — 2026-11-18
+
+Working plan: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md). Inventory:
+[LANGUAGE_READINESS.md](LANGUAGE_READINESS.md). No full Dart-parity or 115-rule
+certification claim is made by this milestone.
+
+| Check | Observed result |
+| --- | --- |
+| `dart pub get --enforce-lockfile` | Passed with Dart 3.13.7; lockfile unchanged |
+| `dart format .` | 98 files; zero changes |
+| `dart analyze` | No issues found |
+| `python3 tool/audit_language.py --check` | Exactly 115 decisions indexed; manifest, evidence paths and generated inventory consistent |
+| `dart run bin/quds.dart test test/native_function_values.quds` | **4 Quds declarations passed**: required function/static values, captured receiver once, generic-class substitution and null-aware method values |
+| Focused feature suite | **16 passed in 1m03s**: native values, target selection, project CLI and F5 integration |
+| Final native/target/F5 focused rerun | **10 passed in 12s**, including readonly E307 and Flutter UI target flags |
+| Final F5 imported-web breakpoint regression | **2 passed in 6s**; initial and refreshed maps used the selected web graph |
+| Generated native-value program | Dart analysis passed; actual VM and JavaScript/Node execution agreed: `2`, `12`, `4`, `1` |
+| Conditional dependency program | Actual VM and JavaScript execution agreed on `web`; deliberately invalid inactive dependency was not loaded |
+| Flutter platform command tests | Real Quds compiled; simulated Flutter verified APK/web/Linux flags, custom appbundle target and native exit 17 |
+| F5 protocol integration | Separate DAP peer verified saved imports, reload/restart, internal response filtering, original error paths, preserved output, recovery and mapped breakpoints |
+| VS Code command check | `node --check editors/vscode/extension.js` and `node test/editor/vscode_hot_updates.cjs` passed |
+| Full compiler suite | **634 passed; zero failures; zero skips in 9m54s** |
+| `git diff --check` | Passed |
+
+These protocol tests do **not** claim real Flutter engine/device hot reload,
+state retention or native debugger variable presentation. Official engine
+artifacts were unavailable locally (the previously confirmed network response was
+403). The new Actions jobs configure portable Linux/Windows/macOS checks and an
+actual Flutter Academy widget/web build, but no remote success is claimed:
+`gh run list` returned `Forbidden` from GitHub's API in this environment. Native
+Android/iOS/desktop artifacts and signing still need their real host toolchains.
+No environment or pub.dev package was published.
+
+Required-positional native function/method values are a verified slice. Generic,
+optional and named function values, richer callback shapes, deferred libraries,
+project-wide refactorings and the remaining release gates are still tracked as
+unfinished. Target-aware loading fixes existing approved syntax rather than
+changing it. Without an explicit browser device the CLI assumes native Flutter;
+LSP target-context selection and interactive device auto-detection remain limits.
 
 ## Generic class inheritance and Quds module staging — L3.2c — 2026-11-16
 

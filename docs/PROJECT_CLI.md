@@ -90,3 +90,35 @@ YAML flow mappings, no-pub behavior, source autodiscovery, target/device selecti
 and all three execution modes. Flutter-side tests use a subprocess peer because
 the managed environment lacks the engine SDK; no native platform build or device
 execution is claimed. See `docs/VALIDATION.md` for exact results.
+
+## Build a Flutter platform
+
+```sh
+quds build apk --release
+quds build appbundle --release
+quds build web
+quds build linux --debug
+quds build windows
+quds build macos
+quds build ios --no-codesign
+quds build ipa
+quds build bundle
+quds build web -t lib/alternate.quds
+```
+
+These compile the selected Quds dependency graph, then invoke `flutter build`
+with the generated target and forwarded native options/exit code. The default
+entry is `lib/main.quds`. Platform builds require a Flutter project and its host
+SDK/toolchains; source emission via `quds build file.quds` is unchanged. No live
+watcher runs during platform builds.
+
+A web build or explicit Chrome/Edge/web-server run selects `platform == "web"`;
+native Flutter uses `"flutter"`, and plain compiler builds use `"vm"`.
+`dart.library.io`, `dart.library.js_interop` and `dart.library.ui` follow that
+compilation environment. Select a browser device explicitly when conditional
+imports depend on the backend; automatic interactive device choice does not yet
+reconfigure the compiler after Flutter selects a device. The LSP default is the
+project's native environment, not every possible deployment target.
+
+CLI integration tests validate real Quds compilation with a simulated Flutter
+executable. Native artifacts and signing are not certified by those tests.

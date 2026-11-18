@@ -14,7 +14,23 @@ The resolutions that used to be listed here as open questions now live in that f
 
 A program that can be parsed in two ways is a compiler bug or a required rejection.
 
-## What the current compiler still does not implement
+## Current implementation limits — 2026-11-18
+
+Use [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md) for the active nine-track
+plan and [LANGUAGE_READINESS.md](LANGUAGE_READINESS.md) for the 115-rule evidence
+inventory. Remaining work includes foreign generic/optional/named function values,
+full callback/record metadata, foreign readonly boundaries, deferred libraries,
+project-wide refactorings, target context in the editor, actual engine/platform
+certification and release gates. A configured CI job is not a passed run.
+Required-positional native function/method values, F5 save reloading and explicit
+web-target conditional imports now have regression coverage.
+
+## Historical implementation notes
+
+The notes below accumulated during earlier milestones. They contain obsolete
+limitations (including the original non-launching debugger and VM-only target).
+They are historical context, not the current supported-feature list. Consult the
+active plan, feature-specific documents and VALIDATION.md before relying on them.
 
 The language rules above are settled. `MVP_0.md` lists the slice that compiles and runs. These design rules are still rejected or only partly lowered:
 

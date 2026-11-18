@@ -190,6 +190,8 @@ function activate(context) {
     }),
     vscode.commands.registerCommand('quds.run', (uri) => runTool('run', uri)),
     vscode.commands.registerCommand('quds.debug', (uri) => debugProgram(uri)),
+    vscode.commands.registerCommand('quds.hotReload', () => hotUpdate('hotReload')),
+    vscode.commands.registerCommand('quds.hotRestart', () => hotUpdate('hotRestart')),
     vscode.commands.registerCommand('quds.showDart', (uri) => showDart(uri)),
     vscode.commands.registerCommand('quds.profile', (uri) =>
       runTool('benchmark', uri),
@@ -683,6 +685,20 @@ async function runTool(verb, uriArgument) {
   }
   terminal.show();
   terminal.sendText(spec.command.map(quote).join(' '));
+}
+
+async function hotUpdate(command) {
+  const session = vscode.debug.activeDebugSession;
+  if (!session || session.type !== 'quds') {
+    vscode.window.showInformationMessage('Start a Quds Flutter debug session first.');
+    return;
+  }
+  if (!(await vscode.workspace.saveAll(false))) {
+    vscode.window.showErrorMessage('Save your changes before updating the application.');
+    return;
+  }
+  try { await session.customRequest(command, {reason:'Quds editor command'}); }
+  catch (error) { vscode.window.showErrorMessage(`Quds update failed: ${error.message}`); }
 }
 
 async function debugProgram(uriArgument) {

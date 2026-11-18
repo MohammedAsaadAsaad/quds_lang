@@ -69,10 +69,22 @@ falling back to restart. Native/plugin changes and pub dependency/configuration
 changes can require stopping and relaunching the session. The source watcher is
 for Quds files, not a pub dependency installer or a Dart-file watcher.
 
-This integration is for **`quds run` / Quds: Run**. Existing `quds debug` / VS Code
-F5 uses the separate Flutter debug-adapter path and is not given automatic save
-reloading by this change. Direct `flutter run` after a one-off Quds build also
-does not monitor Quds sources.
+## VS Code F5
+
+`quds debug` now monitors saved Quds sources in Flutter debug sessions too. It
+waits for the official adapter's `flutter.appStarted`, then sends DAP `hotReload`
+requests rather than CLI machine messages. Internal requests/responses stay
+inside the proxy. **Quds: Hot Reload** and **Quds: Hot Restart** save editor files
+before sending requests; standard restart requests also rebuild first. Invalid
+sources fail a manual request without changing the running graph. Requests are
+serialized and source maps for imported files refresh after successful builds.
+Profile/release and `--no-hot` launches do not enable the monitor.
+
+`test/flutter_debug_live_test.dart` drives a separate DAP peer process, including
+a breakpoint translated with a refreshed imported-file map, compiler-error
+protection, manual restart and recovery. These checks do not certify real-device
+state preservation or native adapter variable presentation. Direct `flutter run`
+after a one-off Quds build does not monitor Quds sources.
 
 ## Validation
 

@@ -7,8 +7,9 @@ import 'package:yaml_edit/yaml_edit.dart';
 import 'package:quds_lang/quds_lang.dart';
 import 'package:quds_lang/src/flutter_project.dart';
 import 'package:quds_lang/src/flutter_live.dart';
+import 'package:quds_lang/src/flutter_debug_live.dart';
 import 'package:quds_lang/src/libraries.dart'
-    show libraryTarget, resolveLibraryPath;
+    show libraryTarget, resolveLibraryPath, packageUsesFlutter;
 import 'package:quds_lang/src/walk.dart';
 import 'package:quds_lang/src/sdk.dart';
 import 'package:quds_lang/src/toolchain.dart';
@@ -20,7 +21,22 @@ Future<void> main(List<String> arguments) async {
   }
   switch (arguments.first) {
     case 'build':
-      _build(arguments);
+      if (arguments.length > 1 &&
+          const {
+            'apk',
+            'appbundle',
+            'web',
+            'linux',
+            'windows',
+            'macos',
+            'ios',
+            'ipa',
+            'bundle'
+          }.contains(arguments[1])) {
+        await _run(['run', ...arguments.skip(2)], buildTarget: arguments[1]);
+      } else {
+        _build(arguments);
+      }
     case 'run':
       await _run(arguments);
     case 'analyze':
@@ -113,7 +129,9 @@ void _help(List<String> arguments) {
 String? _helpText(String? topic) {
   const entries = <String, String>{
     'build': 'quds build [--watch] <input.quds>\n'
-        '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n',
+        '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n'
+        'quds build <apk|appbundle|web|linux|windows|macos|ios|ipa|bundle> [Quds target and Flutter options]\n'
+        '    Build a Flutter application from lib/main.quds or an explicit .quds target.\n',
     'run': 'quds run [input.quds] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
         '    Run the program. An unchanged file reuses the previous build. A Flutter package watches saved Quds files and hot reloads. r: reload, R: restart, q: quit.\n',
     'analyze': 'quds analyze <input.quds>\n'
@@ -819,12 +837,12 @@ String _stamp(List<String> paths) {
   return buffer.toString();
 }
 
-Future<void> _run(List<String> arguments) async {
+Future<void> _run(List<String> arguments, {String? buildTarget}) async {
   final options = <String>[];
   String? entry;
   final rest = arguments.skip(1).toList();
   if (rest.contains('--help') || rest.contains('-h')) {
-    _help(['help', 'run']);
+    _help(['help', buildTarget == null ? 'run' : 'build']);
     return;
   }
   const valued = {
@@ -903,7 +921,12 @@ Future<void> _run(List<String> arguments) async {
   final flutterArguments = options;
   try {
     if (_flutterPackage(input)) {
-      await _runFlutter(input, flutterArguments);
+      await _runFlutter(input, flutterArguments, buildTarget: buildTarget);
+      return;
+    }
+    if (buildTarget != null) {
+      stderr.writeln('Platform builds require a Flutter project.');
+      exitCode = 64;
       return;
     }
     if (flutterArguments.isNotEmpty) {
@@ -1336,57 +1359,40 @@ void _ignoreGenerated(String name) {
   ignore.writeAsStringSync('$text$separator$entry\n');
 }
 
-bool _flutterPackage(File input) {
-  final root = _packageRoot(input.absolute.parent);
-  final pubspec = File('${root.path}${Platform.pathSeparator}pubspec.yaml');
-  if (!pubspec.existsSync()) return false;
-  try {
-    final values = YamlEditor(pubspec.readAsStringSync()).parseAt([]).value;
-    if (values is! Map) return false;
-    for (final section in [
-      'dependencies',
-      'dev_dependencies',
-      'dependency_overrides'
-    ]) {
-      final dependencies = values[section];
-      if (dependencies is Map &&
-          dependencies.values
-              .any((value) => value is Map && value['sdk'] == 'flutter'))
-        return true;
-    }
-  } catch (_) {
-    /* The delegated tool reports malformed project configuration. */
+bool _flutterPackage(File input) => packageUsesFlutter(input.path);
+
+String _flutterPlatform(List<String> arguments,
+    {String? buildTarget, String? device}) {
+  if (buildTarget == 'web') return 'web';
+  for (var index = 0; index < arguments.length; index++) {
+    final option = arguments[index];
+    if ((option == '-d' || option == '--device-id') &&
+        index + 1 < arguments.length)
+      device = arguments[++index];
+    else if (option.startsWith('--device-id='))
+      device = option.substring(12);
+    else if (option.startsWith('-d') &&
+        !option.startsWith('--') &&
+        option.length > 2) device = option.substring(2);
   }
-  return false;
+  return {'chrome', 'edge', 'web-server'}.contains(device) ? 'web' : 'flutter';
 }
 
-Future<void> _runFlutter(File input, List<String> arguments) async {
-  if (arguments.any((arg) =>
-      (arg.startsWith('-t') && !arg.startsWith('--')) ||
-      {'-t', '--target', '--machine', '--no-machine'}
-          .contains(arg.split('=').first))) {
-    stderr.writeln(
-        'Quds controls the generated target and machine protocol. Use a .quds entry point.');
-    exitCode = 64;
-    return;
-  }
-  final modes = arguments
-      .where((arg) => {'--debug', '--profile', '--release'}.contains(arg))
-      .toSet();
-  if (modes.length > 1) {
-    stderr.writeln('Choose one of --debug, --profile or --release.');
-    exitCode = 64;
-    return;
-  }
-  final live = !arguments.contains('--release') &&
-      !arguments.contains('--profile') &&
-      !arguments.contains('--no-hot');
-  final flutter = _flutterExecutable();
-  if (flutter == null) {
-    stderr.writeln('Flutter was not found. Install Flutter and retry.');
-    exitCode = 1;
-    return;
-  }
+class _FlutterPreparation {
+  const _FlutterPreparation(this.root, this.target, this.relative, this.build,
+      this.snapshot, this.failureCode, this.error, this.files);
+  final Directory root;
+  final File target;
+  final String relative;
+  final bool Function() build;
+  final String Function() snapshot;
+  final int Function() failureCode;
+  final String? Function() error;
+  final List<String> Function() files;
+}
+
+_FlutterPreparation _prepareFlutter(File input,
+    {bool guardMain = true, String targetPlatform = 'flutter'}) {
   final root = _packageRoot(input.absolute.parent);
   final target = _flutterGenerated(input, root);
   final relative = _relativePosix(root, target);
@@ -1394,10 +1400,18 @@ Future<void> _runFlutter(File input, List<String> arguments) async {
   final compiledCache = <String, (String, Compilation)>{};
   late String Function() currentSources;
   var buildFailure = 65;
+  String? lastError;
+  var lastFiles = <String>[];
+  void report(Object error) {
+    lastError = '$error';
+    stderr.writeln(error);
+  }
+
   bool build() {
     final saved = exitCode;
     exitCode = 0;
     buildFailure = 65;
+    lastError = null;
     try {
       // Validate the entire dependency graph before touching running output.
       final plan = <(File, Compilation)>[];
@@ -1413,7 +1427,8 @@ Future<void> _runFlutter(File input, List<String> arguments) async {
           compiled = cached.$2;
         } else {
           final before = currentSources();
-          compiled = compile(file.readAsStringSync(), file: path);
+          compiled = compile(file.readAsStringSync(),
+              file: path, targetPlatform: targetPlatform, flutter: true);
           tracked
               .addAll(compiled.dependencies.where((p) => p.endsWith('.quds')));
           if (before == currentSources()) {
@@ -1433,8 +1448,7 @@ Future<void> _runFlutter(File input, List<String> arguments) async {
             _flutterGenerated(file, _packageRoot(file.absolute.parent));
         if (output.existsSync() &&
             !output.readAsStringSync().startsWith(_generatedHeader)) {
-          stderr.writeln(
-              'Refusing to overwrite non-generated file: ${output.path}');
+          report('Refusing to overwrite non-generated file: ${output.path}');
           buildFailure = 73;
           return false;
         }
@@ -1451,18 +1465,19 @@ Future<void> _runFlutter(File input, List<String> arguments) async {
       }
       final main = plan.first.$2;
       final generated = target.readAsStringSync();
-      if (main.sourceMap != null) {
+      if (guardMain && main.sourceMap != null) {
         final suffix = relative.substring(relative.indexOf('quds_gen/'));
         target.writeAsStringSync(
             _guardGeneratedMain(generated, main.sourceMap!, suffix));
       }
       tracked.addAll(seen);
+      lastFiles = seen.toList();
       return true;
     } on CompilerException catch (error) {
-      stderr.writeln(error);
+      report(error);
       return false;
     } on FileSystemException catch (error) {
-      stderr.writeln(error);
+      report(error);
       buildFailure = 74;
       return false;
     } finally {
@@ -1490,15 +1505,61 @@ Future<void> _runFlutter(File input, List<String> arguments) async {
   }
 
   currentSources = snapshot;
+  return _FlutterPreparation(root, target, relative, build, snapshot,
+      () => buildFailure, () => lastError, () => lastFiles);
+}
+
+final _debugFlutterGraphs = <String, _FlutterPreparation>{};
+
+Future<void> _runFlutter(File input, List<String> arguments,
+    {String? buildTarget}) async {
+  if (arguments.any((arg) =>
+      (arg.startsWith('-t') && !arg.startsWith('--')) ||
+      {'-t', '--target', '--machine', '--no-machine'}
+          .contains(arg.split('=').first))) {
+    stderr.writeln(
+        'Quds controls the generated target and machine protocol. Use a .quds entry point.');
+    exitCode = 64;
+    return;
+  }
+  final modes = arguments
+      .where((arg) => {'--debug', '--profile', '--release'}.contains(arg))
+      .toSet();
+  if (modes.length > 1) {
+    stderr.writeln('Choose one of --debug, --profile or --release.');
+    exitCode = 64;
+    return;
+  }
+  final live = !arguments.contains('--release') &&
+      !arguments.contains('--profile') &&
+      !arguments.contains('--no-hot');
+  final flutter = _flutterExecutable();
+  if (flutter == null) {
+    stderr.writeln('Flutter was not found. Install Flutter and retry.');
+    exitCode = 1;
+    return;
+  }
+  final prepared = _prepareFlutter(input,
+      targetPlatform: _flutterPlatform(arguments, buildTarget: buildTarget));
+  final root = prepared.root;
+  final relative = prepared.relative;
+  final build = prepared.build;
+  final snapshot = prepared.snapshot;
   final initialSnapshot = snapshot();
   if (!build()) {
-    exitCode = buildFailure;
+    exitCode = prepared.failureCode();
     return;
   }
   stdout.writeln('Built $relative');
-  if (!live) {
+  if (!live || buildTarget != null) {
     final process = await Process.start(
-        flutter, ['run', '-t', relative, ...arguments],
+        flutter,
+        [
+          if (buildTarget == null) 'run' else ...['build', buildTarget],
+          '-t',
+          relative,
+          ...arguments
+        ],
         workingDirectory: root.path,
         environment: desktopLaunchEnvironment(Platform.environment),
         includeParentEnvironment: false,
@@ -2039,24 +2100,98 @@ Future<void> _debug(List<String> arguments) async {
   }
 
   var inbound = Future<void>.value();
+  FlutterDebugLive? live;
+  void toAdapter(Map<String, dynamic> message) {
+    inbound = inbound.then((_) async {
+      child.stdin.write(encodeFrame(message));
+      await child.stdin.flush();
+    });
+  }
+
+  void console(String message) => write({
+        'seq': 0,
+        'type': 'event',
+        'event': 'output',
+        'body': {'category': 'stderr', 'output': '$message\n'}
+      });
   final fromAdapter = _readFrames(child.stdout).listen((message) {
+    if (live?.adapterMessage(message) == false) return;
     if (translator.shouldPresent(message)) write(translator.present(message));
   });
   final fromEditor = _readFrames(stdin).listen((message) {
+    if (flutter &&
+        message['type'] == 'request' &&
+        live?.request(message) == true) return;
+    String? baseline;
+    _FlutterPreparation? prepared;
+    if (flutter && message['command'] == 'launch') {
+      final config = message['arguments'] as Map?;
+      final program = config?['program'];
+      final options = config?['toolArgs'] as List? ?? const [];
+      final mode = config?['flutterMode'];
+      if (program is String && program.endsWith('.quds')) {
+        final input = File(program).absolute;
+        prepared = _prepareFlutter(input,
+            guardMain: false,
+            targetPlatform: _flutterPlatform(
+                options.map((value) => '$value').toList(),
+                device: config?['deviceId'] as String?));
+        _debugFlutterGraphs[input.path] = prepared;
+        if (mode != 'release' &&
+            mode != 'profile' &&
+            !options.any((value) =>
+                {'--release', '--profile', '--no-hot'}.contains(value))) {
+          baseline = prepared.snapshot();
+        }
+      }
+    }
     final action = translator.accept(message);
     if (action.reply != null) write(action.reply!);
+    void refreshMaps(_FlutterPreparation graph) {
+      for (final path in graph.files()) {
+        final generated =
+            _flutterGenerated(File(path), _packageRoot(File(path).parent));
+        final map = File('${generated.path}.map');
+        translator.bind(DebugBinary(path, generated.path,
+            map.existsSync() ? map.readAsStringSync() : '',
+            cwd: graph.root.path));
+      }
+    }
+
     if (action.message != null) {
-      inbound = inbound.then((_) async {
-        child.stdin.write(encodeFrame(action.message));
-        await child.stdin.flush();
-      });
+      if (prepared != null) refreshMaps(prepared);
+      if (prepared != null && baseline != null) {
+        live?.dispose();
+        final graph = prepared;
+        live = FlutterDebugLive(
+            snapshot: graph.snapshot,
+            build: graph.build,
+            initialSnapshot: baseline,
+            buildError: graph.error,
+            refreshMaps: () => refreshMaps(graph),
+            send: (value) {
+              if (value['type'] == 'response')
+                write(value);
+              else
+                toAdapter(value);
+            },
+            output: console);
+      }
+      toAdapter(action.message!);
     }
   });
-  await fromEditor.asFuture<void>();
-  await inbound;
-  await outbound;
-  child.kill();
-  await fromAdapter.cancel();
+  try {
+    await Future.any(
+        [fromEditor.asFuture<void>(), child.exitCode.then((_) {})]);
+    live?.dispose();
+    await inbound;
+    await outbound;
+  } finally {
+    live?.dispose();
+    child.kill();
+    await fromEditor.cancel();
+    await fromAdapter.cancel();
+  }
 }
 
 DebugBinary? _debugBuild(String qudsPath, void Function(String message) fail) {
@@ -2066,6 +2201,18 @@ DebugBinary? _debugBuild(String qudsPath, void Function(String message) fail) {
     return null;
   }
   final absolute = input.absolute.path;
+  if (_flutterPackage(input)) {
+    final prepared = _debugFlutterGraphs.putIfAbsent(
+        absolute, () => _prepareFlutter(input, guardMain: false));
+    if (!prepared.build()) {
+      fail(prepared.error() ?? 'Quds could not build $absolute');
+      return null;
+    }
+    final map = File('${prepared.target.path}.map');
+    return DebugBinary(absolute, prepared.target.path,
+        map.existsSync() ? map.readAsStringSync() : '',
+        cwd: prepared.root.path);
+  }
   try {
     final result = compile(input.readAsStringSync(), file: absolute);
     final saved = exitCode;

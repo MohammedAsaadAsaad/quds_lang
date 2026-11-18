@@ -1,0 +1,1922 @@
+{
+  "schema": 1,
+  "authority": "docs/QUDS_LANGUAGE_SPECIFICATION.md",
+  "policy": "Evidence inventory, not a percentage of full language implementation. Candidate files require rule-specific review.",
+  "rules": [
+    {
+      "id": "QUDS-001",
+      "decision_summary": "Indentation blocks with colon; no required braces or semicolons.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-002",
+      "decision_summary": "Immutable bindings by default; var mutable; const compile-time; optional type annotations.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-003",
+      "decision_summary": "Lists, maps, sets, records with concise literals.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-004",
+      "decision_summary": "Dart operators plus and/or/not and null-aware operators.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-005",
+      "decision_summary": "if/else-if/else statements and expressions.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-006",
+      "decision_summary": "for-in, ranges inclusive/exclusive, step, while, break/continue, await-for.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-007",
+      "decision_summary": "Typed function declarations and expression-bodied functions.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-008",
+      "decision_summary": "Classes with fields and generated constructors.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Parent constructor synthesis still has an explicit E910 boundary."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-009",
+      "decision_summary": "Parentheses-optional simple calls; named argument blocks; unified widget-like constructor calls.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-010",
+      "decision_summary": "async/async* and Future/Stream interoperability.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-011",
+      "decision_summary": "use imports and pub dependencies.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Deferred import suffix remains unsupported."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-012",
+      "decision_summary": "try/catch/finally, throw, try-expression fallback, optional Result.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-013",
+      "decision_summary": "Dart null safety.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-014",
+      "decision_summary": "Static typing, inference, generics, aliases, explicit dynamic.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Unknown foreign API metadata still has an unchecked dynamic fallback."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-015",
+      "decision_summary": "Properties with get/set.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-016",
+      "decision_summary": "Public/private/protected visibility.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-017",
+      "decision_summary": "extends/implements/with and class modifiers.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-018",
+      "decision_summary": "Collection operations and comprehensions.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-019",
+      "decision_summary": "#, /* */, /// comments and annotations.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-020",
+      "decision_summary": "Interpolation \"Hello {name}\", escaped braces, raw/triple strings.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-021",
+      "decision_summary": "Compound assignments, no ++ or --.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-022",
+      "decision_summary": "Positional, named, optional, required parameters.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-023",
+      "decision_summary": "Single- and multi-line lambdas.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-024",
+      "decision_summary": "Generics.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Some generic/native combinations remain explicitly rejected."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-025",
+      "decision_summary": "Enums with fields and generated constructors.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-026",
+      "decision_summary": "init constructors, named, factory, const.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Explicit parent constructors constrain synthesized child constructors."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-027",
+      "decision_summary": "with object configuration, this/super, mixins.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-028",
+      "decision_summary": "using/using async deterministic cleanup.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-029",
+      "decision_summary": "match patterns.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-030",
+      "decision_summary": "await all and await isolate.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-031",
+      "decision_summary": "if let for nullable binding.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-032",
+      "decision_summary": "Explicit return in multiline functions and lambdas.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-033",
+      "decision_summary": ".quds modules and generated .dart files; pubspec compatibility.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-034",
+      "decision_summary": "Extensions and extension types (type ... wraps ...).",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-035",
+      "decision_summary": "Interfaces, abstract classes and mixins.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-036",
+      "decision_summary": "Operator overloading with Dart-compatible fixed return constraints.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-037",
+      "decision_summary": "sync*/async*, yield/yield*.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-038",
+      "decision_summary": "Records and destructuring.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-039",
+      "decision_summary": "Expression-first and block-first comprehensions and spread.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-040",
+      "decision_summary": "Dart generic semantics.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Raw generic superclasses and complex native signatures need more conformance."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-041",
+      "decision_summary": "late immutable/mutable bindings.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-042",
+      "decision_summary": "static and class const.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-043",
+      "decision_summary": "Native Quds code generation targeting .quds.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-044",
+      "decision_summary": "Generated file management and optional part/part of.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-045",
+      "decision_summary": "Function types (Args) -> Return.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [
+        "test/native_function_values.quds",
+        "test/native_function_values_test.dart"
+      ],
+      "known_limits": [
+        "Required positional native values are covered; generic, named and optional function values remain E910."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-046",
+      "decision_summary": "Callable classes via call.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-047",
+      "decision_summary": "with and with? replace Dart cascades.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-048",
+      "decision_summary": "assert (dev), require (input), check (state).",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-049",
+      "decision_summary": "Typed catch, stack trace, rethrow, stack-aware throw.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-050",
+      "decision_summary": "value class with structural equality and immutable fields.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-051",
+      "decision_summary": "Auto copyWith for value classes; omitted differs from explicit null.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-052",
+      "decision_summary": "Record/list/map/object patterns.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-053",
+      "decision_summary": "defer sync/async, LIFO cleanup.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-054",
+      "decision_summary": "Safe inferred const and canonicalization.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-055",
+      "decision_summary": "factory and lazy isolate-local singleton class.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-056",
+      "decision_summary": "mixin/mixin class/on/with.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-057",
+      "decision_summary": "Dart class modifiers.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-058",
+      "decision_summary": "noSuchMethod under Dart constraints.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-059",
+      "decision_summary": "@Reflectable compile-time metadata generation compatible with AOT.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-060",
+      "decision_summary": "Native Quds compile-time macros with structured safe APIs.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-061",
+      "decision_summary": "annotation Name shorthand.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-062",
+      "decision_summary": "Conditional imports and compile-time when.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [
+        "test/target_platform_test.dart",
+        "test/project_cli_test.dart"
+      ],
+      "known_limits": [
+        "Explicit VM/web/Flutter backend selection and conditional Quds imports are covered; live editor device-context certification remains open."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-063",
+      "decision_summary": "quds create/add/remove/get/run/build/test/analyze/format CLI.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/project_cli_test.dart"
+      ],
+      "verified_slice_files": [
+        "test/project_cli_test.dart"
+      ],
+      "known_limits": [
+        "Platform command transport is covered; native engine builds need CI evidence."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-064",
+      "decision_summary": "test/group/expect and async/widget tests using Dart ecosystem.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Real Flutter widget execution is a separate CI gate."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-065",
+      "decision_summary": "Source-aware diagnostics, warnings, lint and fixes.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/editor_test.dart",
+        "test/editor_growth_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Project-wide refactoring and quick-fix coverage are not complete."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-066",
+      "decision_summary": "LSP, debug adapter, .quds breakpoints, Flutter hot reload.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/editor_test.dart",
+        "test/editor_growth_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [
+        "test/flutter_debug_live_test.dart",
+        "test/flutter_live_test.dart"
+      ],
+      "known_limits": [
+        "F5 save/update protocol is covered; engine state and breakpoint retention need real Flutter checks."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-067",
+      "decision_summary": "/// docs, generated API docs, doctests.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/editor_test.dart",
+        "test/editor_growth_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-068",
+      "decision_summary": "Project language versions and migration.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-069",
+      "decision_summary": "Safe compiler optimization, performance/size benchmarks.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-070",
+      "decision_summary": "Dart FFI, JS interop, platform channels, binding generation.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "All FFI/JS interop and binding-generation shapes are not certified."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-071",
+      "decision_summary": "Publish .quds and generated .dart to pub.dev.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/project_cli_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "A stable package release and Quds/generated-Dart packaging gate remain required."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-072",
+      "decision_summary": "Incremental compilation, caching, watch and hot reload.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/editor_test.dart",
+        "test/editor_growth_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [
+        "test/flutter_debug_live_test.dart",
+        "test/flutter_live_test.dart"
+      ],
+      "known_limits": [
+        "Quds save watching is covered; dependency/plugin changes require relaunch."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-073",
+      "decision_summary": "Pub-based dependency resolution.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/project_cli_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-074",
+      "decision_summary": "Deterministic formatter with project config.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Formatting is deterministic in covered cases; complete project-format certification remains open."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-075",
+      "decision_summary": "Runtime stack traces mapped back to Quds.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/editor_test.dart",
+        "test/editor_growth_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [
+        "test/flutter_debug_live_test.dart"
+      ],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-076",
+      "decision_summary": "Structured logging with pluggable sinks.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-077",
+      "decision_summary": "Typed configuration with environment precedence and secrets.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-078",
+      "decision_summary": "Structured concurrency task group/spawn/cancellation.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-079",
+      "decision_summary": "Generic state/computed/watch reactive primitives.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-080",
+      "decision_summary": "Declarative if/for inside collection/children contexts; not Flutter-specific framework features.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-081",
+      "decision_summary": "Unified calls: positional+named arguments, nested calls, precise parsing.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-082",
+      "decision_summary": "`to Type` explicit conversion, `to? Type` safe conversion, `is`/`as` type tests and casts, explicit custom conversion protocol. `Type?` remains the nullable type.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/conversions_test.dart",
+        "test/export_cast_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-083",
+      "decision_summary": "Optional<T>, missing, present distinguish omission from explicit null.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-084",
+      "decision_summary": "Parameters non-reassignable by default; var parameter allows local reassignment only.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-085",
+      "decision_summary": "Static function overloading; deterministic compile-time resolution, reject ambiguity, unique Dart internal names.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-086",
+      "decision_summary": "Computed defaults evaluated per call; may reference earlier parameters; distinguish omission and null.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-087",
+      "decision_summary": "Typed variadics ...values: Type, argument spreading and overload rules.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-088",
+      "decision_summary": "Record/list destructuring and parenthesized multi-assignment; evaluate RHS fully before mutation.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-089",
+      "decision_summary": "Named destructuring/aliasing for records, objects and maps with structure-specific syntax.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-090",
+      "decision_summary": "Lexical scope; explicit shadow keyword; outer mutable bindings can be assigned.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-091",
+      "decision_summary": "Dart-like closure capture; capture(...) snapshots bindings without deep copy.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-092",
+      "decision_summary": "readonly Type transitive through reference; static checking and runtime guard when needed.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/readonly_classes_test.dart",
+        "test/readonly_graph_test.dart",
+        "test/readonly_paths_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Some foreign final/sealed or erased readonly shapes intentionally report E910."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-093",
+      "decision_summary": "Dart reference/alias semantics; optional static aliasing diagnostics; no mandatory Rust-style ownership.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/readonly_classes_test.dart",
+        "test/readonly_graph_test.dart",
+        "test/readonly_paths_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-094",
+      "decision_summary": "Union types A | B with narrowing and safe Dart lowering.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-095",
+      "decision_summary": "Intersection types A & B for combined type contracts.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-096",
+      "decision_summary": "type aliases; wraps remains distinct extension type.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-097",
+      "decision_summary": "sealed type algebraic data types and match.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-098",
+      "decision_summary": "Exhaustiveness checking of match, strict for expressions.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-099",
+      "decision_summary": "Generic bounds including multiple constraints.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Full foreign recursive bounds and raw generic inheritance are not certified."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-100",
+      "decision_summary": "Safe declared in/out generic variance subject to Dart lowering constraints.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Variance needs continued cross-feature/foreign boundary conformance."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-101",
+      "decision_summary": "Contextual type inference; no unsafe implicit conversions or silent dynamic.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "The unresolved foreign API dynamic fallback is not a static safety guarantee."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-102",
+      "decision_summary": "Preserve ?. ?? ??= safe operators.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-103",
+      "decision_summary": "Type wrapping with checked range/value invariants.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-104",
+      "decision_summary": "Generic extensions with bounds.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-105",
+      "decision_summary": "Pipeline |> with static resolution and deterministic evaluation.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-106",
+      "decision_summary": "do: expression blocks with explicit return.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-107",
+      "decision_summary": "Partial application using _ placeholders when type unambiguous.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-108",
+      "decision_summary": "Standard Result<T,E>, Ok/Error; exceptions remain supported.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-109",
+      "decision_summary": "Result propagation suffix ? with compatible error type.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-110",
+      "decision_summary": "Function contracts using require/check and result validation.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-111",
+      "decision_summary": "Left-to-right, exactly-once evaluation including defaults.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-112",
+      "decision_summary": "Deterministic name resolution; reject ambiguous symbols/extensions.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-113",
+      "decision_summary": "Type compatibility with no unsafe implicit conversions, union/generic/readonly checks.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [
+        "Readonly/foreign/generic boundary certification remains partial."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-114",
+      "decision_summary": "Dart-facing API compatibility and explicit wrappers for Quds-only features.",
+      "status": "partial",
+      "candidate_test_files": [
+        "test/generic_methods_test.dart",
+        "test/generic_constraints_test.dart",
+        "test/dart_generics_test.dart"
+      ],
+      "verified_slice_files": [
+        "test/native_function_values.quds",
+        "test/native_function_values_test.dart"
+      ],
+      "known_limits": [
+        "Native callbacks with generic, named or optional parameter shapes remain restricted."
+      ],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    },
+    {
+      "id": "QUDS-115",
+      "decision_summary": "Uniform syntax and unambiguous parser for calls, properties, blocks.",
+      "status": "needs_certification",
+      "candidate_test_files": [
+        "test/language_test.dart",
+        "test/compiler_test.dart"
+      ],
+      "verified_slice_files": [],
+      "known_limits": [],
+      "completion_evidence": {
+        "positive": [],
+        "negative": [],
+        "interop": []
+      }
+    }
+  ]
+}

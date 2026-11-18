@@ -147,4 +147,38 @@ void main() {
     expect(p.calls.last, contains('lib/quds_gen/other.dart'));
     expect((await p.run(['run', '--debug', '--release'])).exitCode, 64);
   });
+  test(
+      'platform build prepares Quds graph and forwards native flags and failures',
+      () async {
+    final p = await project();
+    p.file('lib/main.quds').writeAsStringSync(
+        'use browser when platform == "web"\nuse native when platform != "web"\nmain():\n  print choice()\n');
+    p
+        .file('lib/browser.quds')
+        .writeAsStringSync('choice() -> String = "browser"\n');
+    p
+        .file('lib/native.quds')
+        .writeAsStringSync('choice() -> String = "native"\n');
+    for (final target in ['apk', 'web', 'linux']) {
+      success(await p.run(['build', target, '--release', '--build-number=3']));
+      expect(p.calls.last, [
+        'build',
+        target,
+        '-t',
+        'lib/quds_gen/main.dart',
+        '--release',
+        '--build-number=3'
+      ]);
+      expect(
+          p.file('lib/quds_gen/main.dart').readAsStringSync(),
+          contains(target == 'web'
+              ? "import 'browser.dart'"
+              : "import 'native.dart'"));
+    }
+    p.file('lib/second.quds').writeAsStringSync('main():\n  print "second"\n');
+    success(await p.run(['build', 'appbundle', '-t', 'lib/second.quds']));
+    expect(p.calls.last, contains('lib/quds_gen/second.dart'));
+    p.file('fail').writeAsStringSync('fail');
+    expect((await p.run(['build', 'linux'])).exitCode, 17);
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

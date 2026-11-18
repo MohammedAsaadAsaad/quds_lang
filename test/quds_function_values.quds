@@ -1,0 +1,55 @@
+use fixtures.quds_function_values.helpers as helpers
+
+identity<T>(value: T) -> T = value
+bounded<T: num>(value: T) -> T = value
+choose(value: int) -> String = "integer"
+choose(value: String) -> String = "text"
+select<T>(value: T) -> T = value
+select<T, U>(first: T, second: U) -> U = second
+shape<T>(value: T) -> T = value
+shape<T>(value: List<T>) -> T = value[0]
+applyChoice(callback: (int) -> String) -> String = callback(10)
+apply(callback: (int) -> int) -> int = callback(9)
+
+test "Quds generic values specialize explicitly and from context":
+  explicit = identity<int>
+  contextual: (String) -> String = identity
+  numeric: (int) -> int = bounded
+  expect(explicit(3), 3)
+  expect(explicit(value: 4), 4)
+  expect(contextual("Quds"), "Quds")
+  expect(numeric(5), 5)
+  expect(apply(identity), 9)
+
+test "expected function signature selects exactly one overload":
+  integer: (int) -> String = choose
+  text: (String) -> String = choose
+  expect(integer(1), "integer")
+  expect(text("a"), "text")
+  expect(applyChoice(choose), "integer")
+
+test "explicit arguments instantiate before overload selection":
+  unary = select<int>
+  binary = select<int, String>
+  expect(unary(6), 6)
+  expect(binary(1, "second"), "second")
+  shaped: (int) -> int = shape<int>
+  listed: (List<int>) -> int = shape
+  expect(shaped(7), 7)
+  expect(listed([8]), 8)
+
+test "imported single generic functions retain their public reference":
+  explicit = helpers.copyValue<int>
+  contextual: (int) -> int = helpers.copyValue
+  expect(explicit(7), 7)
+  expect(contextual(8), 8)
+
+test "selected values remain ordinary calls and arguments execute once":
+  callback: (int) -> String = choose
+  var calls = 0
+  next(value: int) -> int:
+    calls += 1
+    return value
+  before = calls
+  expect(callback(next(1)), "integer")
+  expect(calls, before + 1)

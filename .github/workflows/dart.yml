@@ -31,6 +31,8 @@ jobs:
           dart run bin/quds.dart test test/generic_methods.quds
           dart run bin/quds.dart test test/dart_generics.quds
           dart run bin/quds.dart test test/dart_generics_prefix.quds
+          dart run bin/quds.dart test test/native_function_values.quds
+          dart run bin/quds.dart test test/quds_function_values.quds
           dart run bin/quds.dart test test/readonly_classes.quds
           dart run bin/quds.dart test test/readonly_graph.quds
           dart run bin/quds.dart test test/readonly_paths.quds
@@ -96,7 +98,7 @@ jobs:
           python-version: '3.x'
       - run: dart pub get --enforce-lockfile
       - run: python tool/audit_language.py --check
-      - run: dart test test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/target_platform_test.dart --reporter expanded
+      - run: dart test test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/quds_function_values_test.dart test/target_platform_test.dart --reporter expanded
   flutter-engine:
     runs-on: ubuntu-latest
     defaults:

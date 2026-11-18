@@ -143,3 +143,7 @@ functions. Optional/named signatures and explicit native generic specialization 
 Unconstrained generic values and polymorphic callback signatures remain limited.
 The [readiness handoff](docs/LANGUAGE_READINESS_AR.md) separates implemented
 slices, pending conformance and real-platform release gates.
+
+Quds functions also support explicit/contextual generic values and local overload
+selection from an expected signature; ambiguous values report E311. See
+[Quds function values](docs/QUDS_FUNCTION_VALUES.md) for examples and limits.

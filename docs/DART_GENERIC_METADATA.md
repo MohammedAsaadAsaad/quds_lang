@@ -164,8 +164,9 @@ Every formal needs evidence. No context retains E910 for unsupported polymorphic
 values; a function context that leaves a formal undetermined reports E302.
 Conflicting signatures, bad bounds or incompatible variance are rejected in
 Quds coordinates. Type aliases and nullable expected function types are resolved
-before matching. Quds generic/overload values and polymorphic callback types are
-still separate unfinished work.
+before matching. Quds function/overload values have a separate supported slice in
+[QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md); their remaining adapters and
+polymorphic callback types are unfinished.
 
 This is structural contextual inference with a final subtype check, not a full
 Dart constraint solver or recursive instantiate-to-bound. More complex mixed

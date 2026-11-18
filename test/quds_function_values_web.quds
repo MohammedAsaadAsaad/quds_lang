@@ -1,0 +1,43 @@
+use fixtures.quds_function_values.helpers as helpers
+
+identity<T>(value: T) -> T = value
+bounded<T: num>(value: T) -> T = value
+choose(value: int) -> String = "integer"
+choose(value: String) -> String = "text"
+select<T>(value: T) -> T = value
+select<T, U>(first: T, second: U) -> U = second
+shape<T>(value: T) -> T = value
+shape<T>(value: List<T>) -> T = value[0]
+delayed<T>(value: T) async -> T = value
+applyChoice(callback: (int) -> String) -> String = callback(10)
+apply(callback: (int) -> int) -> int = callback(9)
+
+main() async:
+  explicit = identity<int>
+  contextual: (String) -> String = identity
+  numeric: (int) -> int = bounded
+  integer: (int) -> String = choose
+  text: (String) -> String = choose
+  unary = select<int>
+  binary = select<int, String>
+  shaped: (int) -> int = shape<int>
+  listed: (List<int>) -> int = shape
+  imported: (int) -> int = helpers.copyValue
+  future: (int) -> Future<int> = delayed
+  print explicit(value: 3)
+  print contextual("Quds")
+  print numeric(4)
+  print apply(identity)
+  print integer(1)
+  print text("x")
+  print unary(5)
+  print binary(1, "second")
+  print shaped(6)
+  print listed([7])
+  print imported(8)
+  print await future(10)
+  print applyChoice(choose)
+  forward: (int) -> int = lateIdentity
+  print forward(11)
+
+lateIdentity<T>(value: T) = value

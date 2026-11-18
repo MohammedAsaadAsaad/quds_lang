@@ -16,6 +16,9 @@ full constraint solving and generic callback types remain limited.
 Actual remote CI/engine evidence and the remaining tracks stay explicit gates;
 this is not a claim of complete Dart parity.
 
+The Quds-side function-value slice and remaining adapters/import contracts are
+tracked in [QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md).
+
 ## Architecture
 
 Source manager → indentation-aware lexer → token stream → parser → typed AST → symbol table/name resolution → type checking → lowering IR → Dart emitter → diagnostics/source maps.

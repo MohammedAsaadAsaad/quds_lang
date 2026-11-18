@@ -3975,10 +3975,11 @@ class Analyzer {
     final method = symbol?.nativeMember;
     final nativeCallable = top != null && top.callable && !top.isType ||
         method != null && !method.getter;
-    if (!nativeCallable || functionTypeParts(nonNullableType(type)) == null) {
+    if ((!nativeCallable && symbol?.function == null) ||
+        functionTypeParts(nonNullableType(type)) == null) {
       error(
           'E910',
-          'Explicit function values currently require a native function or method',
+          'Explicit function values require a supported function or method',
           node);
     }
     model.references[node] = symbol!;
@@ -5447,7 +5448,9 @@ class Analyzer {
         }
         model.references[node] = found;
         _touch(found);
-        return _nativeFunctionValue(found, node) ?? found.type;
+        return _qudsFunctionValue(found, node) ??
+            _nativeFunctionValue(found, node) ??
+            found.type;
       }
     }
     final raw = expression(node.object);
@@ -5456,7 +5459,9 @@ class Analyzer {
     if (nested != null && owner?.type != 'prefix') {
       if (owner != null) _touch(owner);
       model.references[node] = nested;
-      return _nativeFunctionValue(nested, node) ?? nested.type;
+      return _qudsFunctionValue(nested, node) ??
+          _nativeFunctionValue(nested, node) ??
+          nested.type;
     }
     final type = raw.startsWith('readonly ') ? raw.substring(9) : raw;
     final nullableExtension = isNullableType(type) &&
@@ -6740,9 +6745,8 @@ class Analyzer {
       final current = _typeSymbol(_genericHead(_thisType!))?.classDeclaration;
       if (current != null) _checkMember(current, node.name, node);
     }
-    if (symbol.overloads.length > 1) {
-      fail('Choose one overload with a call or a typed context', node);
-    }
+    final qudsValue = _qudsFunctionValue(symbol, node);
+    if (qudsValue != null) return qudsValue;
     model.references[node] = symbol;
     _touch(symbol);
     if (symbol.function != null) return functionType(symbol.function!);
@@ -6755,6 +6759,92 @@ class Analyzer {
     if (_readonlyMethod && symbol.field)
       return _readonlyView('readonly this', visible);
     return symbol.readonly ? 'readonly $visible' : visible;
+  }
+
+  String? _qudsFunctionValue(Symbol symbol, Expression node) {
+    final candidates = symbol.overloads;
+    if (candidates.isEmpty) return null;
+    final explicit = identical(node, _nativeInstantiationTarget)
+        ? _nativeInstantiationArguments
+        : null;
+    if (candidates.length == 1 &&
+        candidates.single.typeParameters.isEmpty &&
+        explicit == null) return null;
+    if (candidates.any((f) =>
+        _methodOwners.containsKey(f) ||
+        f.parameters.any((p) =>
+            p.defaultValue != null || p.variadic || p.type.contains(' & '))))
+      error(
+          'E910',
+          'These Quds function values need a method/default/variadic adapter',
+          node);
+    final expected =
+        _expected == null ? null : nonNullableType(model.resolve(_expected!));
+    final contextual = expected != null && functionTypeParts(expected) != null;
+    if (candidates.length > 1 && explicit == null && !contextual)
+      error('E311', 'An overload value needs one expected function signature',
+          node);
+    final matches = <(Symbol, String, List<String>)>[];
+    for (final candidate in candidates) {
+      if (explicit != null &&
+          candidate.typeParameters.length != explicit.length &&
+          candidates.length > 1) continue;
+      final declaration = model.declarations[candidate] ?? symbol;
+      if (declaration.type == '<infer>' && symbol.library.isEmpty)
+        analyzeFunction(candidate);
+      final returned = declaration.type;
+      List<String> arguments;
+      try {
+        if (explicit != null) {
+          arguments = explicit;
+        } else if (candidate.typeParameters.isEmpty) {
+          arguments = const [];
+        } else {
+          if (!contextual)
+            error(
+                'E302',
+                'A generic Quds function value needs type arguments or a function context',
+                node);
+          arguments = _inferNativeFunctionValue(
+              Symbol(candidate.name, declaration.dartName, returned), node, [
+            for (final p in candidate.parameters) (p.name, p.type)
+          ], const {}, const {}, {
+            for (final p in candidate.typeParameters)
+              p.name: p.bound ?? 'Object?'
+          });
+        }
+        final substitution = _checkTypeArguments(
+            candidate.name, candidate.typeParameters, arguments, node);
+        final signature =
+            '(${candidate.parameters.map((p) => '${p.name}: ${_substitute(p.type, substitution)}').join(', ')}) -> ${_substitute(returned, substitution)}';
+        if (contextual && !compatible(signature, expected)) {
+          if (candidates.length == 1)
+            fail('Function value $signature is incompatible with $expected',
+                node);
+          continue;
+        }
+        final selected = Symbol(
+                symbol.name,
+                symbol.library.isEmpty ? declaration.dartName : symbol.dartName,
+                returned,
+                function: candidate,
+                library: symbol.library,
+                documentation: candidate.documentation)
+            .withFunction(candidate);
+        matches.add((selected, signature, arguments));
+      } on CompilerException {
+        if (candidates.length == 1) rethrow;
+      }
+    }
+    if (matches.length != 1)
+      error('E311', 'The function context does not select exactly one overload',
+          node);
+    final selected = matches.single;
+    model.references[node] = selected.$1;
+    _touch(selected.$1);
+    if (explicit == null && selected.$3.isNotEmpty)
+      model.contextualFunctionArguments[node] = selected.$3;
+    return selected.$2;
   }
 
   String? _nativeFunctionValue(Symbol symbol, Node node) {

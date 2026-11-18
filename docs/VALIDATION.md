@@ -1,5 +1,41 @@
 # Compiler validation — latest 2026-11-18
 
+## Quds generic function values and local overload contexts — 2026-11-18
+
+Active handoff updated before implementation:
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md). Contract and examples:
+[QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | **5 declarations passed**: explicit/contextual generic values, callback contexts, local overload selection, explicit-arity selection, single imports and once-only argument evaluation |
+| Negative conformance | **14 cases** reject ambiguous/missing overload contexts with E311, unresolved single generic values with E302, invalid bounds/types with E300 and unsupported default/variadic adapters with E910 |
+| Focused Quds/native/method/parser/semantics regressions | **124 passed in 14s** |
+| Dart output | Deterministic golden matched; generated entry analyzed, imported helper staged; actual VM and JavaScript/Node agreed on 14 output lines |
+| Forward/async/import behavior | Forward local generic function return inference, Future-valued references and a prefixed imported generic provider executed successfully |
+| Documentation example | Actual `quds run` printed `3`, `4`, `integer` |
+| `dart format .` | 99 files; zero changes |
+| `dart analyze` | No issues found |
+| Full compiler suite | **677 passed; zero failures; zero skips in 9m48s** |
+| Readiness and whitespace | 115-rule inventory regenerated/checked; `git diff --check` passed |
+
+CI now lists the primary native/Quds function suites directly and includes the
+new driver in its portable subset. These are configuration changes, not observed
+remote Windows/macOS run results.
+
+The selected reference uses the declaration's generated name without modifying
+the global overload group. Two compatible candidates remain E311; no candidate
+is selected merely because it appears first. Explicit arguments are checked
+before context selection. Direct-call overload resolution remains on its existing
+path. The approved `name<Type>` and expected function-type syntax are preserved.
+
+The certified slice has required positional parameters. Generic/overloaded
+computed-default, variadic, intersection and class-method adapters, imported
+overload registration/export naming, provider-inferred return metadata and full
+constraint solving remain work. See the contract for the exact limits. No full
+QUDS-024/045/085 certification or actual Flutter engine run is claimed.
+
+
 ## Contextual native generic function values — 2026-11-18
 
 Handoff updated before coding: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).

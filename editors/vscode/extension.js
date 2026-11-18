@@ -789,6 +789,76 @@ function targetUri(uriArgument) {
   return editor.document.uri;
 }
 
+// Optional, persistent presentation worker. Heavy Dart AST libraries never enter
+// the compiler/LSP startup graph. While it warms up, show the original tooltip.
+class QudsDocPreview {
+  constructor(spec, output) {
+    this.key = spec.root ? path.resolve(spec.root) : spec.command.join('\0');
+    this.output = output;
+    this.pending = new Map();
+    this.cache = new Map();
+    this.nextId = 1;
+    this.ready = false;
+    this.buffer = '';
+    this.spec = spec;
+    this.child = null;
+    this.unavailable = false;
+  }
+  start() {
+    if (this.unavailable) return;
+    const spec = this.spec;
+    const command = [...spec.command];
+    if (command.at(-1) !== 'lsp') { this.unavailable = true; return; }
+    command[command.length - 1] = 'doc-preview';
+    this.child = spawnCommand(command, {cwd:spec.cwd, env:spec.env, stdio:['pipe','pipe','pipe']});
+    this.child.stdout.setEncoding('utf8');
+    this.child.stdout.on('data', (chunk) => this.receive(chunk));
+    this.child.stderr.on('data', (chunk) => this.output.appendLine(chunk.toString()));
+    this.child.stdin.on('error', () => this.finish());
+    this.child.on('error', () => this.finish());
+    this.child.on('exit', () => this.finish());
+  }
+  receive(chunk) {
+    this.buffer += chunk.toString();
+    let index;
+    while ((index = this.buffer.indexOf('\n')) >= 0) {
+      const line = this.buffer.slice(0,index); this.buffer = this.buffer.slice(index+1);
+      try {
+        const value = JSON.parse(line);
+        if (value.ready) { this.ready = true; continue; }
+        const entry = this.pending.get(value.id);
+        if (!entry || typeof value.markdown !== 'string') continue;
+        clearTimeout(entry.timer); this.pending.delete(value.id);
+        if (this.cache.size >= 64) this.cache.delete(this.cache.keys().next().value);
+        this.cache.set(entry.markdown,value.markdown);
+        entry.resolve(value.markdown);
+      } catch (_) { /* Optional service output must not disrupt LSP. */ }
+    }
+  }
+  render(markdown) {
+    if (markdown.length > 50000 || !/```dart|~~~dart/.test(markdown)) return Promise.resolve(markdown);
+    if (this.cache.has(markdown)) return Promise.resolve(this.cache.get(markdown));
+    if (!this.child) this.start();
+    if (!this.child) return Promise.resolve(markdown);
+    if (this.pending.size >= 64) return Promise.resolve(markdown);
+    const id = this.nextId++;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(markdown),this.ready ? 200 : 0);
+      this.pending.set(id,{markdown,resolve,timer});
+      this.child.stdin.write(`${JSON.stringify({id,markdown})}\n`);
+    });
+  }
+  finish() {
+    for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.resolve(entry.markdown); }
+    this.pending.clear(); this.child = null; this.ready = false; this.unavailable = true;
+  }
+  dispose() {
+    const child = this.child;
+    this.finish(); this.cache.clear();
+    if (child) { child.stdin.end(); child.kill(); }
+  }
+}
+
 class QudsClient {
   constructor(diagnostics, output) {
     this.diagnostics = diagnostics;
@@ -805,6 +875,7 @@ class QudsClient {
     this.ready = false;
     this.starting = null;
     this.rebuilding = false;
+    this.docPreview = null;
   }
 
   start() {
@@ -813,6 +884,11 @@ class QudsClient {
     const spec = serverCommand(sample && sample.uri.fsPath);
     const { command, cwd, env } = spec;
     this.output.appendLine(`Starting ${command.join(' ')}`);
+    const previewKey = spec.root ? path.resolve(spec.root) : command.join('\0');
+    if (!this.docPreview || this.docPreview.key !== previewKey) {
+      if (this.docPreview) this.docPreview.dispose();
+      this.docPreview = new QudsDocPreview(spec, this.output);
+    }
     if (spec.rebuild) scheduleRebuild(this, spec.root, spec.dart);
     this.buffer = Buffer.alloc(0);
     const child = spawnCommand(command, {
@@ -888,6 +964,7 @@ class QudsClient {
     for (const timer of this.timers.values()) clearTimeout(timer);
     for (const timer of this.maximumTimers.values()) clearTimeout(timer);
     this.semanticRefresh.dispose();
+    if (this.docPreview) this.docPreview.dispose();
     this.stop();
   }
 
@@ -1010,6 +1087,7 @@ class QudsClient {
   }
 
   async hover(document, position, token) {
+    const version = document.version;
     try {
       await this.sync(document);
       if (token && token.isCancellationRequested) return undefined;
@@ -1022,7 +1100,10 @@ class QudsClient {
       const value = typeof contents === 'string' ? contents : contents && contents.value;
       if (!value) return undefined;
       if (contents && contents.kind === 'markdown') {
-        const markdown = new vscode.MarkdownString(value);
+        const shown = result.qudsNativeDocumentation && this.docPreview
+          ? await this.docPreview.render(value) : value;
+        if (document.version !== version || (token && token.isCancellationRequested)) return undefined;
+        const markdown = new vscode.MarkdownString(shown);
         return new vscode.Hover(markdown);
       }
       const markdown = new vscode.MarkdownString();

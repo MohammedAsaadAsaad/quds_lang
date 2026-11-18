@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'ast.dart' show Program;
+import 'doc_markup.dart';
 import 'compiler.dart';
 import 'semantics.dart';
 import 'complete.dart';
@@ -473,16 +474,28 @@ class LspSession {
         return {
           'contents': {
             'kind': markdown ? 'markdown' : 'plaintext',
-            'value': text,
+            'value': text.endsWith(nativeDocMarker)
+                ? text.substring(0, text.length - nativeDocMarker.length)
+                : text,
           },
+          'qudsNativeDocumentation': text.endsWith(nativeDocMarker),
         };
       }
     }
     if (opened == null) return null;
     final place = dartPlaceAt(opened.text, line + 1, character + 1);
     if (place == null) return null;
+    final split = place.text.indexOf('\n\n');
     return {
-      'contents': {'kind': 'plaintext', 'value': place.text},
+      'qudsNativeDocumentation': true,
+      'contents': split < 0
+          ? {'kind': 'plaintext', 'value': place.text}
+          : {
+              'kind': 'markdown',
+              'value': nativeDocumentationHover(place.text.substring(0, split),
+                      place.text.substring(split + 2))
+                  .replaceAll(nativeDocMarker, '')
+            },
     };
   }
 

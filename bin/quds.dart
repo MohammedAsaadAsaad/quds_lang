@@ -31,6 +31,8 @@ Future<void> main(List<String> arguments) async {
       _format(arguments);
     case 'create':
       _create(arguments);
+    case 'doc-preview':
+      await _docPreviewService();
     case 'pub':
       await _pubCommand(arguments.skip(1).toList());
     case 'add':
@@ -2176,4 +2178,46 @@ int _headerEnd(List<int> buffer) {
     }
   }
   return -1;
+}
+
+// Kept out of normal CLI imports: the Dart documentation AST parser is loaded
+// only by this optional editor service, never by build/run/pub/create.
+Future<void> _docPreviewService() async {
+  final config = _packageConfigPath();
+  Uri? library;
+  try {
+    library = await Isolate.resolvePackageUri(
+        Uri.parse('package:quds_lang/src/dart_doc_worker.dart'));
+  } catch (_) {}
+  if (library == null && config != null) {
+    final file = File(config);
+    final data = jsonDecode(file.readAsStringSync()) as Map;
+    for (final entry in data['packages'] as List) {
+      if (entry['name'] == 'quds_lang') {
+        var root = file.uri.resolve(entry['rootUri'] as String);
+        if (!root.path.endsWith('/'))
+          root = root.replace(path: '${root.path}/');
+        library = root
+            .resolve(entry['packageUri'] as String? ?? 'lib/')
+            .resolve('src/dart_doc_worker.dart');
+        break;
+      }
+    }
+  }
+  if (library == null) {
+    stderr.writeln('Documentation preview service unavailable.');
+    exitCode = 1;
+    return;
+  }
+  final child = await Process.start(_dartExecutable(),
+      [if (config != null) '--packages=$config', library.toFilePath()],
+      mode: ProcessStartMode.inheritStdio);
+  final termination = Platform.isWindows
+      ? null
+      : ProcessSignal.sigterm.watch().listen((_) => child.kill());
+  try {
+    exitCode = await child.exitCode;
+  } finally {
+    await termination?.cancel();
+  }
 }

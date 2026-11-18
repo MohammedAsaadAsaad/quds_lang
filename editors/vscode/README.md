@@ -57,3 +57,9 @@ Run / Debug / Profile CodeLens actions appear above `main()` without waiting for
 pub/type analysis. The provider refreshes after analysis and ignores responses
 for older buffer versions. If building succeeds but the editor reports parser
 errors or hides actions, see [editor launch troubleshooting](../../docs/EDITOR_RUN_ACTIONS.md).
+
+
+Native Dart/Flutter tooltips display signatures in Quds syntax. An optional
+background service translates supported fenced Dart examples only when rendered;
+unsupported examples stay in Dart. Cold service startup never blocks a hover.
+See [preview scope and checks](../../docs/DART_TOOLTIP_PREVIEWS.md).

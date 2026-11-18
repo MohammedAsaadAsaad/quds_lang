@@ -1276,3 +1276,46 @@ Final verification on Dart 3.13.7:
 - `dart test --reporter expanded`: **612 pass, zero failures**, **7m24s**.
   Includes the new four action/compiler-selection regressions, existing live
   Flutter protocol tests, actual LSP/editor suites and Quds math conformance.
+
+### Project CLI and native Dart tooltip previews (2026-11-18)
+
+- `quds pub` forwards arbitrary native pub subcommands and arguments with inherited
+  IO and exit status. Flutter SDK projects use Flutter pub; other projects use
+  Dart pub. SDK detection uses parsed YAML and honors directory selection.
+- `quds create .` delegates platform scaffolding to Flutter, preserves protected
+  user/configuration files, updates Flutter dependencies with `yaml_edit`, removes
+  only newly generated Dart starter files, and supports `--no-pub`.
+- `quds run` discovers `lib/main.quds` / `main.quds`, accepts normal device/mode
+  options and Quds targets, keeps debug hot reload, and delegates release/profile/
+  no-hot sessions to ordinary Flutter execution. The previous separator spelling
+  remains compatible. Flutter discovery now uses the portable PATH resolver.
+- `dart test test/project_cli_test.dart test/flutter_live_test.dart
+  test/dart_doc_preview_test.dart --reporter expanded`: **14 pass**, **1m28s**.
+  Includes real offline Dart pub get/deps, simulated Flutter pub/scaffolding/modes,
+  protected existing files and YAML flow maps, actual Quds hot-update protocol,
+  executable Dart-versus-Quds preview equivalence, native `.of` metadata, worker
+  JSON/Unicode transport and VS Code fallback/cache/native-only behavior.
+- Final focused hover/fallback regressions: **2 pass**, under **1s**, including
+  real LSP native-documentation tagging and removal of its internal marker.
+- `dart test --reporter expanded`: **623 pass, zero failures**, **10m05s**.
+  Includes existing primary Quds SDK/math conformance and actual editor/LSP suites.
+- Compiler-root `dart analyze`: **No issues found**. Final `dart format .`:
+  **92 files, zero changes**. JavaScript syntax and `git diff --check`: pass.
+- An earlier sweep was stopped while diagnosing AST-parser-induced cold CLI
+  startup cost. The final design isolates the Dart documentation parser in an
+  optional, lazy editor worker. Normal CLI and LSP imports do not load it.
+  `dart bin/quds.dart help`: **2.575s** in one source-start measurement;
+  `dart compile exe bin/quds.dart -o .dart_tool/quds/quds-cli-review`: success;
+  compiled `help`: **0.016s** in one local measurement (not an application-build
+  latency guarantee). The compiled CLI also successfully launched the worker:
+  **AOT documentation worker OK**.
+- Final lazy-worker presentation check:
+  `node test/editor/vscode_doc_preview.cjs`: **VSCODE DOC PREVIEW OK**. Ordinary
+  documentation does not spawn the parser; cold native previews immediately keep
+  the original and cache later results. Warm waits are bounded to 200ms. Unsupported
+  Dart remains explicitly identified; source files and metadata stay unchanged.
+- Platform scaffolding/run tests use a Flutter subprocess peer, not a Flutter
+  engine. Actual native platform generation/build/release/device execution remains
+  unverified in this managed environment. No environment publication occurred.
+- Usage and limits: `docs/PROJECT_CLI.md`, `docs/DART_TOOLTIP_PREVIEWS.md` and the
+  updated `docs/FLUTTER_LIVE_UPDATES.md`. No approved Quds syntax was redesigned.

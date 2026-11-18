@@ -5,6 +5,7 @@ import 'dart:io';
 import 'ast.dart';
 import 'compiler.dart';
 import 'dart_api.dart';
+import 'doc_markup.dart';
 import 'libraries.dart';
 import 'sdk.dart';
 import 'semantics.dart';
@@ -526,8 +527,9 @@ String? _libraryHover(SemanticModel model, Symbol? symbol) {
   if (signature == null && documentation == null) return null;
   if (documentation == null) return signature;
   if (signature == null) return _markdownHover('', documentation, 'quds');
-  final fence = symbol.external ? 'dart' : 'quds';
-  return _markdownHover(signature, documentation, fence);
+  if (symbol.external)
+    return nativeDocumentationHover(signature, documentation);
+  return _markdownHover(signature, documentation, 'quds');
 }
 
 String? _written(String? text) {

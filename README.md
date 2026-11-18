@@ -122,3 +122,8 @@ The next bounded generic package is described in
 
 [Generic class inheritance and multi-file Quds testing](docs/GENERIC_INHERITANCE.md)
 documents the L3.2c subset and its remaining constructor/interop limits.
+
+
+Native Dart/Flutter hover examples can be previewed as Quds without changing
+upstream documentation. An optional background worker converts supported snippets
+and preserves unsupported Dart examples. See [tooltip previews](docs/DART_TOOLTIP_PREVIEWS.md).

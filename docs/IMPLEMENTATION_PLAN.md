@@ -21,6 +21,10 @@ tracked in [QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md). Required-position
 class method values and receiver/visibility contracts are tracked separately in
 [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md).
 
+Provider-owned computed defaults for supported top-level imports and direct
+calls are documented in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md).
+Imported methods, interfaces and full parameter metadata remain separate slices.
+
 ## Architecture
 
 Source manager → indentation-aware lexer → token stream → parser → typed AST → symbol table/name resolution → type checking → lowering IR → Dart emitter → diagnostics/source maps.

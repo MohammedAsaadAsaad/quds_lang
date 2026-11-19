@@ -86,11 +86,13 @@ resolved earlier value. A thrown default prevents entering the target body.
 The internal omission token is distinct from both explicit null and the public
 `missing` value. No default is evaluated while taking a reference.
 
-Local and same-file function definitions emit a private named bridge beside
-the original definition. Repeated references share normal Dart tear-off equality,
+Local and same-file function definitions emit a named bridge beside the
+original definition. Lexical-local bridges remain private; eligible public
+top-level providers publish the reserved ABI bridge described below. Repeated references share normal Dart tear-off equality,
 including generic specialization; lexical mutable captures remain live.
 Concrete same-file method references now use declaring-owner bridges as well;
-see [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Imported providers,
+see [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Supported imported top-level providers now publish stable bridges as described
+in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md). Imported methods,
 interface-declared references and default-plus-intersection adapters retain
 closure lowering without the same identity guarantee. Provider-private default
 expressions and complete readonly boundary contracts need further work.

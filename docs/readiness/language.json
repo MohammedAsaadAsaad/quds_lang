@@ -176,7 +176,9 @@
       "verified_slice_files": [
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
-        "test/quds_value_adapters_web.quds"
+        "test/quds_value_adapters_web.quds",
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/fixtures/quds_value_adapters/facade.quds"
       ],
       "known_limits": [
         "Deferred imports need a prefix; prefix.loadLibrary() is covered for the tested library. Non-deferred loadLibrary is E300. Full import and export combinator certification remains open."
@@ -752,11 +754,14 @@
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
         "test/quds_value_adapters_web.quds",
-        "test/goldens/quds_value_adapters.dart.txt"
+        "test/goldens/quds_value_adapters.dart.txt",
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/fixtures/quds_value_adapters/facade.quds"
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. Awkward parameter order, default-plus-variadic values, parameterized readonly result guards, method overloads, full constraint solving, and polymorphic callbacks remain limited.",
-        "Defaulted value slots are named optional, with a private omission token and sequential resolved defaults. Same-file function and concrete method bridges preserve repeated reference equality, including readonly proxies and selected-owner defaults. Imported/interface/default-plus-intersection identity and complete direct-call parameter-form parity remain unfinished."
+        "Defaulted value slots are named optional, with a private omission token and sequential resolved defaults. Same-file function and concrete method bridges preserve repeated reference equality, including readonly proxies and selected-owner defaults. Imported method/interface/default-plus-intersection identity and complete direct-call parameter-form parity remain unfinished.",
+        "Supported top-level providers with declared signatures own their computed-default bridges, including direct calls and filtered re-exports. Provider methods, SDK sections, awaiting defaults, inferred return metadata and expanded part/cycle/conditional-export certification remain separate work."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1400,7 +1405,9 @@
       "verified_slice_files": [
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
-        "test/quds_value_adapters_web.quds"
+        "test/quds_value_adapters_web.quds",
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/fixtures/quds_value_adapters/facade.quds"
       ],
       "known_limits": [],
       "completion_evidence": {
@@ -1460,7 +1467,9 @@
       "verified_slice_files": [
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
-        "test/quds_value_adapters_web.quds"
+        "test/quds_value_adapters_web.quds",
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/fixtures/quds_value_adapters/facade.quds"
       ],
       "known_limits": [],
       "completion_evidence": {
@@ -1880,7 +1889,9 @@
       "verified_slice_files": [
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
-        "test/quds_value_adapters_web.quds"
+        "test/quds_value_adapters_web.quds",
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/fixtures/quds_value_adapters/facade.quds"
       ],
       "known_limits": [],
       "completion_evidence": {
@@ -1939,7 +1950,12 @@
         "test/quds_function_values.quds",
         "test/quds_function_values_test.dart",
         "test/quds_method_values.quds",
-        "test/quds_method_values_test.dart"
+        "test/quds_method_values_test.dart",
+        "test/quds_value_adapters.quds",
+        "test/quds_value_adapters_test.dart",
+        "test/quds_value_adapters_web.quds",
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/fixtures/quds_value_adapters/facade.quds"
       ],
       "known_limits": [
         "Generic native callbacks remain restricted; non-generic optional/named callback metadata has executable coverage."

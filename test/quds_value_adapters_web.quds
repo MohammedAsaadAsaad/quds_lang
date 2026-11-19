@@ -1,4 +1,6 @@
 use fixtures.quds_value_adapters.helpers as helpers
+use fixtures.quds_value_adapters.helpers show report
+use fixtures.quds_value_adapters.facade as forwarded
 
 interface Named:
   name: String
@@ -34,7 +36,7 @@ class DefaultChild extends DefaultBase:
   readonly number(value: int = 2) -> int = value * 10
 
 
-main():
+main() async:
   saved = text
   print saved()
   print saved(value: null)
@@ -89,3 +91,22 @@ main():
   fromChild = child.number
   print fromBase()
   print fromChild()
+  provider = helpers.report
+  print provider()
+  print provider(first: 12)
+  print provider == helpers.report
+  print provider == report
+  print provider == forwarded.report
+  copied = helpers.copyValue<int>
+  print copied(5)
+  print copied(5, other: 8)
+  choice = helpers.choose
+  print choice()
+  print choice(value: null)
+  print choice(value: missing) == missing
+  asyncValue = helpers.asyncCopy<int>
+  print await asyncValue(9)
+  print await asyncValue(9, other: 10)
+  print helpers.report()
+  print helpers.report(first: 12)
+  print report(second: 4)

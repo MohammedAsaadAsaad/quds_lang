@@ -1,2 +1,9 @@
 pick(value: int) -> String = "integer"
 pick(value: String) -> String = "text"
+use dart:math as internalMath
+
+_hiddenNumber() -> int = 7
+report(first: int = _hiddenNumber(), second: int = internalMath.max(first, 9)) -> String = "{first}:{second}"
+copyValue<T>(value: T, other: T = value) -> T = other
+choose(value: Object? = "default") -> Object? = value
+asyncCopy<T>(value: T, other: T = value) async -> T = other

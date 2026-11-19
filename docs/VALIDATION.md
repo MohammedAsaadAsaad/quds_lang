@@ -1,3 +1,48 @@
+# Provider-owned default bridges — 2026-11-19
+
+Base: `f42d8ce`. Handoff updated before implementation in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Contract: [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | 18 declarations; private provider helper and Dart alias, prefix/unprefixed/show/re-export identity, explicit/contextual generics, null/missing, async targets and direct calls |
+| Focused parser/semantics/value/readonly drivers | 127 passed in 25s |
+| Final adapter driver | 7 passed in 13s; includes source visibility/type rejection and legacy-ABI dependency repair |
+| Generated Dart | Golden updated; generated entry analyzed; actual VM and JavaScript/Node agree on 45 lines including async and direct provider calls |
+| Final source formatting | 101 files; zero changes |
+| Final source analysis | No issues found |
+| Documentation example | Actual `quds run /tmp/quds-provider-example/main.quds`: `7:9`, `12:12`, `true` |
+| Provider compiler full suite before cache epoch | 702 passed, zero failures/skips in 9m36s |
+| Final full suite including cache epoch | **703 passed, zero failures or skips, in 10m06s** |
+
+The final cache change records `provider-defaults-v1` in generated artifacts.
+Both build and warm-run cache checks reject older epochs. The regression removes
+provider bridge functions and updates its output checksum to remain valid, then
+removes the ABI marker. Actual `quds run` repairs the provider automatically and
+prints `7:9`. This proves ABI migration independently of corruption detection.
+
+Every eligible public provider declaration emits its ABI bridge even without a
+local reference. Names depend on the source signature, not compiler-local names
+or checkout paths. Combinators follow the imported/exported library's functions;
+a relative CLI source path is normalized before looking up that library.
+Direct calls capture supplied arguments in source order before entering the bridge.
+
+A subsequent full attempt exposed SDK sections entering this local-provider ABI
+path: the math-foundations generated Dart referenced a bridge absent from its SDK
+bundle. SDK program source files are now excluded using the loaded SDK entries,
+including aliases for the same source. `dart test test/math_foundations_test.dart
+test/quds_value_adapters_test.dart --reporter expanded` passed all 7 tests in 9s
+on the corrected source, including VM/JavaScript for both suites.
+
+An early full run was interrupted to extend the correction to direct calls;
+only the fresh run on the final source is reported as the complete result.
+Provider methods, interfaces, inferred return metadata, SDK sections and complex
+parameter/default forms remain outside this slice. No complete rule certification
+or unobserved remote/device result is claimed.
+
+---
+
 # Concrete default method bridges — 2026-11-19
 
 Base: `81a5287`. Handoff updated before implementation in

@@ -13,6 +13,43 @@ import 'sdk.dart';
 import 'source.dart';
 import 'walk.dart';
 
+/// Stable provider ABI for the supported top-level computed-default slice.
+bool supportsProviderDefaults(FunctionDeclaration function) =>
+    function.visibility != 'private' &&
+    !function.name.startsWith('_') &&
+    !function.span.file.startsWith('quds:') &&
+    function.returnType != null &&
+    function.generator.isEmpty &&
+    function.parameters.any((p) => p.defaultValue != null) &&
+    _providerDefaultsAreSynchronous(function) &&
+    !function.parameters.any((p) => p.variadic || p.type.contains(' & ')) &&
+    !function.parameters
+        .skipWhile((p) => p.defaultValue == null)
+        .any((p) => p.defaultValue == null);
+
+bool _providerDefaultsAreSynchronous(FunctionDeclaration function) {
+  var synchronous = true;
+  for (final parameter in function.parameters) {
+    final value = parameter.defaultValue;
+    if (value == null) continue;
+    walkAst(value, (node) {
+      if (node is AwaitExpression) synchronous = false;
+    });
+  }
+  return synchronous;
+}
+
+String providerDefaultBridgeName(FunctionDeclaration function) =>
+    r'$QudsDefault' +
+    sha256Hex(utf8.encode(jsonEncode([
+      function.name,
+      function.returnType,
+      function.isAsync,
+      for (final p in function.typeParameters) [p.name, p.bound],
+      for (final p in function.parameters)
+        [p.name, p.type, p.defaultValue != null],
+    ]))).substring(0, 20);
+
 class Symbol {
   Symbol(this.name, this.dartName, this.type,
       {this.mutable = false,
@@ -142,6 +179,9 @@ class SemanticModel {
   final nativeArguments = <CallExpression, List<(String?, int)>>{};
 
   /// Closures that restore Quds defaults or hide intersection type parameters.
+  final providerDefaultImports =
+      <ImportDeclaration, Set<FunctionDeclaration>>{};
+  final providerDefaultFunctions = <FunctionDeclaration>{};
   final qudsValueLowerings = <Expression, QudsValueLowering>{};
 
   /// Element type packed into the list argument of a variadic function value.
@@ -538,6 +578,7 @@ class Analyzer {
       ? '_q'
       : '_qp_${sha256Hex(utf8.encode(_file)).substring(0, 12)}_';
   Map<String, Program> _libraries = const {};
+  final _sdkDefaultFiles = <String>{};
 
   /// Symbols of an imported library, including its private names and prefixes.
   ///
@@ -618,10 +659,62 @@ class Analyzer {
     model.warnings.add(CompilerException(code, message, node.span));
   }
 
+  Set<FunctionDeclaration> _exportedDefaultFunctions(
+      Program program, String home, Set<Program> seen) {
+    if (seen.contains(program) || _sdkDefaultFiles.contains(program.span.file))
+      return {};
+    final next = {...seen, program};
+    final result = program.statements
+        .whereType<FunctionDeclaration>()
+        .where(supportsProviderDefaults)
+        .toSet();
+    for (final node in program.statements) {
+      if (node is ImportDeclaration && node.export) {
+        if (node.uri.startsWith('dart:')) continue;
+        final path = _resolveLibrary(home, node.uri);
+        final target = _libraries[path];
+        if (target == null) continue;
+        result.addAll(_exportedDefaultFunctions(target, path, next).where(
+            (fn) =>
+                (node.show.isEmpty || node.show.contains(fn.name)) &&
+                !node.hide.contains(fn.name)));
+      } else if (node is PartDirective && !node.of) {
+        final path = _resolveLibrary(home, node.uri);
+        final target = _libraries[path];
+        if (target != null)
+          result.addAll(_exportedDefaultFunctions(target, path, next));
+      }
+    }
+    return result;
+  }
+
   SemanticModel analyze(Program program,
       {Map<String, Program> libraries = const {}}) {
     model.library = library;
     _libraries = libraries;
+    _sdkDefaultFiles.addAll(libraries.entries
+        .where((entry) => entry.key.startsWith('quds:'))
+        .map((entry) => entry.value.span.file));
+    for (final source in [program, ...libraries.values]) {
+      if (_sdkDefaultFiles.contains(source.span.file)) continue;
+      model.providerDefaultFunctions.addAll(source.statements
+          .whereType<FunctionDeclaration>()
+          .where(supportsProviderDefaults));
+    }
+    for (final source in [program, ...libraries.values]) {
+      for (final directive
+          in source.statements.whereType<ImportDeclaration>()) {
+        if (directive.show.isEmpty && directive.hide.isEmpty) continue;
+        if (directive.uri.startsWith('dart:')) continue;
+        final path = _resolveLibrary(
+            identical(source, program) ? _file : source.span.file,
+            directive.uri);
+        final target = libraries[path];
+        if (target != null)
+          model.providerDefaultImports[directive] =
+              _exportedDefaultFunctions(target, path, {});
+      }
+    }
     _global.symbols['print'] = Symbol('print', 'print', 'void');
     _installChecks();
     _global.symbols['range'] = Symbol(

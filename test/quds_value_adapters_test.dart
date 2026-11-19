@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:quds_lang/quds_lang.dart';
 import 'package:test/test.dart';
@@ -14,7 +15,65 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     expect(
         '${result.stdout}'.split('\n').where((line) => line.startsWith('ok ')),
-        hasLength(15));
+        hasLength(18));
+  });
+
+  test('run rebuilds provider output from a previous generated ABI', () async {
+    final root = Directory.systemTemp.createTempSync('quds-provider-upgrade-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/pubspec.yaml').writeAsStringSync(
+        "name: provider_upgrade\nenvironment:\n  sdk: '>=3.3.0 <4.0.0'\n");
+    final provider = File('${root.path}/provider.quds')
+      ..writeAsStringSync(File('test/fixtures/quds_value_adapters/helpers.quds')
+          .readAsStringSync());
+    final input = File('${root.path}/main.quds')
+      ..writeAsStringSync(
+          'use provider as api\nmain():\n  saved = api.report\n  print saved()\n');
+    final build = await Process.run(Platform.resolvedExecutable,
+        ['run', 'bin/quds.dart', 'build', input.path]);
+    expect(build.exitCode, 0, reason: '${build.stdout}${build.stderr}');
+    final output = File('${root.path}/.dart_tool/quds/out/provider.dart');
+    final legacy = output
+        .readAsStringSync()
+        .split('\n')
+        .where((line) => !line.contains(r' $QudsDefault'))
+        .join('\n');
+    output.writeAsStringSync(legacy);
+    final cache = Directory('${root.path}/.dart_tool/quds/cache');
+    for (final file in cache.listSync().whereType<File>()) {
+      final saved = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
+      saved.remove('abi');
+      final paths = (saved['paths'] as List).cast<String>();
+      if (paths.length == 1 && paths.single == provider.path) {
+        // Keep its output checksum valid: only the ABI marker should reject it.
+        saved['output'] = sha256Hex(utf8.encode(legacy));
+      }
+      file.writeAsStringSync(jsonEncode(saved));
+    }
+    final run = await Process.run(Platform.resolvedExecutable,
+        ['run', 'bin/quds.dart', 'run', input.path]);
+    expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
+    expect('${run.stdout}'.replaceAll('\r', ''), '7:9\n');
+    expect(output.readAsStringSync(), contains(r' $QudsDefault'));
+    for (final file in cache.listSync().whereType<File>()) {
+      expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
+          'provider-defaults-v1');
+    }
+  });
+
+  test('provider bridges retain source visibility and type diagnostics', () {
+    final sourceFile = File('test/provider_bad.quds').absolute.path;
+    for (final body in [
+      'saved = helpers._hiddenNumber',
+      'saved = helpers.report\n  print saved(first: "wrong")',
+    ]) {
+      expect(
+          () => compile(
+              'use fixtures.quds_value_adapters.helpers as helpers\nmain():\n  $body\n',
+              file: sourceFile),
+          throwsA(isA<CompilerException>()
+              .having((error) => error.span.file, 'Quds source', sourceFile)));
+    }
   });
 
   test('default value slots are named-only', () {
@@ -107,6 +166,14 @@ main():
     helperOutput.writeAsStringSync(
         relocateGeneratedLibraries(compiledHelper, '../../').dart);
     writeSdkBundles(root.path, compiledHelper);
+    final facade =
+        File('test/fixtures/quds_value_adapters/facade.quds').absolute;
+    final compiledFacade =
+        compile(facade.readAsStringSync(), file: facade.path);
+    File('${root.path}/fixtures/quds_value_adapters/facade.dart')
+        .writeAsStringSync(
+            relocateGeneratedLibraries(compiledFacade, '../../').dart);
+    writeSdkBundles(root.path, compiledFacade);
     final analysis = await Process.run(
         Platform.resolvedExecutable, ['analyze', output.path]);
     expect(analysis.exitCode, 0,
@@ -114,7 +181,7 @@ main():
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
     expect(vm.stdout,
-        'Quds\nempty\n4\n2\nnull\nAda\n6\n3\ninteger\ntext\n33\n44\ndefault\nnull\ntrue\ntrue\n1\ntrue\nQuds\n4\n10\ntrue\n10\n4\ntrue\nstatic\ntrue\n4\n10\n20\n');
+        'Quds\nempty\n4\n2\nnull\nAda\n6\n3\ninteger\ntext\n33\n44\ndefault\nnull\ntrue\ntrue\n1\ntrue\nQuds\n4\n10\ntrue\n10\n4\ntrue\nstatic\ntrue\n4\n10\n20\n7:9\n12:12\ntrue\ntrue\ntrue\n5\n8\ndefault\nnull\ntrue\n9\n10\n7:9\n12:12\n7:4\n');
     final js = '${root.path}/program.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);

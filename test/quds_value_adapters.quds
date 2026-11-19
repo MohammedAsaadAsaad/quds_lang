@@ -1,5 +1,7 @@
 use dart:math as math deferred
 use fixtures.quds_value_adapters.helpers as helpers
+use fixtures.quds_value_adapters.helpers show report
+use fixtures.quds_value_adapters.facade as forwarded
 
 interface Named:
   name: String
@@ -217,3 +219,35 @@ test "interface defaults keep their static contract":
   fromConcrete = owner.number
   expect(fromInterface(), 30)
   expect(fromConcrete(), 40)
+
+test "imported default references run in their provider scope":
+  first = helpers.report
+  expect(first(), "7:9")
+  expect(first(first: 12), "12:12")
+  expect(first(second: 4), "7:4")
+  expect(first == helpers.report, true)
+  expect(first == report, true)
+  expect(first == forwarded.report, true)
+  copied = helpers.copyValue<int>
+  inferred: (value: int, other: int = missing) -> int = helpers.copyValue
+  expect(copied(5), 5)
+  expect(copied(5, other: 8), 8)
+  expect(copied == inferred, true)
+  choice = helpers.choose
+  expect(choice(), "default")
+  expect(choice(value: null), null)
+  expect(choice(value: missing), missing)
+
+test "imported async defaults keep Future signatures" async:
+  saved = helpers.asyncCopy<int>
+  expect(saved == helpers.asyncCopy<int>, true)
+  expect(await saved(9), 9)
+  expect(await saved(9, other: 10), 10)
+
+test "direct imported calls keep provider defaults and source argument order":
+  expect(helpers.report(), "7:9")
+  expect(helpers.report(first: 12), "12:12")
+  expect(report(second: 4), "7:4")
+  trace = DefaultTrace()
+  expect(helpers.report(second: trace.nextValue(), first: trace.nextValue()), "2:1")
+  expect(trace.calls, 2)

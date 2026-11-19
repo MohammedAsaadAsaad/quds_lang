@@ -109,6 +109,7 @@ class DartEmitter {
   }
 
   String emit(Program program) {
+    _defaultBridges.addAll(model.providerDefaultFunctions);
     _defaultBridges.addAll(model.qudsValueLowerings.values
         .map((lowering) => lowering.function)
         .where((function) =>
@@ -300,6 +301,16 @@ class DartEmitter {
     }
   }
 
+  List<String> _providerCombinator(
+          List<String> names, ImportDeclaration node) =>
+      [
+        ...names,
+        for (final function
+            in model.providerDefaultImports[node] ?? <FunctionDeclaration>{})
+          if (names.contains(function.name))
+            providerDefaultBridgeName(function),
+      ];
+
   void _directives(List<Statement> statements) {
     for (final node in statements) {
       if (model.skipped.contains(node)) continue;
@@ -359,9 +370,9 @@ class DartEmitter {
         final combinator = sectionNames != null && home != null
             ? _sectionCombinator(node, sectionNames, home)
             : node.show.isNotEmpty
-                ? ' show ${node.show.join(', ')}'
+                ? ' show ${_providerCombinator(node.show, node).join(', ')}'
                 : node.hide.isNotEmpty
-                    ? ' hide ${node.hide.join(', ')}'
+                    ? ' hide ${_providerCombinator(node.hide, node).join(', ')}'
                     : '';
         if (sectionNames != null && combinator.isEmpty) continue;
         if (node.export) {
@@ -380,7 +391,10 @@ class DartEmitter {
                 node.hide.isNotEmpty)) {
           _imports.add("import 'dart:core';");
         }
-        _imports.add("import '$uri'$prefix$combinator;");
+        final providerShow = node.show.isNotEmpty &&
+            _providerCombinator(node.show, node).length > node.show.length;
+        _imports.add(
+            "${providerShow ? '// ignore: unused_shown_name\n' : ''}import '$uri'$prefix$combinator;");
       } else if (node is PartDirective) {
         final uri = model.resolvedParts[node] ??
             (node.uri.endsWith('.quds')
@@ -932,6 +946,8 @@ class DartEmitter {
   }
 
   String _defaultBridgeName(FunctionDeclaration node) {
+    if (model.providerDefaultFunctions.contains(node))
+      return providerDefaultBridgeName(node);
     final owners =
         model.classes.values.where((owner) => owner.methods.contains(node));
     final owner = owners.isEmpty ? '' : '${owners.first.name}_';
@@ -3425,7 +3441,16 @@ class DartEmitter {
         ? _defaultBridgeName(function)
         : declared.dartName;
     String target;
-    if (node is MemberAccess) {
+    if (model.providerDefaultFunctions.contains(function)) {
+      if (node is MemberAccess) {
+        target = '${expression(node.object)}.$implementation';
+      } else {
+        final original = model.references[node]?.dartName ?? declared.dartName;
+        final dot = original.lastIndexOf('.');
+        target =
+            '${dot < 0 ? '' : original.substring(0, dot + 1)}$implementation';
+      }
+    } else if (node is MemberAccess) {
       final method = implementation;
       if (function.isStatic) {
         final owner = lowering.staticOwner == null
@@ -4179,6 +4204,40 @@ class DartEmitter {
       return '$target(${parts.join(', ')})';
     }
     final parameters = targetSymbol.function?.parameters ?? const <Parameter>[];
+    final providerFunction = targetSymbol.function;
+    final providerOrder = model.argumentOrder[node];
+    if (!constantContext &&
+        providerFunction != null &&
+        model.providerDefaultFunctions.contains(providerFunction) &&
+        providerOrder != null &&
+        providerOrder.contains(-1) &&
+        !node.arguments.any((argument) => _isHole(argument.value))) {
+      // Capture all written arguments in source order before the provider
+      // resolves omitted defaults. Its private symbols never enter this scope.
+      final supplied = <String>[];
+      final resolved = <String>[];
+      for (var i = 0; i < node.arguments.length; i++) {
+        final temporary = '_qprovided${_temps++}';
+        supplied.add(temporary);
+        resolved
+            .add('final $temporary = ${expression(node.arguments[i].value)};');
+      }
+      final passed = <String>[];
+      for (var i = 0; i < parameters.length; i++) {
+        final index = providerOrder[i];
+        if (index < 0) continue;
+        passed.add(
+            '${parameters[i].defaultValue == null ? '' : '${parameters[i].name}: '}${supplied[index]}');
+      }
+      final typeStart = target.indexOf('<');
+      final plain = typeStart < 0 ? target : target.substring(0, typeStart);
+      final suffix = typeStart < 0 ? '' : target.substring(typeStart);
+      final dot = plain.lastIndexOf('.');
+      final bridge =
+          '${dot < 0 ? '' : plain.substring(0, dot + 1)}${providerDefaultBridgeName(providerFunction)}$suffix';
+      final invoke = '$bridge(${passed.join(', ')})';
+      return '(() { ${resolved.join(' ')} ${targetSymbol.type == 'void' ? '' : 'return '}$invoke; })()';
+    }
     final variadic = parameters.indexWhere((parameter) => parameter.variadic);
     if (variadic >= 0) {
       final order = model.argumentOrder[node] ?? const <int>[];

@@ -151,3 +151,8 @@ selection from an expected signature; ambiguous values report E311. See
 Required-positional Quds class method values support class/method substitution,
 static and inherited instance methods, nullable access and checked readonly
 results. See [method values](docs/QUDS_METHOD_VALUES.md) for examples and limits.
+
+Supported top-level Quds imports keep computed defaults inside their defining
+library for references and calls with omitted arguments. See
+[provider-owned defaults](docs/QUDS_PROVIDER_DEFAULTS.md) for the ABI contract,
+filter/re-export behavior and remaining limits.

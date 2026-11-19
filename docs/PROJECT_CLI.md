@@ -80,7 +80,11 @@ Release, profile and `--no-hot` use ordinary Flutter execution after compiling
 Quds; they do not install a hot-reload watcher. Conflicting execution modes and
 attempts to override the internal machine transport are rejected. A Dart target
 cannot replace the Quds entry point. Non-Flutter console runs retain their own
-execution path; Flutter-only flags are not interpreted as console arguments.
+execution path. Plain values, and every value after `--`, are passed in order
+to `main(args: List<String>)`. A variadic `main(...args: String)` receives the
+same list. Flags still require a Flutter project. On a Flutter project, values
+after `--` stay tool arguments, so `quds run lib/main.quds -- -d chrome` keeps
+its previous meaning.
 
 ## Validation scope
 

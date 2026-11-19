@@ -3215,6 +3215,75 @@ dependencies:
     expect(combined, isNot(contains('main.dart:')));
     expect(combined, isNot(contains('bad.dart:')));
   });
+
+  test('main receives one List<String> of program arguments', () async {
+    final generated = compile('''
+main(args: List<String>):
+  print args.length
+''').dart;
+    expect(generated, contains('void main(List<String> '));
+    expect(compile('''
+main(args: List<String>) async:
+  print args
+''').dart, contains('void main(List<String> '));
+    expect(compile('''
+main(...args: String):
+  print args.length
+''').dart, contains('void main(List<String> '));
+    expect(
+        () => compile('main(count: int):\n  print count\n'),
+        throwsA(isA<CompilerException>().having((error) => error.message,
+            'message', contains('one List<String> argument'))));
+    expect(
+        () => compile(
+            'main(first: List<String>, second: List<String>):\n  print first\n'),
+        throwsA(isA<CompilerException>()));
+    final directory = Directory.systemTemp.createTempSync('quds-main-args-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/args.quds')..writeAsStringSync('''
+main(args: List<String>):
+  print args.length
+  print args[0]
+  print args[1]
+''');
+    final quds = File('bin/quds.dart').absolute.path;
+    final run = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      quds,
+      'run',
+      source.path,
+      'alpha',
+      '--',
+      'beta',
+    ]);
+    final combined = '${run.stdout}\n${run.stderr}';
+    expect(run.exitCode, 0, reason: combined);
+    expect(run.stdout, '2\nalpha\nbeta\n');
+    final helped = File('${directory.path}/help.quds')
+      ..writeAsStringSync('main(args: List<String>):\n  print args[0]\n');
+    final helpRun = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      quds,
+      'run',
+      helped.path,
+      '--',
+      '--help',
+    ]);
+    expect(helpRun.exitCode, 0, reason: '${helpRun.stdout}\n${helpRun.stderr}');
+    expect(helpRun.stdout, '--help\n');
+    final crashed = File('${directory.path}/crash.quds')
+      ..writeAsStringSync('main(args: List<String>):\n  print args[4]\n');
+    final failure = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      quds,
+      'run',
+      crashed.path,
+      'only',
+    ]);
+    final reported = '${failure.stdout}\n${failure.stderr}';
+    expect(failure.exitCode, isNot(0), reason: reported);
+    expect(reported, contains('${crashed.path}:2:'));
+  });
 }
 
 File builtDart(File source) {

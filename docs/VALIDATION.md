@@ -1,3 +1,9 @@
+# Program arguments for main — 2026-11-19
+
+`main` may return `void` or `Future<void>` and take no arguments, or one `List<String>` argument. `main(args: List<String>)` and `main(...args: String)` both lower to Dart `main(List<String> ...)`. `quds run file.quds alpha -- beta` passes `alpha` then `beta`. `quds run file.quds -- --help` passes the text `--help` into `main`. Another parameter shape is rejected. A range error inside that `main` is still reported on the Quds line. `dart test test/compiler_test.dart --name "main receives one List"` passed. `dart analyze lib bin test` reports no issues. `dart test`: 772 passed, reporter 06:33, wall 394825 ms.
+
+---
+
 # Breakpoint retention after a saved Quds file — 2026-11-19
 
 One Linux debug session of `examples/flutter_app/hello_world`. `setBreakpoints` was sent once, for `main.quds` line 18, before launch.

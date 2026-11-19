@@ -1187,14 +1187,34 @@ class Analyzer {
       }
     }
     model.moduleSymbols.addAll(_global.symbols);
-    final main = _global.symbols['main']?.function;
-    if (main != null &&
-        (main.parameters.isNotEmpty ||
-            !{'void', 'Future<void>'}
-                .contains(model.declarations[main]!.type))) {
-      fail('main must have no parameters and return void', main);
-    }
+    _checkEntryPoint();
     return model;
+  }
+
+  /// Dart launches `main()` or `main(List<String> args)`.
+  void _checkEntryPoint() {
+    final entry = _global.symbols['main'];
+    final functions = entry?.overloads ?? const <FunctionDeclaration>[];
+    if (functions.isEmpty) return;
+    final main = functions.length == 1 ? functions.single : null;
+    final returned = main == null ? '' : model.declarations[main]!.type;
+    final parameter = main != null && main.parameters.length == 1
+        ? main.parameters.single
+        : null;
+    final parameterType = parameter == null
+        ? ''
+        : _resolveType(model.declarations[parameter]?.type ??
+            (parameter.variadic ? 'List<${parameter.type}>' : parameter.type));
+    final arguments = main != null &&
+        main.typeParameters.isEmpty &&
+        (main.parameters.isEmpty || parameterType == 'List<String>');
+    if (main == null ||
+        !arguments ||
+        !{'void', 'Future<void>'}.contains(returned)) {
+      fail(
+          'main returns void or Future<void> and takes no arguments or one List<String> argument',
+          main ?? functions.first);
+    }
   }
 
   bool sameSignature(FunctionDeclaration a, FunctionDeclaration b) {

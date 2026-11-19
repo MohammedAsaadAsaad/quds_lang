@@ -132,8 +132,8 @@ String? _helpText(String? topic) {
         '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n'
         'quds build <apk|appbundle|web|linux|windows|macos|ios|ipa|bundle> [Quds target and Flutter options]\n'
         '    Build a Flutter application from lib/main.quds or an explicit .quds target.\n',
-    'run': 'quds run [input.quds] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
-        '    Run the program. An unchanged file reuses the previous build. A Flutter package watches saved Quds files and hot reloads. r: reload, R: restart, q: quit.\n',
+    'run': 'quds run [input.quds] [arguments] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
+        '    Run the program. Plain values and values after -- reach main(args: List<String>). An unchanged file reuses the previous build. A Flutter package watches saved Quds files and hot reloads. r: reload, R: restart, q: quit.\n',
     'analyze': 'quds analyze <input.quds>\n'
         '    Compile and run dart analyze on the generated Dart.\n',
     'test': 'quds test <input.quds>\n'
@@ -843,9 +843,12 @@ String _stamp(List<String> paths) {
 
 Future<void> _run(List<String> arguments, {String? buildTarget}) async {
   final options = <String>[];
+  final programArguments = <String>[];
   String? entry;
   final rest = arguments.skip(1).toList();
-  if (rest.contains('--help') || rest.contains('-h')) {
+  final separator = rest.indexOf('--');
+  final toolArguments = separator < 0 ? rest : rest.take(separator).toList();
+  if (toolArguments.contains('--help') || toolArguments.contains('-h')) {
     _help(['help', buildTarget == null ? 'run' : 'build']);
     return;
   }
@@ -867,7 +870,7 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
   for (var i = 0; i < rest.length; i++) {
     final arg = rest[i];
     if (arg == '--') {
-      options.addAll(rest.skip(i + 1));
+      programArguments.addAll(rest.skip(i + 1));
       break;
     }
     if (arg == '-t' ||
@@ -922,10 +925,15 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
     exitCode = 64;
     return;
   }
-  final flutterArguments = options;
   try {
     if (_flutterPackage(input)) {
-      await _runFlutter(input, flutterArguments, buildTarget: buildTarget);
+      await _runFlutter(
+          input,
+          [
+            ...options,
+            if (programArguments.isNotEmpty) ...programArguments,
+          ],
+          buildTarget: buildTarget);
       return;
     }
     if (buildTarget != null) {
@@ -933,8 +941,9 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
       exitCode = 64;
       return;
     }
-    if (flutterArguments.isNotEmpty) {
-      stderr.writeln('Arguments after -- require a Flutter project.');
+    if (options.any((arg) => arg.startsWith('-'))) {
+      stderr.writeln(
+          'Flags require a Flutter project. Pass program arguments as plain values or after --.');
       exitCode = 64;
       return;
     }
@@ -946,7 +955,8 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
     final qudsSource = input.existsSync() ? input.readAsStringSync() : null;
     final process = await Process.start(
       _dartExecutable(),
-      _withPackages([output.path], input: input),
+      _withPackages([output.path, ...options, ...programArguments],
+          input: input),
       workingDirectory: _packageRoot(input.absolute.parent).path,
     );
     final streams = Future.wait([
@@ -1624,12 +1634,19 @@ Future<void> _runFlutter(File input, List<String> arguments,
 String _guardGeneratedMain(String dart, String sourceMap, String suffix) {
   const ignore = '// ignore_for_file: type=lint\n';
   if (!dart.contains(ignore)) return dart;
-  var renamed =
-      dart.replaceFirst('void main() async {', 'void _qMain() async {');
-  if (identical(renamed, dart)) {
-    renamed = dart.replaceFirst('void main() {', 'void _qMain() {');
-  }
-  if (identical(renamed, dart)) return dart;
+  final entry = RegExp(r'(void|Future<void>) main\(([^)]*)\)( async)? \{');
+  final match = entry.firstMatch(dart);
+  if (match == null) return dart;
+  final renamed = dart.replaceFirst(
+      entry, '${match[1]} _qMain(${match[2]})${match[3] ?? ''} {');
+  final parameters = match[2]!.trim();
+  final names = parameters.isEmpty
+      ? const <String>[]
+      : [
+          for (final part in parameters.split(','))
+            part.trim().split(RegExp(r'\s+')).last
+        ];
+  final invoke = names.isEmpty ? '_qMain' : '() => _qMain(${names.join(', ')})';
   final positions = SourcePositions.parse(sourceMap);
   final entries = StringBuffer();
   var first = true;
@@ -1660,8 +1677,8 @@ String _qMap(String stack) {
   });
 }
 
-void main() {
-  $hook runZonedGuarded(_qMain, (error, stack) {
+void main(${parameters.isEmpty ? '' : parameters}) {
+  $hook runZonedGuarded($invoke, (error, stack) {
     print(error);
     print(_qMap('\$stack'));
   });

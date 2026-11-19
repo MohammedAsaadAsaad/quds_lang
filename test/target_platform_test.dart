@@ -21,8 +21,11 @@ main():
 ''');
     final compilation = compile(input.readAsStringSync(),
         file: input.path, targetPlatform: 'web');
-    expect(compilation.dependencies, contains(web.path));
-    expect(compilation.dependencies, isNot(contains(native.path)));
+    String canonical(String path) =>
+        File(path).absolute.uri.normalizePath().toFilePath();
+    final dependencies = compilation.dependencies.map(canonical);
+    expect(dependencies, contains(canonical(web.path)));
+    expect(dependencies, isNot(contains(canonical(native.path))));
     expect(compilation.dart, contains("import 'browser.dart'"));
     final output = File('${root.path}/main.dart')
       ..writeAsStringSync(compilation.dart);
@@ -31,7 +34,7 @@ main():
             .dart);
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
-    expect(vm.stdout, 'web\n');
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), 'web\n');
     final build = await Process.run(Platform.resolvedExecutable,
         ['compile', 'js', output.path, '-o', '${root.path}/main.js']);
     expect(build.exitCode, 0, reason: '${build.stdout}${build.stderr}');
@@ -41,7 +44,8 @@ main():
       '${root.path}/main.js'
     ]);
     expect(node.exitCode, 0, reason: '${node.stderr}');
-    expect(node.stdout, vm.stdout);
+    expect('${node.stdout}'.replaceAll('\r\n', '\n'),
+        '${vm.stdout}'.replaceAll('\r\n', '\n'));
   });
   test('Dart library flags distinguish native, web and Flutter context', () {
     const source = '''when dart.library.io:

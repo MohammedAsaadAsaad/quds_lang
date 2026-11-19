@@ -13,9 +13,9 @@ language syntax or changed conversion resolution. Existing SDK/symbol hover is
 preserved. In particular, ordinary identifiers named `value`, `get`, `map`, `set`
 and `once` are not automatically treated as language keywords.
 
-The reference explicitly identifies `deferred` import syntax as approved design
-that the current parser does not accept. Do not infer compiler feature completion
-from the presence of a help entry. Context recognition is conservative for
+The `deferred` entry documents a prefixed import and `prefix.loadLibrary()`.
+Do not infer that every import combinator is certified from the presence of a
+help entry. Context recognition is conservative for
 ambiguous/incomplete contextual syntax; normal symbol hover is the fallback.
 
 ## Data flow
@@ -43,7 +43,7 @@ string; help and completion resume correctly after ordinary/raw triple strings.
 ## Validation coverage
 
 `test/keyword_docs_test.dart` checks catalog synchronization, parser-word coverage,
-all reference example grammars (and the documented deferred rejection), identical
+all reference example grammars, including the deferred import example, identical
 completion text, contextual/compound keyword hover, comment/string/member
 exclusion, ordinary-symbol LSP fallback, UTF-16 positions, triple strings, invalid
 buffers, and a large buffer. Its Node adapter regression checks Markdown and plain

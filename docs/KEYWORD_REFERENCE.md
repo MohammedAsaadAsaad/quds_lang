@@ -648,10 +648,13 @@ use quds:math hide Fraction
 
 ## `deferred`
 
-Approved design: loads an imported library lazily through its prefix and loadLibrary operation. **Current limitation:** the compiler does not yet accept this directive suffix; the example documents approved syntax, not executable support.
+Loads an imported library lazily. The import needs a prefix. `prefix.loadLibrary()` returns `Future<void>` and completes before the prefix's names are used.
 
 ```quds
 use dart:math as math deferred
+main() async:
+  await math.loadLibrary()
+  print math.min(1, 2)
 ```
 
 ## `when`

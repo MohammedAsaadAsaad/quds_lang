@@ -1,0 +1,35 @@
+use fixtures.quds_value_adapters.helpers as helpers
+
+interface Named:
+  name: String
+interface Aged:
+  age: int
+class Person implements Named, Aged:
+  name: String required
+  age: int required
+showName(item: Named & Aged) -> String = item.name
+text(value: String? = "Quds") -> String = value ?? "empty"
+offset(base: int, extra: int = base) -> int = base + extra
+count(...items: int) -> int = items.length
+optional<T>(value: T? = null) -> T? = value
+class Utility:
+  static echo<U>(value: U) -> U = value
+class Derived extends Utility:
+  tag: int = 0
+extend String:
+  tag<T>(value: T) -> T = value
+
+main():
+  saved = text
+  print saved()
+  print saved(null)
+  print offset(2)
+  print count(1, 2)
+  omitted: ([value: int?]) -> int? = optional
+  print omitted()
+  print showName(Person(name: "Ada", age: 3))
+  print Derived.echo<int>(6)
+  print "ab".tag<int>(3)
+  integer: (int) -> String = helpers.pick
+  print integer(1)
+  print helpers.pick("a")

@@ -64,7 +64,11 @@ void main() {
 
   test('const output is stable and executes with Dart semantics', () async {
     final output = compile(showcase, file: 'const_eval.quds').dart;
-    expect(output, File('test/goldens/const_eval.dart.txt').readAsStringSync());
+    expect(
+        output,
+        File('test/goldens/const_eval.dart.txt')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n'));
     await execute(showcase, showcaseStdout);
   });
 
@@ -829,7 +833,7 @@ Future<void> execute(String source, String stdout) async {
     final run = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(run.exitCode, 0,
         reason: '${run.stderr}\n${output.readAsStringSync()}');
-    expect(run.stdout, stdout);
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), stdout);
     expect(run.stderr, isEmpty);
   } finally {
     directory.deleteSync(recursive: true);

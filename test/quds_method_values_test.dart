@@ -15,6 +15,8 @@ class Fresh:
   readonly read() -> List<int> = [1]
 class DerivedUtility extends Utility:
   tag: int = 0
+class Awkward:
+  keep<U>(value: U = 1, other: int) -> int = other
 ''';
 
 void main() {
@@ -43,10 +45,7 @@ void main() {
     'saved = helpers.Vault(stored: 1).guarded<int>': 'E207',
     'view: readonly ListBox<int> = ListBox<int>(values: [1])\n  saved = view.read\n  saved()[0] = 2':
         'E307',
-    'saved = Limited().keep<int>': 'E910',
-    'saved = Limited().first<int>': 'E910',
-    'view: readonly Fresh = Fresh()\n  saved = view.read': 'E910',
-    'saved = DerivedUtility.echo<int>': 'E910',
+    'saved = Awkward().keep<int>': 'E910',
     'saved = Box<num>(stored: 1).echo<int>\n  print saved("bad")': 'E300',
     'saved = helpers.Vault.echo<int>': 'E300',
   };
@@ -80,8 +79,11 @@ main():
     final result = compile(input.readAsStringSync(), file: input.path);
     expect(
         result.dart, compile(input.readAsStringSync(), file: input.path).dart);
-    expect(result.dart,
-        File('test/goldens/quds_method_values.dart.txt').readAsStringSync());
+    expect(
+        result.dart,
+        File('test/goldens/quds_method_values.dart.txt')
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n'));
     final root = Directory.systemTemp.createTempSync('quds-method-values-');
     addTearDown(() => root.deleteSync(recursive: true));
     final output = File('${root.path}/program.dart')
@@ -103,7 +105,7 @@ main():
         reason: '${analysis.stdout}${analysis.stderr}');
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
-    expect(vm.stdout,
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'),
         '3\n4\n2\n5\nshadow\n6\n7\n8\n9\n10\nnull\n11\n1\n2\n3\n4\n12\n13\n14\n');
     final js = '${root.path}/program.js';
     final build = await Process.run(
@@ -112,6 +114,7 @@ main():
     final node = await Process.run('node',
         ['-e', 'globalThis.self = globalThis; require(process.argv[1]);', js]);
     expect(node.exitCode, 0, reason: '${node.stderr}');
-    expect(node.stdout, vm.stdout);
+    expect('${node.stdout}'.replaceAll('\r\n', '\n'),
+        '${vm.stdout}'.replaceAll('\r\n', '\n'));
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

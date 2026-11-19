@@ -1,0 +1,76 @@
+use dart:math as math deferred
+use fixtures.quds_value_adapters.helpers as helpers
+
+interface Named:
+  name: String
+interface Aged:
+  age: int
+class Person implements Named, Aged:
+  name: String required
+  age: int required
+showName(item: Named & Aged) -> String = item.name
+text(value: String? = "Quds") -> String = value ?? "empty"
+offset(base: int, extra: int = base) -> int = base + extra
+count(...items: int) -> int = items.length
+total(first: int, ...rest: int) -> int = first + rest.length
+optional<T>(value: T? = null) -> T? = value
+
+class Limited:
+  keep<U>(value: U, times: int = 1) -> U = value
+  first<U>(...values: U) -> U = values[0]
+class Utility:
+  static echo<U>(value: U) -> U = value
+class Derived extends Utility:
+  tag: int = 0
+class Fresh:
+  readonly read() -> List<int> = [1]
+extend String:
+  tag<T>(value: T) -> T = value
+
+test "default omission stays distinct from explicit null":
+  saved = text
+  expect(saved(), "Quds")
+  expect(saved(null), "empty")
+  expect(saved("Ada"), "Ada")
+  shifted = offset
+  expect(shifted(2), 4)
+  expect(shifted(2, 5), 7)
+
+test "variadic values pack arguments and spreads":
+  saved = count
+  expect(saved(), 0)
+  expect(saved(1, 2, 3), 3)
+  numbers = [4, 5]
+  expect(saved(...numbers), 2)
+  summed = total
+  expect(summed(7), 7)
+  expect(summed(7, 1, 1), 9)
+
+test "generic defaults intersection methods extensions and imports":
+  omitted: ([value: int?]) -> int? = optional
+  expect(omitted(), null)
+  expect(omitted(4), 4)
+  person = Person(name: "Ada", age: 3)
+  named = showName
+  expect(named(person), "Ada")
+  kept = Limited().keep<int>
+  expect(kept(8), 8)
+  expect(kept(8, 2), 8)
+  head = Limited().first<String>
+  expect(head("a", "b"), "a")
+  staticValue = Derived.echo<int>
+  expect(staticValue(6), 6)
+  tagged = "ab".tag<int>
+  expect(tagged(3), 3)
+  integer: (int) -> String = helpers.pick
+  expect(integer(1), "integer")
+  expect(helpers.pick("a"), "text")
+
+test "a readonly method value guards its result":
+  view: readonly Fresh = Fresh()
+  saved = view.read
+  expect(saved()[0], 1)
+
+test "deferred libraries load through their prefix" async:
+  await math.loadLibrary()
+  expect(math.min(1, 2), 1)

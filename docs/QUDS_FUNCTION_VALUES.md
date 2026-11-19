@@ -92,7 +92,7 @@ top-level providers publish the reserved ABI bridge described below. Repeated re
 including generic specialization; lexical mutable captures remain live.
 Concrete same-file method references now use declaring-owner bridges as well;
 see [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Supported imported top-level providers now publish stable bridges as described
-in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md). Imported methods,
+in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md). Unsupported imported methods,
 interface-declared references and default-plus-intersection adapters retain
 closure lowering without the same identity guarantee. Provider-private default
 expressions and complete readonly boundary contracts need further work.

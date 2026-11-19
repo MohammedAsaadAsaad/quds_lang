@@ -7,3 +7,14 @@ report(first: int = _hiddenNumber(), second: int = internalMath.max(first, 9)) -
 copyValue<T>(value: T, other: T = value) -> T = other
 choose(value: Object? = "default") -> Object? = value
 asyncCopy<T>(value: T, other: T = value) async -> T = other
+
+class DefaultBox<T>:
+  stored: T required
+  private var count: int = 2
+  private next() -> int:
+    count += 1
+    return count
+  readonly read(first: int = count, second: int = internalMath.max(first, 9)) -> int = first + second
+  take<U>(value: U, first: int = this.next(), second: int = first) -> U = value
+  copy(value: T = stored) -> T = value
+  static number(value: int = _hiddenNumber()) -> int = value

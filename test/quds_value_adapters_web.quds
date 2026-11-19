@@ -110,3 +110,29 @@ main() async:
   print helpers.report()
   print helpers.report(first: 12)
   print report(second: 4)
+  box = helpers.DefaultBox<int>(stored: 8)
+  importedRead = box.read
+  print importedRead == box.read
+  print importedRead()
+  take = box.take<String>
+  print take("value")
+  print importedRead()
+  print box.read()
+  copiedField = box.copy
+  print copiedField()
+  staticNumber = helpers.DefaultBox.number
+  print staticNumber()
+  print staticNumber == helpers.DefaultBox.number
+  viewBox: readonly helpers.DefaultBox<int> = box
+  importedReadonlyRead = viewBox.read
+  print importedReadonlyRead == viewBox.read
+  print importedReadonlyRead()
+  absentBox: helpers.DefaultBox<int>? = null
+  print absentBox?.read == null
+  nullResult = absentBox?.read()
+  print nullResult
+  availableBox: helpers.DefaultBox<int>? = box
+  nullableRead = availableBox?.read
+  print nullableRead!()
+  print availableBox?.read()
+  print helpers.DefaultBox<int>(stored: 8).read()

@@ -1,3 +1,38 @@
+# Imported concrete method defaults — 2026-11-19
+
+Base: `35d41c5`. Handoff updated before coding in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Contract: [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | 22 declarations; imported private fields/helpers and Dart alias, class/method generic defaults, static/inherited owners, virtual dispatch, readonly/nullable references and direct calls |
+| Focused parser/semantics/value/readonly drivers | 128 passed in 28s |
+| Generated Dart | Golden updated; entry analysis passed; actual VM and JavaScript/Node agree on 60 lines |
+| Visibility | Consumer access to the provider's private field and method remains rejected at consumer Quds coordinates |
+| Nullable calls | Inferred nullable result; null short-circuits before supplied argument expressions and defaults |
+| ABI upgrade | v1 cache keeps valid output checksums after method bridge definitions are removed; actual `quds run` rebuilds and prints `7:9` and `11` under v2 |
+| Final package format | 101 files; zero changes |
+| Final static analysis | No issues found |
+| Documentation example | Actual `quds run /tmp/quds-import-method-example/main.quds`: `true`, `11`, `Quds`, `12`, `7` |
+| Full suite | **703 passed, zero failures or skips, in 9m33s** |
+
+Readiness inventory regenerated/checked; keyword sync and `git diff --check` passed.
+No unobserved remote CI or physical-device result is claimed.
+
+Imported method bodies/defaults are analyzed under their provider library scope
+and active privacy context, with context restoration. This fixes missing private
+fields and Dart aliases without granting consumer access to private members.
+A readonly generic field read remains readonly; the fixture's unconstrained T
+copy uses an ordinary method rather than erasing that qualification.
+
+Bridge names include declaring-owner identity. Proxies implement the same members;
+base defaults survive an override while the body still dispatches virtually.
+Interfaces, protected/private exported bridges, non-class owner kinds, SDK methods
+and unsupported parameter/default shapes remain outside this ABI slice.
+
+---
+
 # Provider-owned default bridges — 2026-11-19
 
 Base: `f42d8ce`. Handoff updated before implementation in

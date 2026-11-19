@@ -56,7 +56,7 @@ methods still reject access in Quds and retain a throwing body in the proxy.
 Direct method calls with defaults that read fields now evaluate those fields
 against the captured call receiver, rather than emitting an unbound field name.
 
-The identity guarantee does not cover imported providers, interface-declared
+The identity guarantee does not cover unsupported imported providers or interface-declared
 references or default-plus-intersection adapters. Those retain the earlier
 closure lowering. In particular, interface defaults keep their selected static
 contract instead of being replaced by an implementation's defaults. Provider
@@ -145,3 +145,14 @@ Defaulted slots on stored methods are named optional slots, as required by spec
 Defaults resolve once in declaration order and distinguish explicit missing
 from omission. Method adapters still use closures; stable repeated bound-method
 identity is not claimed by this correction. See [QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md).
+
+## Imported public default methods — 2026-11-19
+
+Supported ordinary public class methods now use provider-owned public member
+bridges, including generic/static/inherited methods and readonly proxies.
+Consumer analysis enters the defining library for private defaults and aliases;
+source access checks remain active outside it. Direct omitted-default calls
+capture the receiver once, and supported null-aware calls skip argument/default
+evaluation on null. The contract and remaining shape restrictions are in
+[QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md#imported-concrete-class-methods--abi-v2).
+Interfaces and other excluded provider shapes retain the earlier lowering.

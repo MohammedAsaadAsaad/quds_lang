@@ -50,6 +50,15 @@ String providerDefaultBridgeName(FunctionDeclaration function) =>
         [p.name, p.type, p.defaultValue != null],
     ]))).substring(0, 20);
 
+String providerMethodDefaultBridgeName(
+        ClassDeclaration owner, FunctionDeclaration function) =>
+    r'$QudsMethodDefault' +
+    sha256Hex(utf8.encode(jsonEncode([
+      owner.name,
+      for (final p in owner.typeParameters) [p.name, p.bound],
+      providerDefaultBridgeName(function),
+    ]))).substring(0, 20);
+
 class Symbol {
   Symbol(this.name, this.dartName, this.type,
       {this.mutable = false,
@@ -181,6 +190,7 @@ class SemanticModel {
   /// Closures that restore Quds defaults or hide intersection type parameters.
   final providerDefaultImports =
       <ImportDeclaration, Set<FunctionDeclaration>>{};
+  final providerDefaultMethods = <FunctionDeclaration, ClassDeclaration>{};
   final providerDefaultFunctions = <FunctionDeclaration>{};
   final qudsValueLowerings = <Expression, QudsValueLowering>{};
 
@@ -638,6 +648,7 @@ class Analyzer {
           .withFunction(function);
   String? _expected;
   String? _thisType;
+  String? _methodLibrary;
   final _promoted = <String, String>{};
   final _fieldSymbols = <Symbol>{};
   var _readonlyMethod = false;
@@ -700,6 +711,18 @@ class Analyzer {
       model.providerDefaultFunctions.addAll(source.statements
           .whereType<FunctionDeclaration>()
           .where(supportsProviderDefaults));
+      for (final owner in source.statements.whereType<ClassDeclaration>()) {
+        if (owner.kind != 'class' || owner.name.startsWith('_')) continue;
+        for (final method in owner.methods) {
+          if (method.visibility.isNotEmpty || !supportsProviderDefaults(method))
+            continue;
+          if (owner.methods
+                  .where((other) => other.name == method.name)
+                  .length !=
+              1) continue;
+          model.providerDefaultMethods[method] = owner;
+        }
+      }
     }
     for (final source in [program, ...libraries.values]) {
       for (final directive
@@ -1515,7 +1538,11 @@ class Analyzer {
     final saved = _scope;
     final savedThis = _thisType;
     final savedReadonly = _readonlyMethod;
-    _scope = _Scope(_global);
+    final home = model.libraryOf[type] ?? '';
+    final savedMethodLibrary = _methodLibrary;
+    _methodLibrary = home.isEmpty ? library : home;
+    _scope = _Scope(
+        home.isNotEmpty && home != library ? _libraryScope(home) : _global);
     _thisType = type.onType ?? type.name;
     final savedTypes = {..._typeNames};
     _typeNames
@@ -1530,19 +1557,23 @@ class Analyzer {
         _typeBounds[parameter.name] = parameter.bound!;
       }
     }
-    _readonlyMethod = isReadonlyMethod(method);
-    _installFields(type);
-    analyzeFunction(method);
-    _checkOverride(type, method);
-    _typeNames
-      ..clear()
-      ..addAll(savedTypes);
-    _typeBounds
-      ..clear()
-      ..addAll(savedBounds);
-    _readonlyMethod = savedReadonly;
-    _thisType = savedThis;
-    _scope = saved;
+    try {
+      _readonlyMethod = isReadonlyMethod(method);
+      _installFields(type);
+      analyzeFunction(method);
+      _checkOverride(type, method);
+    } finally {
+      _typeNames
+        ..clear()
+        ..addAll(savedTypes);
+      _typeBounds
+        ..clear()
+        ..addAll(savedBounds);
+      _readonlyMethod = savedReadonly;
+      _thisType = savedThis;
+      _scope = saved;
+      _methodLibrary = savedMethodLibrary;
+    }
   }
 
   void analyzeConstructor(
@@ -2745,7 +2776,7 @@ class Analyzer {
     if (visibility.isEmpty) return;
     final home =
         model.libraryOf[owner] ?? _global.symbols[owner.name]?.library ?? '';
-    if (home.isEmpty || home == library) return;
+    if (home.isEmpty || home == _activeLibrary) return;
     if (visibility == 'private') {
       error('E206', 'A private name is used outside its library', node);
     }
@@ -3142,7 +3173,7 @@ class Analyzer {
   String get _activeLibrary {
     final home =
         _function == null ? null : model.declarations[_function]?.library;
-    return home == null || home.isEmpty ? library : home;
+    return home == null || home.isEmpty ? (_methodLibrary ?? library) : home;
   }
 
   List<Parameter> _callParameters(
@@ -7992,11 +8023,16 @@ class Analyzer {
               initializing: parameter.initializing)
       ];
       model.references[node.callee] = model.references[callee]!;
-      return applyArguments(node, parameters, functionResolved,
+      final result = applyArguments(node, parameters, functionResolved,
           typeArguments: methodArguments,
           parameterBounds: methodBounds,
           declaredReturnType:
               specialize(model.declarations[functionResolved]!.type));
+      return callee.nullAware &&
+              model.providerDefaultMethods.containsKey(functionResolved) &&
+              result != 'void'
+          ? nullableType(result)
+          : result;
     }
     if (callee is! Identifier) {
       final type = expression(callee);

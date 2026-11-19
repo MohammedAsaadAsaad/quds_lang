@@ -52,7 +52,7 @@ milestone does not redefine the approved visibility syntax.
 The generated `$QudsDefault...` identifier is a reserved Dart ABI detail derived
 from the declaration signature, not absolute paths or backend temporary numbers.
 The source helper remains private; the bridge provides the same public callable
-operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v1`) in build caches.
+operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v2`; v1 covered functions only) in build caches.
 Build/run invalidate older epochs and rebuild dependencies automatically, even
 when their source and output checksums still match. Externally managed generated
 Dart must likewise be rebuilt with the matching compiler. It is not a runtime registry or a dynamic dispatch system.
@@ -64,7 +64,7 @@ a trailing group of computed defaults, no variadic/intersection parameters, no
 generator and no awaiting default. It includes a synchronous default on an async
 function. Native Dart function values retain their existing metadata path.
 
-Provider methods, interface bridges, inferred provider return metadata,
+Non-class/protected provider methods, interface bridges, inferred provider return metadata,
 SDK-section APIs, defaults with variadics/intersections, and awaiting defaults
 remain outside this ABI slice. Existing paths and limitations remain for them.
 Parts, cycles, conditional exports, cross-package publication and compatibility
@@ -83,3 +83,48 @@ generated Dart compatibility; it does not change language specification 1.2.
 The upgrade regression deliberately keeps a legacy provider's output checksum
 valid after removing bridge functions, so ordinary corruption repair cannot
 mask a missing ABI check.
+
+## Imported concrete class methods — ABI v2
+
+Public methods declared in ordinary public `class` declarations now publish
+reserved `$QudsMethodDefault...` member bridges. The owner name, class binders and
+source method signature determine the name; consumer prefixes and backend
+variable numbers do not. The provider emits every supported bridge even when
+it never takes a reference locally. Readonly proxy classes implement the same
+members, including guarded throwing paths for methods unavailable through readonly.
+
+```quds
+use provider as api
+main():
+  owner = api.DefaultBox<int>(stored: 8)
+  saved = owner.read
+  print saved == owner.read
+  print saved()
+  print owner.read()
+```
+
+The fixture provider's `read` default reads a private field and a private Dart
+import alias. Its method body and defaults are analyzed in the defining library,
+with active-library visibility checks, rather than in the consumer. Ordinary
+consumer access to private fields/methods still reports an error.
+
+Both references and direct calls with omitted defaults stay on the captured
+receiver. A direct call evaluates that receiver before written arguments.
+Class/method generics, static declaring owners, inheritance, live fields and
+readonly/nullable references retain their existing checks. Base-typed references
+keep base defaults while their target bodies dispatch virtually.
+
+For supported null-aware calls, a null receiver short-circuits before supplied
+arguments or defaults. The inferred result type remains nullable. The VM/JS
+fixture covers direct null-aware calls as well as nullable method values.
+
+The method slice requires an explicit result and synchronous trailing defaults,
+and excludes duplicate method names, intersections, variadics and generators.
+Interfaces, value/mixin/extension kinds, protected/private exported bridges,
+SDK methods and expanded cross-package/part certification remain separate work.
+A generic field read that could expose mutable data is not made readonly by this
+feature: source readonly qualifications and result guard restrictions still apply.
+
+The generated-ABI epoch is v2. The upgrade regression keeps valid checksums on a
+v1 provider with method bridge definitions removed; `quds run` rebuilds it and
+prints both the function result and the imported method result automatically.

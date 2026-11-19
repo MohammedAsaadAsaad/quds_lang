@@ -23,7 +23,8 @@ class method values and receiver/visibility contracts are tracked separately in
 
 Provider-owned computed defaults for supported top-level imports and direct
 calls are documented in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md).
-Imported methods, interfaces and full parameter metadata remain separate slices.
+Supported ordinary public class methods now publish provider-owned bridges too.
+Interfaces and full parameter metadata remain separate slices.
 
 ## Architecture
 

@@ -110,6 +110,7 @@ class DartEmitter {
 
   String emit(Program program) {
     _defaultBridges.addAll(model.providerDefaultFunctions);
+    _defaultBridges.addAll(model.providerDefaultMethods.keys);
     _defaultBridges.addAll(model.qudsValueLowerings.values
         .map((lowering) => lowering.function)
         .where((function) =>
@@ -946,6 +947,9 @@ class DartEmitter {
   }
 
   String _defaultBridgeName(FunctionDeclaration node) {
+    final methodOwner = model.providerDefaultMethods[node];
+    if (methodOwner != null)
+      return providerMethodDefaultBridgeName(methodOwner, node);
     if (model.providerDefaultFunctions.contains(node))
       return providerDefaultBridgeName(node);
     final owners =
@@ -4208,14 +4212,25 @@ class DartEmitter {
     final providerOrder = model.argumentOrder[node];
     if (!constantContext &&
         providerFunction != null &&
-        model.providerDefaultFunctions.contains(providerFunction) &&
+        (model.providerDefaultFunctions.contains(providerFunction) ||
+            model.providerDefaultMethods.containsKey(providerFunction)) &&
         providerOrder != null &&
-        providerOrder.contains(-1) &&
+        (providerOrder.contains(-1) ||
+            (model.providerDefaultMethods.containsKey(providerFunction) &&
+                member?.nullAware == true)) &&
         !node.arguments.any((argument) => _isHole(argument.value))) {
       // Capture all written arguments in source order before the provider
       // resolves omitted defaults. Its private symbols never enter this scope.
       final supplied = <String>[];
       final resolved = <String>[];
+      final methodOwner = model.providerDefaultMethods[providerFunction];
+      String? methodReceiver;
+      if (methodOwner != null && !providerFunction.isStatic && member != null) {
+        methodReceiver = '_qreceiver${_temps++}';
+        resolved.add('final $methodReceiver = ${expression(member.object)};');
+        if (member.nullAware)
+          resolved.add('if ($methodReceiver == null) return null;');
+      }
       for (var i = 0; i < node.arguments.length; i++) {
         final temporary = '_qprovided${_temps++}';
         supplied.add(temporary);
@@ -4231,10 +4246,20 @@ class DartEmitter {
       }
       final typeStart = target.indexOf('<');
       final plain = typeStart < 0 ? target : target.substring(0, typeStart);
-      final suffix = typeStart < 0 ? '' : target.substring(typeStart);
+      final typeArguments = node.callee is TypeApplication
+          ? (node.callee as TypeApplication).arguments
+          : model.inferredTypeArguments[node];
+      final suffix = typeArguments == null
+          ? ''
+          : '<${typeArguments.map(_dartType).join(', ')}>';
       final dot = plain.lastIndexOf('.');
-      final bridge =
-          '${dot < 0 ? '' : plain.substring(0, dot + 1)}${providerDefaultBridgeName(providerFunction)}$suffix';
+      final receiverPrefix = methodReceiver == null
+          ? (dot < 0 ? '' : plain.substring(0, dot + 1))
+          : '$methodReceiver.';
+      final bridgeName = methodOwner == null
+          ? providerDefaultBridgeName(providerFunction)
+          : providerMethodDefaultBridgeName(methodOwner, providerFunction);
+      final bridge = '$receiverPrefix$bridgeName$suffix';
       final invoke = '$bridge(${passed.join(', ')})';
       return '(() { ${resolved.join(' ')} ${targetSymbol.type == 'void' ? '' : 'return '}$invoke; })()';
     }

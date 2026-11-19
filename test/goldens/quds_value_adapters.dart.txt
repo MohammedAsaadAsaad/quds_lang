@@ -58,7 +58,7 @@ base class $QudsReadonlyPerson with $qudsReadonly.ReadonlyView implements Person
 }
 class Utility {
   Utility();
-  static U echo<U>(U _q58) => _q58;
+  static U echo<U>(U _q76) => _q76;
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Utility) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -106,15 +106,15 @@ base class $QudsReadonlyDerived extends $QudsReadonlyUtility with $qudsReadonly.
   int get tag => $qudsReadonly.protectResult(_$qudsSourceDerived, _$qudsSourceDerived.tag, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
 }
 extension on String {
-  T tag<T>(T _q59) => _q59;
+  T tag<T>(T _q77) => _q77;
 }
 class DefaultOwner<T> {
   DefaultOwner({this.seed = 2});
   int seed;
   U keep<U>(U _q25, int _q26, int _q27) => _q25;
-  U _$qudsDefault_DefaultOwner_keep<U>(U _q25, {Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault0 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault1 = identical(second, _$qudsDefaultOmitted) ? _qdefault0 : second as int; return keep<U>(_q25, _qdefault0, _qdefault1); }
+  U $QudsMethodDefault1e0805afe0e46de0fba3<U>(U _q25, {Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault0 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault1 = identical(second, _$qudsDefaultOmitted) ? _qdefault0 : second as int; return keep<U>(_q25, _qdefault0, _qdefault1); }
   int number(int _q29, int _q30) => (_q29 + _q30);
-  int _$qudsDefault_DefaultOwner_number({Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault2 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault3 = identical(second, _$qudsDefaultOmitted) ? _qdefault2 : second as int; return number(_qdefault2, _qdefault3); }
+  int $QudsMethodDefault88e746df5745ea457978({Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault2 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault3 = identical(second, _$qudsDefaultOmitted) ? _qdefault2 : second as int; return number(_qdefault2, _qdefault3); }
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != DefaultOwner<T>) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -137,9 +137,9 @@ base class $QudsReadonlyDefaultOwner<T> with $qudsReadonly.ReadonlyView implemen
   int get seed => $qudsReadonly.protectResult(_$qudsSourceDefaultOwner, _$qudsSourceDefaultOwner.seed, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
   set seed(int value) => throw UnsupportedError('readonly field');
   U keep<U>(U _q25, int _q26, int _q27) => throw UnsupportedError('readonly method');
-  U _$qudsDefault_DefaultOwner_keep<U>(U _q25, {Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault4 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault5 = identical(second, _$qudsDefaultOmitted) ? _qdefault4 : second as int; return keep<U>(_q25, _qdefault4, _qdefault5); }
+  U $QudsMethodDefault1e0805afe0e46de0fba3<U>(U _q25, {Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault4 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault5 = identical(second, _$qudsDefaultOmitted) ? _qdefault4 : second as int; return keep<U>(_q25, _qdefault4, _qdefault5); }
   int number(int _q29, int _q30) => (_q29 + _q30);
-  int _$qudsDefault_DefaultOwner_number({Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault6 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault7 = identical(second, _$qudsDefaultOmitted) ? _qdefault6 : second as int; return number(_qdefault6, _qdefault7); }
+  int $QudsMethodDefault88e746df5745ea457978({Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault6 = identical(first, _$qudsDefaultOmitted) ? seed : first as int; final int _qdefault7 = identical(second, _$qudsDefaultOmitted) ? _qdefault6 : second as int; return number(_qdefault6, _qdefault7); }
   String toString() => _$qudsSourceDefaultOwner.toString();
   bool operator ==(Object other) => _$qudsSourceDefaultOwner == other;
   int get hashCode => _$qudsSourceDefaultOwner.hashCode;
@@ -147,7 +147,7 @@ base class $QudsReadonlyDefaultOwner<T> with $qudsReadonly.ReadonlyView implemen
 class StaticDefault {
   StaticDefault();
   static U choose<U>(U _q35, int _q36) => _q35;
-  static U _$qudsDefault_StaticDefault_choose<U>(U _q35, {Object? times = _$qudsDefaultOmitted}) { final int _qdefault8 = identical(times, _$qudsDefaultOmitted) ? 1 : times as int; return choose<U>(_q35, _qdefault8); }
+  static U $QudsMethodDefaultd63c95a2b5462b2512d7<U>(U _q35, {Object? times = _$qudsDefaultOmitted}) { final int _qdefault8 = identical(times, _$qudsDefaultOmitted) ? 1 : times as int; return choose<U>(_q35, _qdefault8); }
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != StaticDefault) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -198,7 +198,7 @@ base class $QudsReadonlyChildDefault extends $QudsReadonlyDefaultOwner<int> with
 class DefaultBase {
   DefaultBase();
   int number(int _q43) => _q43;
-  int _$qudsDefault_DefaultBase_number({Object? value = _$qudsDefaultOmitted}) { final int _qdefault9 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return number(_qdefault9); }
+  int $QudsMethodDefault3d4bb618e24070fa04e0({Object? value = _$qudsDefaultOmitted}) { final int _qdefault9 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return number(_qdefault9); }
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != DefaultBase) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -218,7 +218,7 @@ base class $QudsReadonlyDefaultBase with $qudsReadonly.ReadonlyView implements D
   bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceDefaultBase, candidate);
   bool $qudsIsLazySlot(Object slot) => _$qudsSourceDefaultBase.$qudsIsLazySlot(slot);
   int number(int _q43) => _q43;
-  int _$qudsDefault_DefaultBase_number({Object? value = _$qudsDefaultOmitted}) { final int _qdefault10 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return number(_qdefault10); }
+  int $QudsMethodDefault3d4bb618e24070fa04e0({Object? value = _$qudsDefaultOmitted}) { final int _qdefault10 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return number(_qdefault10); }
   String toString() => _$qudsSourceDefaultBase.toString();
   bool operator ==(Object other) => _$qudsSourceDefaultBase == other;
   int get hashCode => _$qudsSourceDefaultBase.hashCode;
@@ -226,7 +226,7 @@ base class $QudsReadonlyDefaultBase with $qudsReadonly.ReadonlyView implements D
 class DefaultChild extends DefaultBase {
   DefaultChild();
   int number(int _q45) => (_q45 * 10);
-  int _$qudsDefault_DefaultChild_number({Object? value = _$qudsDefaultOmitted}) { final int _qdefault11 = identical(value, _$qudsDefaultOmitted) ? 2 : value as int; return number(_qdefault11); }
+  int $QudsMethodDefault63fddb8e21aa2ead194c({Object? value = _$qudsDefaultOmitted}) { final int _qdefault11 = identical(value, _$qudsDefaultOmitted) ? 2 : value as int; return number(_qdefault11); }
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != DefaultChild) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -246,7 +246,7 @@ base class $QudsReadonlyDefaultChild extends $QudsReadonlyDefaultBase with $quds
   bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceDefaultChild, candidate);
   bool $qudsIsLazySlot(Object slot) => _$qudsSourceDefaultChild.$qudsIsLazySlot(slot);
   int number(int _q45) => (_q45 * 10);
-  int _$qudsDefault_DefaultChild_number({Object? value = _$qudsDefaultOmitted}) { final int _qdefault12 = identical(value, _$qudsDefaultOmitted) ? 2 : value as int; return number(_qdefault12); }
+  int $QudsMethodDefault63fddb8e21aa2ead194c({Object? value = _$qudsDefaultOmitted}) { final int _qdefault12 = identical(value, _$qudsDefaultOmitted) ? 2 : value as int; return number(_qdefault12); }
 }
 
 
@@ -310,31 +310,31 @@ void main() async {
   final int Function({Object? value}) _q23 = _$qudsDefault__q21;
   print(_q23());
   final DefaultOwner<int> _q24 = $qudsReadonly.registerGuards<DefaultOwner<int>>(DefaultOwner<int>(), [$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
-  final String Function(String, {int first, int second}) _q28 = ((DefaultOwner<int> _qrecv21) => _qrecv21._$qudsDefault_DefaultOwner_keep<String>)(_q24);
-  print((_q28 == ((DefaultOwner<int> _qrecv22) => _qrecv22._$qudsDefault_DefaultOwner_keep<String>)(_q24)));
+  final String Function(String, {int first, int second}) _q28 = ((DefaultOwner<int> _qrecv21) => _qrecv21.$QudsMethodDefault1e0805afe0e46de0fba3<String>)(_q24);
+  print((_q28 == ((DefaultOwner<int> _qrecv22) => _qrecv22.$QudsMethodDefault1e0805afe0e46de0fba3<String>)(_q24)));
   print(_q28("Quds"));
-  final int Function({int first, int second}) _q31 = ((DefaultOwner<int> _qrecv23) => _qrecv23._$qudsDefault_DefaultOwner_number)(_q24);
+  final int Function({int first, int second}) _q31 = ((DefaultOwner<int> _qrecv23) => _qrecv23.$QudsMethodDefault88e746df5745ea457978)(_q24);
   print(_q31());
   _q24.seed = 5;
   print(_q31());
   final DefaultOwner<int> _q32 = _q24;
-  final int Function({int first, int second}) _q33 = ((DefaultOwner<int> _qrecv24) => _qrecv24._$qudsDefault_DefaultOwner_number)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32));
-  print((_q33 == ((DefaultOwner<int> _qrecv25) => _qrecv25._$qudsDefault_DefaultOwner_number)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32))));
+  final int Function({int first, int second}) _q33 = ((DefaultOwner<int> _qrecv24) => _qrecv24.$QudsMethodDefault88e746df5745ea457978)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32));
+  print((_q33 == ((DefaultOwner<int> _qrecv25) => _qrecv25.$QudsMethodDefault88e746df5745ea457978)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32))));
   print(_q33());
   final ChildDefault _q34 = ChildDefault();
-  print((() { final _qr26 = _q34; final _qd0 = _qr26.seed; final _qd1 = _qd0; return _qr26.number(_qd0, _qd1); })());
-  final String Function(String, {int times}) _q37 = StaticDefault._$qudsDefault_StaticDefault_choose<String>;
-  print((_q37 == StaticDefault._$qudsDefault_StaticDefault_choose<String>));
+  print((() { final _qreceiver26 = _q34; return _qreceiver26.$QudsMethodDefault88e746df5745ea457978(); })());
+  final String Function(String, {int times}) _q37 = StaticDefault.$QudsMethodDefaultd63c95a2b5462b2512d7<String>;
+  print((_q37 == StaticDefault.$QudsMethodDefaultd63c95a2b5462b2512d7<String>));
   print(_q37("static"));
   final DefaultOwner<int>? _q38 = null;
-  print((((DefaultOwner<int>? _qrecv27) => _qrecv27 == null ? null : _qrecv27._$qudsDefault_DefaultOwner_number)(_q38) == null));
+  print((((DefaultOwner<int>? _qrecv27) => _qrecv27 == null ? null : _qrecv27.$QudsMethodDefault88e746df5745ea457978)(_q38) == null));
   final DefaultOwner<int>? _q39 = $qudsReadonly.registerGuards<DefaultOwner<int>>(DefaultOwner<int>(), [$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
-  final int Function({int first, int second})? _q40 = ((DefaultOwner<int>? _qrecv28) => _qrecv28 == null ? null : _qrecv28._$qudsDefault_DefaultOwner_number)(_q39);
+  final int Function({int first, int second})? _q40 = ((DefaultOwner<int>? _qrecv28) => _qrecv28 == null ? null : _qrecv28.$QudsMethodDefault88e746df5745ea457978)(_q39);
   print(((_q40!))());
   final DefaultChild _q41 = DefaultChild();
   final DefaultBase _q42 = _q41;
-  final int Function({int value}) _q44 = ((DefaultBase _qrecv29) => _qrecv29._$qudsDefault_DefaultBase_number)(_q42);
-  final int Function({int value}) _q46 = ((DefaultChild _qrecv30) => _qrecv30._$qudsDefault_DefaultChild_number)(_q41);
+  final int Function({int value}) _q44 = ((DefaultBase _qrecv29) => _qrecv29.$QudsMethodDefault3d4bb618e24070fa04e0)(_q42);
+  final int Function({int value}) _q46 = ((DefaultChild _qrecv30) => _qrecv30.$QudsMethodDefault63fddb8e21aa2ead194c)(_q41);
   print(_q44());
   print(_q46());
   final String Function({int first, int second}) _q49 = helpers.$QudsDefault1650c09ceb2f0bb8930f;
@@ -356,10 +356,36 @@ void main() async {
   print((() {  return helpers.$QudsDefault1650c09ceb2f0bb8930f(); })());
   print((() { final _qprovided31 = 12; return helpers.$QudsDefault1650c09ceb2f0bb8930f(first: _qprovided31); })());
   print((() { final _qprovided32 = 4; return $QudsDefault1650c09ceb2f0bb8930f(second: _qprovided32); })());
+  final helpers.DefaultBox<int> _q58 = $qudsReadonly.registerGuards<helpers.DefaultBox<int>>(helpers.DefaultBox<int>(stored: 8), [$qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
+  final int Function({int first, int second}) _q61 = ((helpers.DefaultBox<int> _qrecv33) => _qrecv33.$QudsMethodDefaultcb40fa1c121532a57529)(_q58);
+  print((_q61 == ((helpers.DefaultBox<int> _qrecv34) => _qrecv34.$QudsMethodDefaultcb40fa1c121532a57529)(_q58)));
+  print(_q61());
+  final String Function(String, {int first, int second}) _q65 = ((helpers.DefaultBox<int> _qrecv35) => _qrecv35.$QudsMethodDefault5c15003a2a3b05c58a76<String>)(_q58);
+  print(_q65("value"));
+  print(_q61());
+  print((() { final _qreceiver36 = _q58; return _qreceiver36.$QudsMethodDefaultcb40fa1c121532a57529(); })());
+  final int Function({int value}) _q67 = ((helpers.DefaultBox<int> _qrecv37) => _qrecv37.$QudsMethodDefault91b11afe848461c4ce86)(_q58);
+  print(_q67());
+  final int Function({int value}) _q69 = helpers.DefaultBox.$QudsMethodDefault96a2ef83e43f8597a643;
+  print(_q69());
+  print((_q69 == helpers.DefaultBox.$QudsMethodDefault96a2ef83e43f8597a643));
+  final helpers.DefaultBox<int> _q70 = _q58;
+  final int Function({int first, int second}) _q71 = ((helpers.DefaultBox<int> _qrecv38) => _qrecv38.$QudsMethodDefaultcb40fa1c121532a57529)($qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q70));
+  print((_q71 == ((helpers.DefaultBox<int> _qrecv39) => _qrecv39.$QudsMethodDefaultcb40fa1c121532a57529)($qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q70))));
+  print(_q71());
+  final helpers.DefaultBox<int>? _q72 = null;
+  print((((helpers.DefaultBox<int>? _qrecv40) => _qrecv40 == null ? null : _qrecv40.$QudsMethodDefaultcb40fa1c121532a57529)(_q72) == null));
+  final int? _q73 = (() { final _qreceiver41 = _q72; if (_qreceiver41 == null) return null; return _qreceiver41.$QudsMethodDefaultcb40fa1c121532a57529(); })();
+  print(_q73);
+  final helpers.DefaultBox<int>? _q74 = _q58;
+  final int Function({int first, int second})? _q75 = ((helpers.DefaultBox<int>? _qrecv42) => _qrecv42 == null ? null : _qrecv42.$QudsMethodDefaultcb40fa1c121532a57529)(_q74);
+  print(((_q75!))());
+  print((() { final _qreceiver43 = _q74; if (_qreceiver43 == null) return null; return _qreceiver43.$QudsMethodDefaultcb40fa1c121532a57529(); })());
+  print((() { final _qreceiver44 = $qudsReadonly.registerGuards<helpers.DefaultBox<int>>(helpers.DefaultBox<int>(stored: 8), [$qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]); return _qreceiver44.$QudsMethodDefaultcb40fa1c121532a57529(); })());
 }
 final showName = _q0;
 final text = _q1;
 final offset = _q2;
 final count = _q3;
 final optional = _q4;
-final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.FutureGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>())]);
+final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.FutureGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);

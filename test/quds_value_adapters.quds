@@ -251,3 +251,73 @@ test "direct imported calls keep provider defaults and source argument order":
   trace = DefaultTrace()
   expect(helpers.report(second: trace.nextValue(), first: trace.nextValue()), "2:1")
   expect(trace.calls, 2)
+
+test "imported method bridges own defaults and retain receiver identity":
+  owner = helpers.DefaultBox<int>(stored: 8)
+  read = owner.read
+  expect(read == owner.read, true)
+  expect(read(), 11)
+  expect(read(first: 12), 24)
+  take = owner.take<String>
+  expect(take == owner.take<String>, true)
+  expect(take("value"), "value")
+  expect(read(), 12)
+  copied = owner.copy
+  expect(copied(), 8)
+  staticValue = helpers.DefaultBox.number
+  expect(staticValue(), 7)
+  expect(staticValue == helpers.DefaultBox.number, true)
+  expect(owner.read(), 12)
+  expect(owner.take<String>("direct"), "direct")
+  expect(read(), 13)
+
+test "imported readonly and nullable method references retain defaults":
+  owner = helpers.DefaultBox<int>(stored: 8)
+  view: readonly helpers.DefaultBox<int> = owner
+  read = view.read
+  expect(read == view.read, true)
+  expect(read(), 11)
+  absent: helpers.DefaultBox<int>? = null
+  expect(absent?.read, null)
+  available: helpers.DefaultBox<int>? = owner
+  nullableRead = available?.read
+  expect(nullableRead!(), 11)
+  expect(nullableRead == available?.read, true)
+
+class ImportedDefaultChild extends helpers.DefaultBox<int>:
+  readonly read(first: int = 20, second: int = first) -> int = first + second
+
+makeImported(trace: DefaultTrace) -> helpers.DefaultBox<int>:
+  trace.nextValue()
+  return helpers.DefaultBox<int>(stored: 8)
+
+test "imported method bridge owners preserve inheritance and receiver evaluation":
+  trace = DefaultTrace()
+  read = makeImported(trace).read
+  expect(trace.calls, 1)
+  expect(read(), 11)
+  expect(read(), 11)
+  expect(trace.calls, 1)
+  expect(makeImported(trace).take<String>("direct"), "direct")
+  expect(trace.calls, 2)
+  expect(helpers.DefaultBox<int>(stored: 8).read(), 11)
+  child = ImportedDefaultChild(stored: 8)
+  base: helpers.DefaultBox<int> = child
+  fromBase = base.read
+  fromChild = child.read
+  expect(fromBase(), 11)
+  expect(fromChild(), 40)
+  expect(fromBase == base.read, true)
+  inheritedStatic = ImportedDefaultChild.number
+  expect(inheritedStatic(), 7)
+  expect(ImportedDefaultChild.number(), 7)
+
+test "null-aware provider calls skip supplied arguments and defaults":
+  trace = DefaultTrace()
+  absent: helpers.DefaultBox<int>? = null
+  outcome = absent?.read(first: trace.nextValue())
+  expect(outcome, null)
+  expect(trace.calls, 0)
+  available: helpers.DefaultBox<int>? = helpers.DefaultBox<int>(stored: 8)
+  value = available?.read()
+  expect(value, 11)

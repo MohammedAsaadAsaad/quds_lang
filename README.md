@@ -156,3 +156,7 @@ Supported top-level Quds imports keep computed defaults inside their defining
 library for references and calls with omitted arguments. See
 [provider-owned defaults](docs/QUDS_PROVIDER_DEFAULTS.md) for the ABI contract,
 filter/re-export behavior and remaining limits.
+
+Public ordinary-class methods in imported Quds providers also publish stable
+default bridges, preserving receiver identity and readonly checks. Interface
+bridges and complete parameter-form metadata remain separate work.

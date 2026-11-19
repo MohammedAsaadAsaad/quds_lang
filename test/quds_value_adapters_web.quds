@@ -19,6 +19,21 @@ class Derived extends Utility:
 extend String:
   tag<T>(value: T) -> T = value
 
+class DefaultOwner<T>:
+  var seed: int = 2
+  keep<U>(value: U, first: int = seed, second: int = first) -> U = value
+  readonly number(first: int = seed, second: int = first) -> int = first + second
+class StaticDefault:
+  static choose<U>(value: U, times: int = 1) -> U = value
+class ChildDefault extends DefaultOwner<int>:
+  tag: int = 0
+
+class DefaultBase:
+  readonly number(value: int = 1) -> int = value
+class DefaultChild extends DefaultBase:
+  readonly number(value: int = 2) -> int = value * 10
+
+
 main():
   saved = text
   print saved()
@@ -46,3 +61,31 @@ main():
   selfDefault(value: Object? = selfDefault) -> int = 1
   selfReference = selfDefault
   print selfReference()
+  owner = DefaultOwner<int>()
+  first = owner.keep<String>
+  print first == owner.keep<String>
+  print first("Quds")
+  read = owner.number
+  print read()
+  owner.seed = 5
+  print read()
+  view: readonly DefaultOwner<int> = owner
+  readonlyRead = view.number
+  print readonlyRead == view.number
+  print readonlyRead()
+  inherited = ChildDefault()
+  print inherited.number()
+  staticValue = StaticDefault.choose<String>
+  print staticValue == StaticDefault.choose<String>
+  print staticValue("static")
+  absent: DefaultOwner<int>? = null
+  print absent?.number == null
+  available: DefaultOwner<int>? = DefaultOwner<int>()
+  nullableValue = available?.number
+  print nullableValue!()
+  child = DefaultChild()
+  base: DefaultBase = child
+  fromBase = base.number
+  fromChild = child.number
+  print fromBase()
+  print fromChild()

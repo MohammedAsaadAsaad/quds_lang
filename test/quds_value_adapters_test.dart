@@ -14,7 +14,7 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     expect(
         '${result.stdout}'.split('\n').where((line) => line.startsWith('ok ')),
-        hasLength(10));
+        hasLength(15));
   });
 
   test('default value slots are named-only', () {
@@ -27,6 +27,19 @@ main():
 ''', file: 'default_named.quds'),
         throwsA(isA<CompilerException>()
             .having((error) => error.code, 'code', 'E300')));
+  });
+
+  test('default bridges preserve readonly access restrictions', () {
+    expect(
+        () => compile('''
+class Owner:
+  change(value: int = 1) -> int = value
+main():
+  view: readonly Owner = Owner()
+  saved = view.change
+''', file: 'readonly_default.quds'),
+        throwsA(isA<CompilerException>()
+            .having((error) => error.code, 'code', 'E307')));
   });
 
   test('deferred imports and guarded results keep their diagnostics', () {
@@ -69,6 +82,11 @@ main():
     final source = input.readAsStringSync();
     final result = compile(source, file: input.path);
     expect(result.dart, compile(source, file: input.path).dart);
+    expect(
+        result.dart.replaceAll('\r', ''),
+        File('test/goldens/quds_value_adapters.dart.txt')
+            .readAsStringSync()
+            .replaceAll('\r', ''));
     expect(result.dart, contains('identical('));
     expect(result.dart, contains('pick\$1'));
     expect(result.dart, contains('Utility.echo'));
@@ -96,7 +114,7 @@ main():
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
     expect(vm.stdout,
-        'Quds\nempty\n4\n2\nnull\nAda\n6\n3\ninteger\ntext\n33\n44\ndefault\nnull\ntrue\ntrue\n1\n');
+        'Quds\nempty\n4\n2\nnull\nAda\n6\n3\ninteger\ntext\n33\n44\ndefault\nnull\ntrue\ntrue\n1\ntrue\nQuds\n4\n10\ntrue\n10\n4\ntrue\nstatic\ntrue\n4\n10\n20\n');
     final js = '${root.path}/program.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);

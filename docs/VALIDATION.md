@@ -1,3 +1,35 @@
+# Concrete default method bridges — 2026-11-19
+
+Base: `81a5287`. Handoff updated before implementation in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Contract: [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | 15 declarations passed; same/different receivers, live fields, generic/static/inherited/nullable methods, readonly proxies, overriding defaults and interface fallback |
+| Focused value/readonly drivers | 80 passed in 24s |
+| Final adapter driver | 5 passed in 6s; includes E307 rejection of a mutating default method through readonly |
+| Dart output | New deterministic golden; analysis; actual VM and JavaScript/Node agree on 30 lines |
+| Static analysis | No issues found |
+| Final package format | 101 files; zero changes |
+| Documentation example | Actual `quds run /tmp/quds-method-bridge-example.quds`: `true`, `2`, `5` |
+| Full compiler suite | **701 passed, zero failures or skips, in 9m27s** |
+
+Bridge names retain their declaring owner, so an override cannot replace the
+selected base default. Proxies implement private bridges as well as original
+methods. Static adapters no longer try to capture a Type as an instance. Direct
+method defaults that read fields now use the captured receiver.
+
+Readiness inventory regenerated and checked; keyword catalog sync and
+`git diff --check` passed. These local results do not claim an unobserved remote
+CI or device session.
+
+Imported/interface and default-plus-intersection adapters retain their earlier
+closure lowering. Their repeated-reference identity is not certified here.
+No new parameter syntax or relaxation of readonly/private/protected is introduced.
+
+---
+
 # Default value adapter correction — 2026-11-19
 
 Base: `e7d4aa0`. Handoff was updated before implementation in

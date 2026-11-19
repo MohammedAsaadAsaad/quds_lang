@@ -89,9 +89,11 @@ The internal omission token is distinct from both explicit null and the public
 Local and same-file function definitions emit a private named bridge beside
 the original definition. Repeated references share normal Dart tear-off equality,
 including generic specialization; lexical mutable captures remain live.
-Default-bearing method and imported function references still use closures and
-do not yet have the same identity guarantee. Provider-private default expressions
-and method receiver/readonly bridge contracts need further conformance work.
+Concrete same-file method references now use declaring-owner bridges as well;
+see [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Imported providers,
+interface-declared references and default-plus-intersection adapters retain
+closure lowering without the same identity guarantee. Provider-private default
+expressions and complete readonly boundary contracts need further work.
 
 A variadic value has the Quds type `(...items: T) -> R` and the Dart type
 `R Function(List<T>)`; call sites pack arguments and spreads. An intersection

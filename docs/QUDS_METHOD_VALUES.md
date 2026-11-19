@@ -24,6 +24,49 @@ Output: `3`, `Quds`, `4`. A bound receiver is evaluated when its reference is
 created. Later calls use the saved receiver. Inferred signatures retain Quds
 positional labels; explicit function annotations define their exposed labels.
 
+## Default-bearing method bridges — 2026-11-19
+
+```quds
+class Counter:
+  var seed: int = 2
+  readonly read(value: int = seed) -> int = value
+main():
+  counter = Counter()
+  saved = counter.read
+  print saved == counter.read // true
+  print saved()               // 2
+  counter.seed = 5
+  print saved()               // 5
+```
+
+Concrete methods declared in the current source file now use a named private
+bridge alongside the original method. Repeated references on the same receiver
+retain ordinary bound-method equality, including generic specialization and
+nullable access. Taking a reference evaluates its receiver once; omitted
+defaults run at each call and observe the receiver's current fields.
+Static bridges use the declaring type, without attempting to capture a Type
+as an instance. No receiver cache or global closure registry is introduced.
+
+Bridge names include the declaring class. A base-typed reference keeps defaults
+from its selected declaration while the original method body still dispatches
+virtually. A child override therefore cannot silently replace the base default.
+Readonly proxies provide the same private bridge members; disallowed mutating
+methods still reject access in Quds and retain a throwing body in the proxy.
+
+Direct method calls with defaults that read fields now evaluate those fields
+against the captured call receiver, rather than emitting an unbound field name.
+
+The identity guarantee does not cover imported providers, interface-declared
+references or default-plus-intersection adapters. Those retain the earlier
+closure lowering. In particular, interface defaults keep their selected static
+contract instead of being replaced by an implementation's defaults. Provider
+bridges, full parameter metadata and parameterized readonly result guards remain
+separate work. Required `readonly`/visibility checks have not been relaxed.
+
+Evidence: `test/quds_value_adapters.quds` (15 declarations), its Dart driver,
+and `test/goldens/quds_value_adapters.dart.txt`; the web fixture analyzes and
+executes on VM and JavaScript. Historical sections below describe earlier slices.
+
 ## Type and dispatch rules
 
 The checker locates the method's declaring owner through the receiver's

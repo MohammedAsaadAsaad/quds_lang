@@ -93,6 +93,7 @@ class DartEmitter {
   var _isPart = false;
   var _hasParts = false;
   String? _returnView;
+  String? _defaultReceiver;
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
   void line(String text) {
@@ -112,8 +113,10 @@ class DartEmitter {
         .map((lowering) => lowering.function)
         .where((function) =>
             function.span.file == program.span.file &&
-            !model.classes.values
-                .any((owner) => owner.methods.contains(function)) &&
+            !function.parameters.any((p) => p.type.contains(' & ')) &&
+            !model.classes.values.any((owner) =>
+                owner.kind == 'interface' &&
+                owner.methods.contains(function)) &&
             function.parameters.any((p) => p.defaultValue != null)));
     _hasParts = program.statements.any((node) => node is PartDirective);
     _isPart =
@@ -928,11 +931,19 @@ class DartEmitter {
     }
   }
 
-  String _defaultBridgeName(FunctionDeclaration node) =>
-      r'_$qudsDefault_' + model.declarations[node]!.dartName;
+  String _defaultBridgeName(FunctionDeclaration node) {
+    final owners =
+        model.classes.values.where((owner) => owner.methods.contains(node));
+    final owner = owners.isEmpty ? '' : '${owners.first.name}_';
+    return r'_$qudsDefault_' + owner + model.declarations[node]!.dartName;
+  }
 
   void emitFunction(FunctionDeclaration node) {
     _emitFunctionBody(node);
+    _emitDefaultBridge(node);
+  }
+
+  void _emitDefaultBridge(FunctionDeclaration node) {
     if (!_defaultBridges.contains(node)) return;
     final savedGenerics = _openGenerics;
     _openGenerics = {
@@ -1493,6 +1504,7 @@ class DartEmitter {
             method.isOperator ? 'operator ${method.name}' : symbol.dartName;
         line(
             "${_dartType(symbol.type)} $title${_typeParameters(method.typeParameters)}($parameters) => throw UnsupportedError('readonly method');");
+        _emitDefaultBridge(method);
       }
     }
     if (node.kind == 'value' || node.modifiers.contains('value')) {
@@ -3217,7 +3229,7 @@ class DartEmitter {
           DotShorthand() => _dot(node),
           AssignExpression() =>
             '${_cell(model.references[node]!)} ${node.operator} ${expression(node.value, constantContext: constantContext)}',
-          ThisExpression() => 'this',
+          ThisExpression() => _defaultReceiver ?? 'this',
           SpreadElement() =>
             '${node.nullAware ? '...?' : '...'}${expression(node.operand, constantContext: constantContext)}',
           IfExpression() => _if(node),
@@ -3415,8 +3427,11 @@ class DartEmitter {
     String target;
     if (node is MemberAccess) {
       final method = implementation;
-      if (lowering.staticOwner != null) {
-        target = '${_dartType(lowering.staticOwner!)}.$method';
+      if (function.isStatic) {
+        final owner = lowering.staticOwner == null
+            ? expression(node.object)
+            : _dartType(lowering.staticOwner!);
+        target = '$owner.$method';
       } else if (node.nullAware) {
         final receiver = '_qrecv${_temps++}';
         final type = _dartType(nullableType(model.types[node.object]!));
@@ -3585,6 +3600,11 @@ class DartEmitter {
   }
 
   String _identifier(Identifier node) {
+    if (_defaultReceiver != null &&
+        (model.implicitThis.contains(node) ||
+            model.references[node]?.field == true)) {
+      return '$_defaultReceiver.${model.references[node]?.dartName ?? node.name}';
+    }
     if (model.implicitThis.contains(node)) {
       final dart = model.references[node]?.dartName ?? node.name;
       return 'this.$dart';
@@ -4212,6 +4232,7 @@ class DartEmitter {
     // Evaluate written arguments exactly once, left to right, before arranging
     // them in declaration order for Dart's positional ABI.
     final declarations = <String>[];
+    String? defaultReceiver;
     if (member != null &&
         targetSymbol.function?.isStatic == false &&
         model.types[member.object] != 'prefix' &&
@@ -4227,6 +4248,7 @@ class DartEmitter {
           ? ''
           : '<${typeArguments.map(_dartType).join(', ')}>';
       target = '$receiver.$method$suffix';
+      defaultReceiver = receiver;
     }
     final values = <String>[];
     final holeNames = <String>[];
@@ -4255,8 +4277,15 @@ class DartEmitter {
       } else if (i < parameters.length && parameters[i].defaultValue != null) {
         final saved = _names;
         _names = subst;
-        final value = expression(parameters[i].defaultValue!);
-        _names = saved;
+        final savedReceiver = _defaultReceiver;
+        _defaultReceiver = defaultReceiver ?? savedReceiver;
+        late String value;
+        try {
+          value = expression(parameters[i].defaultValue!);
+        } finally {
+          _names = saved;
+          _defaultReceiver = savedReceiver;
+        }
         declarations.add('final _qd$i = $value;');
         values.add('_qd$i');
         subst[model.declarations[parameters[i]]!.dartName] = '_qd$i';

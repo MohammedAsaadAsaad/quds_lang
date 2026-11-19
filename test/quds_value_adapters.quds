@@ -132,3 +132,88 @@ selfDefault(value: Object? = selfDefault) -> int = 1
 test "a default may store its own function reference":
   saved = selfDefault
   expect(saved(), 1)
+
+class DefaultOwner<T>:
+  var seed: int = 2
+  keep<U>(value: U, first: int = seed, second: int = first) -> U = value
+  readonly number(first: int = seed, second: int = first) -> int = first + second
+class StaticDefault:
+  static choose<U>(value: U, times: int = 1) -> U = value
+class ChildDefault extends DefaultOwner<int>:
+  tag: int = 0
+
+test "default methods retain identity and live receiver fields":
+  owner = DefaultOwner<int>()
+  first = owner.keep<String>
+  second = owner.keep<String>
+  expect(first == second, true)
+  expect(first("Quds"), "Quds")
+  read = owner.number
+  expect(read(), 4)
+  owner.seed = 5
+  expect(read(), 10)
+  expect(read(first: 3), 6)
+  other = DefaultOwner<int>()
+  expect(read == other.number, false)
+  inherited = ChildDefault()
+  expect(inherited.number == inherited.number, true)
+  expect(inherited.number(), 4)
+  explicit = StaticDefault.choose<String>
+  expect(explicit == StaticDefault.choose<String>, true)
+  expect(explicit("static"), "static")
+
+test "default readonly method bridges retain identity":
+  owner = DefaultOwner<int>()
+  view: readonly DefaultOwner<int> = owner
+  first = view.number
+  expect(first == view.number, true)
+  expect(first(), 4)
+  owner.seed = 6
+  expect(first(), 12)
+
+makeDefault(trace: DefaultTrace) -> DefaultOwner<int>:
+  trace.nextValue()
+  return DefaultOwner<int>()
+
+test "default bridge captures nullable receivers once":
+  trace = DefaultTrace()
+  saved = makeDefault(trace).number
+  expect(trace.calls, 1)
+  expect(saved(), 4)
+  expect(saved(), 4)
+  expect(trace.calls, 1)
+  absent: DefaultOwner<int>? = null
+  missingMethod = absent?.number
+  expect(missingMethod, null)
+  owner: DefaultOwner<int>? = DefaultOwner<int>()
+  nullableValue = owner?.number
+  expect(nullableValue!(), 4)
+  expect(nullableValue == owner?.number, true)
+
+class DefaultBase:
+  readonly number(value: int = 1) -> int = value
+class DefaultChild extends DefaultBase:
+  readonly number(value: int = 2) -> int = value * 10
+
+test "defaults follow the selected owner while the body dispatches virtually":
+  child = DefaultChild()
+  base: DefaultBase = child
+  fromBase = base.number
+  fromChild = child.number
+  expect(fromBase(), 10)
+  expect(fromChild(), 20)
+  expect(fromBase(value: 3), 30)
+  expect(fromBase == base.number, true)
+
+interface DefaultContract:
+  readonly number(value: int = 3) -> int = value
+class ContractDefault implements DefaultContract:
+  readonly number(value: int = 4) -> int = value * 10
+
+test "interface defaults keep their static contract":
+  owner = ContractDefault()
+  face: DefaultContract = owner
+  fromInterface = face.number
+  fromConcrete = owner.number
+  expect(fromInterface(), 30)
+  expect(fromConcrete(), 40)

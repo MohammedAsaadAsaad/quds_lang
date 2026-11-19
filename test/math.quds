@@ -217,10 +217,10 @@ group "quds:math":
     expect(pseudoinverse([[2.0, 0.0], [0.0, 4.0]])[1][1], closeTo(0.25, 1.0e-6))
     expect(matrixExp([[0.0, 1.0], [0.0, 0.0]])[0][1], closeTo(1.0, 1.0e-8))
     expect(matrixExp([[0.0, 1.0], [0.0, 0.0]])[1][1], closeTo(1.0, 1.0e-8))
-    area = romberg((x: double) -> x * x, 0.0, 1.0, 5)
+    area = romberg((x: double) -> x * x, 0.0, 1.0, levels: 5)
     expect(area.value, closeTo(1.0 / 3.0, 1.0e-8))
     expect(area.error, lessThan(1.0e-6))
-    expect(gaussLegendre((x: double) -> x * x * x, 0.0, 1.0, 2), closeTo(0.25,
+    expect(gaussLegendre((x: double) -> x * x * x, 0.0, 1.0, points: 2), closeTo(0.25,
     1.0e-9))
     expect(eulerSystem((x: double, y: List<double>) -> [2.0], 0.0, [1.0], 1.0,
     2)[0], 3.0)
@@ -229,7 +229,7 @@ group "quds:math":
     grown = rungeKuttaAdaptive((x: double, y: double) -> y, 0.0, 1.0, 1.0)
     expect(grown, closeTo(e, 1.0e-5))
     edge = solveBoundary((x: double, y: double, yp: double) -> 0.0, 0.0, 0.0,
-    1.0, 1.0, 0.0, 2.0, 4)
+    1.0, 1.0, 0.0, 2.0, steps: 4)
     expect(edge[0], closeTo(0.0, 1.0e-8))
     expect(edge[2], closeTo(0.5, 1.0e-6))
     expect(edge[4], closeTo(1.0, 1.0e-6))
@@ -424,7 +424,7 @@ group "quds:math":
     1.0e-9))
     expect(adaptiveDoubleIntegral((x: double, y: double) -> 1.0, 0.0, 1.0, 0.0,
     1.0), closeTo(1.0, 1.0e-6))
-    expect(gaussLegendre((x: double) -> x * x * x * x * x * x * x * x * x * x * x * x, 0.0, 1.0, 7), closeTo(1.0 / 13.0, 1.0e-8))
+    expect(gaussLegendre((x: double) -> x * x * x * x * x * x * x * x * x * x * x * x, 0.0, 1.0, points: 7), closeTo(1.0 / 13.0, 1.0e-8))
     axis4 = eigenvalues([[1.0, 0.0, 0.0, 0.0], [0.0, 2.0, 0.0, 0.0], [0.0, 0.0,
     3.0, 0.0], [0.0, 0.0, 0.0, 4.0]])
     expect(axis4[3].real, closeTo(4.0, 1.0e-6))

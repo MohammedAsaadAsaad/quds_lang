@@ -2714,6 +2714,26 @@ class Parser {
     return false;
   }
 
+  Parameter lambdaParameter({bool optionalPositional = false}) {
+    final mutable = word('var');
+    if (mutable) take();
+    final parameterName = name();
+    var type = '<infer>';
+    if (match(TokenKind.colon)) type = typeName();
+    final requiredNamed = word('required');
+    if (requiredNamed) take();
+    Expression? defaultValue;
+    if (match(TokenKind.equals)) defaultValue = expression();
+    return Parameter(parameterName.lexeme, type, mutable, parameterName.span,
+        defaultValue: parameterDefault(defaultValue, optionalPositional,
+            requiredNamed, false, parameterName.span),
+        kind: optionalPositional
+            ? ParameterKind.optionalPositional
+            : requiredNamed
+                ? ParameterKind.requiredNamed
+                : null);
+  }
+
   Expression finishLambda(List<Parameter> parameters, SourceSpan span) {
     expect(TokenKind.arrow, '->');
     if (at(TokenKind.colon)) {
@@ -3172,13 +3192,17 @@ class Parser {
         final parameters = <Parameter>[];
         if (!at(TokenKind.rightParen)) {
           do {
-            final mutable = word('var');
-            if (mutable) take();
-            final parameter = name();
-            var type = '<infer>';
-            if (match(TokenKind.colon)) type = typeName();
-            parameters.add(
-                Parameter(parameter.lexeme, type, mutable, parameter.span));
+            if (match(TokenKind.leftBracket)) {
+              if (at(TokenKind.rightBracket)) {
+                fail('An optional parameter group cannot be empty');
+              }
+              do {
+                parameters.add(lambdaParameter(optionalPositional: true));
+              } while (match(TokenKind.comma) && !at(TokenKind.rightBracket));
+              expect(TokenKind.rightBracket, ']');
+            } else {
+              parameters.add(lambdaParameter());
+            }
           } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
         }
         expect(TokenKind.rightParen, ')');

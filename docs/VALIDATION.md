@@ -1,3 +1,23 @@
+# Optional positional gaps and provider-owned constructor defaults — 2026-11-19
+
+Base: `61dc336`. Contract: [QUDS_PARAMETER_FORMS.md](QUDS_PARAMETER_FORMS.md).
+ABI: `provider-defaults-v6`.
+
+| Check | Observed result |
+| --- | --- |
+| Parameter driver | `dart test test/parameter_forms_test.dart`: **22 passed**. Declarations still report 15 `ok` lines. VM and JS print the same 24 lines, including both gap results `16` |
+| Provider constructor | `api.Owner()` runs the provider `_seed()` through `$QudsCtor` and prints `7`, then `4` |
+| Shape execution | Parent synthesis, lambda kinds, and required-named to optional-named widening print `4`, `ok`, `2`, `5`, `3`, `6` |
+| Negative cases | 19 rejection cases, including mixed lambda groups, a dual override, and a positional argument to `name: Type = expr` |
+| ABI cache | A v4 cache is rebuilt to `provider-defaults-v6` |
+| SDK migration | Optional named arguments in `quds:math`, its reference tests, and `bench/memory_workload.quds` are passed by name. Embedded `mathSdkSource` matches `lib/sdk/math.quds` |
+| Analysis | `dart analyze lib bin test`: **No issues found** |
+| Full suite | First complete run after the slice: **722 passed, 4 failed, in 6m19s**. The math-source mismatch and both memory-profiler failures were then fixed and retested (3 memory tests passed; the source match passed). `quds create flutter writes the app in quds` still fails because the local Flutter SDK prefixes widget types (`extends _qNative….StatelessWidget`). That failure is outside this slice |
+
+No rule was marked `complete`. Class method overload Dart names and default-plus-variadic values remain open.
+
+---
+
 # Required named and optional positional metadata — 2026-11-19
 
 Base: `d4851c3`. The handoff was updated before implementation.

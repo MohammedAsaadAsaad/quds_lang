@@ -112,6 +112,42 @@ String providerMethodDefaultBridgeName(
       providerDefaultBridgeName(function),
     ]))).substring(0, 20);
 
+String providerGapBridgeName(FunctionDeclaration function) =>
+    providerDefaultBridgeName(function)
+        .replaceFirst(r'$QudsDefault', r'$QudsGap');
+
+String providerMethodGapBridgeName(
+        ClassDeclaration owner, FunctionDeclaration function) =>
+    providerMethodDefaultBridgeName(owner, function)
+        .replaceFirst(r'$QudsMethodDefault', r'$QudsMethodGap');
+
+String providerConstructorBridgeName(
+        ClassDeclaration type, ConstructorDeclaration constructor) =>
+    r'$QudsCtor' +
+    sha256Hex(utf8.encode(jsonEncode([
+      type.name,
+      constructor.name,
+      for (final parameter in constructor.parameters)
+        [
+          parameter.name,
+          parameter.type,
+          parameter.defaultValue != null,
+          parameter.kind.name
+        ],
+    ]))).substring(0, 20);
+
+/// An earlier optional positional slot can be omitted while a later slot is
+/// supplied. One Dart positional closure cannot represent that gap.
+bool positionalGapPossible(List<Parameter> parameters) {
+  for (var i = 0; i < parameters.length; i++) {
+    if (parameters[i].kind != ParameterKind.optionalPositional) continue;
+    if (parameters.skip(i + 1).any((parameter) => !parameter.variadic)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 class Symbol {
   Symbol(this.name, this.dartName, this.type,
       {this.mutable = false,
@@ -253,6 +289,16 @@ class SemanticModel {
   final providerDefaultMethods = <FunctionDeclaration, ClassDeclaration>{};
   final providerDefaultFunctions = <FunctionDeclaration>{};
   final qudsValueLowerings = <Expression, QudsValueLowering>{};
+
+  /// Imported calls that omit an earlier optional positional slot.
+  final providerGapCalls = <CallExpression>{};
+
+  /// Stored Quds values whose closure was bound to a gap packet.
+  final gapValues = <Symbol>{};
+  final functionValueGapCalls = <CallExpression>{};
+
+  /// Imported constructor calls whose omitted defaults stay in the provider.
+  final constructorGapTargets = <CallExpression, ClassDeclaration>{};
 
   /// Element type packed into the list argument of a variadic function value.
   final functionValueVariadicElements = <CallExpression, String>{};
@@ -1353,7 +1399,9 @@ class Analyzer {
           type);
     }
     if (parent != null && parent.kind != 'interface') {
-      if (type.constructors.isEmpty && parent.constructors.isNotEmpty) {
+      if (type.constructors.isEmpty &&
+          parent.constructors.isNotEmpty &&
+          _synthesizedParentConstructor(type) == null) {
         error(
             'E910',
             'Synthesizing a constructor over explicit parent constructors needs further conformance',
@@ -1751,6 +1799,28 @@ class Analyzer {
           .where((item) => item.name == parameter.name)
           .firstOrNull;
       if (original != null) model.declarations[original] = symbol;
+    }
+    final parameterNames = <String>[];
+    for (final parameter in constructor.parameters) {
+      if (parameter.defaultValue case final value?) {
+        restrictDefault(value, parameterNames.toSet(),
+            constructor.parameters.map((item) => item.name).toSet());
+        final savedExpected = _expected;
+        final expectedType =
+            model.declarations[parameter]?.type ?? parameter.type;
+        _expected = expectedType;
+        final String actual;
+        try {
+          actual = expression(value);
+        } finally {
+          _expected = savedExpected;
+        }
+        if (!_acceptExpected(value, actual, expectedType)) {
+          error('E200',
+              'Default type $actual is incompatible with $expectedType', value);
+        }
+      }
+      parameterNames.add(parameter.name);
     }
     if (constructor.expressionBody case final value?) {
       final returned = expression(value);
@@ -3668,6 +3738,7 @@ class Analyzer {
             fail('Cannot initialize $target with $type', node);
           }
           symbol.type = target;
+          _rememberGapValue(symbol, node.value);
           if (reactive == 'computed' && computedCycle(node.name, node.value)) {
             warn('W007', 'computed dependency cycle', node);
           }
@@ -3741,6 +3812,11 @@ class Analyzer {
           }
           model.references[node] = existing;
           model.assignments.add(node);
+          if (_valueHasGap(node.value)) {
+            model.gapValues.add(existing);
+          } else {
+            model.gapValues.remove(existing);
+          }
           _afterAssignment(
               node.name,
               existing.type,
@@ -3790,6 +3866,7 @@ class Analyzer {
                 node.mode == BindingMode.lateMutable);
         _scope.symbols[node.name] = symbol;
         model.declarations[node] = symbol;
+        _rememberGapValue(symbol, node.value);
       case IfStatement():
         _requireBool(node.condition, 'if condition must be bool');
         _withPromotions(_promotions(node.condition, whenTrue: true),
@@ -5189,7 +5266,7 @@ class Analyzer {
       bounds[actualMap[actual.typeParameters[i].name]!] = right;
     }
     for (var i = 0; i < actual.parameters.length; i++) {
-      if (actual.parameters[i].kind != expected.parameters[i].kind ||
+      if (!_parameterKindFits(expected.parameters[i], actual.parameters[i]) ||
           expected.parameters[i].isNamed &&
               actual.parameters[i].name != expected.parameters[i].name ||
           actual.parameters[i].variadic != expected.parameters[i].variadic ||
@@ -5688,8 +5765,35 @@ class Analyzer {
     final savedPromoted = Map<String, String>.from(_promoted);
     _promoted.clear();
     _scope = _Scope(saved);
+    if (!portableParameterLayout(node.parameters)) {
+      error(
+          'E910',
+          'A function value cannot mix optional positional parameters with named parameters',
+          node);
+    }
+    final parameterNames = <String>[];
     for (final parameter in node.parameters) {
+      if (parameter.defaultValue case final value?) {
+        restrictDefault(value, parameterNames.toSet(),
+            node.parameters.map((item) => item.name).toSet());
+        final savedDefaultExpected = _expected;
+        _expected = model.declarations[parameter]!.type;
+        final String actual;
+        try {
+          actual = expression(value);
+        } finally {
+          _expected = savedDefaultExpected;
+        }
+        if (!_acceptExpected(
+            value, actual, model.declarations[parameter]!.type)) {
+          error(
+              'E200',
+              'Default type $actual is incompatible with ${model.declarations[parameter]!.type}',
+              value);
+        }
+      }
       _scope.symbols[parameter.name] = model.declarations[parameter]!;
+      parameterNames.add(parameter.name);
     }
     final savedDepth = _lambdaDepth;
     final savedAwait = _lambdaAwait;
@@ -5721,9 +5825,23 @@ class Analyzer {
     _promoted
       ..clear()
       ..addAll(savedPromoted);
-    final parameters =
-        node.parameters.map((p) => model.declarations[p]!.type).join(', ');
-    return '($parameters) -> $type';
+    final parts = <String>[];
+    final named = <String>[];
+    for (final parameter in node.parameters) {
+      final declared = model.declarations[parameter]!.type;
+      if (parameter.kind == ParameterKind.requiredNamed) {
+        named.add('${parameter.name}: $declared required');
+      } else if (parameter.kind == ParameterKind.optionalPositional) {
+        parts.add('[${parameter.name}: $declared]');
+      } else if (parameter.defaultValue != null) {
+        named.add('${parameter.name}: $declared = missing');
+      } else if (parameter.name == '_') {
+        parts.add(declared);
+      } else {
+        parts.add('${parameter.name}: $declared');
+      }
+    }
+    return '(${[...parts, ...named].join(', ')}) -> $type';
   }
 
   String _parameterType(String declared) => functionParameterType(declared);
@@ -6063,14 +6181,7 @@ class Analyzer {
       for (final type in parameterTypes) _substitute(type, substitution)
     ];
     final viewed = _readonlyView(raw, result);
-    if (viewed != result) {
-      if (method.parameters.isNotEmpty)
-        error(
-            'E910',
-            'This readonly method value needs a transitive result adapter; declare its readonly result explicitly',
-            node);
-      model.qudsValueResultGuards[node] = viewed;
-    }
+    if (viewed != result) model.qudsValueResultGuards[node] = viewed;
     final exposed = viewed;
     final signature =
         _callableSignature(method.parameters, specialized, exposed);
@@ -8502,11 +8613,19 @@ class Analyzer {
         if (!p.named) omitted = true;
         continue;
       }
-      if (!p.named && omitted)
-        error(
-            'E910',
-            'A later optional positional argument requires earlier values explicitly',
-            node);
+      if (!p.named && omitted) {
+        final callee = node.callee;
+        final capable = callee is Identifier &&
+            model.gapValues.contains(model.references[callee]);
+        if (!capable) {
+          error(
+              'E910',
+              'A later optional positional argument requires earlier values explicitly',
+              node);
+        } else {
+          model.functionValueGapCalls.add(node);
+        }
+      }
       layout.add((p.named ? p.name : null, order[i]));
     }
     model.types[node.callee] = type;
@@ -8801,6 +8920,55 @@ class Analyzer {
         typeArguments: substitution);
   }
 
+  void _rememberGapValue(Symbol symbol, Expression value) {
+    if (_valueHasGap(value)) model.gapValues.add(symbol);
+  }
+
+  bool _valueHasGap(Expression value) {
+    final lowering = model.qudsValueLowerings[value]?.function;
+    if (lowering != null && positionalGapPossible(lowering.parameters)) {
+      return true;
+    }
+    if (value is Identifier) {
+      final origin = model.references[value] ?? _scope.lookup(value.name);
+      return origin != null && model.gapValues.contains(origin);
+    }
+    return false;
+  }
+
+  /// A required named slot may be implemented by an optional named slot.
+  bool _parameterKindFits(Parameter expected, Parameter actual) =>
+      expected.kind == actual.kind ||
+      expected.kind == ParameterKind.requiredNamed &&
+          actual.kind == ParameterKind.optionalNamed &&
+          actual.defaultValue != null &&
+          expected.name == actual.name;
+
+  /// The one unnamed generative parent constructor a child can forward to.
+  /// Several constructors, a factory, a variadic, or a name clash stay out.
+  ConstructorDeclaration? _synthesizedParentConstructor(ClassDeclaration type) {
+    final parentName = type.superclass;
+    if (parentName == null || type.constructors.isNotEmpty) return null;
+    final parent = _typeSymbol(_genericHead(parentName))?.classDeclaration;
+    if (parent == null || parent.kind == 'interface') return null;
+    final unnamed = parent.constructors
+        .where(
+            (constructor) => constructor.name == null && !constructor.factory)
+        .toList();
+    if (unnamed.length != 1) return null;
+    final constructor = unnamed.single;
+    if (constructor.parameters.any((parameter) => parameter.variadic)) {
+      return null;
+    }
+    final names =
+        constructor.parameters.map((parameter) => parameter.name).toSet();
+    if (type.fields.any((field) =>
+        !field.isStatic && !field.isEvent && names.contains(field.name))) {
+      return null;
+    }
+    return constructor;
+  }
+
   String constructClass(CallExpression node, ClassDeclaration type,
       [List<String> explicit = const []]) {
     if (type.modifiers.contains('singleton')) {
@@ -8830,6 +8998,33 @@ class Analyzer {
       final parameters = _ctorParameters(type, constructor);
       return _finishConstruct(node, type, parameters, explicit, constructor);
     }
+    final parentConstructor = _synthesizedParentConstructor(type);
+    if (parentConstructor != null) {
+      final parent =
+          _typeSymbol(_genericHead(type.superclass!))!.classDeclaration!;
+      final substitution = _genericSubstitution(type.superclass!, parent);
+      final parameters = [
+        for (final parameter in parentConstructor.parameters)
+          Parameter(
+              parameter.name,
+              _substitute(
+                  parameter.initializing.isEmpty
+                      ? model.declarations[parameter]?.type ?? parameter.type
+                      : _fieldType(parent, parameter.name, parameter.span),
+                  substitution),
+              parameter.mutable,
+              parameter.span,
+              kind: parameter.kind,
+              defaultValue: parameter.defaultValue,
+              variadic: parameter.variadic,
+              initializing: parameter.initializing),
+        for (final field in type.fields.where((field) =>
+            !field.isStatic && !field.isEvent && field.lazyBody == null))
+          Parameter(field.name, field.type, false, field.span,
+              defaultValue: field.requiredField ? null : field.initializer)
+      ];
+      return _finishConstruct(node, type, parameters, explicit, null);
+    }
     final parameters = <Parameter>[
       for (final field in _fieldsOf(type).where((field) =>
           !field.isStatic && !field.isEvent && field.lazyBody == null))
@@ -8846,16 +9041,6 @@ class Analyzer {
       List<String> explicit,
       ConstructorDeclaration? constructor) {
     final home = model.libraryOf[type] ?? '';
-    if (constructor != null &&
-        home.isNotEmpty &&
-        home != _activeLibrary &&
-        parameters
-            .any((p) => p.defaultValue != null && p.defaultValue is! Literal)) {
-      error(
-          'E910',
-          'Imported computed constructor defaults need a provider-owned constructor bridge',
-          node);
-    }
     final owned = [
       for (final parameter in parameters)
         Parameter(parameter.name, _classMemberType(parameter.type, type),
@@ -8878,6 +9063,12 @@ class Analyzer {
     for (final parameter in instantiated) {
       model.declarations[parameter] =
           Symbol(parameter.name, parameter.name, parameter.type);
+    }
+    if (constructor != null &&
+        home.isNotEmpty &&
+        home != _activeLibrary &&
+        _omitsForeignDefault(node, instantiated)) {
+      model.constructorGapTargets[node] = type;
     }
     applyArguments(node, instantiated, null);
     model.references[node.callee] = type.constructors.isEmpty
@@ -9104,6 +9295,46 @@ class Analyzer {
           FunctionDeclaration function, Map<String, String> found) =>
       _inferGeneric(pattern, actual, found, function.typeParameters);
 
+  bool _omitsForeignDefault(CallExpression node, List<Parameter> parameters) {
+    final seen = List<bool>.filled(parameters.length, false);
+    var positional = 0;
+    var named = false;
+    for (final argument in node.arguments) {
+      final int target;
+      if (argument.name == null) {
+        if (named) return false;
+        while (positional < parameters.length &&
+            _skipsPositional(parameters[positional])) {
+          positional++;
+        }
+        if (parameters.isNotEmpty &&
+            parameters.last.variadic &&
+            positional >= parameters.length - 1) {
+          continue;
+        }
+        target = positional++;
+      } else {
+        named = true;
+        target = parameters
+            .indexWhere((parameter) => parameter.name == argument.name);
+      }
+      if (target < 0 || target >= parameters.length || seen[target]) {
+        return false;
+      }
+      seen[target] = true;
+    }
+    for (var i = 0; i < parameters.length; i++) {
+      final value = parameters[i].defaultValue;
+      if (!seen[i] && value != null && value is! Literal) return true;
+    }
+    return false;
+  }
+
+  /// `name: Type required` and `name: Type = expr` are named-only.
+  bool _skipsPositional(Parameter parameter) =>
+      parameter.kind == ParameterKind.requiredNamed ||
+      parameter.kind == ParameterKind.optionalNamed;
+
   bool argumentsMatch(CallExpression node, List<Parameter> parameters,
       {required bool commit,
       bool allowConversions = false,
@@ -9131,7 +9362,7 @@ class Analyzer {
       if (argument.name == null) {
         if (named) return false;
         while (positional < parameters.length &&
-            parameters[positional].kind == ParameterKind.requiredNamed) {
+            _skipsPositional(parameters[positional])) {
           positional++;
         }
         if (parameters.isNotEmpty &&
@@ -9284,7 +9515,7 @@ class Analyzer {
         if (named)
           fail('Positional arguments must precede named arguments', argument);
         while (positional < parameters.length &&
-            parameters[positional].kind == ParameterKind.requiredNamed) {
+            _skipsPositional(parameters[positional])) {
           positional++;
         }
         if (parameters.isNotEmpty &&
@@ -9337,10 +9568,8 @@ class Analyzer {
         if (parameters[i].kind == ParameterKind.optionalPositional &&
             order[i] == -1 &&
             order.skip(i + 1).any((index) => index >= 0)) {
-          error(
-              'E910',
-              'An imported optional positional gap needs the provider packet ABI; supply earlier values explicitly',
-              node);
+          model.providerGapCalls.add(node);
+          break;
         }
       }
     }
@@ -9348,6 +9577,10 @@ class Analyzer {
       if (parameters[i].variadic || order[i] != -1) continue;
       final fallback = parameters[i].defaultValue;
       if (fallback == null) fail('Missing required argument', node);
+      if (model.constructorGapTargets.containsKey(node) &&
+          fallback is! Literal) {
+        continue;
+      }
       final savedDefaultExpected = _expected;
       _expected = parameters[i].type;
       final String fallbackType;

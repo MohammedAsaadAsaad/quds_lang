@@ -43,5 +43,5 @@ class CounterWithDefault:
 test "method defaults are checked in their declaring class scope":
   counter = CounterWithDefault()
   counter.add()
-  counter.add(4)
+  counter.add(value: 4)
   expect(counter.total, 5)

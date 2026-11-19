@@ -53,30 +53,34 @@ constructor forms are covered; general computed constructor defaults are not cer
 
 ## Explicit limits and next work
 
-- **Known specification conflict:** direct declaration calls still accept a positional
-  argument for `name: Type = expression`. The AST records `optionalNamed`, and stored
-  values enforce named-only. Removing the legacy exception requires an SDK/example
-  migration audit; this is not a language-design change.
-- Optional positional and named groups cannot share one supported Dart function
-  value; taking such a value is E910. Required positional parameters following
-  defaults and default-plus-variadic values retain their E910 boundary.
-- A stored optional positional value cannot omit an earlier slot and supply a later
-  one; this is E910. Imported direct optional positional gaps are also E910 until a
-  provider packet protocol can represent them safely. Supply preceding values
-  explicitly. Same-library direct calls can resolve the omitted prefix locally.
-- Imported explicit constructors with non-literal defaults need a provider-owned
-  constructor protocol and are rejected with E910. Constructor default scope,
-  dependency and exactly-once certification needs dedicated follow-up.
-- Override parameter kinds currently need an exact kind match; safe kind-widening
-  (such as a required named slot implemented as optional named) is not certified.
-  This is a conformance gap, not a change to the approved override rules.
-- Lambda declaration parameter forms, broader operator/constructor shapes, SDK
-  section bridge support, complex intersections and foreign implementors remain
-  separate work. No generic-callback or full 115-rule certification is claimed.
+- Direct calls of `name: Type = expression` are named-only, including the SDK.
+  A leading dual parameter such as `normalCdf(x)` still accepts a positional
+  argument. Optional parameters that follow it are passed by name.
+- Optional positional and named groups cannot share one Dart function value;
+  taking such a value, including a lambda, is E910. A required parameter after
+  an optional, and a default-plus-variadic value, stay E910.
+- An imported or stored optional positional value may omit an earlier slot and
+  supply a later one. The provider owns the defaults in `$QudsGap` /
+  `$QudsMethodGap` packets `(List<Object?>, List<bool>)`. The stored value
+  remains the positional tear-off; an `Expando` recovers the packet. An opaque
+  Dart function value still reports E910. Same-library direct calls evaluate
+  the omitted prefix locally.
+- An imported constructor with a non-literal omitted default calls the provider
+  static `$QudsCtor...`. Literal defaults stay at the call site. A child with
+  no constructor forwards exactly one unnamed generative parent constructor;
+  a named-only, factory, variadic, or field-name collision stays E910.
+  A private parent default copied by synthesis is not yet provider-owned.
+- A required named parameter may be implemented by an optional named parameter
+  with the same name and a default. A dual parameter does not satisfy a
+  required named parameter.
+- Lambda parameters accept `name: Type required`, `[name: Type]`, and defaults,
+  including a default that reads an earlier parameter. Class method overload
+  Dart names, SDK section bridges, intersections and foreign implementors remain
+  separate work. No full 115-rule certification is claimed.
 
-ABI `provider-defaults-v5` includes parameter kinds in bridge identities. The CLI
-invalidates v4 caches automatically, including valid-checksum output with the new
-bridges removed. Evidence: `test/parameter_forms.quds`, its VM/JS fixture and golden,
-`test/fixtures/parameter_forms/provider.quds`, `test/parameter_forms_test.dart` and
-the existing value-adapter regression. Exact results are in [VALIDATION.md](VALIDATION.md);
-the next-agent handoff is [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+ABI `provider-defaults-v6` adds gap and constructor-default bridges. The CLI
+invalidates v5 and v4 caches automatically, including valid-checksum output.
+Evidence: `test/parameter_forms.quds`, its VM/JS fixture and golden,
+`test/fixtures/parameter_forms/provider.quds` and `test/parameter_forms_test.dart`.
+Exact results are in [VALIDATION.md](VALIDATION.md); the handoff is
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).

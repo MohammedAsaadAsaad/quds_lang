@@ -51,24 +51,41 @@ void main() {
     expect(output.readAsStringSync(), contains(r' $QudsDefault'));
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v5');
+          'provider-defaults-v6');
     }
   });
 
-  test('imported computed constructor defaults report the provider boundary',
-      () {
+  test('imported computed constructor defaults stay in the provider', () async {
     final root =
         Directory.systemTemp.createTempSync('quds-constructor-boundary-');
     addTearDown(() => root.deleteSync(recursive: true));
     File('${root.path}/provider.quds').writeAsStringSync(
-        '_seed() -> int = 7\nclass Owner:\n  value: int\n  init([this.value: int = _seed()]):\n    require true\n');
-    final file = '${root.path}/main.quds';
-    expect(
-        () => compile('use provider as api\nmain():\n  owner = api.Owner()\n',
-            file: file),
-        throwsA(isA<CompilerException>()
-            .having((error) => error.code, 'boundary', 'E910')
-            .having((error) => error.span.file, 'consumer', file)));
+        '_seed() -> int = 7\nclass Owner:\n  value: int\n  init([this.value: int = _seed()]):\n    require value >= 0\n');
+    final file = File('${root.path}/main.quds')
+      ..writeAsStringSync(
+          'use provider as api\nmain():\n  print api.Owner().value\n  print api.Owner(4).value\n');
+    final compiled = compile(file.readAsStringSync(), file: file.path);
+    expect(compiled.dart, contains(r'$QudsCtor'));
+    final provider = File('${root.path}/provider.quds');
+    final implementation =
+        compile(provider.readAsStringSync(), file: provider.path);
+    expect(implementation.dart, contains(r'$QudsCtor'));
+    expect(implementation.dart, contains('_q0()'));
+    expect(compiled.dart, isNot(contains('_q0')));
+    expect(compiled.dart, isNot(contains('_seed')));
+    final output = File('${root.path}/main.dart')
+      ..writeAsStringSync(compiled.dart);
+    writeSdkBundles(root.path, compiled);
+    writeSdkBundles(root.path, implementation);
+    final emitted = File('${root.path}/provider.dart')
+      ..writeAsStringSync(relocateGeneratedLibraries(implementation, '').dart);
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', output.path, emitted.path]);
+    expect(analysis.exitCode, 0,
+        reason: '${analysis.stdout}${analysis.stderr}');
+    final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
+    expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
+    expect(vm.stdout, '7\n4\n');
   });
 
   final negative = <String, String>{
@@ -91,13 +108,14 @@ void main() {
         'bad(...values: int = 1) -> int = values.length\nmain():\n  print 1\n',
     'variadic bracket':
         'bad([...values: int]) -> int = values.length\nmain():\n  print 1\n',
-    'imported positional gap': 'main():\n  print api.optional(other: 2)\n',
-    'stored positional gap':
-        'main():\n  saved = api.optional\n  print saved(other: 2)\n',
     'mixed value groups':
         'mixed([value: int = 1], amount: int required) -> int = value + amount\nmain():\n  saved = mixed\n',
     'override kind':
         'class Parent:\n  read(value: int required) -> int = value\nclass Child extends Parent:\n  read(value: int) -> int = value\nmain():\n  print 1\n',
+    'optional named positional':
+        'bad(value: int = 1) -> int = value\nmain():\n  print bad(2)\n',
+    'mixed lambda groups':
+        'main():\n  saved = (value: int = 1, [other: int = 2]) -> value + other\n',
   };
   for (final entry in negative.entries) {
     test('parameter forms reject ${entry.key} at Quds coordinates', () {
@@ -110,6 +128,48 @@ void main() {
               .having((error) => error.span.file, 'source', file)));
     });
   }
+
+  test('parent synthesis, lambda kinds, and override widening execute',
+      () async {
+    final source = '''
+class Parent:
+  value: int
+  init(this.value: int required):
+    require value > 0
+class Child extends Parent:
+  tag: String required
+class Reader:
+  read(value: int required) -> int = value
+class Wider extends Reader:
+  read(value: int = 2) -> int = value
+choose(value: int, pick: (item: int, [fallback: int]) -> int) -> int = pick(value)
+main():
+  child = Child(value: 4, tag: "ok")
+  print child.value
+  print child.tag
+  print Wider().read()
+  parent: Reader = Wider()
+  print parent.read(value: 5)
+  print choose(3, (item: int, [fallback: int = item]) -> fallback)
+  labeled: (value: int required) -> int = (value: int required) -> value
+  print labeled(value: 6)
+''';
+    final file = File('test/parameter_shape.quds').absolute;
+    final compiled = compile(source, file: file.path);
+    final root = Directory.systemTemp.createTempSync('quds-parameter-shape-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final output = File('${root.path}/main.dart')
+      ..writeAsStringSync(compiled.dart);
+    writeSdkBundles(root.path, compiled);
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', output.path]);
+    expect(analysis.exitCode, 0,
+        reason: '${analysis.stdout}${analysis.stderr}\n${compiled.dart}');
+    final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
+    expect(vm.exitCode, 0,
+        reason: '${vm.stdout}${vm.stderr}\n${compiled.dart}');
+    expect(vm.stdout, '4\nok\n2\n5\n3\n6\n');
+  });
 
   test('parameter forms generate deterministic Dart and execute on VM and JS',
       () async {
@@ -140,7 +200,7 @@ void main() {
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
     expect(vm.stdout,
-        '8\ntrue\n14\n10\n11\ntrue\nnull\n3\nQuds\n11\n6\ntrue\nsafe\n3\ntrue\n70\n20\ntrue\n70\n9\n8\nleft:4\n');
+        '8\ntrue\n14\n10\n11\ntrue\n16\n16\nnull\n3\nQuds\n11\n6\ntrue\nsafe\n3\ntrue\n70\n20\ntrue\n70\n9\n8\nleft:4\n');
     final js = '${root.path}/main.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);

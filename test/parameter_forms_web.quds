@@ -8,6 +8,8 @@ main():
   print optional(5)
   print optional(value: 5, other: 6)
   print optional == api.optional
+  print optional(other: 9)
+  print api.optional(other: 9)
   nullable = api.nullable
   print nullable()
   print nullable(3)

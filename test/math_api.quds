@@ -64,7 +64,7 @@ group "public math API through Quds":
     expect(complexMatmul(left, right)[0][0].real, 5.0)
     expect(complexMatmul(left, right)[0][0].imag, 5.0)
   test "adaptive ODE system through a typed Quds callback":
-    solution = rungeKuttaAdaptiveSystem((x: double, y: List<double>) -> [y[0]], 0.0, [1.0], 1.0, 1.0e-9)
+    solution = rungeKuttaAdaptiveSystem((x: double, y: List<double>) -> [y[0]], 0.0, [1.0], 1.0, tolerance: 1.0e-9)
     expect(solution[0], closeTo(2.718281828459045, 1.0e-8))
   test "previously Dart-only samplers follow theoretical moments":
     expect(_sampleMean((r: Random) -> exponentialSample(r, 2.0)), closeTo(0.5, 0.03))

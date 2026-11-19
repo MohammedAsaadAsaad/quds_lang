@@ -40,6 +40,7 @@ class DartEmitter {
   var _useGroup = false;
   var _useOptional = false;
   var _useDefaultOmitted = false;
+  var _useGap = false;
   final _defaultBridges = <FunctionDeclaration>{};
   var _defaultOmitted = r'_$qudsDefaultOmitted';
   var _defaultOmittedClass = r'_$QudsDefaultOmitted';
@@ -541,6 +542,15 @@ class DartEmitter {
           'class $_defaultOmittedClass { const $_defaultOmittedClass(); }\n'
           'const $_defaultOmitted = $_defaultOmittedClass();');
     }
+    if (_useGap) {
+      helpers.writeln(
+          'final _\$qudsGaps = Expando<Object? Function(List<Object?>, List<bool>)>();\n'
+          'void _\$qudsBindGap(Object value, Object? Function(List<Object?>, List<bool>) gap) {\n'
+          '  _\$qudsGaps[value] = gap;\n'
+          '}\n'
+          'T _\$qudsCallGap<T>(Object value, List<Object?> inputs, List<bool> present) =>\n'
+          '    _\$qudsGaps[value]!(inputs, present) as T;');
+    }
     if (_useOptional) {
       helpers.writeln('class Optional<T> {\n'
           '  final bool isPresent;\n'
@@ -996,9 +1006,52 @@ class DartEmitter {
       final generics = _typeParameters(node.typeParameters, const []);
       line('${node.isStatic ? 'static ' : ''}$returned '
           '${_defaultBridgeName(node)}$generics$body');
+      _emitConcreteGap(node);
     } finally {
       _openGenerics = savedGenerics;
     }
+  }
+
+  void _emitConcreteGap(FunctionDeclaration node) {
+    if (!positionalGapPossible(node.parameters)) return;
+    final owner = model.providerDefaultMethods[node];
+    final name = owner == null
+        ? providerGapBridgeName(node)
+        : providerMethodGapBridgeName(owner, node);
+    final symbol = model.declarations[node]!;
+    final returned = _dartType(symbol.type);
+    final generics = _typeParameters(node.typeParameters, const []);
+    final saved = _names;
+    _names = {..._names};
+    final statements = <String>[];
+    final arguments = <String>[];
+    try {
+      for (var i = 0; i < node.parameters.length; i++) {
+        final parameter = node.parameters[i];
+        final declared = model.declarations[parameter]!;
+        final dartType = _dartType(declared.type);
+        final slot = '_qslot$i';
+        final input = '\$qInputs[$i]';
+        final supplied =
+            declared.type == 'Object?' || declared.type == 'dynamic'
+                ? input
+                : '$input as $dartType';
+        final resolved = parameter.defaultValue == null
+            ? supplied
+            : '\$qPresent[$i] ? $supplied : ${expression(parameter.defaultValue!)}';
+        statements.add('final $dartType $slot = $resolved;');
+        _names[declared.dartName] = slot;
+        arguments.add(parameter.isNamed ? '${parameter.name}: $slot' : slot);
+      }
+    } finally {
+      _names = saved;
+    }
+    final invoke = node.isStatic || owner == null
+        ? symbol.dartName
+        : 'this.${symbol.dartName}';
+    line('${node.isStatic ? 'static ' : ''}$returned $name$generics'
+        '(List<Object?> \$qInputs, List<bool> \$qPresent) '
+        '{ ${statements.join(' ')} return $invoke(${arguments.join(', ')}); }');
   }
 
   String _interfaceSignature(FunctionDeclaration method,
@@ -1037,6 +1090,11 @@ class DartEmitter {
       line(
           '${_dartType(model.declarations[method]!.type)} ${_defaultBridgeName(method)}'
           '${_typeParameters(method.typeParameters)}(${_interfaceSignature(method, declaration: true)});');
+      if (positionalGapPossible(method.parameters)) {
+        line(
+            '${_dartType(model.declarations[method]!.type)} ${providerMethodGapBridgeName(model.providerDefaultMethods[method]!, method)}'
+            '${_typeParameters(method.typeParameters)}(List<Object?> \$qInputs, List<bool> \$qPresent);');
+      }
     } finally {
       _openGenerics = saved;
     }
@@ -1177,6 +1235,21 @@ class DartEmitter {
             '$header { final \$qInterfaceValues = $resolver$resolverTypes(this, '
             '<Object?>[${arguments.join(', ')}], <bool>[${present.join(', ')}]); '
             '${returned == 'void' ? '' : 'return '}$invoke; }');
+        if (positionalGapPossible(method.parameters)) {
+          final gap =
+              '${providerMethodGapBridgeName(owner, method)}${_typeParameters(plan.typeParameters)}';
+          final gapHeader =
+              '$returned $gap(List<Object?> \$qInputs, List<bool> \$qPresent)';
+          if (proxy && !isReadonlyMethod(method)) {
+            line("$gapHeader => throw UnsupportedError('readonly method');");
+          } else {
+            final gapInvoke =
+                'this.${method.name}$typeArgs(${values.join(', ')})';
+            line('$gapHeader { final \$qInterfaceValues = '
+                '$resolver$resolverTypes(this, \$qInputs, \$qPresent); '
+                '${returned == 'void' ? '' : 'return '}$gapInvoke; }');
+          }
+        }
       } finally {
         _openGenerics = saved;
       }
@@ -2050,11 +2123,15 @@ class DartEmitter {
       return;
     }
     final inherited = _inherited(node);
+    final parentConstructor =
+        node.constructors.isEmpty ? _synthesizedParentConstructor(node) : null;
     if (node.modifiers.contains('singleton')) {
       line('${node.name}._();');
       line('static ${node.name}? _instance;');
       line(
           'static ${node.name} get instance => _instance ??= ${node.name}._();');
+    } else if (parentConstructor != null) {
+      _emitSynthesizedParentConstructor(node, parentConstructor);
     } else if (node.constructors.isEmpty) {
       final initializers = <String>[];
       final params = <String>[
@@ -2163,6 +2240,7 @@ class DartEmitter {
           'int get hashCode => $_readonlyRuntime.valueHash(this, <Object?>[$names]);');
     }
     if (supportsReadonlyClass(model, node)) _emitReadonlyDispatch(node);
+    _emitConstructorBridges(node);
     _depth--;
     line('}');
     if (supportsReadonlyClass(model, node)) _emitReadonlyProxy(node);
@@ -2229,6 +2307,129 @@ class DartEmitter {
       field.visibility == 'private' && !field.name.startsWith('_')
           ? '_${field.name}'
           : field.name;
+
+  ConstructorDeclaration? _synthesizedParentConstructor(ClassDeclaration node) {
+    final parentName = node.superclass;
+    if (parentName == null) return null;
+    final parent = _classes[_genericHead(parentName)];
+    if (parent == null || parent.kind == 'interface') return null;
+    final unnamed = parent.constructors
+        .where(
+            (constructor) => constructor.name == null && !constructor.factory)
+        .toList();
+    if (unnamed.length != 1) return null;
+    final constructor = unnamed.single;
+    if (constructor.parameters.any((parameter) => parameter.variadic)) {
+      return null;
+    }
+    final names =
+        constructor.parameters.map((parameter) => parameter.name).toSet();
+    if (node.fields.any((field) =>
+        !field.isStatic && !field.isEvent && names.contains(field.name))) {
+      return null;
+    }
+    return constructor;
+  }
+
+  void _emitSynthesizedParentConstructor(
+      ClassDeclaration node, ConstructorDeclaration parent) {
+    final owner = _classes[_genericHead(node.superclass!)];
+    final substitution = <String, String>{};
+    final spec = node.superclass!;
+    final open = spec.indexOf('<');
+    if (owner != null &&
+        open > 0 &&
+        spec.endsWith('>') &&
+        owner.typeParameters.isNotEmpty) {
+      final args = splitTypeList(spec.substring(open + 1, spec.length - 1));
+      if (args.length == owner.typeParameters.length) {
+        for (var i = 0; i < args.length; i++) {
+          substitution[owner.typeParameters[i].name] = args[i];
+        }
+      }
+    }
+    final names = <String>[];
+    final arguments = <String>[];
+    for (final parameter in parent.parameters) {
+      final declared = parameter.initializing.isEmpty
+          ? model.declarations[parameter]?.type ?? parameter.type
+          : (owner?.fields
+                  .where((field) => field.name == parameter.name)
+                  .firstOrNull
+                  ?.type ??
+              parameter.type);
+      final type = _dartType(substituteBridgeType(declared, substitution));
+      final required = parameter.defaultValue == null &&
+              parameter.kind != ParameterKind.optionalPositional
+          ? 'required '
+          : '';
+      final value = parameter.defaultValue == null
+          ? ''
+          : ' = ${expression(parameter.defaultValue!)}';
+      names.add('$required$type ${parameter.name}$value');
+      arguments.add(parameter.name);
+    }
+    final initializers = <String>[];
+    for (final field in node.fields.where((field) =>
+        !field.isStatic && !field.isEvent && field.lazyBody == null)) {
+      names.add(_constructorParameter(field, initializers));
+    }
+    if (arguments.isNotEmpty) {
+      initializers.insert(0, 'super(${arguments.join(', ')})');
+    }
+    final tail = initializers.isEmpty ? '' : ' : ${initializers.join(', ')}';
+    final list = names.join(', ');
+    line(list.isEmpty ? '${node.name}()$tail;' : '${node.name}({$list})$tail;');
+  }
+
+  void _emitConstructorBridges(ClassDeclaration node) {
+    for (final constructor in node.constructors) {
+      if (constructor.factory ||
+          constructor.parameters.every((parameter) =>
+              parameter.defaultValue == null ||
+              parameter.defaultValue is Literal)) {
+        continue;
+      }
+      final symbolType = model.declarations[node]?.type ?? node.name;
+      final returned = node.typeParameters.isEmpty
+          ? node.name
+          : '${node.name}<${node.typeParameters.map((p) => p.name).join(', ')}>';
+      final name = providerConstructorBridgeName(node, constructor);
+      final generics = _typeParameters(node.typeParameters, const []);
+      final saved = _names;
+      _names = {..._names};
+      final statements = <String>[];
+      final arguments = <String>[];
+      try {
+        for (var i = 0; i < constructor.parameters.length; i++) {
+          final parameter = constructor.parameters[i];
+          final declared =
+              model.declarations[parameter]?.type ?? parameter.type;
+          final dartType = _dartType(declared == '<field>'
+              ? node.fields
+                      .where((field) => field.name == parameter.name)
+                      .firstOrNull
+                      ?.type ??
+                  symbolType
+              : declared);
+          final input = '\$qInputs[$i]';
+          final supplied =
+              '\$qPresent[$i] ? $input as $dartType : ${parameter.defaultValue == null ? 'null as $dartType' : expression(parameter.defaultValue!)}';
+          final slot = '_qctor$i';
+          statements.add('final $dartType $slot = $supplied;');
+          arguments.add(slot);
+        }
+      } finally {
+        _names = saved;
+      }
+      final ctor = constructor.name == null
+          ? node.name
+          : '${node.name}.${constructor.name}';
+      line('static $returned $name$generics'
+          '(List<Object?> \$qInputs, List<bool> \$qPresent) '
+          '{ ${statements.join(' ')} return $ctor${node.typeParameters.isEmpty ? '' : '<${node.typeParameters.map((p) => p.name).join(', ')}>'}(${arguments.join(', ')}); }');
+    }
+  }
 
   String _constructorParameter(
       FieldDeclaration field, List<String> initializers) {
@@ -3639,6 +3840,8 @@ class DartEmitter {
 
   String _finishValue(Expression node, String value) {
     final guard = model.qudsValueResultGuards[node];
+    final parameters = model.qudsValueLowerings[node]?.function.parameters;
+    if (parameters != null && parameters.isNotEmpty) return value;
     if (guard == null || !_emittingValueGuard.add(node)) return value;
     try {
       final call = '($value)()';
@@ -3675,11 +3878,23 @@ class DartEmitter {
       } else if (node.nullAware) {
         final receiver = '_qrecv${_temps++}';
         final type = _dartType(nullableType(model.types[node.object]!));
-        final body = _valueAdapter('$receiver.$method', lowering);
+        final body = _attachGap(
+            _valueAdapter('$receiver.$method', lowering,
+                resultGuard: function.parameters.isEmpty
+                    ? null
+                    : model.qudsValueResultGuards[node]),
+            function,
+            '$receiver.$method');
         return '(($type $receiver) => $receiver == null ? null : $body)(${expression(node.object)})';
       } else {
         final receiver = '_qrecv${_temps++}';
-        final body = _valueAdapter('$receiver.$method', lowering);
+        final body = _attachGap(
+            _valueAdapter('$receiver.$method', lowering,
+                resultGuard: function.parameters.isEmpty
+                    ? null
+                    : model.qudsValueResultGuards[node]),
+            function,
+            '$receiver.$method');
         return '((${_dartType(model.types[node.object]!)} $receiver) => $body)(${expression(node.object)})';
       }
     } else {
@@ -3689,11 +3904,64 @@ class DartEmitter {
               ? _identifier(node)
               : expression(node is TypeApplication ? node.callee : node);
     }
-    return _valueAdapter(target, lowering);
+    return _attachGap(
+        _valueAdapter(target, lowering,
+            resultGuard: function.parameters.isEmpty
+                ? null
+                : model.qudsValueResultGuards[node]),
+        function,
+        target);
+  }
+
+  String _attachGap(
+      String value, FunctionDeclaration function, String implementation) {
+    if (!positionalGapPossible(function.parameters)) return value;
+    _useGap = true;
+    final held = '_qgapv${_temps++}';
+    final gap = _defaultBridges.contains(function)
+        ? value
+            .replaceFirst(r'$QudsMethodDefault', r'$QudsMethodGap')
+            .replaceFirst(r'$QudsDefault', r'$QudsGap')
+        : _localGapClosure(function, implementation);
+    return '(() { final $held = $value; _\$qudsBindGap($held, $gap); return $held; })()';
+  }
+
+  String _localGapClosure(FunctionDeclaration function, String target) {
+    final saved = _names;
+    _names = {..._names};
+    final statements = <String>[];
+    final arguments = <String>[];
+    try {
+      for (var i = 0; i < function.parameters.length; i++) {
+        final parameter = function.parameters[i];
+        final declared = model.declarations[parameter]!;
+        final dartType = _dartType(declared.type);
+        final slot = '_qlocal$i${_temps++}';
+        final input = '\$qInputs[$i]';
+        final supplied =
+            declared.type == 'Object?' || declared.type == 'dynamic'
+                ? input
+                : '$input as $dartType';
+        final resolved = parameter.defaultValue == null
+            ? supplied
+            : '\$qPresent[$i] ? $supplied : ${expression(parameter.defaultValue!)}';
+        statements.add('final $dartType $slot = $resolved;');
+        _names[declared.dartName] = slot;
+        arguments.add(parameter.isNamed ? '${parameter.name}: $slot' : slot);
+      }
+    } finally {
+      _names = saved;
+    }
+    final returned = _dartType(model.declarations[function]!.type);
+    final invocation = '$target(${arguments.join(', ')})';
+    final tail = returned == 'void'
+        ? '$invocation; return null;'
+        : 'return $invocation;';
+    return '((List<Object?> \$qInputs, List<bool> \$qPresent) { ${statements.join(' ')} $tail })';
   }
 
   String _valueAdapter(String target, QudsValueLowering lowering,
-      {bool declaration = false}) {
+      {bool declaration = false, String? resultGuard}) {
     final function = lowering.function;
     final hidden = <String>[];
     for (var i = 0; i < function.parameters.length; i++) {
@@ -3703,9 +3971,13 @@ class DartEmitter {
     final arguments = [...lowering.typeArguments, ...hidden];
     if (arguments.isNotEmpty)
       target = '$target<${arguments.map(_dartType).join(', ')}>';
-    if (!declaration && _defaultBridges.contains(function)) return target;
-    if (function.parameters.every((parameter) => !parameter.needsAdapter))
+    if (!declaration &&
+        _defaultBridges.contains(function) &&
+        resultGuard == null) return target;
+    if (resultGuard == null &&
+        function.parameters.every((parameter) => !parameter.needsAdapter)) {
       return target;
+    }
     final required = <String>[];
     final optional = <String>[];
     final optionalPositional = <String>[];
@@ -3753,7 +4025,11 @@ class DartEmitter {
         if (optional.isNotEmpty) '{${optional.join(', ')}}',
         if (optionalPositional.isNotEmpty) '[${optionalPositional.join(', ')}]',
       ].join(', ');
-      return '($signature) { ${statements.join(' ')} return $target(${passed.join(', ')}); }';
+      final invocation = '$target(${passed.join(', ')})';
+      final guarded = resultGuard == null
+          ? invocation
+          : _readonlyGuard(resultGuard, invocation);
+      return '($signature) { ${statements.join(' ')} return $guarded; }';
     } finally {
       _names = savedNames;
     }
@@ -3892,6 +4168,9 @@ class DartEmitter {
   String _lambda(Lambda node) {
     final savedReturn = _returnView;
     _returnView = null;
+    if (node.parameters.any((parameter) => parameter.needsAdapter)) {
+      return _shapedLambda(node, savedReturn);
+    }
     final parameters = node.parameters
         .map((p) =>
             '${_dartType(model.declarations[p]!.type)} ${model.declarations[p]!.dartName}')
@@ -3911,6 +4190,77 @@ class DartEmitter {
     _depth = savedDepth;
     _returnView = savedReturn;
     return '(($parameters) $async{\n$body})';
+  }
+
+  String _shapedLambda(Lambda node, String? savedReturn) {
+    try {
+      final required = <String>[];
+      final optional = <String>[];
+      final optionalPositional = <String>[];
+      final setup = <String>[];
+      final savedNames = _names;
+      _names = {..._names};
+      try {
+        for (final parameter in node.parameters) {
+          final symbol = model.declarations[parameter]!;
+          final dartType = _dartType(symbol.type);
+          final dartName = symbol.dartName;
+          if (parameter.kind == ParameterKind.requiredNamed) {
+            optional.add('required $dartType ${parameter.name}');
+            _names[dartName] = parameter.name;
+          } else if (parameter.kind == ParameterKind.optionalNamed ||
+              parameter.kind == ParameterKind.optionalPositional) {
+            _useDefaultOmitted = true;
+            final slot = parameter.name;
+            (parameter.kind == ParameterKind.optionalPositional
+                    ? optionalPositional
+                    : optional)
+                .add('Object? $slot = $_defaultOmitted');
+            final resolved = '_qdefault${_temps++}';
+            final fallback = parameter.defaultValue == null
+                ? 'null'
+                : expression(parameter.defaultValue!);
+            final supplied =
+                symbol.type == 'Object?' || symbol.type == 'dynamic'
+                    ? slot
+                    : '$slot as $dartType';
+            setup.add(
+                'final $dartType $resolved = identical($slot, $_defaultOmitted) ? $fallback : $supplied');
+            _names[dartName] = resolved;
+          } else {
+            required.add('$dartType $dartName');
+            _names[dartName] = dartName;
+          }
+        }
+        final signature = [
+          ...required,
+          if (optional.isNotEmpty) '{${optional.join(', ')}}',
+          if (optionalPositional.isNotEmpty)
+            '[${optionalPositional.join(', ')}]',
+        ].join(', ');
+        final async = model.asyncLambdas.contains(node) ? 'async ' : '';
+        if (node.expressionBody case final value?) {
+          final text = expression(value);
+          final prelude = setup.isEmpty ? '' : '${setup.join('; ')}; ';
+          return '(($signature) $async{ $prelude return $text; })';
+        }
+        final savedDepth = _depth;
+        _depth = 0;
+        final body = _captureBlock(() {
+          for (final statement in setup) {
+            line('$statement;');
+          }
+          _hoistOnce(node.body);
+          statements(node.body!);
+        });
+        _depth = savedDepth;
+        return '(($signature) $async{\n$body})';
+      } finally {
+        _names = savedNames;
+      }
+    } finally {
+      _returnView = savedReturn;
+    }
   }
 
   String _map(MapExpression node) {
@@ -4242,7 +4592,94 @@ class DartEmitter {
     return '((${parameters.join(', ')}) => $target(${arguments((i) => values[i])}))(${inputs.join(', ')})';
   }
 
+  String _packetCall(
+      CallExpression node, String target, List<int> order, String returned,
+      {required bool gap}) {
+    final lines = <String>[];
+    final temps = <String>[];
+    for (var i = 0; i < node.arguments.length; i++) {
+      final temp = '_qpk${_temps++}';
+      temps.add(temp);
+      lines.add('final $temp = ${expression(node.arguments[i].value)};');
+    }
+    final inputs = <String>[];
+    final present = <String>[];
+    for (final index in order) {
+      if (index < 0) {
+        inputs.add('null');
+        present.add('false');
+      } else {
+        inputs.add(temps[index]);
+        present.add('true');
+      }
+    }
+    final call = gap
+        ? '_\$qudsCallGap<$returned>($target, <Object?>[${inputs.join(', ')}], <bool>[${present.join(', ')}])'
+        : '$target(<Object?>[${inputs.join(', ')}], <bool>[${present.join(', ')}])';
+    if (gap) _useGap = true;
+    final result = returned == 'void' ? call : 'return $call';
+    return '(() { ${lines.join(' ')} $result; })()';
+  }
+
+  String _providerGapCall(
+      CallExpression node,
+      String target,
+      MemberAccess? member,
+      FunctionDeclaration function,
+      List<Parameter> parameters,
+      List<int> order) {
+    final owner = model.providerDefaultMethods[function];
+    final gapName = owner == null
+        ? providerGapBridgeName(function)
+        : providerMethodGapBridgeName(owner, function);
+    final typeStart = target.indexOf('<');
+    final plain = typeStart < 0 ? target : target.substring(0, typeStart);
+    final suffix = typeStart < 0 ? '' : target.substring(typeStart);
+    final dot = plain.lastIndexOf('.');
+    final prefix = dot < 0 ? '' : plain.substring(0, dot + 1);
+    final bridge = '$prefix$gapName$suffix';
+    return _packetCall(
+        node, bridge, order, _dartType(model.types[node] ?? 'Object?'),
+        gap: false);
+  }
+
+  String _constructorGapCall(
+      CallExpression node, ClassDeclaration type, bool constantContext) {
+    final constructor = type.constructors
+        .where((item) => item.name == null && !item.factory)
+        .first;
+    final name = providerConstructorBridgeName(type, constructor);
+    String owner;
+    var suffix = '';
+    if (node.callee is TypeApplication) {
+      final applied = node.callee as TypeApplication;
+      owner = expression(applied.callee, constantContext: constantContext);
+      suffix = '<${applied.arguments.map(_dartType).join(', ')}>';
+    } else {
+      owner = expression(node.callee, constantContext: constantContext);
+      if (model.inferredTypeArguments[node] case final arguments?) {
+        suffix = '<${arguments.map(_dartType).join(', ')}>';
+      }
+    }
+    final order = model.argumentOrder[node] ??
+        List<int>.filled(constructor.parameters.length, -1);
+    return _packetCall(node, '$owner.$name$suffix', order,
+        _dartType(model.types[node] ?? type.name),
+        gap: false);
+  }
+
   String call(CallExpression node, {bool constantContext = false}) {
+    if (model.functionValueGapCalls.contains(node)) {
+      return _packetCall(
+          node,
+          expression(node.callee),
+          model.argumentOrder[node] ?? const <int>[],
+          _dartType(model.types[node] ?? 'Object?'),
+          gap: true);
+    }
+    if (model.constructorGapTargets[node] case final type?) {
+      return _constructorGapCall(node, type, constantContext);
+    }
     if (model.functionValueCalls.contains(node)) {
       final target = expression(node.callee);
       return _nativeInvocation(
@@ -4438,6 +4875,13 @@ class DartEmitter {
     final parameters = targetSymbol.function?.parameters ?? const <Parameter>[];
     final providerFunction = targetSymbol.function;
     final providerOrder = model.argumentOrder[node];
+    if (!constantContext &&
+        model.providerGapCalls.contains(node) &&
+        providerFunction != null &&
+        providerOrder != null) {
+      return _providerGapCall(
+          node, target, member, providerFunction, parameters, providerOrder);
+    }
     if (!constantContext &&
         providerFunction != null &&
         (model.providerDefaultFunctions.contains(providerFunction) ||

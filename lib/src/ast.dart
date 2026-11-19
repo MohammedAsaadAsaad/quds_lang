@@ -61,13 +61,22 @@ class Metadata extends Node {
 bool hasAnnotation(List<Metadata> notes, String name) =>
     notes.any((note) => note.name == name);
 
+/// How a caller may supply the parameter. `dual` accepts position or name.
+enum ParameterPassing { dual, named, optionalPositional }
+
 class Parameter extends Node {
   const Parameter(this.name, this.type, this.mutable, super.span,
-      {this.defaultValue, this.variadic = false, this.initializing = ''});
+      {this.defaultValue,
+      this.variadic = false,
+      this.initializing = '',
+      this.passing = ParameterPassing.dual});
   final String name;
   final String type;
   final bool mutable;
   final Expression? defaultValue;
+
+  /// `named` is name-only. `optionalPositional` is a `[name: Type]` group.
+  final ParameterPassing passing;
 
   /// `...name: Type` collects the remaining positional arguments as `List<Type>`.
   final bool variadic;

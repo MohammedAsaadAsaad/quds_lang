@@ -22,10 +22,27 @@ bool supportsProviderDefaults(FunctionDeclaration function) =>
     function.generator.isEmpty &&
     function.parameters.any((p) => p.defaultValue != null) &&
     _providerDefaultsAreSynchronous(function) &&
-    !function.parameters.any((p) => p.variadic || p.type.contains(' & ')) &&
-    !function.parameters
-        .skipWhile((p) => p.defaultValue == null)
-        .any((p) => p.defaultValue == null);
+    !function.parameters.any((p) => p.variadic) &&
+    _providerParameterOrder(function);
+
+bool _providerParameterOrder(FunctionDeclaration function) {
+  var opened = false;
+  final named =
+      function.parameters.any((p) => p.passing == ParameterPassing.named);
+  for (final parameter in function.parameters) {
+    if (parameter.passing == ParameterPassing.optionalPositional && named) {
+      return false;
+    }
+    final grouped = parameter.defaultValue != null ||
+        parameter.passing != ParameterPassing.dual;
+    if (grouped) {
+      opened = true;
+    } else if (opened) {
+      return false;
+    }
+  }
+  return true;
+}
 
 bool _providerDefaultsAreSynchronous(FunctionDeclaration function) {
   var synchronous = true;
@@ -58,6 +75,22 @@ String providerMethodDefaultBridgeName(
       for (final p in owner.typeParameters) [p.name, p.bound],
       providerDefaultBridgeName(function),
     ]))).substring(0, 20);
+
+/// Public helper that evaluates an interface method's defaults in its library.
+String providerInterfaceApplyName(
+        ClassDeclaration owner, FunctionDeclaration function) =>
+    r'$QudsIfaceDefault' +
+    providerMethodDefaultBridgeName(owner, function)
+        .substring(r'$QudsMethodDefault'.length);
+
+const _providerMethodOwnerKinds = {
+  'class',
+  'value',
+  'mixin',
+  'mixinClass',
+  'interface',
+  'sealed',
+};
 
 class Symbol {
   Symbol(this.name, this.dartName, this.type,
@@ -192,10 +225,14 @@ class SemanticModel {
       <ImportDeclaration, Set<FunctionDeclaration>>{};
   final providerDefaultMethods = <FunctionDeclaration, ClassDeclaration>{};
   final providerDefaultFunctions = <FunctionDeclaration>{};
+
+  /// Apply-helpers a filtered import must expose for interface method bridges.
+  final providerInterfaceApplies = <ImportDeclaration, Set<String>>{};
   final qudsValueLowerings = <Expression, QudsValueLowering>{};
 
   /// Element type packed into the list argument of a variadic function value.
   final functionValueVariadicElements = <CallExpression, String>{};
+  final functionValueVariadicNames = <CallExpression, String>{};
 
   /// Declaring type used when an inherited static method is torn off.
   final staticValueOwners = <Expression, String>{};
@@ -699,6 +736,39 @@ class Analyzer {
     return result;
   }
 
+  Set<String> _exportedInterfaceApplies(Program program, String home,
+      Set<Program> seen, ImportDeclaration filter) {
+    if (seen.contains(program) || _sdkDefaultFiles.contains(program.span.file))
+      return {};
+    final next = {...seen, program};
+    final result = <String>{};
+    for (final owner in program.statements.whereType<ClassDeclaration>()) {
+      if (owner.kind != 'interface') continue;
+      if (filter.show.isNotEmpty && !filter.show.contains(owner.name)) continue;
+      if (filter.hide.contains(owner.name)) continue;
+      for (final method in owner.methods) {
+        if (method.isStatic || model.providerDefaultMethods[method] != owner)
+          continue;
+        result.add(providerInterfaceApplyName(owner, method));
+      }
+    }
+    for (final node in program.statements) {
+      if (node is ImportDeclaration && node.export) {
+        if (node.uri.startsWith('dart:')) continue;
+        final path = _resolveLibrary(home, node.uri);
+        final target = _libraries[path];
+        if (target == null) continue;
+        result.addAll(_exportedInterfaceApplies(target, path, next, node));
+      } else if (node is PartDirective && !node.of) {
+        final path = _resolveLibrary(home, node.uri);
+        final target = _libraries[path];
+        if (target != null)
+          result.addAll(_exportedInterfaceApplies(target, path, next, filter));
+      }
+    }
+    return result;
+  }
+
   SemanticModel analyze(Program program,
       {Map<String, Program> libraries = const {}}) {
     model.library = library;
@@ -712,10 +782,12 @@ class Analyzer {
           .whereType<FunctionDeclaration>()
           .where(supportsProviderDefaults));
       for (final owner in source.statements.whereType<ClassDeclaration>()) {
-        if (owner.kind != 'class' || owner.name.startsWith('_')) continue;
+        if (!_providerMethodOwnerKinds.contains(owner.kind) ||
+            owner.name.startsWith('_')) continue;
         for (final method in owner.methods) {
-          if (method.visibility.isNotEmpty || !supportsProviderDefaults(method))
+          if (method.visibility == 'private' || method.name.startsWith('_'))
             continue;
+          if (!supportsProviderDefaults(method)) continue;
           if (owner.methods
                   .where((other) => other.name == method.name)
                   .length !=
@@ -733,9 +805,13 @@ class Analyzer {
             identical(source, program) ? _file : source.span.file,
             directive.uri);
         final target = libraries[path];
-        if (target != null)
+        if (target != null) {
           model.providerDefaultImports[directive] =
               _exportedDefaultFunctions(target, path, {});
+          if (directive.show.isNotEmpty)
+            model.providerInterfaceApplies[directive] =
+                _exportedInterfaceApplies(target, path, {}, directive);
+        }
       }
     }
     _global.symbols['print'] = Symbol('print', 'print', 'void');
@@ -1088,11 +1164,7 @@ class Analyzer {
         ..clear()
         ..addAll(savedMethodBounds);
       _typeNames.removeAll(added);
-      final dartName = method.isOperator
-          ? method.name
-          : method.visibility == 'private' && !method.name.startsWith('_')
-              ? '_${method.name}'
-              : method.name;
+      final dartName = _methodDartName(statement, method);
       final symbol = Symbol(method.name, dartName, effective, function: method)
           .withFunction(method);
       model.declarations[method] = symbol;
@@ -1204,10 +1276,12 @@ class Analyzer {
           type);
     }
     if (parent != null && parent.kind != 'interface') {
-      if (type.constructors.isEmpty && parent.constructors.isNotEmpty) {
+      if (type.constructors.isEmpty &&
+          parent.constructors.isNotEmpty &&
+          _synthesizedParentConstructor(type) == null) {
         error(
             'E910',
-            'Synthesizing a constructor over explicit parent constructors needs further conformance',
+            'Synthesizing a constructor over explicit parent constructors needs one unnamed generative constructor',
             type);
       }
       for (final constructor in type.constructors.where((c) => !c.factory)) {
@@ -1757,7 +1831,8 @@ class Analyzer {
           parameter.span,
           initializing: parameter.initializing,
           defaultValue: parameter.defaultValue,
-          variadic: parameter.variadic));
+          variadic: parameter.variadic,
+          passing: parameter.passing));
     }
     return result;
   }
@@ -2362,6 +2437,7 @@ class Analyzer {
     }
     final imported = _libraries[path];
     if (imported == null) fail('Unknown import: ${node.uri}', node);
+    model.importHomes[node] = path;
     final dartUri = dartLibraryUri(_file, node.uri);
     if (dartUri != null) model.resolvedImports[node] = dartUri;
     if (path == _file) return;
@@ -2881,6 +2957,10 @@ class Analyzer {
           if (part.name != null && !names.add(part.name!))
             error('E503', 'Duplicate function-type parameter: ${part.name}',
                 node);
+          if (part.variadic) {
+            validateType(part.type, node, allowVoid: false);
+            continue;
+          }
           if (part.named) {
             if (optionalPosition)
               error(
@@ -3189,7 +3269,8 @@ class Analyzer {
             parameter.mutable, parameter.span,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
-            initializing: parameter.initializing)
+            initializing: parameter.initializing,
+            passing: parameter.passing)
     ];
   }
 
@@ -3317,7 +3398,29 @@ class Analyzer {
             bareReturn.substring(container.length, bareReturn.length - 1))
         : declared;
     final parameterNames = <String>[];
+    var sawOptionalPositional = false;
+    var sawNamed = false;
     for (final parameter in function.parameters) {
+      if (!parameter.variadic &&
+          parameter.passing == ParameterPassing.optionalPositional) {
+        if (sawNamed) {
+          error(
+              'E503',
+              'Optional positional and named parameters cannot be combined',
+              parameter);
+        }
+        sawOptionalPositional = true;
+      } else if (!parameter.variadic &&
+          (parameter.passing == ParameterPassing.named ||
+              parameter.defaultValue != null)) {
+        if (sawOptionalPositional) {
+          error(
+              'E503',
+              'Optional positional and named parameters cannot be combined',
+              parameter);
+        }
+        sawNamed = true;
+      }
       final stored =
           parameter.variadic ? 'List<${parameter.type}>' : parameter.type;
       validateType(stored, parameter, allowVoid: false);
@@ -3327,6 +3430,14 @@ class Analyzer {
       final symbol = create(parameter.name, stored, mutable: parameter.mutable);
       _scope.symbols[parameter.name] = symbol;
       model.declarations[parameter] = symbol;
+      if (parameter.passing == ParameterPassing.optionalPositional &&
+          parameter.defaultValue == null &&
+          !isNullableType(parameter.type)) {
+        error(
+            'E503',
+            'An optional positional parameter needs a default or a nullable type',
+            parameter);
+      }
       if (parameter.defaultValue case final value?) {
         restrictDefault(value, parameterNames.toSet(),
             function.parameters.map((item) => item.name).toSet());
@@ -5288,7 +5399,8 @@ class Analyzer {
             parameter.mutable, parameter.span,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
-            initializing: parameter.initializing)
+            initializing: parameter.initializing,
+            passing: parameter.passing)
     ];
     if (invoked.returnType == null &&
         model.declarations[invoked]?.type == '<infer>') {
@@ -5900,11 +6012,6 @@ class Analyzer {
     ];
     final viewed = _readonlyView(raw, result);
     if (viewed != result) {
-      if (method.parameters.isNotEmpty)
-        error(
-            'E910',
-            'This readonly method value needs a transitive result adapter; declare its readonly result explicitly',
-            node);
       model.qudsValueResultGuards[node] = viewed;
     }
     final exposed = viewed;
@@ -5917,7 +6024,8 @@ class Analyzer {
         .withFunction(method);
     model.validatedQudsFunctionValues.add(node);
     _rememberValueLowering(node, method, arguments, specialized,
-        staticOwner: model.staticValueOwners[node]);
+        staticOwner: model.staticValueOwners[node],
+        force: viewed != result && method.parameters.isNotEmpty);
     if (explicit == null && arguments.isNotEmpty)
       model.contextualFunctionArguments[node] = arguments;
     if (method.parameters.any((p) => p.defaultValue != null) &&
@@ -6163,6 +6271,66 @@ class Analyzer {
       }
     }
     return model.classFields[type] = [...inherited, ...type.fields];
+  }
+
+  String _methodDartName(ClassDeclaration type, FunctionDeclaration method) {
+    if (method.isOperator) return method.name;
+    final base = method.visibility == 'private' && !method.name.startsWith('_')
+        ? '_${method.name}'
+        : method.name;
+    final overloads =
+        type.methods.where((item) => item.name == method.name).length;
+    if (overloads < 2) return base;
+    final index = type.methods
+            .where((item) => item.name == method.name)
+            .toList()
+            .indexOf(method) +
+        1;
+    return '$base\$$index';
+  }
+
+  List<FunctionDeclaration> _methods(ClassDeclaration type, String name,
+      {Set<ClassDeclaration> visited = const {}}) {
+    if (visited.contains(type)) return const [];
+    final own = type.methods.where((method) => method.name == name).toList();
+    if (own.isNotEmpty) return own;
+    final nextVisited = {...visited, type};
+    for (final mixin in type.mixins.reversed) {
+      final declaration = _global.symbols[mixin]?.classDeclaration;
+      if (declaration == null) continue;
+      final found = _methods(declaration, name, visited: nextVisited);
+      if (found.isNotEmpty) return found;
+    }
+    final parent = type.superclass == null
+        ? null
+        : _typeSymbol(_genericHead(type.superclass!))?.classDeclaration;
+    if (parent != null) return _methods(parent, name, visited: nextVisited);
+    return const [];
+  }
+
+  FunctionDeclaration? _selectMethod(
+      List<FunctionDeclaration> methods, CallExpression node, Node at) {
+    if (methods.isEmpty) return null;
+    if (methods.length == 1) return methods.single;
+    List<FunctionDeclaration> match(bool conversions) {
+      final found = <FunctionDeclaration>[];
+      for (final candidate in methods) {
+        if (!argumentsMatch(node, candidate.parameters,
+            commit: false,
+            allowConversions: conversions,
+            function: candidate)) {
+          continue;
+        }
+        found.add(candidate);
+      }
+      return found;
+    }
+
+    var found = match(false);
+    if (found.isEmpty) found = match(true);
+    if (found.isEmpty) fail('No overload matches this call', at);
+    if (found.length > 1) fail('Ambiguous overload: ${methods.first.name}', at);
+    return found.single;
   }
 
   FunctionDeclaration? _method(ClassDeclaration type, String name,
@@ -7280,11 +7448,16 @@ class Analyzer {
   /// Optional parameters must form a trailing group. A later required or
   /// variadic parameter cannot be represented by one Dart positional closure.
   bool _awkwardValueParameters(FunctionDeclaration function) {
-    var optional = false;
+    var opened = false;
     for (final parameter in function.parameters) {
-      if (parameter.defaultValue != null) {
-        optional = true;
-      } else if (optional) return true;
+      final grouped = parameter.defaultValue != null ||
+          parameter.passing != ParameterPassing.dual;
+      if (parameter.variadic) return false;
+      if (grouped) {
+        opened = true;
+      } else if (opened) {
+        return true;
+      }
     }
     return false;
   }
@@ -7297,6 +7470,13 @@ class Analyzer {
       final type = types[i];
       if (parameter.variadic) {
         parts.add('...${parameter.name}: $type');
+      } else if (parameter.passing == ParameterPassing.optionalPositional) {
+        final optional =
+            parameter.defaultValue == null ? type : '$type = missing';
+        parts.add('[${parameter.name}: $optional]');
+      } else if (parameter.passing == ParameterPassing.named &&
+          parameter.defaultValue == null) {
+        parts.add('${parameter.name}: $type required');
       } else if (parameter.defaultValue != null) {
         parts.add('${parameter.name}: $type = missing');
       } else {
@@ -7308,9 +7488,10 @@ class Analyzer {
 
   void _rememberValueLowering(Expression node, FunctionDeclaration function,
       List<String> typeArguments, List<String> parameterTypes,
-      {String? staticOwner}) {
-    final adapt = function.parameters.any((parameter) =>
-        parameter.defaultValue != null || parameter.type.contains(' & '));
+      {String? staticOwner, bool force = false}) {
+    final adapt = force ||
+        function.parameters.any((parameter) =>
+            parameter.defaultValue != null || parameter.type.contains(' & '));
     if (!adapt) return;
     model.qudsValueLowerings[node] = QudsValueLowering(
         function, typeArguments, parameterTypes,
@@ -7748,7 +7929,8 @@ class Analyzer {
               parameter.mutable, parameter.span,
               defaultValue: parameter.defaultValue,
               variadic: parameter.variadic,
-              initializing: parameter.initializing)
+              initializing: parameter.initializing,
+              passing: parameter.passing)
       ];
       final type =
           _libraryType(applyArguments(node, parameters, found.function), home);
@@ -7894,8 +8076,9 @@ class Analyzer {
       }
       final declaration =
           _typeSymbol(_genericHead(objectType))?.classDeclaration;
-      final function =
-          declaration == null ? null : _method(declaration, callee.name);
+      final function = declaration == null
+          ? null
+          : _selectMethod(_methods(declaration, callee.name), node, callee);
       final resolved = function ??
           () {
             final found = _extensions(objectType, callee.name);
@@ -8020,7 +8203,8 @@ class Analyzer {
               parameter.span,
               defaultValue: parameter.defaultValue,
               variadic: parameter.variadic,
-              initializing: parameter.initializing)
+              initializing: parameter.initializing,
+              passing: parameter.passing)
       ];
       model.references[node.callee] = model.references[callee]!;
       final result = applyArguments(node, parameters, functionResolved,
@@ -8051,8 +8235,9 @@ class Analyzer {
     final symbol = _scope.lookup(callee.name);
     if (symbol == null && _thisType != null) {
       final declaration = _global.symbols[_thisType!]?.classDeclaration;
-      final method =
-          declaration == null ? null : _method(declaration, callee.name);
+      final method = declaration == null
+          ? null
+          : _selectMethod(_methods(declaration, callee.name), node, callee);
       final extensions = method == null
           ? _extensions(_thisType!, callee.name)
           : <FunctionDeclaration>[];
@@ -8340,6 +8525,10 @@ class Analyzer {
     if (variadicAt >= 0) {
       model.functionValueVariadicElements[node] = parameters[variadicAt].type;
       model.variadicArguments[node] = variadicArgs;
+      if (parameters.any((parameter) => parameter.named) &&
+          parameters[variadicAt].name != null) {
+        model.functionValueVariadicNames[node] = parameters[variadicAt].name!;
+      }
     }
     return returns;
   }
@@ -8614,10 +8803,36 @@ class Analyzer {
       for (final parameter in selected.parameters)
         Parameter(parameter.name, _substitute(parameter.type, substitution),
             parameter.mutable, parameter.span,
-            defaultValue: parameter.defaultValue, variadic: parameter.variadic)
+            defaultValue: parameter.defaultValue,
+            variadic: parameter.variadic,
+            passing: parameter.passing)
     ];
     return applyArguments(node, parameters, selected,
         typeArguments: substitution);
+  }
+
+  /// The one unnamed generative parent constructor a child can forward to.
+  /// Several constructors, a factory, a variadic, or a name clash stay out.
+  ConstructorDeclaration? _synthesizedParentConstructor(ClassDeclaration type) {
+    final parentName = type.superclass;
+    if (parentName == null || type.constructors.isNotEmpty) return null;
+    final parent = _typeSymbol(_genericHead(parentName))?.classDeclaration;
+    if (parent == null || parent.kind == 'interface') return null;
+    final unnamed = parent.constructors
+        .where(
+            (constructor) => constructor.name == null && !constructor.factory)
+        .toList();
+    if (unnamed.length != 1) return null;
+    final constructor = unnamed.single;
+    if (constructor.parameters.any((parameter) => parameter.variadic)) {
+      return null;
+    }
+    final names =
+        constructor.parameters.map((parameter) => parameter.name).toSet();
+    final owns = type.fields.any((field) =>
+        !field.isStatic && !field.isEvent && names.contains(field.name));
+    if (owns) return null;
+    return constructor;
   }
 
   String constructClass(CallExpression node, ClassDeclaration type,
@@ -8649,6 +8864,32 @@ class Analyzer {
       final parameters = _ctorParameters(type, constructor);
       return _finishConstruct(node, type, parameters, explicit, constructor);
     }
+    final parentConstructor = _synthesizedParentConstructor(type);
+    if (parentConstructor != null) {
+      final parent =
+          _typeSymbol(_genericHead(type.superclass!))!.classDeclaration!;
+      final substitution = _genericSubstitution(type.superclass!, parent);
+      final parameters = [
+        for (final parameter in parentConstructor.parameters)
+          Parameter(
+              parameter.name,
+              _substitute(
+                  parameter.initializing.isEmpty
+                      ? model.declarations[parameter]?.type ?? parameter.type
+                      : _fieldType(parent, parameter.name, parameter.span),
+                  substitution),
+              parameter.mutable,
+              parameter.span,
+              defaultValue: parameter.defaultValue,
+              variadic: parameter.variadic,
+              passing: parameter.passing),
+        for (final field in type.fields.where((field) =>
+            !field.isStatic && !field.isEvent && field.lazyBody == null))
+          Parameter(field.name, field.type, false, field.span,
+              defaultValue: field.requiredField ? null : field.initializer)
+      ];
+      return _finishConstruct(node, type, parameters, explicit, null);
+    }
     final parameters = <Parameter>[
       for (final field in _fieldsOf(type).where((field) =>
           !field.isStatic && !field.isEvent && field.lazyBody == null))
@@ -8670,7 +8911,8 @@ class Analyzer {
             parameter.mutable, parameter.span,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
-            initializing: parameter.initializing)
+            initializing: parameter.initializing,
+            passing: parameter.passing)
     ];
     final substitution = _constructorSubstitution(node, type, owned, explicit);
     final instantiated = [
@@ -8679,7 +8921,8 @@ class Analyzer {
             parameter.mutable, parameter.span,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
-            initializing: parameter.initializing)
+            initializing: parameter.initializing,
+            passing: parameter.passing)
     ];
     applyArguments(node, instantiated, null);
     model.references[node.callee] = type.constructors.isEmpty
@@ -8719,7 +8962,8 @@ class Analyzer {
                   .firstOrNull
                   ?.defaultValue,
               variadic: parameter.variadic,
-              initializing: parameter.initializing)
+              initializing: parameter.initializing,
+              passing: parameter.passing)
       ],
     );
   }
@@ -8903,6 +9147,21 @@ class Analyzer {
           FunctionDeclaration function, Map<String, String> found) =>
       _inferGeneric(pattern, actual, found, function.typeParameters);
 
+  int _nextPositionalParameter(List<Parameter> parameters, int start) {
+    var index = start;
+    while (index < parameters.length &&
+        parameters[index].passing == ParameterPassing.named &&
+        parameters[index].defaultValue == null) {
+      index++;
+    }
+    return index;
+  }
+
+  bool _parameterMayBeOmitted(Parameter parameter) =>
+      parameter.variadic ||
+      parameter.defaultValue != null ||
+      parameter.passing == ParameterPassing.optionalPositional;
+
   bool argumentsMatch(CallExpression node, List<Parameter> parameters,
       {required bool commit,
       bool allowConversions = false,
@@ -8929,12 +9188,13 @@ class Analyzer {
       int target;
       if (argument.name == null) {
         if (named) return false;
+        positional = _nextPositionalParameter(parameters, positional);
         if (parameters.isNotEmpty &&
             parameters.last.variadic &&
             positional >= parameters.length - 1) {
           if (!variadicArgument(argument, parameters.last)) return false;
           checked?.variadics.add(argument);
-          positional++;
+          positional = parameters.length;
           continue;
         }
         target = positional++;
@@ -8982,8 +9242,8 @@ class Analyzer {
       order[target] = i;
     }
     for (var i = 0; i < parameters.length; i++) {
-      if (parameters[i].variadic) continue;
-      if (order[i] == -1 && parameters[i].defaultValue == null) {
+      if (_parameterMayBeOmitted(parameters[i])) continue;
+      if (order[i] == -1) {
         final hole = node.arguments.any((a) => isHole(a.value));
         if (!hole) return false;
       }
@@ -9077,6 +9337,7 @@ class Analyzer {
       if (argument.name == null) {
         if (named)
           fail('Positional arguments must precede named arguments', argument);
+        positional = _nextPositionalParameter(parameters, positional);
         if (parameters.isNotEmpty &&
             parameters.last.variadic &&
             positional >= parameters.length - 1) {
@@ -9086,7 +9347,7 @@ class Analyzer {
                 argument);
           }
           rest.add(i);
-          positional++;
+          positional = parameters.length;
           continue;
         }
         target = positional++;
@@ -9120,6 +9381,10 @@ class Analyzer {
     }
     for (var i = 0; i < parameters.length; i++) {
       if (parameters[i].variadic || order[i] != -1) continue;
+      if (parameters[i].passing == ParameterPassing.optionalPositional &&
+          parameters[i].defaultValue == null) {
+        continue;
+      }
       final fallback = parameters[i].defaultValue;
       if (fallback == null) fail('Missing required argument', node);
       final savedDefaultExpected = _expected;

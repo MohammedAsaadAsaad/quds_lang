@@ -40,7 +40,10 @@ class DartEmitter {
   var _useGroup = false;
   var _useOptional = false;
   var _useDefaultOmitted = false;
+  var _exportIfaceOmitted = false;
   final _defaultBridges = <FunctionDeclaration>{};
+  final _extensionCaches = <String>{};
+  Program? _sourceProgram;
   var _defaultOmitted = r'_$qudsDefaultOmitted';
   var _defaultOmittedClass = r'_$QudsDefaultOmitted';
   var _useResult = false;
@@ -109,13 +112,15 @@ class DartEmitter {
   }
 
   String emit(Program program) {
+    _sourceProgram = program;
     _defaultBridges.addAll(model.providerDefaultFunctions);
     _defaultBridges.addAll(model.providerDefaultMethods.keys);
     _defaultBridges.addAll(model.qudsValueLowerings.values
         .map((lowering) => lowering.function)
         .where((function) =>
             function.span.file == program.span.file &&
-            !function.parameters.any((p) => p.type.contains(' & ')) &&
+            !model.extensions
+                .any((owner) => owner.methods.contains(function)) &&
             !model.classes.values.any((owner) =>
                 owner.kind == 'interface' &&
                 owner.methods.contains(function)) &&
@@ -310,6 +315,9 @@ class DartEmitter {
             in model.providerDefaultImports[node] ?? <FunctionDeclaration>{})
           if (names.contains(function.name))
             providerDefaultBridgeName(function),
+        ...model.providerInterfaceApplies[node] ?? const <String>{},
+        if ((model.providerInterfaceApplies[node] ?? const {}).isNotEmpty)
+          r'$qudsIfaceOmitted',
       ];
 
   void _directives(List<Statement> statements) {
@@ -531,6 +539,9 @@ class DartEmitter {
           'class $_defaultOmittedClass { const $_defaultOmittedClass(); }\n'
           'const $_defaultOmitted = $_defaultOmittedClass();');
     }
+    for (final cache in _extensionCaches) {
+      helpers.writeln('final $cache = Expando<Map<String, Object?>>();');
+    }
     if (_useOptional) {
       helpers.writeln('class Optional<T> {\n'
           '  final bool isPresent;\n'
@@ -619,6 +630,9 @@ class DartEmitter {
         ..writeln("import 'package:matcher/expect.dart' as _qmatch;")
         ..writeln(
             "import 'package:quds_lang/src/check_runtime.dart' as _qrun;");
+    }
+    if (_exportIfaceOmitted) {
+      helpers.writeln('const \$qudsIfaceOmitted = $_defaultOmitted;');
     }
     if (_useState || _useWatch || _useBatch) {
       final batchFields = _useBatch
@@ -963,8 +977,213 @@ class DartEmitter {
     _emitDefaultBridge(node);
   }
 
+  bool _canCacheReceiver(String type) {
+    final bare = _bareType(nonNullableType(type));
+    const unsafe = {'String', 'int', 'double', 'bool', 'num', 'Null', 'Never'};
+    return bare.isNotEmpty &&
+        !unsafe.contains(bare) &&
+        functionTypeParts(bare) == null;
+  }
+
+  ExtensionDeclaration? _extensionOwner(FunctionDeclaration function) {
+    for (final item in model.extensions) {
+      if (item.methods.contains(function)) return item;
+    }
+    return null;
+  }
+
+  String _formalOwnerType(ClassDeclaration owner) => owner
+          .typeParameters.isEmpty
+      ? owner.name
+      : '${owner.name}<${owner.typeParameters.map((p) => p.name).join(', ')}>';
+
+  String _bridgeParameters(
+      FunctionDeclaration function, QudsValueLowering lowering,
+      {String? omitted}) {
+    final required = <String>[];
+    final positionalOptional = <String>[];
+    final named = <String>[];
+    for (var i = 0; i < function.parameters.length; i++) {
+      final parameter = function.parameters[i];
+      final dartName = model.declarations[parameter]!.dartName;
+      final raw = lowering.parameterTypes[i];
+      final type = raw.contains(' & ') ? raw.split(' & ').first.trim() : raw;
+      final element = _variadicElement(parameter, type);
+      final dartType = _dartType(element);
+      if (parameter.variadic) {
+        if (named.isNotEmpty || positionalOptional.isNotEmpty) {
+          named.add('List<$dartType> ${parameter.name} = const <$dartType>[]');
+        } else {
+          required.add('List<$dartType> $dartName');
+        }
+      } else if (parameter.passing == ParameterPassing.optionalPositional) {
+        if (parameter.defaultValue != null) {
+          if (omitted == null) _useDefaultOmitted = true;
+          positionalOptional
+              .add('Object? ${parameter.name} = ${omitted ?? _defaultOmitted}');
+        } else {
+          positionalOptional.add('$dartType ${parameter.name}');
+        }
+      } else if (parameter.passing == ParameterPassing.named ||
+          parameter.defaultValue != null) {
+        if (parameter.defaultValue != null) {
+          if (omitted == null) _useDefaultOmitted = true;
+          named
+              .add('Object? ${parameter.name} = ${omitted ?? _defaultOmitted}');
+        } else {
+          named.add('required $dartType ${parameter.name}');
+        }
+      } else {
+        required.add('$dartType $dartName');
+      }
+    }
+    return [
+      ...required,
+      if (positionalOptional.isNotEmpty) '[${positionalOptional.join(', ')}]',
+      if (named.isNotEmpty) '{${named.join(', ')}}',
+    ].join(', ');
+  }
+
+  List<String> _bridgeForward(FunctionDeclaration function) => [
+        for (final parameter in function.parameters)
+          if (parameter.passing == ParameterPassing.named ||
+              (parameter.defaultValue != null &&
+                  parameter.passing != ParameterPassing.optionalPositional))
+            '${parameter.name}: ${parameter.name}'
+          else
+            model.declarations[parameter]!.dartName,
+      ];
+
+  void _emitImplementedBridges(ClassDeclaration node) {
+    final owners = <ClassDeclaration>{};
+    final referencedAs = <ClassDeclaration, String>{};
+    void collect(String? referenced) {
+      if (referenced == null) return;
+      final owner = _classes[_genericHead(referenced)];
+      if (owner == null || owner == node || owners.contains(owner)) return;
+      owners.add(owner);
+      referencedAs[owner] = referenced;
+      if (owner.superclass != null) collect(owner.superclass);
+      for (final name in owner.interfaces) {
+        collect(name);
+      }
+    }
+
+    if (node.superclass != null) collect(node.superclass);
+    for (final name in node.interfaces) {
+      collect(name);
+    }
+    for (final name in node.mixins) {
+      collect(name);
+    }
+    for (final owner in owners) {
+      if (owner.kind != 'interface') continue;
+      for (final method in owner.methods) {
+        if (method.isStatic || model.providerDefaultMethods[method] != owner)
+          continue;
+        _emitInterfaceForwarder(
+            owner, method, referencedAs[owner] ?? owner.name);
+      }
+    }
+  }
+
+  void _emitInterfaceForwarder(
+      ClassDeclaration owner, FunctionDeclaration method, String referenced) {
+    final symbol = model.declarations[method];
+    if (symbol == null) return;
+    final lowering = QudsValueLowering(
+        method,
+        method.typeParameters.map((p) => p.name).toList(),
+        method.parameters.map((p) => model.declarations[p]!.type).toList());
+    final saved = _openGenerics;
+    _openGenerics = {
+      ..._openGenerics,
+      for (final parameter in method.typeParameters) parameter.name,
+    };
+    try {
+      final prefix = _importPrefix(referenced);
+      final parameters = _bridgeParameters(method, lowering,
+          omitted: '$prefix\$qudsIfaceOmitted');
+      final forward = ['this', ..._bridgeForward(method)];
+      _markProtected(method.visibility);
+      line('@override');
+      line('${_dartType(symbol.type)} '
+          '${providerMethodDefaultBridgeName(owner, method)}'
+          '${_typeParameters(method.typeParameters)}($parameters) => '
+          '$prefix${providerInterfaceApplyName(owner, method)}'
+          '${_helperTypeArguments(referenced, method)}(${forward.join(', ')});');
+    } finally {
+      _openGenerics = saved;
+    }
+  }
+
+  String _helperTypeArguments(String referenced, FunctionDeclaration method) {
+    final open = referenced.indexOf('<');
+    final ownerArgs = open < 0
+        ? ''
+        : referenced.substring(open + 1, referenced.lastIndexOf('>'));
+    final methodArgs = method.typeParameters.map((p) => p.name).join(', ');
+    final parts = [
+      if (ownerArgs.isNotEmpty) ownerArgs,
+      if (methodArgs.isNotEmpty) methodArgs,
+    ];
+    if (parts.isEmpty) return '';
+    return '<${parts.join(', ')}>';
+  }
+
+  String _importPrefix(String referenced) {
+    final head = _genericHead(referenced.trim());
+    final dot = head.lastIndexOf('.');
+    if (dot < 0) return '';
+    return '${_dartImportPrefix(head.substring(0, dot))}.';
+  }
+
+  void _emitInterfaceApplyHelpers(ClassDeclaration node) {
+    if (node.span.file != _sourceProgram?.span.file) return;
+    final savedDepth = _depth;
+    _depth = 0;
+    for (final method in node.methods) {
+      if (method.isStatic || model.providerDefaultMethods[method] != node)
+        continue;
+      _emitInterfaceApplyHelper(node, method);
+    }
+    _depth = savedDepth;
+  }
+
+  void _emitInterfaceApplyHelper(
+      ClassDeclaration owner, FunctionDeclaration method) {
+    final symbol = model.declarations[method];
+    if (symbol == null) return;
+    _exportIfaceOmitted = true;
+    _useDefaultOmitted = true;
+    final savedGenerics = _openGenerics;
+    final savedReceiver = _defaultReceiver;
+    _openGenerics = {
+      for (final parameter in owner.typeParameters) parameter.name,
+      for (final parameter in method.typeParameters) parameter.name,
+    };
+    _defaultReceiver = '_qself';
+    try {
+      final lowering = QudsValueLowering(
+          method,
+          method.typeParameters.map((p) => p.name).toList(),
+          method.parameters.map((p) => model.declarations[p]!.type).toList());
+      final body = _valueAdapter('_qself.${symbol.dartName}', lowering,
+          declaration: true);
+      final generics = _typeParameters(
+          [...owner.typeParameters, ...method.typeParameters], const []);
+      line(
+          '${_dartType(symbol.type)} ${providerInterfaceApplyName(owner, method)}'
+          '$generics(${_dartType(_formalOwnerType(owner))} _qself, ${body.substring(1)}');
+    } finally {
+      _openGenerics = savedGenerics;
+      _defaultReceiver = savedReceiver;
+    }
+  }
+
   void _emitDefaultBridge(FunctionDeclaration node) {
     if (!_defaultBridges.contains(node)) return;
+    _markProtected(node.visibility);
     final savedGenerics = _openGenerics;
     _openGenerics = {
       ..._openGenerics,
@@ -1538,6 +1757,7 @@ class DartEmitter {
     if (!node.methods.any((m) => m.isOperator && m.name == '==') &&
         parent == null)
       line('bool operator ==(Object other) => $source == other;');
+    _emitImplementedBridges(node);
     if (!node.properties.any((p) => p.name == 'hashCode') && parent == null) {
       if (node.kind == 'value' || node.modifiers.contains('value')) {
         final fields = node.fields
@@ -1633,10 +1853,15 @@ class DartEmitter {
       if (optional.isNotEmpty)
         parts.add('[${optional.map((p) => _dartType(p.type)).join(', ')}]');
       if (named.isNotEmpty)
-        parts.add(
-            '{${named.map((p) => '${p.optional ? '' : 'required '}${_dartType(p.type)} ${p.name}').join(', ')}}');
-      for (final parameter in variadic) {
-        parts.add('List<${_dartType(parameter.type)}>');
+        parts.add('{${[
+          ...named.map((p) =>
+              '${p.optional ? '' : 'required '}${_dartType(p.type)} ${p.name}'),
+          ...variadic.map((p) => 'List<${_dartType(p.type)}> ${p.name}')
+        ].join(', ')}}');
+      if (variadic.isNotEmpty && named.isEmpty) {
+        for (final parameter in variadic) {
+          parts.add('List<${_dartType(parameter.type)}>');
+        }
       }
       final args = parts.join(', ');
       return '${_dartType(returns)} Function($args)';
@@ -1786,9 +2011,11 @@ class DartEmitter {
       for (final method in node.methods) {
         emitFunction(method);
       }
+      _emitImplementedBridges(node);
       _openGenerics = savedGenerics;
       _depth--;
       line('}');
+      _emitInterfaceApplyHelpers(node);
       return;
     }
     final header = _header(node);
@@ -1840,17 +2067,22 @@ class DartEmitter {
       for (final method in node.methods) {
         emitFunction(method);
       }
+      _emitImplementedBridges(node);
       _depth--;
       line('}');
       _openGenerics = savedClassGenerics;
       return;
     }
     final inherited = _inherited(node);
+    final parentConstructor =
+        node.constructors.isEmpty ? _synthesizedParentConstructor(node) : null;
     if (node.modifiers.contains('singleton')) {
       line('${node.name}._();');
       line('static ${node.name}? _instance;');
       line(
           'static ${node.name} get instance => _instance ??= ${node.name}._();');
+    } else if (parentConstructor != null) {
+      _emitSynthesizedParentConstructor(node, parentConstructor);
     } else if (node.constructors.isEmpty) {
       final initializers = <String>[];
       final params = <String>[
@@ -1958,6 +2190,7 @@ class DartEmitter {
           'int get hashCode => $_readonlyRuntime.valueHash(this, <Object?>[$names]);');
     }
     if (supportsReadonlyClass(model, node)) _emitReadonlyDispatch(node);
+    _emitImplementedBridges(node);
     _depth--;
     line('}');
     if (supportsReadonlyClass(model, node)) _emitReadonlyProxy(node);
@@ -2040,6 +2273,92 @@ class DartEmitter {
       return '$required${_dartType(field.type)} ${field.name}$value';
     }
     return '${required}this.${field.name}$value';
+  }
+
+  ConstructorDeclaration? _synthesizedParentConstructor(ClassDeclaration node) {
+    final parentName = node.superclass;
+    if (parentName == null) return null;
+    final parent = _classes[_genericHead(parentName)];
+    if (parent == null || parent.kind == 'interface') return null;
+    final unnamed = parent.constructors
+        .where(
+            (constructor) => constructor.name == null && !constructor.factory)
+        .toList();
+    if (unnamed.length != 1) return null;
+    final constructor = unnamed.single;
+    if (constructor.parameters.any((parameter) => parameter.variadic)) {
+      return null;
+    }
+    final names =
+        constructor.parameters.map((parameter) => parameter.name).toSet();
+    if (node.fields.any((field) =>
+        !field.isStatic && !field.isEvent && names.contains(field.name))) {
+      return null;
+    }
+    return constructor;
+  }
+
+  void _emitSynthesizedParentConstructor(
+      ClassDeclaration node, ConstructorDeclaration parent) {
+    final substitution = _superclassSubstitution(node);
+    final names = <String>[];
+    final arguments = <String>[];
+    final owner = _classes[_genericHead(node.superclass!)];
+    for (final parameter in parent.parameters) {
+      final declared = _parentParameterType(owner, parameter);
+      final type = _dartType(_substituteType(declared, substitution));
+      final required = parameter.defaultValue == null ? 'required ' : '';
+      final value = parameter.defaultValue == null
+          ? ''
+          : ' = ${expression(parameter.defaultValue!)}';
+      names.add('$required$type ${parameter.name}$value');
+      arguments.add(parameter.name);
+    }
+    final initializers = <String>[];
+    for (final field in node.fields.where((field) =>
+        !field.isStatic && !field.isEvent && field.lazyBody == null)) {
+      names.add(_constructorParameter(field, initializers));
+    }
+    if (arguments.isNotEmpty) {
+      initializers.insert(0, 'super(${arguments.join(', ')})');
+    }
+    final tail = initializers.isEmpty ? '' : ' : ${initializers.join(', ')}';
+    final list = names.join(', ');
+    line(list.isEmpty ? '${node.name}()$tail;' : '${node.name}({$list})$tail;');
+  }
+
+  Map<String, String> _superclassSubstitution(ClassDeclaration node) {
+    final spec = node.superclass;
+    if (spec == null) return const {};
+    final parent = _classes[_genericHead(spec)];
+    if (parent == null || parent.typeParameters.isEmpty) return const {};
+    final open = spec.indexOf('<');
+    if (open < 0 || !spec.endsWith('>')) return const {};
+    final args = splitTypeList(spec.substring(open + 1, spec.length - 1));
+    if (args.length != parent.typeParameters.length) return const {};
+    return {
+      for (var i = 0; i < args.length; i++)
+        parent.typeParameters[i].name: args[i]
+    };
+  }
+
+  String _parentParameterType(ClassDeclaration? owner, Parameter parameter) {
+    if (parameter.initializing.isEmpty && parameter.type != '<field>') {
+      return model.declarations[parameter]?.type ?? parameter.type;
+    }
+    final fields = owner == null
+        ? const <FieldDeclaration>[]
+        : (model.classFields[owner] ?? owner.fields);
+    final field =
+        fields.where((item) => item.name == parameter.name).firstOrNull;
+    return field?.type ?? parameter.type;
+  }
+
+  String _substituteType(String type, Map<String, String> substitution) {
+    if (substitution.isEmpty) return type;
+    final names = substitution.keys.map(RegExp.escape).join('|');
+    return type.replaceAllMapped(RegExp('(?<![\\w.])($names)\\b'),
+        (match) => substitution[match.group(1)]!);
   }
 
   void _emitConstructor(
@@ -3430,6 +3749,8 @@ class DartEmitter {
     final guard = model.qudsValueResultGuards[node];
     if (guard == null || !_emittingValueGuard.add(node)) return value;
     try {
+      // A parameterized lowering already guards the value it returns.
+      if (model.qudsValueLowerings.containsKey(node)) return value;
       final call = '($value)()';
       return '(() => ${_readonlyGuard(guard, call)})';
     } finally {
@@ -3455,6 +3776,12 @@ class DartEmitter {
             '${dot < 0 ? '' : original.substring(0, dot + 1)}$implementation';
       }
     } else if (node is MemberAccess) {
+      if (_extensionOwner(function) != null && !function.isStatic) {
+        final receiverType = model.types[node.object];
+        if (receiverType != null && _canCacheReceiver(receiverType)) {
+          return _cachedExtensionValue(node, lowering, implementation);
+        }
+      }
       final method = implementation;
       if (function.isStatic) {
         final owner = lowering.staticOwner == null
@@ -3464,11 +3791,13 @@ class DartEmitter {
       } else if (node.nullAware) {
         final receiver = '_qrecv${_temps++}';
         final type = _dartType(nullableType(model.types[node.object]!));
-        final body = _valueAdapter('$receiver.$method', lowering);
+        final body = _valueAdapter('$receiver.$method', lowering,
+            resultGuard: model.qudsValueResultGuards[node]);
         return '(($type $receiver) => $receiver == null ? null : $body)(${expression(node.object)})';
       } else {
         final receiver = '_qrecv${_temps++}';
-        final body = _valueAdapter('$receiver.$method', lowering);
+        final body = _valueAdapter('$receiver.$method', lowering,
+            resultGuard: model.qudsValueResultGuards[node]);
         return '((${_dartType(model.types[node.object]!)} $receiver) => $body)(${expression(node.object)})';
       }
     } else {
@@ -3478,24 +3807,71 @@ class DartEmitter {
               ? _identifier(node)
               : expression(node is TypeApplication ? node.callee : node);
     }
-    return _valueAdapter(target, lowering);
+    return _valueAdapter(target, lowering,
+        resultGuard: model.qudsValueResultGuards[node]);
+  }
+
+  String _cachedExtensionValue(
+      MemberAccess node, QudsValueLowering lowering, String method) {
+    final key = lowering.typeArguments.map(_dartType).join(',');
+    final cache = '_\$qudsExt${sha256Hex(utf8.encode(jsonEncode([
+          lowering.function.name,
+          lowering.function.span.file,
+          lowering.function.span.offset,
+        ]))).substring(0, 12)}';
+    _extensionCaches.add(cache);
+    final receiver = '_qrecv${_temps++}';
+    final map = '_qmap${_temps++}';
+    final hit = '_qhit${_temps++}';
+    final made = '_qmade${_temps++}';
+    final body = _valueAdapter('$receiver.$method', lowering,
+        resultGuard: model.qudsValueResultGuards[node]);
+    final valueType = _dartType(model.types[node] ?? 'Object');
+    final objectType = model.types[node.object]!;
+    if (node.nullAware) {
+      final type = _dartType(nullableType(objectType));
+      return '(($type $receiver) { if ($receiver == null) return null; final $map = $cache[$receiver] ??= <String, Object?>{}; final $hit = $map[${quote(key)}]; if ($hit != null) return $hit as $valueType; final $valueType $made = $body; $map[${quote(key)}] = $made; return $made; })(${expression(node.object)})';
+    }
+    final type = _dartType(objectType);
+    return '(($type $receiver) { final $map = $cache[$receiver] ??= <String, Object?>{}; final $hit = $map[${quote(key)}]; if ($hit != null) return $hit as $valueType; final $valueType $made = $body; $map[${quote(key)}] = $made; return $made; })(${expression(node.object)})';
+  }
+
+  String _variadicElement(Parameter parameter, String type) {
+    final declared = model.declarations[parameter]?.type;
+    if (parameter.variadic &&
+        declared == type &&
+        type.startsWith('List<') &&
+        type.endsWith('>')) {
+      return type.substring(5, type.length - 1);
+    }
+    return type;
   }
 
   String _valueAdapter(String target, QudsValueLowering lowering,
-      {bool declaration = false}) {
+      {bool declaration = false, String? resultGuard}) {
     final function = lowering.function;
     final hidden = <String>[];
     for (var i = 0; i < function.parameters.length; i++) {
       if (!function.parameters[i].type.contains(' & ')) continue;
       hidden.add(lowering.parameterTypes[i].split(' & ').first.trim());
     }
+    if (!declaration && _defaultBridges.contains(function)) {
+      // The bridge method carries the declared type parameters only. Hidden
+      // intersection parameters stay on the method the bridge calls.
+      if (lowering.typeArguments.isNotEmpty)
+        target = '$target<${lowering.typeArguments.map(_dartType).join(', ')}>';
+      return target;
+    }
     final arguments = [...lowering.typeArguments, ...hidden];
     if (arguments.isNotEmpty)
       target = '$target<${arguments.map(_dartType).join(', ')}>';
-    if (!declaration && _defaultBridges.contains(function)) return target;
-    if (function.parameters
-        .every((parameter) => parameter.defaultValue == null)) return target;
+    if (resultGuard == null &&
+        function.parameters
+            .every((parameter) => parameter.defaultValue == null)) {
+      return target;
+    }
     final required = <String>[];
+    final positionalOptional = <String>[];
     final optional = <String>[];
     final passed = <String>[];
     final statements = <String>[];
@@ -3507,14 +3883,26 @@ class DartEmitter {
         final dartName = model.declarations[parameter]!.dartName;
         final raw = lowering.parameterTypes[i];
         final type = raw.contains(' & ') ? raw.split(' & ').first.trim() : raw;
-        final dartType = _dartType(type);
+        final element = _variadicElement(parameter, type);
+        final dartType = _dartType(element);
         if (parameter.variadic) {
-          required.add('List<$dartType> $dartName');
-          passed.add(dartName);
+          final namedSlot =
+              optional.isNotEmpty || positionalOptional.isNotEmpty;
+          if (namedSlot) {
+            optional
+                .add('List<$dartType> ${parameter.name} = const <$dartType>[]');
+            passed.add(parameter.name);
+          } else {
+            required.add('List<$dartType> $dartName');
+            passed.add(dartName);
+          }
         } else if (parameter.defaultValue != null) {
           _useDefaultOmitted = true;
           final suppliedName = parameter.name;
-          optional.add('Object? $suppliedName = $_defaultOmitted');
+          final slot = parameter.passing == ParameterPassing.optionalPositional
+              ? positionalOptional
+              : optional;
+          slot.add('Object? $suppliedName = $_defaultOmitted');
           final fallback = expression(parameter.defaultValue!);
           final resolved = '_qdefault${_temps++}';
           final supplied = type == 'Object?' || type == 'dynamic'
@@ -3524,6 +3912,12 @@ class DartEmitter {
               'identical($suppliedName, $_defaultOmitted) ? $fallback : $supplied;');
           _names[dartName] = resolved;
           passed.add(resolved);
+        } else if (parameter.passing == ParameterPassing.named) {
+          optional.add('required $dartType ${parameter.name}');
+          passed.add(parameter.name);
+        } else if (parameter.passing == ParameterPassing.optionalPositional) {
+          positionalOptional.add('$dartType ${parameter.name}');
+          passed.add(parameter.name);
         } else {
           required.add('$dartType $dartName');
           passed.add(dartName);
@@ -3531,9 +3925,14 @@ class DartEmitter {
       }
       final signature = [
         ...required,
+        if (positionalOptional.isNotEmpty) '[${positionalOptional.join(', ')}]',
         if (optional.isNotEmpty) '{${optional.join(', ')}}',
       ].join(', ');
-      return '($signature) { ${statements.join(' ')} return $target(${passed.join(', ')}); }';
+      final invocation = '$target(${passed.join(', ')})';
+      final returned = resultGuard == null
+          ? invocation
+          : _readonlyGuard(resultGuard, invocation);
+      return '($signature) { ${statements.join(' ')} return $returned; }';
     } finally {
       _names = savedNames;
     }
@@ -3983,7 +4382,9 @@ class DartEmitter {
           .join(', ');
       final tail = _functionValueVariadicList(node, value);
       if (tail == null) return head;
-      return [if (head.isNotEmpty) head, tail].join(', ');
+      final label = model.functionValueVariadicNames[node];
+      final rendered = label == null ? tail : '$label: $tail';
+      return [if (head.isNotEmpty) head, rendered].join(', ');
     }
 
     if (!reordered || constantContext) {
@@ -4241,8 +4642,11 @@ class DartEmitter {
       for (var i = 0; i < parameters.length; i++) {
         final index = providerOrder[i];
         if (index < 0) continue;
+        final byName = parameters[i].passing == ParameterPassing.named ||
+            (parameters[i].defaultValue != null &&
+                parameters[i].passing != ParameterPassing.optionalPositional);
         passed.add(
-            '${parameters[i].defaultValue == null ? '' : '${parameters[i].name}: '}${supplied[index]}');
+            '${byName ? '${parameters[i].name}: ' : ''}${supplied[index]}');
       }
       final typeStart = target.indexOf('<');
       final plain = typeStart < 0 ? target : target.substring(0, typeStart);
@@ -4266,12 +4670,54 @@ class DartEmitter {
     final variadic = parameters.indexWhere((parameter) => parameter.variadic);
     if (variadic >= 0) {
       final order = model.argumentOrder[node] ?? const <int>[];
+      final namedVariadic = parameters.take(variadic).any((parameter) =>
+          parameter.defaultValue != null ||
+          parameter.passing == ParameterPassing.named);
+      if (namedVariadic) {
+        final pieces = <String>[];
+        for (final index in model.variadicArguments[node] ?? const <int>[]) {
+          final value = node.arguments[index].value;
+          if (value is SpreadElement) {
+            final text =
+                expression(value.operand, constantContext: constantContext);
+            pieces.add(value.nullAware ? '...?$text' : '...$text');
+          } else {
+            pieces.add(expression(value, constantContext: constantContext));
+          }
+        }
+        final list =
+            '<${_dartType(model.instantiatedParameterTypes[node]?[variadic] ?? parameters[variadic].type)}>[${pieces.join(', ')}]';
+        final args = <String>[];
+        for (var i = 0; i < variadic; i++) {
+          final index = i < order.length ? order[i] : -1;
+          if (index < 0) continue;
+          args.add(
+              '${parameters[i].name}: ${expression(node.arguments[index].value, constantContext: constantContext)}');
+        }
+        if (pieces.isNotEmpty) args.add('${parameters[variadic].name}: $list');
+        final declared = providerFunction == null
+            ? null
+            : model.declarations[providerFunction]?.dartName;
+        final bridge = providerFunction != null &&
+                _defaultBridges.contains(providerFunction) &&
+                (target == declared ||
+                    (declared != null && target.endsWith('.$declared')))
+            ? target.replaceAll(declared!, _defaultBridgeName(providerFunction))
+            : target;
+        return '$bridge(${args.join(', ')})';
+      }
       final fixed = <String>[];
       for (var i = 0; i < variadic; i++) {
         final index = i < order.length ? order[i] : -1;
         if (index >= 0) {
           fixed.add(expression(node.arguments[index].value,
               constantContext: constantContext));
+        } else if (parameters[i].defaultValue != null) {
+          fixed.add(expression(parameters[i].defaultValue!,
+              constantContext: constantContext));
+        } else if (parameters[i].passing ==
+            ParameterPassing.optionalPositional) {
+          fixed.add('null');
         }
       }
       final pieces = <String>[];
@@ -4373,6 +4819,9 @@ class DartEmitter {
         declarations.add('final _qd$i = $value;');
         values.add('_qd$i');
         subst[model.declarations[parameters[i]]!.dartName] = '_qd$i';
+      } else if (i < parameters.length &&
+          parameters[i].passing == ParameterPassing.optionalPositional) {
+        values.add('null');
       }
     }
     final invocation = '$target(${values.join(', ')})';

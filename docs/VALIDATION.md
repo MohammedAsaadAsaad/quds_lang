@@ -1,3 +1,21 @@
+# Remaining language slice — 2026-11-19
+
+Base: `6beeeac` on `cursor/remaining-language-b792`.
+Handoff: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+
+| Check | Observed result |
+| --- | --- |
+| Interface, value, mixin, and protected bridges | Quds adapter suite, golden, VM, and JavaScript |
+| One generative parent constructor | `generic_inheritance` Quds, VM, and JavaScript; a named-only parent stays E910 |
+| Parameter forms | Required named, optional positional, default-plus-variadic, and class method overloads in `test/parameter_forms.quds` |
+| Parameterized readonly result | Fresh.copy in the value-adapter suite |
+| Package suite | 709 passed and 2 failed before the parameter-form expectation was aligned. The Flutter create failure also fails on `6beeeac` in this environment because the installed Flutter SDK prefixes widget types. After the expectation fix, that pre-existing failure is the remaining suite failure. |
+| Not claimed | Silent dynamic, polymorphic callbacks, full import combinators, editor rename, live device target, real F5, native engine builds, pub.dev, or promotion of the 92 uncertified rules |
+
+No unobserved device or registry result is claimed. Partial rules stay partial.
+
+---
+
 # Imported concrete method defaults — 2026-11-19
 
 Base: `35d41c5`. Handoff updated before coding in
@@ -150,7 +168,29 @@ it. No environment publication or pub.dev release is part of this change.
 
 ---
 
-# Compiler validation — latest 2026-11-18
+# Compiler validation — latest 2026-11-19
+
+## Interface, mixin, value, and extension default bridges — 2026-11-19
+
+Branch `cursor/remaining-language-b792`, cut from `6beeeac`. Supported public
+interface methods emit `$QudsIfaceDefault…` in the declaring library. Implementing
+classes forward to that helper and use the provider omission token
+`$qudsIfaceOmitted`. Value, mixin, and protected methods use the ordinary member
+bridge. Class-receiver extension defaults are cached with `Expando`. Generated
+ABI is `provider-defaults-v3`.
+
+| Check | Observed result |
+| --- | --- |
+| Quds adapter suite | **26 passed**, including interface contract identity, imported interface defaults, mixin and value identity, extension identity, and default-plus-intersection identity |
+| Adapter driver | `dart test test/quds_value_adapters_test.dart`: **7 passed**, including the v1-to-v3 cache rebuild, Dart analysis, and VM/JavaScript agreement |
+| `dart analyze` on the changed compiler files | No issues found |
+
+Awaiting defaults, inferred provider results, private exported bridges, direct-call
+parameter-form parity, default-plus-variadic values, parameterized readonly result
+guards, and method overloads stay open.
+
+
+# Compiler validation — 2026-11-18
 
 ## Windows portable line endings and import paths — 2026-11-18
 

@@ -118,3 +118,15 @@ test "static fields do not occupy inherited constructor argument positions":
   expect(value.value[0], 17)
   expect(value.tag, "static")
   expect(StaticBase.calls, 0)
+
+class GeneratedParent<T>:
+  value: T required
+  init(this.value):
+    require value == value
+class GeneratedChild<U> extends GeneratedParent<List<U>>:
+  tag: String required
+
+test "a child constructor is synthesized over one generative parent constructor":
+  value = GeneratedChild<int>(value: [18], tag: "generated")
+  expect(value.value[0], 18)
+  expect(value.tag, "generated")

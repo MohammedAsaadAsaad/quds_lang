@@ -26,6 +26,7 @@ class Derived extends Utility:
   tag: int = 0
 class Fresh:
   readonly read() -> List<int> = [1]
+  readonly copy(value: int) -> List<int> = [value]
 extend String:
   tag<T>(value: T) -> T = value
 
@@ -74,6 +75,11 @@ test "a readonly method value guards its result":
   view: readonly Fresh = Fresh()
   saved = view.read
   expect(saved()[0], 1)
+
+test "a parameterized readonly method value guards its result":
+  view: readonly Fresh = Fresh()
+  saved = view.copy
+  expect(saved(6)[0], 6)
 
 test "deferred libraries load through their prefix" async:
   await math.loadLibrary()
@@ -219,6 +225,70 @@ test "interface defaults keep their static contract":
   fromConcrete = owner.number
   expect(fromInterface(), 30)
   expect(fromConcrete(), 40)
+  expect(fromInterface == face.number, true)
+  expect(fromConcrete == owner.number, true)
+  expect(fromInterface == fromConcrete, false)
+
+mixin DefaultNumbers:
+  number(value: int = 3) -> int = value * 2
+class MixedNumbers with DefaultNumbers:
+  tag: int = 0
+
+value class DefaultPoint:
+  label: String = "Quds"
+  readonly scaled(value: int = 4) -> int = value
+
+class ExtTarget:
+  var base: int = 1
+extend ExtTarget:
+  extra(value: int = 2) -> int = base + value
+
+interface NamedValue:
+  name: String
+interface AgedValue:
+  age: int
+class NamedPerson implements NamedValue, AgedValue:
+  name: String required
+  age: int required
+class IntersectionHolder:
+  readonly label(item: NamedValue & AgedValue, prefix: String = "Q") -> String = prefix + item.name
+
+class LocalFace implements helpers.DefaultFace:
+  readonly number(value: int = 9) -> int = value * 10
+
+test "mixin and value defaults keep reference identity":
+  mixed = MixedNumbers()
+  expect(mixed.number == mixed.number, true)
+  expect(mixed.number(), 6)
+  point = DefaultPoint()
+  expect(point.scaled == point.scaled, true)
+  expect(point.scaled(), 4)
+
+test "extension defaults keep reference identity for class receivers":
+  owner = ExtTarget()
+  first = owner.extra
+  expect(first == owner.extra, true)
+  expect(first(), 3)
+  owner.base = 5
+  expect(first(), 7)
+  other = ExtTarget()
+  expect(first == other.extra, false)
+
+test "default and intersection parameters keep reference identity":
+  holder = IntersectionHolder()
+  saved = holder.label
+  expect(saved == holder.label, true)
+  expect(saved(NamedPerson(name: "Ada", age: 1)), "QAda")
+
+test "imported interface defaults stay on the contract":
+  owner = LocalFace()
+  face: helpers.DefaultFace = owner
+  fromInterface = face.number
+  fromConcrete = owner.number
+  expect(fromInterface == face.number, true)
+  expect(fromConcrete == owner.number, true)
+  expect(fromInterface(), 30)
+  expect(fromConcrete(), 90)
 
 test "imported default references run in their provider scope":
   first = helpers.report

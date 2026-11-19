@@ -13,7 +13,7 @@ class Child<U> extends Base<List<U>>:
 void main() {
   test('generic inheritance conformance executes in Quds', () async {
     for (final entry in {
-      'generic_inheritance.quds': 11,
+      'generic_inheritance.quds': 12,
       'generic_inheritance_prefix.quds': 2
     }.entries) {
       final result = await Process.run(Platform.resolvedExecutable,
@@ -55,7 +55,7 @@ void main() {
     'class Bad<U> extends Base<U>:\n  init():\n    require true': 'E704',
     'class Bad<U> extends Base<U>:\n  extra: int = 0\n  init(super.value, super.extra):\n    require true':
         'E200',
-    'class ExplicitBase<T>:\n  value: T required\n  init(this.value):\n    require true\nclass Unsupported<U> extends ExplicitBase<U>:\n  tag: String required':
+    'class NamedOnly<T>:\n  value: T required\n  init named(this.value):\n    require true\nclass Unsupported<U> extends NamedOnly<U>:\n  tag: String required':
         'E910',
     'class Unsupported extends Base:\n  tag: String required': 'E910',
     'class NamedBase<T>:\n  value: T required\n  init named(this.value):\n    require true\nclass Bad<U> extends NamedBase<U>:\n  init(super.value):\n    require true':

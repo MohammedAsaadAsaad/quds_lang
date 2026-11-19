@@ -125,7 +125,7 @@
       ],
       "verified_slice_files": [],
       "known_limits": [
-        "Parent constructor synthesis still has an explicit E910 boundary."
+        "A child with no constructor is synthesized over exactly one unnamed generative parent constructor. Named-only parents, factories, variadic parent parameters, and a child field that reuses a parent parameter name stay E910."
       ],
       "completion_evidence": {
         "positive": [],
@@ -759,10 +759,10 @@
         "test/fixtures/quds_value_adapters/facade.quds"
       ],
       "known_limits": [
-        "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. Awkward parameter order, default-plus-variadic values, parameterized readonly result guards, method overloads, full constraint solving, and polymorphic callbacks remain limited.",
-        "Defaulted value slots are named optional, with a private omission token and sequential resolved defaults. Same-file function and concrete method bridges preserve repeated reference equality, including readonly proxies and selected-owner defaults. Unsupported provider-method/interface/default-plus-intersection identity and complete direct-call parameter-form parity remain unfinished.",
-        "Supported top-level providers with declared signatures own their computed-default bridges, including direct calls and filtered re-exports. Unsupported provider methods, interfaces, SDK sections, awaiting defaults, inferred return metadata and expanded part/cycle/conditional-export certification remain separate work.",
-        "Public ordinary-class provider methods with supported declared signatures publish stable member bridges, including readonly proxies and null-aware default calls. Interfaces, non-class/protected/private shapes and complex default signatures need separate certification."
+        "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, readonly result guards for zero-argument and parameterized methods, generic extension values, and inherited static owners. A required positional parameter after a named or optional parameter, full constraint solving, and polymorphic callbacks remain limited.",
+        "Parameter metadata records dual, required named, optional named, and optional positional forms. Required named parameters reject a positional argument. A default remains positionally bindable because generated functions are positional and the SDK calls them that way. Optional positional groups accept position, name, and omission. Default-plus-variadic values use one named bridge. Class methods with one name select by the call and use name$1, name$2. Ambiguous method calls are E310. Full constraint solving and polymorphic callbacks remain limited.",
+        "Supported top-level providers and public interface methods with declared signatures own their computed-default bridges, including direct calls and filtered re-exports. Awaiting defaults, inferred provider return metadata, SDK sections, and expanded part/cycle/conditional-export certification remain separate work.",
+        "Public ordinary-class, value, mixin, interface, and protected methods with supported declared signatures publish stable member bridges, including readonly proxies and null-aware default calls. Private exported bridges and complex default signatures need separate certification."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1449,7 +1449,7 @@
         "test/quds_value_adapters_test.dart"
       ],
       "known_limits": [
-        "Local and imported function overload values use stable public names when signatures differ. Same-signature imports stay E204. Method overloads and awkward default or variadic value shapes remain unfinished."
+        "Local and imported function overload values use stable public names when signatures differ. Same-signature imports stay E204. Class methods with the same name emit name$1 and name$2 and select by the call; an ambiguous call is E310. A method value of an overloaded name still needs one owner method."
       ],
       "completion_evidence": {
         "positive": [],

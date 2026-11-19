@@ -18,3 +18,6 @@ class DefaultBox<T>:
   take<U>(value: U, first: int = this.next(), second: int = first) -> U = value
   copy(value: T = stored) -> T = value
   static number(value: int = _hiddenNumber()) -> int = value
+
+interface DefaultFace:
+  readonly number(value: int = 3) -> int = value

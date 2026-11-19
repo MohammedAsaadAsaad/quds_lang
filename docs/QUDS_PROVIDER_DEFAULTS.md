@@ -52,7 +52,7 @@ milestone does not redefine the approved visibility syntax.
 The generated `$QudsDefault...` identifier is a reserved Dart ABI detail derived
 from the declaration signature, not absolute paths or backend temporary numbers.
 The source helper remains private; the bridge provides the same public callable
-operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v2`; v1 covered functions only) in build caches.
+operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v3`; v2 covered ordinary class methods and v1 covered functions) in build caches.
 Build/run invalidate older epochs and rebuild dependencies automatically, even
 when their source and output checksums still match. Externally managed generated
 Dart must likewise be rebuilt with the matching compiler. It is not a runtime registry or a dynamic dispatch system.
@@ -64,9 +64,14 @@ a trailing group of computed defaults, no variadic/intersection parameters, no
 generator and no awaiting default. It includes a synchronous default on an async
 function. Native Dart function values retain their existing metadata path.
 
-Non-class/protected provider methods, interface bridges, inferred provider return metadata,
-SDK-section APIs, defaults with variadics/intersections, and awaiting defaults
-remain outside this ABI slice. Existing paths and limitations remain for them.
+Protected methods and public interface, value, and mixin methods with the same
+supported signature publish bridges. An interface bridge evaluates defaults in
+the declaring library, and an implementing class forwards to that helper, so
+the contract default is not replaced by the implementation default. A class
+receiver's extension default is cached per receiver and specialization.
+Intersection parameters may share that bridge. Inferred provider return
+metadata, SDK-section APIs, private exported bridges, defaults with variadics,
+and awaiting defaults remain outside this ABI slice.
 Parts, cycles, conditional exports, cross-package publication and compatibility
 with previously generated Dart require expanded certification; they are not
 claimed complete by the local import/re-export tests.
@@ -120,11 +125,11 @@ fixture covers direct null-aware calls as well as nullable method values.
 
 The method slice requires an explicit result and synchronous trailing defaults,
 and excludes duplicate method names, intersections, variadics and generators.
-Interfaces, value/mixin/extension kinds, protected/private exported bridges,
-SDK methods and expanded cross-package/part certification remain separate work.
+Private exported bridges, SDK methods, and expanded cross-package/part
+certification remain separate work.
 A generic field read that could expose mutable data is not made readonly by this
 feature: source readonly qualifications and result guard restrictions still apply.
 
-The generated-ABI epoch is v2. The upgrade regression keeps valid checksums on a
+The class-method slice introduced ABI v2. The current epoch is v3, which adds interface, value, mixin, and protected bridges. The upgrade regression keeps valid checksums on a
 v1 provider with method bridge definitions removed; `quds run` rebuilds it and
 prints both the function result and the imported method result automatically.

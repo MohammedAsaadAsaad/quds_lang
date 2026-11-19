@@ -153,6 +153,44 @@ class Parser {
     var i = start;
     if (i == end) return true;
     while (i < end) {
+      if (tokens[i].kind == TokenKind.leftBracket) {
+        i++;
+        if (i >= end || tokens[i].kind == TokenKind.rightBracket) return false;
+        while (i < end && tokens[i].kind != TokenKind.rightBracket) {
+          if (tokens[i].lexeme == 'var') i++;
+          if (i >= end || tokens[i].kind != TokenKind.identifier) return false;
+          i++;
+          if (i >= end || tokens[i].kind != TokenKind.colon) return false;
+          i++;
+          if (!_skipType(i, end, (next) => i = next)) return false;
+          if (i < end && tokens[i].kind == TokenKind.equals) {
+            i++;
+            var depth = 0;
+            while (i < end && tokens[i].kind != TokenKind.rightBracket) {
+              final kind = tokens[i].kind;
+              if (kind == TokenKind.leftParen ||
+                  kind == TokenKind.leftBracket) {
+                depth++;
+              }
+              if (kind == TokenKind.rightParen ||
+                  kind == TokenKind.rightBracket) {
+                if (depth == 0) break;
+                depth--;
+              }
+              if (depth == 0 && kind == TokenKind.comma) break;
+              i++;
+            }
+          }
+          if (i < end && tokens[i].kind == TokenKind.comma) i++;
+        }
+        if (i >= end || tokens[i].kind != TokenKind.rightBracket) return false;
+        i++;
+        if (i < end && tokens[i].kind == TokenKind.comma) {
+          i++;
+          continue;
+        }
+        return i == end;
+      }
       if (tokens[i].lexeme == 'var') i++;
       if (i < end && tokens[i].kind == TokenKind.spread) i++;
       if (i >= end || tokens[i].kind != TokenKind.identifier) return false;
@@ -2244,7 +2282,18 @@ class Parser {
     final parameters = <Parameter>[];
     if (!at(TokenKind.rightParen)) {
       do {
-        parameters.add(parameter());
+        if (match(TokenKind.leftBracket)) {
+          if (at(TokenKind.rightBracket)) {
+            fail('An optional positional parameter needs name: Type');
+          }
+          do {
+            parameters
+                .add(parameter(passing: ParameterPassing.optionalPositional));
+          } while (match(TokenKind.comma) && !at(TokenKind.rightBracket));
+          expect(TokenKind.rightBracket, ']');
+        } else {
+          parameters.add(parameter());
+        }
       } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
     }
     expect(TokenKind.rightParen, ')');
@@ -2256,7 +2305,7 @@ class Parser {
     return parameters;
   }
 
-  Parameter parameter() {
+  Parameter parameter({ParameterPassing? passing}) {
     final span = current.span;
     if (word('this') || word('super')) {
       final kind = take().lexeme;
@@ -2277,12 +2326,25 @@ class Parser {
     final parameterName = name();
     expect(TokenKind.colon, ':');
     final type = typeName();
-    if (word('required')) take();
+    final namedRequired = word('required');
+    if (namedRequired) {
+      if (passing == ParameterPassing.optionalPositional) {
+        fail('required needs a named parameter');
+      }
+      take();
+    }
     Expression? defaultValue;
-    if (match(TokenKind.equals)) defaultValue = expression();
+    if (match(TokenKind.equals)) {
+      if (namedRequired) fail('A default needs an optional parameter');
+      defaultValue = expression();
+    }
+    final form = passing ??
+        (namedRequired || defaultValue != null
+            ? ParameterPassing.named
+            : ParameterPassing.dual);
     return Parameter(
         parameterName.lexeme, type, mutable, extent(parameterName.span),
-        defaultValue: defaultValue, variadic: variadic);
+        defaultValue: defaultValue, variadic: variadic, passing: form);
   }
 
   ClassDeclaration enumDeclaration(SourceSpan span, List<Metadata> notes) {

@@ -136,6 +136,62 @@ base class $QudsReadonlyExplicitChild<U> extends $QudsReadonlyParent<List<U>> wi
   bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceExplicitChild, candidate);
   bool $qudsIsLazySlot(Object slot) => _$qudsSourceExplicitChild.$qudsIsLazySlot(slot);
 }
+class GeneratedParent<T> {
+  GeneratedParent(this.value) {
+    if (!((value == value))) throw ArgumentError('value == value');
+  }
+  final T value;
+  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
+    if (runtimeType != GeneratedParent<T>) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
+    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
+    final result = $qudsReadonly.cachedView<GeneratedParent<T>>(this, () => $QudsReadonlyGeneratedParent<T>(this, normalized));
+    (result as $QudsReadonlyGeneratedParent<T>)._$qudsGuardsGeneratedParent.addAll(normalized);
+    return result;
+  }
+  bool $qudsIsLazySlot(Object slot) => false;
+}
+base class $QudsReadonlyGeneratedParent<T> with $qudsReadonly.ReadonlyView implements GeneratedParent<T> {
+  $QudsReadonlyGeneratedParent(GeneratedParent<T> source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceGeneratedParent = source, _$qudsGuardsGeneratedParent = Map.of(guards);
+  final GeneratedParent<T> _$qudsSourceGeneratedParent;
+  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsGeneratedParent;
+  @override
+  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  @override
+  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceGeneratedParent, candidate);
+  bool $qudsIsLazySlot(Object slot) => _$qudsSourceGeneratedParent.$qudsIsLazySlot(slot);
+  @override
+  T get value => $qudsReadonly.protectResult(_$qudsSourceGeneratedParent, _$qudsSourceGeneratedParent.value, (_qvalue) => $qudsReadonly.guardFor<T>(_$qudsGuardsGeneratedParent).protect(_qvalue));
+  String toString() => _$qudsSourceGeneratedParent.toString();
+  bool operator ==(Object other) => _$qudsSourceGeneratedParent == other;
+  int get hashCode => _$qudsSourceGeneratedParent.hashCode;
+}
+class GeneratedChild<U> extends GeneratedParent<List<U>> {
+  GeneratedChild({required List<U> value, required this.tag}) : super(value);
+  final String tag;
+  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
+    if (runtimeType != GeneratedChild<U>) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
+    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
+    $qudsReadonly.ListGuard<U>($qudsReadonly.guardFor<U>(normalized)).install(normalized);
+    final result = $qudsReadonly.cachedView<GeneratedChild<U>>(this, () => $QudsReadonlyGeneratedChild<U>(this, normalized));
+    (result as $QudsReadonlyGeneratedChild<U>)._$qudsGuardsGeneratedChild.addAll(normalized);
+    return result;
+  }
+  bool $qudsIsLazySlot(Object slot) => super.$qudsIsLazySlot(slot);
+}
+base class $QudsReadonlyGeneratedChild<U> extends $QudsReadonlyGeneratedParent<List<U>> with $qudsReadonly.ReadonlyView implements GeneratedChild<U> {
+  $QudsReadonlyGeneratedChild(GeneratedChild<U> source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceGeneratedChild = source, _$qudsGuardsGeneratedChild = Map.of(guards), super(source, guards);
+  final GeneratedChild<U> _$qudsSourceGeneratedChild;
+  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsGeneratedChild;
+  @override
+  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  @override
+  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceGeneratedChild, candidate);
+  bool $qudsIsLazySlot(Object slot) => _$qudsSourceGeneratedChild.$qudsIsLazySlot(slot);
+  @override
+  String get tag => $qudsReadonly.protectResult(_$qudsSourceGeneratedChild, _$qudsSourceGeneratedChild.tag, (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue));
+}
+
+
 
 
 
@@ -161,6 +217,9 @@ void main() {
   if (!(((() { final _qo4 = (_q3.read()["x"]!); final _qi5 = 0; return _qo4[_qi5 < 0 ? _qo4.length + _qi5 : _qi5]; })() == 32))) throw ArgumentError('value . read ( ) [ "x" ] ! [ 0 ] == 32');
   if (!((_q3.count == 2))) throw ArgumentError('value . count == 2');
   if (!(((() { final _qo6 = ExplicitChild<int>(<int>[33]).value; final _qi7 = 0; return _qo6[_qi7 < 0 ? _qo6.length + _qi7 : _qi7]; })() == 33))) throw ArgumentError('ExplicitChild < int > ( [ 33 ] ) . value [ 0 ] == 33');
+  final GeneratedChild<int> _q5 = $qudsReadonly.registerGuards<GeneratedChild<int>>((() { final _qa0 = <int>[34]; final _qa1 = "generated"; return GeneratedChild<int>(value: _qa0, tag: _qa1); })(), [$qudsReadonly.ModelGuard<GeneratedChild<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
+  if (!(((() { final _qo8 = _q5.value; final _qi9 = 0; return _qo8[_qi9 < 0 ? _qo8.length + _qi9 : _qi9]; })() == 34))) throw ArgumentError('generated . value [ 0 ] == 34');
+  if (!((_q5.tag == "generated"))) throw ArgumentError('generated . tag == "generated"');
   print("GENERIC INHERITANCE OK");
 }
-final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<Derived<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ModelGuard<ExplicitChild<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.MapGuard<String, List<int>>($qudsReadonly.AutoGuard<String>(), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>()))]);
+final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<Derived<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ModelGuard<ExplicitChild<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ModelGuard<GeneratedChild<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.MapGuard<String, List<int>>($qudsReadonly.AutoGuard<String>(), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>()))]);

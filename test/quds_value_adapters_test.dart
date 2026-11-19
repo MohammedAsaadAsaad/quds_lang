@@ -15,7 +15,7 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     expect(
         '${result.stdout}'.split('\n').where((line) => line.startsWith('ok ')),
-        hasLength(22));
+        hasLength(27));
   });
 
   test('run rebuilds provider output from a previous generated ABI', () async {
@@ -57,7 +57,7 @@ void main() {
     expect(output.readAsStringSync(), contains(r' $QudsMethodDefault'));
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v2');
+          'provider-defaults-v3');
     }
   });
 

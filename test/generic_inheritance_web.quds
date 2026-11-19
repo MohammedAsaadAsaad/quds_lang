@@ -12,6 +12,12 @@ class Parent<T>:
 class ExplicitChild<U> extends Parent<List<U>>:
   init(super.value):
     require value.length >= 0
+class GeneratedParent<T>:
+  value: T required
+  init(this.value):
+    require value == value
+class GeneratedChild<U> extends GeneratedParent<List<U>>:
+  tag: String required
 main():
   var trace = ""
   tag() -> String:
@@ -31,4 +37,7 @@ main():
   require value.read()["x"]![0] == 32
   require value.count == 2
   require ExplicitChild<int>([33]).value[0] == 33
+  generated = GeneratedChild<int>(value: [34], tag: "generated")
+  require generated.value[0] == 34
+  require generated.tag == "generated"
   print "GENERIC INHERITANCE OK"

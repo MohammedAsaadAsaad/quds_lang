@@ -1,0 +1,30 @@
+greet(name: String required, times: int = 1) -> String = name * times
+place(base: int, [extra: int = 4]) -> int = base + extra
+optionalText([caption: String?]) -> String = caption ?? "none"
+collect(first: int = 1, ...rest: int) -> int = first + rest.length
+class ParseBox:
+  parse(text: String) -> String = text
+  parse(value: int) -> int = value
+
+test "required named parameters reject a positional argument":
+  expect(greet(name: "Q"), "Q")
+  expect(greet(name: "Q", times: 2), "QQ")
+
+test "optional positional parameters accept position, name, and omission":
+  expect(place(1), 5)
+  expect(place(1, 7), 8)
+  expect(place(extra: 9, base: 2), 11)
+  expect(optionalText(), "none")
+  expect(optionalText("Ada"), "Ada")
+  expect(optionalText(caption: "Ada"), "Ada")
+
+test "a default and a variadic share one function value":
+  saved = collect
+  expect(saved(), 1)
+  expect(saved(first: 4), 4)
+  expect(collect(2, 8, 9), 4)
+
+test "class method overloads select by argument type":
+  box = ParseBox()
+  expect(box.parse("a"), "a")
+  expect(box.parse(3), 3)

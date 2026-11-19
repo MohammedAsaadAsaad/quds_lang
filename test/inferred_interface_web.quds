@@ -1,0 +1,10 @@
+use fixtures.inferred_interface.provider as api
+
+main():
+  face: api.Contract = api.Box()
+  saved = face.read
+  print saved()
+  print saved == face.read
+  print face.read()
+  owner = api.Box()
+  print owner.read()

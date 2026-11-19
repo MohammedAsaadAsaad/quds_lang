@@ -75,10 +75,10 @@ checksum valid after removing its new bridge, then verifies automatic rebuilding
 
 This milestone implements existing expression-body inference across imports.
 Ordinary multiline bodies still need an explicit result annotation to return a
-value. Inferred declaring-interface default bridges, SDK-section defaults,
-polymorphic callback constraint solving, private nominal return-type publication,
-generator inference and expanded cross-package/part/cycle certification remain
-separate work. The alias test covers provider lexical signature identities;
+value. An expression-bodied interface default whose result is inferred now uses
+the same declaring-library resolver as an annotated interface default, including
+a private helper. SDK-section defaults, generator inference, and expanded
+cross-package/part/cycle certification remain separate work. The alias test covers provider lexical signature identities;
 it does not certify Dart publication of exported erased aliases. No approved
 syntax is redesigned and no whole rule is promoted to complete.
 

@@ -1,3 +1,21 @@
+# Inferred interface default bridges — 2026-11-19
+
+Base: `ddc9e4e`. Generated ABI: `provider-defaults-v11`.
+
+| Check | Observed result |
+| --- | --- |
+| Failing case before the fix | `quds test test/inferred_interface.quds` exited 254. Generated Dart called `_seed` from the consumer at the Quds test coordinates |
+| Quds test | `ok an inferred interface default stays in the provider` |
+| Generated boundary | Consumer golden calls `$QudsMethodDefault...` and does not contain `_seed` or `_q0()`. The provider resolver calls `_q0()` |
+| VM and JavaScript | Both print `70`, `true`, `70`, `20` |
+| Cache | A checksum-valid v10 provider with the resolver removed is rebuilt to `provider-defaults-v11` and prints `70` |
+| Analysis | `dart analyze lib bin test`: no issues. `dart format .` left package sources unchanged (568 files) and could not parse bundled `toolchains/dart` sources |
+| Suite | `dart test`: 761 passed, reporter 05:53, wall 354640 ms |
+
+No rule was marked `complete`. SDK-section default values still use a consumer adapter for literal defaults. Union/intersection boundaries, foreign implementors, real Flutter engine runs, and pub.dev stay open.
+
+---
+
 # Inferred provider results — 2026-11-19
 
 Base: `683c8b9`. Generated ABI: `provider-defaults-v10`.

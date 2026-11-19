@@ -1,0 +1,5 @@
+_seed() -> int = 7
+interface Contract:
+  read(value: int = _seed()) = value
+class Box implements Contract:
+  read(value: int = 2) -> int = value * 10

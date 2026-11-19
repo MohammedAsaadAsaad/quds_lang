@@ -1,0 +1,10 @@
+use fixtures.inferred_interface.provider as api
+
+test "an inferred interface default stays in the provider":
+  face: api.Contract = api.Box()
+  saved = face.read
+  expect(saved(), 70)
+  expect(saved == face.read, true)
+  expect(face.read(), 70)
+  owner = api.Box()
+  expect(owner.read(), 20)

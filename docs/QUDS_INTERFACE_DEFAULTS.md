@@ -68,9 +68,12 @@ owner binders and forwarding method binders use independent reserved names;
 method parameters may shadow owner parameters without capture. Bounds dependent
 on an owner parameter remain active, and conflicting instantiations are rejected.
 
-Public instance methods need an explicit result and synchronous trailing computed
-defaults; generators, variadics, union/intersection parameters, duplicate method
-names, static/operator methods and awaiting defaults remain outside this slice.
+Public instance methods need synchronous trailing computed defaults. An
+expression body may omit the result annotation; the resolver still lives in the
+declaring library and a private helper is not copied to the caller. Generators,
+variadics, union/intersection parameters, duplicate method names, static/operator
+methods, awaiting defaults, and ordinary multiline bodies without a result
+annotation remain outside this slice.
 
 Signatures support core types, nullable/readonly forms, owner/method parameters,
 provider-defined classes and aliases, records and callbacks. Provider lexical types

@@ -112,10 +112,9 @@ bool supportsInterfaceDefaults(
         ClassDeclaration owner, FunctionDeclaration method) =>
     !method.isStatic &&
     !method.isOperator &&
-    method.returnType != null &&
     supportsProviderDefaults(method) &&
     [
-      method.returnType!,
+      if (method.returnType != null) method.returnType!,
       ...method.parameters.map((p) => p.type),
       for (final p in method.typeParameters)
         if (p.bound != null) p.bound!

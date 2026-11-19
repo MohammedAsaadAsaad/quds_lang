@@ -110,8 +110,9 @@ a default has no adapter and reports E910.
 Further work:
 
 - One value that combines a default with a variadic parameter.
-- Class method overloads. Required-positional, default, and variadic method
-  values are documented in [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md).
+- Required-positional, default, and variadic method values are documented in
+  [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Class method overloads now
+  emit `name$1` and `name$2`.
 - Propagation of inferred return metadata from imported providers.
 - Full mixed-variance constraint solving and polymorphic generic callback types.
 

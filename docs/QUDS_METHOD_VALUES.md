@@ -128,10 +128,13 @@ readonly result guard.
 Dart does not inherit static methods. A child-type reference to a parent static,
 whether stored or called, lowers to the declaring type (`Utility.echo`, not
 `Derived.echo`). That is an implementation lowering, not a change to the
-language inheritance rule. Class method overloads are still unresolved: the
-checker returns the first method of that name. A required or variadic parameter
-after a default remains E910. Full mixed-variance constraint solving is not
-part of this slice. Explicit instantiation requires verified callable metadata;
+language inheritance rule. Class methods with different signatures emit
+`name$1` and `name$2` in source order. A same-signature override copies the
+ancestor Dart name. Calls select one candidate at compile time (`E310` when
+two non-variadic candidates both apply). A tear-off needs one expected
+signature (`E311`). A required or variadic parameter after a default remains
+E910. Full mixed-variance constraint solving is not part of this slice.
+Explicit instantiation requires verified callable metadata;
 a function-looking getter alone is insufficient.
 
 Evidence: `test/quds_method_values.quds` (five declarations), the current

@@ -125,7 +125,7 @@
       ],
       "verified_slice_files": [],
       "known_limits": [
-        "One unnamed generative parent constructor is synthesized with the child fields. Named-only, factory, variadic, and field-name collisions stay E910. An imported private parent default is not yet owned by a constructor bridge."
+        "One unnamed generative parent constructor is synthesized with the child fields. An imported non-literal parent default is evaluated by the parent $QudsCtorSlots bridge. Named-only, factory, variadic, and field-name collisions stay E910."
       ],
       "completion_evidence": {
         "positive": [],
@@ -370,7 +370,7 @@
         "test/goldens/parameter_forms.dart.txt"
       ],
       "known_limits": [
-        "Required named and bracketed optional positional forms survive parsing, imports, generic specialization, overload labels, stored values, class/interface bridges, literal constructors, and provider-owned non-literal constructor defaults. Imported and stored optional positional gaps use a provider packet without copying private defaults. Direct optional-named arguments are named-only, including migrated SDK calls. Mixed optional groups, default-plus-variadic values, class method overload Dart names, and synthesized private parent defaults remain open. A required named slot may be implemented as optional named with the same name and a default."
+        "Required named and bracketed optional positional forms survive parsing, imports, generic specialization, overload labels, stored values, class/interface bridges, literal constructors, and provider-owned non-literal constructor defaults. Imported and stored optional positional gaps use a provider packet without copying private defaults. Direct optional-named arguments are named-only, including migrated SDK calls. Class method overloads use source-order Dart names, and a synthesized child evaluates an imported non-literal parent default through the parent slots bridge. Mixed optional groups and default-plus-variadic values remain open. A required named slot may be implemented as optional named with the same name and a default."
       ],
       "completion_evidence": {
         "positive": [],
@@ -451,7 +451,7 @@
       ],
       "known_limits": [
         "A child with no constructor forwards exactly one unnamed generative parent constructor. Named-only, factory, variadic, and field-name collisions stay E910.",
-        "Explicit constructor signatures retain required/bracket metadata and prefixed generic construction. Literal defaults execute at the call site. An omitted non-literal imported default is evaluated by the provider static constructor bridge. Full const/super/generic default certification and private parent defaults on synthesized constructors remain unfinished."
+        "Explicit constructor signatures retain required/bracket metadata and prefixed generic construction. Literal defaults execute at the call site. An omitted non-literal imported default is evaluated by the provider static constructor bridge. A synthesized child calls the parent slots bridge for an imported non-literal default. Const literal defaults, a super parameter default, and a generic class with an int default execute. Computed defaults whose type is a class type parameter remain unfinished."
       ],
       "completion_evidence": {
         "positive": [],
@@ -779,9 +779,9 @@
         "test/goldens/parameter_forms.dart.txt"
       ],
       "known_limits": [
-        "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. Awkward parameter order, default-plus-variadic values, method overloads, full constraint solving, and polymorphic callbacks remain limited. Parameterized readonly method results wrap the adapter invocation when the readonly view is wider.",
+        "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. Awkward parameter order, default-plus-variadic values, full constraint solving, and polymorphic callbacks remain limited. Concrete class method overloads select at compile time. Parameterized readonly method results wrap the adapter invocation when the readonly view is wider.",
         "Defaulted value slots retain provider-owned omission and sequential defaults. Public ordinary-class methods and generic interface contracts with supported signatures preserve repeated-reference equality, including readonly proxies and virtual dispatch. Provider lexical class/alias, record and callback signatures are covered by ABI v4. Complete direct-call parameter-form parity, SDK defaults, inferred provider returns, unions/intersections, foreign implementors and expanded part/cycle/conditional-export certification remain unfinished.",
-        "ABI v6 retains required named and optional positional kinds and adds gap packets for omitted earlier optional positional slots. Lambda parameters accept required, bracket, and default forms. Plain positional callback types keep their previous unlabeled representation for nested compatibility. Mixed optional groups remain limited."
+        "ABI v7 retains required named and optional positional kinds, gap packets, and constructor slots for imported parent defaults. Lambda parameters accept required, bracket, and default forms. Plain positional callback types keep their previous unlabeled representation for nested compatibility. Mixed optional groups remain limited."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1469,7 +1469,7 @@
         "test/quds_value_adapters_web.quds"
       ],
       "known_limits": [
-        "Local and imported function overload values use stable public names when signatures differ. Same-signature imports stay E204. Method overloads and awkward default or variadic value shapes remain unfinished."
+        "Local and imported function overload values use stable public names when signatures differ. Same-signature imports stay E204. Class methods with different signatures emit name$1 and name$2 in source order, and an override copies the ancestor Dart name. Ambiguous calls are E310 and an unselected tear-off is E311. Two applicable non-variadic candidates stay ambiguous even when one parameter type is more specific. Awkward default or variadic value shapes remain unfinished."
       ],
       "completion_evidence": {
         "positive": [],

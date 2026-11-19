@@ -51,7 +51,7 @@ void main() {
     expect(output.readAsStringSync(), contains(r' $QudsDefault'));
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v6');
+          'provider-defaults-v7');
     }
   });
 
@@ -86,6 +86,48 @@ void main() {
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
     expect(vm.stdout, '7\n4\n');
+  });
+
+  test('synthesized constructors keep imported private parent defaults',
+      () async {
+    final root = Directory.systemTemp.createTempSync('quds-parent-default-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/provider.quds').writeAsStringSync(
+        '_seed() -> int = 7\nclass Parent:\n  value: int\n  init([this.value: int = _seed()]):\n    require value >= 0\n');
+    final file = File('${root.path}/main.quds')..writeAsStringSync('''
+use provider as api
+class Child extends api.Parent:
+  tag: String required
+main():
+  made = Child(tag: "ok")
+  print made.value
+  print made.tag
+  print Child(value: 4, tag: "set").value
+''');
+    final compiled = compile(file.readAsStringSync(), file: file.path);
+    expect(compiled.dart, contains(r'$QudsCtor'));
+    expect(compiled.dart, isNot(contains('_seed')));
+    expect(compiled.dart, isNot(contains('_q0()')));
+    final provider = File('${root.path}/provider.quds');
+    final implementation =
+        compile(provider.readAsStringSync(), file: provider.path);
+    expect(implementation.dart, contains(r'$QudsCtorSlots'));
+    expect(implementation.dart, contains('_q0()'));
+    final output = File('${root.path}/main.dart')
+      ..writeAsStringSync(compiled.dart);
+    writeSdkBundles(root.path, compiled);
+    writeSdkBundles(root.path, implementation);
+    final emitted = File('${root.path}/provider.dart')
+      ..writeAsStringSync(relocateGeneratedLibraries(implementation, '').dart);
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', output.path, emitted.path]);
+    expect(analysis.exitCode, 0,
+        reason:
+            '${analysis.stdout}${analysis.stderr}\n${compiled.dart}\n${implementation.dart}');
+    final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
+    expect(vm.exitCode, 0,
+        reason: '${vm.stdout}${vm.stderr}\n${compiled.dart}');
+    expect(vm.stdout, '7\nok\n4\n');
   });
 
   final negative = <String, String>{
@@ -138,6 +180,20 @@ class Parent:
     require value > 0
 class Child extends Parent:
   tag: String required
+class Base:
+  value: int
+  init([this.value: int = 3]):
+    require value > 0
+class Next extends Base:
+  init([super.value: int = 4]):
+    require value > 0
+class Point:
+  x: int
+  const init([this.x: int = 1])
+class Holder<T>:
+  value: int
+  init([this.value: int = 2]):
+    require value > 0
 class Reader:
   read(value: int required) -> int = value
 class Wider extends Reader:
@@ -153,6 +209,11 @@ main():
   print choose(3, (item: int, [fallback: int = item]) -> fallback)
   labeled: (value: int required) -> int = (value: int required) -> value
   print labeled(value: 6)
+  print Next().value
+  print Next(value: 8).value
+  print Point().x
+  print Point(x: 5).x
+  print Holder<String>().value
 ''';
     final file = File('test/parameter_shape.quds').absolute;
     final compiled = compile(source, file: file.path);
@@ -168,7 +229,7 @@ main():
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0,
         reason: '${vm.stdout}${vm.stderr}\n${compiled.dart}');
-    expect(vm.stdout, '4\nok\n2\n5\n3\n6\n');
+    expect(vm.stdout, '4\nok\n2\n5\n3\n6\n4\n8\n1\n5\n2\n');
   });
 
   test('parameter forms generate deterministic Dart and execute on VM and JS',

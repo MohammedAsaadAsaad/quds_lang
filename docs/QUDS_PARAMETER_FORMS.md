@@ -69,17 +69,17 @@ constructor forms are covered; general computed constructor defaults are not cer
   static `$QudsCtor...`. Literal defaults stay at the call site. A child with
   no constructor forwards exactly one unnamed generative parent constructor;
   a named-only, factory, variadic, or field-name collision stays E910.
-  A private parent default copied by synthesis is not yet provider-owned.
+  An imported non-literal parent default is evaluated by `$QudsCtorSlots`.
 - A required named parameter may be implemented by an optional named parameter
   with the same name and a default. A dual parameter does not satisfy a
   required named parameter.
 - Lambda parameters accept `name: Type required`, `[name: Type]`, and defaults,
-  including a default that reads an earlier parameter. Class method overload
-  Dart names, SDK section bridges, intersections and foreign implementors remain
-  separate work. No full 115-rule certification is claimed.
+  including a default that reads an earlier parameter. Class method overloads
+  emit `name$1` and `name$2`. SDK section bridges, intersections and foreign
+  implementors remain separate work. No full 115-rule certification is claimed.
 
-ABI `provider-defaults-v6` adds gap and constructor-default bridges. The CLI
-invalidates v5 and v4 caches automatically, including valid-checksum output.
+ABI `provider-defaults-v7` adds gap, constructor-default, and parent-slot bridges. The CLI
+invalidates v6, v5, and v4 caches automatically, including valid-checksum output.
 Evidence: `test/parameter_forms.quds`, its VM/JS fixture and golden,
 `test/fixtures/parameter_forms/provider.quds` and `test/parameter_forms_test.dart`.
 Exact results are in [VALIDATION.md](VALIDATION.md); the handoff is

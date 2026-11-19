@@ -1230,7 +1230,8 @@ class DartEmitter {
           for (var i = 0; i < arguments.length; i++)
             '\$qInterfaceValues.\$${i + 1}'
         ];
-        final invoke = 'this.${method.name}$typeArgs(${values.join(', ')})';
+        final invoke =
+            'this.${model.declarations[method]?.dartName ?? method.name}$typeArgs(${values.join(', ')})';
         line(
             '$header { final \$qInterfaceValues = $resolver$resolverTypes(this, '
             '<Object?>[${arguments.join(', ')}], <bool>[${present.join(', ')}]); '
@@ -1244,7 +1245,7 @@ class DartEmitter {
             line("$gapHeader => throw UnsupportedError('readonly method');");
           } else {
             final gapInvoke =
-                'this.${method.name}$typeArgs(${values.join(', ')})';
+                'this.${model.declarations[method]?.dartName ?? method.name}$typeArgs(${values.join(', ')})';
             line('$gapHeader { final \$qInterfaceValues = '
                 '$resolver$resolverTypes(this, \$qInputs, \$qPresent); '
                 '${returned == 'void' ? '' : 'return '}$gapInvoke; }');
@@ -2348,6 +2349,7 @@ class DartEmitter {
         }
       }
     }
+    final foreign = _foreignParentDefaults(node, parent);
     final names = <String>[];
     final arguments = <String>[];
     for (final parameter in parent.parameters) {
@@ -2359,11 +2361,15 @@ class DartEmitter {
                   ?.type ??
               parameter.type);
       final type = _dartType(substituteBridgeType(declared, substitution));
-      final required = parameter.defaultValue == null &&
-              parameter.kind != ParameterKind.optionalPositional
+      final hidden = foreign &&
+          parameter.defaultValue != null &&
+          parameter.defaultValue is! Literal;
+      final required = hidden ||
+              parameter.defaultValue == null &&
+                  parameter.kind != ParameterKind.optionalPositional
           ? 'required '
           : '';
-      final value = parameter.defaultValue == null
+      final value = parameter.defaultValue == null || hidden
           ? ''
           : ' = ${expression(parameter.defaultValue!)}';
       names.add('$required$type ${parameter.name}$value');
@@ -2380,6 +2386,78 @@ class DartEmitter {
     final tail = initializers.isEmpty ? '' : ' : ${initializers.join(', ')}';
     final list = names.join(', ');
     line(list.isEmpty ? '${node.name}()$tail;' : '${node.name}({$list})$tail;');
+    if (foreign)
+      _emitSynthesizedParentBridge(node, parent, owner, substitution);
+  }
+
+  bool _foreignParentDefaults(
+      ClassDeclaration node, ConstructorDeclaration parent) {
+    final owner = _classes[_genericHead(node.superclass!)];
+    final parentHome = owner == null ? '' : model.libraryOf[owner] ?? '';
+    final home = model.libraryOf[node] ?? '';
+    if (parentHome.isEmpty || parentHome == home) return false;
+    return parent.parameters.any((parameter) =>
+        parameter.defaultValue != null && parameter.defaultValue is! Literal);
+  }
+
+  void _emitSynthesizedParentBridge(
+      ClassDeclaration node,
+      ConstructorDeclaration parent,
+      ClassDeclaration? owner,
+      Map<String, String> substitution) {
+    final rendered = _dartType(node.superclass!);
+    final open = rendered.indexOf('<');
+    final parentOwner = open < 0 ? rendered : rendered.substring(0, open);
+    final parentSuffix = open < 0 ? '' : rendered.substring(open);
+    final slots =
+        owner == null ? '' : providerConstructorSlotsName(owner, parent);
+    final bridge = providerSynthesizedConstructorBridgeName(node);
+    final generics = _typeParameters(node.typeParameters, const []);
+    final saved = _names;
+    _names = {..._names};
+    final statements = <String>[];
+    final arguments = <String>[];
+    try {
+      statements.add(
+          'final \$qParent = $parentOwner.$slots$parentSuffix(\$qInputs, \$qPresent);');
+      for (var i = 0; i < parent.parameters.length; i++) {
+        final parameter = parent.parameters[i];
+        final declared = parameter.initializing.isEmpty
+            ? model.declarations[parameter]?.type ?? parameter.type
+            : (owner?.fields
+                    .where((field) => field.name == parameter.name)
+                    .firstOrNull
+                    ?.type ??
+                parameter.type);
+        final type = _dartType(substituteBridgeType(declared, substitution));
+        arguments.add('${parameter.name}: \$qParent[$i] as $type');
+      }
+      final fields = node.fields
+          .where((field) =>
+              !field.isStatic && !field.isEvent && field.lazyBody == null)
+          .toList();
+      for (var i = 0; i < fields.length; i++) {
+        final field = fields[i];
+        final index = parent.parameters.length + i;
+        final type = _dartType(field.type);
+        final input = '\$qInputs[$index]';
+        final fallback = field.initializer == null
+            ? "throw StateError('missing')"
+            : expression(field.initializer!);
+        final slot = '_qchild$i';
+        statements.add(
+            'final $type $slot = \$qPresent[$index] ? $input as $type : $fallback;');
+        arguments.add('${field.name}: $slot');
+      }
+    } finally {
+      _names = saved;
+    }
+    final returned = node.typeParameters.isEmpty
+        ? node.name
+        : '${node.name}<${node.typeParameters.map((p) => p.name).join(', ')}>';
+    line('static $returned $bridge$generics'
+        '(List<Object?> \$qInputs, List<bool> \$qPresent) '
+        '{ ${statements.join(' ')} return ${node.name}(${arguments.join(', ')}); }');
   }
 
   void _emitConstructorBridges(ClassDeclaration node) {
@@ -2400,6 +2478,7 @@ class DartEmitter {
       _names = {..._names};
       final statements = <String>[];
       final arguments = <String>[];
+      final casts = <String>[];
       try {
         for (var i = 0; i < constructor.parameters.length; i++) {
           final parameter = constructor.parameters[i];
@@ -2418,6 +2497,7 @@ class DartEmitter {
           final slot = '_qctor$i';
           statements.add('final $dartType $slot = $supplied;');
           arguments.add(slot);
+          casts.add('\$qSlots[$i] as $dartType');
         }
       } finally {
         _names = saved;
@@ -2425,9 +2505,17 @@ class DartEmitter {
       final ctor = constructor.name == null
           ? node.name
           : '${node.name}.${constructor.name}';
+      final applied = node.typeParameters.isEmpty
+          ? ''
+          : '<${node.typeParameters.map((p) => p.name).join(', ')}>';
+      final slots = providerConstructorSlotsName(node, constructor);
+      line('static List<Object?> $slots$generics'
+          '(List<Object?> \$qInputs, List<bool> \$qPresent) '
+          '{ ${statements.join(' ')} return <Object?>[${arguments.join(', ')}]; }');
       line('static $returned $name$generics'
           '(List<Object?> \$qInputs, List<bool> \$qPresent) '
-          '{ ${statements.join(' ')} return $ctor${node.typeParameters.isEmpty ? '' : '<${node.typeParameters.map((p) => p.name).join(', ')}>'}(${arguments.join(', ')}); }');
+          '{ final \$qSlots = $slots$generics(\$qInputs, \$qPresent); '
+          'return $ctor$applied(${casts.join(', ')}); }');
     }
   }
 
@@ -4647,8 +4735,12 @@ class DartEmitter {
       CallExpression node, ClassDeclaration type, bool constantContext) {
     final constructor = type.constructors
         .where((item) => item.name == null && !item.factory)
-        .first;
-    final name = providerConstructorBridgeName(type, constructor);
+        .firstOrNull;
+    final parent =
+        constructor == null ? _synthesizedParentConstructor(type) : null;
+    final name = constructor == null
+        ? providerSynthesizedConstructorBridgeName(type)
+        : providerConstructorBridgeName(type, constructor);
     String owner;
     var suffix = '';
     if (node.callee is TypeApplication) {
@@ -4661,8 +4753,13 @@ class DartEmitter {
         suffix = '<${arguments.map(_dartType).join(', ')}>';
       }
     }
-    final order = model.argumentOrder[node] ??
-        List<int>.filled(constructor.parameters.length, -1);
+    final count = constructor?.parameters.length ??
+        (parent?.parameters.length ?? 0) +
+            type.fields
+                .where((field) =>
+                    !field.isStatic && !field.isEvent && field.lazyBody == null)
+                .length;
+    final order = model.argumentOrder[node] ?? List<int>.filled(count, -1);
     return _packetCall(node, '$owner.$name$suffix', order,
         _dartType(model.types[node] ?? type.name),
         gap: false);

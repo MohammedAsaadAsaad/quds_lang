@@ -1,3 +1,19 @@
+# Method overloads and imported parent constructor defaults — 2026-11-19
+
+Base: `662adb3`. ABI: `provider-defaults-v7`.
+
+| Check | Observed result |
+| --- | --- |
+| Method overloads | `dart test test/language_test.dart --name "class method overloads"`: passed. Output is `a`, `n2`, `b`, `n3`, `cc`, `n2`. Ambiguous calls are `E310`, an unselected tear-off is `E311`, and a missing candidate is `E500` |
+| Parent slots | Synthesized `Child(tag: "ok")` prints `7`, `ok`, `4`. The child file calls `Parent.$QudsCtorSlots` and does not contain `_seed` or `_q0()` |
+| Const, super, generic | The shape program prints `4`, `8`, `1`, `5`, `2` after the earlier six lines |
+| Analysis | `dart analyze lib bin test` after formatting: **No issues found** |
+| Full suite | `dart test`: **730 passed, 1 failed, in 5m56s**. The failure is `quds create flutter writes the app in quds`: the local Flutter SDK prefixes widget types (`class MyApp extends _qNative….StatelessWidget`). That failure is outside this slice |
+
+No rule was marked `complete`. Mixed optional groups, default-plus-variadic values, and opaque Dart function values remain open.
+
+---
+
 # Optional positional gaps and provider-owned constructor defaults — 2026-11-19
 
 Base: `61dc336`. Contract: [QUDS_PARAMETER_FORMS.md](QUDS_PARAMETER_FORMS.md).

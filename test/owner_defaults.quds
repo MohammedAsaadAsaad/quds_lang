@@ -1,0 +1,25 @@
+use fixtures.owner_defaults.provider as api
+
+class Host with api.Label:
+  marker: int = 1
+
+class Child extends api.Base:
+  taken() -> int:
+    saved = read
+    return saved()
+  same() -> bool:
+    saved = read
+    return saved == read
+
+test "value mixin and protected defaults stay on the declaration":
+  point = api.Point(x: 3)
+  scaled = point.scale
+  expect(scaled == point.scale, true)
+  expect(scaled(), 12)
+  host = Host()
+  labeled = host.read
+  expect(labeled == host.read, true)
+  expect(labeled(), 4)
+  child = Child()
+  expect(child.taken(), 4)
+  expect(child.same(), true)

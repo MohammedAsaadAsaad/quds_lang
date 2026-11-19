@@ -1,0 +1,11 @@
+_seed() -> int = 4
+
+value class Point:
+  x: int required
+  scale(factor: int = _seed()) -> int = x * factor
+
+mixin Label:
+  read(value: int = _seed()) -> int = value
+
+class Base:
+  protected read(value: int = _seed()) -> int = value

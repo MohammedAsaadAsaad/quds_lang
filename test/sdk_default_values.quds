@@ -1,0 +1,7 @@
+use quds:math::distribution as stats
+
+test "an SDK section default stays one provider value":
+  saved = stats.normalPdf
+  expect(saved == stats.normalPdf, true)
+  expect(saved(0.0) > 0.0, true)
+  expect(stats.normalPdf(0.0) == saved(0.0), true)

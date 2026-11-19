@@ -355,6 +355,9 @@ class SemanticModel {
   final interfaceDefaultPrefixes = <String, String>{};
   final providerDefaultMethods = <FunctionDeclaration, ClassDeclaration>{};
   final providerDefaultFunctions = <FunctionDeclaration>{};
+
+  /// SDK functions whose generated bridge must be imported by this library.
+  final providerBridgeImports = <FunctionDeclaration>{};
   final qudsValueLowerings = <Expression, QudsValueLowering>{};
 
   /// Imported calls that omit an earlier optional positional slot.
@@ -904,16 +907,25 @@ class Analyzer {
         .where((entry) => entry.key.startsWith('quds:'))
         .map((entry) => entry.value.span.file));
     for (final source in [program, ...libraries.values]) {
-      if (_sdkDefaultFiles.contains(source.span.file)) continue;
+      final sdk = _sdkDefaultFiles.contains(source.span.file);
       model.providerDefaultFunctions.addAll(source.statements
           .whereType<FunctionDeclaration>()
           .where(supportsProviderDefaults));
+      if (sdk) continue;
       for (final owner in source.statements.whereType<ClassDeclaration>()) {
-        if ((owner.kind != 'class' && owner.kind != 'interface') ||
-            owner.name.startsWith('_')) continue;
+        const bridgeOwners = {
+          'class',
+          'interface',
+          'value',
+          'mixin',
+          'mixinClass',
+        };
+        if (!bridgeOwners.contains(owner.kind) || owner.name.startsWith('_'))
+          continue;
         for (final method in owner.methods) {
-          if (method.visibility.isNotEmpty || !supportsProviderDefaults(method))
-            continue;
+          if (method.visibility == 'private' ||
+              method.name.startsWith('_') ||
+              !supportsProviderDefaults(method)) continue;
           if (owner.kind == 'interface' &&
               !supportsInterfaceDefaults(owner, method)) continue;
           if (owner.methods
@@ -6314,7 +6326,7 @@ class Analyzer {
         node);
   }
 
-  String? _qudsMethodValue(MemberAccess node, String raw, String receiverType,
+  String? _qudsMethodValue(Expression node, String raw, String receiverType,
       ClassDeclaration declaration, FunctionDeclaration method) {
     final explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
@@ -6405,7 +6417,9 @@ class Analyzer {
       model.contextualFunctionArguments[node] = arguments;
     if (method.parameters.any((p) => p.defaultValue != null) &&
         !_checking.contains(method)) analyzeMethod(ownerDeclaration, method);
-    return node.nullAware ? nullableType(signature) : signature;
+    return node is MemberAccess && node.nullAware
+        ? nullableType(signature)
+        : signature;
   }
 
   String? _qudsExtensionValue(MemberAccess node, String raw,
@@ -7883,6 +7897,15 @@ class Analyzer {
             : _methods(current, node.name)
                 .where((method) => !method.isStatic)
                 .toList();
+        if (methods.length == 1 &&
+            current != null &&
+            (_valueNeedsLowering(methods.single) ||
+                methods.single.typeParameters.isNotEmpty)) {
+          model.implicitThis.add(node);
+          final raw = _readonlyMethod ? 'readonly $_thisType' : _thisType!;
+          return _qudsMethodValue(
+              node, raw, _thisType!, current, methods.single)!;
+        }
         if (methods.length > 1) {
           final selected = _selectMethodValue(node, methods);
           model.implicitThis.add(node);
@@ -8076,6 +8099,9 @@ class Analyzer {
     final adapt = function.parameters.any((parameter) =>
         parameter.needsAdapter || parameter.type.contains(' & '));
     if (!adapt) return;
+    if (model.providerDefaultFunctions.contains(function)) {
+      model.providerBridgeImports.add(function);
+    }
     model.qudsValueLowerings[node] = QudsValueLowering(
         function, typeArguments, parameterTypes,
         staticOwner: staticOwner);
@@ -10131,6 +10157,11 @@ class Analyzer {
     final providerHome = providerOwner == null
         ? model.declarations[function]?.library ?? ''
         : model.libraryOf[providerOwner] ?? '';
+    if (function != null &&
+        model.providerDefaultFunctions.contains(function) &&
+        order.contains(-1)) {
+      model.providerBridgeImports.add(function);
+    }
     if (function != null &&
         providerHome.isNotEmpty &&
         providerHome != _activeLibrary &&

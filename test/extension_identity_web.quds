@@ -1,0 +1,56 @@
+interface Named:
+  name: String
+interface Aged:
+  age: int
+class Person implements Named, Aged:
+  name: String required
+  age: int required
+choose(item: Named & Aged, extra: int = 1) -> int = extra
+
+extend Object:
+  inspect(value: int = 1) -> int = value
+
+class Box:
+  item: int required
+extend Box:
+  measure<T>(value: T, extra: int = 1) -> int = extra
+
+class Fresh:
+  readonly read(scale: int = 2) -> List<int> = [scale]
+
+class Carrier<T>:
+  item: Object required
+  same() -> bool:
+    saved = item.inspect
+    return saved == item.inspect
+
+main():
+  item: Object = 3
+  saved = item.inspect
+  print saved == item.inspect
+  print saved()
+  other: Object = 4
+  print saved == other.inspect
+  flag: Object = true
+  print flag.inspect == flag.inspect
+  word: Object = "a"
+  print word.inspect == word.inspect
+  carried = Carrier<int>(item: 3)
+  print carried.same()
+  box = Box(item: 1)
+  again = Box(item: 1)
+  left = box.measure<int>
+  print left == box.measure<int>
+  print left == again.measure<int>
+  print left(8)
+  text = box.measure<String>
+  print left == text
+  print text("a")
+  view: readonly Fresh = Fresh()
+  guarded = view.read
+  print guarded == view.read
+  print guarded()[0]
+  person = Person(name: "Ada", age: 3)
+  picked = choose
+  print picked == choose
+  print picked(person)

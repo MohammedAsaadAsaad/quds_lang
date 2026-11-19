@@ -70,9 +70,12 @@ a trailing group of computed defaults, no variadic/intersection parameters, no
 generator and no awaiting default. It includes a synchronous default on an async
 function. Native Dart function values retain their existing metadata path.
 
-Non-class/protected provider methods, interface bridges, inferred provider return metadata,
-SDK-section APIs, defaults with variadics/intersections, and awaiting defaults
-remain outside this ABI slice. Existing paths and limitations remain for them.
+A supported SDK-section function uses the bridge emitted with that SDK library.
+The caller imports the bridge only when it stores the function or omits a
+default. Value classes, mixins, and protected methods use the same bridge, and
+the protected bridge keeps the protected mark. Defaults with variadics or
+awaiting expressions remain outside this ABI slice. An intersection default is
+not a provider bridge; repeated references share an identity-keyed closure.
 Parts, cycles, conditional exports, cross-package publication and compatibility
 with previously generated Dart require expanded certification; they are not
 claimed complete by the local import/re-export tests.

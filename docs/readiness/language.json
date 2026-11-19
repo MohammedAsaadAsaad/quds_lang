@@ -821,11 +821,24 @@
         "test/inferred_interface_test.dart",
         "test/inferred_interface_web.quds",
         "test/goldens/inferred_interface.dart.txt",
-        "test/fixtures/inferred_interface/provider.quds"
+        "test/fixtures/inferred_interface/provider.quds",
+        "test/sdk_default_values.quds",
+        "test/sdk_default_values_test.dart",
+        "test/sdk_default_values_web.quds",
+        "test/goldens/sdk_default_values.dart.txt",
+        "test/owner_defaults.quds",
+        "test/owner_defaults_test.dart",
+        "test/owner_defaults_web.quds",
+        "test/goldens/owner_defaults.dart.txt",
+        "test/fixtures/owner_defaults/provider.quds",
+        "test/extension_identity.quds",
+        "test/extension_identity_test.dart",
+        "test/extension_identity_web.quds",
+        "test/goldens/extension_identity.dart.txt"
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. A named default before a required parameter and a default together with a variadic can be stored as values. Full constraint solving and polymorphic callbacks remain limited. Concrete class method overloads select at compile time. Parameterized readonly method results wrap the adapter invocation when the readonly view is wider.",
-        "Defaulted value slots retain provider-owned omission and sequential defaults. Public ordinary-class methods and generic interface contracts with supported signatures preserve repeated-reference equality, including readonly proxies and virtual dispatch. An expression-bodied interface default with an inferred result uses the declaring library resolver, including a private helper. Provider lexical class/alias, record and callback signatures are covered by ABI v4. Complete direct-call parameter-form parity, SDK-section defaults, unions/intersections, foreign implementors and expanded part/cycle/conditional-export certification remain unfinished.",
+        "Defaulted value slots retain provider-owned omission and sequential defaults. Public ordinary-class methods and generic interface contracts with supported signatures preserve repeated-reference equality, including readonly proxies and virtual dispatch. An expression-bodied interface default with an inferred result uses the declaring library resolver, including a private helper. An SDK section function with a supported default is stored and called through the bridge already emitted by that SDK library. Value classes, mixins, and protected methods use the same declaring-library bridge. Extension values and intersection defaults share one identity-keyed closure, including an Object that holds a primitive, a generic specialization, a readonly result, and a different receiver. Provider lexical class/alias, record and callback signatures are covered by ABI v4. Complete direct-call parameter-form parity, union signatures, foreign implementors and expanded part/cycle/conditional-export certification remain unfinished.",
         "ABI v7 retains required named and optional positional kinds, gap packets, and constructor slots for imported parent defaults. Lambda parameters accept required, bracket, and default forms. Plain positional callback types keep their previous unlabeled representation for nested compatibility. Mixed optional groups are packet values. A raw Dart function value still cannot express a positional gap."
       ],
       "completion_evidence": {

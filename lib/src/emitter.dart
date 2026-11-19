@@ -78,6 +78,7 @@ class DartEmitter {
   var _useTask = false;
   var _useAwaitAll = false;
   var _useProtected = false;
+  var _useValueCache = false;
   var _useLog = false;
   var _useTests = false;
   var _useChecks = false;
@@ -325,6 +326,18 @@ class DartEmitter {
             providerDefaultBridgeName(function),
       ];
 
+  /// Bridge names for SDK functions this import actually calls or stores.
+  List<String> _sdkBridgeNames(ImportDeclaration node, Set<String> visible) {
+    if (visible.isEmpty) return const [];
+    final names = <String>[];
+    for (final function in model.providerBridgeImports) {
+      final home = model.declarations[function]?.library ?? '';
+      if (home != node.uri || !visible.contains(function.name)) continue;
+      names.add(providerDefaultBridgeName(function));
+    }
+    return names;
+  }
+
   void _directives(List<Statement> statements) {
     for (final node in statements) {
       if (model.skipped.contains(node)) continue;
@@ -341,14 +354,18 @@ class DartEmitter {
           final sectioned =
               node.uri.startsWith('quds:') && node.uri.contains('::');
           final used = model.usedSdkNames[node.uri] ?? const <String>{};
+          final bridges =
+              _sdkBridgeNames(node, sectioned ? used : node.show.toSet());
           final show = sectioned
               ? [
                   for (final name in names)
                     if (used.contains(name)) name,
+                  ...bridges,
                 ]
               : [
                   for (final name in node.show)
                     if (names.contains(name)) name,
+                  ...bridges,
                 ];
           final hide = sectioned
               ? const <String>[]
@@ -370,7 +387,9 @@ class DartEmitter {
               : '${node.deferred ? ' deferred' : ''} as ${_dartImportPrefix(node.prefix!)}';
           // Inferred nominal results may use a backend type alias while the
           // automatically selected section still records that type dependency.
-          final ignore = sectioned ? '// ignore: unused_shown_name\n' : '';
+          final ignore = sectioned || bridges.isNotEmpty
+              ? '// ignore: unused_shown_name\n'
+              : '';
           _imports.add("${ignore}import '$uri'$prefix$combinator;");
           continue;
         }
@@ -772,8 +791,22 @@ class DartEmitter {
     if (_useReadonlyList) helpers.writeln(readonlyListHelpers);
     if (_useReadonlyMap) helpers.writeln(readonlyMapHelpers);
     if (_useReadonlySet) helpers.writeln(readonlySetHelpers);
-    if (_useReadonly) {
+    if (_useReadonly || _useValueCache) {
       prelude.writeln("import 'dart:collection' as \$qudsCollection;");
+    }
+    if (_useValueCache) {
+      helpers.writeln('final \$QudsValueOwner = Object();\n'
+          'final \$QudsValueCache = \$qudsCollection.HashMap<Object?, Map<String, Object?>>.identity();\n'
+          'Object? \$QudsCachedValue(Object? receiver, String key, Object? Function() create) {\n'
+          '  final found = \$QudsValueCache[receiver];\n'
+          '  final slot = found ?? <String, Object?>{};\n'
+          '  if (found == null) \$QudsValueCache[receiver] = slot;\n'
+          '  final existing = slot[key];\n'
+          '  if (existing != null) return existing;\n'
+          '  final created = create();\n'
+          '  slot[key] = created;\n'
+          '  return created;\n'
+          '}');
     }
     if (_useProtected) {
       prelude.writeln("import 'package:meta/meta.dart';");
@@ -1009,6 +1042,7 @@ class DartEmitter {
       final body = _valueAdapter(symbol.dartName, lowering, declaration: true);
       final returned = _dartType(symbol.type);
       final generics = _typeParameters(node.typeParameters, const []);
+      _markProtected(node.visibility);
       line('${node.isStatic ? 'static ' : ''}$returned '
           '${_defaultBridgeName(node)}$generics$body');
       _emitConcreteGap(node);
@@ -4053,6 +4087,8 @@ class DartEmitter {
         target =
             '${dot < 0 ? '' : original.substring(0, dot + 1)}$implementation';
       }
+    } else if (node is Identifier && model.implicitThis.contains(node)) {
+      target = 'this.$implementation';
     } else if (node is MemberAccess) {
       final method = implementation;
       if (function.isStatic) {
@@ -4061,26 +4097,9 @@ class DartEmitter {
             : _dartType(lowering.staticOwner!);
         target = '$owner.$method';
       } else if (node.nullAware) {
-        final receiver = '_qrecv${_temps++}';
-        final type = _dartType(nullableType(model.types[node.object]!));
-        final body = _attachGap(
-            _valueAdapter('$receiver.$method', lowering,
-                resultGuard: function.parameters.isEmpty
-                    ? null
-                    : model.qudsValueResultGuards[node]),
-            function,
-            '$receiver.$method');
-        return '(($type $receiver) => $receiver == null ? null : $body)(${expression(node.object)})';
+        return _memberValue(node, function, lowering, method, nullAware: true);
       } else {
-        final receiver = '_qrecv${_temps++}';
-        final body = _attachGap(
-            _valueAdapter('$receiver.$method', lowering,
-                resultGuard: function.parameters.isEmpty
-                    ? null
-                    : model.qudsValueResultGuards[node]),
-            function,
-            '$receiver.$method');
-        return '((${_dartType(model.types[node.object]!)} $receiver) => $body)(${expression(node.object)})';
+        return _memberValue(node, function, lowering, method, nullAware: false);
       }
     } else {
       target = _defaultBridges.contains(function)
@@ -4089,13 +4108,70 @@ class DartEmitter {
               ? _identifier(node)
               : expression(node is TypeApplication ? node.callee : node);
     }
-    return _attachGap(
+    final value = _attachGap(
         _valueAdapter(target, lowering,
             resultGuard: function.parameters.isEmpty
                 ? null
                 : model.qudsValueResultGuards[node]),
         function,
         target);
+    if (!_cacheLowering(function, node)) return value;
+    _useValueCache = true;
+    final key = _dartString(_valueCacheKey(function, lowering));
+    return '\$QudsCachedValue(\$QudsValueOwner, $key, () => $value) as ${_dartType(model.types[node]!)}';
+  }
+
+  bool _cacheLowering(FunctionDeclaration function, Expression node) =>
+      model.extensions
+          .any((extension) => extension.methods.contains(function)) ||
+      function.parameters.any((parameter) => parameter.type.contains(' & ')) ||
+      model.qudsValueResultGuards.containsKey(node);
+
+  String _dartString(String value) =>
+      "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll(r'$', r'\$')}'";
+
+  String _valueCacheKey(
+      FunctionDeclaration function, QudsValueLowering lowering) {
+    final owner = model.providerDefaultMethods[function];
+    final slash = function.span.file.lastIndexOf('/');
+    final base = slash < 0
+        ? function.span.file
+        : function.span.file.substring(slash + 1);
+    final name = owner == null
+        ? '$base:${function.span.offset}:${function.name}'
+        : providerMethodDefaultBridgeName(owner, function);
+    return '$name<${lowering.typeArguments.join(',')}>';
+  }
+
+  String _memberValue(MemberAccess node, FunctionDeclaration function,
+      QudsValueLowering lowering, String method,
+      {required bool nullAware}) {
+    final receiver = '_qrecv${_temps++}';
+    final objectType = _dartType(nullAware
+        ? nullableType(model.types[node.object]!)
+        : model.types[node.object]!);
+    final cache = _cacheLowering(function, node);
+    final body = _attachGap(
+        _valueAdapter('$receiver.$method', lowering,
+            forceClosure: cache && lowering.typeArguments.isNotEmpty,
+            resultGuard: function.parameters.isEmpty
+                ? null
+                : model.qudsValueResultGuards[node]),
+        function,
+        '$receiver.$method');
+    final created = nullAware
+        ? '(($objectType $receiver) => $receiver == null ? null : $body)'
+        : '(($objectType $receiver) => $body)';
+    if (!cache) {
+      return '$created(${expression(node.object)})';
+    }
+    final object = '_qobj${_temps++}';
+    final applied = '$created($object)';
+    final read = expression(node.object);
+    _useValueCache = true;
+    final key = _dartString(_valueCacheKey(function, lowering));
+    final type = _dartType(model.types[node]!);
+    return '(() { final $object = $read; return \$QudsCachedValue($object, $key, () => $applied) as $type; })()';
   }
 
   String _attachGap(
@@ -4146,7 +4222,9 @@ class DartEmitter {
   }
 
   String _valueAdapter(String target, QudsValueLowering lowering,
-      {bool declaration = false, String? resultGuard}) {
+      {bool declaration = false,
+      bool forceClosure = false,
+      String? resultGuard}) {
     final function = lowering.function;
     final hidden = <String>[];
     for (var i = 0; i < function.parameters.length; i++) {
@@ -4157,6 +4235,7 @@ class DartEmitter {
     if (arguments.isNotEmpty)
       target = '$target<${arguments.map(_dartType).join(', ')}>';
     if (!declaration &&
+        !forceClosure &&
         _defaultBridges.contains(function) &&
         resultGuard == null) return target;
     if (resultGuard == null &&
@@ -4199,7 +4278,10 @@ class DartEmitter {
           statements.add('final $dartType $resolved = '
               'identical($suppliedName, $_defaultOmitted) ? $fallback : $supplied;');
           _names[dartName] = resolved;
-          passed.add(resolved);
+          final bridgeCall = !declaration &&
+              _defaultBridges.contains(function) &&
+              parameter.kind != ParameterKind.optionalPositional;
+          passed.add(bridgeCall ? '${parameter.name}: $resolved' : resolved);
         } else {
           required.add('$dartType $dartName');
           passed.add(dartName);

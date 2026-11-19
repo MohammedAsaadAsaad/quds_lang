@@ -48,7 +48,7 @@ void main() {
     expect(run.stdout, '12\n');
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v11');
+          'provider-defaults-v12');
     }
   });
 

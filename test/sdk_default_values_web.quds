@@ -1,0 +1,7 @@
+use quds:math::distribution as stats
+
+main():
+  saved = stats.normalPdf
+  print saved == stats.normalPdf
+  print saved(0.0) > 0.0
+  print stats.normalPdf(0.0) == saved(0.0)

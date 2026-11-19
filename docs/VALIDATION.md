@@ -1,3 +1,22 @@
+# SDK, owner, and reference-identity bridges — 2026-11-19
+
+Base: `9619805`. Generated ABI: `provider-defaults-v12`.
+
+| Check | Observed result |
+| --- | --- |
+| SDK failure before the fix | `quds test test/sdk_default_values.quds` exited 254 at Quds lines 4 and 5. The import prefix was used as a value |
+| SDK after the fix | One bridge tear-off. `saved(0.0)` and `stats.normalPdf(0.0)` match. VM and JavaScript print `true`, `true`, `true` |
+| SDK cache | A checksum-valid v11 consumer is rebuilt to `provider-defaults-v12` |
+| Owner failure before the fix | `quds test test/owner_defaults.quds` exited 254. Value and mixin closures called `_seed`. The protected tear-off was the raw Dart method |
+| Owner after the fix | Bridges stay in the provider and call `_q0()`. External protected access is E207 at `test/owner_defaults_reject.quds:4`. VM and JavaScript print `true`, `12`, `true`, `4`, `4`, `true` |
+| Extension identity | `HashMap.identity`, not Expando. Object holding int, bool, and String; two generic specializations; two receivers; a readonly result; and an intersection default. VM and JavaScript print the same 15 lines |
+| Analysis | `dart analyze lib bin test`: no issues. `python3 tool/audit_language.py --check`: 115 decisions, no unearned complete |
+| Suite | `dart test`: 769 passed, reporter 06:08, wall 369931 ms |
+
+No rule was marked `complete`. Union signatures, foreign Dart implementors, a real Flutter engine run, and the platform matrix remain open.
+
+---
+
 # Inferred interface default bridges — 2026-11-19
 
 Base: `ddc9e4e`. Generated ABI: `provider-defaults-v11`.

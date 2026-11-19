@@ -36,6 +36,12 @@ class DefaultChild extends DefaultBase:
   readonly number(value: int = 2) -> int = value * 10
 
 
+interface SecondReadContract:
+  readonly read(value: int = 5) -> int = value
+class MultiContractImplementation implements helpers.ReadContract, SecondReadContract:
+  readonly read(value: int = 1) -> int = value * 10
+
+
 main() async:
   saved = text
   print saved()
@@ -136,3 +142,69 @@ main() async:
   print nullableRead!()
   print availableBox?.read()
   print helpers.DefaultBox<int>(stored: 8).read()
+  contractOwner = helpers.ReadImplementation()
+  face: helpers.ReadContract = contractOwner
+  contractRead = face.read
+  print contractRead == face.read
+  print contractRead()
+  print contractOwner.read()
+  print face.read()
+  contractView: readonly helpers.ReadContract = contractOwner
+  readonlyContract = contractView.read
+  print readonlyContract()
+  print readonlyContract == contractView.read
+  childFace: helpers.ChildRead = helpers.ChildReadImplementation()
+  inheritedContract = childFace.read
+  print inheritedContract()
+  print inheritedContract == childFace.read
+  copyFace: helpers.CopyContract = helpers.CopyImplementation()
+  explicitCopy = copyFace.copy<int>
+  contextualCopy: (value: int, other: int = missing) -> int = copyFace.copy
+  print explicitCopy == contextualCopy
+  print explicitCopy(8)
+  print explicitCopy(8, other: 9)
+  liveOwner = helpers.LiveImplementation()
+  liveFace: helpers.LiveContract = liveOwner
+  liveRead = liveFace.read
+  print liveRead()
+  liveOwner.seed = 4
+  print liveRead()
+  print liveRead(second: 2)
+  liveView: readonly helpers.LiveContract = liveOwner
+  liveReadonly = liveView.read
+  print liveReadonly()
+  print liveReadonly == liveView.read
+  missingFace: helpers.MissingContract = helpers.MissingImplementation()
+  chooseContract = missingFace.choose
+  print chooseContract()
+  print chooseContract(value: null)
+  print chooseContract(value: missing) == missing
+  absentContract: helpers.ReadContract? = null
+  print absentContract?.read == null
+  noResult = absentContract?.read()
+  print noResult
+  throwOwner = helpers.ThrowImplementation()
+  throwFace: helpers.ThrowContract = throwOwner
+  failingContract = throwFace.run
+  try:
+    failingContract()
+  catch problem:
+    print problem
+  print throwOwner.entered
+  print failingContract(value: 8)
+  print throwOwner.entered
+  multiOwner = MultiContractImplementation()
+  multiFirst: helpers.ReadContract = multiOwner
+  multiSecond: SecondReadContract = multiOwner
+  multiRead = multiFirst.read
+  multiReadSecond = multiSecond.read
+  print multiRead()
+  print multiReadSecond()
+  print multiOwner.read()
+  print multiRead == multiFirst.read
+  print multiReadSecond == multiSecond.read
+  print multiRead == multiReadSecond
+  aliasFace: helpers.AliasContract = helpers.AliasImplementation()
+  aliasValue = aliasFace.read
+  print aliasValue()
+  print aliasValue == aliasFace.read

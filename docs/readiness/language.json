@@ -760,9 +760,10 @@
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. Awkward parameter order, default-plus-variadic values, parameterized readonly result guards, method overloads, full constraint solving, and polymorphic callbacks remain limited.",
-        "Defaulted value slots are named optional, with a private omission token and sequential resolved defaults. Same-file function and concrete method bridges preserve repeated reference equality, including readonly proxies and selected-owner defaults. Unsupported provider-method/interface/default-plus-intersection identity and complete direct-call parameter-form parity remain unfinished.",
-        "Supported top-level providers with declared signatures own their computed-default bridges, including direct calls and filtered re-exports. Unsupported provider methods, interfaces, SDK sections, awaiting defaults, inferred return metadata and expanded part/cycle/conditional-export certification remain separate work.",
-        "Public ordinary-class provider methods with supported declared signatures publish stable member bridges, including readonly proxies and null-aware default calls. Interfaces, non-class/protected/private shapes and complex default signatures need separate certification."
+        "Defaulted value slots are named optional, with a private omission token and sequential resolved defaults. Same-file function and concrete method bridges preserve repeated reference equality, including readonly proxies and selected-owner defaults. Unsupported provider-method/generic-interface/default-plus-intersection identity and complete direct-call parameter-form parity remain unfinished.",
+        "Supported top-level providers with declared signatures own their computed-default bridges, including direct calls and filtered re-exports. Unsupported provider methods, generic interfaces and nonportable signatures, SDK sections, awaiting defaults, inferred return metadata and expanded part/cycle/conditional-export certification remain separate work.",
+        "Public ordinary-class provider methods with supported declared signatures publish stable member bridges, including readonly proxies and null-aware default calls. Generic declaring interfaces, nonportable interface types, non-class/protected/private shapes and complex default signatures need separate certification.",
+        "The first interface member/resolver slice preserves defaults and equality for non-generic declaring interfaces with core/method-parameter signatures. Other interface source acceptance remains unchanged; generic owner binders, lexical type qualification and foreign implementors need separate certification."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1446,7 +1447,8 @@
         "test/quds_function_values_test.dart",
         "test/fixtures/quds_value_adapters/helpers.quds",
         "test/quds_value_adapters.quds",
-        "test/quds_value_adapters_test.dart"
+        "test/quds_value_adapters_test.dart",
+        "test/quds_value_adapters_web.quds"
       ],
       "known_limits": [
         "Local and imported function overload values use stable public names when signatures differ. Same-signature imports stay E204. Method overloads and awkward default or variadic value shapes remain unfinished."
@@ -1573,7 +1575,8 @@
         "test/quds_method_values_test.dart",
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
-        "test/fixtures/quds_value_adapters/helpers.quds"
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/quds_value_adapters_web.quds"
       ],
       "known_limits": [
         "Some foreign final/sealed or erased readonly shapes intentionally report E910."
@@ -1929,7 +1932,12 @@
         "test/generic_constraints_test.dart",
         "test/dart_generics_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/quds_value_adapters.quds",
+        "test/quds_value_adapters_test.dart",
+        "test/quds_value_adapters_web.quds",
+        "test/fixtures/quds_value_adapters/helpers.quds"
+      ],
       "known_limits": [
         "Readonly/foreign/generic boundary certification remains partial."
       ],

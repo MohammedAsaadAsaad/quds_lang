@@ -156,3 +156,11 @@ capture the receiver once, and supported null-aware calls skip argument/default
 evaluation on null. The contract and remaining shape restrictions are in
 [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md#imported-concrete-class-methods--abi-v2).
 Interfaces and other excluded provider shapes retain the earlier lowering.
+
+## Interface continuation — 2026-11-19
+
+The first interface-default bridge slice now preserves repeated contract references
+and static defaults across virtual implementation dispatch. It supports non-generic
+declaring interfaces with the core-type/method-parameter signatures described in
+[QUDS_INTERFACE_DEFAULTS.md](QUDS_INTERFACE_DEFAULTS.md). Other interface shapes
+retain the earlier lowering; no full interface or function-type certification is claimed.

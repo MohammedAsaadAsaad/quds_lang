@@ -52,7 +52,7 @@ milestone does not redefine the approved visibility syntax.
 The generated `$QudsDefault...` identifier is a reserved Dart ABI detail derived
 from the declaration signature, not absolute paths or backend temporary numbers.
 The source helper remains private; the bridge provides the same public callable
-operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v2`; v1 covered functions only) in build caches.
+operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v3`; v1 covered functions and v2 concrete methods) in build caches.
 Build/run invalidate older epochs and rebuild dependencies automatically, even
 when their source and output checksums still match. Externally managed generated
 Dart must likewise be rebuilt with the matching compiler. It is not a runtime registry or a dynamic dispatch system.
@@ -128,3 +128,11 @@ feature: source readonly qualifications and result guard restrictions still appl
 The generated-ABI epoch is v2. The upgrade regression keeps valid checksums on a
 v1 provider with method bridge definitions removed; `quds run` rebuilds it and
 prints both the function result and the imported method result automatically.
+
+## Interface continuation — ABI v3
+
+Supported non-generic declaring interfaces now publish resolver/member bridges;
+implementing Quds classes and readonly proxies forward through the defining library.
+See [interface default bridges](QUDS_INTERFACE_DEFAULTS.md) for the exact signature
+slice, distinct-contract equality, unsupported forms and v2-cache migration.
+Earlier sections describe the function and concrete-method slices.

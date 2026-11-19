@@ -321,3 +321,98 @@ test "null-aware provider calls skip supplied arguments and defaults":
   available: helpers.DefaultBox<int>? = helpers.DefaultBox<int>(stored: 8)
   value = available?.read()
   expect(value, 11)
+
+test "interface bridges retain provider defaults and stable equality":
+  owner = helpers.ReadImplementation()
+  face: helpers.ReadContract = owner
+  saved = face.read
+  expect(saved(), 70)
+  expect(saved == face.read, true)
+  expect(owner.read(), 40)
+  expect(face.read(), 70)
+  view: readonly helpers.ReadContract = owner
+  readonlyValue = view.read
+  expect(readonlyValue(), 70)
+  expect(readonlyValue == view.read, true)
+  child: helpers.ChildRead = helpers.ChildReadImplementation()
+  inherited = child.read
+  expect(inherited(), 70)
+  expect(inherited == child.read, true)
+
+test "generic interface method bridges keep their binders":
+  face: helpers.CopyContract = helpers.CopyImplementation()
+  explicit = face.copy<int>
+  contextual: (value: int, other: int = missing) -> int = face.copy
+  expect(explicit(8), 8)
+  expect(explicit(8, other: 9), 9)
+  expect(explicit == contextual, true)
+
+interface SecondReadContract:
+  readonly read(value: int = 5) -> int = value
+class MultiContractImplementation implements helpers.ReadContract, SecondReadContract:
+  readonly read(value: int = 1) -> int = value * 10
+
+test "different interface contracts keep different defaults on one receiver":
+  owner = MultiContractImplementation()
+  first: helpers.ReadContract = owner
+  second: SecondReadContract = owner
+  fromFirst = first.read
+  fromSecond = second.read
+  expect(fromFirst(), 70)
+  expect(fromSecond(), 50)
+  expect(owner.read(), 10)
+  expect(fromFirst == first.read, true)
+  expect(fromSecond == second.read, true)
+  expect(fromFirst == fromSecond, false)
+
+test "interface defaults observe live getters and supplied values":
+  owner = helpers.LiveImplementation()
+  face: helpers.LiveContract = owner
+  saved = face.read
+  expect(saved(), 12)
+  owner.seed = 4
+  expect(saved(), 13)
+  expect(saved(second: 2), 6)
+  view: readonly helpers.LiveContract = owner
+  readonlyValue = view.read
+  expect(readonlyValue(), 13)
+  expect(readonlyValue == view.read, true)
+
+test "interface bridges distinguish omission null missing and nullable calls":
+  face: helpers.MissingContract = helpers.MissingImplementation()
+  saved = face.choose
+  expect(saved(), "default")
+  expect(saved(value: null), null)
+  expect(saved(value: missing), missing)
+  absent: helpers.ReadContract? = null
+  expect(absent?.read, null)
+  trace = DefaultTrace()
+  outcome = absent?.read(value: trace.nextValue())
+  expect(outcome, null)
+  expect(trace.calls, 0)
+
+test "a failing interface default prevents target body execution":
+  owner = helpers.ThrowImplementation()
+  face: helpers.ThrowContract = owner
+  saved = face.run
+  expect(saved, throwsA(equals("interface default failed")))
+  expect(owner.entered, 0)
+  expect(saved(value: 8), 8)
+  expect(owner.entered, 1)
+
+interface GenericDefaultContract<T>:
+  readonly read(value: T? = null) -> T? = value
+class GenericDefaultImplementation<X> implements GenericDefaultContract<X>:
+  readonly read(value: X? = null) -> X? = value
+
+test "generic declaring interfaces retain their existing value path":
+  face: GenericDefaultContract<int> = GenericDefaultImplementation<int>()
+  saved = face.read
+  expect(saved(), null)
+  expect(saved(value: 8), 8)
+
+test "interface resolver packets preserve provider alias names":
+  face: helpers.AliasContract = helpers.AliasImplementation()
+  saved = face.read
+  expect(saved(), 8)
+  expect(saved == face.read, true)

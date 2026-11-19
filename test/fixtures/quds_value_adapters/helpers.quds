@@ -18,3 +18,42 @@ class DefaultBox<T>:
   take<U>(value: U, first: int = this.next(), second: int = first) -> U = value
   copy(value: T = stored) -> T = value
   static number(value: int = _hiddenNumber()) -> int = value
+
+interface ReadContract:
+  readonly read(value: int = _hiddenNumber()) -> int = value
+class ReadImplementation implements ReadContract:
+  readonly read(value: int = 4) -> int = value * 10
+interface ChildRead extends ReadContract:
+  marker() -> int = 1
+class ChildReadImplementation implements ChildRead:
+  marker() -> int = 1
+  readonly read(value: int = 6) -> int = value * 10
+interface CopyContract:
+  readonly copy<U>(value: U, other: U = value) -> U = other
+class CopyImplementation implements CopyContract:
+  readonly copy<V>(value: V, other: V = value) -> V = other
+
+interface LiveContract:
+  seed: int
+  readonly read(first: int = seed, second: int = internalMath.max(first, 9)) -> int = first + second
+class LiveImplementation implements LiveContract:
+  var seed: int = 3
+  readonly read(first: int = 1, second: int = 1) -> int = first + second
+interface MissingContract:
+  readonly choose(value: Object? = "default") -> Object? = value
+class MissingImplementation implements MissingContract:
+  readonly choose(value: Object? = "implementation") -> Object? = value
+_failInterfaceDefault() -> int:
+  throw "interface default failed"
+interface ThrowContract:
+  run(value: int = _failInterfaceDefault()) -> int = value
+class ThrowImplementation implements ThrowContract:
+  var entered: int = 0
+  run(value: int = 0) -> int:
+    entered += 1
+    return value
+use dart:math as values
+interface AliasContract:
+  readonly read(value: int = values.max(4, 8)) -> int = value
+class AliasImplementation implements AliasContract:
+  readonly read(value: int = 1) -> int = value

@@ -50,6 +50,51 @@ String providerDefaultBridgeName(FunctionDeclaration function) =>
         [p.name, p.type, p.defaultValue != null],
     ]))).substring(0, 20);
 
+/// Forward only signatures whose type names need no provider-specific rewriting.
+/// Other source signatures keep the previous value-lowering path.
+bool supportsInterfaceDefaults(
+    ClassDeclaration owner, FunctionDeclaration method) {
+  if (owner.typeParameters.isNotEmpty ||
+      method.isStatic ||
+      method.isOperator ||
+      !supportsProviderDefaults(method)) return false;
+  final names = {
+    'void',
+    'Never',
+    'Null',
+    'dynamic',
+    'Object',
+    'bool',
+    'int',
+    'num',
+    'double',
+    'String',
+    'List',
+    'Set',
+    'Map',
+    'Iterable',
+    'Future',
+    'Stream',
+    'readonly',
+    for (final p in method.typeParameters) p.name
+  };
+  return [
+    method.returnType!,
+    ...method.parameters.map((p) => p.type),
+    for (final p in method.typeParameters)
+      if (p.bound != null) p.bound!
+  ].every((type) =>
+      !RegExp(r'[^A-Za-z0-9_<>,? \t]').hasMatch(type) &&
+      RegExp(r'[A-Za-z_][A-Za-z0-9_]*')
+          .allMatches(type)
+          .every((m) => names.contains(m.group(0))));
+}
+
+String providerInterfaceDefaultsName(
+        ClassDeclaration owner, FunctionDeclaration method) =>
+    providerMethodDefaultBridgeName(owner, method)
+        .replaceFirst(r'$QudsMethodDefault', r'$QudsInterfaceDefaults');
+
 String providerMethodDefaultBridgeName(
         ClassDeclaration owner, FunctionDeclaration function) =>
     r'$QudsMethodDefault' +
@@ -190,6 +235,8 @@ class SemanticModel {
   /// Closures that restore Quds defaults or hide intersection type parameters.
   final providerDefaultImports =
       <ImportDeclaration, Set<FunctionDeclaration>>{};
+  final interfaceDefaultEdges = <ClassDeclaration, List<ClassDeclaration>>{};
+  final interfaceDefaultPrefixes = <String, String>{};
   final providerDefaultMethods = <FunctionDeclaration, ClassDeclaration>{};
   final providerDefaultFunctions = <FunctionDeclaration>{};
   final qudsValueLowerings = <Expression, QudsValueLowering>{};
@@ -712,10 +759,13 @@ class Analyzer {
           .whereType<FunctionDeclaration>()
           .where(supportsProviderDefaults));
       for (final owner in source.statements.whereType<ClassDeclaration>()) {
-        if (owner.kind != 'class' || owner.name.startsWith('_')) continue;
+        if ((owner.kind != 'class' && owner.kind != 'interface') ||
+            owner.name.startsWith('_')) continue;
         for (final method in owner.methods) {
           if (method.visibility.isNotEmpty || !supportsProviderDefaults(method))
             continue;
+          if (owner.kind == 'interface' &&
+              !supportsInterfaceDefaults(owner, method)) continue;
           if (owner.methods
                   .where((other) => other.name == method.name)
                   .length !=
@@ -891,6 +941,41 @@ class Analyzer {
       error('E903', 'part of does not match the library', mismatched);
     }
     _checkSingletonCycles();
+    if (model.providerDefaultMethods.values
+        .any((owner) => owner.kind == 'interface')) {
+      final visited = <ClassDeclaration>{};
+      while (true) {
+        final pending = model.classes.values
+            .where((owner) => !visited.contains(owner))
+            .toSet();
+        if (pending.isEmpty) break;
+        for (final owner in pending) {
+          visited.add(owner);
+          if (_sdkDefaultFiles.contains(owner.span.file)) continue;
+          final edges = [
+            ...owner.interfaces,
+            if (owner.kind == 'interface' && owner.superclass != null)
+              owner.superclass!
+          ];
+          if (edges.isEmpty) continue;
+          final saved = _scope;
+          final home = model.libraryOf[owner] ?? '';
+          try {
+            _scope =
+                home.isEmpty || home == library ? _global : _libraryScope(home);
+            model.interfaceDefaultEdges[owner] = [
+              for (final edge in edges)
+                if (_typeSymbol(_genericHead(model.resolve(edge)))
+                        ?.classDeclaration
+                    case final parent?)
+                  parent
+            ];
+          } finally {
+            _scope = saved;
+          }
+        }
+      }
+    }
     model.moduleSymbols.addAll(_global.symbols);
     final main = _global.symbols['main']?.function;
     if (main != null &&
@@ -2794,7 +2879,8 @@ class Analyzer {
     }
     final parent = type.superclass == null
         ? null
-        : _typeSymbol(_genericHead(type.superclass!))?.classDeclaration;
+        : _typeSymbol(_genericHead(_classMemberType(type.superclass!, type)))
+            ?.classDeclaration;
     if (parent == null) return null;
     return _declarer(parent, name);
   }
@@ -6174,7 +6260,9 @@ class Analyzer {
           (arity == null || method.parameters.length == arity)) return method;
     }
     for (final mixin in type.mixins.reversed) {
-      final declaration = _global.symbols[mixin]?.classDeclaration;
+      final declaration =
+          _typeSymbol(_genericHead(_classMemberType(mixin, type)))
+              ?.classDeclaration;
       if (declaration == null) continue;
       final found =
           _method(declaration, name, arity: arity, visited: nextVisited);
@@ -6182,7 +6270,8 @@ class Analyzer {
     }
     final parent = type.superclass == null
         ? null
-        : _typeSymbol(_genericHead(type.superclass!))?.classDeclaration;
+        : _typeSymbol(_genericHead(_classMemberType(type.superclass!, type)))
+            ?.classDeclaration;
     if (parent != null)
       return _method(parent, name, arity: arity, visited: nextVisited);
     return null;
@@ -6202,7 +6291,9 @@ class Analyzer {
       if (declaration.superclass != null) declaration.superclass!
     ]) {
       final found = _methodReceiver(
-          _substitute(edge, substitution), method, {...visited, head});
+          _substitute(_classMemberType(edge, declaration), substitution),
+          method,
+          {...visited, head});
       if (found != null) return found;
     }
     return null;

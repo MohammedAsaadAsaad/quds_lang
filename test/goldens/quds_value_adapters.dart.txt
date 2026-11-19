@@ -6,6 +6,7 @@ import 'fixtures/quds_value_adapters/helpers.dart' as helpers;
 import 'fixtures/quds_value_adapters/helpers.dart' show report, $QudsDefault1650c09ceb2f0bb8930f;
 import 'fixtures/quds_value_adapters/facade.dart' as forwarded;
 import 'quds_readonly.dart' as $qudsReadonly;
+import 'fixtures/quds_value_adapters/helpers.dart' as $qudsInterfaceDefaults0;
 class _$QudsDefaultOmitted { const _$QudsDefaultOmitted(); }
 const _$qudsDefaultOmitted = _$QudsDefaultOmitted();
 class Optional<T> {
@@ -58,7 +59,7 @@ base class $QudsReadonlyPerson with $qudsReadonly.ReadonlyView implements Person
 }
 class Utility {
   Utility();
-  static U echo<U>(U _q76) => _q76;
+  static U echo<U>(U _q117) => _q117;
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Utility) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -106,7 +107,7 @@ base class $QudsReadonlyDerived extends $QudsReadonlyUtility with $qudsReadonly.
   int get tag => $qudsReadonly.protectResult(_$qudsSourceDerived, _$qudsSourceDerived.tag, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
 }
 extension on String {
-  T tag<T>(T _q77) => _q77;
+  T tag<T>(T _q118) => _q118;
 }
 class DefaultOwner<T> {
   DefaultOwner({this.seed = 2});
@@ -248,6 +249,45 @@ base class $QudsReadonlyDefaultChild extends $QudsReadonlyDefaultBase with $quds
   int number(int _q45) => (_q45 * 10);
   int $QudsMethodDefault63fddb8e21aa2ead194c({Object? value = _$qudsDefaultOmitted}) { final int _qdefault12 = identical(value, _$qudsDefaultOmitted) ? 2 : value as int; return number(_qdefault12); }
 }
+abstract interface class SecondReadContract {
+  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards);
+  bool $qudsIsLazySlot(Object slot);
+  int read(int _q111) => _q111;
+  int $QudsMethodDefault3e4c380739e2114cdd6b({Object? value});
+}
+class MultiContractImplementation implements helpers.ReadContract, SecondReadContract {
+  MultiContractImplementation();
+  int read(int _q113) => (_q113 * 10);
+  int $QudsMethodDefault714b9839e52cdb41190f({Object? value = _$qudsDefaultOmitted}) { final int _qdefault13 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return read(_qdefault13); }
+  int $QudsMethodDefault1b4ff420be8c539c2ebb({Object? value = _$qudsDefaultOmitted}) { final $qInterfaceValues = $qudsInterfaceDefaults0.$QudsInterfaceDefaults1b4ff420be8c539c2ebb(this, <Object?>[value], <bool>[!identical(value, _$qudsDefaultOmitted)]); return this.read($qInterfaceValues.$1); }
+  int $QudsMethodDefault3e4c380739e2114cdd6b({Object? value = _$qudsDefaultOmitted}) { final $qInterfaceValues = $QudsInterfaceDefaults3e4c380739e2114cdd6b(this, <Object?>[value], <bool>[!identical(value, _$qudsDefaultOmitted)]); return this.read($qInterfaceValues.$1); }
+  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
+    if (runtimeType != MultiContractImplementation) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
+    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
+    final result = $qudsReadonly.cachedView<MultiContractImplementation>(this, () => $QudsReadonlyMultiContractImplementation(this, normalized));
+    (result as $QudsReadonlyMultiContractImplementation)._$qudsGuardsMultiContractImplementation.addAll(normalized);
+    return result;
+  }
+  bool $qudsIsLazySlot(Object slot) => false;
+}
+base class $QudsReadonlyMultiContractImplementation with $qudsReadonly.ReadonlyView implements MultiContractImplementation {
+  $QudsReadonlyMultiContractImplementation(MultiContractImplementation source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceMultiContractImplementation = source, _$qudsGuardsMultiContractImplementation = Map.of(guards);
+  final MultiContractImplementation _$qudsSourceMultiContractImplementation;
+  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsMultiContractImplementation;
+  @override
+  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  @override
+  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceMultiContractImplementation, candidate);
+  bool $qudsIsLazySlot(Object slot) => _$qudsSourceMultiContractImplementation.$qudsIsLazySlot(slot);
+  int read(int _q113) => (_q113 * 10);
+  int $QudsMethodDefault714b9839e52cdb41190f({Object? value = _$qudsDefaultOmitted}) { final int _qdefault14 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return read(_qdefault14); }
+  int $QudsMethodDefault1b4ff420be8c539c2ebb({Object? value = _$qudsDefaultOmitted}) { final $qInterfaceValues = $qudsInterfaceDefaults0.$QudsInterfaceDefaults1b4ff420be8c539c2ebb(this, <Object?>[value], <bool>[!identical(value, _$qudsDefaultOmitted)]); return this.read($qInterfaceValues.$1); }
+  int $QudsMethodDefault3e4c380739e2114cdd6b({Object? value = _$qudsDefaultOmitted}) { final $qInterfaceValues = $QudsInterfaceDefaults3e4c380739e2114cdd6b(this, <Object?>[value], <bool>[!identical(value, _$qudsDefaultOmitted)]); return this.read($qInterfaceValues.$1); }
+  String toString() => _$qudsSourceMultiContractImplementation.toString();
+  bool operator ==(Object other) => _$qudsSourceMultiContractImplementation == other;
+  int get hashCode => _$qudsSourceMultiContractImplementation.hashCode;
+}
+(int,) $QudsInterfaceDefaults3e4c380739e2114cdd6b(SecondReadContract $qInterfaceReceiver, List<Object?> $qInterfaceInputs, List<bool> $qInterfacePresent) { final int $qInterfaceValue0 = $qInterfacePresent[0] ? $qInterfaceInputs[0] as int : 5; return ($qInterfaceValue0,); }
 
 
 
@@ -261,15 +301,17 @@ String _q0<_QT0 extends Named>(_QT0 _q5) {
 }
 
 String _q1(String? _q6) => (_q6 ?? "empty");
-String $QudsDefault8fc8cefc8422fa48003d({Object? value = _$qudsDefaultOmitted}) { final String? _qdefault13 = identical(value, _$qudsDefaultOmitted) ? "Quds" : value as String?; return _q1(_qdefault13); }
+String $QudsDefault8fc8cefc8422fa48003d({Object? value = _$qudsDefaultOmitted}) { final String? _qdefault15 = identical(value, _$qudsDefaultOmitted) ? "Quds" : value as String?; return _q1(_qdefault15); }
 
 int _q2(int _q7, int _q8) => (_q7 + _q8);
-int $QudsDefault55c0226c9f4a7a3cf077(int _q7, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault14 = identical(extra, _$qudsDefaultOmitted) ? _q7 : extra as int; return _q2(_q7, _qdefault14); }
+int $QudsDefault55c0226c9f4a7a3cf077(int _q7, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault16 = identical(extra, _$qudsDefaultOmitted) ? _q7 : extra as int; return _q2(_q7, _qdefault16); }
 
 int _q3(List<int> _q9) => _q9.length;
 
 T? _q4<T>(T? _q10) => _q10;
-T? $QudsDefault057c20e068d2f11c44d9<T>({Object? value = _$qudsDefaultOmitted}) { final T? _qdefault15 = identical(value, _$qudsDefaultOmitted) ? null : value as T?; return _q4<T>(_qdefault15); }
+T? $QudsDefault057c20e068d2f11c44d9<T>({Object? value = _$qudsDefaultOmitted}) { final T? _qdefault17 = identical(value, _$qudsDefaultOmitted) ? null : value as T?; return _q4<T>(_qdefault17); }
+
+
 
 
 
@@ -283,7 +325,7 @@ void main() async {
   final String Function({String? value}) _q11 = $QudsDefault8fc8cefc8422fa48003d;
   print(_q11());
   print(_q11(value: null));
-  print((() { final _qprovided16 = 2; return $QudsDefault55c0226c9f4a7a3cf077(_qprovided16); })());
+  print((() { final _qprovided18 = 2; return $QudsDefault55c0226c9f4a7a3cf077(_qprovided18); })());
   print(_q3(<int>[1, 2]));
   final int? Function({int? value}) _q12 = $QudsDefault057c20e068d2f11c44d9<int>;
   print(_q12());
@@ -294,47 +336,47 @@ void main() async {
   print(_q13(1));
   print(helpers.pick$2("a"));
   int _q14(int _q15, int _q16) => ((_q15 * 10) + _q16);
-  int _$qudsDefault__q14({Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault17 = identical(first, _$qudsDefaultOmitted) ? 3 : first as int; final int _qdefault18 = identical(second, _$qudsDefaultOmitted) ? _qdefault17 : second as int; return _q14(_qdefault17, _qdefault18); }
+  int _$qudsDefault__q14({Object? first = _$qudsDefaultOmitted, Object? second = _$qudsDefaultOmitted}) { final int _qdefault19 = identical(first, _$qudsDefaultOmitted) ? 3 : first as int; final int _qdefault20 = identical(second, _$qudsDefaultOmitted) ? _qdefault19 : second as int; return _q14(_qdefault19, _qdefault20); }
   final int Function({int first, int second}) _q17 = _$qudsDefault__q14;
   print(_q17());
   print(_q17(first: 4));
   Object? _q18(Object? _q19) => _q19;
-  Object? _$qudsDefault__q18({Object? value = _$qudsDefaultOmitted}) { final Object? _qdefault19 = identical(value, _$qudsDefaultOmitted) ? "default" : value; return _q18(_qdefault19); }
+  Object? _$qudsDefault__q18({Object? value = _$qudsDefaultOmitted}) { final Object? _qdefault21 = identical(value, _$qudsDefaultOmitted) ? "default" : value; return _q18(_qdefault21); }
   final Object? Function({Object? value}) _q20 = _$qudsDefault__q18;
   print(_q20());
   print(_q20(value: null));
   print((_q20(value: missing) == missing));
   print((_q17 == _$qudsDefault__q14));
   int _q21(Object? _q22) => 1;
-  int _$qudsDefault__q21({Object? value = _$qudsDefaultOmitted}) { final Object? _qdefault20 = identical(value, _$qudsDefaultOmitted) ? _$qudsDefault__q21 : value; return _q21(_qdefault20); }
+  int _$qudsDefault__q21({Object? value = _$qudsDefaultOmitted}) { final Object? _qdefault22 = identical(value, _$qudsDefaultOmitted) ? _$qudsDefault__q21 : value; return _q21(_qdefault22); }
   final int Function({Object? value}) _q23 = _$qudsDefault__q21;
   print(_q23());
   final DefaultOwner<int> _q24 = $qudsReadonly.registerGuards<DefaultOwner<int>>(DefaultOwner<int>(), [$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
-  final String Function(String, {int first, int second}) _q28 = ((DefaultOwner<int> _qrecv21) => _qrecv21.$QudsMethodDefault1e0805afe0e46de0fba3<String>)(_q24);
-  print((_q28 == ((DefaultOwner<int> _qrecv22) => _qrecv22.$QudsMethodDefault1e0805afe0e46de0fba3<String>)(_q24)));
+  final String Function(String, {int first, int second}) _q28 = ((DefaultOwner<int> _qrecv23) => _qrecv23.$QudsMethodDefault1e0805afe0e46de0fba3<String>)(_q24);
+  print((_q28 == ((DefaultOwner<int> _qrecv24) => _qrecv24.$QudsMethodDefault1e0805afe0e46de0fba3<String>)(_q24)));
   print(_q28("Quds"));
-  final int Function({int first, int second}) _q31 = ((DefaultOwner<int> _qrecv23) => _qrecv23.$QudsMethodDefault88e746df5745ea457978)(_q24);
+  final int Function({int first, int second}) _q31 = ((DefaultOwner<int> _qrecv25) => _qrecv25.$QudsMethodDefault88e746df5745ea457978)(_q24);
   print(_q31());
   _q24.seed = 5;
   print(_q31());
   final DefaultOwner<int> _q32 = _q24;
-  final int Function({int first, int second}) _q33 = ((DefaultOwner<int> _qrecv24) => _qrecv24.$QudsMethodDefault88e746df5745ea457978)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32));
-  print((_q33 == ((DefaultOwner<int> _qrecv25) => _qrecv25.$QudsMethodDefault88e746df5745ea457978)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32))));
+  final int Function({int first, int second}) _q33 = ((DefaultOwner<int> _qrecv26) => _qrecv26.$QudsMethodDefault88e746df5745ea457978)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32));
+  print((_q33 == ((DefaultOwner<int> _qrecv27) => _qrecv27.$QudsMethodDefault88e746df5745ea457978)($qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q32))));
   print(_q33());
   final ChildDefault _q34 = ChildDefault();
-  print((() { final _qreceiver26 = _q34; return _qreceiver26.$QudsMethodDefault88e746df5745ea457978(); })());
+  print((() { final _qreceiver28 = _q34; return _qreceiver28.$QudsMethodDefault88e746df5745ea457978(); })());
   final String Function(String, {int times}) _q37 = StaticDefault.$QudsMethodDefaultd63c95a2b5462b2512d7<String>;
   print((_q37 == StaticDefault.$QudsMethodDefaultd63c95a2b5462b2512d7<String>));
   print(_q37("static"));
   final DefaultOwner<int>? _q38 = null;
-  print((((DefaultOwner<int>? _qrecv27) => _qrecv27 == null ? null : _qrecv27.$QudsMethodDefault88e746df5745ea457978)(_q38) == null));
+  print((((DefaultOwner<int>? _qrecv29) => _qrecv29 == null ? null : _qrecv29.$QudsMethodDefault88e746df5745ea457978)(_q38) == null));
   final DefaultOwner<int>? _q39 = $qudsReadonly.registerGuards<DefaultOwner<int>>(DefaultOwner<int>(), [$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
-  final int Function({int first, int second})? _q40 = ((DefaultOwner<int>? _qrecv28) => _qrecv28 == null ? null : _qrecv28.$QudsMethodDefault88e746df5745ea457978)(_q39);
+  final int Function({int first, int second})? _q40 = ((DefaultOwner<int>? _qrecv30) => _qrecv30 == null ? null : _qrecv30.$QudsMethodDefault88e746df5745ea457978)(_q39);
   print(((_q40!))());
   final DefaultChild _q41 = DefaultChild();
   final DefaultBase _q42 = _q41;
-  final int Function({int value}) _q44 = ((DefaultBase _qrecv29) => _qrecv29.$QudsMethodDefault3d4bb618e24070fa04e0)(_q42);
-  final int Function({int value}) _q46 = ((DefaultChild _qrecv30) => _qrecv30.$QudsMethodDefault63fddb8e21aa2ead194c)(_q41);
+  final int Function({int value}) _q44 = ((DefaultBase _qrecv31) => _qrecv31.$QudsMethodDefault3d4bb618e24070fa04e0)(_q42);
+  final int Function({int value}) _q46 = ((DefaultChild _qrecv32) => _qrecv32.$QudsMethodDefault63fddb8e21aa2ead194c)(_q41);
   print(_q44());
   print(_q46());
   final String Function({int first, int second}) _q49 = helpers.$QudsDefault1650c09ceb2f0bb8930f;
@@ -354,34 +396,101 @@ void main() async {
   print((await _q57(9)));
   print((await _q57(9, other: 10)));
   print((() {  return helpers.$QudsDefault1650c09ceb2f0bb8930f(); })());
-  print((() { final _qprovided31 = 12; return helpers.$QudsDefault1650c09ceb2f0bb8930f(first: _qprovided31); })());
-  print((() { final _qprovided32 = 4; return $QudsDefault1650c09ceb2f0bb8930f(second: _qprovided32); })());
+  print((() { final _qprovided33 = 12; return helpers.$QudsDefault1650c09ceb2f0bb8930f(first: _qprovided33); })());
+  print((() { final _qprovided34 = 4; return $QudsDefault1650c09ceb2f0bb8930f(second: _qprovided34); })());
   final helpers.DefaultBox<int> _q58 = $qudsReadonly.registerGuards<helpers.DefaultBox<int>>(helpers.DefaultBox<int>(stored: 8), [$qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
-  final int Function({int first, int second}) _q61 = ((helpers.DefaultBox<int> _qrecv33) => _qrecv33.$QudsMethodDefaultcb40fa1c121532a57529)(_q58);
-  print((_q61 == ((helpers.DefaultBox<int> _qrecv34) => _qrecv34.$QudsMethodDefaultcb40fa1c121532a57529)(_q58)));
+  final int Function({int first, int second}) _q61 = ((helpers.DefaultBox<int> _qrecv35) => _qrecv35.$QudsMethodDefaultcb40fa1c121532a57529)(_q58);
+  print((_q61 == ((helpers.DefaultBox<int> _qrecv36) => _qrecv36.$QudsMethodDefaultcb40fa1c121532a57529)(_q58)));
   print(_q61());
-  final String Function(String, {int first, int second}) _q65 = ((helpers.DefaultBox<int> _qrecv35) => _qrecv35.$QudsMethodDefault5c15003a2a3b05c58a76<String>)(_q58);
+  final String Function(String, {int first, int second}) _q65 = ((helpers.DefaultBox<int> _qrecv37) => _qrecv37.$QudsMethodDefault5c15003a2a3b05c58a76<String>)(_q58);
   print(_q65("value"));
   print(_q61());
-  print((() { final _qreceiver36 = _q58; return _qreceiver36.$QudsMethodDefaultcb40fa1c121532a57529(); })());
-  final int Function({int value}) _q67 = ((helpers.DefaultBox<int> _qrecv37) => _qrecv37.$QudsMethodDefault91b11afe848461c4ce86)(_q58);
+  print((() { final _qreceiver38 = _q58; return _qreceiver38.$QudsMethodDefaultcb40fa1c121532a57529(); })());
+  final int Function({int value}) _q67 = ((helpers.DefaultBox<int> _qrecv39) => _qrecv39.$QudsMethodDefault91b11afe848461c4ce86)(_q58);
   print(_q67());
   final int Function({int value}) _q69 = helpers.DefaultBox.$QudsMethodDefault96a2ef83e43f8597a643;
   print(_q69());
   print((_q69 == helpers.DefaultBox.$QudsMethodDefault96a2ef83e43f8597a643));
   final helpers.DefaultBox<int> _q70 = _q58;
-  final int Function({int first, int second}) _q71 = ((helpers.DefaultBox<int> _qrecv38) => _qrecv38.$QudsMethodDefaultcb40fa1c121532a57529)($qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q70));
-  print((_q71 == ((helpers.DefaultBox<int> _qrecv39) => _qrecv39.$QudsMethodDefaultcb40fa1c121532a57529)($qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q70))));
+  final int Function({int first, int second}) _q71 = ((helpers.DefaultBox<int> _qrecv40) => _qrecv40.$QudsMethodDefaultcb40fa1c121532a57529)($qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q70));
+  print((_q71 == ((helpers.DefaultBox<int> _qrecv41) => _qrecv41.$QudsMethodDefaultcb40fa1c121532a57529)($qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q70))));
   print(_q71());
   final helpers.DefaultBox<int>? _q72 = null;
-  print((((helpers.DefaultBox<int>? _qrecv40) => _qrecv40 == null ? null : _qrecv40.$QudsMethodDefaultcb40fa1c121532a57529)(_q72) == null));
-  final int? _q73 = (() { final _qreceiver41 = _q72; if (_qreceiver41 == null) return null; return _qreceiver41.$QudsMethodDefaultcb40fa1c121532a57529(); })();
+  print((((helpers.DefaultBox<int>? _qrecv42) => _qrecv42 == null ? null : _qrecv42.$QudsMethodDefaultcb40fa1c121532a57529)(_q72) == null));
+  final int? _q73 = (() { final _qreceiver43 = _q72; if (_qreceiver43 == null) return null; return _qreceiver43.$QudsMethodDefaultcb40fa1c121532a57529(); })();
   print(_q73);
   final helpers.DefaultBox<int>? _q74 = _q58;
-  final int Function({int first, int second})? _q75 = ((helpers.DefaultBox<int>? _qrecv42) => _qrecv42 == null ? null : _qrecv42.$QudsMethodDefaultcb40fa1c121532a57529)(_q74);
+  final int Function({int first, int second})? _q75 = ((helpers.DefaultBox<int>? _qrecv44) => _qrecv44 == null ? null : _qrecv44.$QudsMethodDefaultcb40fa1c121532a57529)(_q74);
   print(((_q75!))());
-  print((() { final _qreceiver43 = _q74; if (_qreceiver43 == null) return null; return _qreceiver43.$QudsMethodDefaultcb40fa1c121532a57529(); })());
-  print((() { final _qreceiver44 = $qudsReadonly.registerGuards<helpers.DefaultBox<int>>(helpers.DefaultBox<int>(stored: 8), [$qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]); return _qreceiver44.$QudsMethodDefaultcb40fa1c121532a57529(); })());
+  print((() { final _qreceiver45 = _q74; if (_qreceiver45 == null) return null; return _qreceiver45.$QudsMethodDefaultcb40fa1c121532a57529(); })());
+  print((() { final _qreceiver46 = $qudsReadonly.registerGuards<helpers.DefaultBox<int>>(helpers.DefaultBox<int>(stored: 8), [$qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]); return _qreceiver46.$QudsMethodDefaultcb40fa1c121532a57529(); })());
+  final helpers.ReadImplementation _q76 = helpers.ReadImplementation();
+  final helpers.ReadContract _q77 = _q76;
+  final int Function({int value}) _q79 = ((helpers.ReadContract _qrecv47) => _qrecv47.$QudsMethodDefault1b4ff420be8c539c2ebb)(_q77);
+  print((_q79 == ((helpers.ReadContract _qrecv48) => _qrecv48.$QudsMethodDefault1b4ff420be8c539c2ebb)(_q77)));
+  print(_q79());
+  print((() { final _qreceiver49 = _q76; return _qreceiver49.$QudsMethodDefault2cff8a833adbf9a12d0a(); })());
+  print((() { final _qreceiver50 = _q77; return _qreceiver50.$QudsMethodDefault1b4ff420be8c539c2ebb(); })());
+  final helpers.ReadContract _q81 = _q76;
+  final int Function({int value}) _q82 = ((helpers.ReadContract _qrecv51) => _qrecv51.$QudsMethodDefault1b4ff420be8c539c2ebb)($qudsReadonly.ModelGuard<helpers.ReadContract>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q81));
+  print(_q82());
+  print((_q82 == ((helpers.ReadContract _qrecv52) => _qrecv52.$QudsMethodDefault1b4ff420be8c539c2ebb)($qudsReadonly.ModelGuard<helpers.ReadContract>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q81))));
+  final helpers.ChildRead _q83 = helpers.ChildReadImplementation();
+  final int Function({int value}) _q84 = ((helpers.ChildRead _qrecv53) => _qrecv53.$QudsMethodDefault1b4ff420be8c539c2ebb)(_q83);
+  print(_q84());
+  print((_q84 == ((helpers.ChildRead _qrecv54) => _qrecv54.$QudsMethodDefault1b4ff420be8c539c2ebb)(_q83)));
+  final helpers.CopyContract _q85 = helpers.CopyImplementation();
+  final int Function(int, {int other}) _q88 = ((helpers.CopyContract _qrecv55) => _qrecv55.$QudsMethodDefault51d38c3debc0f9b5ef04<int>)(_q85);
+  final int Function(int, {int other}) _q89 = ((helpers.CopyContract _qrecv56) => _qrecv56.$QudsMethodDefault51d38c3debc0f9b5ef04<int>)(_q85);
+  print((_q88 == _q89));
+  print(_q88(8));
+  print(_q88(8, other: 9));
+  final helpers.LiveImplementation _q90 = helpers.LiveImplementation();
+  final helpers.LiveContract _q91 = _q90;
+  final int Function({int first, int second}) _q94 = ((helpers.LiveContract _qrecv57) => _qrecv57.$QudsMethodDefault828d41f5fec3541c4852)(_q91);
+  print(_q94());
+  _q90.seed = 4;
+  print(_q94());
+  print(_q94(second: 2));
+  final helpers.LiveContract _q95 = _q90;
+  final int Function({int first, int second}) _q96 = ((helpers.LiveContract _qrecv58) => _qrecv58.$QudsMethodDefault828d41f5fec3541c4852)($qudsReadonly.ModelGuard<helpers.LiveContract>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q95));
+  print(_q96());
+  print((_q96 == ((helpers.LiveContract _qrecv59) => _qrecv59.$QudsMethodDefault828d41f5fec3541c4852)($qudsReadonly.ModelGuard<helpers.LiveContract>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q95))));
+  final helpers.MissingContract _q97 = helpers.MissingImplementation();
+  final Object? Function({Object? value}) _q99 = ((helpers.MissingContract _qrecv60) => _qrecv60.$QudsMethodDefault1a27a9b892563204bf07)(_q97);
+  print(_q99());
+  print(_q99(value: null));
+  print((_q99(value: missing) == missing));
+  final helpers.ReadContract? _q100 = null;
+  print((((helpers.ReadContract? _qrecv61) => _qrecv61 == null ? null : _qrecv61.$QudsMethodDefault1b4ff420be8c539c2ebb)(_q100) == null));
+  final int? _q101 = (() { final _qreceiver62 = _q100; if (_qreceiver62 == null) return null; return _qreceiver62.$QudsMethodDefault1b4ff420be8c539c2ebb(); })();
+  print(_q101);
+  final helpers.ThrowImplementation _q102 = helpers.ThrowImplementation();
+  final helpers.ThrowContract _q103 = _q102;
+  final int Function({int value}) _q105 = ((helpers.ThrowContract _qrecv63) => _qrecv63.$QudsMethodDefault34a46d4fd257251c7b66)(_q103);
+  try {
+    _q105();
+  } catch (_q106) {
+    print(_q106);
+  }
+  print(_q102.entered);
+  print(_q105(value: 8));
+  print(_q102.entered);
+  final MultiContractImplementation _q107 = MultiContractImplementation();
+  final helpers.ReadContract _q108 = _q107;
+  final SecondReadContract _q109 = _q107;
+  final int Function({int value}) _q110 = ((helpers.ReadContract _qrecv64) => _qrecv64.$QudsMethodDefault1b4ff420be8c539c2ebb)(_q108);
+  final int Function({int value}) _q112 = ((SecondReadContract _qrecv65) => _qrecv65.$QudsMethodDefault3e4c380739e2114cdd6b)(_q109);
+  print(_q110());
+  print(_q112());
+  print((() { final _qreceiver66 = _q107; return _qreceiver66.$QudsMethodDefault714b9839e52cdb41190f(); })());
+  print((_q110 == ((helpers.ReadContract _qrecv67) => _qrecv67.$QudsMethodDefault1b4ff420be8c539c2ebb)(_q108)));
+  print((_q112 == ((SecondReadContract _qrecv68) => _qrecv68.$QudsMethodDefault3e4c380739e2114cdd6b)(_q109)));
+  print((_q110 == _q112));
+  final helpers.AliasContract _q114 = helpers.AliasImplementation();
+  final int Function({int value}) _q116 = ((helpers.AliasContract _qrecv69) => _qrecv69.$QudsMethodDefaulta7b71d317bf3f750aaa1)(_q114);
+  print(_q116());
+  print((_q116 == ((helpers.AliasContract _qrecv70) => _qrecv70.$QudsMethodDefaulta7b71d317bf3f750aaa1)(_q114)));
 }
 final showName = _q0;
 final text = _q1;

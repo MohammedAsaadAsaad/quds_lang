@@ -1,3 +1,43 @@
+# Interface computed-default bridges — 2026-11-19
+
+Base: `6beeeac`. Handoff updated before implementation in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Contract: [QUDS_INTERFACE_DEFAULTS.md](QUDS_INTERFACE_DEFAULTS.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | 30 declarations; provider-private defaults, inheritance, multiple contracts, stable equality, readonly, live getters, null/missing, nullable short-circuit, failure before body, method generics and native alias hygiene |
+| Focused parser/semantics/value/readonly regressions | 129 passed in 27s |
+| Generated Dart | Updated deterministic golden; generated entry analyzed; actual VM and JavaScript/Node agree on 93 output lines |
+| Existing generic-interface path | A generic declaring interface still executes without claiming the new identity guarantee |
+| Readonly rejection | A mutating implementation of a readonly interface contract remains rejected at Quds source coordinates |
+| Cache ABI v3 | A valid-checksum v2 provider has interface bridge/resolver definitions removed; actual quds run rebuilds it and prints `7:9`, `11`, `70` |
+| Final adapter driver after import cleanup | 8 passed in 15s |
+| Final package format | 101 files; zero changes |
+| Final analysis | No issues found |
+| Documentation example | Actual `quds run /tmp/quds-interface-example/main.quds`: `70`, `40`, `true` |
+| Full suite | **704 passed, zero failures or skips, in 9m42s** |
+
+The interface provider resolves defaults into a typed record; implementing members
+forward to the original virtual body. Reserved packet names avoid shadowing a Dart
+alias such as `values`. Provider-qualified parent/mixin lookup repairs inherited
+method metadata rather than treating an optional method as a required function.
+
+An unnecessary direct import in the test driver was removed after analysis reported
+it as an info; the same symbols are exported by quds_lang.dart. Compiler source
+remained fixed during the full run. Analysis is clean after that harness cleanup;
+the adapter driver was rerun successfully after the full suite.
+
+Readiness inventory regenerated/checked; keyword catalog sync and `git diff --check` passed.
+No unobserved remote CI or physical-device result is claimed.
+
+The slice deliberately excludes generic declaring interfaces and provider-specific
+signature types. They retain their old source acceptance and lowering. Foreign Dart
+implementors, broader export/part cases, resolver debugger frames and performance
+are not certified by these local compiler results.
+
+---
+
 # Imported concrete method defaults — 2026-11-19
 
 Base: `35d41c5`. Handoff updated before coding in

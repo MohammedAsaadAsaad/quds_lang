@@ -94,6 +94,7 @@ class DartEmitter {
   var _hasParts = false;
   String? _returnView;
   String? _defaultReceiver;
+  String _programFile = '<input>';
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
   void line(String text) {
@@ -109,6 +110,7 @@ class DartEmitter {
   }
 
   String emit(Program program) {
+    _programFile = program.span.file;
     _defaultBridges.addAll(model.providerDefaultFunctions);
     _defaultBridges.addAll(model.providerDefaultMethods.keys);
     _defaultBridges.addAll(model.qudsValueLowerings.values
@@ -143,6 +145,13 @@ class DartEmitter {
       if (node is AnnotationDeclaration) _emitAnnotation(node);
       if (node is ClassDeclaration) emitClass(node);
       if (node is ExtensionDeclaration) emitExtension(node);
+    }
+    for (final owner in program.statements.whereType<ClassDeclaration>()) {
+      if (owner.kind != 'interface') continue;
+      for (final method in owner.methods) {
+        if (model.providerDefaultMethods[method] == owner)
+          _emitInterfaceDefaults(owner, method);
+      }
     }
     _emitReflectableRegistry(program);
     for (final node in program.statements) {
@@ -965,6 +974,11 @@ class DartEmitter {
 
   void _emitDefaultBridge(FunctionDeclaration node) {
     if (!_defaultBridges.contains(node)) return;
+    final owner = model.providerDefaultMethods[node];
+    if (owner?.kind == 'interface') {
+      _emitInterfaceMember(node);
+      return;
+    }
     final savedGenerics = _openGenerics;
     _openGenerics = {
       ..._openGenerics,
@@ -983,6 +997,157 @@ class DartEmitter {
           '${_defaultBridgeName(node)}$generics$body');
     } finally {
       _openGenerics = savedGenerics;
+    }
+  }
+
+  String _interfaceSignature(FunctionDeclaration method,
+      {bool declaration = false}) {
+    final positional = <String>[];
+    final named = <String>[];
+    for (var i = 0; i < method.parameters.length; i++) {
+      final p = method.parameters[i];
+      if (p.defaultValue == null) {
+        positional.add('${_dartType(p.type)} \$qInterfaceArg$i');
+      } else {
+        if (!declaration) _useDefaultOmitted = true;
+        named.add(
+            'Object? ${p.name}${declaration ? '' : ' = $_defaultOmitted'}');
+      }
+    }
+    return [...positional, if (named.isNotEmpty) '{${named.join(', ')}}']
+        .join(', ');
+  }
+
+  void _emitInterfaceMember(FunctionDeclaration method) {
+    final saved = _openGenerics;
+    _openGenerics = {...saved, for (final p in method.typeParameters) p.name};
+    try {
+      line(
+          '${_dartType(model.declarations[method]!.type)} ${_defaultBridgeName(method)}'
+          '${_typeParameters(method.typeParameters)}(${_interfaceSignature(method, declaration: true)});');
+    } finally {
+      _openGenerics = saved;
+    }
+  }
+
+  void _emitInterfaceDefaults(
+      ClassDeclaration owner, FunctionDeclaration method) {
+    final savedNames = _names;
+    final savedReceiver = _defaultReceiver;
+    final savedGenerics = _openGenerics;
+    final savedSpan = _span;
+    _span = method.span;
+    _names = {..._names};
+    _defaultReceiver = r'$qInterfaceReceiver';
+    _openGenerics = {
+      ..._openGenerics,
+      for (final p in method.typeParameters) p.name
+    };
+    try {
+      final types = method.parameters.map((p) => _dartType(p.type)).toList();
+      final record = '(${types.join(', ')}${types.length == 1 ? ',' : ''})';
+      final statements = <String>[];
+      final values = <String>[];
+      for (var i = 0; i < method.parameters.length; i++) {
+        final p = method.parameters[i];
+        final value = '\$qInterfaceValue$i';
+        final input = '\$qInterfaceInputs[$i]';
+        final supplied = types[i] == 'Object?' || types[i] == 'dynamic'
+            ? input
+            : '$input as ${types[i]}';
+        final resolved = p.defaultValue == null
+            ? supplied
+            : '\$qInterfacePresent[$i] ? $supplied : ${expression(p.defaultValue!)}';
+        statements.add('final ${types[i]} $value = $resolved;');
+        values.add(value);
+        _names[model.declarations[p]!.dartName] = value;
+      }
+      line(
+          '$record ${providerInterfaceDefaultsName(owner, method)}${_typeParameters(method.typeParameters)}'
+          '(${owner.name} \$qInterfaceReceiver, List<Object?> \$qInterfaceInputs, List<bool> \$qInterfacePresent) '
+          '{ ${statements.join(' ')} return (${values.join(', ')}${values.length == 1 ? ',' : ''}); }');
+    } finally {
+      _names = savedNames;
+      _defaultReceiver = savedReceiver;
+      _openGenerics = savedGenerics;
+      _span = savedSpan;
+    }
+  }
+
+  String _interfaceResolverTarget(
+      ClassDeclaration owner, FunctionDeclaration method) {
+    final name = providerInterfaceDefaultsName(owner, method);
+    final home = model.libraryOf[owner] ?? '';
+    if (home.isEmpty || home == model.library) return name;
+    final prefix = model.interfaceDefaultPrefixes.putIfAbsent(
+        home,
+        () =>
+            r'$qudsInterfaceDefaults' +
+            '${model.interfaceDefaultPrefixes.length}');
+    model.backendTypeImports
+        .putIfAbsent(prefix, () => qudsBackendLibraryUri(_programFile, home));
+    _imports.add("import '${model.backendTypeImports[prefix]}' as $prefix;");
+    return '$prefix.$name';
+  }
+
+  void _emitInterfaceForwarders(ClassDeclaration node, {bool proxy = false}) {
+    final contracts = <FunctionDeclaration, ClassDeclaration>{};
+    final seen = <ClassDeclaration>{};
+    void collect(ClassDeclaration owner) {
+      if (!seen.add(owner)) return;
+      if (owner.kind == 'interface') {
+        for (final method in owner.methods) {
+          if (model.providerDefaultMethods[method] == owner)
+            contracts[method] = owner;
+        }
+      }
+      for (final parent in model.interfaceDefaultEdges[owner] ??
+          <ClassDeclaration>[]) collect(parent);
+    }
+
+    for (final face in model.interfaceDefaultEdges[node] ??
+        <ClassDeclaration>[]) collect(face);
+    for (final entry in contracts.entries) {
+      final method = entry.key;
+      final owner = entry.value;
+      final saved = _openGenerics;
+      _openGenerics = {
+        ..._openGenerics,
+        for (final p in method.typeParameters) p.name
+      };
+      try {
+        final returned = _dartType(model.declarations[method]!.type);
+        final signature = _interfaceSignature(method);
+        final header =
+            '$returned ${_defaultBridgeName(method)}${_typeParameters(method.typeParameters)}($signature)';
+        if (proxy && !isReadonlyMethod(method)) {
+          line("$header => throw UnsupportedError('readonly method');");
+          continue;
+        }
+        final arguments = <String>[];
+        final present = <String>[];
+        for (var i = 0; i < method.parameters.length; i++) {
+          final p = method.parameters[i];
+          arguments.add(p.defaultValue == null ? '\$qInterfaceArg$i' : p.name);
+          present.add(p.defaultValue == null
+              ? 'true'
+              : '!identical(${p.name}, $_defaultOmitted)');
+        }
+        final typeArgs = method.typeParameters.isEmpty
+            ? ''
+            : '<${method.typeParameters.map((p) => p.name).join(', ')}>';
+        final resolver = _interfaceResolverTarget(owner, method);
+        final values = [
+          for (var i = 0; i < arguments.length; i++)
+            '\$qInterfaceValues.\$${i + 1}'
+        ];
+        final invoke = 'this.${method.name}$typeArgs(${values.join(', ')})';
+        line('$header { final \$qInterfaceValues = $resolver$typeArgs(this, '
+            '<Object?>[${arguments.join(', ')}], <bool>[${present.join(', ')}]); '
+            '${returned == 'void' ? '' : 'return '}$invoke; }');
+      } finally {
+        _openGenerics = saved;
+      }
     }
   }
 
@@ -1527,6 +1692,7 @@ class DartEmitter {
         _emitDefaultBridge(method);
       }
     }
+    _emitInterfaceForwarders(node, proxy: true);
     if (node.kind == 'value' || node.modifiers.contains('value')) {
       final fields = node.fields
           .where((f) => !f.isStatic && !f.isEvent && f.lazyBody == null)
@@ -1935,6 +2101,7 @@ class DartEmitter {
       }
       emitFunction(method);
     }
+    _emitInterfaceForwarders(node);
     _guardEnvironment = savedInstanceGuards;
     final valueFields = node.fields
         .where((field) =>

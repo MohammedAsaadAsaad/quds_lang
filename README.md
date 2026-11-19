@@ -160,3 +160,7 @@ filter/re-export behavior and remaining limits.
 Public ordinary-class methods in imported Quds providers also publish stable
 default bridges, preserving receiver identity and readonly checks. Interface
 bridges and complete parameter-form metadata remain separate work.
+
+An initial [interface-default bridge slice](docs/QUDS_INTERFACE_DEFAULTS.md)
+keeps contract defaults and repeated-reference equality across implementation
+dispatch. Generic declaring interfaces and broader type signatures remain limited.

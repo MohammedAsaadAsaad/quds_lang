@@ -39,6 +39,14 @@ Quds method short circuit, nullable result checking and Future<void> preservatio
 It includes executable Quds, negative, golden, VM/JS and cache-upgrade evidence.
 The latest exact gate and open boundaries remain in VALIDATION.md and the handoff.
 
+## 2026-11-19 — inferred provider results
+
+[INFERRED_PROVIDER_RESULTS.md](INFERRED_PROVIDER_RESULTS.md) records expression-body
+result inference across Quds imports and stored values, provider lexical signatures,
+inferred concrete-class default bridges and checked override results. ABI v10
+invalidates older generated providers. Multiline-body, inferred interface-default,
+SDK and polymorphic callback limits remain explicit. Exact gates are in VALIDATION.md.
+
 ## Architecture
 
 Source manager → indentation-aware lexer → token stream → parser → typed AST → symbol table/name resolution → type checking → lowering IR → Dart emitter → diagnostics/source maps.

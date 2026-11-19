@@ -1,0 +1,112 @@
+use fixtures.inferred_provider.provider as api
+use fixtures.inferred_provider.facade as exported
+use fixtures.inferred_provider.facade show inferred
+
+test "inferred import default resolves in the provider":
+  before = api.Trace.calls
+  saved = api.inferred
+  expect(api.Trace.calls, before)
+  expect(saved(), 7)
+  expect(api.Trace.calls, before + 1)
+  expect(api.inferred(), 7)
+  expect(inferred(), 7)
+  expect(exported.inferred(), 7)
+  expect(saved(value: 4), 4)
+  expect(api.Trace.calls, before + 4)
+  expect(saved == api.inferred, true)
+  expect(saved == exported.inferred, true)
+
+test "inferred plain function references keep function types":
+  saved = api.plain
+  typed: (int) -> int = exported.plain
+  expect(saved(4), 5)
+  expect(typed(8), 9)
+  expect(api.plain(5), 6)
+  expect(saved == exported.plain, true)
+
+test "inferred defaults read earlier parameters":
+  expect(api.sequential(), 15)
+  saved = exported.sequential
+  expect(saved(first: 3), 7)
+
+test "inferred generic results specialize direct and stored calls":
+  expect(api.identity(3), 3)
+  expect(api.bounded<int>(3), 3)
+  explicit = api.identity<String>
+  expect(explicit("q"), "q")
+  contextual: (int, other: int = missing) -> int = exported.identity
+  expect(contextual(4), 4)
+
+test "inferred async results retain Future values" async:
+  pending: Future<int> = api.future()
+  expect(await pending, 7)
+  saved = exported.future
+  pendingAgain: Future<int> = saved(value: 9)
+  expect(await pendingAgain, 9)
+
+test "inferred overload values select a typed result":
+  expect(api.classify(3), "i3")
+  integer: (int) -> String = api.classify
+  text: (String) -> String = api.classify
+  expect(integer(4), "i4")
+  expect(text("q"), "sq")
+
+test "inferred class and alias results retain provider identities":
+  item: api.Payload = exported.payload()
+  expect(item.value, 7)
+  saved = api.payload
+  next: api.Payload = saved(value: 9)
+  expect(next.value, 9)
+  typed: (api.Alias) -> api.Payload = api.alias
+  expect(typed(next).value, 9)
+
+test "inferred method defaults remain in their class library":
+  owner = api.Reader(stored: 3)
+  expect(owner.read(), 10)
+  saved = owner.read
+  expect(saved(value: 2), 5)
+  view: readonly api.Reader = owner
+  expect(view.read(), 10)
+  expect(api.Reader.seed(), 7)
+
+test "inferred generic method results use owner and method binders":
+  owner = api.Box<int>(stored: 8)
+  expect(owner.read(), 8)
+  saved = owner.read
+  expect(saved(), 8)
+  copy = owner.copy<String>
+  expect(copy("q"), "q")
+
+test "inferred nullable and record results retain structure":
+  saved = api.nullable
+  empty: int? = saved(null)
+  expect(empty, null)
+  expect(saved(3), 3)
+  (number, textValue) = api.record(4)
+  expect(number, 4)
+  expect(textValue, "q")
+
+test "inferred inherited and readonly method references retain defaults":
+  owner = api.Child(stored: 3)
+  saved = owner.read
+  expect(saved(), 10)
+  view: readonly api.Reader = owner
+  viewed = view.read
+  expect(viewed(), 10)
+  expect(viewed == view.read, true)
+  derived = api.Derived(stored: 3)
+  base: api.Reader = derived
+  virtualRead = base.read
+  expect(virtualRead(), 17)
+
+test "inferred imported partial call retains its result":
+  saved = api.plain(_)
+  expect(saved(3), 4)
+
+test "inferred and declared override results match after inference":
+  face: api.TypedBase = api.InferredOverride()
+  saved = face.read
+  expect(saved(), 14)
+  other: api.Reader = api.DeclaredOverride(stored: 3)
+  savedOther = other.read
+  expect(savedOther(), 24)

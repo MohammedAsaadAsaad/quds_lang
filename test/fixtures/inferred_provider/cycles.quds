@@ -1,0 +1,3 @@
+self() = self()
+left() = right()
+right() = left()

@@ -1,4 +1,4 @@
-# Parameter metadata — generated ABI v9
+# Parameter metadata — generated ABI v10
 
 Specification 1.2 remains authoritative. This milestone preserves declaration
 parameter kinds from the parser through specialization, call matching, values,
@@ -101,3 +101,7 @@ constructors, nullable Quds method calls and Future<void> results. See
 [CALL_SUSPENSION.md](CALL_SUSPENSION.md) for semantics, evidence and limits.
 Exact results are in [VALIDATION.md](VALIDATION.md); the handoff is
 [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+
+The v10 continuation resolves expression-bodied imported results before call/value
+use and supports inferred concrete-class default bridges. See
+[INFERRED_PROVIDER_RESULTS.md](INFERRED_PROVIDER_RESULTS.md) for evidence and limits.

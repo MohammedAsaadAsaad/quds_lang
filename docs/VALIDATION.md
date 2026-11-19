@@ -1,3 +1,47 @@
+# Inferred provider results — 2026-11-19
+
+Base: `683c8b9`. Generated ABI: `provider-defaults-v10`.
+Contract: [INFERRED_PROVIDER_RESULTS.md](INFERRED_PROVIDER_RESULTS.md).
+
+| Check | Observed result |
+| --- | --- |
+| Original CLI reproduction | Before: provider expression result int was checked against void (E300). After: direct function, stored function and method each print `7` |
+| Quds conformance | 13 actual Quds test declarations, launched by the new Dart driver |
+| Focused regression set | `dart test test/inferred_provider_test.dart test/generic_inheritance_test.dart test/generic_methods_test.dart test/parameter_forms_test.dart`: 94 passed in 46s |
+| New golden/VM/JavaScript | Consumer, provider and facade pass `dart analyze` with warnings fatal; actual VM and compiled JavaScript/Node outputs match the same 41 lines |
+| Negative conformance | Consumer assignment/argument/bound/private/ambiguous errors retain consumer coordinates. Direct/mutual recursion reports E300 with a return-annotation diagnostic at the provider. Unsafe inferred overrides and unannotated multiline value returns are rejected |
+| Cache migration | A valid-checksum v9 provider with the new bridge removed is rebuilt automatically; run prints `7`, and caches record v10 |
+| `dart format .` | 104 files, 0 changes |
+| `dart analyze` | No issues found |
+| `dart test` | **758 passed, 0 failed, 11m16s**, before the final scope-only bridge guard |
+| Final affected regression set | `dart test test/inferred_provider_test.dart test/quds_value_adapters_test.dart test/parameter_forms_test.dart test/call_suspension_test.dart test/constructor_packet_regressions_test.dart`: **59 passed, 0 failed, 45s** after the guard; format/analyze rerun and clean |
+| `python3 tool/audit_language.py --check` | 115 decisions indexed; statuses unchanged |
+| `python3 tool/sync_keyword_docs.py --check`, `git diff --check` | Passed |
+
+The slice covers direct calls and values through prefixes, unprefixed show imports
+and filtered re-exports; sequential/private defaults, reference equality, generics,
+Future/nullable/record/class/alias result types, concrete/static/inherited/readonly
+method values and virtual dispatch. Default expressions stay in their provider and
+do not run when a reference is taken. Lexical owner substitution fixes generic
+method default checking and imported inherited-field/override-owner lookup.
+
+Backend method names are assigned before result-dependent body checking, with
+unresolved results deferred only for name matching. Full override result checking
+remains enforced after inference, including against a declared base contract.
+Existing concrete result checks remain early. The final bridge guard explicitly
+retains the previous requirement for ordinary multiline bodies: only a declared
+result or an expression body enables this provider protocol. The focused final
+rerun covers the affected import/default/constructor/await paths after narrowing
+that guard. No result is replaced by dynamic,
+and no approved syntax changes. Ordinary multiline value returns still require an
+annotation. Inferred declaring-interface defaults, SDK-section bridges, private
+nominal API publication, generator and cross-package certification remain outside
+this milestone. No rule is promoted to complete; no Flutter engine claim is made.
+The latest handoff is [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Older validation sections below are historical.
+
+---
+
 # Awaited calls and null-aware Quds methods — 2026-11-19
 
 Base: `f21bfb4`. Generated ABI: `provider-defaults-v9`.

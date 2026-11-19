@@ -1,5 +1,11 @@
 # Provider-owned computed defaults
 
+Current continuation: [inferred provider results](INFERRED_PROVIDER_RESULTS.md),
+generated ABI v10. Supported expression-bodied top-level functions and ordinary
+class methods no longer require an explicit result annotation. Earlier slice
+sections below are historical; their narrower limits are superseded only where
+the linked continuation provides executable evidence.
+
 A supported top-level Quds function publishes a stable Dart bridge for its
 computed defaults. The bridge is emitted by the defining library even when that
 library never takes its own function reference. Consumers reference that bridge;

@@ -1,0 +1,82 @@
+use fixtures.inferred_provider.provider as api
+use fixtures.inferred_provider.facade as exported
+use fixtures.inferred_provider.facade show inferred
+main() async:
+  before = api.Trace.calls
+  saved = api.inferred
+  print api.Trace.calls == before
+  print saved()
+  print api.inferred()
+  print inferred()
+  print exported.inferred()
+  print saved(value: 4)
+  print api.Trace.calls == before + 4
+  print saved == exported.inferred
+  plain = api.plain
+  typed: (int) -> int = exported.plain
+  print plain(4)
+  print typed(8)
+  print plain == exported.plain
+  print api.sequential()
+  sequential = exported.sequential
+  print sequential(first: 3)
+  print api.identity(3)
+  print api.bounded<int>(3)
+  explicit = api.identity<String>
+  print explicit("q")
+  contextual: (int, other: int = missing) -> int = exported.identity
+  print contextual(4)
+  pending: Future<int> = api.future()
+  print await pending
+  future = exported.future
+  pendingAgain: Future<int> = future(value: 9)
+  print await pendingAgain
+  integer: (int) -> String = api.classify
+  text: (String) -> String = api.classify
+  print integer(4)
+  print text("q")
+  item: api.Payload = exported.payload()
+  print item.value
+  payload = api.payload
+  next: api.Payload = payload(value: 9)
+  alias: (api.Alias) -> api.Payload = api.alias
+  print alias(next).value
+  owner = api.Reader(stored: 3)
+  print owner.read()
+  read = owner.read
+  print read(value: 2)
+  view: readonly api.Reader = owner
+  print view.read()
+  print api.Reader.seed()
+  box = api.Box<int>(stored: 8)
+  print box.read()
+  boxRead = box.read
+  print boxRead()
+  copy = box.copy<String>
+  print copy("q")
+  nullable = api.nullable
+  empty: int? = nullable(null)
+  print empty
+  print nullable(3)
+  (number, textValue) = api.record(4)
+  print number
+  print textValue
+  child = api.Child(stored: 3)
+  inherited = child.read
+  print inherited()
+  readonlyOwner: readonly api.Reader = child
+  readonlyRead = readonlyOwner.read
+  print readonlyRead()
+  print readonlyRead == readonlyOwner.read
+  derived = api.Derived(stored: 3)
+  base: api.Reader = derived
+  virtualRead = base.read
+  print virtualRead()
+  partial = api.plain(_)
+  print partial(3)
+  face: api.TypedBase = api.InferredOverride()
+  savedFace = face.read
+  print savedFace()
+  declared: api.Reader = api.DeclaredOverride(stored: 3)
+  savedDeclared = declared.read
+  print savedDeclared()

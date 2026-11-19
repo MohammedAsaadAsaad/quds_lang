@@ -18,7 +18,7 @@ bool supportsProviderDefaults(FunctionDeclaration function) =>
     function.visibility != 'private' &&
     !function.name.startsWith('_') &&
     !function.span.file.startsWith('quds:') &&
-    function.returnType != null &&
+    (function.returnType != null || function.expressionBody != null) &&
     function.generator.isEmpty &&
     function.parameters.any((p) => p.needsAdapter) &&
     _providerDefaultsAreSynchronous(function) &&
@@ -112,6 +112,7 @@ bool supportsInterfaceDefaults(
         ClassDeclaration owner, FunctionDeclaration method) =>
     !method.isStatic &&
     !method.isOperator &&
+    method.returnType != null &&
     supportsProviderDefaults(method) &&
     [
       method.returnType!,
@@ -2983,8 +2984,12 @@ class Analyzer {
             ? _global.symbols[statement.name]
             : _space(qualify, statement)[statement.name];
     if (existing?.function == statement) return;
-    final type =
-        statement.returnType ?? (statement.isAsync ? 'Future<void>' : 'void');
+    final type = statement.returnType ??
+        (statement.expressionBody != null
+            ? '<infer>'
+            : statement.isAsync
+                ? 'Future<void>'
+                : 'void');
     final effective = statement.isAsync &&
             statement.returnType != null &&
             !stripReadonlyType(statement.returnType!).startsWith('Future<')
@@ -5360,7 +5365,8 @@ class Analyzer {
       Map<String, String> actualClass,
       FunctionDeclaration expected,
       ClassDeclaration expectedOwner,
-      Map<String, String> expectedClass) {
+      Map<String, String> expectedClass,
+      {bool ignoreReturn = false}) {
     if (actual.typeParameters.length != expected.typeParameters.length ||
         actual.isStatic != expected.isStatic ||
         isReadonlyMethod(expected) && !isReadonlyMethod(actual) ||
@@ -5399,9 +5405,13 @@ class Analyzer {
           expected.parameters[i].defaultValue != null &&
               actual.parameters[i].defaultValue == null) return false;
     }
+    String signature(FunctionDeclaration method) => ignoreReturn
+        ? _callableSignature(method.parameters,
+            method.parameters.map((p) => p.type).toList(), 'void')
+        : functionType(method);
     return _contractTypeCompatible(
-        normalize(functionType(actual), actualOwner, actual, actualMap),
-        normalize(functionType(expected), expectedOwner, expected, expectedMap),
+        normalize(signature(actual), actualOwner, actual, actualMap),
+        normalize(signature(expected), expectedOwner, expected, expectedMap),
         bounds);
   }
 
@@ -5984,6 +5994,12 @@ class Analyzer {
     if (method.isOperator) return;
     final candidates = _superclassMethods(type, method.name);
     if (candidates.isEmpty) return;
+    for (final candidate in candidates) {
+      final owner = _methodOwners[candidate];
+      if (owner != null && model.declarations[candidate]?.type == '<infer>') {
+        analyzeMethod(owner, candidate);
+      }
+    }
     if (_overrideMatch(type, method, candidates) == null) {
       error(
           'E300',
@@ -6045,16 +6061,20 @@ class Analyzer {
   }
 
   FunctionDeclaration? _overrideMatch(ClassDeclaration type,
-      FunctionDeclaration method, List<FunctionDeclaration> inherited) {
+      FunctionDeclaration method, List<FunctionDeclaration> inherited,
+      {bool ignoreReturn = false}) {
     for (final candidate in inherited) {
       final owner = _methodOwners[candidate];
       if (owner == null) continue;
       final edge = _edgeTo(type, owner);
       if (edge == null) continue;
-      final receiver = _methodReceiver(edge, candidate);
+      final receiver = _methodReceiver(_classMemberType(edge, type), candidate);
       if (receiver == null) continue;
       if (_methodContractCompatible(method, type, const {}, candidate,
-          receiver.$2, _genericSubstitution(receiver.$1, receiver.$2))) {
+          receiver.$2, _genericSubstitution(receiver.$1, receiver.$2),
+          ignoreReturn: ignoreReturn &&
+              (model.declarations[method]?.type == '<infer>' ||
+                  model.declarations[candidate]?.type == '<infer>'))) {
         return candidate;
       }
     }
@@ -6602,7 +6622,8 @@ class Analyzer {
     final inherited = <FieldDeclaration>[];
     final edge = type.superclass;
     if (edge != null) {
-      final parent = _typeSymbol(_genericHead(edge))?.classDeclaration;
+      final parent = _typeSymbol(_genericHead(_classMemberType(edge, type)))
+          ?.classDeclaration;
       if (parent != null) {
         final substitution = _genericSubstitution(edge, parent);
         for (final field in _fieldsOf(parent, {...visited, type})) {
@@ -6777,7 +6798,10 @@ class Analyzer {
       };
       final fresh = <FunctionDeclaration>[];
       for (final method in own) {
-        final match = _overrideMatch(type, method, inherited);
+        // Backend names depend on parameter contracts. Resolve/check inferred
+        // results after names are stable, so body references keep those names.
+        final match =
+            _overrideMatch(type, method, inherited, ignoreReturn: true);
         if (match != null) {
           final name = model.declarations[match]!.dartName;
           _setMethodDartName(method, name);
@@ -7917,6 +7941,7 @@ class Analyzer {
     if (candidates.length == 1 &&
         candidates.single.typeParameters.isEmpty &&
         explicit == null &&
+        symbol.library.isEmpty &&
         !_valueNeedsLowering(candidates.single)) return null;
     if (candidates.any(_methodOwners.containsKey))
       error(
@@ -7934,10 +7959,16 @@ class Analyzer {
       if (explicit != null &&
           candidate.typeParameters.length != explicit.length &&
           candidates.length > 1) continue;
-      final declaration = model.declarations[candidate] ?? symbol;
-      if (declaration.type == '<infer>' && symbol.library.isEmpty)
+      final home = (model.declarations[candidate] ?? symbol).library;
+      if (home.isNotEmpty && home != _activeLibrary) _libraryScope(home);
+      if (model.declarations[candidate]?.type == '<infer>')
         analyzeFunction(candidate);
-      final returned = declaration.type;
+      final declaration = model.declarations[candidate] ?? symbol;
+      final binders = candidate.typeParameters.map((p) => p.name).toSet();
+      String lexical(String type) => home.isEmpty || home == _activeLibrary
+          ? type
+          : _libraryType(type, home, shadows: binders);
+      final returned = lexical(declaration.type);
       List<String> arguments;
       try {
         if (explicit != null) {
@@ -7953,7 +7984,7 @@ class Analyzer {
           arguments = _inferNativeFunctionValue(
               Symbol(candidate.name, declaration.dartName, returned), node, [
             for (final p in candidate.parameters)
-              (p.name, p.variadic ? '...${p.type}' : p.type)
+              (p.name, p.variadic ? '...${lexical(p.type)}' : lexical(p.type))
           ], {
             for (final p in candidate.parameters)
               if (p.isNamed) p.name
@@ -7962,14 +7993,14 @@ class Analyzer {
               if (p.defaultValue != null) p.name
           }, {
             for (final p in candidate.typeParameters)
-              p.name: p.bound ?? 'Object?'
+              p.name: lexical(p.bound ?? 'Object?')
           });
         }
         final substitution = _checkTypeArguments(
             candidate.name, candidate.typeParameters, arguments, node);
         final specialized = [
           for (final parameter in candidate.parameters)
-            _substitute(parameter.type, substitution)
+            _substitute(lexical(parameter.type), substitution)
         ];
         final signature = _callableSignature(candidate.parameters, specialized,
             _substitute(returned, substitution));
@@ -8817,6 +8848,7 @@ class Analyzer {
       model.references[node.callee] = model.references[callee]!;
       final result = applyArguments(node, parameters, functionResolved,
           typeArguments: methodArguments,
+          defaultSubstitution: {...classArguments, ...methodArguments},
           parameterBounds: methodBounds,
           declaredReturnType:
               specialize(model.declarations[functionResolved]!.type));
@@ -10016,7 +10048,8 @@ class Analyzer {
       String? declaredReturnType}) {
     parameters = _callParameters(parameters, function);
     if (function != null &&
-        (parameters.any((parameter) => parameter.needsAdapter) ||
+        (model.declarations[function]?.type == '<infer>' ||
+            parameters.any((parameter) => parameter.needsAdapter) ||
             node.arguments.any((argument) => argument.name != null))) {
       final owner = _methodOwners[function];
       if (owner == null) {

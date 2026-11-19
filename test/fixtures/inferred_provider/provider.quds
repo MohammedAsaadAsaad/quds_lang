@@ -1,0 +1,40 @@
+use dart:math as internalMath
+class Trace:
+  static var calls: int = 0
+_privateSeed() = internalMath.max(7, 3)
+_counted() -> int:
+  Trace.calls += 1
+  return _privateSeed()
+plain(value: int) = value + 1
+inferred(value: int = _counted()) = value
+sequential(first: int = _privateSeed(), second: int = first + 1) = first + second
+identity<T>(value: T, other: T = value) = other
+future(value: int = _privateSeed()) async = value
+classify(value: int) = "i{value}"
+classify(value: String) = "s{value}"
+class Payload:
+  value: int required
+type Alias = Payload
+payload(value: int = _privateSeed()) = Payload(value: value)
+alias(value: Alias) = value
+class Reader:
+  stored: int required
+  readonly read(value: int = _privateSeed()) = stored + value
+  static seed(value: int = _privateSeed()) = value
+class Box<T>:
+  stored: T required
+  read(value: T = stored) = value
+  readonly copy<U>(value: U, other: U = value) = other
+nullable(value: int?) = value
+record(value: int) = (value, "q")
+class Child extends Reader:
+  tag: String = "child"
+class Derived extends Reader:
+  readonly read(value: int = _privateSeed()) = stored + value * 2
+bounded<T: num>(value: T) = value
+class TypedBase:
+  readonly read(value: int = _privateSeed()) -> int = value
+class InferredOverride extends TypedBase:
+  readonly read(value: int = _privateSeed()) = value * 2
+class DeclaredOverride extends Reader:
+  readonly read(value: int = _privateSeed()) -> int = stored + value * 3

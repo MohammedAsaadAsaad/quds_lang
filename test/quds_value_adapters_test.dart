@@ -53,7 +53,7 @@ void main() {
     final cache = Directory('${root.path}/.dart_tool/quds/cache');
     for (final file in cache.listSync().whereType<File>()) {
       final saved = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
-      saved['abi'] = 'provider-defaults-v3';
+      saved['abi'] = 'provider-defaults-v4';
       final paths = (saved['paths'] as List).cast<String>();
       if (paths.length == 1 && paths.single == provider.path) {
         // Keep its output checksum valid: only the ABI marker should reject it.
@@ -70,7 +70,7 @@ void main() {
     }
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v4');
+          'provider-defaults-v5');
     }
   });
 

@@ -1,0 +1,131 @@
+use fixtures.parameter_forms.provider as api
+
+local(value: int required, other: int) -> int = value + other
+optional([value: int = 2, other: int = value]) -> int = value + other
+nullable([value: int?]) -> int? = value
+
+test "required named parameters skip positional slots":
+  expect(local(3, value: 4), 7)
+  expect(api.mixed(3, amount: 4), 7)
+  expect(api.named(value: 8), 8)
+
+test "named required values retain labels and stable equality":
+  saved = api.named
+  expect(saved(value: 8), 8)
+  expect(saved == api.named, true)
+  mixed = api.mixed
+  expect(mixed(3, amount: 4), 7)
+  contextualMixed: (int, amount: int required) -> int = api.mixed
+  expect(contextualMixed(3, amount: 4), 7)
+  specialized = api.identity<int>
+  expect(specialized(value: 9), 9)
+  contextual: (value: String required) -> String = api.identity
+  expect(contextual(value: "Quds"), "Quds")
+
+test "optional positional calls keep sequential defaults":
+  expect(optional(), 4)
+  expect(optional(3), 6)
+  expect(optional(3, 4), 7)
+  expect(optional(other: 9), 11)
+  expect(api.optional(), 14)
+  expect(api.optional(4), 8)
+  expect(api.optional(4, 5), 9)
+
+test "optional positional values preserve defaults and identity":
+  saved = api.optional
+  expect(saved(), 14)
+  expect(saved(5), 10)
+  expect(saved(5, 6), 11)
+  expect(saved(value: 5, other: 6), 11)
+  expect(saved == api.optional, true)
+
+test "implicit null differs from an explicit optional value":
+  expect(nullable(), null)
+  expect(api.nullable(), null)
+  saved = api.nullable
+  expect(saved(), null)
+  expect(saved(null), null)
+  expect(saved(3), 3)
+
+test "named required can follow a named computed default":
+  saved = api.combined
+  expect(saved(amount: 4), 11)
+  expect(saved(amount: 4, value: 2), 6)
+  expect(api.combined(amount: 4), 11)
+
+test "generic class methods and readonly retain parameter forms":
+  owner = api.Box<int>(stored: 8)
+  saved = owner.named
+  expect(saved(value: 5), 5)
+  expect(saved == owner.named, true)
+  view: readonly api.Box<int> = owner
+  viewed = view.named
+  expect(viewed(value: 6), 6)
+  optionalRead = view.optional
+  expect(optionalRead(), 7)
+  expect(optionalRead(4), 4)
+  genericRead = owner.generic<String>
+  expect(genericRead(value: "safe"), "safe")
+
+test "interface forwarding preserves named contracts":
+  face: api.NamedContract<int> = api.NamedImplementation<int>()
+  saved = face.read
+  expect(saved(value: 3), 3)
+  expect(saved == face.read, true)
+  expect(face.read(value: 4), 4)
+
+test "interface optional defaults belong to the interface":
+  face: api.OptionalContract = api.OptionalImplementation()
+  saved = face.read
+  expect(saved(), 70)
+  expect(saved(2), 20)
+  expect(saved == face.read, true)
+  expect(face.read(), 70)
+
+test "constructor formals retain required and bracket metadata":
+  expect(api.Constructed(value: 4).value, 4)
+  expect(api.OptionalConstructed().value, 9)
+  expect(api.OptionalConstructed(5).value, 5)
+
+test "overloads preserve named labels in calls and contexts":
+  expect(api.select(left: 2), "left:2")
+  expect(api.select(right: 3), "right:3")
+  saved: (left: int required) -> String = api.select
+  expect(saved(left: 4), "left:4")
+
+test "generic constructor metadata survives prefixed specialization":
+  expect(api.GenericConstructed<int>(value: 8).value, 8)
+
+class Trace:
+  static var events: String = ""
+mark(value: int) -> int:
+  Trace.events += "{value}"
+  return value
+ordered(value: int required, fallback: int = mark(3)) -> int = value + fallback
+
+test "named operands precede defaults and run once in source order":
+  Trace.events = ""
+  saved = ordered
+  expect(saved(fallback: mark(1), value: mark(2)), 3)
+  expect(Trace.events, "12")
+  Trace.events = ""
+  expect(saved(value: mark(2)), 5)
+  expect(Trace.events, "23")
+
+test "nullable named required parameters still require a supplied value":
+  saved = api.nullableNamed
+  expect(saved(value: null), null)
+  expect(saved(value: 3), 3)
+  expect(api.nullableNamed(value: null), null)
+
+test "nullable named method calls skip operand evaluation":
+  absent: api.Box<int>? = null
+  eventsBefore = Trace.events
+  skipped = absent?.named(value: mark(9))
+  expect(skipped, null)
+  expect(Trace.events, eventsBefore)
+  unavailable = absent?.named
+  expect(unavailable, null)
+  available: api.Box<int>? = api.Box<int>(stored: 8)
+  saved = available?.named
+  expect(saved!(value: 5), 5)

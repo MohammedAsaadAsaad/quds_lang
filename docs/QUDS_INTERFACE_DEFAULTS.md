@@ -1,4 +1,4 @@
-# Interface default bridges — generated ABI v4
+# Interface default bridges — generated ABI v5
 
 This slice preserves a selected Quds interface's computed defaults while the
 original method body dispatches to the implementation. Taking the same contract
@@ -110,7 +110,7 @@ main():
 
 Generated interface/implementation ABIs now contain companion members. Generated
 Quds implementations and readonly proxies must be rebuilt together. The CLI's
-`provider-defaults-v4` epoch invalidates v3 caches automatically, even when a legacy
+`provider-defaults-v5` epoch invalidates v4 caches automatically, even when a legacy
 provider's output checksum remains valid. Manually authored Dart implementors need
 the generated protocol or an explicit Quds adapter; arbitrary foreign implementations
 are not certified by this slice. Parts/cycles/conditional exports, cross-package
@@ -121,3 +121,8 @@ Evidence is in `test/quds_value_adapters.quds`, its Dart driver and VM/JS fixtur
 `test/fixtures/quds_value_adapters/helpers.quds`, and the Dart golden. Exact observed
 commands/results are recorded in [VALIDATION.md](VALIDATION.md). The active next-agent
 plan is [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+
+The parameter-metadata continuation supports required named and optional positional
+interface members in the representable signature slice. See
+[parameter forms](QUDS_PARAMETER_FORMS.md) for syntax, constructor scope, legacy
+direct-default matching and explicit E910 boundaries.

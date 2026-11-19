@@ -122,7 +122,7 @@ class DartEmitter {
             !model.classes.values.any((owner) =>
                 owner.kind == 'interface' &&
                 owner.methods.contains(function)) &&
-            function.parameters.any((p) => p.defaultValue != null)));
+            function.parameters.any((p) => p.needsAdapter)));
     _hasParts = program.statements.any((node) => node is PartDirective);
     _isPart =
         program.statements.any((node) => node is PartDirective && node.of);
@@ -1005,19 +1005,29 @@ class DartEmitter {
       {bool declaration = false, List<String>? parameterTypes}) {
     final positional = <String>[];
     final named = <String>[];
+    final optionalPositional = <String>[];
     for (var i = 0; i < method.parameters.length; i++) {
       final p = method.parameters[i];
-      if (p.defaultValue == null) {
+      if (p.kind == ParameterKind.requiredNamed) {
+        named.add(
+            'required ${_dartType(parameterTypes?[i] ?? p.type)} ${p.name}');
+      } else if (p.defaultValue == null) {
         positional.add(
             '${_dartType(parameterTypes?[i] ?? p.type)} \$qInterfaceArg$i');
       } else {
         if (!declaration) _useDefaultOmitted = true;
-        named.add(
-            'Object? ${p.name}${declaration ? '' : ' = $_defaultOmitted'}');
+        (p.kind == ParameterKind.optionalPositional
+                ? optionalPositional
+                : named)
+            .add(
+                'Object? ${p.name}${declaration ? '' : ' = $_defaultOmitted'}');
       }
     }
-    return [...positional, if (named.isNotEmpty) '{${named.join(', ')}}']
-        .join(', ');
+    return [
+      ...positional,
+      if (optionalPositional.isNotEmpty) '[${optionalPositional.join(', ')}]',
+      if (named.isNotEmpty) '{${named.join(', ')}}'
+    ].join(', ');
   }
 
   void _emitInterfaceMember(FunctionDeclaration method) {
@@ -1140,7 +1150,10 @@ class DartEmitter {
         final present = <String>[];
         for (var i = 0; i < method.parameters.length; i++) {
           final p = method.parameters[i];
-          arguments.add(p.defaultValue == null ? '\$qInterfaceArg$i' : p.name);
+          arguments.add(
+              p.kind == ParameterKind.requiredNamed || p.defaultValue != null
+                  ? p.name
+                  : '\$qInterfaceArg$i');
           present.add(p.defaultValue == null
               ? 'true'
               : '!identical(${p.name}, $_defaultOmitted)');
@@ -3691,10 +3704,11 @@ class DartEmitter {
     if (arguments.isNotEmpty)
       target = '$target<${arguments.map(_dartType).join(', ')}>';
     if (!declaration && _defaultBridges.contains(function)) return target;
-    if (function.parameters
-        .every((parameter) => parameter.defaultValue == null)) return target;
+    if (function.parameters.every((parameter) => !parameter.needsAdapter))
+      return target;
     final required = <String>[];
     final optional = <String>[];
+    final optionalPositional = <String>[];
     final passed = <String>[];
     final statements = <String>[];
     final savedNames = _names;
@@ -3709,10 +3723,17 @@ class DartEmitter {
         if (parameter.variadic) {
           required.add('List<$dartType> $dartName');
           passed.add(dartName);
+        } else if (parameter.kind == ParameterKind.requiredNamed) {
+          optional.add('required $dartType ${parameter.name}');
+          passed.add(parameter.name);
+          _names[dartName] = parameter.name;
         } else if (parameter.defaultValue != null) {
           _useDefaultOmitted = true;
           final suppliedName = parameter.name;
-          optional.add('Object? $suppliedName = $_defaultOmitted');
+          (parameter.kind == ParameterKind.optionalPositional
+                  ? optionalPositional
+                  : optional)
+              .add('Object? $suppliedName = $_defaultOmitted');
           final fallback = expression(parameter.defaultValue!);
           final resolved = '_qdefault${_temps++}';
           final supplied = type == 'Object?' || type == 'dynamic'
@@ -3730,6 +3751,7 @@ class DartEmitter {
       final signature = [
         ...required,
         if (optional.isNotEmpty) '{${optional.join(', ')}}',
+        if (optionalPositional.isNotEmpty) '[${optionalPositional.join(', ')}]',
       ].join(', ');
       return '($signature) { ${statements.join(' ')} return $target(${passed.join(', ')}); }';
     } finally {
@@ -4363,7 +4385,15 @@ class DartEmitter {
                 : targetSymbol.dartName;
     if (node.callee case TypeApplication applied) {
       final original = model.references[applied.callee];
-      if (original?.function != null && original?.classDeclaration == null ||
+      final explicitQudsConstructor =
+          original?.classDeclaration != null && targetSymbol.function != null;
+      if (explicitQudsConstructor) {
+        target = member == null
+            ? original!.dartName
+            : '${expression(member.object, constantContext: constantContext)}.${original!.classDeclaration!.name}';
+      }
+      if (explicitQudsConstructor ||
+          original?.function != null && original?.classDeclaration == null ||
           targetSymbol.external &&
               model.nativeArguments.containsKey(node) &&
               (!targetSymbol.nativeConstructor || member != null)) {
@@ -4413,6 +4443,10 @@ class DartEmitter {
         (model.providerDefaultFunctions.contains(providerFunction) ||
             model.providerDefaultMethods.containsKey(providerFunction)) &&
         providerOrder != null &&
+        !parameters.asMap().entries.any((entry) =>
+            entry.value.kind == ParameterKind.optionalPositional &&
+            providerOrder[entry.key] == -1 &&
+            providerOrder.skip(entry.key + 1).any((index) => index >= 0)) &&
         (providerOrder.contains(-1) ||
             (model.providerDefaultMethods.containsKey(providerFunction) &&
                 member?.nullAware == true)) &&
@@ -4440,7 +4474,7 @@ class DartEmitter {
         final index = providerOrder[i];
         if (index < 0) continue;
         passed.add(
-            '${parameters[i].defaultValue == null ? '' : '${parameters[i].name}: '}${supplied[index]}');
+            '${parameters[i].isNamed ? '${parameters[i].name}: ' : ''}${supplied[index]}');
       }
       final typeStart = target.indexOf('<');
       final plain = typeStart < 0 ? target : target.substring(0, typeStart);

@@ -5,11 +5,11 @@ import 'quds_readonly.dart' as $qudsReadonly;
 abstract interface class Transformer {
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards);
   bool $qudsIsLazySlot(Object slot);
-  T transform<T>(T _q8) => _q8;
+  T transform<T>(T _q10) => _q10;
 }
 class Identity implements Transformer {
   Identity();
-  U transform<U>(U _q9) => _q9;
+  U transform<U>(U _q11) => _q11;
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Identity) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -28,14 +28,14 @@ base class $QudsReadonlyIdentity with $qudsReadonly.ReadonlyView implements Iden
   @override
   bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceIdentity, candidate);
   bool $qudsIsLazySlot(Object slot) => _$qudsSourceIdentity.$qudsIsLazySlot(slot);
-  U transform<U>(U _q9) => throw UnsupportedError('readonly method');
+  U transform<U>(U _q11) => throw UnsupportedError('readonly method');
   String toString() => _$qudsSourceIdentity.toString();
   bool operator ==(Object other) => _$qudsSourceIdentity == other;
   int get hashCode => _$qudsSourceIdentity.hashCode;
 }
 class Pair<C> {
   Pair();
-  T choose<T>(T _q10, C _q11) => _q10;
+  T choose<T>(T _q7, C _q8) => _q7;
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Pair<C>) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -54,7 +54,7 @@ base class $QudsReadonlyPair<C> with $qudsReadonly.ReadonlyView implements Pair<
   @override
   bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourcePair, candidate);
   bool $qudsIsLazySlot(Object slot) => _$qudsSourcePair.$qudsIsLazySlot(slot);
-  T choose<T>(T _q10, C _q11) => throw UnsupportedError('readonly method');
+  T choose<T>(T _q7, C _q8) => throw UnsupportedError('readonly method');
   String toString() => _$qudsSourcePair.toString();
   bool operator ==(Object other) => _$qudsSourcePair == other;
   int get hashCode => _$qudsSourcePair.hashCode;
@@ -110,8 +110,8 @@ void main() {
     _q3 += "item ";
     return 23;
   }
-  final int _q7 = (() { final _qr0 = _q4(); final _qa0 = _q5(); final _qa1 = _q6(); return _qr0.choose<int>(_qa1, _qa0); })();
-  if (!((_q7 == 23))) throw ArgumentError('selected == 23');
+  final int _q9 = (() { final _qr0 = _q4(); final _qa0 = _q5(); final _qa1 = _q6(); return _qr0.choose<int>(_qa1, _qa0); })();
+  if (!((_q9 == 23))) throw ArgumentError('selected == 23');
   if (!((_q3 == "receiver marker item "))) throw ArgumentError('trace == "receiver marker item "');
   print("GENERIC METHODS OK");
 }

@@ -125,3 +125,9 @@ supported generic and non-generic declaring-interface contracts and repeated-ref
 equality across virtual dispatch. Provider class/alias, record and callback signatures
 are covered by the ABI v4 continuation; union/intersection and foreign implementor
 certification remain separate work.
+
+The ABI v5 [parameter-form continuation](QUDS_PARAMETER_FORMS.md) preserves
+required named and bracketed optional positional declaration kinds, including
+contextual generic values and overload labels. Direct named-default calls still
+have their documented legacy exception; lambda parity and mixed optional groups
+remain separate work.

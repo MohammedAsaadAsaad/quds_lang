@@ -153,6 +153,23 @@ class Parser {
     var i = start;
     if (i == end) return true;
     while (i < end) {
+      if (tokens[i].kind == TokenKind.leftBracket) {
+        var close = i + 1;
+        var depth = 1;
+        for (; close < end; close++) {
+          if (tokens[close].kind == TokenKind.leftBracket) depth++;
+          if (tokens[close].kind == TokenKind.rightBracket && --depth == 0)
+            break;
+        }
+        if (close >= end || close == i + 1 || !_parameterList(i + 1, close))
+          return false;
+        i = close + 1;
+        if (i < end && tokens[i].kind == TokenKind.comma) {
+          i++;
+          continue;
+        }
+        return i == end;
+      }
       if (tokens[i].lexeme == 'var') i++;
       if (i < end && tokens[i].kind == TokenKind.spread) i++;
       if (i >= end || tokens[i].kind != TokenKind.identifier) return false;
@@ -2244,7 +2261,16 @@ class Parser {
     final parameters = <Parameter>[];
     if (!at(TokenKind.rightParen)) {
       do {
-        parameters.add(parameter());
+        if (match(TokenKind.leftBracket)) {
+          if (at(TokenKind.rightBracket))
+            fail('An optional parameter group cannot be empty');
+          do {
+            parameters.add(parameter(optionalPositional: true));
+          } while (match(TokenKind.comma) && !at(TokenKind.rightBracket));
+          expect(TokenKind.rightBracket, ']');
+        } else {
+          parameters.add(parameter());
+        }
       } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
     }
     expect(TokenKind.rightParen, ')');
@@ -2256,7 +2282,7 @@ class Parser {
     return parameters;
   }
 
-  Parameter parameter() {
+  Parameter parameter({bool optionalPositional = false}) {
     final span = current.span;
     if (word('this') || word('super')) {
       final kind = take().lexeme;
@@ -2264,11 +2290,19 @@ class Parser {
       final field = name();
       var type = '<field>';
       if (match(TokenKind.colon)) type = typeName();
-      if (word('required')) take();
+      final requiredNamed = word('required');
+      if (requiredNamed) take();
       Expression? defaultValue;
       if (match(TokenKind.equals)) defaultValue = expression();
       return Parameter(field.lexeme, type, false, extent(span),
-          defaultValue: defaultValue, initializing: kind);
+          defaultValue: parameterDefault(
+              defaultValue, optionalPositional, requiredNamed, false, span),
+          initializing: kind,
+          kind: optionalPositional
+              ? ParameterKind.optionalPositional
+              : requiredNamed
+                  ? ParameterKind.requiredNamed
+                  : null);
     }
     final variadic = at(TokenKind.spread);
     if (variadic) take();
@@ -2277,12 +2311,30 @@ class Parser {
     final parameterName = name();
     expect(TokenKind.colon, ':');
     final type = typeName();
-    if (word('required')) take();
+    final requiredNamed = word('required');
+    if (requiredNamed) take();
     Expression? defaultValue;
     if (match(TokenKind.equals)) defaultValue = expression();
     return Parameter(
         parameterName.lexeme, type, mutable, extent(parameterName.span),
-        defaultValue: defaultValue, variadic: variadic);
+        defaultValue: parameterDefault(
+            defaultValue, optionalPositional, requiredNamed, variadic, span),
+        variadic: variadic,
+        kind: optionalPositional
+            ? ParameterKind.optionalPositional
+            : requiredNamed
+                ? ParameterKind.requiredNamed
+                : null);
+  }
+
+  Expression? parameterDefault(Expression? value, bool optionalPositional,
+      bool requiredNamed, bool variadic, SourceSpan span) {
+    if (requiredNamed && (value != null || optionalPositional || variadic) ||
+        variadic && (optionalPositional || value != null)) {
+      throw CompilerException('E503',
+          'Invalid required, optional or variadic parameter combination', span);
+    }
+    return value ?? (optionalPositional ? Literal(null, span) : null);
   }
 
   ClassDeclaration enumDeclaration(SourceSpan span, List<Metadata> notes) {

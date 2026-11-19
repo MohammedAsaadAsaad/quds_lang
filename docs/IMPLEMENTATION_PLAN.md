@@ -26,8 +26,10 @@ calls are documented in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md).
 Supported ordinary public class methods now publish provider-owned bridges too.
 Generic declaring-interface bridges and provider lexical class/alias, record and
 callback signatures are documented in [QUDS_INTERFACE_DEFAULTS.md](QUDS_INTERFACE_DEFAULTS.md).
-Full parameter metadata and broader union/intersection/foreign ABI certification
-remain separate work.
+Required named and optional positional declaration metadata is covered by
+[QUDS_PARAMETER_FORMS.md](QUDS_PARAMETER_FORMS.md). Direct named-default matching,
+lambda/constructor completion and broader union/intersection/foreign ABI
+certification remain separate work.
 
 ## Architecture
 

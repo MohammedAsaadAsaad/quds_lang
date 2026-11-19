@@ -1,0 +1,40 @@
+_secret() -> int = 7
+named(value: int required) -> int = value
+mixed(amount: int required, value: int) -> int = amount + value
+optional([value: int = _secret(), other: int = value]) -> int = value + other
+nullable([value: int?]) -> int? = value
+combined(value: int = _secret(), amount: int required) -> int = value + amount
+identity<T>(value: T required) -> T = value
+
+class Box<T>:
+  stored: T required
+  readonly named(value: T required) -> T = value
+  readonly optional([value: int = _secret()]) -> int = value
+  readonly generic<U>(value: U required) -> U = value
+
+interface NamedContract<T>:
+  readonly read(value: T required) -> T = value
+class NamedImplementation<X> implements NamedContract<X>:
+  readonly read(value: X required) -> X = value
+
+interface OptionalContract:
+  readonly read([value: int = _secret()]) -> int = value
+class OptionalImplementation implements OptionalContract:
+  readonly read([value: int = 3]) -> int = value * 10
+
+class Constructed:
+  value: int
+  init(this.value: int required):
+    require value >= 0
+class OptionalConstructed:
+  value: int
+  init([this.value: int = 9]):
+    require value >= 0
+
+select(left: int required) -> String = "left:{left}"
+select(right: int required) -> String = "right:{right}"
+class GenericConstructed<T>:
+  value: T
+  init(this.value: T required):
+    require true
+nullableNamed(value: int? required) -> int? = value

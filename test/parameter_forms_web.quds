@@ -1,0 +1,38 @@
+use fixtures.parameter_forms.provider as api
+main():
+  named = api.named
+  print named(value: 8)
+  print named == api.named
+  optional = api.optional
+  print optional()
+  print optional(5)
+  print optional(value: 5, other: 6)
+  print optional == api.optional
+  nullable = api.nullable
+  print nullable()
+  print nullable(3)
+  contextual: (value: String required) -> String = api.identity
+  print contextual(value: "Quds")
+  combined = api.combined
+  print combined(amount: 4)
+  owner = api.Box<int>(stored: 8)
+  view: readonly api.Box<int> = owner
+  viewed = view.named
+  print viewed(value: 6)
+  print viewed == view.named
+  genericRead = owner.generic<String>
+  print genericRead(value: "safe")
+  face: api.NamedContract<int> = api.NamedImplementation<int>()
+  namedRead = face.read
+  print namedRead(value: 3)
+  print namedRead == face.read
+  optionalFace: api.OptionalContract = api.OptionalImplementation()
+  optionalRead = optionalFace.read
+  print optionalRead()
+  print optionalRead(2)
+  print optionalRead == optionalFace.read
+  print optionalFace.read()
+  print api.OptionalConstructed().value
+  print api.GenericConstructed<int>(value: 8).value
+  selected: (left: int required) -> String = api.select
+  print selected(left: 4)

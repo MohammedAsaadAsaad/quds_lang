@@ -61,13 +61,27 @@ class Metadata extends Node {
 bool hasAnnotation(List<Metadata> notes, String name) =>
     notes.any((note) => note.name == name);
 
+enum ParameterKind { dual, requiredNamed, optionalNamed, optionalPositional }
+
 class Parameter extends Node {
   const Parameter(this.name, this.type, this.mutable, super.span,
-      {this.defaultValue, this.variadic = false, this.initializing = ''});
+      {this.defaultValue,
+      this.variadic = false,
+      this.initializing = '',
+      ParameterKind? kind})
+      : kind = kind ??
+            (defaultValue == null
+                ? ParameterKind.dual
+                : ParameterKind.optionalNamed);
   final String name;
   final String type;
   final bool mutable;
   final Expression? defaultValue;
+  final ParameterKind kind;
+  bool get isNamed =>
+      kind == ParameterKind.requiredNamed ||
+      kind == ParameterKind.optionalNamed;
+  bool get needsAdapter => kind != ParameterKind.dual || defaultValue != null;
 
   /// `...name: Type` collects the remaining positional arguments as `List<Type>`.
   final bool variadic;

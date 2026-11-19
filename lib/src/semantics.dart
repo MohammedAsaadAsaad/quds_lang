@@ -20,12 +20,26 @@ bool supportsProviderDefaults(FunctionDeclaration function) =>
     !function.span.file.startsWith('quds:') &&
     function.returnType != null &&
     function.generator.isEmpty &&
-    function.parameters.any((p) => p.defaultValue != null) &&
+    function.parameters.any((p) => p.needsAdapter) &&
     _providerDefaultsAreSynchronous(function) &&
     !function.parameters.any((p) => p.variadic || p.type.contains(' & ')) &&
-    !function.parameters
-        .skipWhile((p) => p.defaultValue == null)
-        .any((p) => p.defaultValue == null);
+    portableParameterLayout(function.parameters);
+
+bool portableParameterLayout(List<Parameter> parameters) {
+  var optional = false;
+  var positionalOptional = false;
+  var named = false;
+  for (final parameter in parameters) {
+    positionalOptional |= parameter.kind == ParameterKind.optionalPositional;
+    named |= parameter.isNamed;
+    if (parameter.defaultValue != null) {
+      optional = true;
+    } else if (optional && parameter.kind != ParameterKind.requiredNamed) {
+      return false;
+    }
+  }
+  return !(positionalOptional && named);
+}
 
 bool _providerDefaultsAreSynchronous(FunctionDeclaration function) {
   var synchronous = true;
@@ -47,7 +61,7 @@ String providerDefaultBridgeName(FunctionDeclaration function) =>
       function.isAsync,
       for (final p in function.typeParameters) [p.name, p.bound],
       for (final p in function.parameters)
-        [p.name, p.type, p.defaultValue != null],
+        [p.name, p.type, p.defaultValue != null, p.kind.name],
     ]))).substring(0, 20);
 
 /// Unions/intersections need their own portable boundary conformance.
@@ -1037,7 +1051,10 @@ class Analyzer {
   bool sameSignature(FunctionDeclaration a, FunctionDeclaration b) {
     if (a.parameters.length != b.parameters.length) return false;
     for (var i = 0; i < a.parameters.length; i++) {
-      if (a.parameters[i].variadic != b.parameters[i].variadic) return false;
+      if (a.parameters[i].kind != b.parameters[i].kind ||
+          a.parameters[i].isNamed &&
+              a.parameters[i].name != b.parameters[i].name ||
+          a.parameters[i].variadic != b.parameters[i].variadic) return false;
       if (a.parameters[i].type != b.parameters[i].type) return false;
     }
     return true;
@@ -1888,6 +1905,7 @@ class Analyzer {
           parameter.mutable,
           parameter.span,
           initializing: parameter.initializing,
+          kind: parameter.kind,
           defaultValue: parameter.defaultValue,
           variadic: parameter.variadic));
     }
@@ -3335,6 +3353,7 @@ class Analyzer {
       for (final parameter in parameters)
         Parameter(parameter.name, _libraryType(parameter.type, home),
             parameter.mutable, parameter.span,
+            kind: parameter.kind,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
             initializing: parameter.initializing)
@@ -5170,7 +5189,10 @@ class Analyzer {
       bounds[actualMap[actual.typeParameters[i].name]!] = right;
     }
     for (var i = 0; i < actual.parameters.length; i++) {
-      if (actual.parameters[i].variadic != expected.parameters[i].variadic ||
+      if (actual.parameters[i].kind != expected.parameters[i].kind ||
+          expected.parameters[i].isNamed &&
+              actual.parameters[i].name != expected.parameters[i].name ||
+          actual.parameters[i].variadic != expected.parameters[i].variadic ||
           expected.parameters[i].defaultValue != null &&
               actual.parameters[i].defaultValue == null) return false;
     }
@@ -5434,6 +5456,7 @@ class Analyzer {
       for (final parameter in invoked.parameters)
         Parameter(parameter.name, _substitute(parameter.type, substitution),
             parameter.mutable, parameter.span,
+            kind: parameter.kind,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
             initializing: parameter.initializing)
@@ -5967,7 +5990,7 @@ class Analyzer {
     if (_awkwardValueParameters(method))
       error(
           'E910',
-          'A required or variadic parameter follows a default, so this method value has no adapter yet',
+          'These parameter groups cannot be represented by one supported Dart method signature',
           node);
     final owner = _methodReceiver(receiverType, method);
     if (owner == null ||
@@ -6023,10 +6046,10 @@ class Analyzer {
           )
       ], {
         for (final parameter in method.parameters)
-          if (parameter.defaultValue != null) parameter.name
+          if (parameter.isNamed) parameter.name
       }, {
         for (final parameter in method.parameters)
-          if (parameter.defaultValue != null) parameter.name
+          if (parameter.isNamed) parameter.name
       }, {
         for (final p in method.typeParameters)
           p.name: bounds[p.name] ?? 'Object?'
@@ -6071,7 +6094,7 @@ class Analyzer {
     if (_awkwardValueParameters(method))
       error(
           'E910',
-          'A required or variadic parameter follows a default, so this method value has no adapter yet',
+          'These parameter groups cannot be represented by one supported Dart method signature',
           node);
     final explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
@@ -6123,10 +6146,10 @@ class Analyzer {
           )
       ], {
         for (final parameter in method.parameters)
-          if (parameter.defaultValue != null) parameter.name
+          if (parameter.isNamed) parameter.name
       }, {
         for (final parameter in method.parameters)
-          if (parameter.defaultValue != null) parameter.name
+          if (parameter.isNamed) parameter.name
       }, {
         for (final parameter in method.typeParameters)
           parameter.name: bounds[parameter.name] ?? 'Object?'
@@ -7326,7 +7349,7 @@ class Analyzer {
     if (candidates.any(_awkwardValueParameters))
       error(
           'E910',
-          'A required or variadic parameter follows a default, so this function value has no adapter yet',
+          'These parameter groups cannot be represented by one supported Dart function signature',
           node);
     final expected =
         _expected == null ? null : nonNullableType(_resolveType(_expected!));
@@ -7361,7 +7384,7 @@ class Analyzer {
               (p.name, p.variadic ? '...${p.type}' : p.type)
           ], {
             for (final p in candidate.parameters)
-              if (p.defaultValue != null) p.name
+              if (p.isNamed) p.name
           }, {
             for (final p in candidate.parameters)
               if (p.defaultValue != null) p.name
@@ -7419,44 +7442,42 @@ class Analyzer {
 
   bool _valueNeedsLowering(FunctionDeclaration function) =>
       function.parameters.any((parameter) =>
-          parameter.defaultValue != null ||
+          parameter.needsAdapter ||
           parameter.variadic ||
           parameter.type.contains(' & '));
 
   /// Optional parameters must form a trailing group. A later required or
   /// variadic parameter cannot be represented by one Dart positional closure.
-  bool _awkwardValueParameters(FunctionDeclaration function) {
-    var optional = false;
-    for (final parameter in function.parameters) {
-      if (parameter.defaultValue != null) {
-        optional = true;
-      } else if (optional) return true;
-    }
-    return false;
-  }
+  bool _awkwardValueParameters(FunctionDeclaration function) =>
+      !portableParameterLayout(function.parameters);
 
   String _callableSignature(
       List<Parameter> parameters, List<String> types, String returned) {
     final parts = <String>[];
+    final named = <String>[];
     for (var i = 0; i < parameters.length; i++) {
       final parameter = parameters[i];
       final type = types[i];
       if (parameter.variadic) {
         parts.add('...${parameter.name}: $type');
+      } else if (parameter.kind == ParameterKind.requiredNamed) {
+        named.add('${parameter.name}: $type required');
+      } else if (parameter.kind == ParameterKind.optionalPositional) {
+        parts.add('[${parameter.name}: $type]');
       } else if (parameter.defaultValue != null) {
-        parts.add('${parameter.name}: $type = missing');
+        named.add('${parameter.name}: $type = missing');
       } else {
         parts.add('${parameter.name}: $type');
       }
     }
-    return '(${parts.join(', ')}) -> $returned';
+    return '(${[...parts, ...named].join(', ')}) -> $returned';
   }
 
   void _rememberValueLowering(Expression node, FunctionDeclaration function,
       List<String> typeArguments, List<String> parameterTypes,
       {String? staticOwner}) {
     final adapt = function.parameters.any((parameter) =>
-        parameter.defaultValue != null || parameter.type.contains(' & '));
+        parameter.needsAdapter || parameter.type.contains(' & '));
     if (!adapt) return;
     model.qudsValueLowerings[node] = QudsValueLowering(
         function, typeArguments, parameterTypes,
@@ -7579,10 +7600,13 @@ class Analyzer {
   }
 
   String functionType(FunctionDeclaration function) {
-    final parameters = function.parameters.map((p) => p.type).join(', ');
     final returns =
         model.declarations[function]?.type ?? function.returnType ?? 'void';
-    return '($parameters) -> $returns';
+    if (!function.parameters.any((p) => p.needsAdapter)) {
+      return '(${function.parameters.map((p) => p.type).join(', ')}) -> $returns';
+    }
+    return _callableSignature(function.parameters,
+        function.parameters.map((p) => p.type).toList(), returns);
   }
 
   String unary(UnaryExpression node) {
@@ -7892,6 +7916,7 @@ class Analyzer {
         for (final parameter in found.function!.parameters)
           Parameter(parameter.name, _libraryType(parameter.type, home),
               parameter.mutable, parameter.span,
+              kind: parameter.kind,
               defaultValue: parameter.defaultValue,
               variadic: parameter.variadic,
               initializing: parameter.initializing)
@@ -7932,9 +7957,13 @@ class Analyzer {
         final parameters = _ctorParameters(type, named.first);
         applyArguments(node, parameters, null);
         _rememberConstCall(node, named.first, parameters, type.name);
-        model.references[callee] = Symbol(callee.name, callee.name, type.name,
-            function: FunctionDeclaration(callee.name, parameters, type.name,
-                null, null, named.first.span));
+        for (final parameter in parameters) {
+          model.declarations[parameter] ??=
+              Symbol(parameter.name, parameter.name, parameter.type);
+        }
+        model.references[callee] = Symbol(callee.name, callee.name, type.name)
+            .withFunction(FunctionDeclaration(callee.name, parameters,
+                type.name, null, null, named.first.span));
         return type.name;
       }
     }
@@ -8164,6 +8193,7 @@ class Analyzer {
               _substitute(specialize(parameter.type), methodArguments),
               parameter.mutable,
               parameter.span,
+              kind: parameter.kind,
               defaultValue: parameter.defaultValue,
               variadic: parameter.variadic,
               initializing: parameter.initializing)
@@ -8737,9 +8767,12 @@ class Analyzer {
       if (!symbol.dartName.contains('.')) return returned;
       final qualified = _qualifyType(
           symbol.dartName, returned, symbol.classDeclaration!.name);
-      model.references[node.callee] = Symbol(
-          symbol.dartName, symbol.dartName, qualified,
-          classDeclaration: symbol.classDeclaration);
+      final previous = model.references[node.callee];
+      model.references[node.callee] = previous?.function == null
+          ? Symbol(symbol.dartName, symbol.dartName, qualified,
+              classDeclaration: symbol.classDeclaration)
+          : Symbol(symbol.dartName, symbol.dartName, qualified)
+              .withFunction(previous!.function);
       return qualified;
     }
     if (symbol.external &&
@@ -8760,7 +8793,9 @@ class Analyzer {
       for (final parameter in selected.parameters)
         Parameter(parameter.name, _substitute(parameter.type, substitution),
             parameter.mutable, parameter.span,
-            defaultValue: parameter.defaultValue, variadic: parameter.variadic)
+            kind: parameter.kind,
+            defaultValue: parameter.defaultValue,
+            variadic: parameter.variadic)
     ];
     return applyArguments(node, parameters, selected,
         typeArguments: substitution);
@@ -8810,10 +8845,22 @@ class Analyzer {
       List<Parameter> parameters,
       List<String> explicit,
       ConstructorDeclaration? constructor) {
+    final home = model.libraryOf[type] ?? '';
+    if (constructor != null &&
+        home.isNotEmpty &&
+        home != _activeLibrary &&
+        parameters
+            .any((p) => p.defaultValue != null && p.defaultValue is! Literal)) {
+      error(
+          'E910',
+          'Imported computed constructor defaults need a provider-owned constructor bridge',
+          node);
+    }
     final owned = [
       for (final parameter in parameters)
         Parameter(parameter.name, _classMemberType(parameter.type, type),
             parameter.mutable, parameter.span,
+            kind: parameter.kind,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
             initializing: parameter.initializing)
@@ -8823,15 +8870,20 @@ class Analyzer {
       for (final parameter in owned)
         Parameter(parameter.name, _substitute(parameter.type, substitution),
             parameter.mutable, parameter.span,
+            kind: parameter.kind,
             defaultValue: parameter.defaultValue,
             variadic: parameter.variadic,
             initializing: parameter.initializing)
     ];
+    for (final parameter in instantiated) {
+      model.declarations[parameter] =
+          Symbol(parameter.name, parameter.name, parameter.type);
+    }
     applyArguments(node, instantiated, null);
     model.references[node.callee] = type.constructors.isEmpty
         ? Symbol(type.name, type.name, type.name, classDeclaration: type)
-        : Symbol(type.name, type.name, type.name,
-            function: FunctionDeclaration(
+        : Symbol(type.name, type.name, type.name).withFunction(
+            FunctionDeclaration(
                 type.name, instantiated, type.name, null, null, type.span));
     final returned = type.typeParameters.isEmpty
         ? type.name
@@ -8860,6 +8912,7 @@ class Analyzer {
         for (final parameter in parameters)
           Parameter(
               parameter.name, parameter.type, parameter.mutable, parameter.span,
+              kind: parameter.kind,
               defaultValue: constructor.parameters
                   .where((item) => item.name == parameter.name)
                   .firstOrNull
@@ -9077,6 +9130,10 @@ class Analyzer {
       int target;
       if (argument.name == null) {
         if (named) return false;
+        while (positional < parameters.length &&
+            parameters[positional].kind == ParameterKind.requiredNamed) {
+          positional++;
+        }
         if (parameters.isNotEmpty &&
             parameters.last.variadic &&
             positional >= parameters.length - 1) {
@@ -9192,7 +9249,8 @@ class Analyzer {
       String? declaredReturnType}) {
     parameters = _callParameters(parameters, function);
     if (function != null &&
-        parameters.any((parameter) => parameter.defaultValue != null)) {
+        (parameters.any((parameter) => parameter.needsAdapter) ||
+            node.arguments.any((argument) => argument.name != null))) {
       final owner = _methodOwners[function];
       if (owner == null) {
         analyzeFunction(function);
@@ -9225,6 +9283,10 @@ class Analyzer {
       if (argument.name == null) {
         if (named)
           fail('Positional arguments must precede named arguments', argument);
+        while (positional < parameters.length &&
+            parameters[positional].kind == ParameterKind.requiredNamed) {
+          positional++;
+        }
         if (parameters.isNotEmpty &&
             parameters.last.variadic &&
             positional >= parameters.length - 1) {
@@ -9265,6 +9327,22 @@ class Analyzer {
       }
       _rememberInference(function, parameters[target].type, type, inferred);
       order[target] = i;
+    }
+    if (function != null &&
+        (model.declarations[function]?.library.isNotEmpty ?? false) &&
+        model.declarations[function]!.library != _activeLibrary &&
+        (model.providerDefaultFunctions.contains(function) ||
+            model.providerDefaultMethods.containsKey(function))) {
+      for (var i = 0; i < parameters.length; i++) {
+        if (parameters[i].kind == ParameterKind.optionalPositional &&
+            order[i] == -1 &&
+            order.skip(i + 1).any((index) => index >= 0)) {
+          error(
+              'E910',
+              'An imported optional positional gap needs the provider packet ABI; supply earlier values explicitly',
+              node);
+        }
+      }
     }
     for (var i = 0; i < parameters.length; i++) {
       if (parameters[i].variadic || order[i] != -1) continue;

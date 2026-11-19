@@ -1,3 +1,40 @@
+# Required named and optional positional metadata — 2026-11-19
+
+Base: `d4851c3`. The handoff was updated before implementation.
+Contract: [QUDS_PARAMETER_FORMS.md](QUDS_PARAMETER_FORMS.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds program | 15 declarations cover named-required cursor skipping, omission/null, computed sequential defaults, function identity, generic contexts, overload labels, readonly/interface methods, constructors, evaluation order and nullable short-circuit |
+| Initial focused regressions | 109 passed in 26s across parser/semantics/function/method/value and parameter-form drivers |
+| Callback/generic regressions after correction | 67 passed in 28s; constructor/Dart-generic/parameter regressions then 69 passed in 46s |
+| Final parameter driver | 20 passed in 28s before the added variadic-default regression; final parser + parameter drivers **32 passed in 41s** |
+| Negative conformance | 17 source cases plus an actual imported computed-constructor boundary check; original consumer Quds coordinates retained |
+| Generated Dart | New deterministic golden; generated entry analyzed; VM and JavaScript/Node agree on 22 lines |
+| ABI v5 | Simulated v4 cache keeps valid provider checksums after parameter bridges are removed; actual `quds run` rebuilds and prints `8`, `7`, `true`. Existing generic-interface upgrade regression also targets v5 |
+| Documentation example | Actual `quds run /tmp/quds-parameter-example/main.quds`: `8`, `14`, `8`, `9`, `null`, `7`, `9`, `true` |
+| Final formatting/analysis | `dart analyze`: **No issues found**; `dart format .`: **102 files, zero changes** |
+| Full suite | `dart test`: **726 passed, zero failures, in 12m31s** |
+
+An initial full run was stopped after a stale generic-method golden exposed changed
+internal temporary numbering. Broader targeted checks then caught plain positional
+callback labels affecting nested function-type compatibility and doubled explicit
+constructor type arguments. These were corrected and tested on the VM and JS;
+the generic-method golden changed only internal identifiers. The last parser change
+rejects a variadic default with E503 instead of silently accepting forbidden syntax.
+The final full run passed all 726 tests on fixed compiler/test sources.
+Superseded runners were explicitly terminated after stdin interrupts left them
+running; only the final stable log supplies the full-suite result.
+Readiness inventory, keyword catalog sync and `git diff --check` passed.
+
+Known limits are explicit: direct named-default calls retain their legacy positional
+exception; imported/stored optional positional gaps, mixed optional groups, lambda
+forms and general computed constructors still need follow-up. Rule QUDS-022 is
+partial, not complete. No unobserved CI, Flutter engine/device or performance
+certification is claimed.
+
+---
+
 # Generic interface defaults and lexical signature types — 2026-11-19
 
 Base: `21f2538`. Handoff updated before implementation in

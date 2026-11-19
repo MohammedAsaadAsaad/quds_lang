@@ -6,6 +6,57 @@
 إلى قلب اللغة. الأقسام الأقدم تحت هذه الدفعة سجل تاريخي. الحالة الحالية هي
 القسم الأول أدناه؛ الأقسام التالية تحفظ نتائج الدفعات السابقة.
 
+## الدفعة الحالية: metadata لـrequired وoptional positional — مكتملة ضمن نطاقها
+
+الأساس `d4851c3`. أضيف ParameterKind إلى AST، مع حفظ kind في parser
+ونسخ المعاملات المستوردة والمتخصصة وconstructor signatures. الموضع يتجاوز
+required named slots، وتحافظ مراجع الدوال على required labels وbracket groups.
+implicit null يُقبل للنوع nullable ويُرفض للنوع غير nullable. اختيار overload
+يشمل الأسماء المسماة، والتواقيع المعروضة ترتب positional قبل named دون تغيير
+ترتيب تقييم الوسائط المكتوبة. named-required قد يلي named default.
+
+جسور الدوال وطرق الكلاسات والواجهات العامة وreadonly تدعم الأشكال القابلة
+للتمثيل. أُصلح ضياع synthetic constructor signatures وكذلك التخصص العام
+ذي prefix. القيم الافتراضية literal للبواني مختبرة؛ non-literal imports تُرفض
+بـE910 حتى يوجد provider-owned constructor protocol. ABI v5 يشمل kinds
+في هوية bridge ويعيد بناء كاش v4 حتى مع checksum قديم صحيح.
+
+الاختبارات: 15 declaration بلغة قدس، و17 حالة رفض، وconstructor boundary،
+وVM/JS مع 22 سطرًا متطابقًا وgolden، وترقية كاش فعلية. نجح الفحص المركّز
+الأولي 109 اختبارات؛ بعد تصحيح توافق callbacks والبواني نجح فحص 67 حالة ثم
+69 حالة. نجح الفحص النهائي للـparser والمعاملات: 32 اختبارًا في 41s.
+نجح الفحص الشامل: **726 اختبارًا في 12m31s**، والتحليل نظيف والتنسيق
+102 ملف دون تغييرات. النتيجة المثبتة في VALIDATION.md.
+العقد: [QUDS_PARAMETER_FORMS.md](QUDS_PARAMETER_FORMS.md).
+
+تعارض تنفيذي معروف لا يغيّر المواصفة: direct calls القديمة تسمح بتمرير
+`name: Type = expr` موضعيًا. تبقى هذه السماحية في هذه الدفعة، بينما يحفظ
+AST النوع optionalNamed ومراجع الدوال تطبّق named-only. لا يُعلن اكتمال
+QUDS-022 أو جميع parameter forms؛ حالتها الآن partial في inventory.
+
+### خطوات الاستلام التالية
+
+1. وسّع provider packet ABI لتمثيل optional positional gaps، ثم أزل E910
+   للاحتفاظ بالقيم المتروكة دون نقل defaults الخاصة إلى المستدعي أو تكرارها.
+   قيم الدوال المخزنة تحتاج كذلك وسيلة آمنة لحفظ omission/default metadata.
+2. أضف provider-owned constructor defaults: lexical scope وearlier-parameter
+   rules وexactly-once وخصوصية وconst/super/generic signatures. اختبر كل مسار
+   بقدس ثم VM/JS؛ لا تكتفِ بنسخ تعبير default في emitter المستدعي.
+3. وحّد parameter parser للـlambdas، مع حفظ contextual inference والـcaptures.
+   mixed optional groups ليست توقيع Dart واحدًا؛ تحتاج قرار lowering متوافقًا
+   مع المواصفة، لا محو الأسماء أو optionality ولا Function.apply.
+4. دقّق استدعاءات SDK والأمثلة، ثم طبّق optionalNamed matching على direct
+   calls والـoverloads والـholes/spreads. ميّز سياسة الباني المولّد من fields
+   عن parameter declarations؛ لا تغيّر API أو الصياغة المعتمدة بصمت.
+5. وسّع override kind compatibility باختبارات widening الآمن؛ التنفيذ الحالي
+   يشترط kind مطابقًا، وهذه فجوة توافق وليست تعديلًا لقاعدة override.
+   حافظ على فحوص callback containers: ordinary positional types لا تحمل
+   labels داخل التمثيل القديم. أي تطبيع بنيوي جديد يحتاج اختبارات invariance
+   وnullability وgeneric inheritance؛ لا تنسخ kind إلى نص التوقيع فقط.
+6. بعد كل دفعة: format/analyze/full tests وgolden وcache epoch عند الحاجة،
+   ثم VALIDATION.md وinventory ورفع origin/main. اعتماد CI/Flutter والأداء
+   وforeign implementors وبقية القيود موضح في الأقسام التاريخية أدناه.
+
 ## الدفعة الحالية: واجهات عامة وتواقيع مرتبطة بالمكتبة — مكتملة ضمن نطاقها
 
 الأساس `21f2538`. نُفذت خطط forwarding متخصصة لكل implements edge،

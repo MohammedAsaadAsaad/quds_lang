@@ -335,7 +335,7 @@ extend double Reals:
   # True when this number is within 1e-9 of [other].
   # Example:
   #   print 1.0.about(1.0)
-  about(other: double) -> bool = approximately(this, other, 1.0e-9)
+  about(other: double) -> bool = approximately(this, other, tolerance: 1.0e-9)
 
 # Adjacent binary64 value toward positive infinity, including signed zero.
 # NaN propagates; positive infinity is fixed. No logarithm or bit-width cast.
@@ -2747,19 +2747,19 @@ lognormalPdf(x: double, center: double, sigma: double) -> double:
 lognormalCdf(x: double, center: double, sigma: double) -> double:
   if sigma <= 0.0: throw "sigma must be positive"
   if x <= 0.0: return 0.0
-  return normalCdf(math.log(x), center, sigma)
+  return normalCdf(math.log(x), center: center, sigma: sigma)
 
 # Lognormal quantile.
 # Example:
 #   print lognormalQuantile(0.5, 0.0, 1.0)
 lognormalQuantile(p: double, center: double, sigma: double) -> double:
-  return math.exp(normalQuantile(p, center, sigma))
+  return math.exp(normalQuantile(p, center: center, sigma: sigma))
 
 # One lognormal draw.
 # Example:
 #   print lognormalSample(Random(1), 0.0, 1.0) > 0.0
 lognormalSample(random: Random, center: double, sigma: double) -> double:
-  return math.exp(normalSample(random, center, sigma))
+  return math.exp(normalSample(random, center: center, sigma: sigma))
 
 # Cauchy density.
 # Example:
@@ -3243,7 +3243,7 @@ rungeKuttaAdaptive(
       x0,
       [y0],
       x1,
-      tolerance)
+      tolerance: tolerance)
   return answer[0]
 
 # Adaptive Runge-Kutta-Fehlberg for a system, within [tolerance].

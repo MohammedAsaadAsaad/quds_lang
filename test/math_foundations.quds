@@ -6,8 +6,8 @@ test "series normalization and differencing":
   expect(seriesAutocovariance([1.0, 2.0, 3.0], 2), 0.0 - 1.0 / 3.0)
   expect(seriesAutocorrelation([1.0, 2.0, 3.0], 2), -0.5)
   expect(seriesDifference([1.0, 3.0, 6.0]), [2.0, 3.0])
-  expect(seriesDifference([1.0, 3.0, 6.0], 2), [5.0])
-  expect(seriesDifference([1.0], 1).length, 0)
+  expect(seriesDifference([1.0, 3.0, 6.0], lag: 2), [5.0])
+  expect(seriesDifference([1.0], lag: 1).length, 0)
 
 test "series rejects undefined and nonfinite inputs":
   empty() -> double = seriesAutocovariance([], 0)
@@ -20,7 +20,7 @@ test "series rejects undefined and nonfinite inputs":
   expect(constant, throwsA(equals("series correlation needs positive variance")))
   infinite() -> List<double> = seriesDifference([0.0, 1.0 / 0.0])
   expect(infinite, throwsA(equals("series values must be finite")))
-  differenceLag() -> List<double> = seriesDifference([1.0], 0)
+  differenceLag() -> List<double> = seriesDifference([1.0], lag: 0)
   expect(differenceLag, throwsA(equals("series difference lag must be inside the series")))
   overflow() -> double = seriesAutocovariance([1.0e308, -1.0e308], 0)
   expect(overflow, throwsA(equals("series covariance is not finite")))

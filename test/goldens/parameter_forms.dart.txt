@@ -3,17 +3,26 @@
 
 import 'fixtures/parameter_forms/provider.dart' as api;
 import 'quds_readonly.dart' as $qudsReadonly;
+final _$qudsGaps = Expando<Object? Function(List<Object?>, List<bool>)>();
+void _$qudsBindGap(Object value, Object? Function(List<Object?>, List<bool>) gap) {
+  _$qudsGaps[value] = gap;
+}
+T _$qudsCallGap<T>(Object value, List<Object?> inputs, List<bool> present) =>
+    _$qudsGaps[value]!(inputs, present) as T;
+
 
 
 void main() {
   final int Function({required int value}) _q0 = api.$QudsDefault986f383792c9c87b1f19;
   print(_q0(value: 8));
   print((_q0 == api.$QudsDefault986f383792c9c87b1f19));
-  final int Function([int, int]) _q3 = api.$QudsDefault323f74e053dc72803031;
+  final int Function([int, int]) _q3 = (() { final _qgapv0 = api.$QudsDefault323f74e053dc72803031; _$qudsBindGap(_qgapv0, api.$QudsGap323f74e053dc72803031); return _qgapv0; })();
   print(_q3());
   print(_q3(5));
   print(_q3(5, 6));
-  print((_q3 == api.$QudsDefault323f74e053dc72803031));
+  print((_q3 == (() { final _qgapv1 = api.$QudsDefault323f74e053dc72803031; _$qudsBindGap(_qgapv1, api.$QudsGap323f74e053dc72803031); return _qgapv1; })()));
+  print((() { final _qpk2 = 9; return _$qudsCallGap<int>(_q3, <Object?>[null, _qpk2], <bool>[false, true]); })());
+  print((() { final _qpk3 = 9; return api.$QudsGap323f74e053dc72803031(<Object?>[null, _qpk3], <bool>[false, true]); })());
   final int? Function([int?]) _q5 = api.$QudsDefaultffc6219798c71094ed78;
   print(_q5());
   print(_q5(3));
@@ -23,21 +32,21 @@ void main() {
   print(_q9(amount: 4));
   final api.Box<int> _q10 = $qudsReadonly.registerGuards<api.Box<int>>(api.Box<int>(stored: 8), [$qudsReadonly.ModelGuard<api.Box<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
   final api.Box<int> _q11 = _q10;
-  final int Function({required int value}) _q12 = ((api.Box<int> _qrecv0) => _qrecv0.$QudsMethodDefault22b8f70a058c877f5f7e)($qudsReadonly.ModelGuard<api.Box<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q11));
+  final int Function({required int value}) _q12 = ((api.Box<int> _qrecv4) => _qrecv4.$QudsMethodDefault22b8f70a058c877f5f7e)($qudsReadonly.ModelGuard<api.Box<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q11));
   print(_q12(value: 6));
-  print((_q12 == ((api.Box<int> _qrecv1) => _qrecv1.$QudsMethodDefault22b8f70a058c877f5f7e)($qudsReadonly.ModelGuard<api.Box<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q11))));
-  final String Function({required String value}) _q13 = ((api.Box<int> _qrecv2) => _qrecv2.$QudsMethodDefaulte111b0b5d715d2158c52<String>)(_q10);
+  print((_q12 == ((api.Box<int> _qrecv5) => _qrecv5.$QudsMethodDefault22b8f70a058c877f5f7e)($qudsReadonly.ModelGuard<api.Box<int>>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, $qudsReadonly.AutoGuard<int>()])).protect(_q11))));
+  final String Function({required String value}) _q13 = ((api.Box<int> _qrecv6) => _qrecv6.$QudsMethodDefaulte111b0b5d715d2158c52<String>)(_q10);
   print(_q13(value: "safe"));
   final api.NamedContract<int> _q14 = $qudsReadonly.registerGuards<api.NamedImplementation<int>>(api.NamedImplementation<int>(), [$qudsReadonly.ModelGuard<api.NamedImplementation<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
-  final int Function({required int value}) _q15 = ((api.NamedContract<int> _qrecv3) => _qrecv3.$QudsMethodDefaultf872bf9fff4bd33b52d3)(_q14);
+  final int Function({required int value}) _q15 = ((api.NamedContract<int> _qrecv7) => _qrecv7.$QudsMethodDefaultf872bf9fff4bd33b52d3)(_q14);
   print(_q15(value: 3));
-  print((_q15 == ((api.NamedContract<int> _qrecv4) => _qrecv4.$QudsMethodDefaultf872bf9fff4bd33b52d3)(_q14)));
+  print((_q15 == ((api.NamedContract<int> _qrecv8) => _qrecv8.$QudsMethodDefaultf872bf9fff4bd33b52d3)(_q14)));
   final api.OptionalContract _q16 = api.OptionalImplementation();
-  final int Function([int]) _q18 = ((api.OptionalContract _qrecv5) => _qrecv5.$QudsMethodDefault5f2ca306ba2e22cdfc8f)(_q16);
+  final int Function([int]) _q18 = ((api.OptionalContract _qrecv9) => _qrecv9.$QudsMethodDefault5f2ca306ba2e22cdfc8f)(_q16);
   print(_q18());
   print(_q18(2));
-  print((_q18 == ((api.OptionalContract _qrecv6) => _qrecv6.$QudsMethodDefault5f2ca306ba2e22cdfc8f)(_q16)));
-  print((() { final _qreceiver7 = _q16; return _qreceiver7.$QudsMethodDefault5f2ca306ba2e22cdfc8f(); })());
+  print((_q18 == ((api.OptionalContract _qrecv10) => _qrecv10.$QudsMethodDefault5f2ca306ba2e22cdfc8f)(_q16)));
+  print((() { final _qreceiver11 = _q16; return _qreceiver11.$QudsMethodDefault5f2ca306ba2e22cdfc8f(); })());
   print((() { final _qd0 = 9; return api.OptionalConstructed(_qd0); })().value);
   print((() { final _qa0 = 8; return api.GenericConstructed<int>(_qa0); })().value);
   final String Function({required int left}) _q19 = api.$QudsDefaultd1cc09b1ec7909a42caa;

@@ -58,8 +58,8 @@ main():
   memory.held.clear()
   memory.retainBuffers()
   memory.buffers.clear()
-  memory.copyWork(1)
-  memory.viewWork(1)
+  memory.copyWork(count: 1)
+  memory.viewWork(count: 1)
   memory.checksum = 0
   developer.debugger()
   memory.allocateCells(20000)

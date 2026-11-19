@@ -70,7 +70,7 @@ void main() {
     }
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v5');
+          'provider-defaults-v6');
     }
   });
 

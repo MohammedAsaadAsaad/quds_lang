@@ -102,9 +102,11 @@ A readonly collection result cannot be assigned to a mutable-return signature or
 mutated through the saved callback.
 
 A zero-parameter method whose readonly view is wider than its declared result
-stores a guard around the tear-off. A method with parameters that would need
-the same transitive protection still reports E910; declare the readonly result
-explicitly. The qualification is not erased.
+stores a guard around the tear-off. A method with parameters stores the same
+guard on the value and the adapter wraps the invocation result, so the
+tear-off is not rejected with E910 for that reason alone. Declare an explicit
+readonly result when the qualification itself is part of the signature. The
+qualification is not erased.
 
 | Invalid case | Diagnostic |
 | --- | --- |
@@ -113,7 +115,7 @@ explicitly. The qualification is not erased.
 | Nullable receiver without safe access | E308 |
 | Cross-library private/protected access | E206 / E207 |
 | Mutating method exposed through readonly or mutation of its readonly result | E307 |
-| Required or variadic parameter after a default, ambiguous owner, or a readonly result adapter on a method with parameters | E910 |
+| Required or variadic parameter after a default, or an ambiguous method owner | E910 |
 
 ## Limits and handoff
 

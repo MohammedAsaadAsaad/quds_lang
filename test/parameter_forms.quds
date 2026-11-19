@@ -30,6 +30,7 @@ test "optional positional calls keep sequential defaults":
   expect(api.optional(), 14)
   expect(api.optional(4), 8)
   expect(api.optional(4, 5), 9)
+  expect(api.optional(other: 9), 16)
 
 test "optional positional values preserve defaults and identity":
   saved = api.optional
@@ -37,6 +38,7 @@ test "optional positional values preserve defaults and identity":
   expect(saved(5), 10)
   expect(saved(5, 6), 11)
   expect(saved(value: 5, other: 6), 11)
+  expect(saved(other: 9), 16)
   expect(saved == api.optional, true)
 
 test "implicit null differs from an explicit optional value":

@@ -55,7 +55,11 @@ void main() {
     'class Bad<U> extends Base<U>:\n  init():\n    require true': 'E704',
     'class Bad<U> extends Base<U>:\n  extra: int = 0\n  init(super.value, super.extra):\n    require true':
         'E200',
-    'class ExplicitBase<T>:\n  value: T required\n  init(this.value):\n    require true\nclass Unsupported<U> extends ExplicitBase<U>:\n  tag: String required':
+    'class NamedOnly:\n  value: int required\n  init named(this.value):\n    require true\nclass BadNamed extends NamedOnly:\n  tag: int = 1':
+        'E910',
+    'class VarParent:\n  init(...values: int):\n    require true\nclass BadVar extends VarParent:\n  tag: int = 1':
+        'E910',
+    'class ClashParent:\n  value: int required\n  init(this.value):\n    require true\nclass BadClash extends ClashParent:\n  value: int = 1':
         'E910',
     'class Unsupported extends Base:\n  tag: String required': 'E910',
     'class NamedBase<T>:\n  value: T required\n  init named(this.value):\n    require true\nclass Bad<U> extends NamedBase<U>:\n  init(super.value):\n    require true':

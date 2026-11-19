@@ -15,8 +15,6 @@ class Fresh:
   readonly read() -> List<int> = [1]
 class DerivedUtility extends Utility:
   tag: int = 0
-class Awkward:
-  keep<U>(value: U = 1, other: int) -> int = other
 ''';
 
 void main() {
@@ -45,7 +43,6 @@ void main() {
     'saved = helpers.Vault(stored: 1).guarded<int>': 'E207',
     'view: readonly ListBox<int> = ListBox<int>(values: [1])\n  saved = view.read\n  saved()[0] = 2':
         'E307',
-    'saved = Awkward().keep<int>': 'E910',
     'saved = Box<num>(stored: 1).echo<int>\n  print saved("bad")': 'E300',
     'saved = helpers.Vault.echo<int>': 'E300',
   };
@@ -60,6 +57,32 @@ void main() {
                   'test/quds_method_values_bad.quds')));
     });
   }
+  test('a named default before a required method parameter is one value',
+      () async {
+    final source = '''
+class Awkward:
+  keep<U>(value: U? = null, other: int) -> int = other
+main():
+  box = Awkward()
+  saved = box.keep<int>
+  print saved(4)
+  print saved(4, value: null)
+  print saved == box.keep<int>
+''';
+    final compiled = compile(source, file: 'awkward_method_value.quds');
+    final root = Directory.systemTemp.createTempSync('quds-awkward-method-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final output = File('${root.path}/main.dart')
+      ..writeAsStringSync(compiled.dart);
+    writeSdkBundles(root.path, compiled);
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', output.path]);
+    expect(analysis.exitCode, 0,
+        reason: '${analysis.stdout}${analysis.stderr}');
+    final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
+    expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
+    expect(vm.stdout, '4\n4\ntrue\n');
+  });
   test('readonly this cannot leak a mutating generic method value', () {
     expect(
         () => compile('''class Escaper:

@@ -52,7 +52,7 @@ void main() {
     'saved: (value: int required, value: int = 0) -> int = native.named':
         'E503',
     'saved: ([value: int], int) -> int = native.optional': 'E503',
-    'saved: ([value: int], extra: int = 0) -> int = native.optional': 'E503',
+    'saved: ([value: int], extra: int = 0) -> int = native.optional': 'E300',
   };
   for (final entry in invalidCalls.entries) {
     test('function metadata rejects ${entry.key}', () {

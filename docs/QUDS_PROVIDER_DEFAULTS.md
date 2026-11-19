@@ -52,7 +52,7 @@ milestone does not redefine the approved visibility syntax.
 The generated `$QudsDefault...` identifier is a reserved Dart ABI detail derived
 from the declaration signature, not absolute paths or backend temporary numbers.
 The source helper remains private; the bridge provides the same public callable
-operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v6`; earlier epochs covered functions, methods, generic interfaces and parameter kinds) in build caches.
+operation as its source declaration. The CLI records a generated-ABI epoch (`provider-defaults-v7`; earlier epochs covered functions, methods, generic interfaces, parameter kinds, and gap packets) in build caches.
 Build/run invalidate older epochs and rebuild dependencies automatically, even
 when their source and output checksums still match. Externally managed generated
 Dart must likewise be rebuilt with the matching compiler. It is not a runtime registry or a dynamic dispatch system.

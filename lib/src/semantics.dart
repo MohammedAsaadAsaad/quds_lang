@@ -41,6 +41,49 @@ bool portableParameterLayout(List<Parameter> parameters) {
   return !(positionalOptional && named);
 }
 
+/// A stored value whose groups cannot be one Dart function. Calls pass
+/// `(List<Object?>, List<bool>)` in signature order and the provider applies
+/// defaults. A named default followed by a required positional parameter stays
+/// a reordered Dart signature.
+bool packetValueLayout(List<Parameter> parameters) {
+  final positionalOptional = parameters
+      .any((parameter) => parameter.kind == ParameterKind.optionalPositional);
+  final named = parameters.any((parameter) => parameter.isNamed);
+  if (positionalOptional && named) return true;
+  if (!parameters.any((parameter) => parameter.variadic)) return false;
+  return parameters.any((parameter) =>
+      parameter.defaultValue != null ||
+      parameter.kind == ParameterKind.optionalPositional ||
+      parameter.isNamed);
+}
+
+/// Positional and variadic slots, then named slots. Matches [_callableSignature].
+List<Parameter> packetSlots(List<Parameter> parameters) {
+  final positional = <Parameter>[];
+  final named = <Parameter>[];
+  for (final parameter in parameters) {
+    final namedSlot = parameter.kind == ParameterKind.requiredNamed ||
+        (parameter.defaultValue != null &&
+            parameter.kind != ParameterKind.optionalPositional &&
+            !parameter.variadic);
+    if (namedSlot) {
+      named.add(parameter);
+    } else {
+      positional.add(parameter);
+    }
+  }
+  return [...positional, ...named];
+}
+
+bool packetSignature(List<FunctionParameterShape> parameters) {
+  final positionalOptional = parameters.any((parameter) =>
+      parameter.optional && !parameter.named && !parameter.variadic);
+  final named = parameters.any((parameter) => parameter.named);
+  if (positionalOptional && named) return true;
+  if (!parameters.any((parameter) => parameter.variadic)) return false;
+  return parameters.any((parameter) => parameter.optional || parameter.named);
+}
+
 bool _providerDefaultsAreSynchronous(FunctionDeclaration function) {
   var synchronous = true;
   for (final parameter in function.parameters) {
@@ -116,6 +159,15 @@ String providerGapBridgeName(FunctionDeclaration function) =>
     providerDefaultBridgeName(function)
         .replaceFirst(r'$QudsDefault', r'$QudsGap');
 
+String providerPacketBridgeName(FunctionDeclaration function) =>
+    providerDefaultBridgeName(function)
+        .replaceFirst(r'$QudsDefault', r'$QudsPacket');
+
+String providerMethodPacketBridgeName(
+        ClassDeclaration owner, FunctionDeclaration function) =>
+    providerMethodDefaultBridgeName(owner, function)
+        .replaceFirst(r'$QudsMethodDefault', r'$QudsMethodPacket');
+
 String providerMethodGapBridgeName(
         ClassDeclaration owner, FunctionDeclaration function) =>
     providerMethodDefaultBridgeName(owner, function)
@@ -134,6 +186,21 @@ String providerConstructorBridgeName(
           parameter.defaultValue != null,
           parameter.kind.name
         ],
+    ]))).substring(0, 20);
+
+String providerConstructorSlotsName(
+        ClassDeclaration type, ConstructorDeclaration constructor) =>
+    providerConstructorBridgeName(type, constructor)
+        .replaceFirst(r'$QudsCtor', r'$QudsCtorSlots');
+
+String providerSynthesizedConstructorBridgeName(ClassDeclaration type) =>
+    r'$QudsCtor' +
+    sha256Hex(utf8.encode(jsonEncode([
+      type.name,
+      'synthesized',
+      type.superclass,
+      for (final field in type.fields)
+        if (!field.isStatic && !field.isEvent) [field.name, field.type],
     ]))).substring(0, 20);
 
 /// An earlier optional positional slot can be omitted while a later slot is
@@ -299,6 +366,16 @@ class SemanticModel {
 
   /// Imported constructor calls whose omitted defaults stay in the provider.
   final constructorGapTargets = <CallExpression, ClassDeclaration>{};
+
+  /// Class type arguments for a constructor call, used when a default
+  /// expression mentions those parameters.
+  final constructorSubstitutions = <CallExpression, Map<String, String>>{};
+
+  /// Calls whose callee is a packet value rather than a Dart function.
+  final packetValueCalls = <CallExpression>{};
+
+  /// Index of the variadic slot in a function-value call, in signature order.
+  final functionValueVariadicIndex = <CallExpression, int>{};
 
   /// Element type packed into the list argument of a variadic function value.
   final functionValueVariadicElements = <CallExpression, String>{};
@@ -715,6 +792,7 @@ class Analyzer {
   late _Scope _scope = _global;
   final _checked = <FunctionDeclaration>{};
   final _checking = <FunctionDeclaration>{};
+  final _typedConstructorDefaults = <ConstructorDeclaration>{};
   final _typeNames = <String>{};
   final _pendingClasses = <String>{};
   final _typeBounds = <String, String>{};
@@ -974,6 +1052,7 @@ class Analyzer {
       }
     }
     _validateConversionDefinitions();
+    _assignAllMethodOverloadNames();
     for (final statement in functions) {
       analyzeFunction(statement);
     }
@@ -1770,6 +1849,45 @@ class Analyzer {
       _thisType = savedThis;
       _scope = saved;
       _methodLibrary = savedMethodLibrary;
+    }
+  }
+
+  /// Default expressions are checked in the class scope, including `T` in
+  /// `Box<T>`. A later call substitutes the constructed type arguments.
+  void _typeConstructorDefaults(
+      ClassDeclaration type, ConstructorDeclaration constructor) {
+    if (!_typedConstructorDefaults.add(constructor)) return;
+    final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
+    final savedExpected = _expected;
+    final savedScope = _scope;
+    final home = model.libraryOf[type] ?? library;
+    _typeNames.addAll(type.typeParameters.map((parameter) => parameter.name));
+    for (final parameter in type.typeParameters) {
+      _typeBounds.remove(parameter.name);
+      if (parameter.bound != null)
+        _typeBounds[parameter.name] = parameter.bound!;
+    }
+    _scope = _Scope(home.isEmpty ? _global : _libraryScope(home));
+    try {
+      for (final parameter in constructor.parameters) {
+        final declared = model.declarations[parameter]?.type ?? parameter.type;
+        final symbol = Symbol(parameter.name, parameter.name, declared);
+        _scope.symbols[parameter.name] = symbol;
+        final value = parameter.defaultValue;
+        if (value == null || model.types.containsKey(value)) continue;
+        _expected = declared;
+        expression(value);
+      }
+    } finally {
+      _expected = savedExpected;
+      _scope = savedScope;
+      _typeNames
+        ..clear()
+        ..addAll(savedTypes);
+      _typeBounds
+        ..clear()
+        ..addAll(savedBounds);
     }
   }
 
@@ -3099,16 +3217,17 @@ class Analyzer {
       if (parameters.trim().isNotEmpty) {
         final names = <String>{};
         var optionalPosition = false, namedPosition = false;
-        for (final part in functionParameters(parameters)) {
+        final shapes = functionParameters(parameters);
+        for (var i = 0; i < shapes.length; i++) {
+          final part = shapes[i];
           if (part.name != null && !names.add(part.name!))
             error('E503', 'Duplicate function-type parameter: ${part.name}',
                 node);
+          if (part.variadic) {
+            validateType(part.type, node, allowVoid: false);
+            continue;
+          }
           if (part.named) {
-            if (optionalPosition)
-              error(
-                  'E503',
-                  'Optional positional and named parameters cannot be combined',
-                  node);
             namedPosition = true;
           } else {
             if (namedPosition || optionalPosition && !part.optional)
@@ -5192,18 +5311,24 @@ class Analyzer {
       }
     }
     for (final method in face.methods) {
-      final actual = _method(implementation, method.name);
-      final actualOwner =
-          actual == null ? null : _methodReceiver(implementation.name, actual);
-      if (actual == null ||
-          actualOwner == null ||
-          !_methodContractCompatible(
-              actual,
-              actualOwner.$2,
-              _genericSubstitution(actualOwner.$1, actualOwner.$2),
-              method,
-              face,
-              substitution)) {
+      final candidates = method.isOperator
+          ? [
+              if (_method(implementation, method.name) case final actual?)
+                actual
+            ]
+          : _methods(implementation, method.name);
+      final matched = candidates.where((candidate) {
+        final owner = _methodReceiver(implementation.name, candidate);
+        return owner != null &&
+            _methodContractCompatible(
+                candidate,
+                owner.$2,
+                _genericSubstitution(owner.$1, owner.$2),
+                method,
+                face,
+                substitution);
+      });
+      if (matched.isEmpty) {
         error('E700', 'interface method ${method.name} is not implemented',
             implementation);
       }
@@ -5765,12 +5890,6 @@ class Analyzer {
     final savedPromoted = Map<String, String>.from(_promoted);
     _promoted.clear();
     _scope = _Scope(saved);
-    if (!portableParameterLayout(node.parameters)) {
-      error(
-          'E910',
-          'A function value cannot mix optional positional parameters with named parameters',
-          node);
-    }
     final parameterNames = <String>[];
     for (final parameter in node.parameters) {
       if (parameter.defaultValue case final value?) {
@@ -5861,23 +5980,84 @@ class Analyzer {
   }
 
   void _checkOverride(ClassDeclaration type, FunctionDeclaration method) {
-    final edge = type.superclass;
-    if (edge == null) return;
-    final parent = _typeSymbol(_genericHead(edge))?.classDeclaration;
-    if (parent == null) return;
-    final inherited = _method(parent, method.name);
-    if (inherited == null) return;
-    final owner = _methodReceiver(edge, inherited);
-    if (owner == null) return;
-    if (model.declarations[inherited]?.type == '<infer>' ||
-        model.declarations[method]?.type == '<infer>') return;
-    if (!_methodContractCompatible(method, type, const {}, inherited, owner.$2,
-        _genericSubstitution(owner.$1, owner.$2))) {
+    if (method.isOperator) return;
+    final candidates = _superclassMethods(type, method.name);
+    if (candidates.isEmpty) return;
+    if (_overrideMatch(type, method, candidates) == null) {
       error(
           'E300',
           'override method ${method.name} is incompatible with its superclass',
           method);
     }
+  }
+
+  List<FunctionDeclaration> _superclassMethods(
+      ClassDeclaration type, String name) {
+    final found = <FunctionDeclaration>[];
+    void walk(String? raw, ClassDeclaration from) {
+      if (raw == null) return;
+      final declaration = _typeSymbol(_genericHead(_classMemberType(raw, from)))
+          ?.classDeclaration;
+      if (declaration == null) return;
+      found.addAll([
+        for (final method in declaration.methods)
+          if (method.name == name && !method.isOperator) method
+      ]);
+      for (final mixin in declaration.mixins.reversed) {
+        walk(mixin, declaration);
+      }
+      walk(declaration.superclass, declaration);
+    }
+
+    for (final mixin in type.mixins.reversed) {
+      walk(mixin, type);
+    }
+    walk(type.superclass, type);
+    return found;
+  }
+
+  String? _edgeTo(ClassDeclaration type, ClassDeclaration owner,
+      [Set<ClassDeclaration>? seen]) {
+    final visited = seen ?? <ClassDeclaration>{};
+    if (!visited.add(type)) return null;
+    String? step(String raw) {
+      final declaration = _typeSymbol(_genericHead(_classMemberType(raw, type)))
+          ?.classDeclaration;
+      if (declaration == null) return null;
+      if (identical(declaration, owner)) return raw;
+      final nested = _edgeTo(declaration, owner, visited);
+      if (nested == null) return null;
+      return _substitute(nested, _genericSubstitution(raw, declaration));
+    }
+
+    for (final mixin in type.mixins.reversed) {
+      final found = step(mixin);
+      if (found != null) return found;
+    }
+    for (final face in type.interfaces) {
+      final found = step(face);
+      if (found != null) return found;
+    }
+    final parent = type.superclass;
+    if (parent == null) return null;
+    return step(parent);
+  }
+
+  FunctionDeclaration? _overrideMatch(ClassDeclaration type,
+      FunctionDeclaration method, List<FunctionDeclaration> inherited) {
+    for (final candidate in inherited) {
+      final owner = _methodOwners[candidate];
+      if (owner == null) continue;
+      final edge = _edgeTo(type, owner);
+      if (edge == null) continue;
+      final receiver = _methodReceiver(edge, candidate);
+      if (receiver == null) continue;
+      if (_methodContractCompatible(method, type, const {}, candidate,
+          receiver.$2, _genericSubstitution(receiver.$1, receiver.$2))) {
+        return candidate;
+      }
+    }
+    return null;
   }
 
   (String, String) _functionParts(String type) =>
@@ -5987,10 +6167,18 @@ class Analyzer {
     if (declaration != null) {
       final field =
           _fieldsOf(declaration).where((item) => item.name == node.name);
-      final method = field.isEmpty ? _method(declaration, node.name) : null;
-      final isStatic =
-          field.isNotEmpty ? field.first.isStatic : method?.isStatic ?? false;
-      if ((field.isNotEmpty || method != null) && isStatic != onType) {
+      final namedMethods = field.isNotEmpty
+          ? const <FunctionDeclaration>[]
+          : _methods(declaration, node.name);
+      final matching =
+          namedMethods.where((method) => method.isStatic == onType).toList();
+      if ((field.isNotEmpty || namedMethods.isNotEmpty) &&
+          (field.isNotEmpty
+              ? field.first.isStatic != onType
+              : matching.isEmpty)) {
+        final isStatic = field.isNotEmpty
+            ? field.first.isStatic
+            : namedMethods.first.isStatic;
         fail(
             isStatic
                 ? 'Static member ${node.name} is used on an instance'
@@ -6008,8 +6196,14 @@ class Analyzer {
       final extensions = classOwns
           ? const <FunctionDeclaration>[]
           : _extensions(look, node.name);
-      final accessedMethod =
-          declaration == null ? null : _method(declaration, node.name);
+      final accessedMethods = declaration == null
+          ? const <FunctionDeclaration>[]
+          : _methods(declaration, node.name)
+              .where((method) => method.isStatic == onType)
+              .toList();
+      final accessedMethod = accessedMethods.length > 1
+          ? _selectMethodValue(node, accessedMethods)
+          : (accessedMethods.length == 1 ? accessedMethods.single : null);
       final accessedExtension =
           extensions.length == 1 ? extensions.single : null;
       final readMethod = accessedMethod ?? accessedExtension;
@@ -6105,14 +6299,8 @@ class Analyzer {
     final explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
         : null;
-    if (_awkwardValueParameters(method))
-      error(
-          'E910',
-          'These parameter groups cannot be represented by one supported Dart method signature',
-          node);
     final owner = _methodReceiver(receiverType, method);
-    if (owner == null ||
-        owner.$2.methods.where((m) => m.name == method.name).length != 1)
+    if (owner == null || !owner.$2.methods.contains(method))
       error('E910', 'This method value needs unambiguous owner metadata', node);
     final ownerDeclaration = owner.$2;
     if (method.isStatic && ownerDeclaration != declaration)
@@ -6202,11 +6390,6 @@ class Analyzer {
 
   String? _qudsExtensionValue(MemberAccess node, String raw,
       String receiverType, FunctionDeclaration method) {
-    if (_awkwardValueParameters(method))
-      error(
-          'E910',
-          'These parameter groups cannot be represented by one supported Dart method signature',
-          node);
     final explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
         : null;
@@ -6442,28 +6625,297 @@ class Analyzer {
 
   FunctionDeclaration? _method(ClassDeclaration type, String name,
       {int? arity, Set<ClassDeclaration> visited = const {}}) {
-    if (visited.contains(type)) return null;
-    final nextVisited = {...visited, type};
-    for (final method in type.methods) {
-      if (method.name == name &&
-          (arity == null || method.parameters.length == arity)) return method;
+    if (arity != null) {
+      if (visited.contains(type)) return null;
+      final nextVisited = {...visited, type};
+      for (final method in type.methods) {
+        if (method.name == name && method.parameters.length == arity) {
+          return method;
+        }
+      }
+      for (final mixin in type.mixins.reversed) {
+        final declaration =
+            _typeSymbol(_genericHead(_classMemberType(mixin, type)))
+                ?.classDeclaration;
+        if (declaration == null) continue;
+        final found =
+            _method(declaration, name, arity: arity, visited: nextVisited);
+        if (found != null) return found;
+      }
+      final parent = type.superclass == null
+          ? null
+          : _typeSymbol(_genericHead(_classMemberType(type.superclass!, type)))
+              ?.classDeclaration;
+      if (parent != null) {
+        return _method(parent, name, arity: arity, visited: nextVisited);
+      }
+      return null;
     }
+    return _methods(type, name, visited: visited).firstOrNull;
+  }
+
+  /// Visible methods of [name], with a same-signature child replacing a parent.
+  List<FunctionDeclaration> _methods(ClassDeclaration type, String name,
+      {Set<ClassDeclaration> visited = const {}}) {
+    if (visited.contains(type)) return const [];
+    final nextVisited = {...visited, type};
+    final own = [
+      for (final method in type.methods)
+        if (method.name == name && !method.isOperator) method
+    ];
+    final inherited = <FunctionDeclaration>[];
     for (final mixin in type.mixins.reversed) {
       final declaration =
           _typeSymbol(_genericHead(_classMemberType(mixin, type)))
               ?.classDeclaration;
       if (declaration == null) continue;
-      final found =
-          _method(declaration, name, arity: arity, visited: nextVisited);
-      if (found != null) return found;
+      inherited.addAll(_methods(declaration, name, visited: nextVisited));
+    }
+    for (final face in type.interfaces) {
+      final declaration =
+          _typeSymbol(_genericHead(_classMemberType(face, type)))
+              ?.classDeclaration;
+      if (declaration == null) continue;
+      inherited.addAll(_methods(declaration, name, visited: nextVisited));
     }
     final parent = type.superclass == null
         ? null
         : _typeSymbol(_genericHead(_classMemberType(type.superclass!, type)))
             ?.classDeclaration;
-    if (parent != null)
-      return _method(parent, name, arity: arity, visited: nextVisited);
-    return null;
+    if (parent != null) {
+      inherited.addAll(_methods(parent, name, visited: nextVisited));
+    }
+    final visible = <FunctionDeclaration>[];
+    for (final method in inherited) {
+      if (own.any((item) =>
+          sameSignature(item, method) ||
+          _overrideMatch(type, item, [method]) != null)) {
+        continue;
+      }
+      visible.removeWhere((item) =>
+          _methodOwners[item]?.kind == 'interface' &&
+          _overrideMatch(type, method, [item]) != null);
+      if (visible.any((item) => sameSignature(item, method))) continue;
+      visible.add(method);
+    }
+    visible.addAll(own);
+    return visible;
+  }
+
+  void _assignAllMethodOverloadNames() {
+    final pending = model.classes.values.toList();
+    final done = <ClassDeclaration>{};
+    void visit(ClassDeclaration type) {
+      if (!done.add(type)) return;
+      final parent = type.superclass == null
+          ? null
+          : _typeSymbol(_genericHead(type.superclass!))?.classDeclaration;
+      if (parent != null) visit(parent);
+      for (final face in type.interfaces) {
+        final declaration = _typeSymbol(_genericHead(face))?.classDeclaration;
+        if (declaration != null) visit(declaration);
+      }
+      for (final mixin in type.mixins) {
+        final declaration = _typeSymbol(_genericHead(mixin))?.classDeclaration;
+        if (declaration != null) visit(declaration);
+      }
+      _assignMethodOverloadNames(type);
+    }
+
+    for (final type in pending) {
+      visit(type);
+    }
+  }
+
+  List<FunctionDeclaration> _ancestorMethods(ClassDeclaration type, String name,
+      [Set<ClassDeclaration>? visited]) {
+    final seen = visited ?? <ClassDeclaration>{};
+    if (!seen.add(type)) return const [];
+    final found = <FunctionDeclaration>[];
+    void walk(String raw) {
+      final declaration = _typeSymbol(_genericHead(_classMemberType(raw, type)))
+          ?.classDeclaration;
+      if (declaration == null) return;
+      found.addAll([
+        for (final method in declaration.methods)
+          if (method.name == name && !method.isOperator) method
+      ]);
+      found.addAll(_ancestorMethods(declaration, name, seen));
+    }
+
+    for (final mixin in type.mixins.reversed) {
+      walk(mixin);
+    }
+    for (final face in type.interfaces) {
+      walk(face);
+    }
+    final parent = type.superclass;
+    if (parent != null) walk(parent);
+    return found;
+  }
+
+  void _assignMethodOverloadNames(ClassDeclaration type) {
+    final groups = <String, List<FunctionDeclaration>>{};
+    for (final method in type.methods) {
+      if (method.isOperator) continue;
+      groups.putIfAbsent(method.name, () => []).add(method);
+    }
+    for (final entry in groups.entries) {
+      final own = entry.value;
+      for (var i = 0; i < own.length; i++) {
+        for (var j = i + 1; j < own.length; j++) {
+          if (sameSignature(own[i], own[j])) {
+            fail('Duplicate function or unsupported overload: ${entry.key}',
+                own[j]);
+          }
+        }
+      }
+      final inherited = _ancestorMethods(type, entry.key);
+      final taken = <String>{
+        for (final method in inherited) model.declarations[method]!.dartName,
+      };
+      final fresh = <FunctionDeclaration>[];
+      for (final method in own) {
+        final match = _overrideMatch(type, method, inherited);
+        if (match != null) {
+          final name = model.declarations[match]!.dartName;
+          _setMethodDartName(method, name);
+          taken.add(name);
+          continue;
+        }
+        if (_superclassMethods(type, entry.key).isNotEmpty) {
+          error(
+              'E300',
+              'override method ${method.name} is incompatible with its superclass',
+              method);
+        }
+        fresh.add(method);
+      }
+      if (fresh.isEmpty) continue;
+      if (fresh.length == 1 && own.length == 1 && inherited.isEmpty) continue;
+      for (final method in fresh) {
+        final base =
+            method.visibility == 'private' && !method.name.startsWith('_')
+                ? '_${method.name}'
+                : method.name;
+        if (fresh.length == 1 && own.length == 1 && !taken.contains(base)) {
+          continue;
+        }
+        var index = 1;
+        while (taken.contains('$base\$$index')) {
+          index++;
+        }
+        final name = '$base\$$index';
+        taken.add(name);
+        _setMethodDartName(method, name);
+      }
+    }
+  }
+
+  void _setMethodDartName(FunctionDeclaration method, String dartName) {
+    final previous = model.declarations[method]!;
+    if (previous.dartName == dartName) return;
+    model.declarations[method] = Symbol(method.name, dartName, previous.type,
+            function: method,
+            library: previous.library,
+            documentation: previous.documentation)
+        .withFunction(method);
+  }
+
+  List<Parameter> _substitutedParameters(
+          FunctionDeclaration method, Map<String, String> substitution) =>
+      [
+        for (final parameter in method.parameters)
+          Parameter(parameter.name, _substitute(parameter.type, substitution),
+              parameter.mutable, parameter.span,
+              kind: parameter.kind,
+              defaultValue: parameter.defaultValue,
+              variadic: parameter.variadic,
+              initializing: parameter.initializing)
+      ];
+
+  FunctionDeclaration _selectOverload(
+      CallExpression node, List<FunctionDeclaration> candidates, String name,
+      {Map<String, String> Function(FunctionDeclaration method)?
+          substitutionFor}) {
+    List<Parameter> parametersOf(FunctionDeclaration method) {
+      final substitution = substitutionFor?.call(method) ?? const {};
+      return substitution.isEmpty
+          ? method.parameters
+          : _substitutedParameters(method, substitution);
+    }
+
+    FunctionDeclaration? selected;
+    for (final candidate in candidates) {
+      if (!argumentsMatch(node, parametersOf(candidate),
+          commit: false, function: candidate)) {
+        continue;
+      }
+      final selectedVariadic =
+          selected != null && selected.parameters.any((p) => p.variadic);
+      final candidateVariadic =
+          candidate.parameters.any((parameter) => parameter.variadic);
+      if (selected != null && selectedVariadic == candidateVariadic) {
+        fail('Ambiguous overload: $name', node);
+      }
+      if (selected == null || (selectedVariadic && !candidateVariadic)) {
+        selected = candidate;
+      }
+    }
+    if (selected == null) {
+      for (final candidate in candidates) {
+        if (!argumentsMatch(node, parametersOf(candidate),
+            commit: false, allowConversions: true, function: candidate)) {
+          continue;
+        }
+        if (selected != null) fail('Ambiguous overload: $name', node);
+        selected = candidate;
+      }
+    }
+    if (selected == null) fail('No overload matches this call', node);
+    return selected;
+  }
+
+  FunctionDeclaration _selectMethodValue(
+      Expression node, List<FunctionDeclaration> methods) {
+    final expected =
+        _expected == null ? null : nonNullableType(_resolveType(_expected!));
+    if (expected == null || functionTypeParts(expected) == null) {
+      error('E311', 'An overload value needs one expected function signature',
+          node);
+    }
+    final matches = <FunctionDeclaration>[];
+    for (final method in methods) {
+      final owner = _methodOwners[method];
+      final declared = model.declarations[method];
+      if (declared != null &&
+          declared.type == '<infer>' &&
+          owner != null &&
+          !_checking.contains(method)) {
+        analyzeMethod(owner, method);
+      }
+      final returned =
+          model.declarations[method]?.type ?? method.returnType ?? 'void';
+      final signature = _callableSignature(
+          method.parameters,
+          [for (final parameter in method.parameters) parameter.type],
+          returned);
+      if (compatible(signature, expected)) matches.add(method);
+    }
+    if (matches.length != 1) {
+      error('E311', 'The function context does not select exactly one overload',
+          node);
+    }
+    return matches.single;
+  }
+
+  Map<String, String> _methodClassSubstitution(String objectType,
+      FunctionDeclaration method, ClassDeclaration fallback) {
+    final owner = _methodReceiver(objectType, method);
+    final ownerDeclaration = owner?.$2 ?? fallback;
+    return {..._genericSubstitution(owner?.$1 ?? objectType, ownerDeclaration)}
+      ..removeWhere((key, _) =>
+          method.typeParameters.any((parameter) => parameter.name == key));
   }
 
   (String, ClassDeclaration)? _methodReceiver(
@@ -7402,6 +7854,19 @@ class Analyzer {
       if (member != null) {
         final current = _typeSymbol(_genericHead(_thisType!))?.classDeclaration;
         if (current != null) _checkMember(current, node.name, node);
+        final methods = current == null
+            ? const <FunctionDeclaration>[]
+            : _methods(current, node.name)
+                .where((method) => !method.isStatic)
+                .toList();
+        if (methods.length > 1) {
+          final selected = _selectMethodValue(node, methods);
+          model.implicitThis.add(node);
+          model.references[node] = model.declarations[selected]!;
+          return _readonlyMethod
+              ? _readonlyView('readonly this', functionType(selected))
+              : functionType(selected);
+        }
         model.implicitThis.add(node);
         model.references[node] =
             Symbol(node.name, _dartMember(_thisType!, node.name), member);
@@ -7456,11 +7921,6 @@ class Analyzer {
       error(
           'E910',
           'These Quds function values need a method/default/variadic adapter',
-          node);
-    if (candidates.any(_awkwardValueParameters))
-      error(
-          'E910',
-          'These parameter groups cannot be represented by one supported Dart function signature',
           node);
     final expected =
         _expected == null ? null : nonNullableType(_resolveType(_expected!));
@@ -7556,11 +8016,6 @@ class Analyzer {
           parameter.needsAdapter ||
           parameter.variadic ||
           parameter.type.contains(' & '));
-
-  /// Optional parameters must form a trailing group. A later required or
-  /// variadic parameter cannot be represented by one Dart positional closure.
-  bool _awkwardValueParameters(FunctionDeclaration function) =>
-      !portableParameterLayout(function.parameters);
 
   String _callableSignature(
       List<Parameter> parameters, List<String> types, String returned) {
@@ -8180,8 +8635,25 @@ class Analyzer {
       }
       final declaration =
           _typeSymbol(_genericHead(objectType))?.classDeclaration;
-      final function =
-          declaration == null ? null : _method(declaration, callee.name);
+      final onType = _isTypeReference(callee.object);
+      final visible = declaration == null
+          ? const <FunctionDeclaration>[]
+          : _methods(declaration, callee.name);
+      if (visible.isNotEmpty &&
+          visible.every((method) => method.isStatic != onType)) {
+        fail(
+            visible.first.isStatic
+                ? 'Static member ${callee.name} is used on an instance'
+                : 'Instance member ${callee.name} is used on the type',
+            callee);
+      }
+      final candidates =
+          visible.where((method) => method.isStatic == onType).toList();
+      final function = candidates.length > 1
+          ? _selectOverload(node, candidates, callee.name,
+              substitutionFor: (method) =>
+                  _methodClassSubstitution(objectType, method, declaration!))
+          : (candidates.isEmpty ? null : candidates.single);
       final resolved = function ??
           () {
             final found = _extensions(objectType, callee.name);
@@ -8338,8 +8810,16 @@ class Analyzer {
     final symbol = _scope.lookup(callee.name);
     if (symbol == null && _thisType != null) {
       final declaration = _global.symbols[_thisType!]?.classDeclaration;
-      final method =
-          declaration == null ? null : _method(declaration, callee.name);
+      final candidates = declaration == null
+          ? const <FunctionDeclaration>[]
+          : _methods(declaration, callee.name)
+              .where((method) => !method.isStatic)
+              .toList();
+      final method = candidates.length > 1
+          ? _selectOverload(node, candidates, callee.name,
+              substitutionFor: (item) =>
+                  _methodClassSubstitution(_thisType!, item, declaration!))
+          : (candidates.isEmpty ? null : candidates.single);
       final extensions = method == null
           ? _extensions(_thisType!, callee.name)
           : <FunctionDeclaration>[];
@@ -8634,8 +9114,10 @@ class Analyzer {
     model.argumentOrder[node] = order;
     if (variadicAt >= 0) {
       model.functionValueVariadicElements[node] = parameters[variadicAt].type;
+      model.functionValueVariadicIndex[node] = variadicAt;
       model.variadicArguments[node] = variadicArgs;
     }
+    if (packetSignature(parameters)) model.packetValueCalls.add(node);
     return returns;
   }
 
@@ -9064,13 +9546,18 @@ class Analyzer {
       model.declarations[parameter] =
           Symbol(parameter.name, parameter.name, parameter.type);
     }
-    if (constructor != null &&
-        home.isNotEmpty &&
-        home != _activeLibrary &&
+    final synthesizedForeign =
+        constructor == null && _synthesizedForeignParentDefault(type);
+    if ((constructor != null && home.isNotEmpty && home != _activeLibrary ||
+            synthesizedForeign) &&
         _omitsForeignDefault(node, instantiated)) {
       model.constructorGapTargets[node] = type;
     }
-    applyArguments(node, instantiated, null);
+    if (constructor != null) _typeConstructorDefaults(type, constructor);
+    if (substitution.isNotEmpty) {
+      model.constructorSubstitutions[node] = substitution;
+    }
+    applyArguments(node, instantiated, null, defaultSubstitution: substitution);
     model.references[node.callee] = type.constructors.isEmpty
         ? Symbol(type.name, type.name, type.name, classDeclaration: type)
         : Symbol(type.name, type.name, type.name).withFunction(
@@ -9330,6 +9817,18 @@ class Analyzer {
     return false;
   }
 
+  /// A synthesized child in another library cannot inline a private parent default.
+  bool _synthesizedForeignParentDefault(ClassDeclaration type) {
+    final constructor = _synthesizedParentConstructor(type);
+    if (constructor == null) return false;
+    final parent =
+        _typeSymbol(_genericHead(type.superclass!))?.classDeclaration;
+    final parentHome = parent == null ? '' : model.libraryOf[parent] ?? '';
+    if (parentHome.isEmpty || parentHome == _activeLibrary) return false;
+    return constructor.parameters.any((parameter) =>
+        parameter.defaultValue != null && parameter.defaultValue is! Literal);
+  }
+
   /// `name: Type required` and `name: Type = expr` are named-only.
   bool _skipsPositional(Parameter parameter) =>
       parameter.kind == ParameterKind.requiredNamed ||
@@ -9477,6 +9976,7 @@ class Analyzer {
       {_CheckedArguments? checked,
       Map<String, String> typeArguments = const {},
       Map<String, String> parameterBounds = const {},
+      Map<String, String> defaultSubstitution = const {},
       String? declaredReturnType}) {
     parameters = _callParameters(parameters, function);
     if (function != null &&
@@ -9591,7 +10091,8 @@ class Analyzer {
       } finally {
         _expected = savedDefaultExpected;
       }
-      final type = _callResult(fallbackType, function);
+      final type =
+          _substitute(_callResult(fallbackType, function), defaultSubstitution);
       if (!compatible(type, parameters[i].type)) {
         fail('Default type $type is incompatible with ${parameters[i].type}',
             fallback);

@@ -104,14 +104,15 @@ parameter keeps its hidden Dart type parameter and runtime check.
 
 Imported overloads with different signatures keep the holder name and publish
 `name$1`, `name$2`, and so on, in source order. The same signature, or a class
-with the same name, is still E204. A required or variadic parameter that follows
-a default has no adapter and reports E910.
+with the same name, is still E204. A named default before a required parameter
+is one reordered Dart signature. A default together with a variadic, and mixed
+optional groups, are packet values.
 
 Further work:
 
-- One value that combines a default with a variadic parameter.
-- Class method overloads. Required-positional, default, and variadic method
-  values are documented in [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md).
+- Required-positional, default, and variadic method values are documented in
+  [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Class method overloads now
+  emit `name$1` and `name$2`.
 - Propagation of inferred return metadata from imported providers.
 - Full mixed-variance constraint solving and polymorphic generic callback types.
 

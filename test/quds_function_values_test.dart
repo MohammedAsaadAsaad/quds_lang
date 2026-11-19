@@ -36,7 +36,6 @@ void main() {
     'saved = identity<int, String>': 'E300',
     'saved: (String) -> int = identity<int>': 'E300',
     'saved = shape<int>': 'E311',
-    'saved = awkward<int>': 'E910',
     'saved = ordinary<int>': 'E300',
     'saved: () -> void = unused': 'E302',
     'saved: (int) -> int = identity\n  print saved("wrong")': 'E300',
@@ -51,6 +50,30 @@ void main() {
               .having((e) => e.span.file, 'source', 'quds_values_bad.quds')));
     });
   }
+  test('a named default before a required parameter is one value', () async {
+    final source = '''
+$declarations
+main():
+  saved = awkward<int>
+  print saved(4)
+  print saved(4, value: null)
+  print saved == awkward<int>
+''';
+    final compiled = compile(source, file: 'awkward_value.quds');
+    final root = Directory.systemTemp.createTempSync('quds-awkward-value-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final output = File('${root.path}/main.dart')
+      ..writeAsStringSync(compiled.dart);
+    writeSdkBundles(root.path, compiled);
+    final analysis = await Process.run(
+        Platform.resolvedExecutable, ['analyze', output.path]);
+    expect(analysis.exitCode, 0,
+        reason: '${analysis.stdout}${analysis.stderr}');
+    final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
+    expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
+    expect(vm.stdout, '4\n4\ntrue\n');
+  });
+
   test('selected Quds values produce deterministic Dart and execute on VM/JS',
       () async {
     final input = File('test/quds_function_values_web.quds').absolute;

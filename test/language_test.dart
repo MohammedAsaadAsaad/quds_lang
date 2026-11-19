@@ -700,6 +700,52 @@ main():
             "Instance of 'Optional<int>'\n");
   });
 
+  test('class method overloads resolve statically', () async {
+    await execute('''
+class Parser:
+  parse(text: String) -> String = text
+  parse(value: int) -> String = "n{value}"
+interface Reader:
+  read(text: String) -> String = text
+  read(value: int) -> String = "n{value}"
+class Page implements Reader:
+  read(text: String) -> String = text
+  read(value: int) -> String = "n{value}"
+class Child extends Parser:
+  parse(text: String) -> String = "c{text}"
+main():
+  item = Parser()
+  print item.parse("a")
+  print item.parse(2)
+  saved: (String) -> String = item.parse
+  print saved("b")
+  print Page().read(3)
+  print Child().parse("c")
+  print Child().parse(2)
+''', 'a\nn2\nb\nn3\ncc\nn2\n');
+    expect(() => compile('''
+class Same:
+  read(value: int) -> int = value
+  read(value: num) -> num = value
+main():
+  print Same().read(1)
+'''), throwsA(predicate((error) => '$error'.contains('E310'))));
+    expect(() => compile('''
+class Parser:
+  parse(text: String) -> String = text
+  parse(value: int) -> String = "n{value}"
+main():
+  saved = Parser().parse
+'''), throwsA(predicate((error) => '$error'.contains('E311'))));
+    expect(() => compile('''
+class Parser:
+  parse(text: String) -> String = text
+  parse(value: int) -> String = "n{value}"
+main():
+  print Parser().parse(true)
+'''), throwsA(predicate((error) => '$error'.contains('E500'))));
+  });
+
   test('async, sealed match, imports, value classes, and macros execute',
       () async {
     await execute('''

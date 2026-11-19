@@ -49,16 +49,18 @@ required named slots or optional positional slots and delegate to those bodies.
 Provider defaults remain in the defining library; private expressions are not copied
 to a consumer. Constructor signature metadata is retained even for prefixed generic
 construction, fixing lost defaults and doubled import prefixes. Literal/default-null
-constructor forms are covered; general computed constructor defaults are not certified.
+constructor forms are covered. A computed default whose type uses a class type
+parameter is checked in the declaring library and substituted at the call.
 
 ## Explicit limits and next work
 
 - Direct calls of `name: Type = expression` are named-only, including the SDK.
   A leading dual parameter such as `normalCdf(x)` still accepts a positional
   argument. Optional parameters that follow it are passed by name.
-- Optional positional and named groups cannot share one Dart function value;
-  taking such a value, including a lambda, is E910. A required parameter after
-  an optional, and a default-plus-variadic value, stay E910.
+- Optional positional and named groups, and a default or optional positional
+  together with a variadic, are stored as packet values
+  `(List<Object?>, List<bool>)`. A named default before a required positional
+  parameter stays one reordered Dart signature.
 - An imported or stored optional positional value may omit an earlier slot and
   supply a later one. The provider owns the defaults in `$QudsGap` /
   `$QudsMethodGap` packets `(List<Object?>, List<bool>)`. The stored value
@@ -69,17 +71,17 @@ constructor forms are covered; general computed constructor defaults are not cer
   static `$QudsCtor...`. Literal defaults stay at the call site. A child with
   no constructor forwards exactly one unnamed generative parent constructor;
   a named-only, factory, variadic, or field-name collision stays E910.
-  A private parent default copied by synthesis is not yet provider-owned.
+  An imported non-literal parent default is evaluated by `$QudsCtorSlots`.
 - A required named parameter may be implemented by an optional named parameter
   with the same name and a default. A dual parameter does not satisfy a
   required named parameter.
 - Lambda parameters accept `name: Type required`, `[name: Type]`, and defaults,
-  including a default that reads an earlier parameter. Class method overload
-  Dart names, SDK section bridges, intersections and foreign implementors remain
-  separate work. No full 115-rule certification is claimed.
+  including a default that reads an earlier parameter. Class method overloads
+  emit `name$1` and `name$2`. SDK section bridges, intersections and foreign
+  implementors remain separate work. No full 115-rule certification is claimed.
 
-ABI `provider-defaults-v6` adds gap and constructor-default bridges. The CLI
-invalidates v5 and v4 caches automatically, including valid-checksum output.
+ABI `provider-defaults-v7` adds gap, constructor-default, and parent-slot bridges. The CLI
+invalidates v6, v5, and v4 caches automatically, including valid-checksum output.
 Evidence: `test/parameter_forms.quds`, its VM/JS fixture and golden,
 `test/fixtures/parameter_forms/provider.quds` and `test/parameter_forms_test.dart`.
 Exact results are in [VALIDATION.md](VALIDATION.md); the handoff is

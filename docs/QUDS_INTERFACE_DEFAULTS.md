@@ -110,7 +110,7 @@ main():
 
 Generated interface/implementation ABIs now contain companion members. Generated
 Quds implementations and readonly proxies must be rebuilt together. The CLI's
-`provider-defaults-v6` epoch invalidates v4 and v5 caches automatically, even when a legacy
+`provider-defaults-v7` epoch invalidates v4, v5, and v6 caches automatically, even when a legacy
 provider's output checksum remains valid. Manually authored Dart implementors need
 the generated protocol or an explicit Quds adapter; arbitrary foreign implementations
 are not certified by this slice. Parts/cycles/conditional exports, cross-package

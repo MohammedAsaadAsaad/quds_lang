@@ -24,9 +24,10 @@ class method values and receiver/visibility contracts are tracked separately in
 Provider-owned computed defaults for supported top-level imports and direct
 calls are documented in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md).
 Supported ordinary public class methods now publish provider-owned bridges too.
-The first non-generic declaring-interface bridge slice is documented in
-[QUDS_INTERFACE_DEFAULTS.md](QUDS_INTERFACE_DEFAULTS.md). Generic interfaces,
-lexical type qualification and full parameter metadata remain separate work.
+Generic declaring-interface bridges and provider lexical class/alias, record and
+callback signatures are documented in [QUDS_INTERFACE_DEFAULTS.md](QUDS_INTERFACE_DEFAULTS.md).
+Full parameter metadata and broader union/intersection/foreign ABI certification
+remain separate work.
 
 ## Architecture
 

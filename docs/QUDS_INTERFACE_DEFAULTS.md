@@ -1,4 +1,4 @@
-# Interface default bridges — generated ABI v3
+# Interface default bridges — generated ABI v4
 
 This slice preserves a selected Quds interface's computed defaults while the
 original method body dispatches to the implementation. Taking the same contract
@@ -60,32 +60,57 @@ Those imports do not add private source names to the consumer namespace and also
 work when a source import only exposes the interface. Declaring-provider identities
 are used for inherited method lookup, so inherited defaults keep their metadata.
 
-## First supported signature slice
+## Supported signature slice
 
-The declaring interface must be public and have no interface type parameters.
+Public declaring interfaces may have type parameters. Each implementation edge
+retains its specialized owner arguments through inherited interfaces. Resolver
+owner binders and forwarding method binders use independent reserved names;
+method parameters may shadow owner parameters without capture. Bounds dependent
+on an owner parameter remain active, and conflicting instantiations are rejected.
+
 Public instance methods need an explicit result and synchronous trailing computed
-defaults; generators, variadics, intersection parameters, duplicate method names,
-static/operator methods and awaiting defaults remain outside this slice.
+defaults; generators, variadics, union/intersection parameters, duplicate method
+names, static/operator methods and awaiting defaults remain outside this slice.
 
-Declaration type names may use `bool`, `int`, `num`, `double`, `String`, `Object`,
-`dynamic`, `Never`, `Null`, `void` where legal, `List`, `Set`, `Map`, `Iterable`,
-`Future`, `Stream`, nullable/readonly forms and method type parameters. Method
-type parameters and compatible bounds using those names are supported, independently
-of the implementing class's method binder names. Existing argument/bound/variance
-checks remain active.
+Signatures support core types, nullable/readonly forms, owner/method parameters,
+provider-defined classes and aliases, records and callbacks. Provider lexical types
+are qualified before forwarding into another library. Type substitution protects
+record/function labels and generic binders. A caller alias named `T` cannot capture
+the `T` of an inferred generic function. Existing bounds, variance, argument and
+readonly checks still apply; an ordinary mutable generic return is not silently
+made readonly.
 
-Generic declaring interfaces and other declaration types, aliases, function/record
-signatures or union/intersection forms retain their previous lowering. Their
-acceptance is not redesigned; their repeated-reference identity is not certified.
-A regression verifies that an ordinary generic declaring interface still executes
-on that earlier path. Extending the slice requires lexical type qualification and
-binder hygiene, not changing approved language syntax.
+Executable coverage includes `GenericSource<List<X>>`, inherited specialization,
+method/owner name collisions, `U: T` bounds, provider-owned `PayloadAlias`, record
+and callback defaults. This does not certify every alias cycle, union/intersection
+boundary, foreign Dart implementor or polymorphic callback signature.
+
+For example, a method binder can intentionally shadow its interface binder:
+
+```quds
+interface Source<T>:
+  seed: T
+  read(value: T = seed) -> T = value
+  readonly copy<T>(value: T, other: T = value) -> T = other
+class SourceImplementation<X> implements Source<List<X>>:
+  seed: List<X> required
+  read(value: List<X> = seed) -> List<X> = value
+  readonly copy<U>(value: U, other: U = value) -> U = other
+
+main():
+  face: Source<List<int>> = SourceImplementation<int>(seed: [7])
+  read = face.read
+  print read()[0]           // 7
+  print read == face.read   // true
+  copy = face.copy<String>
+  print copy("Quds")        // Quds
+```
 
 ## Compatibility and evidence
 
 Generated interface/implementation ABIs now contain companion members. Generated
 Quds implementations and readonly proxies must be rebuilt together. The CLI's
-`provider-defaults-v3` epoch invalidates v2 caches automatically, even when a legacy
+`provider-defaults-v4` epoch invalidates v3 caches automatically, even when a legacy
 provider's output checksum remains valid. Manually authored Dart implementors need
 the generated protocol or an explicit Quds adapter; arbitrary foreign implementations
 are not certified by this slice. Parts/cycles/conditional exports, cross-package

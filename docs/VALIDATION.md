@@ -1,3 +1,41 @@
+# Generic interface defaults and lexical signature types — 2026-11-19
+
+Base: `21f2538`. Handoff updated before implementation in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+Contract: [QUDS_INTERFACE_DEFAULTS.md](QUDS_INTERFACE_DEFAULTS.md).
+
+| Check | Observed result |
+| --- | --- |
+| Primary Quds suite | `dart run bin/quds.dart test test/quds_value_adapters.quds`: **35 declarations passed** |
+| Focused adapter driver | `dart test test/quds_value_adapters_test.dart`: **9 passed in 15s**; final strengthened driver **9 passed in 16s** |
+| Generic contracts | Owner specialization through inherited interfaces, method/owner/caller-alias binder collisions, dependent `U: T` bounds and stable repeated references |
+| Provider lexical signatures | User class and alias, record and callback defaults resolve in the declaring provider; mutable generic results retain their qualification |
+| Negative bound | `copy<String>` under `T: num` rejects with E300 at consumer line 4 |
+| Generated Dart | Deterministic golden; generated entry analyzes; actual VM and JavaScript/Node agree on **106 output lines** |
+| Cache ABI v4 | Valid-checksum v3 provider has generic interface bridge/resolver definitions removed; actual `quds run` rebuilds and prints `7:9`, `11`, `70`, `6`, `true` |
+| Final package format | `dart format .`: **101 files, zero changes** |
+| Final analysis | `dart analyze`: **No issues found** |
+| Documentation example | Actual cross-library `quds run /tmp/quds-generic-interface-example/main.quds`: `7`, `true`, `Quds` |
+| Full suite | `dart test`: **705 passed, zero failures or skips, in 10m07s** |
+
+Compiler source remained fixed during the full run. Afterwards, the cache regression
+was narrowed to the newly introduced generic interface protocol and its actual
+execution; the bound diagnostic assertion was tightened to E300. The adapter driver
+passed all 9 tests again in 16s for those harness changes.
+
+Generic owners have fresh resolver binders; implementation forwarding plans freshen
+method binders before simultaneous substitution. Provider alias/native type bindings
+remain lexical, and function/record labels are not substituted as type identifiers.
+The inferred generic function pattern protects its own binders from caller aliases.
+Existing readonly/privacy/omission and exactly-once default semantics stay active.
+
+Unions/intersections, full parameter-form parity, foreign Dart implementors,
+expanded parts/cycles/conditional-export certification, new resolver debugger-frame
+projection and performance certification remain separate work. This is not full
+certification of all 115 decisions. No remote CI or device result is claimed.
+
+---
+
 # Interface computed-default bridges — 2026-11-19
 
 Base: `6beeeac`. Handoff updated before implementation in

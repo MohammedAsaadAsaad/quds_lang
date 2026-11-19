@@ -57,3 +57,41 @@ interface AliasContract:
   readonly read(value: int = values.max(4, 8)) -> int = value
 class AliasImplementation implements AliasContract:
   readonly read(value: int = 1) -> int = value
+
+interface GenericSource<T>:
+  seed: T
+  read(value: T = seed) -> T = value
+  readonly mirror<T>(value: T, other: T = value) -> T = other
+class GenericSourceImplementation<X> implements GenericSource<List<X>>:
+  seed: List<X> required
+  read(value: List<X> = seed) -> List<X> = value
+  readonly mirror<V>(value: V, other: V = value) -> V = other
+interface NestedGenericSource<X> extends GenericSource<List<X>>:
+  marker() -> int = 1
+class NestedGenericImplementation<Y> implements NestedGenericSource<Y>:
+  seed: List<Y> required
+  read(value: List<Y> = seed) -> List<Y> = value
+  readonly mirror<V>(value: V, other: V = value) -> V = other
+  marker() -> int = 1
+class Payload:
+  value: int required
+type PayloadAlias = Payload
+_makePayload() -> Payload = Payload(value: 7)
+interface PayloadContract:
+  readonly read(value: PayloadAlias = _makePayload()) -> PayloadAlias = value
+class PayloadImplementation implements PayloadContract:
+  readonly read(value: PayloadAlias = _makePayload()) -> PayloadAlias = value
+
+_pairDefault() -> (int, String) = (4, "pair")
+_increment(value: int) -> int = value + 1
+interface StructuredContract:
+  readonly pair(value: (int, String) = _pairDefault()) -> (int, String) = value
+  readonly callback(value: (int) -> int = _increment) -> (int) -> int = value
+class StructuredImplementation implements StructuredContract:
+  readonly pair(value: (int, String) = _pairDefault()) -> (int, String) = value
+  readonly callback(value: (int) -> int = _increment) -> (int) -> int = value
+
+interface BoundedSource<T: num>:
+  readonly copy<U: T>(value: U, other: U = value) -> U = other
+class BoundedImplementation<X: num> implements BoundedSource<X>:
+  readonly copy<V: X>(value: V, other: V = value) -> V = other

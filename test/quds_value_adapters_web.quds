@@ -208,3 +208,29 @@ main() async:
   aliasValue = aliasFace.read
   print aliasValue()
   print aliasValue == aliasFace.read
+  genericOwner = helpers.GenericSourceImplementation<int>(seed: [6])
+  genericFace: helpers.GenericSource<List<int>> = genericOwner
+  genericRead = genericFace.read
+  print genericRead()[0]
+  print genericRead == genericFace.read
+  genericMirror = genericFace.mirror<String>
+  print genericMirror("safe")
+  nestedFace: helpers.NestedGenericSource<int> = helpers.NestedGenericImplementation<int>(seed: [3])
+  nestedRead = nestedFace.read
+  print nestedRead()[0]
+  print nestedRead == nestedFace.read
+  payloadFace: helpers.PayloadContract = helpers.PayloadImplementation()
+  payloadRead = payloadFace.read
+  print payloadRead().value
+  print payloadRead == payloadFace.read
+  structuredFace: helpers.StructuredContract = helpers.StructuredImplementation()
+  pairRead = structuredFace.pair
+  print pairRead() == (4, "pair")
+  print pairRead == structuredFace.pair
+  callbackRead = structuredFace.callback
+  print callbackRead()(8)
+  print callbackRead == structuredFace.callback
+  boundedFace: helpers.BoundedSource<num> = helpers.BoundedImplementation<num>()
+  boundedRead = boundedFace.copy<int>
+  print boundedRead(8)
+  print boundedRead == boundedFace.copy<int>

@@ -94,8 +94,9 @@ Concrete same-file method references now use declaring-owner bridges as well;
 see [QUDS_METHOD_VALUES.md](QUDS_METHOD_VALUES.md). Supported imported top-level providers now publish stable bridges as described
 in [QUDS_PROVIDER_DEFAULTS.md](QUDS_PROVIDER_DEFAULTS.md). Unsupported imported methods,
 unsupported interface signatures and default-plus-intersection adapters retain
-closure lowering without the same identity guarantee. Provider-private default
-expressions and complete readonly boundary contracts need further work.
+closure lowering without the same identity guarantee. Supported provider bridges
+resolve private default expressions in their defining library. Broader readonly
+boundary and unsupported-signature certification remain separate work.
 
 A variadic value has the Quds type `(...items: T) -> R` and the Dart type
 `R Function(List<T>)`; call sites pack arguments and spreads. An intersection
@@ -120,6 +121,7 @@ drivers, and [VALIDATION.md](VALIDATION.md). The active next-agent handoff is
 [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
 
 The initial [interface-default bridge slice](QUDS_INTERFACE_DEFAULTS.md) now keeps
-supported non-generic declaring-interface contracts and repeated-reference equality
-across virtual dispatch. Generic declaring interfaces and broader declaration types
-remain outside that slice without redesigning their existing source acceptance.
+supported generic and non-generic declaring-interface contracts and repeated-reference
+equality across virtual dispatch. Provider class/alias, record and callback signatures
+are covered by the ABI v4 continuation; union/intersection and foreign implementor
+certification remain separate work.

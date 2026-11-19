@@ -405,14 +405,69 @@ interface GenericDefaultContract<T>:
 class GenericDefaultImplementation<X> implements GenericDefaultContract<X>:
   readonly read(value: X? = null) -> X? = value
 
-test "generic declaring interfaces retain their existing value path":
+test "generic declaring interfaces retain defaults and stable equality":
   face: GenericDefaultContract<int> = GenericDefaultImplementation<int>()
   saved = face.read
   expect(saved(), null)
   expect(saved(value: 8), 8)
+  expect(saved == face.read, true)
 
 test "interface resolver packets preserve provider alias names":
   face: helpers.AliasContract = helpers.AliasImplementation()
   saved = face.read
   expect(saved(), 8)
   expect(saved == face.read, true)
+
+test "generic interface owners specialize independently from method binders":
+  items = [1]
+  owner = helpers.GenericSourceImplementation<int>(seed: items)
+  face: helpers.GenericSource<List<int>> = owner
+  saved = face.read
+  expect(saved == face.read, true)
+  expect(saved()[0], 1)
+  saved().add(2)
+  expect(owner.seed.length, 2)
+  shadowed = face.mirror<String>
+  expect(shadowed("shadow"), "shadow")
+  expect(shadowed == face.mirror<String>, true)
+  inherited: helpers.NestedGenericSource<int> = helpers.NestedGenericImplementation<int>(seed: [3])
+  nested = inherited.read
+  expect(nested()[0], 3)
+  expect(nested == inherited.read, true)
+
+test "interface signatures retain provider class and alias identities":
+  face: helpers.PayloadContract = helpers.PayloadImplementation()
+  saved = face.read
+  expect(saved().value, 7)
+  expect(saved == face.read, true)
+  expect(saved(value: helpers.Payload(value: 9)).value, 9)
+
+type T = String
+class BinderOwner<T> implements helpers.GenericSource<T>:
+  seed: T required
+  read(value: T = seed) -> T = value
+  readonly mirror<U>(value: U, other: U = value) -> U = other
+
+test "interface forwarding avoids implementation and method binder capture":
+  owner = BinderOwner<int>(seed: 17)
+  face: helpers.GenericSource<int> = owner
+  saved = face.read
+  expect(saved(), 17)
+  expect(saved == face.read, true)
+  copy = face.mirror<String>
+  expect(copy("safe"), "safe")
+
+test "interface defaults preserve record and callback signatures":
+  face: helpers.StructuredContract = helpers.StructuredImplementation()
+  pair = face.pair
+  expect(pair() == (4, "pair"), true)
+  expect(pair == face.pair, true)
+  callback = face.callback
+  expect(callback()(8), 9)
+  expect(callback == face.callback, true)
+
+test "generic interface forwarding preserves owner dependent method bounds":
+  face: helpers.BoundedSource<num> = helpers.BoundedImplementation<num>()
+  saved = face.copy<int>
+  expect(saved(8), 8)
+  expect(saved == face.copy<int>, true)

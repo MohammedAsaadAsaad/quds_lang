@@ -50,44 +50,38 @@ String providerDefaultBridgeName(FunctionDeclaration function) =>
         [p.name, p.type, p.defaultValue != null],
     ]))).substring(0, 20);
 
-/// Forward only signatures whose type names need no provider-specific rewriting.
-/// Other source signatures keep the previous value-lowering path.
+/// Unions/intersections need their own portable boundary conformance.
 bool supportsInterfaceDefaults(
-    ClassDeclaration owner, FunctionDeclaration method) {
-  if (owner.typeParameters.isNotEmpty ||
-      method.isStatic ||
-      method.isOperator ||
-      !supportsProviderDefaults(method)) return false;
-  final names = {
-    'void',
-    'Never',
-    'Null',
-    'dynamic',
-    'Object',
-    'bool',
-    'int',
-    'num',
-    'double',
-    'String',
-    'List',
-    'Set',
-    'Map',
-    'Iterable',
-    'Future',
-    'Stream',
-    'readonly',
-    for (final p in method.typeParameters) p.name
-  };
-  return [
-    method.returnType!,
-    ...method.parameters.map((p) => p.type),
-    for (final p in method.typeParameters)
-      if (p.bound != null) p.bound!
-  ].every((type) =>
-      !RegExp(r'[^A-Za-z0-9_<>,? \t]').hasMatch(type) &&
-      RegExp(r'[A-Za-z_][A-Za-z0-9_]*')
-          .allMatches(type)
-          .every((m) => names.contains(m.group(0))));
+        ClassDeclaration owner, FunctionDeclaration method) =>
+    !method.isStatic &&
+    !method.isOperator &&
+    supportsProviderDefaults(method) &&
+    [
+      method.returnType!,
+      ...method.parameters.map((p) => p.type),
+      for (final p in method.typeParameters)
+        if (p.bound != null) p.bound!
+    ].every((type) => !type.contains(' & ') && !type.contains(' | '));
+
+String substituteBridgeType(String type, Map<String, String> substitution) {
+  if (substitution.isEmpty) return type;
+  final names = substitution.keys.map(RegExp.escape).join('|');
+  return type.replaceAllMapped(
+      RegExp('(?<![\\w.])($names)\\b(?!\\s*:)(\\?)?'),
+      (match) => match.group(2) == null
+          ? substitution[match.group(1)]!
+          : nullableType(substitution[match.group(1)]!));
+}
+
+class InterfaceForwardingPlan {
+  const InterfaceForwardingPlan(this.owner, this.method, this.ownerArguments,
+      this.parameterTypes, this.returnType, this.typeParameters);
+  final ClassDeclaration owner;
+  final FunctionDeclaration method;
+  final List<String> ownerArguments;
+  final List<String> parameterTypes;
+  final String returnType;
+  final List<TypeParameter> typeParameters;
 }
 
 String providerInterfaceDefaultsName(
@@ -189,6 +183,10 @@ class _Scope {
   _Scope([this.parent]);
   final _Scope? parent;
   final symbols = <String, Symbol>{};
+  final typeBindings = <String, String>{};
+  Map<String, String> get lexicalTypes => typeBindings.isEmpty
+      ? parent?.lexicalTypes ?? const {}
+      : {...?parent?.lexicalTypes, ...typeBindings};
   Symbol? lookup(String name) => symbols[name] ?? parent?.lookup(name);
 }
 
@@ -235,7 +233,8 @@ class SemanticModel {
   /// Closures that restore Quds defaults or hide intersection type parameters.
   final providerDefaultImports =
       <ImportDeclaration, Set<FunctionDeclaration>>{};
-  final interfaceDefaultEdges = <ClassDeclaration, List<ClassDeclaration>>{};
+  final interfaceForwardingPlans =
+      <ClassDeclaration, List<InterfaceForwardingPlan>>{};
   final interfaceDefaultPrefixes = <String, String>{};
   final providerDefaultMethods = <FunctionDeclaration, ClassDeclaration>{};
   final providerDefaultFunctions = <FunctionDeclaration>{};
@@ -287,29 +286,38 @@ class SemanticModel {
   /// are included.
   final sdkDartNames = <String, Set<String>>{};
 
-  String resolve(String type) {
-    var current = type;
+  String resolve(String type,
+      {Set<String> boundNames = const {},
+      Map<String, String> lexicalTypes = const {}}) {
+    final protected = {
+      for (var i = 0; i < boundNames.length; i++)
+        boundNames.elementAt(i): '@#bound$i#'
+    };
+    var current = substituteBridgeType(type, protected);
+    final bindings = {
+      for (final entry in aliases.entries)
+        if (!activeAliasShadows.contains(entry.key)) entry.key: entry.value,
+      ...lexicalTypes
+    };
     final seen = <String>{};
     while (seen.add(current)) {
-      var next = current;
-      for (final entry in aliases.entries) {
-        if (activeAliasShadows.contains(entry.key)) continue;
-        next = next.replaceAll(
-            RegExp('(?<![\\w.])${RegExp.escape(entry.key)}\\b'), entry.value);
-      }
-      if (next == current) return current;
+      final next = substituteBridgeType(current, bindings);
+      if (next == current) break;
       current = next;
     }
-    return type;
+    for (final entry in protected.entries)
+      current = current.replaceAll(entry.value, entry.key);
+    return current;
   }
 
   /// Internal native identity keys are never part of user-facing type text.
   String displayType(String text) {
     var result = text;
     for (final entry in backendTypes.entries) {
-      if (!entry.key.startsWith('@dart.')) continue;
+      if (!entry.key.startsWith('@')) continue;
       final visible = aliases.entries
-          .where((alias) => alias.value == entry.key)
+          .where(
+              (alias) => !alias.key.startsWith('@') && alias.value == entry.key)
           .firstOrNull;
       final name = visible?.key ?? entry.value.split('.').last;
       result =
@@ -664,6 +672,9 @@ class Analyzer {
     constConstructorOf: (node) => model.constCalls[node],
     fail: fail,
   );
+  String _resolveType(String type) => model.resolve(type,
+      boundNames: _typeNames, lexicalTypes: _scope.lexicalTypes);
+
   Never fail(String message, Node node) => throw CompilerException(
       registryCode(message), model.displayType(message), node.span);
   Symbol create(String name, String type,
@@ -943,36 +954,72 @@ class Analyzer {
     _checkSingletonCycles();
     if (model.providerDefaultMethods.values
         .any((owner) => owner.kind == 'interface')) {
-      final visited = <ClassDeclaration>{};
-      while (true) {
-        final pending = model.classes.values
-            .where((owner) => !visited.contains(owner))
-            .toSet();
-        if (pending.isEmpty) break;
-        for (final owner in pending) {
-          visited.add(owner);
-          if (_sdkDefaultFiles.contains(owner.span.file)) continue;
-          final edges = [
-            ...owner.interfaces,
-            if (owner.kind == 'interface' && owner.superclass != null)
-              owner.superclass!
-          ];
-          if (edges.isEmpty) continue;
-          final saved = _scope;
-          final home = model.libraryOf[owner] ?? '';
-          try {
-            _scope =
-                home.isEmpty || home == library ? _global : _libraryScope(home);
-            model.interfaceDefaultEdges[owner] = [
-              for (final edge in edges)
-                if (_typeSymbol(_genericHead(model.resolve(edge)))
-                        ?.classDeclaration
-                    case final parent?)
-                  parent
-            ];
-          } finally {
-            _scope = saved;
+      for (final implementation in model.classes.values.toSet()) {
+        if (_sdkDefaultFiles.contains(implementation.span.file) ||
+            implementation.kind == 'interface') continue;
+        final saved = _scope;
+        final home = model.libraryOf[implementation] ?? '';
+        try {
+          _scope =
+              home.isEmpty || home == library ? _global : _libraryScope(home);
+          final plans = <FunctionDeclaration, InterfaceForwardingPlan>{};
+          final seen = <ClassDeclaration, String>{};
+          void collect(String type, Set<ClassDeclaration> path) {
+            final owner = _typeSymbol(_genericHead(type))?.classDeclaration;
+            if (owner == null || path.contains(owner)) return;
+            final previous = seen[owner];
+            if (previous != null) {
+              if (previous != type)
+                error(
+                    'E300',
+                    'Conflicting interface instantiations: $previous and $type',
+                    implementation);
+              return;
+            }
+            seen[owner] = type;
+            final substitution = _genericSubstitution(type, owner);
+            for (final method in owner.methods) {
+              if (model.providerDefaultMethods[method] != owner ||
+                  owner.kind != 'interface') continue;
+              final methodSub = {...substitution};
+              for (var i = 0; i < method.typeParameters.length; i++) {
+                methodSub[method.typeParameters[i].name] =
+                    r'$qInterfaceMethod' + '$i';
+              }
+              String specialize(String value) => _substitute(
+                  _qualifiedMethodType(value, owner, method), methodSub);
+              plans[method] = InterfaceForwardingPlan(
+                  owner,
+                  method,
+                  [
+                    for (final p in owner.typeParameters)
+                      substitution[p.name] ?? p.name
+                  ],
+                  [for (final p in method.parameters) specialize(p.type)],
+                  specialize(model.declarations[method]!.type),
+                  [
+                    for (final p in method.typeParameters)
+                      TypeParameter(methodSub[p.name]!, p.span,
+                          bound: p.bound == null ? null : specialize(p.bound!),
+                          variance: p.variance)
+                  ]);
+            }
+            for (final edge in [
+              ...owner.interfaces,
+              if (owner.kind == 'interface' && owner.superclass != null)
+                owner.superclass!
+            ]) {
+              collect(_substitute(_classMemberType(edge, owner), substitution),
+                  {...path, owner});
+            }
           }
+
+          for (final edge in implementation.interfaces)
+            collect(_classMemberType(edge, implementation), {});
+          model.interfaceForwardingPlans[implementation] =
+              plans.values.toList();
+        } finally {
+          _scope = saved;
         }
       }
     }
@@ -1604,7 +1651,7 @@ class Analyzer {
     _thisType = type.name;
     for (final field in type.fields) {
       _scope.symbols[field.name] =
-          Symbol(field.name, field.name, model.resolve(field.type));
+          Symbol(field.name, field.name, _resolveType(field.type));
     }
     for (final requirement in type.requirements) {
       final condition = expression(requirement);
@@ -1680,7 +1727,7 @@ class Analyzer {
     _installFields(type, assignable: true);
     for (final parameter in _ctorParameters(type, constructor)) {
       final symbol =
-          Symbol(parameter.name, parameter.name, model.resolve(parameter.type));
+          Symbol(parameter.name, parameter.name, _resolveType(parameter.type));
       _scope.symbols[parameter.name] = symbol;
       model.declarations[parameter] = symbol;
       final original = constructor.parameters
@@ -1800,7 +1847,7 @@ class Analyzer {
       final dart = field.visibility == 'private' && !field.name.startsWith('_')
           ? '_${field.name}'
           : field.name;
-      final symbol = Symbol(field.name, dart, model.resolve(field.type),
+      final symbol = Symbol(field.name, dart, _resolveType(field.type),
           mutable: assignable || field.mutable, field: true);
       if (assignable) {
         _scope.symbols[field.name] = symbol;
@@ -1853,7 +1900,7 @@ class Analyzer {
       throw CompilerException(
           'E200', 'No field $name for an initializing formal', span);
     }
-    return model.resolve(found.first.type);
+    return _resolveType(found.first.type);
   }
 
   bool _bodyAssigns(List<Statement>? body, String name) {
@@ -2708,7 +2755,8 @@ class Analyzer {
         (qualify == null && _global.lookup(statement.name) != null)) {
       error('E204', 'Two imports define ${statement.name}', statement);
     }
-    model.aliases[key] = statement.target;
+    _libraryScope(home);
+    model.aliases[key] = _libraryType(statement.target, home);
     model.sdkAliases[key] = home;
   }
 
@@ -2925,7 +2973,7 @@ class Analyzer {
 
   void validateType(String type, Node node, {bool allowVoid = true}) {
     if (_importedTypes.containsKey(type)) return;
-    final resolved = model.resolve(type);
+    final resolved = _resolveType(type);
     if (resolved != type) {
       validateType(resolved, node, allowVoid: allowVoid);
       return;
@@ -3163,6 +3211,9 @@ class Analyzer {
       names[declaration.name] = key;
       model.backendTypes[key] = '$prefix.${declaration.name}';
     }
+    for (final alias in program.statements.whereType<AliasDeclaration>()) {
+      names[alias.name] = '@${_libraryTypes.length - 1}.${alias.name}';
+    }
     // Signatures in this library keep their lexical imported type identities,
     // even when the caller uses a different prefix or imports no such type.
     for (final directive in program.statements.whereType<ImportDeclaration>()) {
@@ -3188,6 +3239,20 @@ class Analyzer {
     model.activeAliasShadows.addAll(scope.symbols.keys);
     _scope = scope;
     try {
+      for (final directive
+          in program.statements.whereType<ImportDeclaration>()) {
+        if (!directive.export &&
+            (directive.uri.startsWith('dart:') ||
+                directive.uri.startsWith('package:') &&
+                    directive.uri.endsWith('.dart') ||
+                _isLocalDart(directive))) {
+          _bindDartScope(scope, directive, home: home);
+        }
+      }
+      scope.typeBindings.addAll(names);
+      for (final alias in program.statements.whereType<AliasDeclaration>()) {
+        model.aliases[names[alias.name]!] = _libraryType(alias.target, home);
+      }
       for (final statement in program.statements) {
         switch (statement) {
           case FunctionDeclaration():
@@ -3241,13 +3306,10 @@ class Analyzer {
       {Set<String> shadows = const {}}) {
     final names = _libraryTypes[home];
     if (names == null) return type;
-    var output = type;
-    for (final entry in names.entries) {
-      if (shadows.contains(entry.key)) continue;
-      output = output.replaceAll(
-          RegExp('(?<![\\w.])${RegExp.escape(entry.key)}\\b'), entry.value);
-    }
-    return output;
+    return substituteBridgeType(type, {
+      for (final entry in names.entries)
+        if (!shadows.contains(entry.key)) entry.key: entry.value
+    });
   }
 
   String _selfType(String type, ClassDeclaration? owner, String receiver) {
@@ -3575,7 +3637,7 @@ class Analyzer {
           _scope.symbols[node.name] = symbol;
           model.declarations[node] = symbol;
           final savedExpected = _expected;
-          if (node.type != null) _expected = model.resolve(node.type!);
+          if (node.type != null) _expected = _resolveType(node.type!);
           final type = expression(node.value);
           _expected = savedExpected;
           if (type == 'void') {
@@ -3595,11 +3657,11 @@ class Analyzer {
         final existing = _scope.lookup(node.name);
         final savedExpected = _expected;
         if (node.type != null) {
-          _expected = model.resolve(node.type!);
+          _expected = _resolveType(node.type!);
         } else if (existing != null &&
             node.mode == BindingMode.inferred &&
             node.type == null) {
-          _expected = model.resolve(existing.type);
+          _expected = _resolveType(existing.type);
         }
         if (node.open) {
           _expected = savedExpected;
@@ -4804,8 +4866,8 @@ class Analyzer {
   }
 
   bool _sameType(String from, String to) {
-    from = model.resolve(from);
-    to = model.resolve(to);
+    from = _resolveType(from);
+    to = _resolveType(to);
     if (from == to) return true;
     final source = _typeSymbol(from)?.classDeclaration;
     final target = _typeSymbol(to)?.classDeclaration;
@@ -4832,8 +4894,8 @@ class Analyzer {
   }
 
   bool compatible(String from, String to) {
-    from = model.resolve(from);
-    to = model.resolve(to);
+    from = _resolveType(from);
+    to = _resolveType(to);
     if (from == to || from == '*') return true;
     if ((to == 'dynamic' || to == 'Object' || to == 'Object?') &&
         from.startsWith('readonly ') &&
@@ -5390,15 +5452,8 @@ class Analyzer {
     return open < 0 ? name : name.substring(0, open);
   }
 
-  String _substitute(String type, Map<String, String> substitution) {
-    if (substitution.isEmpty) return type;
-    final names = substitution.keys.map(RegExp.escape).join('|');
-    return type.replaceAllMapped(
-        RegExp('(?<![\\w.])($names)\\b(?!\\s*:)(\\?)?'),
-        (match) => match.group(2) == null
-            ? substitution[match.group(1)]!
-            : nullableType(substitution[match.group(1)]!));
-  }
+  String _substitute(String type, Map<String, String> substitution) =>
+      substituteBridgeType(type, substitution);
 
   String _genericHead(String type) {
     final open = type.indexOf('<');
@@ -5685,7 +5740,7 @@ class Analyzer {
   }
 
   (String, String) _functionParts(String type) =>
-      functionTypeParts(unwrap(model.resolve(type)))!;
+      functionTypeParts(unwrap(_resolveType(type)))!;
 
   void parameterType(Parameter parameter, String type) {
     final symbol = create(parameter.name, type, mutable: parameter.mutable);
@@ -5944,7 +5999,7 @@ class Analyzer {
         if (p.bound != null) p.name: specialize(p.bound!)
     };
     final expected =
-        _expected == null ? null : nonNullableType(model.resolve(_expected!));
+        _expected == null ? null : nonNullableType(_resolveType(_expected!));
     final contextual = expected != null && functionTypeParts(expected) != null;
     List<String> arguments;
     if (explicit != null) {
@@ -6044,7 +6099,7 @@ class Analyzer {
           parameter.name: specialize(parameter.bound!)
     };
     final expected =
-        _expected == null ? null : nonNullableType(model.resolve(_expected!));
+        _expected == null ? null : nonNullableType(_resolveType(_expected!));
     final contextual = expected != null && functionTypeParts(expected) != null;
     List<String> arguments;
     if (explicit != null) {
@@ -6706,7 +6761,7 @@ class Analyzer {
       if (name == null) return const {};
       final symbol = _scope.lookup(name);
       if (symbol == null || symbol.field) return const {};
-      final current = model.resolve(_promoted[name] ?? symbol.type);
+      final current = _resolveType(_promoted[name] ?? symbol.type);
       if (!isNullableType(current)) return const {};
       final unequal = node.operator == '!=';
       if (unequal != whenTrue) return const {};
@@ -6730,7 +6785,7 @@ class Analyzer {
   }
 
   void _checkIfNull(String target, String value, Node node) {
-    target = model.resolve(target);
+    target = _resolveType(target);
     if (!isNullableType(target) && target != 'Null') {
       fail('??= requires a nullable binding', node);
     }
@@ -6751,7 +6806,7 @@ class Analyzer {
 
   void _afterAssignment(
       String name, String target, String value, String operator) {
-    target = model.resolve(target);
+    target = _resolveType(target);
     if ((operator == '=' || operator == '??=') &&
         isNullableType(target) &&
         !isNullableType(value) &&
@@ -6764,7 +6819,7 @@ class Analyzer {
 
   // Only these shapes have a runtime view that can cross an erased boundary.
   bool _readonlyBoundarySafe(String type) {
-    type = stripReadonlyType(model.resolve(type));
+    type = stripReadonlyType(_resolveType(type));
     if (isNullableType(type)) return _readonlyBoundarySafe(unwrap(type));
     if (const {
       'int',
@@ -7060,7 +7115,7 @@ class Analyzer {
       SymbolExpression() => 'Symbol',
       NameofExpression() => _nameof(node),
     };
-    final resolved = model.resolve(type);
+    final resolved = _resolveType(type);
     model.types[node] = resolved;
     return resolved;
   }
@@ -7274,7 +7329,7 @@ class Analyzer {
           'A required or variadic parameter follows a default, so this function value has no adapter yet',
           node);
     final expected =
-        _expected == null ? null : nonNullableType(model.resolve(_expected!));
+        _expected == null ? null : nonNullableType(_resolveType(_expected!));
     final contextual = expected != null && functionTypeParts(expected) != null;
     if (candidates.length > 1 && explicit == null && !contextual)
       error('E311', 'An overload value needs one expected function signature',
@@ -7428,7 +7483,7 @@ class Analyzer {
     final contextual = explicit == null &&
         formals.isNotEmpty &&
         _expected != null &&
-        functionTypeParts(nonNullableType(model.resolve(_expected!))) != null;
+        functionTypeParts(nonNullableType(_resolveType(_expected!))) != null;
     if (contextual) {
       explicit = _inferNativeFunctionValue(
           symbol, node, parameters, named, optional, formals);
@@ -7453,7 +7508,7 @@ class Analyzer {
     final type =
         '(${nativeFunctionParameters(specialized, named, optional)}) -> ${_substitute(symbol.type, substitution)}';
     if (contextual) {
-      final expected = nonNullableType(model.resolve(_expected!));
+      final expected = nonNullableType(_resolveType(_expected!));
       if (!compatible(type, expected))
         fail('Inferred function type $type is incompatible with $expected',
             node);
@@ -7470,7 +7525,7 @@ class Analyzer {
       Set<String> optional,
       Map<String, String> formals) {
     final expected =
-        functionTypeParts(nonNullableType(model.resolve(_expected!)))!;
+        functionTypeParts(nonNullableType(_resolveType(_expected!)))!;
     final encoded = nativeFunctionParameters(parameters, named, optional);
     if (!functionParametersCompatible(
         encoded, expected.$1, (_source, _target) => true))
@@ -8241,8 +8296,8 @@ class Analyzer {
     if (symbol.function == null &&
         symbol.overloads.isEmpty &&
         symbol.parameterTypes.isEmpty &&
-        functionTypeParts(unwrap(model.resolve(symbol.type))) != null) {
-      final callable = model.resolve(_promoted[symbol.name] ?? symbol.type);
+        functionTypeParts(unwrap(_resolveType(symbol.type))) != null) {
+      final callable = _resolveType(_promoted[symbol.name] ?? symbol.type);
       if (isNullableType(callable))
         error(
             'E308',
@@ -8723,7 +8778,7 @@ class Analyzer {
     if (type.kind == 'extensionType') {
       final field = type.fields.single;
       final parameters = [
-        Parameter(field.name, model.resolve(field.type), false, field.span)
+        Parameter(field.name, _resolveType(field.type), false, field.span)
       ];
       applyArguments(node, parameters, null);
       model.constCalls[node] = ConstConstructor(type.name, parameters,
@@ -8888,8 +8943,10 @@ class Analyzer {
 
   bool _inferGeneric(String pattern, String actual, Map<String, String> found,
       List<TypeParameter> parameters) {
-    pattern = model.resolve(pattern);
-    actual = model.resolve(actual);
+    pattern = model.resolve(pattern,
+        boundNames: {..._typeNames, for (final p in parameters) p.name},
+        lexicalTypes: _scope.lexicalTypes);
+    actual = _resolveType(actual);
     // A concrete nullable parameter accepts the whole source type, including
     // an unbounded type variable. Only peel nullable shells for inference.
     if (!parameters.any((parameter) =>
@@ -9310,7 +9367,7 @@ class Analyzer {
 
   final _nativeInstantiations = <String, DartShape>{};
   DartShape? _nativeShape(String type) {
-    final instance = nonNullableType(stripReadonlyType(model.resolve(type)));
+    final instance = nonNullableType(stripReadonlyType(_resolveType(type)));
     final head = _dartHead(instance);
     if (_typeSymbol(head)?.classDeclaration != null) return null;
     final shape = model.dartShapes[head];
@@ -9320,7 +9377,7 @@ class Analyzer {
   }
 
   bool _typedStorage(String type) {
-    final resolved = model.resolve(type);
+    final resolved = _resolveType(type);
     if (!_dartHead(resolved).startsWith('@dart.typed.')) return false;
     final shape = _nativeShape(resolved);
     return shape?.typedStorage ?? false;
@@ -9969,7 +10026,7 @@ class Analyzer {
     final saved = {...model.activeAliasShadows};
     model.activeAliasShadows.addAll(shadows);
     try {
-      if (home == library || home.isEmpty) return model.resolve(raw);
+      if (home == library || home.isEmpty) return _resolveType(raw);
       _libraryScope(home);
       final aliases =
           _libraries[home]?.statements.whereType<AliasDeclaration>().toList() ??
@@ -9986,7 +10043,7 @@ class Analyzer {
       }
       // Resolve the provider's lexical names before caller aliases. Otherwise
       // a caller's `type Ticket = String` can steal an imported Ticket cast.
-      return model.resolve(_libraryType(raw, home, shadows: shadows));
+      return _resolveType(_libraryType(raw, home, shadows: shadows));
     } finally {
       model.activeAliasShadows
         ..clear()
@@ -10537,8 +10594,8 @@ class Analyzer {
   }
 
   String joinTypes(String left, String right, Node node) {
-    left = model.resolve(left);
-    right = model.resolve(right);
+    left = _resolveType(left);
+    right = _resolveType(right);
     if (left == 'dynamic' || right == 'dynamic') return 'dynamic';
     if (left == 'Null') return nullableType(right);
     if (right == 'Null') return nullableType(left);
@@ -10566,7 +10623,7 @@ class Analyzer {
             ].map((parent) => _substitute(_classMemberType(parent, declaration),
               _genericSubstitution(current, declaration)));
       for (final parent in parents) {
-        final candidate = model.resolve(parent);
+        final candidate = _resolveType(parent);
         if (const {'Object', 'Object?', 'dynamic'}.contains(candidate))
           continue;
         if (compatible(left, candidate) && compatible(right, candidate))

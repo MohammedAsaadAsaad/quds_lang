@@ -7,6 +7,7 @@ import 'fixtures/quds_value_adapters/helpers.dart' show report, $QudsDefault1650
 import 'fixtures/quds_value_adapters/facade.dart' as forwarded;
 import 'quds_readonly.dart' as $qudsReadonly;
 import 'fixtures/quds_value_adapters/helpers.dart' as $qudsInterfaceDefaults0;
+import 'fixtures/quds_value_adapters/helpers.dart' as _qImportedType0;
 class _$QudsDefaultOmitted { const _$QudsDefaultOmitted(); }
 const _$qudsDefaultOmitted = _$QudsDefaultOmitted();
 class Optional<T> {
@@ -59,7 +60,7 @@ base class $QudsReadonlyPerson with $qudsReadonly.ReadonlyView implements Person
 }
 class Utility {
   Utility();
-  static U echo<U>(U _q117) => _q117;
+  static U echo<U>(U _q138) => _q138;
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Utility) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -107,7 +108,7 @@ base class $QudsReadonlyDerived extends $QudsReadonlyUtility with $qudsReadonly.
   int get tag => $qudsReadonly.protectResult(_$qudsSourceDerived, _$qudsSourceDerived.tag, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
 }
 extension on String {
-  T tag<T>(T _q118) => _q118;
+  T tag<T>(T _q139) => _q139;
 }
 class DefaultOwner<T> {
   DefaultOwner({this.seed = 2});
@@ -491,10 +492,36 @@ void main() async {
   final int Function({int value}) _q116 = ((helpers.AliasContract _qrecv69) => _qrecv69.$QudsMethodDefaulta7b71d317bf3f750aaa1)(_q114);
   print(_q116());
   print((_q116 == ((helpers.AliasContract _qrecv70) => _qrecv70.$QudsMethodDefaulta7b71d317bf3f750aaa1)(_q114)));
+  final helpers.GenericSourceImplementation<int> _q117 = $qudsReadonly.registerGuards<helpers.GenericSourceImplementation<int>>(helpers.GenericSourceImplementation<int>(seed: <int>[6]), [$qudsReadonly.ModelGuard<helpers.GenericSourceImplementation<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
+  final helpers.GenericSource<List<int>> _q118 = _q117;
+  final List<int> Function({List<int> value}) _q120 = ((helpers.GenericSource<List<int>> _qrecv71) => _qrecv71.$QudsMethodDefault1f5ff4ed0d0ea30138f4)(_q118);
+  print((() { final _qo72 = _q120(); final _qi73 = 0; return _qo72[_qi73 < 0 ? _qo72.length + _qi73 : _qi73]; })());
+  print((_q120 == ((helpers.GenericSource<List<int>> _qrecv74) => _qrecv74.$QudsMethodDefault1f5ff4ed0d0ea30138f4)(_q118)));
+  final String Function(String, {String other}) _q123 = ((helpers.GenericSource<List<int>> _qrecv75) => _qrecv75.$QudsMethodDefault32a7c47f7b1bf4e59ca9<String>)(_q118);
+  print(_q123("safe"));
+  final helpers.NestedGenericSource<int> _q124 = $qudsReadonly.registerGuards<helpers.NestedGenericImplementation<int>>(helpers.NestedGenericImplementation<int>(seed: <int>[3]), [$qudsReadonly.ModelGuard<helpers.NestedGenericImplementation<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
+  final List<int> Function({List<int> value}) _q125 = ((helpers.NestedGenericSource<int> _qrecv76) => _qrecv76.$QudsMethodDefault1f5ff4ed0d0ea30138f4)(_q124);
+  print((() { final _qo77 = _q125(); final _qi78 = 0; return _qo77[_qi78 < 0 ? _qo77.length + _qi78 : _qi78]; })());
+  print((_q125 == ((helpers.NestedGenericSource<int> _qrecv79) => _qrecv79.$QudsMethodDefault1f5ff4ed0d0ea30138f4)(_q124)));
+  final helpers.PayloadContract _q126 = helpers.PayloadImplementation();
+  final _qImportedType0.Payload Function({_qImportedType0.Payload value}) _q128 = ((helpers.PayloadContract _qrecv80) => _qrecv80.$QudsMethodDefault2a934ef518b071bdd408)(_q126);
+  print(_q128().value);
+  print((_q128 == ((helpers.PayloadContract _qrecv81) => _qrecv81.$QudsMethodDefault2a934ef518b071bdd408)(_q126)));
+  final helpers.StructuredContract _q129 = helpers.StructuredImplementation();
+  final (int, String) Function({(int, String) value}) _q131 = ((helpers.StructuredContract _qrecv82) => _qrecv82.$QudsMethodDefault49aa1891df01df485182)(_q129);
+  print((_q131() == (4, "pair")));
+  print((_q131 == ((helpers.StructuredContract _qrecv83) => _qrecv83.$QudsMethodDefault49aa1891df01df485182)(_q129)));
+  final int Function(int) Function({int Function(int) value}) _q133 = ((helpers.StructuredContract _qrecv84) => _qrecv84.$QudsMethodDefault8e0756b1d1c2b516ff94)(_q129);
+  print((_q133())(8));
+  print((_q133 == ((helpers.StructuredContract _qrecv85) => _qrecv85.$QudsMethodDefault8e0756b1d1c2b516ff94)(_q129)));
+  final helpers.BoundedSource<num> _q134 = $qudsReadonly.registerGuards<helpers.BoundedImplementation<num>>(helpers.BoundedImplementation<num>(), [$qudsReadonly.ModelGuard<helpers.BoundedImplementation<num>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<num>()]))]);
+  final int Function(int, {int other}) _q137 = ((helpers.BoundedSource<num> _qrecv86) => _qrecv86.$QudsMethodDefaulta81c45c6800460e0f227<int>)(_q134);
+  print(_q137(8));
+  print((_q137 == ((helpers.BoundedSource<num> _qrecv87) => _qrecv87.$QudsMethodDefaulta81c45c6800460e0f227<int>)(_q134)));
 }
 final showName = _q0;
 final text = _q1;
 final offset = _q2;
 final count = _q3;
 final optional = _q4;
-final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.FutureGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
+final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<DefaultOwner<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.FutureGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>()), $qudsReadonly.ModelGuard<helpers.BoundedImplementation<num>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<num>()])), $qudsReadonly.ModelGuard<helpers.BoundedSource<num>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<num>()])), $qudsReadonly.ModelGuard<helpers.DefaultBox<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ModelGuard<helpers.GenericSource<List<int>>>($qudsReadonly.guardsOf([$qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>())])), $qudsReadonly.ModelGuard<helpers.GenericSourceImplementation<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ModelGuard<helpers.NestedGenericImplementation<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);

@@ -4,7 +4,43 @@
 حزمة المترجم مستقل عنها. لا تغيّر الصياغة المعتمدة لتجاوز مشكلة تنفيذية.
 الهدف توافق موثّق مع Dart وتجربة تطوير متكاملة، وليس إضافة صياغة خاصة بفلاتر
 إلى قلب اللغة. الأقسام الأقدم تحت هذه الدفعة سجل تاريخي. الحالة الحالية هي
-قسم «الدفعة الحالية: جسور الواجهات» أدناه.
+القسم الأول أدناه؛ الأقسام التالية تحفظ نتائج الدفعات السابقة.
+
+## الدفعة الحالية: واجهات عامة وتواقيع مرتبطة بالمكتبة — مكتملة ضمن نطاقها
+
+الأساس `21f2538`. نُفذت خطط forwarding متخصصة لكل implements edge،
+بما فيه وراثة الواجهات، مع معاملات owner وmethod بأسماء backend مستقلة.
+تحتفظ bounds التابعة للـowner بمعناها، وتظل defaults داخل provider.
+الأنواع المعرفة في provider والـaliases تُؤهّل قبل نقل التوقيع. التواقيع
+المختبرة تشمل records وcallbacks. إصلاح استنتاج الأنواع يحمي binder الدالة
+من alias في مكتبة المستدعي يحمل الاسم نفسه. لا تغيير للصياغة المعتمدة.
+ABI v4 يعيد بناء الكاش الأقدم تلقائيًا، حتى لو كان checksum القديم صحيحًا.
+
+نجح فحص قدس الأساسي: **35 declaration**. نجح driver المركّز: **9 اختبارات**،
+تشمل تنفيذ VM/JS متطابقًا، golden، رفض bounds غير المطابقة، قيود readonly،
+والكاش. نجح الفحص الشامل: **705 اختبارات في 10m07s**، مع تحليل نظيف
+وتنسيق 101 ملف دون تغييرات. النتائج الدقيقة في VALIDATION.md.
+العقد وحدوده موثّقان في [QUDS_INTERFACE_DEFAULTS.md](QUDS_INTERFACE_DEFAULTS.md).
+
+### المهمة التالية: metadata المعاملات من AST حتى ABI
+
+المرجع هو فقرة parameterList في المواصفة 1.2: `name: Type` يقبل position
+أو name، و`name: Type required` named-only required، و`name: Type = expr`
+named-only optional، و`[parameters]` optional positional مع السماح بالاسم.
+المحلل الحالي يستهلك `required` دون حفظه في Parameter، ولا يحفظ bracket
+metadata. لا تصلح ذلك في emitter وحده ولا تغيّر المواصفة لتناسب التنفيذ.
+
+1. أضف kind واضحًا إلى Parameter مع source span، واحفظه في parser وفي كل
+   نسخ Parameter بالتحليل الدلالي، بما فيها imported/class/constructor signatures.
+2. طبّق matching واحدًا للـdirect calls والـoverloads والـfunction values؛ اختبر
+   named-required وoptional positional والازدواج والأسماء المجهولة وholes/spread.
+3. راجع function-type encoding والتوافق وoverrides، وجميع جسور defaults
+   والمكتبات المستوردة والـreadonly، ثم emitter. احفظ ترتيب التقييم مرة واحدة.
+4. اعزل تحديث ABI والكاش في الدفعة ذاتها. أضف Quds positive/negative واختبار
+   VM/JS وgolden وcache upgrade، ثم format/analyze/full tests وحدّث هذه الخطة.
+5. التواقيع العامة/union/intersection المركبة وforeign Dart implementors
+   وparts/cycles/conditional exports وإطارات debugger وأرقام الأداء تبقى
+   بنود اعتماد مستقلة. لا تعلن اكتمال القواعد الـ115 من نجاح هذه الشريحة.
 
 ## الدفعة الحالية: جسور الواجهات — مكتملة ضمن نطاقها
 

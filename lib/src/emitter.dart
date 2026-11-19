@@ -95,6 +95,7 @@ class DartEmitter {
   String? _returnView;
   String? _defaultReceiver;
   String _programFile = '<input>';
+  Map<String, String> _interfaceTypeBindings = const {};
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
   void line(String text) {
@@ -1001,13 +1002,14 @@ class DartEmitter {
   }
 
   String _interfaceSignature(FunctionDeclaration method,
-      {bool declaration = false}) {
+      {bool declaration = false, List<String>? parameterTypes}) {
     final positional = <String>[];
     final named = <String>[];
     for (var i = 0; i < method.parameters.length; i++) {
       final p = method.parameters[i];
       if (p.defaultValue == null) {
-        positional.add('${_dartType(p.type)} \$qInterfaceArg$i');
+        positional.add(
+            '${_dartType(parameterTypes?[i] ?? p.type)} \$qInterfaceArg$i');
       } else {
         if (!declaration) _useDefaultOmitted = true;
         named.add(
@@ -1036,13 +1038,35 @@ class DartEmitter {
     final savedReceiver = _defaultReceiver;
     final savedGenerics = _openGenerics;
     final savedSpan = _span;
+    final savedBindings = _interfaceTypeBindings;
+    final savedGuard = _guardEnvironment;
+    final ownerBindings = {
+      for (var i = 0; i < owner.typeParameters.length; i++)
+        owner.typeParameters[i].name: '\$qInterfaceOwner$i'
+    };
+    _interfaceTypeBindings = {...ownerBindings}..removeWhere(
+        (name, _) => method.typeParameters.any((p) => p.name == name));
+    final helperParameters = [
+      for (final p in owner.typeParameters)
+        TypeParameter(ownerBindings[p.name]!, p.span,
+            bound: p.bound == null
+                ? null
+                : substituteBridgeType(p.bound!, ownerBindings)),
+      for (final p in method.typeParameters)
+        TypeParameter(p.name, p.span,
+            bound: p.bound == null
+                ? null
+                : substituteBridgeType(p.bound!, _interfaceTypeBindings)),
+    ];
     _span = method.span;
     _names = {..._names};
     _defaultReceiver = r'$qInterfaceReceiver';
     _openGenerics = {
       ..._openGenerics,
-      for (final p in method.typeParameters) p.name
+      for (final p in helperParameters) p.name
     };
+    _guardEnvironment =
+        '$_readonlyRuntime.guardsOf([...$_knownGuardsName.values, ...$_readonlyRuntime.guardsFor($_defaultReceiver).values])';
     try {
       final types = method.parameters.map((p) => _dartType(p.type)).toList();
       final record = '(${types.join(', ')}${types.length == 1 ? ',' : ''})';
@@ -1063,14 +1087,16 @@ class DartEmitter {
         _names[model.declarations[p]!.dartName] = value;
       }
       line(
-          '$record ${providerInterfaceDefaultsName(owner, method)}${_typeParameters(method.typeParameters)}'
-          '(${owner.name} \$qInterfaceReceiver, List<Object?> \$qInterfaceInputs, List<bool> \$qInterfacePresent) '
+          '$record ${providerInterfaceDefaultsName(owner, method)}${_typeParameters(helperParameters)}'
+          '(${owner.name}${owner.typeParameters.isEmpty ? '' : '<${owner.typeParameters.map((p) => ownerBindings[p.name]).join(', ')}>'} \$qInterfaceReceiver, List<Object?> \$qInterfaceInputs, List<bool> \$qInterfacePresent) '
           '{ ${statements.join(' ')} return (${values.join(', ')}${values.length == 1 ? ',' : ''}); }');
     } finally {
       _names = savedNames;
       _defaultReceiver = savedReceiver;
       _openGenerics = savedGenerics;
       _span = savedSpan;
+      _interfaceTypeBindings = savedBindings;
+      _guardEnvironment = savedGuard;
     }
   }
 
@@ -1091,35 +1117,21 @@ class DartEmitter {
   }
 
   void _emitInterfaceForwarders(ClassDeclaration node, {bool proxy = false}) {
-    final contracts = <FunctionDeclaration, ClassDeclaration>{};
-    final seen = <ClassDeclaration>{};
-    void collect(ClassDeclaration owner) {
-      if (!seen.add(owner)) return;
-      if (owner.kind == 'interface') {
-        for (final method in owner.methods) {
-          if (model.providerDefaultMethods[method] == owner)
-            contracts[method] = owner;
-        }
-      }
-      for (final parent in model.interfaceDefaultEdges[owner] ??
-          <ClassDeclaration>[]) collect(parent);
-    }
-
-    for (final face in model.interfaceDefaultEdges[node] ??
-        <ClassDeclaration>[]) collect(face);
-    for (final entry in contracts.entries) {
-      final method = entry.key;
-      final owner = entry.value;
+    for (final plan in model.interfaceForwardingPlans[node] ??
+        <InterfaceForwardingPlan>[]) {
+      final method = plan.method;
+      final owner = plan.owner;
       final saved = _openGenerics;
       _openGenerics = {
         ..._openGenerics,
-        for (final p in method.typeParameters) p.name
+        for (final p in plan.typeParameters) p.name
       };
       try {
-        final returned = _dartType(model.declarations[method]!.type);
-        final signature = _interfaceSignature(method);
+        final returned = _dartType(plan.returnType);
+        final signature =
+            _interfaceSignature(method, parameterTypes: plan.parameterTypes);
         final header =
-            '$returned ${_defaultBridgeName(method)}${_typeParameters(method.typeParameters)}($signature)';
+            '$returned ${_defaultBridgeName(method)}${_typeParameters(plan.typeParameters)}($signature)';
         if (proxy && !isReadonlyMethod(method)) {
           line("$header => throw UnsupportedError('readonly method');");
           continue;
@@ -1133,16 +1145,23 @@ class DartEmitter {
               ? 'true'
               : '!identical(${p.name}, $_defaultOmitted)');
         }
-        final typeArgs = method.typeParameters.isEmpty
+        final typeArgs = plan.typeParameters.isEmpty
             ? ''
-            : '<${method.typeParameters.map((p) => p.name).join(', ')}>';
+            : '<${plan.typeParameters.map((p) => p.name).join(', ')}>';
         final resolver = _interfaceResolverTarget(owner, method);
+        final resolverArgs = [
+          ...plan.ownerArguments.map(_dartType),
+          ...plan.typeParameters.map((p) => p.name)
+        ];
+        final resolverTypes =
+            resolverArgs.isEmpty ? '' : '<${resolverArgs.join(', ')}>';
         final values = [
           for (var i = 0; i < arguments.length; i++)
             '\$qInterfaceValues.\$${i + 1}'
         ];
         final invoke = 'this.${method.name}$typeArgs(${values.join(', ')})';
-        line('$header { final \$qInterfaceValues = $resolver$typeArgs(this, '
+        line(
+            '$header { final \$qInterfaceValues = $resolver$resolverTypes(this, '
             '<Object?>[${arguments.join(', ')}], <bool>[${present.join(', ')}]); '
             '${returned == 'void' ? '' : 'return '}$invoke; }');
       } finally {
@@ -1290,7 +1309,7 @@ class DartEmitter {
 
   String? _typedReadonlySuffix(String type) {
     if (!type.startsWith('readonly ')) return null;
-    final base = _bareType(model.resolve(type));
+    final base = _bareType(_resolveType(type));
     if (!base.startsWith('@dart.typed.')) return null;
     if (model.classes.containsKey(base)) return null;
     final shape = model.dartShapes[base];
@@ -1335,6 +1354,7 @@ class DartEmitter {
 
   /// A Dart signature cannot spell `readonly`, so the boundary is a view.
   String? _readonlyBoundary(String type) {
+    type = substituteBridgeType(type, _interfaceTypeBindings);
     if (!type.startsWith('readonly ')) return null;
     if (_typedReadonlySuffix(type) != null) return '@typed:$type';
     final inner = type.substring(9);
@@ -1458,8 +1478,9 @@ class DartEmitter {
   }
 
   String _guardDescriptor(String type, {bool includeKnown = true}) {
+    type = substituteBridgeType(type, _interfaceTypeBindings);
     _requireReadonlyRuntime();
-    type = stripReadonlyType(model.resolve(type));
+    type = stripReadonlyType(_resolveType(type));
     if (isNullableType(type)) {
       final inner = nonNullableType(type);
       return '$_readonlyRuntime.NullableGuard<${_dartType(inner)}>(${_guardDescriptor(inner, includeKnown: false)})';
@@ -1508,7 +1529,7 @@ class DartEmitter {
     });
     final selected = <String>{};
     for (var type in model.types.values) {
-      type = nonNullableType(stripReadonlyType(model.resolve(type)));
+      type = nonNullableType(stripReadonlyType(_resolveType(type)));
       if (!type.contains('<') ||
           type.contains('->') ||
           type.contains('@dart.') ||
@@ -1754,7 +1775,11 @@ class DartEmitter {
           ? r'$qudsPrefix_' + name
           : name;
 
+  String _resolveType(String type) =>
+      model.resolve(type, boundNames: _openGenerics);
+
   String _dartType(String type) {
+    type = substituteBridgeType(type, _interfaceTypeBindings);
     if (type == 'ConversionError') {
       _requireReadonlyRuntime();
       return '$_readonlyRuntime.ConversionError';
@@ -1766,7 +1791,7 @@ class DartEmitter {
             '${_dartImportPrefix(entry.key)}.');
       }
     }
-    final resolved = model.resolve(type);
+    final resolved = _resolveType(type);
     if (resolved != type) return _dartType(resolved);
     for (final entry in model.backendTypes.entries) {
       final pattern = RegExp('${RegExp.escape(entry.key)}\\b');
@@ -2158,13 +2183,19 @@ class DartEmitter {
 
   String _typeParameters(List<TypeParameter> parameters,
       [List<String> extra = const []]) {
-    final body = [
-      for (final parameter in parameters)
-        '${parameter.name}${parameter.bound == null ? '' : ' extends ${_dartType(parameter.bound!)}'}',
-      ...extra,
-    ];
-    if (body.isEmpty) return '';
-    return '<${body.join(', ')}>';
+    final saved = _openGenerics;
+    _openGenerics = {..._openGenerics, for (final p in parameters) p.name};
+    try {
+      final body = [
+        for (final parameter in parameters)
+          '${parameter.name}${parameter.bound == null ? '' : ' extends ${_dartType(parameter.bound!)}'}',
+        ...extra,
+      ];
+      if (body.isEmpty) return '';
+      return '<${body.join(', ')}>';
+    } finally {
+      _openGenerics = saved;
+    }
   }
 
   List<String> _intersectionChecks(FunctionDeclaration node) {

@@ -366,6 +366,7 @@ class SemanticModel {
 
   /// Imported constructor calls whose omitted defaults stay in the provider.
   final constructorGapTargets = <CallExpression, ClassDeclaration>{};
+  final constructorGapDeclarations = <CallExpression, ConstructorDeclaration>{};
 
   /// Class type arguments for a constructor call, used when a default
   /// expression mentions those parameters.
@@ -8382,6 +8383,14 @@ class Analyzer {
     return returned;
   }
 
+  void _qualifyConstConstructor(CallExpression node, String type) {
+    final constructor = model.constCalls[node];
+    if (constructor != null && constructor.type != type) {
+      model.constCalls[node] = ConstConstructor(type, constructor.parameters,
+          requirements: constructor.requirements);
+    }
+  }
+
   /// A call whose target is a Dart library. Arguments stay in source order.
   String _passExternal(CallExpression node, Symbol symbol) {
     model.references[node.callee] = symbol;
@@ -8463,6 +8472,7 @@ class Analyzer {
       final returned = constructClass(node, declaration);
       final qualified =
           _qualifyType(found.dartName, returned, declaration.name);
+      _qualifyConstConstructor(node, qualified);
       final previous = model.references[node.callee];
       if (previous == null || previous.classDeclaration != null) {
         model.references[node.callee] = Symbol(
@@ -8520,23 +8530,46 @@ class Analyzer {
           .toList();
       if (type != null && named != null && named.isNotEmpty) {
         model.references[callee.object as Identifier] = owner!;
-        final parameters = _ctorParameters(type, named.first);
-        applyArguments(node, parameters, null);
-        _rememberConstCall(node, named.first, parameters, type.name);
-        for (final parameter in parameters) {
-          model.declarations[parameter] ??=
-              Symbol(parameter.name, parameter.name, parameter.type);
-        }
-        model.references[callee] = Symbol(callee.name, callee.name, type.name)
-            .withFunction(FunctionDeclaration(callee.name, parameters,
-                type.name, null, null, named.first.span));
-        return type.name;
+        final home = model.libraryOf[type] ?? '';
+        if (callee.name.startsWith('_') &&
+            home.isNotEmpty &&
+            home != _activeLibrary)
+          error('E204', 'Private constructor is not accessible', callee);
+        final returned = _finishConstruct(node, type,
+            _ctorParameters(type, named.first), const [], named.first);
+        final function = model.references[node.callee]?.function;
+        model.references[callee] =
+            Symbol(callee.name, callee.name, returned).withFunction(function);
+        return returned;
       }
     }
     if (callee is MemberAccess) {
       final rawObject = expression(callee.object);
       final nested = model.references[callee.object]?.namespace?[callee.name];
       final owner = model.references[callee.object];
+      final constructorOwner = owner?.classDeclaration;
+      final namedConstructor = constructorOwner?.constructors
+          .where((c) => c.name == callee.name)
+          .firstOrNull;
+      if (constructorOwner != null && namedConstructor != null) {
+        final home = model.libraryOf[constructorOwner] ?? '';
+        if (callee.name.startsWith('_') &&
+            home.isNotEmpty &&
+            home != _activeLibrary)
+          error('E204', 'Private constructor is not accessible', callee);
+        final returned = _finishConstruct(
+            node,
+            constructorOwner,
+            _ctorParameters(constructorOwner, namedConstructor),
+            const [],
+            namedConstructor);
+        final function = model.references[node.callee]?.function;
+        final qualified =
+            _qualifyType(owner!.dartName, returned, constructorOwner.name);
+        model.references[callee] =
+            Symbol(callee.name, callee.name, qualified).withFunction(function);
+        return qualified;
+      }
       if (nested != null && owner?.type != 'prefix') {
         model.references[callee] = nested;
         if (nested.parameterTypes.isNotEmpty || nested.callable) {
@@ -9368,6 +9401,7 @@ class Analyzer {
       if (!symbol.dartName.contains('.')) return returned;
       final qualified = _qualifyType(
           symbol.dartName, returned, symbol.classDeclaration!.name);
+      _qualifyConstConstructor(node, qualified);
       final previous = model.references[node.callee];
       model.references[node.callee] = previous?.function == null
           ? Symbol(symbol.dartName, symbol.dartName, qualified,
@@ -9522,7 +9556,6 @@ class Analyzer {
       List<Parameter> parameters,
       List<String> explicit,
       ConstructorDeclaration? constructor) {
-    final home = model.libraryOf[type] ?? '';
     final owned = [
       for (final parameter in parameters)
         Parameter(parameter.name, _classMemberType(parameter.type, type),
@@ -9548,10 +9581,15 @@ class Analyzer {
     }
     final synthesizedForeign =
         constructor == null && _synthesizedForeignParentDefault(type);
-    if ((constructor != null && home.isNotEmpty && home != _activeLibrary ||
-            synthesizedForeign) &&
-        _omitsForeignDefault(node, instantiated)) {
+    final hasPacket = constructor != null &&
+        !constructor.factory &&
+        constructor.parameters
+            .any((p) => p.defaultValue != null && p.defaultValue is! Literal);
+    if (hasPacket ||
+        synthesizedForeign && _omitsForeignDefault(node, instantiated)) {
       model.constructorGapTargets[node] = type;
+      if (constructor != null)
+        model.constructorGapDeclarations[node] = constructor;
     }
     if (constructor != null) _typeConstructorDefaults(type, constructor);
     if (substitution.isNotEmpty) {
@@ -10059,9 +10097,13 @@ class Analyzer {
       _rememberInference(function, parameters[target].type, type, inferred);
       order[target] = i;
     }
+    final providerOwner = model.providerDefaultMethods[function];
+    final providerHome = providerOwner == null
+        ? model.declarations[function]?.library ?? ''
+        : model.libraryOf[providerOwner] ?? '';
     if (function != null &&
-        (model.declarations[function]?.library.isNotEmpty ?? false) &&
-        model.declarations[function]!.library != _activeLibrary &&
+        providerHome.isNotEmpty &&
+        providerHome != _activeLibrary &&
         (model.providerDefaultFunctions.contains(function) ||
             model.providerDefaultMethods.containsKey(function))) {
       for (var i = 0; i < parameters.length; i++) {

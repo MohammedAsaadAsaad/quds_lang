@@ -1,3 +1,40 @@
+# Constructor packets and awaited operands — 2026-11-19
+
+Base: `d84f077` (latest `origin/main` at validation). Generated ABI:
+`provider-defaults-v8`. Approved specification 1.2 syntax is unchanged.
+
+| Check | Observed result |
+| --- | --- |
+| `dart format .` | 102 files processed; the new test driver formatted. Subsequent compiler-test formatting: no changes |
+| `dart analyze` | No issues found, including the final compiler-test assertion change |
+| `dart run bin/quds.dart test test/constructor_packet_regressions.quds` | 11 Quds declarations passed |
+| `dart test` | **740 passed, 0 failed, 9m44s**, completed 2026-11-19 15:44 UTC |
+| New executable/golden driver (included above) | Deterministic golden; generated consumer and provider analyzed with `--no-fatal-warnings`; VM and compiled JavaScript executed with the same 18 output lines |
+| New negative cases (included above) | Self/forward defaults rejected with E503 at Quds coordinates; imported bound/type/positional/private-constructor errors rejected at consumer coordinates |
+| Cache migration (included above) | A valid-checksum v7 provider with the old unbound-slot defect was rebuilt by v8; execution printed `7` |
+| `dart test test/compiler_test.dart --name 'quds create flutter writes the app in quds'` | 1 passed; in this PATH Flutter is unavailable, so this case exercises its documented missing-Flutter branch |
+| `python3 tool/audit_language.py --check` | 115 decisions indexed; statuses unchanged |
+| `python3 tool/sync_keyword_docs.py --check`, `git diff --check` | Passed |
+
+The four reviewed failures are repaired: sequential constructor defaults, `await`
+inside packet operands, bounded generic bridge invocations, and imported named
+constructor default ownership. Regressions also cover receiver-first evaluation,
+all-supplied operands in source order, Future/void results, awaited spreads, native
+alias collisions, failed defaults skipping bodies and prefixed const objects.
+Imported prefixed function values and imported method gaps retain their provider.
+Generated fixture warnings (unused private constructor and constant-condition dead
+code) are nonfatal; analyzer errors still fail the executable/golden test.
+
+The earlier Flutter-create assertion now accepts either the plain StatelessWidget
+name or a qualified native alias and verifies the alias import. The actual Flutter
+engine was **not** downloaded or executed: its SDK download remains blocked by
+CONNECT 403. This run is not evidence of real-device/F5 or engine validation.
+No rule was promoted to complete: 24 partial, 91 needs_certification, 0 complete.
+Handoff: [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md). Contract:
+[QUDS_PARAMETER_FORMS.md](QUDS_PARAMETER_FORMS.md). Older sections are historical.
+
+---
+
 # Packet values and generic constructor defaults — 2026-11-19
 
 Base: `ea105c7` on `cursor/language-remainder-b792`. ABI stays `provider-defaults-v7`.

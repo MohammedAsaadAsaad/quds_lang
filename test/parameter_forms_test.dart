@@ -51,7 +51,7 @@ void main() {
     expect(output.readAsStringSync(), contains(r' $QudsDefault'));
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v7');
+          'provider-defaults-v8');
     }
   });
 

@@ -367,7 +367,10 @@
         "test/parameter_forms_web.quds",
         "test/parameter_forms_test.dart",
         "test/fixtures/parameter_forms/provider.quds",
-        "test/goldens/parameter_forms.dart.txt"
+        "test/goldens/parameter_forms.dart.txt",
+        "test/constructor_packet_regressions.quds",
+        "test/constructor_packet_regressions_test.dart",
+        "test/constructor_packet_regressions_web.quds"
       ],
       "known_limits": [
         "Required named and bracketed optional positional forms survive parsing, imports, generic specialization, overload labels, stored values, class/interface bridges, literal constructors, and provider-owned non-literal constructor defaults. Imported and stored optional positional gaps use a provider packet without copying private defaults. Direct optional-named arguments are named-only, including migrated SDK calls. Class method overloads use source-order Dart names, and a synthesized child evaluates an imported non-literal parent default through the parent slots bridge. Mixed optional groups and a default together with a variadic are packet values. A named default before a required positional parameter stays one reordered Dart signature. A raw Dart function value has no omission token, so a positional gap through it stays E910. A required named slot may be implemented as optional named with the same name and a default."
@@ -447,11 +450,14 @@
         "test/parameter_forms_web.quds",
         "test/parameter_forms_test.dart",
         "test/fixtures/parameter_forms/provider.quds",
-        "test/goldens/parameter_forms.dart.txt"
+        "test/goldens/parameter_forms.dart.txt",
+        "test/constructor_packet_regressions.quds",
+        "test/constructor_packet_regressions_test.dart",
+        "test/constructor_packet_regressions_web.quds"
       ],
       "known_limits": [
         "A child with no constructor forwards exactly one unnamed generative parent constructor. Named-only, factory, variadic, and field-name collisions stay E910.",
-        "Explicit constructor signatures retain required/bracket metadata and prefixed generic construction. Literal defaults execute at the call site. An omitted non-literal imported default is evaluated by the provider static constructor bridge. A synthesized child calls the parent slots bridge for an imported non-literal default. Const literal defaults, a super parameter default, and a generic class with an int default execute. A computed default whose type uses a class type parameter is checked in the declaring library and substituted at the call, including an imported private default."
+        "Explicit constructor signatures retain required/bracket metadata and prefixed generic construction. Literal defaults execute at the call site. An omitted non-literal imported default is evaluated by the provider static constructor bridge. A synthesized child calls the parent slots bridge for an imported non-literal default. Const literal defaults, a super parameter default, and a generic class with an int default execute. A computed default whose type uses a class type parameter is checked in the declaring library and substituted at the call, including an imported private default. ABI v8 also covers named/local constructor packets, earlier resolved slots, bounded generic helper invocations, native-alias collisions and constant prefixed construction."
       ],
       "completion_evidence": {
         "positive": [],
@@ -776,7 +782,10 @@
         "test/parameter_forms_web.quds",
         "test/parameter_forms_test.dart",
         "test/fixtures/parameter_forms/provider.quds",
-        "test/goldens/parameter_forms.dart.txt"
+        "test/goldens/parameter_forms.dart.txt",
+        "test/constructor_packet_regressions.quds",
+        "test/constructor_packet_regressions_test.dart",
+        "test/constructor_packet_regressions_web.quds"
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. A named default before a required parameter and a default together with a variadic can be stored as values. Full constraint solving and polymorphic callbacks remain limited. Concrete class method overloads select at compile time. Parameterized readonly method results wrap the adapter invocation when the readonly view is wider.",
@@ -1490,7 +1499,10 @@
         "test/quds_value_adapters_test.dart",
         "test/quds_value_adapters_web.quds",
         "test/fixtures/quds_value_adapters/helpers.quds",
-        "test/fixtures/quds_value_adapters/facade.quds"
+        "test/fixtures/quds_value_adapters/facade.quds",
+        "test/constructor_packet_regressions.quds",
+        "test/constructor_packet_regressions_test.dart",
+        "test/constructor_packet_regressions_web.quds"
       ],
       "known_limits": [],
       "completion_evidence": {
@@ -1916,7 +1928,10 @@
         "test/quds_value_adapters_test.dart",
         "test/quds_value_adapters_web.quds",
         "test/fixtures/quds_value_adapters/helpers.quds",
-        "test/fixtures/quds_value_adapters/facade.quds"
+        "test/fixtures/quds_value_adapters/facade.quds",
+        "test/constructor_packet_regressions.quds",
+        "test/constructor_packet_regressions_test.dart",
+        "test/constructor_packet_regressions_web.quds"
       ],
       "known_limits": [],
       "completion_evidence": {

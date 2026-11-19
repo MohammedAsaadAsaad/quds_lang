@@ -21,8 +21,8 @@ void main() {
   print(_q3(5));
   print(_q3(5, 6));
   print((_q3 == (() { final _qgapv1 = api.$QudsDefault323f74e053dc72803031; _$qudsBindGap(_qgapv1, api.$QudsGap323f74e053dc72803031); return _qgapv1; })()));
-  print((() { final _qpk2 = 9; return _$qudsCallGap<int>(_q3, <Object?>[null, _qpk2], <bool>[false, true]); })());
-  print((() { final _qpk3 = 9; return api.$QudsGap323f74e053dc72803031(<Object?>[null, _qpk3], <bool>[false, true]); })());
+  print(((Object $qPacketTarget, int _qpk2) { return _$qudsCallGap<int>($qPacketTarget, <Object?>[null, _qpk2], <bool>[false, true]); })(_q3, 9));
+  print(((int Function(List<Object?>, List<bool>) $qPacketTarget, int _qpk3) { return $qPacketTarget(<Object?>[null, _qpk3], <bool>[false, true]); })(api.$QudsGap323f74e053dc72803031, 9));
   final int? Function([int?]) _q5 = api.$QudsDefaultffc6219798c71094ed78;
   print(_q5());
   print(_q5(3));

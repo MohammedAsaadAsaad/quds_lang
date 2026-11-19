@@ -1,0 +1,34 @@
+use fixtures.constructor_packet_regressions.provider as api
+use fixtures.constructor_packet_regressions.provider show Box
+main() async:
+  print api.Box().second
+  print api.Box(first: 4).second
+  print api.Box(second: 9).first
+  print api.Bounded<int>().value
+  print Box.named().second
+  print api.Box.named(first: 4).second
+  print api.AliasCollision().second
+  api.Trace.events = ""
+  print api.Box(second: await later(2)).first
+  print api.Trace.events
+  api.Trace.events = ""
+  print api.receiver().read(second: await later(2))
+  print api.Trace.events
+  saved = api.optional
+  print saved(second: await later(2))
+  mixed = api.mixed
+  print mixed(extra: await later(2))
+  future = api.futureMixed
+  pending: Future<int> = future(extra: await later(3))
+  print await pending
+  api.Trace.events = ""
+  printValue = api.voidMixed
+  printValue(extra: await later(2))
+  print api.Trace.events
+  print api.GenericNamed.named(first: 8).second
+  const owner = api.Constant()
+  print owner.value
+  rest = api.rest
+  print rest(...await laterItems(), prefix: "p")
+later(value: int) async -> int = api.mark(value)
+laterItems() async -> List<int> = [1, 2]

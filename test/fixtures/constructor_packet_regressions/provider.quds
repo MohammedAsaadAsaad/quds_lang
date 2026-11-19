@@ -1,0 +1,55 @@
+use dart:math as _qctor0
+_seed() -> int = 7
+class Trace:
+  static var events: String = ""
+  static var bodies: int = 0
+mark(value: int) -> int:
+  Trace.events += "{value}"
+  return value
+class Box:
+  first: int
+  second: int
+  init(this.first: int = _seed(), this.second: int = first):
+    Trace.bodies += 1
+  init named(this.first: int = _seed(), this.second: int = first):
+    Trace.bodies += 1
+  init _hidden(this.first: int, this.second: int):
+    require true
+class Bounded<T: num>:
+  value: int
+  init(this.value: int = _seed()):
+    require true
+  init named(this.value: int = _seed()):
+    require true
+class Receiver:
+  read([first: int = _seed(), second: int = first]) -> int = first + second
+receiver() -> Receiver:
+  Trace.events += "r"
+  return Receiver()
+optional([first: int = _seed(), second: int = first]) -> int = first + second
+mixed([value: int = _seed()], extra: int required) -> int = value + extra
+futureMixed([value: int = _seed()], extra: int required) async -> int = value + extra
+voidMixed([value: int = _seed()], extra: int required) -> void:
+  Trace.events += "{value}:{extra}"
+class AliasCollision:
+  first: int
+  second: int
+  init(this.first: int = _qctor0.max(2, 3), this.second: int = first):
+    require true
+class Throwing:
+  value: int
+  init(this.value: int = _fail()):
+    Trace.bodies += 1
+_fail() -> int:
+  throw "default failed"
+
+class GenericNamed<T>:
+  first: T
+  second: T
+  init named(this.first: T required, this.second: T = first):
+    require true
+
+rest(prefix: String = "q", ...items: int) -> String = "{prefix}:{items.length}"
+class Constant:
+  value: int
+  const init(this.value: int = 1 + 2)

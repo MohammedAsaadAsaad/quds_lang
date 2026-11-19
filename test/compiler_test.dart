@@ -1244,7 +1244,16 @@ dependencies:
     final source = File('${root.path}/hello/lib/main.quds').readAsStringSync();
     final compiled = compile(source, file: '${root.path}/hello/lib/main.quds');
     expect(compiled.dart, contains("import 'package:flutter/material.dart';"));
-    expect(compiled.dart, contains('extends StatelessWidget'));
+    final base = RegExp(
+            r'class MyApp extends ((?:[A-Za-z_$][\w$]*\.)?StatelessWidget)\b')
+        .firstMatch(compiled.dart);
+    expect(base, isNotNull, reason: compiled.dart);
+    final name = base!.group(1)!;
+    if (name.contains('.')) {
+      final prefix = name.substring(0, name.indexOf('.'));
+      expect(compiled.dart,
+          contains(RegExp("import '[^']+' as ${RegExp.escape(prefix)};")));
+    }
   }, timeout: const Timeout(Duration(minutes: 6)));
 
   test('quds run launches flutter with the generated target', () async {

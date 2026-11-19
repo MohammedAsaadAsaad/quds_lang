@@ -1,4 +1,4 @@
-# Parameter metadata — generated ABI v5
+# Parameter metadata — generated ABI v8
 
 Specification 1.2 remains authoritative. This milestone preserves declaration
 parameter kinds from the parser through specialization, call matching, values,
@@ -8,7 +8,7 @@ provider bridges and interface forwarding. It does not certify all QUDS-022.
 | --- | --- | --- |
 | `value: int` | Required dual positional/named | Existing calls retained |
 | `value: int required` | Required named-only | Checked in direct calls, overloads, constructors and function values |
-| `value: int = expression` | Optional named-only | Kind retained; values enforce named-only; direct calls retain the legacy exception below |
+| `value: int = expression` | Optional named-only | Named-only in direct calls and values |
 | `[value: int = expression]` | Optional positional, also callable by name | Direct calls and values, sequential computed defaults |
 | `[value: int?]` | Optional positional, implicit null | Checked for null compatibility; `[value: int]` is rejected |
 | `...values: int` | Trailing variadic | Existing packing retained; bracket/required combinations rejected |
@@ -67,8 +67,9 @@ parameter is checked in the declaring library and substituted at the call.
   remains the positional tear-off; an `Expando` recovers the packet. An opaque
   Dart function value still reports E910. Same-library direct calls evaluate
   the omitted prefix locally.
-- An imported constructor with a non-literal omitted default calls the provider
-  static `$QudsCtor...`. Literal defaults stay at the call site. A child with
+- A generative constructor with any non-literal default calls the provider
+  static `$QudsCtor...`, including local/named constructors and fully supplied
+  calls. Literal-only defaults stay at the call site. A child with
   no constructor forwards exactly one unnamed generative parent constructor;
   a named-only, factory, variadic, or field-name collision stays E910.
   An imported non-literal parent default is evaluated by `$QudsCtorSlots`.
@@ -80,8 +81,19 @@ parameter is checked in the declaring library and substituted at the call.
   emit `name$1` and `name$2`. SDK section bridges, intersections and foreign
   implementors remain separate work. No full 115-rule certification is claimed.
 
-ABI `provider-defaults-v7` adds gap, constructor-default, and parent-slot bridges. The CLI
-invalidates v6, v5, and v4 caches automatically, including valid-checksum output.
+ABI `provider-defaults-v8` repairs sequential constructor slots, bounded generic
+bridge calls and named-constructor default ownership. Each resolved slot is
+available to later defaults; reserved generated slot names do not shadow native
+import aliases. Generic declarations retain bounds, while invocations use only
+type arguments. Explicit constant contexts keep constant evaluation.
+
+Packet calls evaluate the callable/receiver first, then supplied operands once in
+source order, outside the synchronous packing closure. This permits `await` and
+spread operands without flattening Future results or losing void behavior.
+Imported method defaults and prefixed function values retain provider ownership.
+The CLI invalidates v7 and earlier caches, including valid-checksum output.
+Additional evidence: `test/constructor_packet_regressions.quds`, its VM/JS fixture,
+provider, golden and Dart driver (negative diagnostics and cache migration).
 Evidence: `test/parameter_forms.quds`, its VM/JS fixture and golden,
 `test/fixtures/parameter_forms/provider.quds` and `test/parameter_forms_test.dart`.
 Exact results are in [VALIDATION.md](VALIDATION.md); the handoff is

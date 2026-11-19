@@ -1,0 +1,81 @@
+use fixtures.constructor_packet_regressions.provider as api
+use fixtures.constructor_packet_regressions.provider show Box
+
+later(value: int) async -> int = api.mark(value)
+
+class Local:
+  first: int
+  second: int
+  init named(this.first: int = 2 + 3, this.second: int = first):
+    require true
+
+test "constructor defaults use earlier resolved slots":
+  expect(api.Box().second, 7)
+  expect(api.Box(first: 4).second, 4)
+  expect(api.Box(second: 9).first, 7)
+  expect(api.Box(first: 4, second: 9).second, 9)
+
+test "awaited constructor operands retain source order" async:
+  api.Trace.events = ""
+  owner = api.Box(second: await later(2))
+  expect(owner.first, 7)
+  expect(owner.second, 2)
+  expect(api.Trace.events, "2")
+  api.Trace.events = ""
+  supplied = api.Box(second: await later(2), first: await later(1))
+  expect(supplied.first, 1)
+  expect(supplied.second, 2)
+  expect(api.Trace.events, "21")
+
+test "bounded generic constructor bridges use type arguments":
+  expect(api.Bounded<int>().value, 7)
+  expect(api.Bounded<num>(value: 9).value, 9)
+
+test "named constructors resolve defaults in their provider":
+  expect(Box.named().second, 7)
+  expect(api.Box.named(first: 4).second, 4)
+  expect(api.Box.named(second: 9).first, 7)
+  expect(Local.named().second, 5)
+  expect(api.GenericNamed.named(first: 8).second, 8)
+
+test "constructor helper locals preserve native import aliases":
+  expect(api.AliasCollision().second, 3)
+
+test "receiver evaluation precedes awaited gap operands" async:
+  api.Trace.events = ""
+  expect(api.receiver().read(second: await later(2)), 9)
+  expect(api.Trace.events, "r2")
+
+test "stored positional gaps accept awaited operands" async:
+  saved = api.optional
+  expect(saved(second: await later(2)), 9)
+
+test "packet values keep Future and void results" async:
+  saved = api.mixed
+  expect(saved(extra: await later(2)), 9)
+  future = api.futureMixed
+  pending: Future<int> = future(extra: await later(3))
+  expect(await pending, 10)
+  printValue = api.voidMixed
+  api.Trace.events = ""
+  printValue(extra: await later(2))
+  expect(api.Trace.events, "27:2")
+
+test "failed defaults prevent body execution":
+  before = api.Trace.bodies
+  try:
+    api.Throwing()
+  catch problem:
+    expect(problem, "default failed")
+  expect(api.Trace.bodies, before)
+  expect(api.Throwing(value: 9).value, 9)
+
+laterItems() async -> List<int> = [1, 2]
+test "packet spreads keep await outside the closure" async:
+  saved = api.rest
+  expect(saved(...await laterItems(), prefix: "p"), "p:2")
+
+test "constant constructor defaults retain constant evaluation":
+  const owner = api.Constant()
+  expect(owner.value, 3)
+  expect(api.Constant().value, 3)

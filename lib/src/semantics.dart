@@ -41,6 +41,49 @@ bool portableParameterLayout(List<Parameter> parameters) {
   return !(positionalOptional && named);
 }
 
+/// A stored value whose groups cannot be one Dart function. Calls pass
+/// `(List<Object?>, List<bool>)` in signature order and the provider applies
+/// defaults. A named default followed by a required positional parameter stays
+/// a reordered Dart signature.
+bool packetValueLayout(List<Parameter> parameters) {
+  final positionalOptional = parameters
+      .any((parameter) => parameter.kind == ParameterKind.optionalPositional);
+  final named = parameters.any((parameter) => parameter.isNamed);
+  if (positionalOptional && named) return true;
+  if (!parameters.any((parameter) => parameter.variadic)) return false;
+  return parameters.any((parameter) =>
+      parameter.defaultValue != null ||
+      parameter.kind == ParameterKind.optionalPositional ||
+      parameter.isNamed);
+}
+
+/// Positional and variadic slots, then named slots. Matches [_callableSignature].
+List<Parameter> packetSlots(List<Parameter> parameters) {
+  final positional = <Parameter>[];
+  final named = <Parameter>[];
+  for (final parameter in parameters) {
+    final namedSlot = parameter.kind == ParameterKind.requiredNamed ||
+        (parameter.defaultValue != null &&
+            parameter.kind != ParameterKind.optionalPositional &&
+            !parameter.variadic);
+    if (namedSlot) {
+      named.add(parameter);
+    } else {
+      positional.add(parameter);
+    }
+  }
+  return [...positional, ...named];
+}
+
+bool packetSignature(List<FunctionParameterShape> parameters) {
+  final positionalOptional = parameters.any((parameter) =>
+      parameter.optional && !parameter.named && !parameter.variadic);
+  final named = parameters.any((parameter) => parameter.named);
+  if (positionalOptional && named) return true;
+  if (!parameters.any((parameter) => parameter.variadic)) return false;
+  return parameters.any((parameter) => parameter.optional || parameter.named);
+}
+
 bool _providerDefaultsAreSynchronous(FunctionDeclaration function) {
   var synchronous = true;
   for (final parameter in function.parameters) {
@@ -115,6 +158,15 @@ String providerMethodDefaultBridgeName(
 String providerGapBridgeName(FunctionDeclaration function) =>
     providerDefaultBridgeName(function)
         .replaceFirst(r'$QudsDefault', r'$QudsGap');
+
+String providerPacketBridgeName(FunctionDeclaration function) =>
+    providerDefaultBridgeName(function)
+        .replaceFirst(r'$QudsDefault', r'$QudsPacket');
+
+String providerMethodPacketBridgeName(
+        ClassDeclaration owner, FunctionDeclaration function) =>
+    providerMethodDefaultBridgeName(owner, function)
+        .replaceFirst(r'$QudsMethodDefault', r'$QudsMethodPacket');
 
 String providerMethodGapBridgeName(
         ClassDeclaration owner, FunctionDeclaration function) =>
@@ -314,6 +366,16 @@ class SemanticModel {
 
   /// Imported constructor calls whose omitted defaults stay in the provider.
   final constructorGapTargets = <CallExpression, ClassDeclaration>{};
+
+  /// Class type arguments for a constructor call, used when a default
+  /// expression mentions those parameters.
+  final constructorSubstitutions = <CallExpression, Map<String, String>>{};
+
+  /// Calls whose callee is a packet value rather than a Dart function.
+  final packetValueCalls = <CallExpression>{};
+
+  /// Index of the variadic slot in a function-value call, in signature order.
+  final functionValueVariadicIndex = <CallExpression, int>{};
 
   /// Element type packed into the list argument of a variadic function value.
   final functionValueVariadicElements = <CallExpression, String>{};
@@ -730,6 +792,7 @@ class Analyzer {
   late _Scope _scope = _global;
   final _checked = <FunctionDeclaration>{};
   final _checking = <FunctionDeclaration>{};
+  final _typedConstructorDefaults = <ConstructorDeclaration>{};
   final _typeNames = <String>{};
   final _pendingClasses = <String>{};
   final _typeBounds = <String, String>{};
@@ -1786,6 +1849,45 @@ class Analyzer {
       _thisType = savedThis;
       _scope = saved;
       _methodLibrary = savedMethodLibrary;
+    }
+  }
+
+  /// Default expressions are checked in the class scope, including `T` in
+  /// `Box<T>`. A later call substitutes the constructed type arguments.
+  void _typeConstructorDefaults(
+      ClassDeclaration type, ConstructorDeclaration constructor) {
+    if (!_typedConstructorDefaults.add(constructor)) return;
+    final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
+    final savedExpected = _expected;
+    final savedScope = _scope;
+    final home = model.libraryOf[type] ?? library;
+    _typeNames.addAll(type.typeParameters.map((parameter) => parameter.name));
+    for (final parameter in type.typeParameters) {
+      _typeBounds.remove(parameter.name);
+      if (parameter.bound != null)
+        _typeBounds[parameter.name] = parameter.bound!;
+    }
+    _scope = _Scope(home.isEmpty ? _global : _libraryScope(home));
+    try {
+      for (final parameter in constructor.parameters) {
+        final declared = model.declarations[parameter]?.type ?? parameter.type;
+        final symbol = Symbol(parameter.name, parameter.name, declared);
+        _scope.symbols[parameter.name] = symbol;
+        final value = parameter.defaultValue;
+        if (value == null || model.types.containsKey(value)) continue;
+        _expected = declared;
+        expression(value);
+      }
+    } finally {
+      _expected = savedExpected;
+      _scope = savedScope;
+      _typeNames
+        ..clear()
+        ..addAll(savedTypes);
+      _typeBounds
+        ..clear()
+        ..addAll(savedBounds);
     }
   }
 
@@ -3115,16 +3217,17 @@ class Analyzer {
       if (parameters.trim().isNotEmpty) {
         final names = <String>{};
         var optionalPosition = false, namedPosition = false;
-        for (final part in functionParameters(parameters)) {
+        final shapes = functionParameters(parameters);
+        for (var i = 0; i < shapes.length; i++) {
+          final part = shapes[i];
           if (part.name != null && !names.add(part.name!))
             error('E503', 'Duplicate function-type parameter: ${part.name}',
                 node);
+          if (part.variadic) {
+            validateType(part.type, node, allowVoid: false);
+            continue;
+          }
           if (part.named) {
-            if (optionalPosition)
-              error(
-                  'E503',
-                  'Optional positional and named parameters cannot be combined',
-                  node);
             namedPosition = true;
           } else {
             if (namedPosition || optionalPosition && !part.optional)
@@ -5787,12 +5890,6 @@ class Analyzer {
     final savedPromoted = Map<String, String>.from(_promoted);
     _promoted.clear();
     _scope = _Scope(saved);
-    if (!portableParameterLayout(node.parameters)) {
-      error(
-          'E910',
-          'A function value cannot mix optional positional parameters with named parameters',
-          node);
-    }
     final parameterNames = <String>[];
     for (final parameter in node.parameters) {
       if (parameter.defaultValue case final value?) {
@@ -6202,11 +6299,6 @@ class Analyzer {
     final explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
         : null;
-    if (_awkwardValueParameters(method))
-      error(
-          'E910',
-          'These parameter groups cannot be represented by one supported Dart method signature',
-          node);
     final owner = _methodReceiver(receiverType, method);
     if (owner == null || !owner.$2.methods.contains(method))
       error('E910', 'This method value needs unambiguous owner metadata', node);
@@ -6298,11 +6390,6 @@ class Analyzer {
 
   String? _qudsExtensionValue(MemberAccess node, String raw,
       String receiverType, FunctionDeclaration method) {
-    if (_awkwardValueParameters(method))
-      error(
-          'E910',
-          'These parameter groups cannot be represented by one supported Dart method signature',
-          node);
     final explicit = identical(node, _nativeInstantiationTarget)
         ? _nativeInstantiationArguments
         : null;
@@ -7835,11 +7922,6 @@ class Analyzer {
           'E910',
           'These Quds function values need a method/default/variadic adapter',
           node);
-    if (candidates.any(_awkwardValueParameters))
-      error(
-          'E910',
-          'These parameter groups cannot be represented by one supported Dart function signature',
-          node);
     final expected =
         _expected == null ? null : nonNullableType(_resolveType(_expected!));
     final contextual = expected != null && functionTypeParts(expected) != null;
@@ -7934,11 +8016,6 @@ class Analyzer {
           parameter.needsAdapter ||
           parameter.variadic ||
           parameter.type.contains(' & '));
-
-  /// Optional parameters must form a trailing group. A later required or
-  /// variadic parameter cannot be represented by one Dart positional closure.
-  bool _awkwardValueParameters(FunctionDeclaration function) =>
-      !portableParameterLayout(function.parameters);
 
   String _callableSignature(
       List<Parameter> parameters, List<String> types, String returned) {
@@ -9037,8 +9114,10 @@ class Analyzer {
     model.argumentOrder[node] = order;
     if (variadicAt >= 0) {
       model.functionValueVariadicElements[node] = parameters[variadicAt].type;
+      model.functionValueVariadicIndex[node] = variadicAt;
       model.variadicArguments[node] = variadicArgs;
     }
+    if (packetSignature(parameters)) model.packetValueCalls.add(node);
     return returns;
   }
 
@@ -9474,7 +9553,11 @@ class Analyzer {
         _omitsForeignDefault(node, instantiated)) {
       model.constructorGapTargets[node] = type;
     }
-    applyArguments(node, instantiated, null);
+    if (constructor != null) _typeConstructorDefaults(type, constructor);
+    if (substitution.isNotEmpty) {
+      model.constructorSubstitutions[node] = substitution;
+    }
+    applyArguments(node, instantiated, null, defaultSubstitution: substitution);
     model.references[node.callee] = type.constructors.isEmpty
         ? Symbol(type.name, type.name, type.name, classDeclaration: type)
         : Symbol(type.name, type.name, type.name).withFunction(
@@ -9893,6 +9976,7 @@ class Analyzer {
       {_CheckedArguments? checked,
       Map<String, String> typeArguments = const {},
       Map<String, String> parameterBounds = const {},
+      Map<String, String> defaultSubstitution = const {},
       String? declaredReturnType}) {
     parameters = _callParameters(parameters, function);
     if (function != null &&
@@ -10007,7 +10091,8 @@ class Analyzer {
       } finally {
         _expected = savedDefaultExpected;
       }
-      final type = _callResult(fallbackType, function);
+      final type =
+          _substitute(_callResult(fallbackType, function), defaultSubstitution);
       if (!compatible(type, parameters[i].type)) {
         fail('Default type $type is incompatible with ${parameters[i].type}',
             fallback);

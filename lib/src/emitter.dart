@@ -980,11 +980,14 @@ class DartEmitter {
 
   void emitFunction(FunctionDeclaration node) {
     _emitFunctionBody(node);
+    if (packetValueLayout(node.parameters)) _emitPacketBridge(node);
     _emitDefaultBridge(node);
   }
 
   void _emitDefaultBridge(FunctionDeclaration node) {
-    if (!_defaultBridges.contains(node)) return;
+    if (!_defaultBridges.contains(node) || packetValueLayout(node.parameters)) {
+      return;
+    }
     final owner = model.providerDefaultMethods[node];
     if (owner?.kind == 'interface') {
       _emitInterfaceMember(node);
@@ -1009,6 +1012,77 @@ class DartEmitter {
       _emitConcreteGap(node);
     } finally {
       _openGenerics = savedGenerics;
+    }
+  }
+
+  void _emitPacketBridge(FunctionDeclaration node) {
+    final savedGenerics = _openGenerics;
+    _openGenerics = {
+      ..._openGenerics,
+      for (final parameter in node.typeParameters) parameter.name
+    };
+    try {
+      final symbol = model.declarations[node]!;
+      final owner = model.classes.values
+          .where((item) => item.methods.contains(node))
+          .firstOrNull;
+      final name = owner == null
+          ? providerPacketBridgeName(node)
+          : providerMethodPacketBridgeName(owner, node);
+      final returned = _dartType(symbol.type);
+      final generics = _typeParameters(node.typeParameters, const []);
+      final prefix = owner != null && node.isStatic ? 'static ' : '';
+      final target = node.isStatic || owner == null
+          ? symbol.dartName
+          : 'this.${symbol.dartName}';
+      final body = _packetInvocation(node.parameters, target, returned);
+      line('$prefix$returned $name$generics'
+          '(List<Object?> \$qInputs, List<bool> \$qPresent) { $body }');
+    } finally {
+      _openGenerics = savedGenerics;
+    }
+  }
+
+  /// Binds signature-order packet slots, then calls [target] in source order.
+  String _packetInvocation(
+      List<Parameter> parameters, String target, String returned) {
+    final saved = _names;
+    _names = {..._names};
+    final statements = <String>[];
+    try {
+      final slots = packetSlots(parameters);
+      for (var i = 0; i < slots.length; i++) {
+        final parameter = slots[i];
+        final declared = model.declarations[parameter]!;
+        final element = _dartType(declared.type);
+        final slot = '_qslot$i';
+        final input = '\$qInputs[$i]';
+        if (parameter.variadic) {
+          final listType = _variadicListType(declared.type);
+          final elementType = listType.substring(5, listType.length - 1);
+          statements.add(
+              'final $listType $slot = \$qPresent[$i] ? $input as $listType : <$elementType>[];');
+        } else {
+          final supplied =
+              declared.type == 'Object?' || declared.type == 'dynamic'
+                  ? input
+                  : '$input as $element';
+          final resolved = parameter.defaultValue == null
+              ? supplied
+              : '\$qPresent[$i] ? $supplied : ${expression(parameter.defaultValue!)}';
+          statements.add('final $element $slot = $resolved;');
+        }
+        _names[declared.dartName] = slot;
+      }
+      final arguments = [
+        for (final parameter in parameters)
+          _names[model.declarations[parameter]!.dartName]!
+      ];
+      final invocation = '$target(${arguments.join(', ')})';
+      final tail = returned == 'void' ? '$invocation;' : 'return $invocation;';
+      return '${statements.join(' ')} $tail';
+    } finally {
+      _names = saved;
     }
   }
 
@@ -1899,6 +1973,9 @@ class DartEmitter {
     if (functionTypeParts(type) != null) {
       final (parameters, returns) = _splitFunctionType(type);
       final shapes = functionParameters(parameters);
+      if (packetSignature(shapes)) {
+        return '${_dartType(returns)} Function(List<Object?>, List<bool>)';
+      }
       final parts = <String>[
         for (final p
             in shapes.where((p) => !p.named && !p.optional && !p.variadic))
@@ -2461,6 +2538,19 @@ class DartEmitter {
   }
 
   void _emitConstructorBridges(ClassDeclaration node) {
+    final savedOpen = _openGenerics;
+    _openGenerics = {
+      ..._openGenerics,
+      for (final parameter in node.typeParameters) parameter.name
+    };
+    try {
+      _emitConstructorBridgeBodies(node);
+    } finally {
+      _openGenerics = savedOpen;
+    }
+  }
+
+  void _emitConstructorBridgeBodies(ClassDeclaration node) {
     for (final constructor in node.constructors) {
       if (constructor.factory ||
           constructor.parameters.every((parameter) =>
@@ -3942,6 +4032,9 @@ class DartEmitter {
   String _emitQudsValueLowering(Expression node) {
     final lowering = model.qudsValueLowerings[node]!;
     final function = lowering.function;
+    if (packetValueLayout(function.parameters)) {
+      return _emitPacketTearoff(node, lowering);
+    }
     final declared = model.declarations[function]!;
     final implementation = _defaultBridges.contains(function)
         ? _defaultBridgeName(function)
@@ -4253,9 +4346,49 @@ class DartEmitter {
     return name;
   }
 
+  String _emitPacketTearoff(Expression node, QudsValueLowering lowering) {
+    final function = lowering.function;
+    final owner = model.providerDefaultMethods[function] ??
+        model.classes.values
+            .where((item) => item.methods.contains(function))
+            .firstOrNull;
+    final bridge = owner == null
+        ? providerPacketBridgeName(function)
+        : providerMethodPacketBridgeName(owner, function);
+    final arguments = [...lowering.typeArguments];
+    final suffix =
+        arguments.isEmpty ? '' : '<${arguments.map(_dartType).join(', ')}>';
+    if (node is MemberAccess) {
+      if (function.isStatic) {
+        final ownerType = lowering.staticOwner == null
+            ? expression(node.object)
+            : _dartType(lowering.staticOwner!);
+        return '$ownerType.$bridge$suffix';
+      }
+      final receiver = '_qrecv${_temps++}';
+      final body = '$receiver.$bridge$suffix';
+      if (node.nullAware) {
+        final type = _dartType(nullableType(model.types[node.object]!));
+        return '(($type $receiver) => $receiver == null ? null : $body)(${expression(node.object)})';
+      }
+      final type = _dartType(model.types[node.object]!);
+      return '(($type $receiver) => $body)(${expression(node.object)})';
+    }
+    final declared = model.declarations[function]!;
+    final original = model.references[node]?.dartName ?? declared.dartName;
+    final dot = original.lastIndexOf('.');
+    final prefix = dot < 0 ? '' : original.substring(0, dot + 1);
+    return '$prefix$bridge$suffix';
+  }
+
   String _lambda(Lambda node) {
     final savedReturn = _returnView;
     _returnView = null;
+    if (packetValueLayout(node.parameters)) {
+      final text = _packetLambda(node);
+      _returnView = savedReturn;
+      return text;
+    }
     if (node.parameters.any((parameter) => parameter.needsAdapter)) {
       return _shapedLambda(node, savedReturn);
     }
@@ -4278,6 +4411,53 @@ class DartEmitter {
     _depth = savedDepth;
     _returnView = savedReturn;
     return '(($parameters) $async{\n$body})';
+  }
+
+  String _packetLambda(Lambda node) {
+    final saved = _names;
+    _names = {..._names};
+    final bindings = <String>[];
+    try {
+      final slots = packetSlots(node.parameters);
+      for (var i = 0; i < slots.length; i++) {
+        final parameter = slots[i];
+        final declared = model.declarations[parameter]!;
+        final element = _dartType(declared.type);
+        final slot = '_qslot$i';
+        final input = '\$qInputs[$i]';
+        if (parameter.variadic) {
+          final listType = _variadicListType(declared.type);
+          final elementType = listType.substring(5, listType.length - 1);
+          bindings.add(
+              'final $listType $slot = \$qPresent[$i] ? $input as $listType : <$elementType>[]');
+        } else {
+          final supplied =
+              declared.type == 'Object?' || declared.type == 'dynamic'
+                  ? input
+                  : '$input as $element';
+          final resolved = parameter.defaultValue == null
+              ? supplied
+              : '\$qPresent[$i] ? $supplied : ${expression(parameter.defaultValue!)}';
+          bindings.add('final $element $slot = $resolved');
+        }
+        _names[declared.dartName] = slot;
+      }
+      final async = model.asyncLambdas.contains(node) ? 'async ' : '';
+      final setup = bindings.join('; ');
+      if (node.expressionBody case final value?) {
+        return '((List<Object?> \$qInputs, List<bool> \$qPresent) $async{ $setup; return ${expression(value)}; })';
+      }
+      final savedDepth = _depth;
+      _depth = 0;
+      final body = _captureBlock(() {
+        _hoistOnce(node.body);
+        statements(node.body!);
+      });
+      _depth = savedDepth;
+      return '((List<Object?> \$qInputs, List<bool> \$qPresent) $async{ $setup;\n$body})';
+    } finally {
+      _names = saved;
+    }
   }
 
   String _shapedLambda(Lambda node, String? savedReturn) {
@@ -4682,18 +4862,26 @@ class DartEmitter {
 
   String _packetCall(
       CallExpression node, String target, List<int> order, String returned,
-      {required bool gap}) {
+      {required bool gap, int? variadicIndex}) {
     final lines = <String>[];
     final temps = <String>[];
     for (var i = 0; i < node.arguments.length; i++) {
       final temp = '_qpk${_temps++}';
       temps.add(temp);
-      lines.add('final $temp = ${expression(node.arguments[i].value)};');
+      final value = node.arguments[i].value;
+      final text = value is SpreadElement
+          ? expression(value.operand)
+          : expression(value);
+      lines.add('final $temp = $text;');
     }
     final inputs = <String>[];
     final present = <String>[];
-    for (final index in order) {
-      if (index < 0) {
+    for (var i = 0; i < order.length; i++) {
+      final index = order[i];
+      if (i == variadicIndex) {
+        inputs.add(_packetVariadicList(node, temps));
+        present.add('true');
+      } else if (index < 0) {
         inputs.add('null');
         present.add('false');
       } else {
@@ -4707,6 +4895,25 @@ class DartEmitter {
     if (gap) _useGap = true;
     final result = returned == 'void' ? call : 'return $call';
     return '(() { ${lines.join(' ')} $result; })()';
+  }
+
+  String _variadicListType(String declared) {
+    final rendered = _dartType(declared);
+    if (rendered.startsWith('List<') && rendered.endsWith('>')) return rendered;
+    return 'List<$rendered>';
+  }
+
+  String _packetVariadicList(CallExpression node, List<String> temps) {
+    final element =
+        _dartType(model.functionValueVariadicElements[node] ?? 'Object?');
+    final pieces = <String>[];
+    for (final index in model.variadicArguments[node] ?? const <int>[]) {
+      final value = node.arguments[index].value;
+      pieces.add(value is SpreadElement
+          ? (value.nullAware ? '...?${temps[index]}' : '...${temps[index]}')
+          : temps[index]);
+    }
+    return '<$element>[${pieces.join(', ')}]';
   }
 
   String _providerGapCall(
@@ -4766,6 +4973,15 @@ class DartEmitter {
   }
 
   String call(CallExpression node, {bool constantContext = false}) {
+    if (model.packetValueCalls.contains(node)) {
+      return _packetCall(
+          node,
+          expression(node.callee),
+          model.argumentOrder[node] ?? const <int>[],
+          _dartType(model.types[node] ?? 'Object?'),
+          gap: false,
+          variadicIndex: model.functionValueVariadicIndex[node]);
+    }
     if (model.functionValueGapCalls.contains(node)) {
       return _packetCall(
           node,
@@ -5136,12 +5352,18 @@ class DartEmitter {
         _names = subst;
         final savedReceiver = _defaultReceiver;
         _defaultReceiver = defaultReceiver ?? savedReceiver;
+        final savedBindings = _interfaceTypeBindings;
+        final substitution = model.constructorSubstitutions[node];
+        if (substitution != null) {
+          _interfaceTypeBindings = {..._interfaceTypeBindings, ...substitution};
+        }
         late String value;
         try {
           value = expression(parameters[i].defaultValue!);
         } finally {
           _names = saved;
           _defaultReceiver = savedReceiver;
+          _interfaceTypeBindings = savedBindings;
         }
         declarations.add('final _qd$i = $value;');
         values.add('_qd$i');

@@ -150,14 +150,10 @@ main():
         'bad(...values: int = 1) -> int = values.length\nmain():\n  print 1\n',
     'variadic bracket':
         'bad([...values: int]) -> int = values.length\nmain():\n  print 1\n',
-    'mixed value groups':
-        'mixed([value: int = 1], amount: int required) -> int = value + amount\nmain():\n  saved = mixed\n',
     'override kind':
         'class Parent:\n  read(value: int required) -> int = value\nclass Child extends Parent:\n  read(value: int) -> int = value\nmain():\n  print 1\n',
     'optional named positional':
         'bad(value: int = 1) -> int = value\nmain():\n  print bad(2)\n',
-    'mixed lambda groups':
-        'main():\n  saved = (value: int = 1, [other: int = 2]) -> value + other\n',
   };
   for (final entry in negative.entries) {
     test('parameter forms reject ${entry.key} at Quds coordinates', () {
@@ -170,6 +166,69 @@ main():
               .having((error) => error.span.file, 'source', file)));
     });
   }
+
+  test('packet values and generic constructor defaults execute', () async {
+    final provider =
+        Directory.systemTemp.createTempSync('quds-packet-provider-');
+    addTearDown(() => provider.deleteSync(recursive: true));
+    File('${provider.path}/provider.quds').writeAsStringSync('''
+_seed<T>() -> List<T> = []
+class Box<T>:
+  items: List<T>
+  init([this.items: List<T> = _seed<T>()]):
+    if items.length < 0:
+      throw "empty"
+''');
+    final file = File('${provider.path}/main.quds');
+    file.writeAsStringSync('''
+use "provider.quds" as api
+mixed([value: int = 1], amount: int required) -> int = value + amount
+join(prefix: String = "x", ...items: int) -> String = "{prefix}:{items.length}"
+tail([first: int = 1], ...items: int) -> int = first + items.length
+main():
+  saved = mixed
+  print saved(amount: 4)
+  print saved(3, amount: 4)
+  print saved == mixed
+  grouped = ([value: int = 1], amount: int required) -> value + amount
+  print grouped(amount: 5)
+  print grouped(2, amount: 5)
+  text = join
+  print text()
+  print text(1, 2, prefix: "a")
+  print text == join
+  rest = tail
+  print rest()
+  print rest(4, 8, 9)
+  print rest == tail
+  print api.Box<int>().items.length
+  print api.Box<String>(items: ["q"]).items.length
+''');
+    final compiled = compile(file.readAsStringSync(), file: file.path);
+    expect(compiled.dart, contains(r'$QudsPacket'));
+    expect(compiled.dart, isNot(contains('_seed')));
+    final implementation = compile(
+        File('${provider.path}/provider.quds').readAsStringSync(),
+        file: '${provider.path}/provider.quds');
+    expect(implementation.dart, contains(r'$QudsCtorSlots'));
+    expect(implementation.dart, contains('_q0<T>()'));
+    expect(compiled.dart, isNot(contains('_q0<T>()')));
+    final output = File('${provider.path}/main.dart')
+      ..writeAsStringSync(compiled.dart);
+    writeSdkBundles(provider.path, compiled);
+    writeSdkBundles(provider.path, implementation);
+    File('${provider.path}/provider.dart')
+        .writeAsStringSync(relocateGeneratedLibraries(implementation, '').dart);
+    final analysis = await Process.run(Platform.resolvedExecutable,
+        ['analyze', output.path, '${provider.path}/provider.dart']);
+    expect(analysis.exitCode, 0,
+        reason:
+            '${analysis.stdout}${analysis.stderr}\n${compiled.dart}\n${implementation.dart}');
+    final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
+    expect(vm.exitCode, 0,
+        reason: '${vm.stdout}${vm.stderr}\n${compiled.dart}');
+    expect(vm.stdout, '5\n7\ntrue\n6\n7\nx:0\na:2\ntrue\n1\n6\ntrue\n0\n1\n');
+  });
 
   test('parent synthesis, lambda kinds, and override widening execute',
       () async {

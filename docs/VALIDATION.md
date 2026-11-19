@@ -1,3 +1,19 @@
+# Packet values and generic constructor defaults — 2026-11-19
+
+Base: `ea105c7` on `cursor/language-remainder-b792`. ABI stays `provider-defaults-v7`.
+
+| Check | Observed result |
+| --- | --- |
+| Packet values | Mixed optional groups, a default with a variadic, and an optional positional with a variadic print `5`, `7`, `true`, `6`, `7`, `x:0`, `a:2`, `true`, `1`, `6`, `true` |
+| Generic constructor | `Box<int>()` and `Box<String>(items: ["q"])` print `0`, `1`. The provider bridge contains `_q0<T>()` and the caller does not |
+| Named default before required | `awkward<int>` and `Awkward.keep<int>` each print `4`, `4`, `true` |
+| Analysis | `dart analyze lib bin test` after `dart format`: no issues |
+| Suite | `dart test`: 729 passed, 1 failed, wall clock 6m 4s (ended 16:26 Asia/Gaza). The failure is the existing `quds create flutter writes the app in quds` case |
+
+No rule was marked `complete`. A raw Dart function value still has no omission token. Certification of the remaining rules, real F5, and pub.dev stay open.
+
+---
+
 # Method overloads and imported parent constructor defaults — 2026-11-19
 
 Base: `662adb3`. ABI: `provider-defaults-v7`.

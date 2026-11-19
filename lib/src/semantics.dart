@@ -5756,7 +5756,10 @@ class Analyzer {
                 ? '...${parameterTypes[i]}'
                 : parameterTypes[i]
           )
-      ], const {}, {
+      ], {
+        for (final parameter in method.parameters)
+          if (parameter.defaultValue != null) parameter.name
+      }, {
         for (final parameter in method.parameters)
           if (parameter.defaultValue != null) parameter.name
       }, {
@@ -5853,7 +5856,10 @@ class Analyzer {
                 ? '...${parameterTypes[i]}'
                 : parameterTypes[i]
           )
-      ], const {}, {
+      ], {
+        for (final parameter in method.parameters)
+          if (parameter.defaultValue != null) parameter.name
+      }, {
         for (final parameter in method.parameters)
           if (parameter.defaultValue != null) parameter.name
       }, {
@@ -7083,7 +7089,10 @@ class Analyzer {
               Symbol(candidate.name, declaration.dartName, returned), node, [
             for (final p in candidate.parameters)
               (p.name, p.variadic ? '...${p.type}' : p.type)
-          ], const {}, {
+          ], {
+            for (final p in candidate.parameters)
+              if (p.defaultValue != null) p.name
+          }, {
             for (final p in candidate.parameters)
               if (p.defaultValue != null) p.name
           }, {
@@ -7165,7 +7174,7 @@ class Analyzer {
       if (parameter.variadic) {
         parts.add('...${parameter.name}: $type');
       } else if (parameter.defaultValue != null) {
-        parts.add('[${parameter.name}: $type]');
+        parts.add('${parameter.name}: $type = missing');
       } else {
         parts.add('${parameter.name}: $type');
       }

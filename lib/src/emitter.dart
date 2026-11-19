@@ -39,6 +39,10 @@ class DartEmitter {
   var _useLeast = false;
   var _useGroup = false;
   var _useOptional = false;
+  var _useDefaultOmitted = false;
+  final _defaultBridges = <FunctionDeclaration>{};
+  var _defaultOmitted = r'_$qudsDefaultOmitted';
+  var _defaultOmittedClass = r'_$QudsDefaultOmitted';
   var _useResult = false;
   var _usePropagate = false;
   var _useConversion = false;
@@ -104,10 +108,20 @@ class DartEmitter {
   }
 
   String emit(Program program) {
+    _defaultBridges.addAll(model.qudsValueLowerings.values
+        .map((lowering) => lowering.function)
+        .where((function) =>
+            function.span.file == program.span.file &&
+            !model.classes.values
+                .any((owner) => owner.methods.contains(function)) &&
+            function.parameters.any((p) => p.defaultValue != null)));
     _hasParts = program.statements.any((node) => node is PartDirective);
     _isPart =
         program.statements.any((node) => node is PartDirective && node.of);
     if (_hasParts) {
+      final salt = sha256Hex(utf8.encode(program.span.file)).substring(0, 12);
+      _defaultOmitted += '_$salt';
+      _defaultOmittedClass += '_$salt';
       _knownGuardsName +=
           '_${sha256Hex(utf8.encode(program.span.file)).substring(0, 12)}';
       _requireReadonlyRuntime();
@@ -493,6 +507,11 @@ class DartEmitter {
     }
     if (_useTests) {
       helpers.writeln('var _qTestFailed = 0;');
+    }
+    if (_useDefaultOmitted) {
+      helpers.writeln(
+          'class $_defaultOmittedClass { const $_defaultOmittedClass(); }\n'
+          'const $_defaultOmitted = $_defaultOmittedClass();');
     }
     if (_useOptional) {
       helpers.writeln('class Optional<T> {\n'
@@ -909,7 +928,34 @@ class DartEmitter {
     }
   }
 
+  String _defaultBridgeName(FunctionDeclaration node) =>
+      r'_$qudsDefault_' + model.declarations[node]!.dartName;
+
   void emitFunction(FunctionDeclaration node) {
+    _emitFunctionBody(node);
+    if (!_defaultBridges.contains(node)) return;
+    final savedGenerics = _openGenerics;
+    _openGenerics = {
+      ..._openGenerics,
+      for (final p in node.typeParameters) p.name
+    };
+    try {
+      final symbol = model.declarations[node]!;
+      final lowering = QudsValueLowering(
+          node,
+          node.typeParameters.map((p) => p.name).toList(),
+          node.parameters.map((p) => model.declarations[p]!.type).toList());
+      final body = _valueAdapter(symbol.dartName, lowering, declaration: true);
+      final returned = _dartType(symbol.type);
+      final generics = _typeParameters(node.typeParameters, const []);
+      line('${node.isStatic ? 'static ' : ''}$returned '
+          '${_defaultBridgeName(node)}$generics$body');
+    } finally {
+      _openGenerics = savedGenerics;
+    }
+  }
+
+  void _emitFunctionBody(FunctionDeclaration node) {
     _span = node.span;
     final savedGenerics = _openGenerics;
     _openGenerics = {
@@ -3363,9 +3409,12 @@ class DartEmitter {
     final lowering = model.qudsValueLowerings[node]!;
     final function = lowering.function;
     final declared = model.declarations[function]!;
+    final implementation = _defaultBridges.contains(function)
+        ? _defaultBridgeName(function)
+        : declared.dartName;
     String target;
     if (node is MemberAccess) {
-      final method = declared.dartName;
+      final method = implementation;
       if (lowering.staticOwner != null) {
         target = '${_dartType(lowering.staticOwner!)}.$method';
       } else if (node.nullAware) {
@@ -3379,14 +3428,17 @@ class DartEmitter {
         return '((${_dartType(model.types[node.object]!)} $receiver) => $body)(${expression(node.object)})';
       }
     } else {
-      target = node is Identifier
-          ? _identifier(node)
-          : expression(node is TypeApplication ? node.callee : node);
+      target = _defaultBridges.contains(function)
+          ? implementation
+          : node is Identifier
+              ? _identifier(node)
+              : expression(node is TypeApplication ? node.callee : node);
     }
     return _valueAdapter(target, lowering);
   }
 
-  String _valueAdapter(String target, QudsValueLowering lowering) {
+  String _valueAdapter(String target, QudsValueLowering lowering,
+      {bool declaration = false}) {
     final function = lowering.function;
     final hidden = <String>[];
     for (var i = 0; i < function.parameters.length; i++) {
@@ -3396,36 +3448,51 @@ class DartEmitter {
     final arguments = [...lowering.typeArguments, ...hidden];
     if (arguments.isNotEmpty)
       target = '$target<${arguments.map(_dartType).join(', ')}>';
+    if (!declaration && _defaultBridges.contains(function)) return target;
     if (function.parameters
         .every((parameter) => parameter.defaultValue == null)) return target;
     final required = <String>[];
     final optional = <String>[];
     final passed = <String>[];
-    for (var i = 0; i < function.parameters.length; i++) {
-      final parameter = function.parameters[i];
-      final dartName = model.declarations[parameter]!.dartName;
-      final raw = lowering.parameterTypes[i];
-      final type = raw.contains(' & ') ? raw.split(' & ').first.trim() : raw;
-      final dartType = _dartType(type);
-      if (parameter.variadic) {
-        required.add('List<$dartType> $dartName');
-        passed.add(dartName);
-      } else if (parameter.defaultValue != null) {
-        _useOptional = true;
-        optional.add('Object? $dartName = missing');
-        final fallback = expression(parameter.defaultValue!);
-        passed.add(
-            'identical($dartName, missing) ? $fallback : $dartName as $dartType');
-      } else {
-        required.add('$dartType $dartName');
-        passed.add(dartName);
+    final statements = <String>[];
+    final savedNames = _names;
+    _names = {..._names};
+    try {
+      for (var i = 0; i < function.parameters.length; i++) {
+        final parameter = function.parameters[i];
+        final dartName = model.declarations[parameter]!.dartName;
+        final raw = lowering.parameterTypes[i];
+        final type = raw.contains(' & ') ? raw.split(' & ').first.trim() : raw;
+        final dartType = _dartType(type);
+        if (parameter.variadic) {
+          required.add('List<$dartType> $dartName');
+          passed.add(dartName);
+        } else if (parameter.defaultValue != null) {
+          _useDefaultOmitted = true;
+          final suppliedName = parameter.name;
+          optional.add('Object? $suppliedName = $_defaultOmitted');
+          final fallback = expression(parameter.defaultValue!);
+          final resolved = '_qdefault${_temps++}';
+          final supplied = type == 'Object?' || type == 'dynamic'
+              ? suppliedName
+              : '$suppliedName as $dartType';
+          statements.add('final $dartType $resolved = '
+              'identical($suppliedName, $_defaultOmitted) ? $fallback : $supplied;');
+          _names[dartName] = resolved;
+          passed.add(resolved);
+        } else {
+          required.add('$dartType $dartName');
+          passed.add(dartName);
+        }
       }
+      final signature = [
+        ...required,
+        if (optional.isNotEmpty) '{${optional.join(', ')}}',
+      ].join(', ');
+      return '($signature) { ${statements.join(' ')} return $target(${passed.join(', ')}); }';
+    } finally {
+      _names = savedNames;
     }
-    final signature = [
-      ...required,
-      if (optional.isNotEmpty) '[${optional.join(', ')}]',
-    ].join(', ');
-    return '($signature) => $target(${passed.join(', ')})';
   }
 
   String _instantiateNativeValue(Expression callee, List<String> arguments) {

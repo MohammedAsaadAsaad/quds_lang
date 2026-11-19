@@ -754,7 +754,8 @@
         "test/quds_value_adapters_web.quds"
       ],
       "known_limits": [
-        "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. Awkward parameter order, default-plus-variadic values, parameterized readonly result guards, method overloads, full constraint solving, and polymorphic callbacks remain limited."
+        "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. Awkward parameter order, default-plus-variadic values, parameterized readonly result guards, method overloads, full constraint solving, and polymorphic callbacks remain limited.",
+        "Defaulted value slots are named optional, with a private omission token and sequential resolved defaults. Same-file function bridges preserve repeated reference equality. Method/imported adapter identity and complete direct-call parameter-form parity remain unfinished."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1395,7 +1396,11 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/quds_value_adapters.quds",
+        "test/quds_value_adapters_test.dart",
+        "test/quds_value_adapters_web.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -1451,7 +1456,11 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/quds_value_adapters.quds",
+        "test/quds_value_adapters_test.dart",
+        "test/quds_value_adapters_web.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -1867,7 +1876,11 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/quds_value_adapters.quds",
+        "test/quds_value_adapters_test.dart",
+        "test/quds_value_adapters_web.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],

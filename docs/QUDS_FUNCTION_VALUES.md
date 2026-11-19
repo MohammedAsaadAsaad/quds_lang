@@ -61,13 +61,41 @@ returns and single-function imports with declared return types remain covered.
 The later value-adapter batch also stores functions that have defaults, variadic
 parameters, or intersection parameters.
 
-A stored default becomes a Dart closure. Omission is the sentinel `missing`,
-which is distinct from an explicit null. A computed default may still refer only
-to earlier parameters. A variadic value has the Quds type `(...items: T) -> R`
-and the Dart type `R Function(List<T>)`; call sites pack arguments and spreads.
-An intersection parameter keeps its hidden Dart type parameter and runtime
-check. Direct calls still fill defaults at the call site; the closure exists
-only when the function is stored or passed as a value.
+### Computed defaults: corrected value contract (2026-11-19)
+
+```quds
+combine(first: int = 3, second: int = first) -> int = first * 10 + second
+main():
+  saved = combine
+  print saved()                // 33
+  print saved(first: 4)        // 44
+  print saved == combine      // true: local named bridge
+```
+
+As required by specification 1.2, a defaulted parameter is named-only through
+these function and method values. The earlier adapter batch exposed it as an
+optional positional parameter; this was an implementation conflict, not an
+approved syntax change. Explicit function signatures use
+`(value: int? = missing) -> int?`, rather than `([value: int?]) -> int?`.
+Direct declaration calls still use their legacy matching path, which remains
+more permissive and needs a separate parameter-metadata milestone.
+
+Supplied expressions execute first, once in source order. Omitted defaults then
+resolve to typed locals once in declaration order; later defaults see the
+resolved earlier value. A thrown default prevents entering the target body.
+The internal omission token is distinct from both explicit null and the public
+`missing` value. No default is evaluated while taking a reference.
+
+Local and same-file function definitions emit a private named bridge beside
+the original definition. Repeated references share normal Dart tear-off equality,
+including generic specialization; lexical mutable captures remain live.
+Default-bearing method and imported function references still use closures and
+do not yet have the same identity guarantee. Provider-private default expressions
+and method receiver/readonly bridge contracts need further conformance work.
+
+A variadic value has the Quds type `(...items: T) -> R` and the Dart type
+`R Function(List<T>)`; call sites pack arguments and spreads. An intersection
+parameter keeps its hidden Dart type parameter and runtime check.
 
 Imported overloads with different signatures keep the holder name and publish
 `name$1`, `name$2`, and so on, in source order. The same signature, or a class

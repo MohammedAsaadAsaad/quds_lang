@@ -14,7 +14,19 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     expect(
         '${result.stdout}'.split('\n').where((line) => line.startsWith('ok ')),
-        hasLength(5));
+        hasLength(10));
+  });
+
+  test('default value slots are named-only', () {
+    expect(
+        () => compile('''
+choose(value: int = 1) -> int = value
+main():
+  saved = choose
+  print saved(2)
+''', file: 'default_named.quds'),
+        throwsA(isA<CompilerException>()
+            .having((error) => error.code, 'code', 'E300')));
   });
 
   test('deferred imports and guarded results keep their diagnostics', () {
@@ -83,7 +95,8 @@ main():
         reason: '${analysis.stdout}${analysis.stderr}');
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stderr}');
-    expect(vm.stdout, 'Quds\nempty\n4\n2\nnull\nAda\n6\n3\ninteger\ntext\n');
+    expect(vm.stdout,
+        'Quds\nempty\n4\n2\nnull\nAda\n6\n3\ninteger\ntext\n33\n44\ndefault\nnull\ntrue\ntrue\n1\n');
     final js = '${root.path}/program.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);

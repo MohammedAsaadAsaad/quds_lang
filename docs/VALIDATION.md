@@ -1,3 +1,43 @@
+# Default value adapter correction — 2026-11-19
+
+Base: `e7d4aa0`. Handoff was updated before implementation in
+[LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+
+- Reproduced invalid generated Dart when an omitted default referred to an earlier
+  omitted default. Sequential typed locals now resolve defaults exactly once.
+- A private omission token distinguishes explicit `missing` and null from omission.
+- Stored default slots are named optional, following spec 1.2. The previous
+  optional-positional adapter was an implementation conflict. Direct-call matching
+  and complete required-named/bracket metadata are separate unfinished work.
+- Same-file function bridges preserve repeated reference equality, including
+  explicit/contextual generic specialization. Method/import adapters still use
+  closures and do not yet have the same identity guarantee.
+
+| Check | Observed result |
+| --- | --- |
+| Focused value drivers | 72 passed in 17s after named-slot and bridge changes |
+| Final adapter driver | 4 passed in 6s; primary Quds suite has 10 declarations |
+| New Quds regressions | Earlier defaults, fresh per-call evaluation, supplied-before-default order, explicit null/missing, reference equality and failing default before body |
+| Generated output | Deterministic compilation; Dart analysis; actual VM and JavaScript/Node agree on 17 lines |
+| Documentation example | Actual `quds run /tmp/quds-default-doc.quds`: `33`, `44`, `true` |
+| Package formatting | 101 files, zero changes on final format check |
+| Static analysis | `dart analyze`: no issues found |
+| Readiness/catalog/whitespace | Inventory regenerated and checked; keyword sync and `git diff --check` passed |
+| Final full suite | **700 passed, zero failures or skips, in 9m55s** |
+
+An additional self-referencing default exposed an adapter being expanded again
+while its named bridge was being emitted. Bridge declaration lowering is now an
+explicit call-local option, so taking a nested reference uses the existing bridge.
+The regression executes on VM/JavaScript. The initial full run was interrupted
+at 289 passing tests to apply that correction; interrupted tests are not claimed
+as a completed result. The fresh full run uses the final source.
+
+The earlier local uncommitted adapter implementation is preserved in Git stash;
+this correction is applied to the other agent's merged source, not overlaid onto
+it. No environment publication or pub.dev release is part of this change.
+
+---
+
 # Compiler validation — latest 2026-11-18
 
 ## Windows portable line endings and import paths — 2026-11-18

@@ -22,10 +22,10 @@ extend String:
 main():
   saved = text
   print saved()
-  print saved(null)
+  print saved(value: null)
   print offset(2)
   print count(1, 2)
-  omitted: ([value: int?]) -> int? = optional
+  omitted: (value: int? = missing) -> int? = optional
   print omitted()
   print showName(Person(name: "Ada", age: 3))
   print Derived.echo<int>(6)
@@ -33,3 +33,16 @@ main():
   integer: (int) -> String = helpers.pick
   print integer(1)
   print helpers.pick("a")
+  sample(first: int = 3, second: int = first) -> int = first * 10 + second
+  dependent = sample
+  print dependent()
+  print dependent(first: 4)
+  choose(value: Object? = "default") -> Object? = value
+  distinguish = choose
+  print distinguish()
+  print distinguish(value: null)
+  print distinguish(value: missing) == missing
+  print dependent == sample
+  selfDefault(value: Object? = selfDefault) -> int = 1
+  selfReference = selfDefault
+  print selfReference()

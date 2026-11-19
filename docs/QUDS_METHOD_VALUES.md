@@ -94,3 +94,11 @@ rejection map in its driver, `test/quds_value_adapters.quds`, a deterministic
 Dart golden, entry analysis and VM/JavaScript execution. Exact results and the
 active next-agent steps live in [VALIDATION.md](VALIDATION.md) and
 [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).
+
+## Default adapter correction — 2026-11-19
+
+Defaulted slots on stored methods are named optional slots, as required by spec
+1.2. For example, `kept = Limited().keep<int>` uses `kept(8, times: 2)`.
+Defaults resolve once in declaration order and distinguish explicit missing
+from omission. Method adapters still use closures; stable repeated bound-method
+identity is not claimed by this correction. See [QUDS_FUNCTION_VALUES.md](QUDS_FUNCTION_VALUES.md).

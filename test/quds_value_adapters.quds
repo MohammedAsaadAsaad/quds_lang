@@ -30,11 +30,11 @@ extend String:
 test "default omission stays distinct from explicit null":
   saved = text
   expect(saved(), "Quds")
-  expect(saved(null), "empty")
-  expect(saved("Ada"), "Ada")
+  expect(saved(value: null), "empty")
+  expect(saved(value: "Ada"), "Ada")
   shifted = offset
   expect(shifted(2), 4)
-  expect(shifted(2, 5), 7)
+  expect(shifted(2, extra: 5), 7)
 
 test "variadic values pack arguments and spreads":
   saved = count
@@ -47,15 +47,17 @@ test "variadic values pack arguments and spreads":
   expect(summed(7, 1, 1), 9)
 
 test "generic defaults intersection methods extensions and imports":
-  omitted: ([value: int?]) -> int? = optional
+  omitted: (value: int? = missing) -> int? = optional
+  explicit = optional<int>
+  expect(explicit == omitted, true)
   expect(omitted(), null)
-  expect(omitted(4), 4)
+  expect(omitted(value: 4), 4)
   person = Person(name: "Ada", age: 3)
   named = showName
   expect(named(person), "Ada")
   kept = Limited().keep<int>
   expect(kept(8), 8)
-  expect(kept(8, 2), 8)
+  expect(kept(8, times: 2), 8)
   head = Limited().first<String>
   expect(head("a", "b"), "a")
   staticValue = Derived.echo<int>
@@ -74,3 +76,59 @@ test "a readonly method value guards its result":
 test "deferred libraries load through their prefix" async:
   await math.loadLibrary()
   expect(math.min(1, 2), 1)
+
+class DefaultTrace:
+  var calls: int = 0
+  nextValue() -> int:
+    calls += 1
+    return calls
+
+test "defaults resolve once before dependent defaults":
+  trace = DefaultTrace()
+  sample(first: int = trace.nextValue(), second: int = first) -> int = first * 10 + second
+  saved = sample
+  expect(saved == sample, true)
+  expect(trace.calls, 0)
+  expect(saved(), 11)
+  expect(trace.calls, 1)
+  expect(saved(first: 4), 44)
+  expect(trace.calls, 1)
+  expect(saved(), 22)
+  expect(trace.calls, 2)
+
+test "explicit missing is supplied rather than omitted":
+  choose(value: Object? = "default") -> Object? = value
+  saved = choose
+  expect(saved(), "default")
+  expect(saved(value: null), null)
+  expect(saved(value: missing), missing)
+
+test "supplied effects precede defaults":
+  trace = DefaultTrace()
+  compute(first: int = trace.nextValue(), second: int = first) -> int = first * 10 + second
+  saved = compute
+  expect(saved(second: trace.nextValue()), 21)
+  expect(trace.calls, 2)
+  expect(saved == compute, true)
+
+test "a failing default prevents entering the body":
+  trace = DefaultTrace()
+  failValue() -> int:
+    throw "default failed"
+  perform(value: int = failValue()) -> int:
+    trace.nextValue()
+    return value
+  saved = perform
+  try:
+    saved()
+  catch problem:
+    expect(problem, "default failed")
+  expect(trace.calls, 0)
+  expect(saved(value: 7), 7)
+  expect(trace.calls, 1)
+
+selfDefault(value: Object? = selfDefault) -> int = 1
+
+test "a default may store its own function reference":
+  saved = selfDefault
+  expect(saved(), 1)

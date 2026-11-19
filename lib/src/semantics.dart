@@ -468,6 +468,17 @@ class SemanticModel {
   }
 
   final wrapAs = <Expression, String>{};
+
+  /// Dart prefix, including the dot, for a binding whose union lives in an
+  /// imported library. An empty string is an unprefixed import.
+  final unionPrefixes = <Symbol, String>{};
+
+  /// Same prefix for one expression that must be wrapped as that library's
+  /// sealed union. Absent means the union class is emitted in this library.
+  final unionWrapPrefixes = <Expression, String>{};
+
+  /// Tear-off whose function type mentions a union owned by the import prefix.
+  final unionExpressionPrefixes = <Expression, String>{};
   final captures = <CaptureExpression, List<(Symbol outer, Symbol copy)>>{};
   final shapes = <Node, List<String>>{};
   final skipped = <Statement>{};
@@ -4002,6 +4013,7 @@ class Analyzer {
                 node.mode == BindingMode.lateMutable);
         _scope.symbols[node.name] = symbol;
         model.declarations[node] = symbol;
+        _rememberUnionHome(symbol, node.value);
         _rememberGapValue(symbol, node.value);
       case IfStatement():
         _requireBool(node.condition, 'if condition must be bool');
@@ -6133,9 +6145,14 @@ class Analyzer {
         }
         model.references[node] = found;
         _touch(found);
-        return _qudsFunctionValue(found, node) ??
+        final signature = _qudsFunctionValue(found, node) ??
             _nativeFunctionValue(found, node) ??
             found.type;
+        if (signature.contains(' | ') && node.object is Identifier) {
+          model.unionExpressionPrefixes[node] =
+              '${(node.object as Identifier).name}.';
+        }
+        return signature;
       }
     }
     final raw = expression(node.object);
@@ -9168,6 +9185,8 @@ class Analyzer {
       _expected = saved;
       if (!_acceptExpected(argument.value, actual, expected))
         fail('Argument type $actual is incompatible with $expected', argument);
+      _noteUnionWrap(
+          argument.value, actual, expected, _calleeUnionPrefix(node.callee));
       order[target] = i;
     }
     var omitted = false;
@@ -10064,6 +10083,54 @@ class Analyzer {
     }
   }
 
+  void _rememberUnionHome(Symbol symbol, Expression value) {
+    final prefix = model.unionExpressionPrefixes[value];
+    if (prefix == null || !symbol.type.contains(' | ')) return;
+    model.unionPrefixes[symbol] = prefix;
+  }
+
+  /// Null when the union class belongs to this library. An empty string is an
+  /// unprefixed import; `api.` is that import's Dart prefix.
+  String? _importedUnionPrefix(FunctionDeclaration? function) {
+    final home =
+        function == null ? '' : model.declarations[function]?.library ?? '';
+    if (home.isEmpty || home == _activeLibrary) return null;
+    for (final node in model.imports) {
+      if (node.export) continue;
+      if (_resolveLibrary(_file, node.uri) != home) continue;
+      final name = node.prefix;
+      return name == null || name.isEmpty ? '' : '$name.';
+    }
+    return '';
+  }
+
+  String? _calleeUnionPrefix(Expression callee) {
+    if (callee is Identifier) {
+      final symbol = model.references[callee];
+      if (symbol != null && model.unionPrefixes.containsKey(symbol)) {
+        return model.unionPrefixes[symbol];
+      }
+      return _importedUnionPrefix(symbol?.function);
+    }
+    if (callee is MemberAccess && callee.object is Identifier) {
+      final owner = model.references[callee.object];
+      if (owner?.namespace != null) {
+        return '${(callee.object as Identifier).name}.';
+      }
+    }
+    return null;
+  }
+
+  void _noteUnionWrap(
+      Expression value, String actual, String expected, String? prefix) {
+    final wanted = _resolveType(expected);
+    final got = _resolveType(actual);
+    if (functionTypeParts(wanted) != null || !wanted.contains(' | ')) return;
+    if (got == wanted || got.contains(' | ')) return;
+    model.wrapAs[value] = wanted;
+    if (prefix != null) model.unionWrapPrefixes[value] = prefix;
+  }
+
   String applyArguments(CallExpression node, List<Parameter> parameters,
       FunctionDeclaration? function,
       {_CheckedArguments? checked,
@@ -10207,9 +10274,12 @@ class Analyzer {
       if (isHole(argument.value)) continue;
       final actual =
           verified.types[argument.value] ?? model.types[argument.value]!;
-      if (!compatible(actual, _substitute(parameters[i].type, inferred))) {
+      final expected = _substitute(parameters[i].type, inferred);
+      if (!compatible(actual, expected)) {
         fail('Inferred type does not accept argument $actual', argument);
       }
+      _noteUnionWrap(
+          argument.value, actual, expected, _importedUnionPrefix(function));
     }
     if (function != null &&
         function.typeParameters.isNotEmpty &&

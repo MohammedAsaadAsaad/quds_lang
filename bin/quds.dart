@@ -1578,9 +1578,17 @@ Future<void> _runFlutter(File input, List<String> arguments,
     environment: desktopLaunchEnvironment(Platform.environment),
     includeParentEnvironment: false,
   );
-  final terminal = stdin.hasTerminal;
-  final echo = terminal ? stdin.echoMode : true;
-  final line = terminal ? stdin.lineMode : true;
+  var terminal = stdin.hasTerminal;
+  var echo = true;
+  var line = true;
+  if (terminal) {
+    try {
+      echo = stdin.echoMode;
+      line = stdin.lineMode;
+    } on StdinException {
+      terminal = false;
+    }
+  }
   final interrupt = ProcessSignal.sigint
       .watch()
       .listen((_) => process.kill(ProcessSignal.sigint));
@@ -1599,8 +1607,12 @@ Future<void> _runFlutter(File input, List<String> arguments,
   } finally {
     await interrupt.cancel();
     if (terminal) {
-      stdin.echoMode = echo;
-      stdin.lineMode = line;
+      try {
+        stdin.echoMode = echo;
+        stdin.lineMode = line;
+      } on StdinException {
+        // The controlling terminal can close before raw mode is restored.
+      }
     }
   }
 }

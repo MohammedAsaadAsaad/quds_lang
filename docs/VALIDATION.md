@@ -1,3 +1,28 @@
+# Union call boundaries and the Flutter engine — 2026-11-19
+
+Base: `2f3e8d0`. Generated ABI stays `provider-defaults-v12`.
+
+| Check | Observed result |
+| --- | --- |
+| Union failure before the fix | A call passed a raw `int` to `QudsUnion_int_or_String`, and `is int` still read the wrapper |
+| Quds test | `quds test test/union_boundaries.quds` prints `ok union calls wrap and narrowing unwraps` |
+| Generated boundary | Local calls wrap `QudsUnion_int_or_String_int`. Imported calls wrap `api.QudsUnion_int_or_String_int`. Narrowed uses read `.value` |
+| VM and JavaScript | Both print `n1`, `sa`, `n2`, `sb`, `4` |
+| Re-emit | `quds test` emits twice. `wrapAs` is restored so the second emit still wraps |
+| Flutter Linux debug | `flutter build linux --debug -t lib/quds_gen/main.dart` built `build/linux/x64/debug/bundle/hello_world` |
+| Flutter Linux profile and release | Both bundles built |
+| Flutter web | `flutter build web --debug` and `--release` built `build/web` |
+| Live session | `quds run -d linux --debug` reached Impeller. Saving `main.quds` logged `Reloaded 1 of 757 libraries in 188ms` and `Quds: Flutter update completed`. `R` logged `Restarted application in 285ms` |
+| Breakpoint | `quds debug` stopped with reason `breakpoint` at `main.quds:18`, frame `HomeState.build`, local `context` |
+| Not certified | Breakpoint retention after a later hot reload. Android, iOS, Windows, and macOS. No pub.dev publish |
+| Terminal | `stdin.echoMode` is read and restored only when the call succeeds. A closed descriptor no longer aborts `quds run` |
+| Analysis | `dart analyze lib bin test`: no issues. `python3 tool/audit_language.py`: 115 decisions, no unearned complete |
+| Suite | `dart test`: 771 passed, reporter 06:23, wall 384579 ms |
+
+No rule was marked `complete`. A returning `is` does not narrow the following code to the remaining union arm. Foreign Dart implementors stay unfinished.
+
+---
+
 # SDK, owner, and reference-identity bridges — 2026-11-19
 
 Base: `9619805`. Generated ABI: `provider-defaults-v12`.

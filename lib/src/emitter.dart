@@ -59,6 +59,10 @@ class DartEmitter {
   Expression? _replace;
   Expression? _replaceWith;
   String? _matched;
+
+  /// Null emits this library's sealed union. An empty string names an
+  /// unprefixed import; `api.` qualifies that import.
+  String? _importedUnionPrefix;
   StringBuffer? _redirect;
   final _unions = <String>{};
   int _depth = 0;
@@ -639,7 +643,7 @@ class DartEmitter {
           '  final Object? value;\n'
           '}');
     }
-    for (final union in _unions) {
+    for (final union in [..._unions]) {
       final name = _unionClass(union);
       final parts = union.split(' | ').map((part) => part.trim());
       helpers.writeln('sealed class $name { const $name(); }');
@@ -2001,8 +2005,14 @@ class DartEmitter {
     if (type.contains(' & ') && functionTypeParts(type) == null) {
       return _dartType(type.split(' & ').first.trim());
     }
-    if (type.contains(' | ') && functionTypeParts(type) == null)
-      return _unionClass(type);
+    if (type.contains(' | ') && functionTypeParts(type) == null) {
+      final name = _unionClass(type);
+      if (_importedUnionPrefix == null) {
+        _unions.add(type);
+        return name;
+      }
+      return '$_importedUnionPrefix$name';
+    }
     if (isNullableType(type)) {
       return '${_dartType(nonNullableType(type))}?';
     }
@@ -3049,7 +3059,7 @@ class DartEmitter {
               expression(node.value, constantContext: symbol.constant);
           final declared = symbol.type == 'dynamic'
               ? (_externalConstructor(node.value) ?? _dartType(symbol.type))
-              : _dartType(symbol.type);
+              : _typeOf(symbol);
           line('$modifier$declared ${symbol.dartName} = $initializer;');
         }
       case ReturnStatement():
@@ -3787,12 +3797,20 @@ class DartEmitter {
     // A const or literal bool is reachable to Dart's analyzer when it is
     // hidden behind an identity call. The operand is still read once.
     if (model.wrapAs[node] case final union?) {
+      // A second emit, used by quds test, must see the same wrap. Remove it
+      // only while the inner expression is rendered so this does not recurse.
       model.wrapAs.remove(node);
-      final innerType = model.types[node]!;
-      final inner = expression(node,
-          constantContext: constantContext, opaqueBool: opaqueBool);
-      _unions.add(union);
-      return '${_unionClass(union)}_${_alt(innerType)}($inner)';
+      try {
+        final innerType = model.types[node]!;
+        final inner = expression(node,
+            constantContext: constantContext, opaqueBool: opaqueBool);
+        final prefix = model.unionWrapPrefixes[node];
+        if (prefix == null) _unions.add(union);
+        final owner = prefix ?? '';
+        return '$owner${_unionClass(union)}_${_alt(innerType)}($inner)';
+      } finally {
+        model.wrapAs[node] = union;
+      }
     }
     if (opaqueBool && !constantContext && _opaqueBoolLeaf(node)) {
       _useBoolHelper = true;
@@ -4391,7 +4409,10 @@ class DartEmitter {
     return open < 0 ? type : type.substring(0, open);
   }
 
-  String _identifier(Identifier node) {
+  String _identifier(Identifier node) =>
+      _unwrapPromotedUnion(node, _renderIdentifier(node));
+
+  String _renderIdentifier(Identifier node) {
     if (_defaultReceiver != null &&
         (model.implicitThis.contains(node) ||
             model.references[node]?.field == true)) {
@@ -6067,6 +6088,31 @@ class DartEmitter {
       parts.add(_piece(node.elements[i], element, aware));
     }
     return '<$element>{${parts.join(', ')}}';
+  }
+
+  String _typeOf(Symbol symbol) {
+    if (!model.unionPrefixes.containsKey(symbol)) return _dartType(symbol.type);
+    final saved = _importedUnionPrefix;
+    _importedUnionPrefix = model.unionPrefixes[symbol];
+    try {
+      return _dartType(symbol.type);
+    } finally {
+      _importedUnionPrefix = saved;
+    }
+  }
+
+  String _unwrapPromotedUnion(Identifier node, String rendered) {
+    final symbol = model.references[node];
+    if (symbol == null) return rendered;
+    final stored = symbol.type;
+    if (!stored.contains(' | ') || functionTypeParts(stored) != null) {
+      return rendered;
+    }
+    final used = model.types[node];
+    if (used == null || used == stored || used.contains(' | ')) return rendered;
+    final arms = stored.split(' | ').map((part) => part.trim());
+    if (!arms.contains(used)) return rendered;
+    return '($rendered).value';
   }
 
   String _unionClass(String type) =>

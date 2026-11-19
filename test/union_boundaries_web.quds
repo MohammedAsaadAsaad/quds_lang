@@ -1,0 +1,19 @@
+use fixtures.union_boundaries.provider as api
+
+local(value: int | String) -> String:
+  if value is int:
+    return "n{value}"
+  if value is String:
+    return "s{value}"
+  return ""
+
+main():
+  saved = local
+  print saved(1)
+  print local("a")
+  taken = api.classify
+  print taken(2)
+  print api.classify("b")
+  held: int | String = 3
+  if held is int:
+    print held + 1

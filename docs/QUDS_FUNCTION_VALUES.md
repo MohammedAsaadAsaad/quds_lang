@@ -126,9 +126,9 @@ supported generic and non-generic declaring-interface contracts and repeated-ref
 equality across virtual dispatch. Provider class/alias, record and callback signatures
 are covered by the ABI v4 continuation. A sealed union parameter is now
 wrapped at the call and unwrapped after `is`; an imported prefixed signature
-uses that library's `QudsUnion` class. Code after a returning `is` check is
-not narrowed to the remaining arm. Foreign implementor certification remains
-separate work.
+uses that library's `QudsUnion` class. A returning `is` check narrows a
+two-arm union to the other arm. A wider union keeps its sealed representation.
+Foreign implementor certification remains separate work.
 
 The ABI v5 [parameter-form continuation](QUDS_PARAMETER_FORMS.md) preserves
 required named and bracketed optional positional declaration kinds, including

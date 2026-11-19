@@ -1,6 +1,4 @@
 classify(value: int | String) -> String:
   if value is int:
     return "n{value}"
-  if value is String:
-    return "s{value}"
-  return ""
+  return "s{value}"

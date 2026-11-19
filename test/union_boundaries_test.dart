@@ -16,7 +16,7 @@ void main() {
     final source = File('test/union_boundaries_web.quds').absolute;
     final result = compile(source.readAsStringSync(), file: source.path);
     expect(result.dart, contains('api.QudsUnion_int_or_String_int(2)'));
-    expect(result.dart, contains('(_q1).value'));
+    expect(result.dart, contains('as QudsUnion_int_or_String_String).value'));
     expect(
         result.dart,
         File('test/goldens/union_boundaries.dart.txt')

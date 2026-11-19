@@ -3,9 +3,7 @@ use fixtures.union_boundaries.provider as api
 local(value: int | String) -> String:
   if value is int:
     return "n{value}"
-  if value is String:
-    return "s{value}"
-  return ""
+  return "s{value}"
 
 test "union calls wrap and narrowing unwraps":
   saved = local

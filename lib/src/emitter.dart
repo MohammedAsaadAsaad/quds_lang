@@ -60,6 +60,10 @@ class DartEmitter {
   Expression? _replaceWith;
   String? _matched;
 
+  /// The scrutinee is promoted by the surrounding union case, so `.value` is
+  /// visible without a cast.
+  var _insideUnionCase = false;
+
   /// Null emits this library's sealed union. An empty string names an
   /// unprefixed import; `api.` qualifies that import.
   String? _importedUnionPrefix;
@@ -3337,7 +3341,15 @@ class DartEmitter {
               arm.guard == null ? '' : ' when ${expression(arm.guard!)}';
           line('case ${_pattern(arm.pattern)}$guard:');
           _depth++;
+          final savedInside = _insideUnionCase;
+          if (_matched != null &&
+              _matched!.contains(' | ') &&
+              arm.pattern is TypedPattern &&
+              (arm.pattern as TypedPattern).name == null) {
+            _insideUnionCase = true;
+          }
           statements(arm.body);
+          _insideUnionCase = savedInside;
           _depth--;
         }
         if (model.warnings.any((warning) =>
@@ -3384,9 +3396,17 @@ class DartEmitter {
           line('if ($scrutinee case ${_pattern(node.pattern)}) {');
         }
         _matched = savedMatched;
+        final savedInside = _insideUnionCase;
+        if (matched != null &&
+            matched.contains(' | ') &&
+            typed != null &&
+            typed.name == null) {
+          _insideUnionCase = true;
+        }
         _depth++;
         statements(node.body);
         _depth--;
+        _insideUnionCase = savedInside;
         line('}');
       case WhenStatement():
         if (model.skipped.contains(node)) break;
@@ -6112,7 +6132,10 @@ class DartEmitter {
     if (used == null || used == stored || used.contains(' | ')) return rendered;
     final arms = stored.split(' | ').map((part) => part.trim());
     if (!arms.contains(used)) return rendered;
-    return '($rendered).value';
+    if (_insideUnionCase) return '($rendered).value';
+    final prefix = model.unionPrefixes[symbol] ?? '';
+    final cast = '$prefix${_unionClass(stored)}_${_alt(used)}';
+    return '($rendered as $cast).value';
   }
 
   String _unionClass(String type) =>

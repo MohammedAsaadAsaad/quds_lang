@@ -18,10 +18,7 @@ String _q0(QudsUnion_int_or_String _q1) {
   if (_q1 case QudsUnion_int_or_String_int()) {
     return ["n", (_q1).value].join();
   }
-  if (_q1 case QudsUnion_int_or_String_String()) {
-    return ["s", (_q1).value].join();
-  }
-  return "";
+  return ["s", (_q1 as QudsUnion_int_or_String_String).value].join();
 }
 
 void main() {

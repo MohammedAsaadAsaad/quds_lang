@@ -843,7 +843,7 @@
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. A named default before a required parameter and a default together with a variadic can be stored as values. Full constraint solving and polymorphic callbacks remain limited. Concrete class method overloads select at compile time. Parameterized readonly method results wrap the adapter invocation when the readonly view is wider.",
-        "Defaulted value slots retain provider-owned omission and sequential defaults. Public ordinary-class methods and generic interface contracts with supported signatures preserve repeated-reference equality, including readonly proxies and virtual dispatch. An expression-bodied interface default with an inferred result uses the declaring library resolver, including a private helper. An SDK section function with a supported default is stored and called through the bridge already emitted by that SDK library. Value classes, mixins, and protected methods use the same declaring-library bridge. Extension values and intersection defaults share one identity-keyed closure, including an Object that holds a primitive, a generic specialization, a readonly result, and a different receiver. A sealed union parameter is wrapped at the call and unwrapped after is. An imported prefixed signature uses that library's QudsUnion class. Code after a returning is check is not narrowed to the remaining arm. Provider lexical class/alias, record and callback signatures are covered by ABI v4. Foreign Dart implementors and expanded part/cycle/conditional-export certification remain unfinished.",
+        "Defaulted value slots retain provider-owned omission and sequential defaults. Public ordinary-class methods and generic interface contracts with supported signatures preserve repeated-reference equality, including readonly proxies and virtual dispatch. An expression-bodied interface default with an inferred result uses the declaring library resolver, including a private helper. An SDK section function with a supported default is stored and called through the bridge already emitted by that SDK library. Value classes, mixins, and protected methods use the same declaring-library bridge. Extension values and intersection defaults share one identity-keyed closure, including an Object that holds a primitive, a generic specialization, a readonly result, and a different receiver. A sealed union parameter is wrapped at the call and unwrapped after is. An imported prefixed signature uses that library's QudsUnion class. A returning is check narrows a two-arm union to the other arm. A wider union keeps its sealed representation. Provider lexical class/alias, record and callback signatures are covered by ABI v4. Foreign Dart implementors and expanded part/cycle/conditional-export certification remain unfinished.",
         "ABI v7 retains required named and optional positional kinds, gap packets, and constructor slots for imported parent defaults. Lambda parameters accept required, bracket, and default forms. Plain positional callback types keep their previous unlabeled representation for nested compatibility. Mixed optional groups are packet values. A raw Dart function value still cannot express a positional gap."
       ],
       "completion_evidence": {
@@ -1199,7 +1199,7 @@
         "test/flutter_live_test.dart"
       ],
       "known_limits": [
-        "A live Linux debug session launched hello_world, hot-reloaded a saved .quds file, and hot-restarted. quds debug stopped at main.quds:18 in HomeState.build and showed the Quds local context. Linux profile and release binaries and web debug and release bundles compiled. Breakpoint retention across a later hot reload, and Android, iOS, Windows, and macOS devices, were not certified."
+        "A live Linux debug session launched hello_world, hot-reloaded a saved .quds file, and hot-restarted. quds debug stopped at main.quds:18 in HomeState.build and showed the Quds local context. After continue, the idle app did not re-enter build. Saving a comment then stopped again at main.quds:18 without another setBreakpoints request. The successful internal hot reload response is hidden from the DAP client. Linux profile and release binaries and web debug and release bundles compiled. Android, iOS, Windows, and macOS devices were not certified."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1702,8 +1702,16 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
-      "known_limits": [],
+      "verified_slice_files": [
+        "test/union_boundaries.quds",
+        "test/union_boundaries_test.dart",
+        "test/union_boundaries_web.quds",
+        "test/goldens/union_boundaries.dart.txt",
+        "test/fixtures/union_boundaries/provider.quds"
+      ],
+      "known_limits": [
+        "A returning is check on a two-arm sealed union narrows the following statements to the other arm. The generated read casts that sealed subclass. A wider union keeps the original sealed representation until one arm remains. Generic unions are not certified."
+      ],
       "completion_evidence": {
         "positive": [],
         "negative": [],

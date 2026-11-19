@@ -1,3 +1,37 @@
+# Breakpoint retention after a saved Quds file — 2026-11-19
+
+One Linux debug session of `examples/flutter_app/hello_world`. `setBreakpoints` was sent once, for `main.quds` line 18, before launch.
+
+| Check | Observed result |
+| --- | --- |
+| First stop | `main.quds:18` |
+| After continue | No further stop for 20 seconds. `build` runs on state changes, so an idle frame does not re-enter it |
+| Save | A trailing comment was appended to `main.quds` and removed afterward |
+| Next stop | `main.quds:18` again, with no second `setBreakpoints` request |
+| Reload text | None. `FlutterDebugLive` hides a successful internal hot-reload response and only prints a rejection |
+
+Android, iOS, Windows, and macOS were not attached. Nothing was published.
+
+---
+
+# Union remainder narrowing — 2026-11-19
+
+Base: `3e1541c`. Generated ABI stays `provider-defaults-v12`.
+
+| Check | Observed result |
+| --- | --- |
+| Before | The statement after `if value is int: return` still read the sealed wrapper, so `.value` was not a member |
+| After | That statement casts `QudsUnion_int_or_String_String` and reads `.value`. Inside the promoting case the read stays uncast |
+| Quds test | `quds test test/union_boundaries.quds` prints `ok union calls wrap and narrowing unwraps` |
+| VM and JavaScript | Both print `n1`, `sa`, `n2`, `sb`, `4` |
+| Limit | A union with more than two arms keeps the original sealed class. The fact does not leave the statement list |
+| Analysis | `dart analyze lib bin test` reports no issues |
+| Full suite | `dart test`: 771 passed, reporter 06:36, wall 397862 ms |
+
+No rule was marked `complete`. Foreign Dart implementors stay at their existing sound rejection.
+
+---
+
 # Union call boundaries and the Flutter engine — 2026-11-19
 
 Base: `2f3e8d0`. Generated ABI stays `provider-defaults-v12`.

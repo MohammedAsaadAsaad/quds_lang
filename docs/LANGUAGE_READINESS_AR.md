@@ -10,9 +10,9 @@
 
 الأساس `2f3e8d0`. الكاش يبقى `provider-defaults-v12`؛ شكل جسور الافتراضيات لم يتغير.
 
-نداء معامل `int | String` يغلّف القيمة في الصنف المختوم، و`is` يفك الغلاف عبر `.value`. الاستيراد المسبوق يستخدم `api.QudsUnion_...` من مكتبة الإعلان ولا ينسخ الصنف. `quds test test/union_boundaries.quds` يطبع `ok`. VM وJavaScript يطبعان `n1` و`sa` و`n2` و`sb` و`4`. الكود بعد `is` الذي يرجع لا يُضيَّق إلى الذراع الباقية. تطبيقات Dart الخارجية ما زالت غير منفذة، وE910 الخاص بها باقٍ.
+نداء معامل `int | String` يغلّف القيمة في الصنف المختوم، و`is` يفك الغلاف. إذا كان الفرع يرجع، فالجمل التالية في اتحاد من ذراعين ترى الذراع الأخرى عبر cast للصنف الفرعي. الاستيراد المسبوق يستخدم `api.QudsUnion_...`. `quds test test/union_boundaries.quds` يطبع `ok`. VM وJavaScript يطبعان `n1` و`sa` و`n2` و`sb` و`4`. اتحاد أوسع من ذراعين يبقى على الصنف المختوم الأصلي. تطبيقات Dart الخارجية ما زالت غير منفذة.
 
-`quds run -d linux --debug` على hello_world شغّل محرك Impeller. حفظ `main.quds` طلب hot reload وأكمله Flutter خلال 188ms. `R` أعاد التشغيل خلال 285ms. `quds debug` وقف عند `main.quds:18` في `HomeState.build` وأظهر المتغير `context`. بُنيت حزم Linux debug وprofile وrelease، وweb debug وrelease. بقاء breakpoint بعد hot reload لاحق، وأجهزة Android وiOS وWindows وmacOS، لم تُفحص هنا. لم يُنشر شيء إلى pub.dev. لم تُعلَّم أي قاعدة `complete`.
+`quds run -d linux --debug` على hello_world شغّل محرك Impeller. حفظ `main.quds` طلب hot reload وأكمله Flutter خلال 188ms. `R` أعاد التشغيل خلال 285ms. `quds debug` وقف عند `main.quds:18` في `HomeState.build` وأظهر المتغير `context`. بعد المتابعة بقي التطبيق ساكنًا، ثم حفظ تعليق أعاد التوقف عند السطر نفسه دون طلب `setBreakpoints` ثانٍ. رد hot reload الداخلي الناجح مخفي عن عميل DAP. بُنيت حزم Linux debug وprofile وrelease، وweb debug وrelease. أجهزة Android وiOS وWindows وmacOS لم تُفحص هنا. لم يُنشر شيء إلى pub.dev. لم تُعلَّم أي قاعدة `complete`.
 
 إصلاح جانبي: قراءة `stdin.echoMode` واستعادتها لا توقف `quds run` عندما تكون الطرفية غير صالحة.
 

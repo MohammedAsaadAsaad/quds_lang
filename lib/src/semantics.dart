@@ -3847,11 +3847,75 @@ class Analyzer {
   void statements(List<Statement> body, {bool nested = false}) {
     final saved = _scope;
     if (nested) _scope = _Scope(_scope);
+    final savedPromoted = Map<String, String>.from(_promoted);
+    final local = <String>[];
     for (final statement in body) {
       check(statement);
+      final extra = _exitPromotion(statement);
+      if (extra == null) continue;
+      for (final entry in extra.entries) {
+        _promoted[entry.key] = entry.value;
+        local.add(entry.key);
+      }
+    }
+    for (final name in local) {
+      if (savedPromoted.containsKey(name)) {
+        _promoted[name] = savedPromoted[name]!;
+      } else {
+        _promoted.remove(name);
+      }
     }
     _scope = saved;
   }
+
+  /// After `if name is Arm: return`, a two-arm union leaves the other arm.
+  /// The fact belongs to this statement list, so a nested block cannot leak it.
+  Map<String, String>? _exitPromotion(Statement node) {
+    if (node is! IfCaseStatement || !_alwaysExits(node.body)) return null;
+    final scrutinee = node.scrutinee;
+    final pattern = node.pattern;
+    if (scrutinee is! Identifier || pattern is! TypedPattern) return null;
+    final symbol = model.references[scrutinee];
+    if (symbol == null) return null;
+    final visible = _resolveType(_promoted[scrutinee.name] ?? symbol.type);
+    final arm = _resolveType(pattern.type);
+    if (!visible.contains(' | ') || functionTypeParts(visible) != null) {
+      return null;
+    }
+    final parts = [for (final part in visible.split(' | ')) part.trim()];
+    if (!parts.contains(arm)) return null;
+    final rest = [
+      for (final part in parts)
+        if (part != arm) part
+    ];
+    if (rest.length != 1) return null;
+    return {scrutinee.name: rest.single};
+  }
+
+  bool _alwaysExits(List<Statement> body) {
+    for (final statement in body) {
+      if (_statementExits(statement)) return true;
+    }
+    return false;
+  }
+
+  bool _statementExits(Statement node) => switch (node) {
+        ReturnStatement() ||
+        RaiseStatement() ||
+        RethrowStatement() ||
+        BreakStatement() ||
+        ContinueStatement() =>
+          true,
+        IfStatement() => node.elseBody.isNotEmpty &&
+            _alwaysExits(node.thenBody) &&
+            _alwaysExits(node.elseBody),
+        IfCaseStatement() => _alwaysExits(node.body),
+        IfLetStatement() => node.elseBody.isNotEmpty &&
+            _alwaysExits(node.thenBody) &&
+            _alwaysExits(node.elseBody),
+        LabelStatement() => _statementExits(node.statement),
+        _ => false,
+      };
 
   void check(Statement node) {
     switch (node) {

@@ -1,0 +1,112 @@
+use fixtures.constructor_packet_regressions.provider as api
+
+class Events:
+  static var text: String = ""
+mark(value: int) -> int:
+  Events.text += "{value}"
+  return value
+later(value: int) async -> int = mark(value)
+join(first: int, second: int) -> int = first * 10 + second
+local(first: int, second: int = first + 1) -> int = first + second
+future(first: int, second: int) async -> int = first + second
+silent(first: int, second: int) -> void:
+  Events.text += "b"
+nullable(available: bool) -> api.Receiver?:
+  Events.text += "r"
+  if available:
+    return api.Receiver()
+  return null
+
+test "local reordered calls retain await and source order" async:
+  Events.text = ""
+  expect(join(second: await later(2), first: await later(1)), 12)
+  expect(Events.text, "21")
+  expect(local(first: await later(3)), 7)
+  pending: Future<int> = future(second: await later(2), first: await later(1))
+  expect(await pending, 3)
+  silent(second: await later(2), first: await later(1))
+  expect(Events.text, "2132121b")
+
+test "imported default calls retain awaited operands" async:
+  expect(api.optional(first: await later(4)), 8)
+  expect(api.receiver().read(first: await later(4)), 8)
+
+test "null aware gaps skip all operands and evaluate receiver once" async:
+  Events.text = ""
+  expect(nullable(false)?.read(second: await later(2)), null)
+  expect(Events.text, "r")
+  expect(nullable(true)?.read(second: await later(2)), 9)
+  expect(Events.text, "rr2")
+
+test "null aware complete calls still skip all operands" async:
+  Events.text = ""
+  expect(nullable(false)?.read(first: await later(1), second: await later(2)), null)
+  expect(Events.text, "r")
+  expect(nullable(true)?.read(second: await later(2), first: await later(1)), 3)
+  expect(Events.text, "rr21")
+
+class Plain:
+  readonly read(first: int, second: int) -> int = first * 10 + second
+  readonly defaulted(value: int = mark(7)) -> int = value
+  readonly done(first: int, second: int) async -> void:
+    Events.text += "d"
+  readonly silent(first: int, second: int) -> void:
+    Events.text += "s"
+class Automatic:
+  first: int required
+  second: int required
+
+test "automatic constructors preserve awaited argument order" async:
+  Events.text = ""
+  owner = Automatic(second: await later(2), first: await later(1))
+  expect(owner.first, 1)
+  expect(owner.second, 2)
+  expect(Events.text, "21")
+
+test "local nullable methods keep nullable result and skip void bodies" async:
+  Events.text = ""
+  absent: Plain? = null
+  skipped: int? = absent?.read(second: await later(2), first: await later(1))
+  expect(skipped, null)
+  absent?.silent(second: await later(2), first: await later(1))
+  expect(Events.text, "")
+  owner: Plain? = Plain()
+  expect(owner?.read(second: await later(2), first: await later(1)), 12)
+  pending: Future<void>? = owner?.done(second: await later(2), first: await later(1))
+  await pending!
+  expect(Events.text, "2121d")
+
+test "readonly receivers accept suspended operands" async:
+  view: readonly Plain = Plain()
+  expect(view.read(second: await later(2), first: await later(1)), 12)
+
+receiverLater(available: bool) async -> api.Receiver? = nullable(available)
+failLater() async -> int:
+  throw "operand failed"
+
+test "awaited receiver retains null short circuit" async:
+  Events.text = ""
+  expect((await receiverLater(false))?.read(second: await later(2)), null)
+  expect(Events.text, "r")
+  expect((await receiverLater(true))?.read(second: await later(2)), 9)
+  expect(Events.text, "rr2")
+
+test "failed operands skip later operands and the target" async:
+  Events.text = ""
+  try:
+    silent(second: await failLater(), first: await later(1))
+  catch problem:
+    expect(problem, "operand failed")
+  expect(Events.text, "")
+
+
+test "null aware calls skip defaults and synchronous operands":
+  Events.text = ""
+  absent: Plain? = null
+  expect(absent?.defaulted(), null)
+  expect(Events.text, "")
+  expect(nullable(false)?.read(second: mark(2)), null)
+  expect(Events.text, "r")
+  owner: Plain? = Plain()
+  expect(owner?.defaulted(), 7)
+  expect(Events.text, "r7")

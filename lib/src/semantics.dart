@@ -8820,9 +8820,7 @@ class Analyzer {
           parameterBounds: methodBounds,
           declaredReturnType:
               specialize(model.declarations[functionResolved]!.type));
-      return callee.nullAware &&
-              model.providerDefaultMethods.containsKey(functionResolved) &&
-              result != 'void'
+      return callee.nullAware && result != 'void'
           ? nullableType(result)
           : result;
     }

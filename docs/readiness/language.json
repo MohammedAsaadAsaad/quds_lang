@@ -157,7 +157,11 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/call_suspension.quds",
+        "test/call_suspension_test.dart",
+        "test/call_suspension_web.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -213,7 +217,11 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/call_suspension.quds",
+        "test/call_suspension_test.dart",
+        "test/call_suspension_web.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -370,7 +378,10 @@
         "test/goldens/parameter_forms.dart.txt",
         "test/constructor_packet_regressions.quds",
         "test/constructor_packet_regressions_test.dart",
-        "test/constructor_packet_regressions_web.quds"
+        "test/constructor_packet_regressions_web.quds",
+        "test/call_suspension.quds",
+        "test/call_suspension_test.dart",
+        "test/call_suspension_web.quds"
       ],
       "known_limits": [
         "Required named and bracketed optional positional forms survive parsing, imports, generic specialization, overload labels, stored values, class/interface bridges, literal constructors, and provider-owned non-literal constructor defaults. Imported and stored optional positional gaps use a provider packet without copying private defaults. Direct optional-named arguments are named-only, including migrated SDK calls. Class method overloads use source-order Dart names, and a synthesized child evaluates an imported non-literal parent default through the parent slots bridge. Mixed optional groups and a default together with a variadic are packet values. A named default before a required positional parameter stays one reordered Dart signature. A raw Dart function value has no omission token, so a positional gap through it stays E910. A required named slot may be implemented as optional named with the same name and a default."
@@ -453,7 +464,10 @@
         "test/goldens/parameter_forms.dart.txt",
         "test/constructor_packet_regressions.quds",
         "test/constructor_packet_regressions_test.dart",
-        "test/constructor_packet_regressions_web.quds"
+        "test/constructor_packet_regressions_web.quds",
+        "test/call_suspension.quds",
+        "test/call_suspension_test.dart",
+        "test/call_suspension_web.quds"
       ],
       "known_limits": [
         "A child with no constructor forwards exactly one unnamed generative parent constructor. Named-only, factory, variadic, and field-name collisions stay E910.",
@@ -1779,7 +1793,11 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/call_suspension.quds",
+        "test/call_suspension_test.dart",
+        "test/call_suspension_web.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -1931,7 +1949,10 @@
         "test/fixtures/quds_value_adapters/facade.quds",
         "test/constructor_packet_regressions.quds",
         "test/constructor_packet_regressions_test.dart",
-        "test/constructor_packet_regressions_web.quds"
+        "test/constructor_packet_regressions_web.quds",
+        "test/call_suspension.quds",
+        "test/call_suspension_test.dart",
+        "test/call_suspension_web.quds"
       ],
       "known_limits": [],
       "completion_evidence": {

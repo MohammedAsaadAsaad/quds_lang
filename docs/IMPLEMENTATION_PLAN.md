@@ -31,6 +31,14 @@ Required named and optional positional declaration metadata is covered by
 lambda/constructor completion and broader union/intersection/foreign ABI
 certification remain separate work.
 
+## 2026-11-19 — call suspension and null-aware continuation
+
+[CALL_SUSPENSION.md](CALL_SUSPENSION.md) records the ABI v9 continuation: awaited
+operands in reordered ordinary/provider calls and automatic constructors, nullable
+Quds method short circuit, nullable result checking and Future<void> preservation.
+It includes executable Quds, negative, golden, VM/JS and cache-upgrade evidence.
+The latest exact gate and open boundaries remain in VALIDATION.md and the handoff.
+
 ## Architecture
 
 Source manager → indentation-aware lexer → token stream → parser → typed AST → symbol table/name resolution → type checking → lowering IR → Dart emitter → diagnostics/source maps.

@@ -1,4 +1,4 @@
-# Parameter metadata — generated ABI v8
+# Parameter metadata — generated ABI v9
 
 Specification 1.2 remains authoritative. This milestone preserves declaration
 parameter kinds from the parser through specialization, call matching, values,
@@ -96,5 +96,8 @@ Additional evidence: `test/constructor_packet_regressions.quds`, its VM/JS fixtu
 provider, golden and Dart driver (negative diagnostics and cache migration).
 Evidence: `test/parameter_forms.quds`, its VM/JS fixture and golden,
 `test/fixtures/parameter_forms/provider.quds` and `test/parameter_forms_test.dart`.
+The v9 continuation covers awaited ordinary/provider operands, automatic
+constructors, nullable Quds method calls and Future<void> results. See
+[CALL_SUSPENSION.md](CALL_SUSPENSION.md) for semantics, evidence and limits.
 Exact results are in [VALIDATION.md](VALIDATION.md); the handoff is
 [LANGUAGE_READINESS_AR.md](LANGUAGE_READINESS_AR.md).

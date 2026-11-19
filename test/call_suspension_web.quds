@@ -1,0 +1,72 @@
+use fixtures.constructor_packet_regressions.provider as api
+class Events:
+  static var text: String = ""
+mark(value: int) -> int:
+  Events.text += "{value}"
+  return value
+later(value: int) async -> int = mark(value)
+join(first: int, second: int) -> int = first * 10 + second
+local(first: int, second: int = first + 1) -> int = first + second
+future(first: int, second: int) async -> int = first + second
+silent(first: int, second: int) -> void:
+  Events.text += "b"
+nullable(available: bool) -> api.Receiver?:
+  Events.text += "r"
+  if available:
+    return api.Receiver()
+  return null
+class Plain:
+  readonly read(first: int, second: int) -> int = first * 10 + second
+  readonly done(first: int, second: int) async -> void:
+    Events.text += "d"
+  readonly silent(first: int, second: int) -> void:
+    Events.text += "s"
+class Automatic:
+  first: int required
+  second: int required
+receiverLater(available: bool) async -> api.Receiver? = nullable(available)
+failLater() async -> int:
+  throw "operand failed"
+main() async:
+  print join(second: await later(2), first: await later(1))
+  print local(first: await later(3))
+  pending: Future<int> = future(second: await later(2), first: await later(1))
+  print await pending
+  silent(second: await later(2), first: await later(1))
+  print Events.text
+  print api.optional(first: await later(4))
+  print api.receiver().read(first: await later(4))
+  Events.text = ""
+  print nullable(false)?.read(second: await later(2))
+  print nullable(true)?.read(second: await later(2))
+  print Events.text
+  Events.text = ""
+  print nullable(false)?.read(first: await later(1), second: await later(2))
+  print nullable(true)?.read(second: await later(2), first: await later(1))
+  print Events.text
+  Events.text = ""
+  owner = Automatic(second: await later(2), first: await later(1))
+  print owner.first
+  print owner.second
+  print Events.text
+  Events.text = ""
+  absent: Plain? = null
+  print absent?.read(second: await later(2), first: await later(1))
+  absent?.silent(second: await later(2), first: await later(1))
+  available: Plain? = Plain()
+  print available?.read(second: await later(2), first: await later(1))
+  done: Future<void>? = available?.done(second: await later(2), first: await later(1))
+  await done!
+  print Events.text
+  view: readonly Plain = Plain()
+  print view.read(second: await later(2), first: await later(1))
+  Events.text = ""
+  print ((await receiverLater(false))?.read(second: await later(2)))
+  print ((await receiverLater(true))?.read(second: await later(2)))
+  print Events.text
+  Events.text = ""
+  try:
+    silent(second: await failLater(), first: await later(1))
+  catch problem:
+    print problem
+  print Events.text == ""

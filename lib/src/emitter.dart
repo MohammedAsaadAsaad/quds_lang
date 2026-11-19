@@ -48,6 +48,8 @@ class DartEmitter {
   var _usePropagate = false;
   var _useConversion = false;
   final _emittingConversions = <Expression>{};
+  final _callReceiverNames = <Expression, String>{};
+  final _nullAwareCalls = <CallExpression>{};
   var _useReturn = false;
   final _onceFlags = <OnceStatement, String>{};
   var _openGenerics = <String>{};
@@ -3702,6 +3704,7 @@ class DartEmitter {
   final _emittingValueGuard = <Expression>{};
   String expression(Expression node,
       {bool constantContext = false, bool opaqueBool = false}) {
+    if (_callReceiverNames[node] case final receiver?) return receiver;
     if (identical(node, _replace) && _replaceWith != null) {
       final replacement = _replaceWith!;
       _replace = null;
@@ -4990,7 +4993,47 @@ class DartEmitter {
         gap: false);
   }
 
+  bool _suspendingArguments(CallExpression node) {
+    var suspending = false;
+    for (final argument in node.arguments) {
+      walkAst(argument.value, (part) {
+        if (part is AwaitExpression) suspending = true;
+      });
+    }
+    return suspending;
+  }
+
+  String _operandType(Expression value) => _dartType(
+      model.implicitConversions[value]?.resultType ?? model.types[value]!);
+
   String call(CallExpression node, {bool constantContext = false}) {
+    final source = node.callee is TypeApplication
+        ? (node.callee as TypeApplication).callee
+        : node.callee;
+    if (!constantContext &&
+        source is MemberAccess &&
+        source.nullAware &&
+        model.references[node.callee]?.function != null &&
+        !node.arguments.any((argument) => _isHole(argument.value)) &&
+        _nullAwareCalls.add(node)) {
+      // Pattern capture preserves exactly-once receiver evaluation without
+      // moving await into another function or eagerly evaluating null operands.
+      final receiver = expression(source.object);
+      final name = '\$qCallReceiver${_temps++}';
+      final previous = _callReceiverNames[source.object];
+      _callReceiverNames[source.object] = name;
+      try {
+        final invocation = call(node);
+        return '(switch ($receiver) { final $name? => $invocation, _ => null })';
+      } finally {
+        if (previous == null) {
+          _callReceiverNames.remove(source.object);
+        } else {
+          _callReceiverNames[source.object] = previous;
+        }
+        _nullAwareCalls.remove(node);
+      }
+    }
     if (model.packetValueCalls.contains(node)) {
       return _packetCall(
           node,
@@ -5101,17 +5144,27 @@ class DartEmitter {
         return '$rendered(${parts.join(', ')})';
       }
       final declarations = <String>[];
+      final capture = !constantContext && _suspendingArguments(node);
+      final formals = <String>[];
+      final inputs = <String>[];
       final named = <String>[];
       for (var i = 0; i < node.arguments.length; i++) {
-        declarations.add(
-            'final _qa$i = ${expression(node.arguments[i].value, constantContext: constantContext)};');
+        if (capture) {
+          formals.add('${_operandType(node.arguments[i].value)} _qa$i');
+          inputs.add(expression(node.arguments[i].value));
+        } else {
+          declarations.add(
+              'final _qa$i = ${expression(node.arguments[i].value, constantContext: constantContext)};');
+        }
       }
       for (var i = 0; i < fields.length && i < order.length; i++) {
         final index = order[i];
         if (index < 0) continue;
         named.add('${fields[i].name}: _qa$index');
       }
-      return '(() { ${declarations.join(' ')} return $rendered(${named.join(', ')}); })()';
+      return capture
+          ? '((${formals.join(', ')}) => $rendered(${named.join(', ')}))(${inputs.join(', ')})'
+          : '(() { ${declarations.join(' ')} return $rendered(${named.join(', ')}); })()';
     }
     final sourceCallee = node.callee is TypeApplication
         ? (node.callee as TypeApplication).callee
@@ -5231,19 +5284,35 @@ class DartEmitter {
       // resolves omitted defaults. Its private symbols never enter this scope.
       final supplied = <String>[];
       final resolved = <String>[];
+      final capture = _suspendingArguments(node);
+      final formals = <String>[];
+      final inputs = <String>[];
       final methodOwner = model.providerDefaultMethods[providerFunction];
       String? methodReceiver;
       if (methodOwner != null && !providerFunction.isStatic && member != null) {
         methodReceiver = '_qreceiver${_temps++}';
-        resolved.add('final $methodReceiver = ${expression(member.object)};');
-        if (member.nullAware)
+        if (capture) {
+          final type = _nullAwareCalls.contains(node)
+              ? nonNullableType(model.types[member.object]!)
+              : model.types[member.object]!;
+          formals.add('${_dartType(type)} $methodReceiver');
+          inputs.add(expression(member.object));
+        } else {
+          resolved.add('final $methodReceiver = ${expression(member.object)};');
+        }
+        if (member.nullAware && !_nullAwareCalls.contains(node))
           resolved.add('if ($methodReceiver == null) return null;');
       }
       for (var i = 0; i < node.arguments.length; i++) {
         final temporary = '_qprovided${_temps++}';
         supplied.add(temporary);
-        resolved
-            .add('final $temporary = ${expression(node.arguments[i].value)};');
+        if (capture) {
+          formals.add('${_operandType(node.arguments[i].value)} $temporary');
+          inputs.add(expression(node.arguments[i].value));
+        } else {
+          resolved.add(
+              'final $temporary = ${expression(node.arguments[i].value)};');
+        }
       }
       final passed = <String>[];
       for (var i = 0; i < parameters.length; i++) {
@@ -5269,7 +5338,11 @@ class DartEmitter {
           : providerMethodDefaultBridgeName(methodOwner, providerFunction);
       final bridge = '$receiverPrefix$bridgeName$suffix';
       final invoke = '$bridge(${passed.join(', ')})';
-      return '(() { ${resolved.join(' ')} ${targetSymbol.type == 'void' ? '' : 'return '}$invoke; })()';
+      final body =
+          '${resolved.join(' ')} ${targetSymbol.type == 'void' ? '' : 'return '}$invoke;';
+      return capture
+          ? '((${formals.join(', ')}) { $body })(${inputs.join(', ')})'
+          : '(() { $body })()';
     }
     final variadic = parameters.indexWhere((parameter) => parameter.variadic);
     if (variadic >= 0) {
@@ -5324,6 +5397,9 @@ class DartEmitter {
     // Evaluate written arguments exactly once, left to right, before arranging
     // them in declaration order for Dart's positional ABI.
     final declarations = <String>[];
+    final capture = holes == 0 && _suspendingArguments(node);
+    final formals = <String>[];
+    final inputs = <String>[];
     String? defaultReceiver;
     if (member != null &&
         targetSymbol.function?.isStatic == false &&
@@ -5331,8 +5407,16 @@ class DartEmitter {
         model.references[member.object]?.namespace == null &&
         model.references[member.object]?.classDeclaration == null) {
       final receiver = '_qr${_temps++}';
-      declarations.add(
-          'final $receiver = ${expression(member.object, constantContext: constantContext)};');
+      if (capture) {
+        final type = _nullAwareCalls.contains(node)
+            ? nonNullableType(model.types[member.object]!)
+            : model.types[member.object]!;
+        formals.add('${_dartType(type)} $receiver');
+        inputs.add(expression(member.object));
+      } else {
+        declarations.add(
+            'final $receiver = ${expression(member.object, constantContext: constantContext)};');
+      }
       final method = model.references[member]?.dartName ?? member.name;
       final typeArguments = node.callee is TypeApplication
           ? (node.callee as TypeApplication).arguments
@@ -5349,8 +5433,13 @@ class DartEmitter {
     final subst = <String, String>{};
     for (var i = 0; i < node.arguments.length; i++) {
       if (_isHole(node.arguments[i].value)) continue;
-      declarations.add(
-          'final _qa$i = ${expression(node.arguments[i].value, constantContext: constantContext)};');
+      if (capture) {
+        formals.add('${_operandType(node.arguments[i].value)} _qa$i');
+        inputs.add(expression(node.arguments[i].value));
+      } else {
+        declarations.add(
+            'final _qa$i = ${expression(node.arguments[i].value, constantContext: constantContext)};');
+      }
     }
     final arranged = order ?? List.generate(node.arguments.length, (i) => i);
     for (var i = 0; i < arranged.length; i++) {
@@ -5391,8 +5480,7 @@ class DartEmitter {
       }
     }
     final invocation = '$target(${values.join(', ')})';
-    final returnsVoid =
-        targetSymbol.type == 'void' || targetSymbol.type == 'Future<void>';
+    final returnsVoid = targetSymbol.type == 'void';
     final body = returnsVoid ? '$invocation;' : 'return $invocation;';
     if (holeNames.isNotEmpty) {
       final signature = [
@@ -5401,7 +5489,9 @@ class DartEmitter {
       ].join(', ');
       return '(($signature) { ${declarations.join(' ')} $body })';
     }
-    return '(() { ${declarations.join(' ')} $body })()';
+    return capture
+        ? '((${formals.join(', ')}) { ${declarations.join(' ')} $body })(${inputs.join(', ')})'
+        : '(() { ${declarations.join(' ')} $body })()';
   }
 
   bool _isHole(Expression node) => node is Identifier && node.name == '_';

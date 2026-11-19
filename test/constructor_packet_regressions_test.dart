@@ -97,7 +97,7 @@ void main() {
     expect(node.stdout, vm.stdout);
   }, timeout: const Timeout(Duration(minutes: 2)));
 
-  test('v8 rebuilds valid-checksum v7 constructor output', () async {
+  test('current ABI rebuilds valid-checksum v7 constructor output', () async {
     final root = Directory.systemTemp.createTempSync('quds-constructor-cache-');
     addTearDown(() => root.deleteSync(recursive: true));
     File('${root.path}/pubspec.yaml').writeAsStringSync(
@@ -136,7 +136,7 @@ void main() {
     expect(run.stdout, '7\n');
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v8');
+          'provider-defaults-v9');
     }
   });
 }

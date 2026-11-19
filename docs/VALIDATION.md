@@ -1,3 +1,37 @@
+# Awaited calls and null-aware Quds methods — 2026-11-19
+
+Base: `f21bfb4`. Generated ABI: `provider-defaults-v9`.
+Contract and limits: [CALL_SUSPENSION.md](CALL_SUSPENSION.md).
+
+| Check | Observed result |
+| --- | --- |
+| Baseline Quds reproduction | Rejected generated Dart: await inside synchronous closures, and a gap-method bridge accessed on a nullable receiver |
+| `dart test test/call_suspension_test.dart` | 5 passed in 16s, including ten actual Quds test declarations, two source-coordinate rejection tests, VM/JS and cache migration |
+| Golden/VM/JavaScript | Generated consumer/provider analyzed with `--no-fatal-warnings`; actual VM and JavaScript/Node executions printed the same 24 lines |
+| Cache upgrade | An otherwise valid v8 cache with a matching legacy-output checksum was rebuilt, printed `12` and recorded ABI v9 |
+| `dart format .` | 103 files, 0 changes on the final run |
+| `dart analyze` | No issues found |
+| `dart test` | **745 passed, 0 failed, 10m51s** |
+| `python3 tool/audit_language.py --check` | 115 decisions indexed; no status promoted to complete |
+| `python3 tool/sync_keyword_docs.py --check`, `git diff --check` | Passed |
+
+Awaited operands remain in the caller's async scope for reordered ordinary calls,
+supported provider-default calls and automatic constructors. Null-aware Quds
+methods capture the receiver once, skip operands/defaults/body on null and report
+a nullable result. Future<void> is preserved as a value; void statements, readonly
+receivers, failed-operand ordering and awaited receivers have executable coverage.
+The pre-existing adapter golden was updated for the new null-short-circuit path.
+No approved syntax changed. This does not certify every native/partial/generator
+or awaiting-default combination; see the contract document's explicit limits.
+
+A fresh network probe still receives CONNECT 403 from storage.googleapis.com;
+Flutter's Dart SDK and engine tester are unavailable. No actual Flutter engine,
+device, F5 or cross-host claim is made by this run. A separate inferred-provider
+return bug was reproduced and recorded in the handoff; it is not included in this
+milestone's successful-test claims. Older sections below are historical.
+
+---
+
 # Constructor packets and awaited operands — 2026-11-19
 
 Base: `d84f077` (latest `origin/main` at validation). Generated ABI:

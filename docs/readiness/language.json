@@ -850,12 +850,20 @@
         "test/goldens/union_boundaries.dart.txt",
         "test/fixtures/union_boundaries/provider.quds",
         "test/function_value_cache_gc_test.dart",
-        "test/fixtures/value_cache_gc.quds"
+        "test/fixtures/value_cache_gc.quds",
+        "test/union_exchange.quds",
+        "test/union_exchange_web.quds",
+        "test/union_exchange_test.dart",
+        "test/goldens/union_exchange.dart.txt",
+        "test/fixtures/union_exchange/provider.quds",
+        "test/fixtures/union_exchange/facade.quds",
+        "test/fixtures/union_exchange/second.quds"
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. A named default before a required parameter and a default together with a variadic can be stored as values. Full constraint solving and polymorphic callbacks remain limited. Concrete class method overloads select at compile time. Parameterized readonly method results wrap the adapter invocation when the readonly view is wider.",
-        "Defaulted value slots retain provider-owned omission and sequential defaults. Public ordinary-class methods and generic interface contracts with supported signatures preserve repeated-reference equality, including readonly proxies and virtual dispatch. An expression-bodied interface default with an inferred result uses the declaring library resolver, including a private helper. An SDK section function with a supported default is stored and called through the bridge already emitted by that SDK library. Value classes, mixins, and protected methods use the same declaring-library bridge. Extension values and intersection defaults share one identity-keyed closure, including an Object that holds a primitive, a generic specialization, a readonly result, and a different receiver. A sealed union parameter is wrapped at the call and unwrapped after is. An imported prefixed signature uses that library's QudsUnion class. A returning is check narrows a two-arm union to the other arm. A wider union keeps its sealed representation. Provider lexical class/alias, record and callback signatures are covered by ABI v4. Foreign Dart implementors and expanded part/cycle/conditional-export certification remain unfinished.",
-        "ABI v7 retains required named and optional positional kinds, gap packets, and constructor slots for imported parent defaults. Lambda parameters accept required, bracket, and default forms. Plain positional callback types keep their previous unlabeled representation for nested compatibility. Mixed optional groups are packet values. A raw Dart function value still cannot express a positional gap."
+        "Defaulted value slots retain provider-owned omission and sequential defaults. Public ordinary-class methods and generic interface contracts with supported signatures preserve repeated-reference equality, including readonly proxies and virtual dispatch. An expression-bodied interface default with an inferred result uses the declaring library resolver, including a private helper. An SDK section function with a supported default is stored and called through the bridge already emitted by that SDK library. Value classes, mixins, and protected methods use the same declaring-library bridge. Extension values and intersection defaults share one identity-keyed closure, including an Object that holds a primitive, a generic specialization, a readonly result, and a different receiver. A sealed union parameter is wrapped at the call and unwrapped after is. ABI v14 normalizes supported direct imported unions through checked provider payload bridges; original Dart signatures remain sealed. A returning is check narrows a two-arm union to the other arm. A wider union keeps its sealed representation. Provider lexical class/alias, record and callback signatures are covered by ABI v4. Foreign Dart implementors and expanded part/cycle/conditional-export certification remain unfinished.",
+        "ABI v7 retains required named and optional positional kinds, gap packets, and constructor slots for imported parent defaults. Lambda parameters accept required, bracket, and default forms. Plain positional callback types keep their previous unlabeled representation for nested compatibility. Mixed optional groups are packet values. A raw Dart function value still cannot express a positional gap.",
+        "ABI v14 checks payloads for direct synchronous non-generic top-level union exchange, stored values and filtered re-exports. Generic/async/nested/alias-only/callback/owner union boundaries still need certification; see docs/UNION_LIBRARY_BOUNDARIES.md."
       ],
       "completion_evidence": {
         "positive": [],
@@ -1735,10 +1743,18 @@
         "test/fixtures/union_boundaries/provider.quds",
         "test/union_flow.quds",
         "test/union_flow_test.dart",
-        "test/union_flow_web.quds"
+        "test/union_flow_web.quds",
+        "test/union_exchange.quds",
+        "test/union_exchange_web.quds",
+        "test/union_exchange_test.dart",
+        "test/goldens/union_exchange.dart.txt",
+        "test/fixtures/union_exchange/provider.quds",
+        "test/fixtures/union_exchange/facade.quds",
+        "test/fixtures/union_exchange/second.quds"
       ],
       "known_limits": [
-        "A returning is check on a two-arm sealed union narrows the following statements to the other arm. The generated read casts that sealed subclass. A wider union keeps the original sealed representation until one arm remains. Generic unions are not certified."
+        "A returning is check on a two-arm sealed union narrows the following statements to the other arm. The generated read casts that sealed subclass. A wider union keeps the original sealed representation until one arm remains. Generic unions are not certified.",
+        "ABI v14 checks payloads for direct synchronous non-generic top-level union exchange, stored values and filtered re-exports. Generic/async/nested/alias-only/callback/owner union boundaries still need certification; see docs/UNION_LIBRARY_BOUNDARIES.md."
       ],
       "completion_evidence": {
         "positive": [],

@@ -2,7 +2,7 @@
 // ignore_for_file: type=lint
 
 import 'fixtures/union_boundaries/provider.dart' as api;
-sealed class QudsUnion_int_or_String { const QudsUnion_int_or_String(); }
+sealed class QudsUnion_int_or_String { const QudsUnion_int_or_String(); Object? get value; }
 class QudsUnion_int_or_String_int extends QudsUnion_int_or_String {
   final int value;
   const QudsUnion_int_or_String_int(this.value);
@@ -11,6 +11,56 @@ class QudsUnion_int_or_String_String extends QudsUnion_int_or_String {
   final String value;
   const QudsUnion_int_or_String_String(this.value);
 }
+QudsUnion_int_or_String $QudsFromQudsUnion_int_or_String(Object? value) {
+  if (value is int) return QudsUnion_int_or_String_int(value);
+  if (value is String) return QudsUnion_int_or_String_String(value);
+  throw ArgumentError.value(value, 'value', 'Invalid union payload'); }
+class $QudsValueSlot {
+  $QudsValueSlot(this.receiver, this.key, this.types, this.functionKey);
+  final Object? receiver;
+  final String key;
+  final List<Type> types;
+  final bool functionKey;
+  Object? target;
+  late Object? value;
+}
+final $QudsValueCache = <int, List<WeakReference<$QudsValueSlot>>>{};
+final $QudsValueFinalizer = Finalizer<(int, WeakReference<$QudsValueSlot>)>((token) {
+  final bucket = $QudsValueCache[token.$1];
+  if (bucket == null) return;
+  bucket.remove(token.$2);
+  if (bucket.isEmpty) $QudsValueCache.remove(token.$1);
+});
+Type $QudsValueType<T>() => T;
+Object? $QudsCachedValue(Object? receiver, String key, List<Type> types,
+    Object? Function($QudsValueSlot) create, {bool functionKey = false}) {
+  final hash = functionKey ? receiver.hashCode : identityHashCode(receiver);
+  final bucket = $QudsValueCache[hash];
+  if (bucket != null) {
+    for (var i = bucket.length - 1; i >= 0; i--) {
+      final slot = bucket[i].target;
+      if (slot == null) { bucket.removeAt(i); continue; }
+      final sameReceiver = functionKey
+          ? slot.receiver == receiver : identical(slot.receiver, receiver);
+      if (slot.functionKey != functionKey || !sameReceiver || slot.key != key ||
+          slot.types.length != types.length) continue;
+      var same = true;
+      for (var j = 0; j < types.length; j++) {
+        if (slot.types[j] != types[j]) { same = false; break; }
+      }
+      if (same) return slot.value;
+    }
+    if (bucket.isEmpty) $QudsValueCache.remove(hash);
+  }
+  final slot = $QudsValueSlot(receiver, key, types, functionKey);
+  final value = create(slot);
+  slot.value = value;
+  final reference = WeakReference(slot);
+  ($QudsValueCache[hash] ??= []).add(reference);
+  $QudsValueFinalizer.attach(slot, (hash, reference));
+  return value;
+}
+
 
 
 
@@ -20,15 +70,16 @@ String _q0(QudsUnion_int_or_String _q1) {
   }
   return ["s", (_q1 as QudsUnion_int_or_String_String).value].join();
 }
+String $QudsUnionCall66e4e3982af96f224df4(List<Object?> $qInputs, List<bool> $qPresent) { final QudsUnion_int_or_String _qslot0 = $QudsFromQudsUnion_int_or_String($qInputs[0]); return _q0(_qslot0); }
 
 void main() {
   final String Function(QudsUnion_int_or_String) _q2 = _q0;
-  print(_q2(QudsUnion_int_or_String_int(1)));
-  print(_q0(QudsUnion_int_or_String_String("a")));
-  final String Function(api.QudsUnion_int_or_String) _q3 = api.classify;
-  print(_q3(api.QudsUnion_int_or_String_int(2)));
-  print(api.classify(api.QudsUnion_int_or_String_String("b")));
-  final QudsUnion_int_or_String _q4 = QudsUnion_int_or_String_int(3);
+  print(_q2($QudsFromQudsUnion_int_or_String(1)));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk0) { return $qPacketTarget(<Object?>[_qpk0], <bool>[true]); })($QudsUnionCall66e4e3982af96f224df4, "a"));
+  final String Function(QudsUnion_int_or_String) _q3 = $QudsCachedValue(api.$QudsUnionCallf52c412edc582e0cc2d7, 'union:\$QudsUnionCallf52c412edc582e0cc2d7:(value: int | String) -> String:', <Type>[], (_qUnionSlot1) { _qUnionSlot1.target = api.$QudsUnionCallf52c412edc582e0cc2d7; return (QudsUnion_int_or_String value) { return (_qUnionSlot1.target as String Function(List<Object?>, List<bool>))(<Object?>[value.value], <bool>[true]); }; }, functionKey: true) as String Function(QudsUnion_int_or_String);
+  print(_q3($QudsFromQudsUnion_int_or_String(2)));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk2) { return $qPacketTarget(<Object?>[_qpk2], <bool>[true]); })(api.$QudsUnionCallf52c412edc582e0cc2d7, "b"));
+  final QudsUnion_int_or_String _q4 = $QudsFromQudsUnion_int_or_String(3);
   if (_q4 case QudsUnion_int_or_String_int()) {
     print(((_q4).value + 1));
   }

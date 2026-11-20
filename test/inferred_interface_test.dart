@@ -108,7 +108,7 @@ main():
     expect(output.readAsStringSync(), contains(r'$QudsInterfaceDefaults'));
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v13');
+          'provider-defaults-v14');
     }
   });
 }

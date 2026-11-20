@@ -1,0 +1,49 @@
+use fixtures.union_exchange.provider as api
+use fixtures.union_exchange.facade as facade show accept, produce, identity, withDefault, ordered, mixed, Trace, wide, Payload, makeObject, readObject
+use fixtures.union_exchange.second as other
+use fixtures.union_exchange.provider show accept
+
+class Trace:
+  static var text: String = ""
+tap(tag: String, value: int | String) -> int | String:
+  Trace.text += tag
+  return value
+later(value: int) async -> int = value
+main() async:
+  held: int | String = 3
+  print api.accept(held)
+  print accept(held)
+  print facade.accept(api.produce(false))
+  print other.send(held)
+  received: int | String = other.relay(true)
+  print api.accept(received)
+  saved = facade.identity
+  print saved == api.identity
+  print api.accept(saved(held))
+  print facade.ordered(second: tap("B", "x"), first: tap("A", 4))
+  print Trace.text
+  print api.ordered(second: await later(2), first: await later(1))
+  print facade.mixed(held)
+  print facade.mixed(first: "x", second: held)
+  defaults = facade.withDefault
+  print defaults()
+  print facade.Trace.defaults
+  object: facade.Payload | String = facade.makeObject()
+  print facade.readObject(object)
+  var value: int | String = 1
+  value = "set"
+  print api.accept(value)
+  value = api.produce(false)
+  print api.accept(value)
+  small: int | String = 9
+  wide: num | String = small
+  print facade.wide(wide) is num
+  print api.accept(api.inferred(3))
+  print readInferred()
+  print api.pick(false)
+
+readInferred() -> int:
+  object = api.makeObject()
+  if object is String:
+    return object.length
+  return object.value

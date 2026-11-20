@@ -15,7 +15,7 @@ void main() {
   test('union boundaries analyze and run on VM and JavaScript', () async {
     final source = File('test/union_boundaries_web.quds').absolute;
     final result = compile(source.readAsStringSync(), file: source.path);
-    expect(result.dart, contains('api.QudsUnion_int_or_String_int(2)'));
+    expect(result.dart, contains('api.\$QudsUnionCall'));
     expect(result.dart, contains('as QudsUnion_int_or_String_String).value'));
     expect(
         result.dart,

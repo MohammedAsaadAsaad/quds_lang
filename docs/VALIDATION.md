@@ -1,3 +1,30 @@
+# Checked union library exchange — 2026-11-20
+
+Base: `20949f6`. Generated ABI: `provider-defaults-v14`.
+Contract/handoff: [UNION_LIBRARY_BOUNDARIES.md](UNION_LIBRARY_BOUNDARIES.md).
+
+| Check | Observed result |
+| --- | --- |
+| Baseline reproduction | `quds test test/union_exchange.quds` failed: separate nominal union families across modules, plus raw-arm returns from a union function |
+| Quds execution | Eight new execution cases in `test/union_exchange.quds`; source-level invalid-arm checks and explicit E910 coverage |
+| Focused regression | Union exchange/boundary/flow drivers: 21 passed; final exchange-only driver (including overload-candidate regression): 15 passed |
+| Generated output | Deterministic golden, strict Dart analysis, actual VM and JavaScript runs; invalid foreign payload rejected with ArgumentError |
+| Cache | Checksum-valid v13 legacy output rebuilt with ABI v14 |
+| Memory regression | VM and compiled JS each observed `collected: 1000, buckets: 1, live: 42, canonical: true` |
+| Portable CI | Three union drivers added to Linux/Windows/macOS matrix; remote runs not observed locally |
+| Final format | `dart format .`: 113 files, 0 changes |
+| Final analysis | `dart analyze`: no issues found |
+| Full suite | `dart test --reporter expanded`: **795 passed, 0 failed, 11m30s** |
+| Inventory and keyword sync | `audit_language.py --check`, `sync_keyword_docs.py --check`, `git diff --check`: passed; 24 partial, 91 needs_certification, 0 complete retained |
+
+The cloud connection was restored during the final run; the original process
+continued and its final log recorded all 795 passes.
+
+The preliminary full run was stopped before completion to ensure the final run
+includes a correction to speculative overload handling. No preliminary full-run
+pass is claimed. These checks do not repeat an actual Flutter engine run or
+certify the broader union combinations listed in the contract.
+
 # Review of the next agent's work and cache/flow follow-up — 2026-11-20
 
 Review base: `5f6dbc3`. Generated ABI: `provider-defaults-v13`.

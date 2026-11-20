@@ -1,0 +1,7 @@
+type Choice = int | String
+alias(value: Choice) -> Choice = value
+generic<T>(value: int | String, other: T) -> T = other
+asynchronous(value: int | String) async -> int = 3
+nested(value: List<int | String>) -> int = 3
+callback(value: (int | String) -> int) -> int = 3
+accept(value: int | String) -> String = "q"

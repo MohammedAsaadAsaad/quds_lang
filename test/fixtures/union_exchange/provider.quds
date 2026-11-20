@@ -1,0 +1,30 @@
+accept(value: int | String) -> String:
+  if value is int:
+    return "n{value}"
+  return "s{value}"
+produce(number: bool) -> int | String:
+  if number:
+    return 7
+  return "q"
+identity(value: int | String) -> int | String = value
+
+class Trace:
+  static var defaults: int = 0
+_seed() -> int:
+  Trace.defaults += 1
+  return 5
+withDefault(value: int | String = _seed()) -> String = accept(value)
+ordered(first: int | String, second: int | String) -> String = "{accept(first)}:{accept(second)}"
+mixed(first: int | String = _seed(), second: int | String) -> String = ordered(first, second)
+wide(value: num | String) -> num | String = value
+class Payload:
+  value: int required
+makeObject() -> Payload | String = Payload(value: 12)
+readObject(value: Payload | String) -> int:
+  if value is String:
+    return value.length
+  return value.value
+
+inferred(value: int | String) = value
+pick<T>(value: int | String, other: T) -> T = other
+pick(value: bool) -> String = "bool"

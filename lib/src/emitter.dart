@@ -333,6 +333,9 @@ class DartEmitter {
             in model.providerDefaultImports[node] ?? <FunctionDeclaration>{})
           if (names.contains(function.name))
             providerDefaultBridgeName(function),
+        for (final function
+            in model.providerUnionImports[node] ?? <FunctionDeclaration>{})
+          if (names.contains(function.name)) providerUnionBridgeName(function),
       ];
 
   /// Bridge names for SDK functions this import actually calls or stores.
@@ -651,7 +654,8 @@ class DartEmitter {
     for (final union in [..._unions]) {
       final name = _unionClass(union);
       final parts = union.split(' | ').map((part) => part.trim());
-      helpers.writeln('sealed class $name { const $name(); }');
+      helpers
+          .writeln('sealed class $name { const $name(); Object? get value; }');
       for (final part in parts) {
         final alt = _alt(part);
         helpers.writeln('class ${name}_$alt extends $name {\n'
@@ -659,6 +663,13 @@ class DartEmitter {
             '  const ${name}_$alt(this.value);\n'
             '}');
       }
+      helpers.writeln('$name \$QudsFrom$name(Object? value) {');
+      for (final part in parts) {
+        helpers.writeln(
+            '  if (value is ${_dartType(part)}) return ${name}_${_alt(part)}(value);');
+      }
+      helpers.writeln(
+          "  throw ArgumentError.value(value, 'value', 'Invalid union payload'); }");
     }
     final prelude = StringBuffer();
     for (final item in _imports.toSet()) {
@@ -1011,8 +1022,34 @@ class DartEmitter {
 
   void emitFunction(FunctionDeclaration node) {
     _emitFunctionBody(node);
+    if (model.providerUnionFunctions.contains(node)) _emitUnionBridge(node);
     if (packetValueLayout(node.parameters)) _emitPacketBridge(node);
     _emitDefaultBridge(node);
+  }
+
+  bool _isUnionType(String type) => directUnionType(_resolveType(type));
+
+  String _unionTypeTest(TypeTestExpression node, bool constantContext) {
+    var value = expression(node.operand, constantContext: constantContext);
+    if (_isUnionType(model.types[node.operand]!)) {
+      value = '($value).value';
+    }
+    return '($value ${node.operator} ${_dartType(node.type)})';
+  }
+
+  String _unionFrom(String type, String value) {
+    final name = _dartType(type);
+    return '\$QudsFrom$name($value)';
+  }
+
+  void _emitUnionBridge(FunctionDeclaration node) {
+    final symbol = model.declarations[node]!;
+    final unionResult = _isUnionType(symbol.type);
+    final returned = unionResult ? 'Object?' : _dartType(symbol.type);
+    final body = _packetInvocation(node.parameters, symbol.dartName, returned,
+        unionPayloads: true, unionResult: unionResult);
+    line('$returned ${providerUnionBridgeName(node)}'
+        '(List<Object?> \$qInputs, List<bool> \$qPresent) { $body }');
   }
 
   void _emitDefaultBridge(FunctionDeclaration node) {
@@ -1077,7 +1114,8 @@ class DartEmitter {
 
   /// Binds signature-order packet slots, then calls [target] in source order.
   String _packetInvocation(
-      List<Parameter> parameters, String target, String returned) {
+      List<Parameter> parameters, String target, String returned,
+      {bool unionPayloads = false, bool unionResult = false}) {
     final saved = _names;
     _names = {..._names};
     final statements = <String>[];
@@ -1095,8 +1133,9 @@ class DartEmitter {
           statements.add(
               'final $listType $slot = \$qPresent[$i] ? $input as $listType : <$elementType>[];');
         } else {
-          final supplied =
-              declared.type == 'Object?' || declared.type == 'dynamic'
+          final supplied = unionPayloads && _isUnionType(declared.type)
+              ? _unionFrom(declared.type, input)
+              : declared.type == 'Object?' || declared.type == 'dynamic'
                   ? input
                   : '$input as $element';
           final resolved = parameter.defaultValue == null
@@ -1110,7 +1149,8 @@ class DartEmitter {
         for (final parameter in parameters)
           _names[model.declarations[parameter]!.dartName]!
       ];
-      final invocation = '$target(${arguments.join(', ')})';
+      final invocation =
+          '$target(${arguments.join(', ')})${unionResult ? '.value' : ''}';
       final tail = returned == 'void' ? '$invocation;' : 'return $invocation;';
       return '${statements.join(' ')} $tail';
     } finally {
@@ -3320,8 +3360,7 @@ class DartEmitter {
         }
       case MatchStatement():
         _matched = model.types[node.value];
-        if (_matched != null && _matched!.contains(' | '))
-          _unions.add(_matched!);
+        if (_matched != null && _matched!.contains(' | ')) _dartType(_matched!);
         line('switch (${expression(node.value)}) {');
         _depth++;
         for (final arm in node.arms) {
@@ -3813,6 +3852,13 @@ class DartEmitter {
     }
     // A const or literal bool is reachable to Dart's analyzer when it is
     // hidden behind an identity call. The operand is still read once.
+    if (model.reboxAs.remove(node) case final union?) {
+      try {
+        return _unionFrom(union, '(${expression(node)}).value');
+      } finally {
+        model.reboxAs[node] = union;
+      }
+    }
     if (model.wrapAs[node] case final union?) {
       // A second emit, used by quds test, must see the same wrap. Remove it
       // only while the inner expression is rendered so this does not recurse.
@@ -3822,6 +3868,7 @@ class DartEmitter {
         final inner = expression(node,
             constantContext: constantContext, opaqueBool: opaqueBool);
         final prefix = model.unionWrapPrefixes[node];
+        if (prefix == null && !constantContext) return _unionFrom(union, inner);
         if (prefix == null) _unions.add(union);
         final owner = prefix ?? '';
         return '$owner${_unionClass(union)}_${_alt(innerType)}($inner)';
@@ -3886,8 +3933,7 @@ class DartEmitter {
               constantContext: constantContext, childOpaque: childOpaque),
           ChainComparison() => _chain(node),
           SliceExpression() => _slice(node),
-          TypeTestExpression() =>
-            '(${expression(node.operand, constantContext: constantContext)} ${node.operator} ${_dartType(node.type)})',
+          TypeTestExpression() => _unionTypeTest(node, constantContext),
           ListExpression() => _list(node),
           CallExpression() => call(node, constantContext: constantContext),
           InterpolatedString() =>
@@ -4105,6 +4151,9 @@ class DartEmitter {
   String _emitQudsValueLowering(Expression node) {
     final lowering = model.qudsValueLowerings[node]!;
     final function = lowering.function;
+    if (model.providerUnionFunctions.contains(function)) {
+      return _emitUnionValue(node, lowering);
+    }
     if (packetValueLayout(function.parameters)) {
       return _emitPacketTearoff(node, lowering);
     }
@@ -4181,6 +4230,74 @@ class DartEmitter {
             resultGuard: model.qudsValueResultGuards[node]),
         function,
         target);
+  }
+
+  String _unionTarget(Expression node, FunctionDeclaration function) {
+    if (node is TypeApplication) return _unionTarget(node.callee, function);
+    if (node is MemberAccess) {
+      return '${expression(node.object)}.${providerUnionBridgeName(function)}';
+    }
+    final original = model.references[node]?.dartName ?? function.name;
+    final dot = original.lastIndexOf('.');
+    return '${dot < 0 ? '' : original.substring(0, dot + 1)}${providerUnionBridgeName(function)}';
+  }
+
+  String _emitUnionValue(Expression node, QudsValueLowering lowering) {
+    final function = lowering.function;
+    final signature = functionTypeParts(model.types[node]!)!;
+    final returnedType = signature.$2;
+    final returned =
+        _isUnionType(returnedType) ? 'Object?' : _dartType(returnedType);
+    final target = _unionTarget(node, function);
+    final slot = '_qUnionSlot${_temps++}';
+    final held =
+        '($slot.target as $returned Function(List<Object?>, List<bool>))';
+    final required = <String>[];
+    final named = <String>[];
+    final optional = <String>[];
+    final payloads = <Parameter, String>{};
+    final presence = <Parameter, String>{};
+    for (var i = 0; i < function.parameters.length; i++) {
+      final parameter = function.parameters[i];
+      final type = lowering.parameterTypes[i];
+      final name = parameter.name;
+      final hasDefault = parameter.defaultValue != null;
+      final present =
+          hasDefault ? '!identical($name, $_defaultOmitted)' : 'true';
+      if (hasDefault) {
+        _useDefaultOmitted = true;
+        (parameter.kind == ParameterKind.optionalPositional ? optional : named)
+            .add('Object? $name = $_defaultOmitted');
+      } else if (parameter.kind == ParameterKind.requiredNamed) {
+        named.add('required ${_dartType(type)} $name');
+      } else {
+        required.add('${_dartType(type)} $name');
+      }
+      final value = _isUnionType(type)
+          ? (hasDefault ? '($name as ${_dartType(type)}).value' : '$name.value')
+          : name;
+      payloads[parameter] = hasDefault ? '$present ? $value : null' : value;
+      presence[parameter] = present;
+    }
+    final parameters = [
+      ...required,
+      if (named.isNotEmpty) '{${named.join(', ')}}',
+      if (optional.isNotEmpty) '[${optional.join(', ')}]',
+    ].join(', ');
+    final slots = packetSlots(function.parameters);
+    final invoke =
+        '$held(<Object?>[${slots.map((p) => payloads[p]).join(', ')}], '
+        '<bool>[${slots.map((p) => presence[p]).join(', ')}])';
+    var result =
+        _isUnionType(returnedType) ? _unionFrom(returnedType, invoke) : invoke;
+    final guard = model.qudsValueResultGuards[node];
+    if (guard != null) result = _readonlyGuard(guard, result);
+    final body =
+        '($parameters) { ${returnedType == 'void' ? '' : 'return '}$result; }';
+    _useValueCache = true;
+    final key = _dartString(
+        'union:${providerUnionBridgeName(function)}:${model.types[node]}:${guard ?? ''}');
+    return '\$QudsCachedValue($target, $key, <Type>[], ($slot) { $slot.target = $target; return $body; }, functionKey: true) as ${_dartType(model.types[node]!)}';
   }
 
   bool _cacheLowering(FunctionDeclaration function, Expression node) =>
@@ -4749,7 +4866,7 @@ class DartEmitter {
   String _match(MatchExpression node) {
     final saved = _matched;
     _matched = model.types[node.value];
-    if (_matched != null && _matched!.contains(' | ')) _unions.add(_matched!);
+    if (_matched != null && _matched!.contains(' | ')) _dartType(_matched!);
     final arms = node.arms.map((arm) {
       final guard = arm.guard == null ? '' : ' when ${expression(arm.guard!)}';
       return 'case ${_pattern(arm.pattern)}$guard: return ${expression(arm.result)};';
@@ -5034,7 +5151,7 @@ class DartEmitter {
 
   String _packetCall(
       CallExpression node, String target, List<int> order, String returned,
-      {required bool gap, int? variadicIndex}) {
+      {required bool gap, int? variadicIndex, bool unionPayloads = false}) {
     final parameters = <String>[
       '${gap ? 'Object' : '$returned Function(List<Object?>, List<bool>)'} \$qPacketTarget'
     ];
@@ -5044,14 +5161,23 @@ class DartEmitter {
       final temp = '_qpk${_temps++}';
       temps.add(temp);
       final value = node.arguments[i].value;
-      final text = value is SpreadElement
-          ? expression(value.operand)
-          : expression(value);
+      final wrap = unionPayloads ? model.wrapAs.remove(value) : null;
+      final rebox = unionPayloads ? model.reboxAs.remove(value) : null;
+      final String text;
+      try {
+        text = value is SpreadElement
+            ? expression(value.operand)
+            : expression(value);
+      } finally {
+        if (wrap != null) model.wrapAs[value] = wrap;
+        if (rebox != null) model.reboxAs[value] = rebox;
+      }
       final operand = value is SpreadElement ? value.operand : value;
       final type = model.implicitConversions[operand]?.resultType ??
           model.types[operand]!;
-      parameters.add('${_dartType(type)} $temp');
-      operands.add(text);
+      parameters.add('${unionPayloads ? 'Object?' : _dartType(type)} $temp');
+      operands
+          .add(unionPayloads && _isUnionType(type) ? '($text).value' : text);
     }
     final inputs = <String>[];
     final present = <String>[];
@@ -5197,6 +5323,24 @@ class DartEmitter {
         }
         _nullAwareCalls.remove(node);
       }
+    }
+    final unionFunction = model.references[node.callee]?.function;
+    if (unionFunction != null &&
+        model.providerUnionFunctions.contains(unionFunction) &&
+        !node.arguments.any((argument) => _isHole(argument.value))) {
+      final type = model.types[node]!;
+      final result = _packetCall(
+          node,
+          _unionTarget(node.callee, unionFunction),
+          [
+            for (final p in packetSlots(unionFunction.parameters))
+              (model.argumentOrder[node] ??
+                  const <int>[])[unionFunction.parameters.indexOf(p)]
+          ],
+          _isUnionType(type) ? 'Object?' : _dartType(type),
+          gap: false,
+          unionPayloads: true);
+      return _isUnionType(type) ? _unionFrom(type, result) : result;
     }
     if (model.packetValueCalls.contains(node)) {
       return _packetCall(
@@ -6174,8 +6318,7 @@ class DartEmitter {
     final arms = stored.split(' | ').map((part) => part.trim());
     if (!arms.contains(used)) return rendered;
     if (_unionCaseBindings.contains(symbol)) return '($rendered).value';
-    final prefix = model.unionPrefixes[symbol] ?? '';
-    final cast = '$prefix${_unionClass(stored)}_${_alt(used)}';
+    final cast = '${_typeOf(symbol)}_${_alt(_dartType(used))}';
     return '($rendered as $cast).value';
   }
 
@@ -6185,8 +6328,7 @@ class DartEmitter {
   String _alt(String type) => type.replaceAll(RegExp(r'[^A-Za-z0-9]'), '_');
 
   String _unionPattern(String matched, TypedPattern pattern) {
-    _unions.add(matched);
-    final cls = '${_unionClass(matched)}_${_alt(pattern.type)}';
+    final cls = '${_dartType(matched)}_${_alt(_dartType(pattern.type))}';
     if (pattern.name == null) return '$cls()';
     return '$cls(value: final ${model.declarations[pattern]!.dartName})';
   }

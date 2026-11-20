@@ -1,0 +1,54 @@
+use fixtures.union_exchange.provider as api
+
+test "stored unions cross library call boundaries":
+  held: int | String = 3
+  expect(api.accept(held), "n3")
+  saved = api.accept
+  expect(saved(held), "n3")
+
+test "imported union results become caller values":
+  received: int | String = api.produce(true)
+  if received is int:
+    expect(received + 1, 8)
+  expect(api.accept(api.produce(false)), "sq")
+
+test "union results and assignments use caller wrappers":
+  var value: int | String = api.produce(true)
+  value = "changed"
+  expect(api.accept(value), "schanged")
+  value = api.identity(api.produce(false))
+  expect(api.accept(value), "sq")
+
+test "stored callable identities are canonical":
+  saved = api.identity
+  expect(saved == api.identity, true)
+  value: int | String = 4
+  expect(api.accept(saved(value)), "n4")
+
+test "defaults stay in provider and omission remains observable":
+  api.Trace.defaults = 0
+  saved = api.withDefault
+  expect(saved(), "n5")
+  expect(api.Trace.defaults, 1)
+  value: int | String = "given"
+  expect(saved(value: value), "sgiven")
+  expect(api.Trace.defaults, 1)
+  expect(api.withDefault(), "n5")
+  expect(api.Trace.defaults, 2)
+
+test "direct unions containing nominal objects keep provider identity":
+  object: api.Payload | String = api.makeObject()
+  expect(api.readObject(object), 12)
+
+test "inferred union results and inferred nominal bindings narrow locally":
+  expect(api.accept(api.inferred(3)), "n3")
+  expect(readInferred(), 12)
+
+readInferred() -> int:
+  object = api.makeObject()
+  if object is String:
+    return object.length
+  return object.value
+
+test "unsupported candidates do not block another resolved overload":
+  expect(api.pick(false), "bool")

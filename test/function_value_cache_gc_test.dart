@@ -150,7 +150,7 @@ require(process.argv[1]);
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
     verify(jsonDecode('${run.stdout}'.trim()) as Map<String, dynamic>);
   }, timeout: const Timeout(Duration(minutes: 1)));
-  test('v13 rebuilds a checksum-valid v12 consumer with a strong cache',
+  test('current ABI rebuilds a checksum-valid v12 consumer with a strong cache',
       () async {
     File('${root.path}/pubspec.yaml').writeAsStringSync(
         "name: cache_upgrade\nenvironment:\n  sdk: '>=3.3.0 <4.0.0'\n");
@@ -184,7 +184,7 @@ require(process.argv[1]);
     expect(run.stdout, 'true\n1\n');
     for (final file in directory.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v13');
+          'provider-defaults-v14');
     }
   });
 }

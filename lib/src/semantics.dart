@@ -107,6 +107,35 @@ String providerDefaultBridgeName(FunctionDeclaration function) =>
         [p.name, p.type, p.defaultValue != null, p.kind.name],
     ]))).substring(0, 20);
 
+/// Direct unions have a checked payload ABI at top-level library boundaries.
+/// Nested/generic unions require a separate representation contract.
+bool directUnionType(String type) =>
+    type.contains(' | ') &&
+    functionTypeParts(type) == null &&
+    !type.contains('<') &&
+    !type.contains('(') &&
+    !type.startsWith('readonly ');
+
+bool supportsUnionBoundary(FunctionDeclaration function) =>
+    function.visibility != 'private' &&
+    !function.name.startsWith('_') &&
+    function.typeParameters.isEmpty &&
+    function.generator.isEmpty &&
+    !function.isAsync &&
+    !function.parameters.any((p) => p.variadic) &&
+    !packetValueLayout(function.parameters) &&
+    _providerDefaultsAreSynchronous(function) &&
+    [function.returnType ?? '', ...function.parameters.map((p) => p.type)]
+        .any(directUnionType) &&
+    [function.returnType ?? '', ...function.parameters.map((p) => p.type)]
+        .every((type) =>
+            !type.contains(' & ') &&
+            (!type.contains(' | ') || directUnionType(type)));
+
+String providerUnionBridgeName(FunctionDeclaration function) =>
+    providerDefaultBridgeName(function)
+        .replaceFirst(r'$QudsDefault', r'$QudsUnionCall');
+
 /// Unions/intersections need their own portable boundary conformance.
 bool supportsInterfaceDefaults(
         ClassDeclaration owner, FunctionDeclaration method) =>
@@ -348,6 +377,9 @@ class SemanticModel {
   final nativeArguments = <CallExpression, List<(String?, int)>>{};
 
   /// Closures that restore Quds defaults or hide intersection type parameters.
+  final providerUnionFunctions = <FunctionDeclaration>{};
+  final providerUnionImports = <ImportDeclaration, Set<FunctionDeclaration>>{};
+  final reboxAs = <Expression, String>{};
   final providerDefaultImports =
       <ImportDeclaration, Set<FunctionDeclaration>>{};
   final interfaceForwardingPlans =
@@ -882,13 +914,14 @@ class Analyzer {
   }
 
   Set<FunctionDeclaration> _exportedDefaultFunctions(
-      Program program, String home, Set<Program> seen) {
+      Program program, String home, Set<Program> seen,
+      {bool unions = false}) {
     if (seen.contains(program) || _sdkDefaultFiles.contains(program.span.file))
       return {};
     final next = {...seen, program};
     final result = program.statements
         .whereType<FunctionDeclaration>()
-        .where(supportsProviderDefaults)
+        .where(unions ? supportsUnionBoundary : supportsProviderDefaults)
         .toSet();
     for (final node in program.statements) {
       if (node is ImportDeclaration && node.export) {
@@ -896,15 +929,17 @@ class Analyzer {
         final path = _resolveLibrary(home, node.uri);
         final target = _libraries[path];
         if (target == null) continue;
-        result.addAll(_exportedDefaultFunctions(target, path, next).where(
-            (fn) =>
-                (node.show.isEmpty || node.show.contains(fn.name)) &&
-                !node.hide.contains(fn.name)));
+        result.addAll(
+            _exportedDefaultFunctions(target, path, next, unions: unions).where(
+                (fn) =>
+                    (node.show.isEmpty || node.show.contains(fn.name)) &&
+                    !node.hide.contains(fn.name)));
       } else if (node is PartDirective && !node.of) {
         final path = _resolveLibrary(home, node.uri);
         final target = _libraries[path];
         if (target != null)
-          result.addAll(_exportedDefaultFunctions(target, path, next));
+          result.addAll(
+              _exportedDefaultFunctions(target, path, next, unions: unions));
       }
     }
     return result;
@@ -919,6 +954,11 @@ class Analyzer {
         .map((entry) => entry.value.span.file));
     for (final source in [program, ...libraries.values]) {
       final sdk = _sdkDefaultFiles.contains(source.span.file);
+      if (!sdk) {
+        model.providerUnionFunctions.addAll(source.statements
+            .whereType<FunctionDeclaration>()
+            .where(supportsUnionBoundary));
+      }
       model.providerDefaultFunctions.addAll(source.statements
           .whereType<FunctionDeclaration>()
           .where(supportsProviderDefaults));
@@ -956,9 +996,12 @@ class Analyzer {
             identical(source, program) ? _file : source.span.file,
             directive.uri);
         final target = libraries[path];
-        if (target != null)
+        if (target != null) {
           model.providerDefaultImports[directive] =
               _exportedDefaultFunctions(target, path, {});
+          model.providerUnionImports[directive] =
+              _exportedDefaultFunctions(target, path, {}, unions: true);
+        }
       }
     }
     _global.symbols['print'] = Symbol('print', 'print', 'void');
@@ -5301,11 +5344,11 @@ class Analyzer {
             .every((value) => value);
       }
     }
-    if (to.contains(' | ')) {
-      return to.split(' | ').any((arm) => compatible(from, arm.trim()));
-    }
-    if (from.contains(' | ')) {
+    if (directUnionType(from)) {
       return from.split(' | ').every((arm) => compatible(arm.trim(), to));
+    }
+    if (directUnionType(to)) {
+      return to.split(' | ').any((arm) => compatible(from, arm.trim()));
     }
     if (isNullableType(to)) {
       return from == 'Null' || compatible(unwrap(from), unwrap(to));
@@ -6230,7 +6273,9 @@ class Analyzer {
         final signature = _qudsFunctionValue(found, node) ??
             _nativeFunctionValue(found, node) ??
             found.type;
-        if (signature.contains(' | ') && node.object is Identifier) {
+        if (signature.contains(' | ') &&
+            node.object is Identifier &&
+            !model.providerUnionFunctions.contains(found.function)) {
           model.unionExpressionPrefixes[node] =
               '${(node.object as Identifier).name}.';
         }
@@ -8197,7 +8242,9 @@ class Analyzer {
   void _rememberValueLowering(Expression node, FunctionDeclaration function,
       List<String> typeArguments, List<String> parameterTypes,
       {String? staticOwner}) {
-    final adapt = function.parameters.any((parameter) =>
+    _checkUnionBoundary(function, node);
+    final adapt = model.providerUnionFunctions.contains(function) ||
+        function.parameters.any((parameter) =>
             parameter.needsAdapter || parameter.type.contains(' & ')) ||
         model.qudsValueResultGuards.containsKey(node);
     if (!adapt) return;
@@ -10039,6 +10086,7 @@ class Analyzer {
       Map<String, String> typeArguments = const {},
       Map<String, String> parameterBounds = const {},
       String? declaredReturnType}) {
+    if (commit) _checkUnionBoundary(function, node);
     parameters = _callParameters(parameters, function);
     final inferred = {...typeArguments};
     final types = <int, String>{};
@@ -10179,7 +10227,9 @@ class Analyzer {
   String? _importedUnionPrefix(FunctionDeclaration? function) {
     final home =
         function == null ? '' : model.declarations[function]?.library ?? '';
-    if (home.isEmpty || home == _activeLibrary) return null;
+    if (home.isEmpty ||
+        home == _activeLibrary ||
+        model.providerUnionFunctions.contains(function)) return null;
     for (final node in model.imports) {
       if (node.export) continue;
       if (_resolveLibrary(_file, node.uri) != home) continue;
@@ -10199,7 +10249,9 @@ class Analyzer {
     }
     if (callee is MemberAccess && callee.object is Identifier) {
       final owner = model.references[callee.object];
-      if (owner?.namespace != null) {
+      if (owner?.namespace != null &&
+          !model.providerUnionFunctions
+              .contains(model.references[callee]?.function)) {
         return '${(callee.object as Identifier).name}.';
       }
     }
@@ -10210,10 +10262,42 @@ class Analyzer {
       Expression value, String actual, String expected, String? prefix) {
     final wanted = _resolveType(expected);
     final got = _resolveType(actual);
-    if (functionTypeParts(wanted) != null || !wanted.contains(' | ')) return;
-    if (got == wanted || got.contains(' | ')) return;
+    if (!directUnionType(wanted)) return;
+    if (got == wanted) return;
+    if (directUnionType(got)) {
+      model.reboxAs[value] = wanted;
+      return;
+    }
     model.wrapAs[value] = wanted;
     if (prefix != null) model.unionWrapPrefixes[value] = prefix;
+  }
+
+  void _checkUnionBoundary(FunctionDeclaration? function, Node node) {
+    if (function == null) return;
+    final home = model.declarations[function]?.library ?? '';
+    if (home.isEmpty || home == _activeLibrary) return;
+    if (model.providerUnionFunctions.contains(function)) {
+      if (node is CallExpression &&
+          node.arguments.any((a) => isHole(a.value))) {
+        error(
+            'E910',
+            'Imported union partial application needs additional boundary conformance',
+            node);
+      }
+      return;
+    }
+    final types = [
+      model.declarations[function]!.type,
+      ...function.parameters.map((p) => p.type)
+    ];
+    if (types.any((type) => _conversionSignatureType(
+            type, home, function.typeParameters.map((p) => p.name).toSet())
+        .contains(' | '))) {
+      error(
+          'E910',
+          'This imported union signature needs additional boundary conformance',
+          node);
+    }
   }
 
   String applyArguments(CallExpression node, List<Parameter> parameters,
@@ -10407,6 +10491,7 @@ class Analyzer {
         }
       }
     }
+    _checkUnionBoundary(function, node);
     return _callResult(_substitute(returned, inferred), function);
   }
 
@@ -11185,7 +11270,10 @@ class Analyzer {
   }
 
   bool _acceptExpected(Expression value, String actual, String expected) {
-    if (compatible(actual, expected)) return true;
+    if (compatible(actual, expected)) {
+      _noteUnionWrap(value, actual, expected, null);
+      return true;
+    }
     final plan = _customConversion(actual, expected, value);
     if (plan == null) return false;
     model.implicitConversions[value] = plan;

@@ -1,0 +1,3 @@
+use provider as api
+send(value: int | String) -> String = api.accept(value)
+relay(number: bool) -> int | String = api.produce(number)

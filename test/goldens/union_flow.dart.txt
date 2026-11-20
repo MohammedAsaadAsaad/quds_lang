@@ -2,7 +2,7 @@
 // ignore_for_file: type=lint
 
 import 'quds_readonly.dart' as $qudsReadonly;
-sealed class QudsUnion_int_or_String { const QudsUnion_int_or_String(); }
+sealed class QudsUnion_int_or_String { const QudsUnion_int_or_String(); Object? get value; }
 class QudsUnion_int_or_String_int extends QudsUnion_int_or_String {
   final int value;
   const QudsUnion_int_or_String_int(this.value);
@@ -11,7 +11,11 @@ class QudsUnion_int_or_String_String extends QudsUnion_int_or_String {
   final String value;
   const QudsUnion_int_or_String_String(this.value);
 }
-sealed class QudsUnion_int_or_bool { const QudsUnion_int_or_bool(); }
+QudsUnion_int_or_String $QudsFromQudsUnion_int_or_String(Object? value) {
+  if (value is int) return QudsUnion_int_or_String_int(value);
+  if (value is String) return QudsUnion_int_or_String_String(value);
+  throw ArgumentError.value(value, 'value', 'Invalid union payload'); }
+sealed class QudsUnion_int_or_bool { const QudsUnion_int_or_bool(); Object? get value; }
 class QudsUnion_int_or_bool_int extends QudsUnion_int_or_bool {
   final int value;
   const QudsUnion_int_or_bool_int(this.value);
@@ -20,6 +24,10 @@ class QudsUnion_int_or_bool_bool extends QudsUnion_int_or_bool {
   final bool value;
   const QudsUnion_int_or_bool_bool(this.value);
 }
+QudsUnion_int_or_bool $QudsFromQudsUnion_int_or_bool(Object? value) {
+  if (value is int) return QudsUnion_int_or_bool_int(value);
+  if (value is bool) return QudsUnion_int_or_bool_bool(value);
+  throw ArgumentError.value(value, 'value', 'Invalid union payload'); }
 
 class Notice {
   Notice();
@@ -71,6 +79,7 @@ String _q0(QudsUnion_int_or_String _q3, QudsUnion_int_or_bool _q4) {
   }
   return ["s", (_q3 as QudsUnion_int_or_String_String).value].join();
 }
+String $QudsUnionCall6f9f4d15d16bc0b197d6(List<Object?> $qInputs, List<bool> $qPresent) { final QudsUnion_int_or_String _qslot0 = $QudsFromQudsUnion_int_or_String($qInputs[0]); final QudsUnion_int_or_bool _qslot1 = $QudsFromQudsUnion_int_or_bool($qInputs[1]); return _q0(_qslot0, _qslot1); }
 
 String _q1(QudsUnion_int_or_String _q5, QudsUnion_int_or_String _q6) {
   if (_q5 case QudsUnion_int_or_String_int()) {
@@ -81,6 +90,7 @@ String _q1(QudsUnion_int_or_String _q5, QudsUnion_int_or_String _q6) {
   }
   return "end";
 }
+String $QudsUnionCall57147d6f61b4dac0185c(List<Object?> $qInputs, List<bool> $qPresent) { final QudsUnion_int_or_String _qslot0 = $QudsFromQudsUnion_int_or_String($qInputs[0]); final QudsUnion_int_or_String _qslot1 = $QudsFromQudsUnion_int_or_String($qInputs[1]); return _q1(_qslot0, _qslot1); }
 
 String _q2(QudsUnion_int_or_String _q7) {
   if (_q7 case QudsUnion_int_or_String_int()) {
@@ -88,26 +98,27 @@ String _q2(QudsUnion_int_or_String _q7) {
   }
   return (_q7 as QudsUnion_int_or_String_String).value;
 }
+String $QudsUnionCall46fb65ba54d1b5d4315e(List<Object?> $qInputs, List<bool> $qPresent) { final QudsUnion_int_or_String _qslot0 = $QudsFromQudsUnion_int_or_String($qInputs[0]); return _q2(_qslot0); }
 
 
 void main() {
-  print(_q0(QudsUnion_int_or_String_int(3), QudsUnion_int_or_bool_bool(false)));
-  print(_q0(QudsUnion_int_or_String_int(3), QudsUnion_int_or_bool_int(1)));
-  print(_q0(QudsUnion_int_or_String_String("q"), QudsUnion_int_or_bool_bool(false)));
-  print(_q1(QudsUnion_int_or_String_String("q"), QudsUnion_int_or_String_int(1)));
-  print(_q1(QudsUnion_int_or_String_int(2), QudsUnion_int_or_String_int(1)));
-  print(_q1(QudsUnion_int_or_String_String("q"), QudsUnion_int_or_String_String("s")));
-  print(_q2(QudsUnion_int_or_String_String("q")));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk0, Object? _qpk1) { return $qPacketTarget(<Object?>[_qpk0, _qpk1], <bool>[true, true]); })($QudsUnionCall6f9f4d15d16bc0b197d6, 3, false));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk2, Object? _qpk3) { return $qPacketTarget(<Object?>[_qpk2, _qpk3], <bool>[true, true]); })($QudsUnionCall6f9f4d15d16bc0b197d6, 3, 1));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk4, Object? _qpk5) { return $qPacketTarget(<Object?>[_qpk4, _qpk5], <bool>[true, true]); })($QudsUnionCall6f9f4d15d16bc0b197d6, "q", false));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk6, Object? _qpk7) { return $qPacketTarget(<Object?>[_qpk6, _qpk7], <bool>[true, true]); })($QudsUnionCall57147d6f61b4dac0185c, "q", 1));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk8, Object? _qpk9) { return $qPacketTarget(<Object?>[_qpk8, _qpk9], <bool>[true, true]); })($QudsUnionCall57147d6f61b4dac0185c, 2, 1));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk10, Object? _qpk11) { return $qPacketTarget(<Object?>[_qpk10, _qpk11], <bool>[true, true]); })($QudsUnionCall57147d6f61b4dac0185c, "q", "s"));
+  print(((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk12) { return $qPacketTarget(<Object?>[_qpk12], <bool>[true]); })($QudsUnionCall46fb65ba54d1b5d4315e, "q"));
   bool _q8 = false;
   try {
-    _q2(QudsUnion_int_or_String_int(3));
+    ((String Function(List<Object?>, List<bool>) $qPacketTarget, Object? _qpk13) { return $qPacketTarget(<Object?>[_qpk13], <bool>[true]); })($QudsUnionCall46fb65ba54d1b5d4315e, 3);
   } catch (_q9) {
     _q8 = true;
   }
   print(_q8);
   final Notice _q10 = Notice();
-  print(_q10.read(QudsUnion_int_or_String_int(3)));
-  print(_q10.read(QudsUnion_int_or_String_String("q")));
+  print(_q10.read($QudsFromQudsUnion_int_or_String(3)));
+  print(_q10.read($QudsFromQudsUnion_int_or_String("q")));
 }
 final classify = _q0;
 final cross = _q1;

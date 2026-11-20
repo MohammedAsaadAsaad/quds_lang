@@ -65,6 +65,26 @@
     "string": {
       "patterns": [
         {
+          "name": "string.quoted.triple.double.raw.quds",
+          "begin": "\\br\"\"\"",
+          "end": "\"\"\""
+        },
+        {
+          "name": "string.quoted.double.raw.quds",
+          "begin": "\\br\"",
+          "end": "\""
+        },
+        {
+          "name": "string.quoted.triple.single.raw.quds",
+          "begin": "\\br'''",
+          "end": "'''"
+        },
+        {
+          "name": "string.quoted.single.raw.quds",
+          "begin": "\\br'",
+          "end": "'"
+        },
+        {
           "name": "string.quoted.triple.double.quds",
           "begin": "\"\"\"",
           "end": "\"\"\"",
@@ -92,12 +112,14 @@
     },
     "string-inner": {
       "patterns": [
+        { "name": "constant.character.escape.quds", "match": "\\{\\{|\\}\\}" },
         {
           "name": "constant.character.escape.quds",
           "match": "\\\\."
         },
         {
           "name": "meta.interpolation.quds",
+          "contentName": "meta.embedded.expression.quds",
           "begin": "\\{",
           "beginCaptures": {
             "0": { "name": "punctuation.definition.interpolation.begin.quds" }

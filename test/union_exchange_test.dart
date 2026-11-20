@@ -127,7 +127,7 @@ void main() {
         .whereType<File>()
         .where((file) => file.path.endsWith('.json'));
     final cache = caches.firstWhere(
-        (file) => file.readAsStringSync().contains('provider-defaults-v15'));
+        (file) => file.readAsStringSync().contains('provider-defaults-v16'));
     final data = jsonDecode(cache.readAsStringSync()) as Map<String, dynamic>;
     data['abi'] = 'provider-defaults-v13';
     const old =
@@ -139,7 +139,7 @@ void main() {
     final second = await build();
     expect(second.exitCode, 0, reason: '${second.stdout}${second.stderr}');
     expect(
-        jsonDecode(cache.readAsStringSync())['abi'], 'provider-defaults-v15');
+        jsonDecode(cache.readAsStringSync())['abi'], 'provider-defaults-v16');
     expect(output.readAsStringSync(), isNot(old));
   });
 }

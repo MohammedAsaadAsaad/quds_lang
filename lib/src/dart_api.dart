@@ -1436,12 +1436,24 @@ class _Parser {
   void _value(Set<String> modifiers) {
     if (i >= tokens.length) return;
     final raw = _rawType();
+    // A top-level setter has no return type and must not overwrite its getter.
+    if (raw == 'set' && isIdent) {
+      _skipMember();
+      return;
+    }
     if (!isIdent) {
       _skipMember();
       return;
     }
-    final at = _here;
-    final name = take();
+    var at = _here;
+    var name = take();
+    if (name == 'get' && isIdent) {
+      at = _here;
+      name = take();
+    } else if (name == 'set' && isIdent) {
+      _skipMember();
+      return;
+    }
     final params = peek == '<' ? _typeParameters() : const <String, String>{};
     if (name.startsWith('_')) {
       _skipMember();

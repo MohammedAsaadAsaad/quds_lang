@@ -1,0 +1,24 @@
+class Trace:
+  static var text: String = ""
+text() -> String:
+  Trace.text += "S"
+  return "some"
+count() -> int:
+  Trace.text += "C"
+  return 5
+laterText() async -> String = text()
+laterCount() async -> int = count()
+const forward = "some" * 5
+const reverse = 5 * "some"
+main() async:
+  print forward
+  print reverse
+  print text() * count()
+  print Trace.text
+  Trace.text = ""
+  print count() * text()
+  print Trace.text
+  Trace.text = ""
+  print ((await laterCount()) * (await laterText()))
+  print Trace.text
+  print ("x" * 0 == "")

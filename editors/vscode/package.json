@@ -32,6 +32,7 @@
       {
         "language": "quds",
         "scopeName": "source.quds",
+        "tokenTypes": { "meta.embedded.expression.quds": "other" },
         "path": "./syntaxes/quds.tmLanguage.json"
       }
     ],

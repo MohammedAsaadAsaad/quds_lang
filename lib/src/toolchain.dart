@@ -20,7 +20,7 @@ Future<int> installToolchain({
     stderr.writeln('HOME is not set, so Quds has nowhere to install.');
     return 1;
   }
-  activateCommand(packageRoot);
+  final activated = activateCommand(packageRoot);
   rememberPath(home, pubBin(home));
   final failed = await _installEditors(
     home: home,
@@ -35,7 +35,7 @@ Future<int> installToolchain({
   if (failed) return 1;
   stdout.writeln('Extension id: $extensionId');
   stdout.writeln('Reload each editor and open a .quds file.');
-  return 0;
+  return activated ? 0 : 1;
 }
 
 /// Status lines for the editors this machine can host.
@@ -108,7 +108,7 @@ String? homeDirectory() {
   return Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
 }
 
-void activateCommand(Directory root) {
+bool activateCommand(Directory root) {
   final offlineOnly = Platform.environment['QUDS_INSTALL_OFFLINE'] == '1';
   var result = _activate(root, offline: true);
   if (result.exitCode != 0 && !offlineOnly) {
@@ -118,12 +118,21 @@ void activateCommand(Directory root) {
     stdout.writeln('[note] The quds command was not added to the pub cache.');
     final message = '${result.stderr}'.trim();
     if (message.isNotEmpty) stderr.writeln(message.split('\n').first);
-    return;
+    return false;
   }
   stdout.writeln('Activated the quds command.');
+  return true;
 }
 
 ProcessResult _activate(Directory root, {required bool offline}) {
+  // Current Dart does not accept --offline on `pub global activate`.
+  // Resolve the path package offline first; activation can reuse its config.
+  if (offline) {
+    final resolved = Process.runSync(
+        Platform.resolvedExecutable, ['pub', 'get', '--offline'],
+        workingDirectory: root.path);
+    if (resolved.exitCode != 0) return resolved;
+  }
   return Process.runSync(Platform.resolvedExecutable, [
     'pub',
     'global',
@@ -131,7 +140,6 @@ ProcessResult _activate(Directory root, {required bool offline}) {
     '--source',
     'path',
     root.path,
-    if (offline) '--offline',
   ]);
 }
 

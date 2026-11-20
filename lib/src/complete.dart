@@ -15,6 +15,36 @@ import 'sdk.dart';
 import 'semantics.dart';
 import 'walk.dart';
 
+Node? _loopCompletionOwner(String source, String prefix, int offset) {
+  for (var candidate in [source, prefix]) {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final program =
+            Parser(Lexer().tokenize(candidate)).parse(partial: true);
+        Node? owner;
+        walkAst(program, (node) {
+          if (!_loopContextContains(node, offset)) return;
+          if (owner == null || node.span.length < owner!.span.length)
+            owner = node;
+        });
+        if (owner != null) return owner;
+        break;
+      } on CompilerException catch (error) {
+        if (error.code != 'E004') break;
+        final start = _stringIndexForByte(candidate, error.span.offset);
+        if (start >= candidate.length) break;
+        final quote = candidate[start];
+        if (quote != '"' && quote != "'") break;
+        final delimiter =
+            candidate.startsWith(quote * 3, start) ? quote * 3 : quote;
+        candidate +=
+            '${error.message.contains('interpolation') ? '}' : ''}$delimiter\n';
+      }
+    }
+  }
+  return null;
+}
+
 bool _loopContextContains(Node node, int offset) {
   bool contains(Node child) =>
       offset >= child.span.offset &&
@@ -72,14 +102,9 @@ List<Map<String, Object?>> completeAt({
       final probe = source.substring(0, word.start) +
           'index' +
           source.substring(word.end);
-      final program = Parser(Lexer().tokenize(probe)).parse(partial: true);
       final offset = utf8.encode(source.substring(0, dot - 1)).length;
-      Node? owner;
-      walkAst(program, (node) {
-        if (!_loopContextContains(node, offset)) return;
-        if (owner == null || node.span.length < owner!.span.length)
-          owner = node;
-      });
+      final owner = _loopCompletionOwner(
+          probe, source.substring(0, word.start) + 'index', offset);
       if (owner == null) return const [];
       final hasItem = owner is ForStatement ||
           owner is CollectionFor ||
@@ -2398,6 +2423,13 @@ bool _inCode(String source, int index) {
     if (quote != 0 && interpolations.isEmpty) {
       if (!raw && unit == 92) {
         cursor += cursor + 1 < source.length ? 2 : 1;
+        continue;
+      }
+      if (!raw &&
+          (unit == 123 || unit == 125) &&
+          cursor + 1 < source.length &&
+          source.codeUnitAt(cursor + 1) == unit) {
+        cursor += 2;
         continue;
       }
       if (!raw && unit == 123) {

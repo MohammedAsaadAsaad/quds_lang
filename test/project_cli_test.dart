@@ -61,6 +61,20 @@ void main(List<String> args) {
 void success(ProcessResult result) =>
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
 void main() {
+  test('flutter clean forwards arguments, cwd, output and failure status',
+      () async {
+    final p = await project();
+    final result = await p.run(['flutter', 'clean', '--verbose']);
+    expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+    expect(p.calls.last, ['clean', '--verbose']);
+    expect(result.stdout, contains('backend ok'));
+    p.file('fail').writeAsStringSync('fail');
+    final failed = await p.run(['flutter', 'clean']);
+    expect(failed.exitCode, 17);
+    expect(failed.stderr, contains('backend error'));
+    expect((await p.run(['flutter'])).exitCode, 64);
+  });
+
   test('pub forwards arbitrary Flutter subcommands, options and exit status',
       () async {
     final p = await project();

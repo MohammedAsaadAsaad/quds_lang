@@ -2753,8 +2753,10 @@ main():
     Directory('${home.path}/.claude').createSync(recursive: true);
     Directory('${home.path}/.windsurf').createSync(recursive: true);
 
-    final copied = await cli(['install'], env: env);
-    expect(copied.exitCode, 0, reason: '${copied.stdout}\n${copied.stderr}');
+    // This editor-staging fixture deliberately has no git on PATH.
+    // Failed command activation must now be reported, not silently succeed.
+    final copied = await cli(['install', '--no-update'], env: env);
+    expect(copied.exitCode, 1, reason: '${copied.stdout}\n${copied.stderr}');
     final package =
         jsonDecode(File('editors/vscode/package.json').readAsStringSync())
             as Map<String, Object?>;
@@ -2798,8 +2800,8 @@ exit 0
 ''');
     final chmod = Process.runSync('chmod', ['+x', code.path]);
     expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
-    final installed = await cli(['install'], env: env);
-    expect(installed.exitCode, 0,
+    final installed = await cli(['install', '--no-update'], env: env);
+    expect(installed.exitCode, 1,
         reason: '${installed.stdout}\n${installed.stderr}');
     expect(
         installed.stdout, contains('Installed the Quds extension with code.'));

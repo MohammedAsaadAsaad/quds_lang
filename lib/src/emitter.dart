@@ -4068,10 +4068,15 @@ class DartEmitter {
       final result = node.operator == 'not in' ? '!$test' : test;
       return '(() { final $left = ${expression(node.left, constantContext: constantContext)}; final $right = ${expression(node.right, constantContext: constantContext)}; return $result; })()';
     }
+    if (constantContext &&
+        node.operator == '*' &&
+        model.constants[node] is ConstString) {
+      return model.constants[node]!.dartSource;
+    }
     if (node.operator == '*' && leftType == 'int' && rightType == 'String') {
       final count = '_qn${_temps++}';
       final text = '_qn${_temps++}';
-      return '(() { final $count = ${expression(node.left, constantContext: constantContext)}; final $text = ${expression(node.right, constantContext: constantContext)}; return $text * $count; })()';
+      return '((int $count, String $text) => $text * $count)(${expression(node.left)}, ${expression(node.right)})';
     }
     final op = switch (node.operator) {
       'and' => '&&',

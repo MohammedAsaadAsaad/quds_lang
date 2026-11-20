@@ -1,0 +1,13 @@
+test "positive integer repetition works in both directions":
+  expect("some" * 5, "somesomesomesomesome")
+  expect(5 * "some", "somesomesomesomesome")
+  expect("some" * 0, "")
+test "repetition is a valid Quds compile-time constant":
+  const first = "some" * 5
+  const second = 5 * "some"
+  expect(first, "somesomesomesomesome")
+  expect(first, second)
+amount() async -> int = 5
+text() async -> String = "some"
+test "reverse repetition evaluates awaits in the caller" async:
+  expect((await amount()) * (await text()), "somesomesomesomesome")

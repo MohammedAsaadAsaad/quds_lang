@@ -59,8 +59,15 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
-      "known_limits": [],
+      "verified_slice_files": [
+        "test/string_repeat.quds",
+        "test/string_repeat_web.quds",
+        "test/console_repeat_test.dart",
+        "test/goldens/string_repeat.dart.txt"
+      ],
+      "known_limits": [
+        "String repetition is covered in both operand orders, compile-time constants and awaited reverse operands with left-to-right effects; this does not certify every operator combination."
+      ],
       "completion_evidence": {
         "positive": [],
         "negative": [],
@@ -196,10 +203,13 @@
         "test/fixtures/quds_value_adapters/facade.quds",
         "test/inferred_provider.quds",
         "test/inferred_provider_test.dart",
-        "test/inferred_provider_web.quds"
+        "test/inferred_provider_web.quds",
+        "test/console_repeat_vm.quds",
+        "test/console_repeat_test.dart"
       ],
       "known_limits": [
-        "Deferred imports need a prefix; prefix.loadLibrary() is covered for the tested library. Non-deferred loadLibrary is E300. Full import and export combinator certification remains open."
+        "Deferred imports need a prefix; prefix.loadLibrary() is covered for the tested library. Non-deferred loadLibrary is E300. Full import and export combinator certification remains open.",
+        "Typed top-level native getters such as dart:io stdout are readable and survive a following setter; this does not add top-level native setter assignment support. Console IO evidence is native VM, not a browser console."
       ],
       "completion_evidence": {
         "positive": [],

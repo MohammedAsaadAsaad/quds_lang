@@ -1,3 +1,32 @@
+# Editor/console/installer follow-up — 2026-11-20
+
+Base: `9a2ca13`. Generated ABI: `provider-defaults-v16`.
+Contract/handoff: [EDITOR_CONSOLE_INSTALL_FOLLOWUP.md](EDITOR_CONSOLE_INSTALL_FOLLOWUP.md).
+
+| Check | Observed result |
+| --- | --- |
+| Reproduced completion defect | Unterminated interpolation returned an empty loop completion list; bare EOF/closed interpolation worked |
+| Editor fixes | Temporary syntax-recovery views, live LSP completion before diagnostics, embedded code token type; literal doubled braces/raw strings excluded |
+| Console | Real Quds VM program uses stdout.write without inserted newlines; getter parsing restored stdout and preserves typed getters across setters |
+| Repetition | Three primary Quds tests, deterministic golden/strict generated Dart analysis, actual VM/JS execution; awaited reverse operands remain in caller context |
+| Git update | Real temporary origins/checkouts: fast-forward/idempotence, tracked edits, divergence, detached HEAD, fetch failure and archive cases |
+| Activation | An isolated local package is activated and its command runs; invalid activation fails. Restricted editor-staging test reports activation failure while retaining copied editor files |
+| Flutter clean | Fake-backend project test checks arguments, working directory, stdout/stderr and exit codes; no actual engine run claimed |
+| Focused final gate | Loop/console/update/activation/editor drivers: **56 passed in 15s**; updated installer staging regression: **1 passed in 30s** |
+| Final format | `dart format .`: 119 files, 0 changes |
+| Final analysis | `dart analyze`: no issues found |
+| Full suite | `dart test --reporter expanded`: **836 passed, 1 failed, 11m41s**; the sole failure was an accidentally changed Shell-installer exit-code expectation, not product code |
+| Corrected Shell regression | Restored success expectation for `install.sh --skip-cli`; exact targeted test: **1 passed**. No product code changed after the full run; all **837 final cases** are verified across the full and targeted runs |
+| Inventory/keyword sync | `audit_language.py --check`, `sync_keyword_docs.py --check`, `git diff --check`: passed; 24 partial, 91 needs_certification, 0 complete |
+
+The full suite was not repeated after the one-line Shell expectation correction;
+the matching targeted test was rerun successfully. VM/JS cache GC regressions in
+the full run each observed `collected: 1000, buckets: 1, live: 42, canonical: true`.
+
+The first full run was stopped before completion to include literal-interpolation
+regressions. No incomplete full-run pass is claimed. Headless LSP/client tests and
+grammar configuration do not constitute an interactive VS Code GUI session.
+
 # Owner-approved loop context — 2026-11-20
 
 Base: `2fd7ffe`. Generated ABI: `provider-defaults-v15`.

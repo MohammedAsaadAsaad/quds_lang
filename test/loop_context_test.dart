@@ -32,6 +32,17 @@ void main() {
     });
   }
   for (final sample in <(String, Set<String>)>[
+    ('main():\n  for item in [1]:\n    print "{{\$.|}}"\n', {}),
+    ('main():\n  for item in [1]:\n    print r"{\$.|}"\n', {}),
+    (
+      'main():\n  for item in [1]:\n    print "{\$.|"',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  for item in [1]:\n    print "{\$.|',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    ('main():\n  repeat 3:\n    \$.|', {'index', 'iteration', 'isFirst'}),
     (
       'main():\n  for عنصر in [1]:\n    print \$.|\n',
       {'index', 'iteration', 'item', 'isFirst'}
@@ -81,6 +92,36 @@ void main() {
       }
     });
   }
+  test(
+      'live LSP serves loop suggestions before incomplete-string diagnostics finish',
+      () {
+    final session = LspSession()..background = true;
+    addTearDown(session.dispose);
+    const uri = 'file:///loop-popup.quds';
+    const text = 'main():\n  for item in [1]:\n    print "{\$.';
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {
+          'uri': uri,
+          'languageId': 'quds',
+          'version': 1,
+          'text': text
+        }
+      }
+    });
+    final answer = session.handle({
+      'id': 1,
+      'method': 'textDocument/completion',
+      'params': {
+        'textDocument': {'uri': uri},
+        'position': {'line': 2, 'character': 14}
+      }
+    });
+    final result = answer.response!['result'] as Map;
+    expect((result['items'] as List).map((item) => item['label']).toSet(),
+        {'index', 'iteration', 'item', 'isFirst'});
+  });
   test('loop context hover explains purpose and static type in English', () {
     const source = 'main():\n  for item in [10]:\n    print \$.index\n';
     final result = compile(source);
@@ -119,7 +160,7 @@ void main() {
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
     expect(run.stdout, '10\n');
     expect(jsonDecode(cacheFile.readAsStringSync())['abi'],
-        'provider-defaults-v15');
+        'provider-defaults-v16');
   });
   test('context golden analyzes and executes on VM and JavaScript', () async {
     final input = File('test/loop_context_web.quds').absolute;

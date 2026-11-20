@@ -1,0 +1,7 @@
+use dart:io
+main():
+  stdout.write "some" * 5
+  stdout.write "|"
+  stdout.write 2 * "x"
+  print "!"
+  stdout.writeln "done"

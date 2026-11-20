@@ -2861,3 +2861,26 @@ exactly once. An unannotated `number = 5` remains int.
 
 See [AUGMENT_AND_CONVERSIONS_AR.md](AUGMENT_AND_CONVERSIONS_AR.md) for implemented
 contexts, Quds conformance suites, backend checks and explicit limitations.
+
+## Owner-approved additive loop context — 2026-11-20
+
+This addition is authorized by the language owner after the original 115-rule
+handoff. It preserves the existing loop productions. Outside strings, `$` is a
+reserved contextual receiver and cannot be bound or passed as a standalone value.
+
+```ebnf
+loop-context-reference = "$", ".", ("index" | "iteration" | "item" | "isFirst") ;
+```
+
+This production participates as an expression primary.
+
+Within the nearest loop body, index is a zero-based int, iteration is a one-based
+int, and isFirst is a bool. Item is the same typed for-in binding and is unavailable
+for while, C-style for and repeat. Properties are read-only; this does not freeze
+an item's object. A new loop's initializer/count/iterable and while/C-style header expressions resolve `$`
+in the enclosing context; their existing evaluation times are unchanged. A trailing repeat-while condition
+uses that repeat's completed entry. Else after loop completion uses the enclosing
+context. Continue counts as an entered iteration. Closures capture per-entry
+snapshots; unrelated functions do not inherit dynamic caller context. Collection
+filters see input ordinals. See [LOOP_CONTEXT.md](LOOP_CONTEXT.md) for examples and
+implementation evidence. No lookahead, length query or iterator replay is implied.

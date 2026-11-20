@@ -99,7 +99,7 @@ jobs:
           python-version: '3.x'
       - run: dart pub get --enforce-lockfile
       - run: python tool/audit_language.py --check
-      - run: dart test test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/quds_function_values_test.dart test/quds_method_values_test.dart test/target_platform_test.dart test/union_exchange_test.dart test/union_boundaries_test.dart test/union_flow_test.dart --reporter expanded
+      - run: dart test test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/quds_function_values_test.dart test/quds_method_values_test.dart test/target_platform_test.dart test/union_exchange_test.dart test/union_boundaries_test.dart test/union_flow_test.dart test/loop_context_test.dart --reporter expanded
   flutter-engine:
     runs-on: ubuntu-latest
     defaults:

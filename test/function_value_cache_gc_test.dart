@@ -184,7 +184,7 @@ require(process.argv[1]);
     expect(run.stdout, 'true\n1\n');
     for (final file in directory.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v14');
+          'provider-defaults-v15');
     }
   });
 }

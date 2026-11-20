@@ -15,7 +15,7 @@ No row is declared complete merely because a sample or the full test suite passe
 | QUDS-003 | Lists, maps, sets, records with concise literals. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-004 | Dart operators plus and/or/not and null-aware operators. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-005 | if/else-if/else statements and expressions. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
-| QUDS-006 | for-in, ranges inclusive/exclusive, step, while, break/continue, await-for. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
+| QUDS-006 | for-in, ranges inclusive/exclusive, step, while, break/continue, await-for. | needs_certification | [test/loop_context.quds](../test/loop_context.quds), [test/loop_context_web.quds](../test/loop_context_web.quds), [test/loop_context_test.dart](../test/loop_context_test.dart), [test/goldens/loop_context.dart.txt](../test/goldens/loop_context.dart.txt) — Owner-approved loop context provides index, iteration, isFirst and for-in item. Headers use enclosing context; postcondition repeat uses its completed entry. This evidence does not certify all loop/collection combinations; see docs/LOOP_CONTEXT.md. |
 | QUDS-007 | Typed function declarations and expression-bodied functions. | needs_certification | [test/inferred_provider.quds](../test/inferred_provider.quds), [test/inferred_provider_test.dart](../test/inferred_provider_test.dart), [test/inferred_provider_web.quds](../test/inferred_provider_web.quds) |
 | QUDS-008 | Classes with fields and generated constructors. | partial | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) — One unnamed generative parent constructor is synthesized with the child fields. An imported non-literal parent default is evaluated by the parent $QudsCtorSlots bridge. Named-only, factory, variadic, and field-name collisions stay E910. |
 | QUDS-009 | Parentheses-optional simple calls; named argument blocks; unified widget-like constructor calls. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
@@ -27,7 +27,7 @@ No row is declared complete merely because a sample or the full test suite passe
 | QUDS-015 | Properties with get/set. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-016 | Public/private/protected visibility. | needs_certification | [test/quds_method_values.quds](../test/quds_method_values.quds), [test/quds_method_values_test.dart](../test/quds_method_values_test.dart) |
 | QUDS-017 | extends/implements/with and class modifiers. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
-| QUDS-018 | Collection operations and comprehensions. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
+| QUDS-018 | Collection operations and comprehensions. | needs_certification | [test/loop_context.quds](../test/loop_context.quds), [test/loop_context_web.quds](../test/loop_context_web.quds), [test/loop_context_test.dart](../test/loop_context_test.dart), [test/goldens/loop_context.dart.txt](../test/goldens/loop_context.dart.txt) — Owner-approved loop context provides index, iteration, isFirst and for-in item. Headers use enclosing context; postcondition repeat uses its completed entry. This evidence does not certify all loop/collection combinations; see docs/LOOP_CONTEXT.md. |
 | QUDS-019 | #, /* */, /// comments and annotations. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-020 | Interpolation "Hello {name}", escaped braces, raw/triple strings. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
 | QUDS-021 | Compound assignments, no ++ or --. | needs_certification | [test/language_test.dart](../test/language_test.dart), [test/compiler_test.dart](../test/compiler_test.dart) |
@@ -131,20 +131,20 @@ No row is declared complete merely because a sample or the full test suite passe
 This is a source inventory, not a claim that every deliberate rejection is a missing feature.
 Readonly erasure constraints and unsupported signatures must remain rejected until proved safe.
 
-- [lib/src/semantics.dart:1563](../lib/src/semantics.dart#L1563): `'E910', 'A generic superclass needs explicit type arguments in this subset', type); }`
-- [lib/src/semantics.dart:1572](../lib/src/semantics.dart#L1572): `'E910', 'Synthesizing a constructor over explicit parent constructors needs further conformance', type); }`
-- [lib/src/semantics.dart:4683](../lib/src/semantics.dart#L4683): `'E910', 'Explicit function values require a supported function or method', node); }`
-- [lib/src/semantics.dart:6480](../lib/src/semantics.dart#L6480): `error('E910', 'This method value needs unambiguous owner metadata', node); final ownerDeclaration = owner.$2; if (method.isStatic && ownerDeclaration != declaration) model.staticValueOwners[node] = _genericHead(owner.$1);`
-- [lib/src/semantics.dart:7635](../lib/src/semantics.dart#L7635): `'E910', 'This readonly shape has no runtime guard for an erased or Dart boundary', node); }`
-- [lib/src/semantics.dart:8116](../lib/src/semantics.dart#L8116): `'E910', 'These Quds function values need a method/default/variadic adapter', node); final expected =`
-- [lib/src/semantics.dart:8274](../lib/src/semantics.dart#L8274): `error('E910', 'This native function value needs additional conformance', node); final contextual = explicit == null && formals.isNotEmpty &&`
-- [lib/src/semantics.dart:8285](../lib/src/semantics.dart#L8285): `error('E910', 'This native function value needs additional conformance', node); } final substitution = explicit == null`
-- [lib/src/semantics.dart:8919](../lib/src/semantics.dart#L8919): `'E910', 'No supported generic native signature for ${callee.name}', callee); }`
-- [lib/src/semantics.dart:9341](../lib/src/semantics.dart#L9341): `'E910', 'A later optional positional argument requires earlier values explicitly', node); } else {`
-- [lib/src/semantics.dart:9372](../lib/src/semantics.dart#L9372): `error('E910', 'This Dart callback signature needs additional conformance', node); final named = top?.namedParameters ?? member!.namedParameters; final optional = top?.optionalNames ?? member!.optionalNames;`
-- [lib/src/semantics.dart:9470](../lib/src/semantics.dart#L9470): `'E910', 'A later optional Dart positional argument requires earlier values explicitly', node); layout.add((named.contains(name) ? name : null, order[i]));`
-- [lib/src/semantics.dart:10283](../lib/src/semantics.dart#L10283): `'E910', 'Imported union partial application needs additional boundary conformance', node); }`
-- [lib/src/semantics.dart:10297](../lib/src/semantics.dart#L10297): `'E910', 'This imported union signature needs additional boundary conformance', node); }`
+- [lib/src/semantics.dart:1566](../lib/src/semantics.dart#L1566): `'E910', 'A generic superclass needs explicit type arguments in this subset', type); }`
+- [lib/src/semantics.dart:1575](../lib/src/semantics.dart#L1575): `'E910', 'Synthesizing a constructor over explicit parent constructors needs further conformance', type); }`
+- [lib/src/semantics.dart:4691](../lib/src/semantics.dart#L4691): `'E910', 'Explicit function values require a supported function or method', node); }`
+- [lib/src/semantics.dart:6539](../lib/src/semantics.dart#L6539): `error('E910', 'This method value needs unambiguous owner metadata', node); final ownerDeclaration = owner.$2; if (method.isStatic && ownerDeclaration != declaration) model.staticValueOwners[node] = _genericHead(owner.$1);`
+- [lib/src/semantics.dart:7695](../lib/src/semantics.dart#L7695): `'E910', 'This readonly shape has no runtime guard for an erased or Dart boundary', node); }`
+- [lib/src/semantics.dart:8178](../lib/src/semantics.dart#L8178): `'E910', 'These Quds function values need a method/default/variadic adapter', node); final expected =`
+- [lib/src/semantics.dart:8336](../lib/src/semantics.dart#L8336): `error('E910', 'This native function value needs additional conformance', node); final contextual = explicit == null && formals.isNotEmpty &&`
+- [lib/src/semantics.dart:8347](../lib/src/semantics.dart#L8347): `error('E910', 'This native function value needs additional conformance', node); } final substitution = explicit == null`
+- [lib/src/semantics.dart:8981](../lib/src/semantics.dart#L8981): `'E910', 'No supported generic native signature for ${callee.name}', callee); }`
+- [lib/src/semantics.dart:9403](../lib/src/semantics.dart#L9403): `'E910', 'A later optional positional argument requires earlier values explicitly', node); } else {`
+- [lib/src/semantics.dart:9434](../lib/src/semantics.dart#L9434): `error('E910', 'This Dart callback signature needs additional conformance', node); final named = top?.namedParameters ?? member!.namedParameters; final optional = top?.optionalNames ?? member!.optionalNames;`
+- [lib/src/semantics.dart:9532](../lib/src/semantics.dart#L9532): `'E910', 'A later optional Dart positional argument requires earlier values explicitly', node); layout.add((named.contains(name) ? name : null, order[i]));`
+- [lib/src/semantics.dart:10345](../lib/src/semantics.dart#L10345): `'E910', 'Imported union partial application needs additional boundary conformance', node); }`
+- [lib/src/semantics.dart:10359](../lib/src/semantics.dart#L10359): `'E910', 'This imported union signature needs additional boundary conformance', node); }`
 - [lib/src/emitter.dart:1634](../lib/src/emitter.dart#L1634): `'E910', 'No sound runtime readonly boundary for $type', _span ?? const SourceSpan(1, 1, 1)); }`
 
 ## Exit gate

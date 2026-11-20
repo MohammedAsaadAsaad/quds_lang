@@ -156,7 +156,7 @@ void main() {
     expect(run.stdout, '7\n');
     for (final file in cache.listSync().whereType<File>()) {
       expect((jsonDecode(file.readAsStringSync()) as Map)['abi'],
-          'provider-defaults-v14');
+          'provider-defaults-v15');
     }
   });
 }

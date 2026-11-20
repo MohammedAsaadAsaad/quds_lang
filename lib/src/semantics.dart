@@ -437,6 +437,9 @@ class SemanticModel {
 
   /// The index binding of `for index, name in`, or the first field of a pair.
   final loopIndexes = <Node, Symbol>{};
+  final loopContextIndexes = <Node, Symbol>{};
+  final loopContextBodyIndexes = <Node>{};
+  final loopContextMembers = <MemberAccess, (Symbol, String)>{};
 
   /// `for a, b in` walks a pair instead of an index.
   final loopPairs = <Node>{};
@@ -4202,7 +4205,7 @@ class Analyzer {
         final frame = _LoopFrame(asValue);
         _loops.add(frame);
         _loopDepth++;
-        statements(node.body);
+        _withIteration(node, symbol, () => statements(node.body));
         _loopDepth--;
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
@@ -4216,7 +4219,8 @@ class Analyzer {
           _loops.add(frame);
           _loopDepth++;
           _withLet(node.letName!, node.condition, node, () {
-            statements(node.body, nested: true);
+            _withIteration(
+                node, null, () => statements(node.body, nested: true));
           });
           _loopDepth--;
           _loops.removeLast();
@@ -4229,7 +4233,8 @@ class Analyzer {
           _loops.add(frame);
           _loopDepth++;
           _withPattern(node.condition, node.pattern!, () {
-            statements(node.body, nested: true);
+            _withIteration(
+                node, null, () => statements(node.body, nested: true));
           });
           _loopDepth--;
           _loops.removeLast();
@@ -4241,8 +4246,10 @@ class Analyzer {
         final frame = _LoopFrame(asValue);
         _loops.add(frame);
         _loopDepth++;
-        _withPromotions(_promotions(node.condition, whenTrue: true),
-            () => statements(node.body, nested: true));
+        _withPromotions(
+            _promotions(node.condition, whenTrue: true),
+            () => _withIteration(
+                node, null, () => statements(node.body, nested: true)));
         _loopDepth--;
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
@@ -4423,7 +4430,7 @@ class Analyzer {
         final frame = _LoopFrame(asValue);
         _loops.add(frame);
         _loopDepth++;
-        statements(node.body);
+        _withIteration(node, null, () => statements(node.body));
         _loopDepth--;
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
@@ -4501,7 +4508,7 @@ class Analyzer {
           final frame = _LoopFrame(asValue);
           _loops.add(frame);
           _loopDepth++;
-          statements(node.body, nested: true);
+          _withIteration(node, null, () => statements(node.body, nested: true));
           _loopDepth--;
           _loops.removeLast();
           if (asValue) _valueBreakType = frame.breakType;
@@ -4511,11 +4518,12 @@ class Analyzer {
         final frame = _LoopFrame(asValue);
         _loops.add(frame);
         _loopDepth++;
-        statements(node.body, nested: true);
+        _withIteration(node, null, () => statements(node.body, nested: true));
         _loopDepth--;
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
-        if (expression(node.condition!) != 'bool') {
+        if (_withIteration(node, null, () => expression(node.condition!)) !=
+            'bool') {
           fail('repeat condition must be bool', node.condition!);
         }
         if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
@@ -6237,7 +6245,58 @@ class Analyzer {
     model.declarations[parameter] = symbol;
   }
 
+  final _iterationContexts = <(Node, Symbol?)>[];
+
+  T _withIteration<T>(Node owner, Symbol? item, T Function() body) {
+    _iterationContexts.add((owner, item));
+    try {
+      return body();
+    } finally {
+      _iterationContexts.removeLast();
+    }
+  }
+
+  String _iterationMember(MemberAccess node) {
+    final context = _iterationContexts.reversed.where((entry) {
+      final span = entry.$1.span;
+      return span.file == node.span.file &&
+          node.span.offset >= span.offset &&
+          node.span.offset < span.offset + span.length;
+    }).firstOrNull;
+    if (context == null)
+      error('E300', 'Loop context requires an enclosing loop body', node);
+    if (!{'index', 'iteration', 'item', 'isFirst'}.contains(node.name)) {
+      error('E300', 'Unknown loop context property: ${node.name}', node);
+    }
+    final Symbol symbol;
+    if (node.name == 'item') {
+      if (context.$2 == null)
+        error('E300', 'This loop has no item; item requires for-in', node);
+      symbol = context.$2!;
+    } else {
+      symbol = model.loopContextIndexes
+          .putIfAbsent(context.$1, () => create(r'$loopIndex', 'int'));
+    }
+    final owner = context.$1;
+    if (node.name != 'item' &&
+        !(owner is RepeatStatement &&
+            owner.condition != null &&
+            node.span.offset >= owner.condition!.span.offset &&
+            node.span.offset <
+                owner.condition!.span.offset + owner.condition!.span.length)) {
+      model.loopContextBodyIndexes.add(owner);
+    }
+    model.loopContextMembers[node] = (symbol, node.name);
+    // A contextual property is always read-only, even when its item is mutable.
+    model.references[node] = Symbol(node.name, symbol.dartName,
+        node.name == 'isFirst' ? 'bool' : symbol.type);
+    return node.name == 'isFirst' ? 'bool' : symbol.type;
+  }
+
   String member(MemberAccess node) {
+    if (node.object is Identifier && (node.object as Identifier).name == r'$') {
+      return _iterationMember(node);
+    }
     if (node.object is Identifier) {
       final owner = _scope.lookup((node.object as Identifier).name);
       if (owner != null && owner.namespace != null) {
@@ -7349,7 +7408,8 @@ class Analyzer {
       final saved = _scope;
       _scope = _Scope(saved);
       _scope.symbols[node.name!] = symbol;
-      final shaped = mapLiteral(node.thenMap);
+      final shaped =
+          _withIteration(node, symbol, () => mapLiteral(node.thenMap));
       model.types[node.thenMap] = shaped;
       _scope = saved;
       final inner = shaped.substring(4, shaped.length - 1);
@@ -8022,6 +8082,8 @@ class Analyzer {
   }
 
   String identifier(Identifier node) {
+    if (node.name == r'$')
+      error('E300', 'Use a loop context property such as \$.index', node);
     final symbol = _scope.lookup(node.name);
     if (symbol == null && _thisType != null) {
       final current = _thisType!;
@@ -11451,10 +11513,12 @@ class Analyzer {
       _scope.symbols[node.index!] = index;
       if (pair != null) model.loopPairs.add(node);
     }
-    if (node.filter != null && expression(node.filter!) != 'bool') {
-      fail('collection filter must be bool', node.filter!);
-    }
-    final type = groupElementType(node.body);
+    final type = _withIteration(node, symbol, () {
+      if (node.filter != null && expression(node.filter!) != 'bool') {
+        fail('collection filter must be bool', node.filter!);
+      }
+      return groupElementType(node.body);
+    });
     _scope = saved;
     return type;
   }

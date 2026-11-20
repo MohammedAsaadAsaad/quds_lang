@@ -1,0 +1,178 @@
+test "for-in exposes index iteration item and first":
+  var seen: String = ""
+  for item in [10, 20, 30]:
+    seen += "{$.index}:{$.iteration}:{$.item}:{$.isFirst};"
+  expect(seen, "0:1:10:true;1:2:20:false;2:3:30:false;")
+
+test "headers read outer loop context and body reads inner context":
+  var seen: String = ""
+  for outer in [0, 1, 2]:
+    repeat $.index:
+      seen += "{$.index}"
+  expect(seen, "001")
+
+test "while and C-style for count entries including continue":
+  var n: int = 0
+  var seen: String = ""
+  while n < 3:
+    n += 1
+    if n == 2:
+      continue
+    seen += "{$.index}"
+  expect(seen, "02")
+  var total: int = 0
+  for var counter = 3 while counter > 0 step counter -= 1:
+    total += $.iteration
+  expect(total, 6)
+
+test "repeat and postcondition repeat count entries":
+  var seen: String = ""
+  repeat 3:
+    seen += "{$.index}"
+  var n: int = 0
+  repeat:
+    seen += "{$.iteration}"
+    n += 1
+  while n < 2
+  expect(seen, "01212")
+
+test "collection iteration positions precede filtering":
+  values = [$.item + $.index for item in [10, 20, 30] if $.index != 1]
+  expect(values, [10, 32])
+
+test "pair loops expose ordinal independent of keys":
+  data = [("a", 10), ("b", 20)]
+  var seen: String = ""
+  for key, value in data:
+    seen += "{$.index}:{$.item}:{key};"
+  expect(seen, "0:10:a;1:20:b;")
+
+test "else reads outer context and postcondition reads completed entry":
+  var seen: String = ""
+  for outer in [0, 1]:
+    repeat 0:
+      print "unused"
+    else:
+      seen += "{$.index}"
+    var n: int = 0
+    repeat:
+      seen += "{$.index}"
+      n += 1
+    while $.iteration < 2
+  expect(seen, "001101")
+
+test "callbacks snapshot each entry":
+  var callbacks: List<() -> int> = []
+  for item in [10, 20]:
+    callbacks.add(() -> $.index + $.item)
+  expect(callbacks[0](), 10)
+  expect(callbacks[1](), 21)
+
+test "nested collection headers use enclosing context":
+  rows = [[$.item for inside in [$.item]] for item in [2, 4]]
+  expect(rows, [[2], [4]])
+
+test "context participates in ordinary expected-type conversions":
+  for item in [3]:
+    value: int | String = $.item
+    if value is int:
+      expect(value, 3)
+
+test "map and set collection loops expose context":
+  mapped = map:
+    for entry in [5, 7]:
+      $.index: $.item
+  expect(mapped[0], 5)
+  expect(mapped[1], 7)
+  unique = set:
+    $.item + $.index for item in [1, 1, 1]
+  expect(unique.length, 3)
+
+stream() async* -> int:
+  for item in [10, 20]:
+    yield $.item
+later(value: int) async -> int = value
+
+test "await-for and awaited collection operands preserve context" async:
+  var seen: String = ""
+  await for item in stream():
+    seen += "{$.index}:{$.item};"
+  expect(seen, "0:10;1:20;")
+  values = [await later($.item + $.index) for item in [10, 20]]
+  expect(values, [10, 21])
+
+readAt(values: List<int?>, index: int) -> int? = values[index]
+test "while-let and while-pattern have entry counters":
+  values: List<int?> = [1, 2, null]
+  var n: int = 0
+  var seen: String = ""
+  while let value = readAt(values, n):
+    seen += "{$.index}:{value};"
+    n += 1
+  expect(seen, "0:1;1:2;")
+  var matched: int = 0
+  while matched is int:
+    expect($.index, 0)
+    break
+
+test "range index is ordinal and labeled continue counts entries":
+  var seen: String = ""
+  label outer
+  for value in 10..14 step 2:
+    if value == 12:
+      continue outer
+    seen += "{$.index}:{$.item};"
+  expect(seen, "0:10;2:14;")
+
+test "loop values use the same context":
+  found = for item in [10, 20]:
+    if $.index == 1:
+      break $.item
+  else:
+    0
+  expect(found, 20)
+
+test "zero entries do not create an iteration":
+  var total: int = 0
+  empty: List<int> = []
+  for item in empty:
+    total += $.iteration
+  repeat 0:
+    total += $.iteration
+  while false:
+    total += $.iteration
+  expect(total, 0)
+
+pairStream() async* -> (String, int):
+  yield ("a", 10)
+  yield ("b", 20)
+test "await-for pairs expose ordinal independent of first field" async:
+  var seen: String = ""
+  await for key, value in pairStream():
+    seen += "{$.index}:{key}:{$.item};"
+  expect(seen, "0:a:10;1:b:20;")
+
+test "explicit collection index and context share the input ordinal":
+  values = [index + $.index + $.item for index, item in [10, 20] if index == $.index]
+  expect(values, [10, 22])
+
+remember(callbacks: List<() -> int>, value: () -> int, iteration: int) -> bool:
+  callbacks.add(value)
+  return iteration < 3
+test "postconditions snapshot completed entries even after continue":
+  var callbacks: List<() -> int> = []
+  repeat:
+    continue
+  while remember(callbacks, () -> $.index, $.iteration)
+  expect(callbacks.length, 3)
+  expect(callbacks[0](), 0)
+  expect(callbacks[1](), 1)
+  expect(callbacks[2](), 2)
+
+again(iteration: int) async -> bool = iteration < 2
+test "postconditions preserve awaited evaluations" async:
+  var entered: int = 0
+  repeat:
+    entered += 1
+  while await again($.iteration)
+  expect(entered, 2)

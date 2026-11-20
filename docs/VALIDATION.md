@@ -1,3 +1,29 @@
+# Owner-approved loop context — 2026-11-20
+
+Base: `2fd7ffe`. Generated ABI: `provider-defaults-v15`.
+Contract/handoff: [LOOP_CONTEXT.md](LOOP_CONTEXT.md).
+
+| Check | Observed result |
+| --- | --- |
+| Quds source coverage | 20 positive cases across statement/value loops, nullable/pattern while, ranges, labels, nested headers, postconditions, callbacks, generators, streams and list/set/map comprehensions |
+| Focused gate | Final loop driver: **23 passed in 12s**. Loop/union/editor development gate: 53 passed before the final async-postcondition case; final full gate includes it |
+| Baseline pair defect | The `2fd7ffe` backend on a pair-stream program emitted synchronous for-in over Stream; actual Dart execution rejected the generated file |
+| Generated output | Deterministic golden, strict generated Dart analysis, actual VM and JavaScript execution |
+| Completion | Parser/lexer only; tests forbid semantic compilation, cover Unicode, incomplete property names, nested headers and postconditions, and omit item in non-item loops |
+| Hover/highlighting | English type/purpose/example; TextMate contextual receiver/property scopes and readonly semantic tokens |
+| Completion measurement | During the full gate, 20 warm requests after 5 warmups: 1,000 helper lines median 12.009ms / p95 22.434ms; 5,000 lines median 43.472ms / p95 58.214ms. Zero semantic compilations; this is a local syntax-completion measurement, not an end-to-end editor SLA |
+| Cache | Checksum-valid v14 output rebuilt to v15; real CLI await-for pair program prints 10 |
+| Memory regression | VM and compiled JS each reported `collected: 1000, buckets: 1, live: 42, canonical: true` |
+| Final format | `dart format .`: 115 files, 0 changes |
+| Final analysis | `dart analyze`: no issues found |
+| Full suite | `dart test --reporter expanded`: **818 passed, 0 failed, 11m33s** |
+| Inventory/docs | `audit_language.py --check`, `sync_keyword_docs.py --check`, `git diff --check`: passed; 24 partial, 91 needs_certification, 0 complete |
+
+The existing source syntax is preserved. `$` is an additive owner-approved
+contextual receiver, not a new first-class runtime value. The portable CI matrix
+selects the new driver; its configuration is not an observed remote run. No actual
+Flutter engine run is claimed for this compiler addition.
+
 # Checked union library exchange — 2026-11-20
 
 Base: `20949f6`. Generated ABI: `provider-defaults-v14`.

@@ -3,6 +3,7 @@ export 'source.dart';
 
 enum TokenKind {
   identifier,
+  dollar,
   number,
   string,
   colon,
@@ -429,6 +430,7 @@ class _Scanner {
         '^': TokenKind.caret,
         '~': TokenKind.tilde,
         '@': TokenKind.at,
+        r'$': TokenKind.dollar,
       };
       if (ch == ';') fail('E102', 'A semicolon is not allowed');
       final kind = singles[ch];

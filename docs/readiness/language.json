@@ -91,8 +91,15 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
-      "known_limits": [],
+      "verified_slice_files": [
+        "test/loop_context.quds",
+        "test/loop_context_web.quds",
+        "test/loop_context_test.dart",
+        "test/goldens/loop_context.dart.txt"
+      ],
+      "known_limits": [
+        "Owner-approved loop context provides index, iteration, isFirst and for-in item. Headers use enclosing context; postcondition repeat uses its completed entry. This evidence does not certify all loop/collection combinations; see docs/LOOP_CONTEXT.md."
+      ],
       "completion_evidence": {
         "positive": [],
         "negative": [],
@@ -317,8 +324,15 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
-      "known_limits": [],
+      "verified_slice_files": [
+        "test/loop_context.quds",
+        "test/loop_context_web.quds",
+        "test/loop_context_test.dart",
+        "test/goldens/loop_context.dart.txt"
+      ],
+      "known_limits": [
+        "Owner-approved loop context provides index, iteration, isFirst and for-in item. Headers use enclosing context; postcondition repeat uses its completed entry. This evidence does not certify all loop/collection combinations; see docs/LOOP_CONTEXT.md."
+      ],
       "completion_evidence": {
         "positive": [],
         "negative": [],

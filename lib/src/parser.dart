@@ -3004,6 +3004,7 @@ class Parser {
   }
 
   bool startsExpression() =>
+      at(TokenKind.dollar) ||
       at(TokenKind.number) ||
       at(TokenKind.string) ||
       at(TokenKind.leftBracket) ||
@@ -3014,6 +3015,7 @@ class Parser {
           !(word('if') && !_ifExpressionAhead());
   Expression prefix() {
     final token = take();
+    if (token.kind == TokenKind.dollar) return Identifier(r'$', token.span);
     if (token.kind == TokenKind.number) {
       final lexeme = token.lexeme.replaceAll('_', '');
       final Object? value;

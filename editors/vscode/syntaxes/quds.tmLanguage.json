@@ -6,11 +6,30 @@
     { "include": "#comment" },
     { "include": "#string" },
     { "include": "#directive" },
+    { "include": "#loop-context" },
     { "include": "#keyword" },
     { "include": "#number" },
     { "include": "#function" }
   ],
   "repository": {
+    "loop-context": {
+      "patterns": [
+        {
+          "match": "(\\$)(\\.)(index|iteration|item|isFirst)\\b",
+          "captures": {
+            "1": {
+              "name": "variable.language.loop-context.quds"
+            },
+            "2": {
+              "name": "punctuation.accessor.quds"
+            },
+            "3": {
+              "name": "variable.other.property.quds"
+            }
+          }
+        }
+      ]
+    },
     "section": {
       "patterns": [
         {

@@ -3041,7 +3041,35 @@ class DartEmitter {
     _openGenerics = savedGenerics;
   }
 
+  final _contextLoopEmitting = <Statement>{};
+  String _contextCounter(Symbol symbol) =>
+      '\$qContextCounter${symbol.dartName}';
+  void _iterationStatements(Statement node, List<Statement> body) {
+    final index = model.loopContextIndexes[node];
+    if (index != null) {
+      final counter = _contextCounter(index);
+      line('$counter = $counter + 1;');
+      if (model.loopContextBodyIndexes.contains(node))
+        line('final int ${index.dartName} = $counter;');
+    }
+    statements(body);
+  }
+
   void statement(Statement node) {
+    final contextIndex = model.loopContextIndexes[node];
+    if (contextIndex != null && _contextLoopEmitting.add(node)) {
+      line('{');
+      _depth++;
+      line('var ${_contextCounter(contextIndex)} = -1;');
+      try {
+        statement(node);
+      } finally {
+        _contextLoopEmitting.remove(node);
+      }
+      _depth--;
+      line('}');
+      return;
+    }
     _span = node.span;
     switch (node) {
       case Binding():
@@ -3116,7 +3144,7 @@ class DartEmitter {
         line(
             'for ($keyword${_dartType(symbol.type)} ${symbol.dartName} = ${expression(init.value)}; ${expression(node.condition)}; $step) {');
         _depth++;
-        statements(node.body);
+        _iterationStatements(node, node.body);
         _depth--;
         line('}');
         _endLoop(node.elseBody);
@@ -3170,7 +3198,7 @@ class DartEmitter {
               'if ($count < 0) throw RangeError.range($count, 0, null, "count");');
           line('for (var $index = 0; $index < $count; $index = $index + 1) {');
           _depth++;
-          statements(node.body);
+          _iterationStatements(node, node.body);
           _depth--;
           line('}');
           _depth--;
@@ -3180,9 +3208,14 @@ class DartEmitter {
         }
         line('do {');
         _depth++;
-        statements(node.body);
+        _iterationStatements(node, node.body);
         _depth--;
-        line('} while (${expression(node.condition!)});');
+        final index = model.loopContextIndexes[node];
+        final condition = expression(node.condition!);
+        final tested = index == null
+            ? condition
+            : '(switch (${_contextCounter(index)}) { final ${index.dartName} => $condition })';
+        line('} while ($tested);');
         _endLoop(node.elseBody);
       case TestDeclaration():
         _useTests = true;
@@ -3240,12 +3273,13 @@ class DartEmitter {
             '${node.awaiting ? 'await ' : ''}for (final ${_dartType(symbol.type)} ${symbol.dartName} in $iterable) {';
         if (model.loopPairs.contains(node) && indexSymbol != null) {
           final record = '_qp${_temps++}';
-          final element = _sequenceElement(model.types[node.iterable] ?? '');
-          line('for (final ${_dartType(element)} $record in $iterable) {');
+          final element = '(${indexSymbol.type}, ${symbol.type})';
+          line(
+              '${node.awaiting ? 'await ' : ''}for (final ${_dartType(element)} $record in $iterable) {');
           _depth++;
           line('final ${indexSymbol.dartName} = $record.\$1;');
           line('final ${symbol.dartName} = $record.\$2;');
-          statements(node.body);
+          _iterationStatements(node, node.body);
           _depth--;
           line('}');
           _endLoop(node.elseBody);
@@ -3254,7 +3288,7 @@ class DartEmitter {
         if (indexSymbol == null) {
           line(header);
           _depth++;
-          statements(node.body);
+          _iterationStatements(node, node.body);
           _depth--;
           line('}');
           _endLoop(node.elseBody);
@@ -3267,7 +3301,7 @@ class DartEmitter {
         _depth++;
         line('final ${indexSymbol.dartName} = $counter;');
         line('$counter = $counter + 1;');
-        statements(node.body);
+        _iterationStatements(node, node.body);
         _depth--;
         line('}');
         _depth--;
@@ -3285,7 +3319,7 @@ class DartEmitter {
           line('if (!_qPresent($temp)) break;');
           line(
               'final ${_dartType(bound.type)} ${bound.dartName} = _qSome<${_dartType(bound.type)}>($temp);');
-          statements(node.body);
+          _iterationStatements(node, node.body);
           _depth--;
           line('}');
           _endLoop(node.elseBody);
@@ -3296,7 +3330,7 @@ class DartEmitter {
           _depth++;
           _openPattern('if', node.condition, node.pattern!);
           _depth++;
-          statements(node.body);
+          _iterationStatements(node, node.body);
           _depth--;
           line('} else {');
           line('  break;');
@@ -3308,7 +3342,7 @@ class DartEmitter {
         }
         line('while (${expression(node.condition, opaqueBool: true)}) {');
         _depth++;
-        statements(node.body);
+        _iterationStatements(node, node.body);
         _depth--;
         line('}');
         _endLoop(node.elseBody);
@@ -3995,18 +4029,6 @@ class DartEmitter {
     return value;
   }
 
-  String _sequenceElement(String type) {
-    final bare = _bareType(type);
-    final typed = model.dartShapes[bare]?.listElement;
-    if (typed != null) return typed;
-    for (final head in ['List<', 'Iterable<', 'Set<']) {
-      if (bare.startsWith(head) && bare.endsWith('>')) {
-        return bare.substring(head.length, bare.length - 1);
-      }
-    }
-    return 'Object';
-  }
-
   String _binary(BinaryExpression node,
       {required bool constantContext, required bool childOpaque}) {
     final leftType = model.types[node.left];
@@ -4512,6 +4534,16 @@ class DartEmitter {
   }
 
   String _member(MemberAccess node, {bool constantContext = false}) {
+    final context = model.loopContextMembers[node];
+    if (context != null) {
+      final name = context.$1.dartName;
+      return switch (context.$2) {
+        'iteration' => '($name + 1)',
+        'isFirst' => '($name == 0)',
+        _ => name,
+      };
+    }
+
     final dart = model.references[node]?.dartName ?? node.name;
     if (model.staticValueOwners[node] case final owner?) {
       return '${_dartType(owner)}.$dart';
@@ -4842,6 +4874,14 @@ class DartEmitter {
     if (key is MapComprehension) {
       if (key.name != null) {
         final symbol = model.declarations[key]!;
+        final contextIndex = model.loopContextIndexes[key];
+        if (contextIndex != null) {
+          var iterable = expression(key.iterable!);
+          if (_bareType(model.types[key.iterable!]) == 'String')
+            iterable = '($iterable).split(\'\')';
+          return 'for (final (${contextIndex.dartName}, ${symbol.dartName}) in ($iterable).indexed) '
+              '...<$keyType, $valueType>{${_mapEntries(key.thenMap, keyType, valueType)}}';
+        }
         return 'for (final ${_dartType(symbol.type)} ${symbol.dartName} in ${expression(key.iterable!)}) ...<$keyType, $valueType>{${_mapEntries(key.thenMap, keyType, valueType)}}';
       }
       final tail = key.elseMap == null
@@ -6258,9 +6298,28 @@ class DartEmitter {
     if (element is CollectionFor) {
       final symbol = model.declarations[element]!;
       final indexSymbol = model.loopIndexes[element];
+      final contextIndex = model.loopContextIndexes[element];
       var iterable = expression(element.iterable);
       if (_bareType(model.types[element.iterable]) == 'String') {
         iterable = '($iterable).split(\'\')';
+      }
+      if (contextIndex != null) {
+        final paired = model.loopPairs.contains(element);
+        final binding = paired
+            ? '(${indexSymbol!.dartName}, ${symbol.dartName})'
+            : symbol.dartName;
+        final savedNames = _names;
+        _names = {..._names};
+        if (indexSymbol != null && !paired)
+          _names[indexSymbol.dartName] = contextIndex.dartName;
+        try {
+          final filter = element.filter == null
+              ? ''
+              : ' if (${expression(element.filter!, opaqueBool: true)})';
+          return 'for (final (${contextIndex.dartName}, $binding) in ($iterable).indexed)$filter ...<$type>[${_pieces(element.body, type)}]';
+        } finally {
+          _names = savedNames;
+        }
       }
       if (indexSymbol == null) {
         final guard = element.filter == null

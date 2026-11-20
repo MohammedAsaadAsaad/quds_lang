@@ -161,3 +161,12 @@ The owner approves unified `augment Type:` (no `partial`) and type-level
 declarations inside classes or augments. This is an explicit amendment to 1.2.
 QUDS-082 `to`/`to?` and type-checking `as`/`is` remain distinct.
 See AUGMENT_AND_CONVERSIONS_AR.md for the agreement, implemented stages and limits.
+
+## Owner-approved addition — 2026-11-20: loop context
+
+The owner requested contextual `$.index`, `$.iteration` and `$.item` in all loop
+forms, with the closest enclosing loop body supplying them. A new loop's initial
+header reads the enclosing context, as in `repeat $.index:`. `$.isFirst` is also
+provided. See [LOOP_CONTEXT.md](LOOP_CONTEXT.md) for exact scope, postcondition,
+completion and validation behavior. This is an additive owner decision, not a
+renumbering or certification of the original 115 decisions.

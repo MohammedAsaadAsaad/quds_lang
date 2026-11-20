@@ -1,4 +1,6 @@
 import 'source_index.dart';
+import 'parser.dart';
+import 'loop_context_docs.dart';
 import 'keyword_docs_data.dart';
 import 'lexer.dart';
 import 'type_syntax.dart';
@@ -12,6 +14,31 @@ import 'libraries.dart';
 import 'sdk.dart';
 import 'semantics.dart';
 import 'walk.dart';
+
+bool _loopContextContains(Node node, int offset) {
+  bool contains(Node child) =>
+      offset >= child.span.offset &&
+      offset < child.span.offset + child.span.length;
+  final body = switch (node) {
+    ForStatement() => node.body,
+    WhileStatement() => node.body,
+    CForStatement() => node.body,
+    RepeatStatement() => node.body,
+    _ => null,
+  };
+  if (body != null)
+    return body.any(contains) ||
+        node is RepeatStatement &&
+            node.condition != null &&
+            contains(node.condition!);
+  if (node is CollectionFor) {
+    return node.body.any(contains) ||
+        node.filter != null && contains(node.filter!);
+  }
+  return node is MapComprehension &&
+      node.name != null &&
+      contains(node.thenMap);
+}
 
 /// LSP completion items for [source] at the zero-based [line] and [character].
 ///
@@ -38,6 +65,44 @@ List<Map<String, Object?>> completeAt({
   if (prefix.isNotEmpty && _digit(prefix.codeUnitAt(0))) return const [];
   final dot = _dotBefore(source, word.start);
   final range = _range(source, word.start, word.end);
+  if (dot != null && dot > 0 && source[dot - 1] == r'$') {
+    // Syntax-only: no compiler, imports, Dart analyzer or filesystem work on
+    // the loop-context completion path, even while the property is unfinished.
+    try {
+      final probe = source.substring(0, word.start) +
+          'index' +
+          source.substring(word.end);
+      final program = Parser(Lexer().tokenize(probe)).parse(partial: true);
+      final offset = utf8.encode(source.substring(0, dot - 1)).length;
+      Node? owner;
+      walkAst(program, (node) {
+        if (!_loopContextContains(node, offset)) return;
+        if (owner == null || node.span.length < owner!.span.length)
+          owner = node;
+      });
+      if (owner == null) return const [];
+      final hasItem = owner is ForStatement ||
+          owner is CollectionFor ||
+          owner is MapComprehension;
+      return [
+        for (final entry in loopContextDocs.entries)
+          if ((entry.key != 'item' || hasItem) && entry.key.startsWith(prefix))
+            {
+              'label': entry.key,
+              'kind': 10,
+              'detail': entry.key == 'item'
+                  ? 'current loop item'
+                  : entry.key == 'isFirst'
+                      ? 'bool'
+                      : 'int',
+              'documentation': {'kind': 'markdown', 'value': entry.value},
+              'textEdit': {'range': range, 'newText': entry.key},
+            }
+      ];
+    } on CompilerException {
+      return const [];
+    }
+  }
   final items = <String, Map<String, Object?>>{};
   void add(Map<String, Object?> item) {
     final label = item['label'];

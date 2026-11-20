@@ -1,0 +1,56 @@
+stream() async* -> int:
+  for item in [10, 20]:
+    yield $.item
+later(value: int) async -> int = value
+objectValue() -> Object = 3
+main() async:
+  for item in [10, 20]:
+    print "{$.index}:{$.iteration}:{$.item}:{$.isFirst}"
+    repeat $.index:
+      print "inner{$.index}"
+  var n: int = 0
+  while n < 3:
+    n += 1
+    if n == 2:
+      continue
+    print "while{$.index}"
+  for var counter = 5 while counter > 3 step counter -= 1:
+    print "for{$.iteration}"
+  repeat 2:
+    print "repeat{$.index}"
+  repeat:
+    print "post{$.index}"
+  while $.iteration < 2
+  values = [await later($.item + $.index) for item in [10, 20]]
+  print values
+  filtered = [$.item + $.index for item in [10, 20, 30] if $.index != 1]
+  print filtered
+  pairs = ["{key}:{$.item}:{$.index}" for key, value in [("a", 10), ("b", 20)]]
+  print pairs
+  mapped = map:
+    for item in [5, 7]:
+      $.index: $.item
+  print mapped
+  await for item in stream():
+    print "stream{$.index}:{$.item}"
+  var callbacks: List<() -> int> = []
+  for item in [10, 20]:
+    callbacks.add(() -> $.index + $.item)
+  print callbacks[0]()
+  print callbacks[1]()
+  var maybe: int? = 3
+  while let current = maybe:
+    print "let{$.index}:{current}"
+    maybe = null
+  pattern: Object = objectValue()
+  while pattern is int:
+    print "pattern{$.index}"
+    break
+  found = for item in [10, 20]:
+    if $.index == 1:
+      break $.item
+  else:
+    0
+  print found
+  explicit = [index + $.index + $.item for index, item in [10, 20] if index == $.index]
+  print explicit

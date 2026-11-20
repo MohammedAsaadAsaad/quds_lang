@@ -1,4 +1,5 @@
 import 'source_index.dart';
+import 'loop_context_docs.dart';
 import 'dart:convert';
 import 'dart:io';
 
@@ -627,6 +628,9 @@ String? _identifierHover(SemanticModel model, Identifier node) {
 }
 
 String? _memberHover(SemanticModel model, MemberAccess node) {
+  if (model.loopContextMembers.containsKey(node)) {
+    return '`${r'$.'}${node.name}: ${model.displayType(model.types[node]!)}`\n\n${loopContextDocs[node.name]}';
+  }
   final library = _libraryHover(model, model.references[node]);
   if (library != null) return library;
   final found = _findMember(model, node);
@@ -711,6 +715,8 @@ String? _valueHover(String name, String? type, {required bool mutable}) {
 }
 
 (int, int) _memberKind(SemanticModel model, MemberAccess node) {
+  if (model.loopContextMembers.containsKey(node))
+    return (_property, _bits(readonly: true));
   final found = _findMember(model, node);
   switch (found) {
     case _PropertyFound(:final declaration):

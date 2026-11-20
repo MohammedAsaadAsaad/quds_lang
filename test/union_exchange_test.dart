@@ -111,7 +111,7 @@ void main() {
     expect(rejected.stdout, 'checked\n');
   }, timeout: const Timeout(Duration(minutes: 2)));
 
-  test('v14 rebuilds a checksum-valid v13 union consumer', () async {
+  test('current ABI rebuilds a checksum-valid v13 union consumer', () async {
     final root = Directory.systemTemp.createTempSync('quds-union-abi-');
     addTearDown(() => root.deleteSync(recursive: true));
     File('${root.path}/pubspec.yaml').writeAsStringSync(
@@ -127,7 +127,7 @@ void main() {
         .whereType<File>()
         .where((file) => file.path.endsWith('.json'));
     final cache = caches.firstWhere(
-        (file) => file.readAsStringSync().contains('provider-defaults-v14'));
+        (file) => file.readAsStringSync().contains('provider-defaults-v15'));
     final data = jsonDecode(cache.readAsStringSync()) as Map<String, dynamic>;
     data['abi'] = 'provider-defaults-v13';
     const old =
@@ -139,7 +139,7 @@ void main() {
     final second = await build();
     expect(second.exitCode, 0, reason: '${second.stdout}${second.stderr}');
     expect(
-        jsonDecode(cache.readAsStringSync())['abi'], 'provider-defaults-v14');
+        jsonDecode(cache.readAsStringSync())['abi'], 'provider-defaults-v15');
     expect(output.readAsStringSync(), isNot(old));
   });
 }

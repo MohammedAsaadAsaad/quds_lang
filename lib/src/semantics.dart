@@ -3921,7 +3921,7 @@ class Analyzer {
 
   bool _statementExits(Statement node) => switch (node) {
         ReturnStatement() ||
-        RaiseStatement() ||
+        ThrowStatement() ||
         RethrowStatement() ||
         BreakStatement() ||
         ContinueStatement() =>
@@ -3929,11 +3929,9 @@ class Analyzer {
         IfStatement() => node.elseBody.isNotEmpty &&
             _alwaysExits(node.thenBody) &&
             _alwaysExits(node.elseBody),
-        IfCaseStatement() => _alwaysExits(node.body),
         IfLetStatement() => node.elseBody.isNotEmpty &&
             _alwaysExits(node.thenBody) &&
             _alwaysExits(node.elseBody),
-        LabelStatement() => _statementExits(node.statement),
         _ => false,
       };
 
@@ -6587,7 +6585,9 @@ class Analyzer {
     final substitution = _checkTypeArguments(
         method.name, method.typeParameters, arguments, node,
         bounds: bounds);
-    final result = _substitute(returned, substitution);
+    final actualResult = _substitute(returned, substitution);
+    final result = _readonlyView(raw, actualResult);
+    if (result != actualResult) model.qudsValueResultGuards[node] = result;
     final specialized = [
       for (final type in parameterTypes) _substitute(type, substitution)
     ];
@@ -8198,7 +8198,8 @@ class Analyzer {
       List<String> typeArguments, List<String> parameterTypes,
       {String? staticOwner}) {
     final adapt = function.parameters.any((parameter) =>
-        parameter.needsAdapter || parameter.type.contains(' & '));
+            parameter.needsAdapter || parameter.type.contains(' & ')) ||
+        model.qudsValueResultGuards.containsKey(node);
     if (!adapt) return;
     if (model.providerDefaultFunctions.contains(function)) {
       model.providerBridgeImports.add(function);

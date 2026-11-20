@@ -47,6 +47,14 @@ inferred concrete-class default bridges and checked override results. ABI v10
 invalidates older generated providers. Multiline-body, inferred interface-default,
 SDK and polymorphic callback limits remain explicit. Exact gates are in VALIDATION.md.
 
+## 2026-11-20 — review and lifetime/flow continuation
+
+[FUNCTION_VALUE_CACHE_AND_FLOW.md](FUNCTION_VALUE_CACHE_AND_FLOW.md) records the
+review of `5f6dbc3`: weak callable canonicalization with actual VM/JS cycle
+collection, runtime generic and readonly separation, conservative union exits and
+per-scrutinee unwrapping, plus CLI argument/generated-main regressions. ABI v13
+rebuilds old consumers. Existing readiness and cross-host limits remain explicit.
+
 ## Architecture
 
 Source manager → indentation-aware lexer → token stream → parser → typed AST → symbol table/name resolution → type checking → lowering IR → Dart emitter → diagnostics/source maps.

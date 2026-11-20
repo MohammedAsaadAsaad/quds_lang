@@ -1,0 +1,46 @@
+classify(value: int | String, other: int | bool) -> String:
+  if value is int:
+    if other is int:
+      return "nested"
+  if value is int:
+    return "fallback"
+  return "s{value}"
+
+cross(first: int | String, other: int | String) -> String:
+  if first is int:
+    return "number"
+  if other is int:
+    return first
+  return "end"
+
+throwExit(value: int | String) -> String:
+  if value is int:
+    throw "number"
+  return value
+
+class Notice:
+  event changed: () -> void
+  read(value: int | String) -> String:
+    if value is int:
+      raise changed
+    if value is int:
+      return "number"
+    return value
+
+main():
+  print classify(3, false)
+  print classify(3, 1)
+  print classify("q", false)
+  print cross("q", 1)
+  print cross(2, 1)
+  print cross("q", "s")
+  print throwExit("q")
+  var denied = false
+  try:
+    throwExit(3)
+  catch problem:
+    denied = true
+  print denied
+  owner = Notice()
+  print owner.read(3)
+  print owner.read("q")

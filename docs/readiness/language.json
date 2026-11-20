@@ -533,7 +533,11 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/union_flow.quds",
+        "test/union_flow_test.dart",
+        "test/union_flow_web.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -613,7 +617,12 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/extension_identity.quds",
+        "test/extension_identity_test.dart",
+        "test/function_value_cache_gc_test.dart",
+        "test/fixtures/value_cache_gc.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -839,7 +848,9 @@
         "test/union_boundaries_test.dart",
         "test/union_boundaries_web.quds",
         "test/goldens/union_boundaries.dart.txt",
-        "test/fixtures/union_boundaries/provider.quds"
+        "test/fixtures/union_boundaries/provider.quds",
+        "test/function_value_cache_gc_test.dart",
+        "test/fixtures/value_cache_gc.quds"
       ],
       "known_limits": [
         "Native values support explicit and concrete contextual specialization. Quds value adapters cover defaults, variadics, intersection parameters, zero-argument readonly result guards, generic extension values, and inherited static owners. A named default before a required parameter and a default together with a variadic can be stored as values. Full constraint solving and polymorphic callbacks remain limited. Concrete class method overloads select at compile time. Parameterized readonly method results wrap the adapter invocation when the readonly view is wider.",
@@ -1643,7 +1654,12 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/extension_identity.quds",
+        "test/extension_identity_test.dart",
+        "test/function_value_cache_gc_test.dart",
+        "test/fixtures/value_cache_gc.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -1666,7 +1682,11 @@
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
         "test/fixtures/quds_value_adapters/helpers.quds",
-        "test/quds_value_adapters_web.quds"
+        "test/quds_value_adapters_web.quds",
+        "test/extension_identity.quds",
+        "test/extension_identity_test.dart",
+        "test/function_value_cache_gc_test.dart",
+        "test/fixtures/value_cache_gc.quds"
       ],
       "known_limits": [
         "Some foreign final/sealed or erased readonly shapes intentionally report E910. A parameterized method value whose readonly view is wider than its declared result wraps the call result instead of rejecting the tear-off."
@@ -1686,7 +1706,12 @@
         "test/readonly_graph_test.dart",
         "test/readonly_paths_test.dart"
       ],
-      "verified_slice_files": [],
+      "verified_slice_files": [
+        "test/extension_identity.quds",
+        "test/extension_identity_test.dart",
+        "test/function_value_cache_gc_test.dart",
+        "test/fixtures/value_cache_gc.quds"
+      ],
       "known_limits": [],
       "completion_evidence": {
         "positive": [],
@@ -1707,7 +1732,10 @@
         "test/union_boundaries_test.dart",
         "test/union_boundaries_web.quds",
         "test/goldens/union_boundaries.dart.txt",
-        "test/fixtures/union_boundaries/provider.quds"
+        "test/fixtures/union_boundaries/provider.quds",
+        "test/union_flow.quds",
+        "test/union_flow_test.dart",
+        "test/union_flow_web.quds"
       ],
       "known_limits": [
         "A returning is check on a two-arm sealed union narrows the following statements to the other arm. The generated read casts that sealed subclass. A wider union keeps the original sealed representation until one arm remains. Generic unions are not certified."
@@ -1832,7 +1860,10 @@
       "verified_slice_files": [
         "test/inferred_provider.quds",
         "test/inferred_provider_test.dart",
-        "test/inferred_provider_web.quds"
+        "test/inferred_provider_web.quds",
+        "test/union_flow.quds",
+        "test/union_flow_test.dart",
+        "test/union_flow_web.quds"
       ],
       "known_limits": [
         "The unresolved foreign API dynamic fallback is not a static safety guarantee."
@@ -2052,7 +2083,10 @@
         "test/quds_value_adapters.quds",
         "test/quds_value_adapters_test.dart",
         "test/quds_value_adapters_web.quds",
-        "test/fixtures/quds_value_adapters/helpers.quds"
+        "test/fixtures/quds_value_adapters/helpers.quds",
+        "test/union_flow.quds",
+        "test/union_flow_test.dart",
+        "test/union_flow_web.quds"
       ],
       "known_limits": [
         "Readonly/foreign/generic boundary certification remains partial."

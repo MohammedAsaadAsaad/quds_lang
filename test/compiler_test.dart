@@ -1269,7 +1269,8 @@ dependencies:
 ''');
     Directory('${root.path}/lib').createSync();
     File('${root.path}/lib/main.quds')
-        .writeAsStringSync('main():\n  print "hi"\n');
+        .writeAsStringSync('const message = r"void main() {"\n'
+            'main():\n  print message\n');
     final bin = Directory('${root.path}/fake-bin')..createSync();
     final script = File('${bin.path}/flutter');
     script.writeAsStringSync('''#!/bin/sh
@@ -1292,6 +1293,9 @@ exit 0
     final generatedText = generated.readAsStringSync();
     expect(generatedText, contains('void _qMain()'));
     expect(generatedText, contains('void main()'));
+    expect(RegExp(r'^void main\(', multiLine: true).allMatches(generatedText),
+        hasLength(1));
+    expect(generatedText, contains(RegExp(r'^void _qMain\(', multiLine: true)));
     expect(generatedText, contains('_qMap'));
     expect(generatedText, contains('main.quds'));
     expect(File('${root.path}/lib/main.dart').existsSync(), isFalse);
@@ -3259,6 +3263,17 @@ main(args: List<String>):
     final combined = '${run.stdout}\n${run.stderr}';
     expect(run.exitCode, 0, reason: combined);
     expect(run.stdout, '2\nalpha\nbeta\n');
+    final fileArgument = await Process.run(Platform.resolvedExecutable, [
+      'run',
+      quds,
+      'run',
+      source.path,
+      'payload.quds',
+      'second',
+    ]);
+    expect(fileArgument.exitCode, 0,
+        reason: '${fileArgument.stdout}\n${fileArgument.stderr}');
+    expect(fileArgument.stdout, '2\npayload.quds\nsecond\n');
     final helped = File('${directory.path}/help.quds')
       ..writeAsStringSync('main(args: List<String>):\n  print args[0]\n');
     final helpRun = await Process.run(Platform.resolvedExecutable, [

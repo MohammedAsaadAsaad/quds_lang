@@ -1668,8 +1668,10 @@ class Parser {
         properties.add(propertyDeclaration(''));
         continue;
       }
+      final readonlyMethod = word('readonly');
+      if (readonlyMethod) take();
       if (!functionAhead()) fail('An extension member must be a function');
-      methods.add(function(notes));
+      methods.add(function(notes, readonlyMethod: readonlyMethod));
     }
     expect(TokenKind.dedent, 'end of extension');
     return ExtensionDeclaration(extensionName, target, methods, extent(span),

@@ -1,0 +1,52 @@
+classify(value: int | String, other: int | bool) -> String:
+  if value is int:
+    if other is int:
+      return "nested"
+  if value is int:
+    return "fallback"
+  return "s{value}"
+
+cross(first: int | String, other: int | String) -> String:
+  if first is int:
+    return "number"
+  if other is int:
+    return first
+  return "end"
+
+throwExit(value: int | String) -> String:
+  if value is int:
+    throw "number"
+  return value
+
+test "a conditional case is not an unconditional branch exit":
+  expect(classify(3, false), "fallback")
+  expect(classify(3, 1), "nested")
+  expect(classify("q", false), "sq")
+
+test "Dart promotion belongs to its own union scrutinee":
+  expect(cross("q", 1), "q")
+  expect(cross(2, 1), "number")
+  expect(cross("q", "s"), "end")
+
+test "throwing branches narrow the remainder":
+  expect(throwExit("q"), "q")
+  var denied = false
+  try:
+    throwExit(3)
+  catch problem:
+    denied = true
+  expect(denied, true)
+
+class Notice:
+  event changed: () -> void
+  read(value: int | String) -> String:
+    if value is int:
+      raise changed
+    if value is int:
+      return "number"
+    return value
+
+test "raising an event does not exit the branch":
+  owner = Notice()
+  expect(owner.read(3), "number")
+  expect(owner.read("q"), "q")

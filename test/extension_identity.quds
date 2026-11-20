@@ -11,12 +11,15 @@ extend Object:
   inspect(value: int = 1) -> int = value
 
 class Box:
-  item: int required
+  var item: int required
 extend Box:
-  measure<T>(value: T, extra: int = 1) -> int = extra
+  measure<T>(value: T, extra: int = item) -> int = extra
 
 class Fresh:
-  readonly read(scale: int = 2) -> List<int> = [scale]
+  base: int = 0
+  readonly read(scale: int = 2) -> List<int> = [base + scale]
+  readonly plain() -> List<int> = [base]
+  readonly take() -> (scale: int = missing) -> readonly List<int> = read
 
 class Carrier<T>:
   item: Object required
@@ -29,6 +32,8 @@ test "extension identity survives primitives generics and intersections":
   saved = item.inspect
   expect(saved == item.inspect, true)
   expect(saved(), 1)
+  maybe: Object? = item
+  expect(saved == maybe?.inspect, true)
   other: Object = 4
   expect(saved == other.inspect, false)
   flag: Object = true
@@ -54,3 +59,72 @@ test "extension identity survives primitives generics and intersections":
   picked = choose
   expect(picked == choose, true)
   expect(picked(person), 1)
+
+
+extend Box:
+  unused<T>(extra: int = 1) -> int = extra
+  readonly values(scale: int = 2) -> List<int> = [item + scale]
+
+select<T>(owner: Box) = owner.measure<T>
+selectUnused<T>(owner: Box) = owner.unused<T>
+localFactory(amount: int) -> (item: Named & Aged, extra: int = missing) -> int:
+  local(item: Named & Aged, extra: int = 1) -> int = amount + extra
+  return local
+laterBox(owner: Box) async -> Box = owner
+
+test "generic cache specialization is reified at each invocation":
+  owner = Box(item: 1)
+  first = select<int>(owner)
+  second = select<String>(owner)
+  expect(first(3), 1)
+  expect(second("q"), 1)
+  expect(first == select<int>(owner), true)
+  expect(first == second, false)
+  unused = selectUnused<int>(owner)
+  expect(unused == selectUnused<int>(owner), true)
+  expect(unused == selectUnused<String>(owner), false)
+  owner.item = 4
+  expect(first(3), 4)
+
+test "local callable cache retains its lexical receiver":
+  person = Person(name: "Ada", age: 3)
+  first = localFactory(2)
+  second = localFactory(8)
+  expect(first(person), 3)
+  expect(second(person), 9)
+  expect(first == second, false)
+
+test "readonly function cache cannot reuse a mutable adapter":
+  owner = Box(item: 1)
+  raw = owner.values
+  view: readonly Box = owner
+  guarded = view.values
+  expect(raw == guarded, false)
+  expect(raw()[0], 3)
+  erased: dynamic = guarded()
+  expect(guarded()[0], 3)
+  var denied = false
+  try:
+    erased.add(9)
+  catch problem:
+    denied = true
+  expect(denied, true)
+
+test "implicit method values distinguish their owners":
+  first = Fresh(base: 3)
+  second = Fresh(base: 9)
+  left = first.take()
+  right = second.take()
+  expect(left()[0], 5)
+  expect(right()[0], 11)
+  expect(left == right, false)
+  expect(left == first.take(), true)
+  view: readonly Fresh = first
+  zero = view.plain
+  expect(zero == view.plain, true)
+  expect(zero()[0], 3)
+
+test "awaited extension receiver stays outside the cache closure" async:
+  owner = Box(item: 7)
+  saved = (await laterBox(owner)).measure<int>
+  expect(saved(3), 7)

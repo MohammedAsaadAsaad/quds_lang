@@ -11,12 +11,15 @@ extend Object:
   inspect(value: int = 1) -> int = value
 
 class Box:
-  item: int required
+  var item: int required
 extend Box:
-  measure<T>(value: T, extra: int = 1) -> int = extra
+  measure<T>(value: T, extra: int = item) -> int = extra
 
 class Fresh:
-  readonly read(scale: int = 2) -> List<int> = [scale]
+  base: int = 0
+  readonly read(scale: int = 2) -> List<int> = [base + scale]
+  readonly plain() -> List<int> = [base]
+  readonly take() -> (scale: int = missing) -> readonly List<int> = read
 
 class Carrier<T>:
   item: Object required
@@ -24,11 +27,22 @@ class Carrier<T>:
     saved = item.inspect
     return saved == item.inspect
 
-main():
+extend Box:
+  unused<T>(extra: int = 1) -> int = extra
+  readonly values(scale: int = 2) -> List<int> = [item + scale]
+select<T>(owner: Box) = owner.measure<T>
+selectUnused<T>(owner: Box) = owner.unused<T>
+localFactory(amount: int) -> (item: Named & Aged, extra: int = missing) -> int:
+  local(item: Named & Aged, extra: int = 1) -> int = amount + extra
+  return local
+laterBox(owner: Box) async -> Box = owner
+main() async:
   item: Object = 3
   saved = item.inspect
   print saved == item.inspect
   print saved()
+  maybe: Object? = item
+  print saved == maybe?.inspect
   other: Object = 4
   print saved == other.inspect
   flag: Object = true
@@ -54,3 +68,49 @@ main():
   picked = choose
   print picked == choose
   print picked(person)
+
+  specialized = Box(item: 1)
+  first = select<int>(specialized)
+  second = select<String>(specialized)
+  print first(3)
+  print second("q")
+  print first == select<int>(specialized)
+  print first == second
+  unused = selectUnused<int>(specialized)
+  print unused == selectUnused<int>(specialized)
+  print unused == selectUnused<String>(specialized)
+  specialized.item = 4
+  print first(3)
+  localFirst = localFactory(2)
+  localSecond = localFactory(8)
+  print localFirst(person)
+  print localSecond(person)
+  print localFirst == localSecond
+  mutable = Box(item: 1)
+  raw = mutable.values
+  readonlyOwner: readonly Box = mutable
+  protectedValue = readonlyOwner.values
+  print raw == protectedValue
+  print raw()[0]
+  erased: dynamic = protectedValue()
+  print protectedValue()[0]
+  var denied = false
+  try:
+    erased.add(9)
+  catch problem:
+    denied = true
+  print denied
+  freshFirst = Fresh(base: 3)
+  freshSecond = Fresh(base: 9)
+  implicitFirst = freshFirst.take()
+  implicitSecond = freshSecond.take()
+  print implicitFirst()[0]
+  print implicitSecond()[0]
+  print implicitFirst == implicitSecond
+  print implicitFirst == freshFirst.take()
+  zeroView: readonly Fresh = freshFirst
+  zero = zeroView.plain
+  print zero == zeroView.plain
+  print zero()[0]
+  awaited = (await laterBox(specialized)).measure<int>
+  print awaited(3)

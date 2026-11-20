@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'hash.dart';
 import 'type_syntax.dart';
 import 'readonly_helpers.dart';
+import 'function_value_cache.dart';
 import 'ast.dart';
 import 'constants.dart';
 import 'libraries.dart';
@@ -62,7 +63,7 @@ class DartEmitter {
 
   /// The scrutinee is promoted by the surrounding union case, so `.value` is
   /// visible without a cast.
-  var _insideUnionCase = false;
+  final _unionCaseBindings = <Symbol>{};
 
   /// Null emits this library's sealed union. An empty string names an
   /// unprefixed import; `api.` qualifies that import.
@@ -799,23 +800,10 @@ class DartEmitter {
     if (_useReadonlyList) helpers.writeln(readonlyListHelpers);
     if (_useReadonlyMap) helpers.writeln(readonlyMapHelpers);
     if (_useReadonlySet) helpers.writeln(readonlySetHelpers);
-    if (_useReadonly || _useValueCache) {
+    if (_useReadonly) {
       prelude.writeln("import 'dart:collection' as \$qudsCollection;");
     }
-    if (_useValueCache) {
-      helpers.writeln('final \$QudsValueOwner = Object();\n'
-          'final \$QudsValueCache = \$qudsCollection.HashMap<Object?, Map<String, Object?>>.identity();\n'
-          'Object? \$QudsCachedValue(Object? receiver, String key, Object? Function() create) {\n'
-          '  final found = \$QudsValueCache[receiver];\n'
-          '  final slot = found ?? <String, Object?>{};\n'
-          '  if (found == null) \$QudsValueCache[receiver] = slot;\n'
-          '  final existing = slot[key];\n'
-          '  if (existing != null) return existing;\n'
-          '  final created = create();\n'
-          '  slot[key] = created;\n'
-          '  return created;\n'
-          '}');
-    }
+    if (_useValueCache) helpers.writeln(functionValueCacheHelpers);
     if (_useProtected) {
       prelude.writeln("import 'package:meta/meta.dart';");
     }
@@ -3341,15 +3329,19 @@ class DartEmitter {
               arm.guard == null ? '' : ' when ${expression(arm.guard!)}';
           line('case ${_pattern(arm.pattern)}$guard:');
           _depth++;
-          final savedInside = _insideUnionCase;
+          final symbol =
+              node.value is Identifier ? model.references[node.value] : null;
+          final alreadyPromoted =
+              symbol != null && _unionCaseBindings.contains(symbol);
           if (_matched != null &&
               _matched!.contains(' | ') &&
               arm.pattern is TypedPattern &&
               (arm.pattern as TypedPattern).name == null) {
-            _insideUnionCase = true;
+            if (symbol != null) _unionCaseBindings.add(symbol);
           }
           statements(arm.body);
-          _insideUnionCase = savedInside;
+          if (symbol != null && !alreadyPromoted)
+            _unionCaseBindings.remove(symbol);
           _depth--;
         }
         if (model.warnings.any((warning) =>
@@ -3396,17 +3388,22 @@ class DartEmitter {
           line('if ($scrutinee case ${_pattern(node.pattern)}) {');
         }
         _matched = savedMatched;
-        final savedInside = _insideUnionCase;
+        final symbol = node.scrutinee is Identifier
+            ? model.references[node.scrutinee]
+            : null;
+        final alreadyPromoted =
+            symbol != null && _unionCaseBindings.contains(symbol);
         if (matched != null &&
             matched.contains(' | ') &&
             typed != null &&
             typed.name == null) {
-          _insideUnionCase = true;
+          if (symbol != null) _unionCaseBindings.add(symbol);
         }
         _depth++;
         statements(node.body);
         _depth--;
-        _insideUnionCase = savedInside;
+        if (symbol != null && !alreadyPromoted)
+          _unionCaseBindings.remove(symbol);
         line('}');
       case WhenStatement():
         if (model.skipped.contains(node)) break;
@@ -4095,7 +4092,7 @@ class DartEmitter {
   String _finishValue(Expression node, String value) {
     final guard = model.qudsValueResultGuards[node];
     final parameters = model.qudsValueLowerings[node]?.function.parameters;
-    if (parameters != null && parameters.isNotEmpty) return value;
+    if (parameters != null) return value;
     if (guard == null || !_emittingValueGuard.add(node)) return value;
     try {
       final call = '($value)()';
@@ -4146,17 +4143,44 @@ class DartEmitter {
               ? _identifier(node)
               : expression(node is TypeApplication ? node.callee : node);
     }
-    final value = _attachGap(
+    if (_cacheLowering(function, node)) {
+      _useValueCache = true;
+      final key = _dartString(_valueCacheKey(function, lowering,
+          guard: model.qudsValueResultGuards[node]));
+      final slot = '_qslot${_temps++}';
+      final arguments = [
+        ...lowering.typeArguments,
+        for (var i = 0; i < function.parameters.length; i++)
+          if (function.parameters[i].type.contains(' & '))
+            lowering.parameterTypes[i].split(' & ').first.trim()
+      ];
+      final applied = arguments.isEmpty
+          ? target
+          : '$target<${arguments.map(_dartType).join(', ')}>';
+      final returned = _dartType(functionTypeParts(model.types[node]!)!.$2);
+      final sourceType = _defaultBridges.contains(function)
+          ? _dartType(model.types[node]!)
+          : '$returned Function(${[
+              for (var i = 0; i < function.parameters.length; i++)
+                function.parameters[i].variadic
+                    ? _variadicListType(lowering.parameterTypes[i])
+                    : _dartType(lowering.parameterTypes[i])
+            ].join(', ')})';
+      final held = '($slot.target as $sourceType)';
+      final value = _attachGap(
+          _valueAdapter(held, lowering,
+              forceClosure: true,
+              instantiated: true,
+              resultGuard: model.qudsValueResultGuards[node]),
+          function,
+          held);
+      return '\$QudsCachedValue($target, $key, ${_valueCacheTypes(node, lowering)}, ($slot) { $slot.target = $applied; return $value; }, functionKey: true) as ${_dartType(model.types[node]!)}';
+    }
+    return _attachGap(
         _valueAdapter(target, lowering,
-            resultGuard: function.parameters.isEmpty
-                ? null
-                : model.qudsValueResultGuards[node]),
+            resultGuard: model.qudsValueResultGuards[node]),
         function,
         target);
-    if (!_cacheLowering(function, node)) return value;
-    _useValueCache = true;
-    final key = _dartString(_valueCacheKey(function, lowering));
-    return '\$QudsCachedValue(\$QudsValueOwner, $key, () => $value) as ${_dartType(model.types[node]!)}';
   }
 
   bool _cacheLowering(FunctionDeclaration function, Expression node) =>
@@ -4169,7 +4193,8 @@ class DartEmitter {
       "'${value.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll(r'$', r'\$')}'";
 
   String _valueCacheKey(
-      FunctionDeclaration function, QudsValueLowering lowering) {
+      FunctionDeclaration function, QudsValueLowering lowering,
+      {String? guard}) {
     final owner = model.providerDefaultMethods[function];
     final slash = function.span.file.lastIndexOf('/');
     final base = slash < 0
@@ -4178,38 +4203,52 @@ class DartEmitter {
     final name = owner == null
         ? '$base:${function.span.offset}:${function.name}'
         : providerMethodDefaultBridgeName(owner, function);
-    return '$name<${lowering.typeArguments.join(',')}>';
+    return '$name:${guard ?? ''}';
   }
+
+  String _valueCacheTypes(Expression node, QudsValueLowering lowering) =>
+      '<Type>[\$QudsValueType<${_dartType(nonNullableType(model.types[node]!))}>(), '
+      '${lowering.typeArguments.map((type) => '\$QudsValueType<${_dartType(type)}>()').join(', ')}]';
 
   String _memberValue(MemberAccess node, FunctionDeclaration function,
       QudsValueLowering lowering, String method,
       {required bool nullAware}) {
     final receiver = '_qrecv${_temps++}';
-    final objectType = _dartType(nullAware
-        ? nullableType(model.types[node.object]!)
-        : model.types[node.object]!);
+    final rawType = model.types[node.object]!;
+    final objectType = _dartType(nullAware ? nullableType(rawType) : rawType);
     final cache = _cacheLowering(function, node);
-    final body = _attachGap(
-        _valueAdapter('$receiver.$method', lowering,
-            forceClosure: cache && lowering.typeArguments.isNotEmpty,
-            resultGuard: function.parameters.isEmpty
-                ? null
-                : model.qudsValueResultGuards[node]),
-        function,
-        '$receiver.$method');
-    final created = nullAware
-        ? '(($objectType $receiver) => $receiver == null ? null : $body)'
-        : '(($objectType $receiver) => $body)';
     if (!cache) {
-      return '$created(${expression(node.object)})';
+      final body = _attachGap(
+          _valueAdapter('$receiver.$method', lowering,
+              resultGuard: model.qudsValueResultGuards[node]),
+          function,
+          '$receiver.$method');
+      return '(($objectType $receiver) => ${nullAware ? '$receiver == null ? null : ' : ''}$body)(${expression(node.object)})';
     }
-    final object = '_qobj${_temps++}';
-    final applied = '$created($object)';
-    final read = expression(node.object);
     _useValueCache = true;
-    final key = _dartString(_valueCacheKey(function, lowering));
-    final type = _dartType(model.types[node]!);
-    return '(() { final $object = $read; return \$QudsCachedValue($object, $key, () => $applied) as $type; })()';
+    final slot = '_qslot${_temps++}';
+    final held = '($slot.receiver as ${_dartType(nonNullableType(rawType))})';
+    final target = '$held.$method';
+    final savedReceiver = _defaultReceiver;
+    if (model.extensions.any((item) => item.methods.contains(function))) {
+      _defaultReceiver = held;
+    }
+    late String body;
+    try {
+      body = _attachGap(
+          _valueAdapter(target, lowering,
+              forceClosure: true,
+              resultGuard: model.qudsValueResultGuards[node]),
+          function,
+          target);
+    } finally {
+      _defaultReceiver = savedReceiver;
+    }
+    final key = _dartString(_valueCacheKey(function, lowering,
+        guard: model.qudsValueResultGuards[node]));
+    final cached =
+        '\$QudsCachedValue($receiver, $key, ${_valueCacheTypes(node, lowering)}, ($slot) => $body) as ${_dartType(model.types[node]!)}';
+    return '(($objectType $receiver) => ${nullAware ? '$receiver == null ? null : ' : ''}$cached)(${expression(node.object)})';
   }
 
   String _attachGap(
@@ -4262,6 +4301,7 @@ class DartEmitter {
   String _valueAdapter(String target, QudsValueLowering lowering,
       {bool declaration = false,
       bool forceClosure = false,
+      bool instantiated = false,
       String? resultGuard}) {
     final function = lowering.function;
     final hidden = <String>[];
@@ -4270,13 +4310,14 @@ class DartEmitter {
       hidden.add(lowering.parameterTypes[i].split(' & ').first.trim());
     }
     final arguments = [...lowering.typeArguments, ...hidden];
-    if (arguments.isNotEmpty)
+    if (!instantiated && arguments.isNotEmpty)
       target = '$target<${arguments.map(_dartType).join(', ')}>';
     if (!declaration &&
         !forceClosure &&
         _defaultBridges.contains(function) &&
         resultGuard == null) return target;
-    if (resultGuard == null &&
+    if (!forceClosure &&
+        resultGuard == null &&
         function.parameters.every((parameter) => !parameter.needsAdapter)) {
       return target;
     }
@@ -6132,7 +6173,7 @@ class DartEmitter {
     if (used == null || used == stored || used.contains(' | ')) return rendered;
     final arms = stored.split(' | ').map((part) => part.trim());
     if (!arms.contains(used)) return rendered;
-    if (_insideUnionCase) return '($rendered).value';
+    if (_unionCaseBindings.contains(symbol)) return '($rendered).value';
     final prefix = model.unionPrefixes[symbol] ?? '';
     final cast = '$prefix${_unionClass(stored)}_${_alt(used)}';
     return '($rendered as $cast).value';

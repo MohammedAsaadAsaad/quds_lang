@@ -48,18 +48,52 @@ class _QudsReadonlyList<E> extends $qudsCollection.ListBase<E> with _QudsReadonl
   bool contains(Object? value) => _source.any((item) => _qReadonlyMatches(item, value));
 }
 
-final $QudsValueOwner = Object();
-final $QudsValueCache = $qudsCollection.HashMap<Object?, Map<String, Object?>>.identity();
-Object? $QudsCachedValue(Object? receiver, String key, Object? Function() create) {
-  final found = $QudsValueCache[receiver];
-  final slot = found ?? <String, Object?>{};
-  if (found == null) $QudsValueCache[receiver] = slot;
-  final existing = slot[key];
-  if (existing != null) return existing;
-  final created = create();
-  slot[key] = created;
-  return created;
+class $QudsValueSlot {
+  $QudsValueSlot(this.receiver, this.key, this.types, this.functionKey);
+  final Object? receiver;
+  final String key;
+  final List<Type> types;
+  final bool functionKey;
+  Object? target;
+  late Object? value;
 }
+final $QudsValueCache = <int, List<WeakReference<$QudsValueSlot>>>{};
+final $QudsValueFinalizer = Finalizer<(int, WeakReference<$QudsValueSlot>)>((token) {
+  final bucket = $QudsValueCache[token.$1];
+  if (bucket == null) return;
+  bucket.remove(token.$2);
+  if (bucket.isEmpty) $QudsValueCache.remove(token.$1);
+});
+Type $QudsValueType<T>() => T;
+Object? $QudsCachedValue(Object? receiver, String key, List<Type> types,
+    Object? Function($QudsValueSlot) create, {bool functionKey = false}) {
+  final hash = functionKey ? receiver.hashCode : identityHashCode(receiver);
+  final bucket = $QudsValueCache[hash];
+  if (bucket != null) {
+    for (var i = bucket.length - 1; i >= 0; i--) {
+      final slot = bucket[i].target;
+      if (slot == null) { bucket.removeAt(i); continue; }
+      final sameReceiver = functionKey
+          ? slot.receiver == receiver : identical(slot.receiver, receiver);
+      if (slot.functionKey != functionKey || !sameReceiver || slot.key != key ||
+          slot.types.length != types.length) continue;
+      var same = true;
+      for (var j = 0; j < types.length; j++) {
+        if (slot.types[j] != types[j]) { same = false; break; }
+      }
+      if (same) return slot.value;
+    }
+    if (bucket.isEmpty) $QudsValueCache.remove(hash);
+  }
+  final slot = $QudsValueSlot(receiver, key, types, functionKey);
+  final value = create(slot);
+  slot.value = value;
+  final reference = WeakReference(slot);
+  ($QudsValueCache[hash] ??= []).add(reference);
+  $QudsValueFinalizer.attach(slot, (hash, reference));
+  return value;
+}
+
 
 abstract interface class Named {
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards);
@@ -102,12 +136,12 @@ base class $QudsReadonlyPerson with $qudsReadonly.ReadonlyView implements Person
   int get hashCode => _$qudsSourcePerson.hashCode;
 }
 extension on Object {
-  int inspect(int _q4) => _q4;
+  int inspect(int _q18) => _q18;
   int _$qudsDefault_inspect({Object? value = _$qudsDefaultOmitted}) { final int _qdefault0 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return inspect(_qdefault0); }
 }
 class Box {
   Box({required this.item});
-  final int item;
+  int item;
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Box) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -128,18 +162,22 @@ base class $QudsReadonlyBox with $qudsReadonly.ReadonlyView implements Box {
   bool $qudsIsLazySlot(Object slot) => _$qudsSourceBox.$qudsIsLazySlot(slot);
   @override
   int get item => $qudsReadonly.protectResult(_$qudsSourceBox, _$qudsSourceBox.item, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
+  set item(int value) => throw UnsupportedError('readonly field');
   String toString() => _$qudsSourceBox.toString();
   bool operator ==(Object other) => _$qudsSourceBox == other;
   int get hashCode => _$qudsSourceBox.hashCode;
 }
 extension on Box {
-  int measure<T>(T _q12, int _q13) => _q13;
-  int _$qudsDefault_measure<T>(T _q12, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault1 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return measure<T>(_q12, _qdefault1); }
+  int measure<T>(T _q8, int _q9) => _q9;
+  int _$qudsDefault_measure<T>(T _q8, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault1 = identical(extra, _$qudsDefaultOmitted) ? this.item : extra as int; return measure<T>(_q8, _qdefault1); }
 }
 class Fresh {
-  Fresh();
-  List<int> read(int _q17) => <int>[_q17];
+  Fresh({this.base = 0});
+  final int base;
+  List<int> read(int _q30) => <int>[(base + _q30)];
   List<int> $QudsMethodDefaultebc78a155cf16515b206({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault2 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return read(_qdefault2); }
+  List<int> plain() => <int>[base];
+  List<int> Function({int scale}) take() => $QudsCachedValue(this.$QudsMethodDefaultebc78a155cf16515b206, '\$QudsMethodDefaultebc78a155cf16515b206:readonly List<int>', <Type>[$QudsValueType<List<int> Function({int scale})>(), ], (_qslot3) { _qslot3.target = this.$QudsMethodDefaultebc78a155cf16515b206; return ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault4 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return _qReadonlyList<int>((_qslot3.target as List<int> Function({int scale}))(scale: _qdefault4), (_qe) => _qe); }; }, functionKey: true) as List<int> Function({int scale});
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Fresh) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
     final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
@@ -158,8 +196,12 @@ base class $QudsReadonlyFresh with $qudsReadonly.ReadonlyView implements Fresh {
   @override
   bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceFresh, candidate);
   bool $qudsIsLazySlot(Object slot) => _$qudsSourceFresh.$qudsIsLazySlot(slot);
-  List<int> read(int _q17) => <int>[_q17];
-  List<int> $QudsMethodDefaultebc78a155cf16515b206({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault3 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return read(_qdefault3); }
+  @override
+  int get base => $qudsReadonly.protectResult(_$qudsSourceFresh, _$qudsSourceFresh.base, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
+  List<int> read(int _q30) => <int>[(base + _q30)];
+  List<int> $QudsMethodDefaultebc78a155cf16515b206({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault5 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return read(_qdefault5); }
+  List<int> plain() => <int>[base];
+  List<int> Function({int scale}) take() => $QudsCachedValue(this.$QudsMethodDefaultebc78a155cf16515b206, '\$QudsMethodDefaultebc78a155cf16515b206:readonly List<int>', <Type>[$QudsValueType<List<int> Function({int scale})>(), ], (_qslot6) { _qslot6.target = this.$QudsMethodDefaultebc78a155cf16515b206; return ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault7 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return _qReadonlyList<int>((_qslot6.target as List<int> Function({int scale}))(scale: _qdefault7), (_qe) => _qe); }; }, functionKey: true) as List<int> Function({int scale});
   String toString() => _$qudsSourceFresh.toString();
   bool operator ==(Object other) => _$qudsSourceFresh == other;
   int get hashCode => _$qudsSourceFresh.hashCode;
@@ -168,8 +210,8 @@ class Carrier<T> {
   Carrier({required this.item});
   final Object item;
   bool same() {
-    final int Function({int value}) _q21 = (() { final _qobj5 = item; return $QudsCachedValue(_qobj5, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv4) => _qrecv4._$qudsDefault_inspect)(_qobj5)) as int Function({int value}); })();
-    return (_q21 == (() { final _qobj7 = item; return $QudsCachedValue(_qobj7, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv6) => _qrecv6._$qudsDefault_inspect)(_qobj7)) as int Function({int value}); })());
+    final int Function({int value}) _q55 = ((Object _qrecv8) => $QudsCachedValue(_qrecv8, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot9) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault10 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot9.receiver as Object)._$qudsDefault_inspect(value: _qdefault10); }) as int Function({int value}))(item);
+    return (_q55 == ((Object _qrecv11) => $QudsCachedValue(_qrecv11, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot12) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault13 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot12.receiver as Object)._$qudsDefault_inspect(value: _qdefault13); }) as int Function({int value}))(item));
   }
   Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
     if (runtimeType != Carrier<T>) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
@@ -196,13 +238,19 @@ base class $QudsReadonlyCarrier<T> with $qudsReadonly.ReadonlyView implements Ca
   bool operator ==(Object other) => _$qudsSourceCarrier == other;
   int get hashCode => _$qudsSourceCarrier.hashCode;
 }
+extension on Box {
+  int unused<T>(int _q11) => _q11;
+  int _$qudsDefault_unused<T>({Object? extra = _$qudsDefaultOmitted}) { final int _qdefault14 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return unused<T>(_qdefault14); }
+  List<int> values(int _q41) => <int>[(this.item + _q41)];
+  List<int> _$qudsDefault_values({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault15 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return values(_qdefault15); }
+}
 
 
 
 
-int _q0<_QT0 extends Named>(_QT0 _q1, int _q2) {
-  if (_q1 is! Aged) throw ArgumentError('intersection');
-  return _q2;
+int _q0<_QT0 extends Named>(_QT0 _q5, int _q6) {
+  if (_q5 is! Aged) throw ArgumentError('intersection');
+  return _q6;
 }
 
 
@@ -210,36 +258,103 @@ int _q0<_QT0 extends Named>(_QT0 _q1, int _q2) {
 
 
 
-void main() {
-  final Object _q3 = 3;
-  final int Function({int value}) _q5 = (() { final _qobj9 = _q3; return $QudsCachedValue(_qobj9, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv8) => _qrecv8._$qudsDefault_inspect)(_qobj9)) as int Function({int value}); })();
-  print((_q5 == (() { final _qobj11 = _q3; return $QudsCachedValue(_qobj11, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv10) => _qrecv10._$qudsDefault_inspect)(_qobj11)) as int Function({int value}); })()));
-  print(_q5());
-  final Object _q6 = 4;
-  print((_q5 == (() { final _qobj13 = _q6; return $QudsCachedValue(_qobj13, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv12) => _qrecv12._$qudsDefault_inspect)(_qobj13)) as int Function({int value}); })()));
-  final Object _q7 = true;
-  print(((() { final _qobj15 = _q7; return $QudsCachedValue(_qobj15, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv14) => _qrecv14._$qudsDefault_inspect)(_qobj15)) as int Function({int value}); })() == (() { final _qobj17 = _q7; return $QudsCachedValue(_qobj17, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv16) => _qrecv16._$qudsDefault_inspect)(_qobj17)) as int Function({int value}); })()));
-  final Object _q8 = "a";
-  print(((() { final _qobj19 = _q8; return $QudsCachedValue(_qobj19, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv18) => _qrecv18._$qudsDefault_inspect)(_qobj19)) as int Function({int value}); })() == (() { final _qobj21 = _q8; return $QudsCachedValue(_qobj21, 'extension_identity_web.quds:216:inspect<>', () => ((Object _qrecv20) => _qrecv20._$qudsDefault_inspect)(_qobj21)) as int Function({int value}); })()));
-  final Carrier<int> _q9 = $qudsReadonly.registerGuards<Carrier<int>>(Carrier<int>(item: 3), [$qudsReadonly.ModelGuard<Carrier<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
-  print(_q9.same());
-  final Box _q10 = Box(item: 1);
-  final Box _q11 = Box(item: 1);
-  final int Function(int, {int extra}) _q14 = (() { final _qobj24 = _q10; return $QudsCachedValue(_qobj24, 'extension_identity_web.quds:302:measure<int>', () => ((Box _qrecv22) => (int _q12, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault23 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return _qrecv22._$qudsDefault_measure<int>(_q12, extra: _qdefault23); })(_qobj24)) as int Function(int, {int extra}); })();
-  print((_q14 == (() { final _qobj27 = _q10; return $QudsCachedValue(_qobj27, 'extension_identity_web.quds:302:measure<int>', () => ((Box _qrecv25) => (int _q12, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault26 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return _qrecv25._$qudsDefault_measure<int>(_q12, extra: _qdefault26); })(_qobj27)) as int Function(int, {int extra}); })()));
-  print((_q14 == (() { final _qobj30 = _q11; return $QudsCachedValue(_qobj30, 'extension_identity_web.quds:302:measure<int>', () => ((Box _qrecv28) => (int _q12, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault29 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return _qrecv28._$qudsDefault_measure<int>(_q12, extra: _qdefault29); })(_qobj30)) as int Function(int, {int extra}); })()));
-  print(_q14(8));
-  final int Function(String, {int extra}) _q15 = (() { final _qobj33 = _q10; return $QudsCachedValue(_qobj33, 'extension_identity_web.quds:302:measure<String>', () => ((Box _qrecv31) => (String _q12, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault32 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return _qrecv31._$qudsDefault_measure<String>(_q12, extra: _qdefault32); })(_qobj33)) as int Function(String, {int extra}); })();
-  print((_q14 == _q15));
-  print(_q15("a"));
-  final Fresh _q16 = Fresh();
-  final List<int> Function({int scale}) _q18 = (() { final _qobj36 = $qudsReadonly.ModelGuard<Fresh>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q16); return $QudsCachedValue(_qobj36, '\$QudsMethodDefaultebc78a155cf16515b206<>', () => ((Fresh _qrecv34) => ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault35 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return _qReadonlyList<int>(_qrecv34.$QudsMethodDefaultebc78a155cf16515b206(scale: _qdefault35), (_qe) => _qe); })(_qobj36)) as List<int> Function({int scale}); })();
-  print((_q18 == (() { final _qobj39 = $qudsReadonly.ModelGuard<Fresh>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q16); return $QudsCachedValue(_qobj39, '\$QudsMethodDefaultebc78a155cf16515b206<>', () => ((Fresh _qrecv37) => ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault38 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return _qReadonlyList<int>(_qrecv37.$QudsMethodDefaultebc78a155cf16515b206(scale: _qdefault38), (_qe) => _qe); })(_qobj39)) as List<int> Function({int scale}); })()));
-  print((() { final _qo40 = _qReadonlyList<int>(_q18(), (_qe) => _qe); final _qi41 = 0; return _qo40[_qi41 < 0 ? _qo40.length + _qi41 : _qi41]; })());
-  final Person _q19 = (() { final _qa0 = "Ada"; final _qa1 = 3; return Person(name: _qa0, age: _qa1); })();
-  final int Function(Named, {int extra}) _q20 = $QudsCachedValue($QudsValueOwner, 'extension_identity_web.quds:140:choose<>', () => (Named _q1, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault42 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return _q0<Named>(_q1, _qdefault42); }) as int Function(Named, {int extra});
-  print((_q20 == $QudsCachedValue($QudsValueOwner, 'extension_identity_web.quds:140:choose<>', () => (Named _q1, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault43 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return _q0<Named>(_q1, _qdefault43); }) as int Function(Named, {int extra})));
-  print(_q20(_q19));
+
+int Function(T, {int extra}) _q1<T>(Box _q7) => ((Box _qrecv16) => $QudsCachedValue(_qrecv16, 'extension_identity_web.quds:306:measure:', <Type>[$QudsValueType<int Function(T, {int extra})>(), $QudsValueType<T>()], (_qslot17) => (T _q8, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault18 = identical(extra, _$qudsDefaultOmitted) ? (_qslot17.receiver as Box).item : extra as int; return (_qslot17.receiver as Box)._$qudsDefault_measure<T>(_q8, extra: _qdefault18); }) as int Function(T, {int extra}))(_q7);
+
+int Function({int extra}) _q2<T>(Box _q10) => ((Box _qrecv19) => $QudsCachedValue(_qrecv19, 'extension_identity_web.quds:701:unused:', <Type>[$QudsValueType<int Function({int extra})>(), $QudsValueType<T>()], (_qslot20) => ({Object? extra = _$qudsDefaultOmitted}) { final int _qdefault21 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return (_qslot20.receiver as Box)._$qudsDefault_unused<T>(extra: _qdefault21); }) as int Function({int extra}))(_q10);
+
+int Function(Named, {int extra}) _q3(int _q12) {
+  int _q13<_QT0 extends Named>(_QT0 _q14, int _q15) {
+    if (_q14 is! Aged) throw ArgumentError('intersection');
+    return (_q12 + _q15);
+  }
+  return $QudsCachedValue(_q13, 'extension_identity_web.quds:975:local:', <Type>[$QudsValueType<int Function(Named, {int extra})>(), ], (_qslot22) { _qslot22.target = _q13<Named>; return (Named _q14, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault23 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return (_qslot22.target as int Function(Named, int))(_q14, _qdefault23); }; }, functionKey: true) as int Function(Named, {int extra});
+}
+
+Future<Box> _q4(Box _q16) async => _q16;
+
+void main() async {
+  final Object _q17 = 3;
+  final int Function({int value}) _q19 = ((Object _qrecv24) => $QudsCachedValue(_qrecv24, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot25) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault26 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot25.receiver as Object)._$qudsDefault_inspect(value: _qdefault26); }) as int Function({int value}))(_q17);
+  print((_q19 == ((Object _qrecv27) => $QudsCachedValue(_qrecv27, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot28) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault29 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot28.receiver as Object)._$qudsDefault_inspect(value: _qdefault29); }) as int Function({int value}))(_q17)));
+  print(_q19());
+  final Object? _q20 = _q17;
+  print((_q19 == ((Object? _qrecv30) => _qrecv30 == null ? null : $QudsCachedValue(_qrecv30, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot31) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault32 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot31.receiver as Object)._$qudsDefault_inspect(value: _qdefault32); }) as int Function({int value})?)(_q20)));
+  final Object _q21 = 4;
+  print((_q19 == ((Object _qrecv33) => $QudsCachedValue(_qrecv33, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot34) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault35 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot34.receiver as Object)._$qudsDefault_inspect(value: _qdefault35); }) as int Function({int value}))(_q21)));
+  final Object _q22 = true;
+  print((((Object _qrecv36) => $QudsCachedValue(_qrecv36, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot37) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault38 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot37.receiver as Object)._$qudsDefault_inspect(value: _qdefault38); }) as int Function({int value}))(_q22) == ((Object _qrecv39) => $QudsCachedValue(_qrecv39, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot40) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault41 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot40.receiver as Object)._$qudsDefault_inspect(value: _qdefault41); }) as int Function({int value}))(_q22)));
+  final Object _q23 = "a";
+  print((((Object _qrecv42) => $QudsCachedValue(_qrecv42, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot43) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault44 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot43.receiver as Object)._$qudsDefault_inspect(value: _qdefault44); }) as int Function({int value}))(_q23) == ((Object _qrecv45) => $QudsCachedValue(_qrecv45, 'extension_identity_web.quds:216:inspect:', <Type>[$QudsValueType<int Function({int value})>(), ], (_qslot46) => ({Object? value = _$qudsDefaultOmitted}) { final int _qdefault47 = identical(value, _$qudsDefaultOmitted) ? 1 : value as int; return (_qslot46.receiver as Object)._$qudsDefault_inspect(value: _qdefault47); }) as int Function({int value}))(_q23)));
+  final Carrier<int> _q24 = $qudsReadonly.registerGuards<Carrier<int>>(Carrier<int>(item: 3), [$qudsReadonly.ModelGuard<Carrier<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()]))]);
+  print(_q24.same());
+  final Box _q25 = Box(item: 1);
+  final Box _q26 = Box(item: 1);
+  final int Function(int, {int extra}) _q27 = ((Box _qrecv48) => $QudsCachedValue(_qrecv48, 'extension_identity_web.quds:306:measure:', <Type>[$QudsValueType<int Function(int, {int extra})>(), $QudsValueType<int>()], (_qslot49) => (int _q8, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault50 = identical(extra, _$qudsDefaultOmitted) ? (_qslot49.receiver as Box).item : extra as int; return (_qslot49.receiver as Box)._$qudsDefault_measure<int>(_q8, extra: _qdefault50); }) as int Function(int, {int extra}))(_q25);
+  print((_q27 == ((Box _qrecv51) => $QudsCachedValue(_qrecv51, 'extension_identity_web.quds:306:measure:', <Type>[$QudsValueType<int Function(int, {int extra})>(), $QudsValueType<int>()], (_qslot52) => (int _q8, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault53 = identical(extra, _$qudsDefaultOmitted) ? (_qslot52.receiver as Box).item : extra as int; return (_qslot52.receiver as Box)._$qudsDefault_measure<int>(_q8, extra: _qdefault53); }) as int Function(int, {int extra}))(_q25)));
+  print((_q27 == ((Box _qrecv54) => $QudsCachedValue(_qrecv54, 'extension_identity_web.quds:306:measure:', <Type>[$QudsValueType<int Function(int, {int extra})>(), $QudsValueType<int>()], (_qslot55) => (int _q8, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault56 = identical(extra, _$qudsDefaultOmitted) ? (_qslot55.receiver as Box).item : extra as int; return (_qslot55.receiver as Box)._$qudsDefault_measure<int>(_q8, extra: _qdefault56); }) as int Function(int, {int extra}))(_q26)));
+  print(_q27(8));
+  final int Function(String, {int extra}) _q28 = ((Box _qrecv57) => $QudsCachedValue(_qrecv57, 'extension_identity_web.quds:306:measure:', <Type>[$QudsValueType<int Function(String, {int extra})>(), $QudsValueType<String>()], (_qslot58) => (String _q8, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault59 = identical(extra, _$qudsDefaultOmitted) ? (_qslot58.receiver as Box).item : extra as int; return (_qslot58.receiver as Box)._$qudsDefault_measure<String>(_q8, extra: _qdefault59); }) as int Function(String, {int extra}))(_q25);
+  print((_q27 == _q28));
+  print(_q28("a"));
+  final Fresh _q29 = Fresh();
+  final List<int> Function({int scale}) _q31 = ((Fresh _qrecv60) => $QudsCachedValue(_qrecv60, '\$QudsMethodDefaultebc78a155cf16515b206:readonly List<int>', <Type>[$QudsValueType<List<int> Function({int scale})>(), ], (_qslot61) => ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault62 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return _qReadonlyList<int>((_qslot61.receiver as Fresh).$QudsMethodDefaultebc78a155cf16515b206(scale: _qdefault62), (_qe) => _qe); }) as List<int> Function({int scale}))($qudsReadonly.ModelGuard<Fresh>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q29));
+  print((_q31 == ((Fresh _qrecv63) => $QudsCachedValue(_qrecv63, '\$QudsMethodDefaultebc78a155cf16515b206:readonly List<int>', <Type>[$QudsValueType<List<int> Function({int scale})>(), ], (_qslot64) => ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault65 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return _qReadonlyList<int>((_qslot64.receiver as Fresh).$QudsMethodDefaultebc78a155cf16515b206(scale: _qdefault65), (_qe) => _qe); }) as List<int> Function({int scale}))($qudsReadonly.ModelGuard<Fresh>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q29))));
+  print((() { final _qo66 = _qReadonlyList<int>(_q31(), (_qe) => _qe); final _qi67 = 0; return _qo66[_qi67 < 0 ? _qo66.length + _qi67 : _qi67]; })());
+  final Person _q32 = (() { final _qa0 = "Ada"; final _qa1 = 3; return Person(name: _qa0, age: _qa1); })();
+  final int Function(Named, {int extra}) _q33 = $QudsCachedValue(_q0, 'extension_identity_web.quds:140:choose:', <Type>[$QudsValueType<int Function(Named, {int extra})>(), ], (_qslot68) { _qslot68.target = _q0<Named>; return (Named _q5, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault69 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return (_qslot68.target as int Function(Named, int))(_q5, _qdefault69); }; }, functionKey: true) as int Function(Named, {int extra});
+  print((_q33 == $QudsCachedValue(_q0, 'extension_identity_web.quds:140:choose:', <Type>[$QudsValueType<int Function(Named, {int extra})>(), ], (_qslot70) { _qslot70.target = _q0<Named>; return (Named _q5, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault71 = identical(extra, _$qudsDefaultOmitted) ? 1 : extra as int; return (_qslot70.target as int Function(Named, int))(_q5, _qdefault71); }; }, functionKey: true) as int Function(Named, {int extra})));
+  print(_q33(_q32));
+  final Box _q34 = Box(item: 1);
+  final int Function(int, {int extra}) _q35 = _q1<int>(_q34);
+  final int Function(String, {int extra}) _q36 = _q1<String>(_q34);
+  print(_q35(3));
+  print(_q36("q"));
+  print((_q35 == _q1<int>(_q34)));
+  print((_q35 == _q36));
+  final int Function({int extra}) _q37 = _q2<int>(_q34);
+  print((_q37 == _q2<int>(_q34)));
+  print((_q37 == _q2<String>(_q34)));
+  _q34.item = 4;
+  print(_q35(3));
+  final int Function(Named, {int extra}) _q38 = _q3(2);
+  final int Function(Named, {int extra}) _q39 = _q3(8);
+  print(_q38(_q32));
+  print(_q39(_q32));
+  print((_q38 == _q39));
+  final Box _q40 = Box(item: 1);
+  final List<int> Function({int scale}) _q42 = ((Box _qrecv72) => $QudsCachedValue(_qrecv72, 'extension_identity_web.quds:753:values:', <Type>[$QudsValueType<List<int> Function({int scale})>(), ], (_qslot73) => ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault74 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return (_qslot73.receiver as Box)._$qudsDefault_values(scale: _qdefault74); }) as List<int> Function({int scale}))(_q40);
+  final Box _q43 = _q40;
+  final List<int> Function({int scale}) _q44 = ((Box _qrecv75) => $QudsCachedValue(_qrecv75, 'extension_identity_web.quds:753:values:readonly List<int>', <Type>[$QudsValueType<List<int> Function({int scale})>(), ], (_qslot76) => ({Object? scale = _$qudsDefaultOmitted}) { final int _qdefault77 = identical(scale, _$qudsDefaultOmitted) ? 2 : scale as int; return _qReadonlyList<int>((_qslot76.receiver as Box)._$qudsDefault_values(scale: _qdefault77), (_qe) => _qe); }) as List<int> Function({int scale}))($qudsReadonly.ModelGuard<Box>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q43));
+  print((_q42 == _q44));
+  print((() { final _qo78 = _q42(); final _qi79 = 0; return _qo78[_qi79 < 0 ? _qo78.length + _qi79 : _qi79]; })());
+  final dynamic _q45 = _qReadonlyList<int>(_q44(), (_qe) => _qe);
+  print((() { final _qo80 = _qReadonlyList<int>(_q44(), (_qe) => _qe); final _qi81 = 0; return _qo80[_qi81 < 0 ? _qo80.length + _qi81 : _qi81]; })());
+  bool _q46 = false;
+  try {
+    _q45.add(9);
+  } catch (_q47) {
+    _q46 = true;
+  }
+  print(_q46);
+  final Fresh _q48 = Fresh(base: 3);
+  final Fresh _q49 = Fresh(base: 9);
+  final List<int> Function({int scale}) _q50 = _q48.take();
+  final List<int> Function({int scale}) _q51 = _q49.take();
+  print((() { final _qo82 = _qReadonlyList<int>(_q50(), (_qe) => _qe); final _qi83 = 0; return _qo82[_qi83 < 0 ? _qo82.length + _qi83 : _qi83]; })());
+  print((() { final _qo84 = _qReadonlyList<int>(_q51(), (_qe) => _qe); final _qi85 = 0; return _qo84[_qi85 < 0 ? _qo84.length + _qi85 : _qi85]; })());
+  print((_q50 == _q51));
+  print((_q50 == _q48.take()));
+  final Fresh _q52 = _q48;
+  final List<int> Function() _q53 = ((Fresh _qrecv86) => $QudsCachedValue(_qrecv86, 'extension_identity_web.quds:464:plain:readonly List<int>', <Type>[$QudsValueType<List<int> Function()>(), ], (_qslot87) => () {  return _qReadonlyList<int>((_qslot87.receiver as Fresh).plain(), (_qe) => _qe); }) as List<int> Function())($qudsReadonly.ModelGuard<Fresh>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q52));
+  print((_q53 == ((Fresh _qrecv88) => $QudsCachedValue(_qrecv88, 'extension_identity_web.quds:464:plain:readonly List<int>', <Type>[$QudsValueType<List<int> Function()>(), ], (_qslot89) => () {  return _qReadonlyList<int>((_qslot89.receiver as Fresh).plain(), (_qe) => _qe); }) as List<int> Function())($qudsReadonly.ModelGuard<Fresh>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ])).protect(_q52))));
+  print((() { final _qo90 = _qReadonlyList<int>(_q53(), (_qe) => _qe); final _qi91 = 0; return _qo90[_qi91 < 0 ? _qo90.length + _qi91 : _qi91]; })());
+  final int Function(int, {int extra}) _q54 = ((Box _qrecv92) => $QudsCachedValue(_qrecv92, 'extension_identity_web.quds:306:measure:', <Type>[$QudsValueType<int Function(int, {int extra})>(), $QudsValueType<int>()], (_qslot93) => (int _q8, {Object? extra = _$qudsDefaultOmitted}) { final int _qdefault94 = identical(extra, _$qudsDefaultOmitted) ? (_qslot93.receiver as Box).item : extra as int; return (_qslot93.receiver as Box)._$qudsDefault_measure<int>(_q8, extra: _qdefault94); }) as int Function(int, {int extra}))((await _q4(_q34)));
+  print(_q54(3));
 }
 final choose = _q0;
-final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<Carrier<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>())]);
+final select = _q1;
+final selectUnused = _q2;
+final localFactory = _q3;
+final laterBox = _q4;
+final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ModelGuard<Carrier<int>>($qudsReadonly.guardsOf([$qudsReadonly.AutoGuard<int>()])), $qudsReadonly.FutureGuard<Box>($qudsReadonly.ModelGuard<Box>($qudsReadonly.guardsOf([]))), $qudsReadonly.ListGuard<int>($qudsReadonly.AutoGuard<int>())]);

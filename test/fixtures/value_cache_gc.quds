@@ -1,0 +1,6 @@
+class Probe:
+  value: int required
+  var back: dynamic = null
+extend Probe:
+  measure(amount: int = 1) -> int = value + amount
+hold(owner: Probe) = owner.measure

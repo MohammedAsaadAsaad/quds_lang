@@ -1,3 +1,46 @@
+# Review of the next agent's work and cache/flow follow-up — 2026-11-20
+
+Review base: `5f6dbc3`. Generated ABI: `provider-defaults-v13`.
+Contract/review: [FUNCTION_VALUE_CACHE_AND_FLOW.md](FUNCTION_VALUE_CACHE_AND_FLOW.md).
+
+| Check | Observed result |
+| --- | --- |
+| Baseline review | The five new commits were inspected; `dart analyze` clean. The inferred-interface/SDK/owner/identity/union drivers plus compiler driver: **84 passed in 3m34s** |
+| Baseline union defect | A conditional nested case was treated as an unconditional exit; actual execution threw a sealed-union subtype cast error |
+| Baseline memory workload on `5f6dbc3` | VM and JavaScript both retained all 1,000 cyclic receivers: `collected: 0, buckets: 1001`; the new GC tests failed as expected |
+| Revised memory workload | VM-service GC and compiled JavaScript/Node GC each reported `collected: 1000, buckets: 1, live: 42, canonical: true` |
+| Development regression set | Extension/GC/union-flow/value-adapter/method-value drivers: **39 passed in 28s**. Final nullable-reference identity coverage was added afterward and is included in the full gate |
+| Entry-point preparation regression | Same fake-Flutter test failed on `5f6dbc3` with two main definitions; fixed source has one main and a real top-level _qMain. No engine execution claimed by this test |
+| Program arguments | Actual CLI passes a `.quds` suffix as a payload argument after the entry point; mapped runtime errors and `-- --help` retain existing behavior |
+| Quds coverage | Six reference-identity declarations and four union-flow declarations; negative union-promotion and readonly-extension cases |
+| Output conformance | Deterministic goldens and actual VM/JavaScript execution; 37-line identity program and 10-line union-flow program |
+| Cache epoch | A checksum-valid v12 consumer with legacy output is rebuilt to v13 and prints `true`, `1` |
+| Final `dart format .` | 112 files, 0 changes |
+| Final `dart analyze` | No issues found |
+| Final `dart test` | **780 passed, 0 failed, 11m13s**; includes the final nullable-identity regression and all VM/JS GC checks |
+| Inventory/docs | `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+The GC workload uses real compiled Quds objects, including receiver/closure cycles
+and an independently retained live callable. Test thresholds allow collector timing
+variation. The exact 1,000/1 measurements above were observed on both hosts; they
+are not a platform-wide memory budget. Buckets contain only weak slots and
+finalizer tokens do not retain receivers. Reified generic types, readonly contract
+keys, lexical activations and implicit-this owners keep distinct operations apart.
+
+A conditional pattern or event notification cannot justify remainder narrowing.
+Throw does exit. The emitter tracks the promoted symbol rather than applying one
+union case's assumption to other values. Wider/inter-library union certification,
+polymorphic callbacks and foreign implementors remain explicit follow-up work.
+
+The preceding agent recorded actual Linux Flutter engine/hot reload/debug/build
+observations. Those records were read, but the engine SDK is absent in this
+workspace; no fresh engine/device run is claimed. GitHub API still returns Forbidden,
+so its pull-request state was not independently queried here. All 115 decisions
+remain indexed, with 24 partial, 91 needs_certification and no newly complete rule.
+Older sections below are historical.
+
+---
+
 # Program arguments for main — 2026-11-19
 
 `main` may return `void` or `Future<void>` and take no arguments, or one `List<String>` argument. `main(args: List<String>)` and `main(...args: String)` both lower to Dart `main(List<String> ...)`. `quds run file.quds alpha -- beta` passes `alpha` then `beta`. `quds run file.quds -- --help` passes the text `--help` into `main`. Another parameter shape is rejected. A range error inside that `main` is still reported on the Quds line. `dart test test/compiler_test.dart --name "main receives one List"` passed. `dart analyze lib bin test` reports no issues. `dart test`: 772 passed, reporter 06:33, wall 394825 ms.

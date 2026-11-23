@@ -17,6 +17,8 @@ void main() {
     'text_unicode_reference.quds',
     'text_patterns_search.quds',
     'text_replace_reader.quds',
+    'text_format_compare.quds',
+    'text_escape_encoding.quds',
   ];
 
   for (final name in suites) {

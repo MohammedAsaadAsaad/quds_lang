@@ -1,0 +1,89 @@
+use quds:text::escape
+use quds:text::encoding
+use quds:text::patterns
+use quds:text::search
+
+_throws(action: () -> void) -> bool:
+  try:
+    action()
+    return false
+  catch _:
+    return true
+
+test "escape: literal escape/unescape round-trip, quote/unquote, escapeRegexLiteral":
+  raw = "line1\nline2\t\"quoted\" 'single' \\slash" + String.fromCharCode(0)
+  escaped = escapeTextLiteral(raw)
+  expect(escaped, "line1\\nline2\\t\\\"quoted\\\" \\'single\\' \\\\slash\\x00")
+  expect(unescapeTextLiteral(escaped), raw)
+  expect(unescapeTextLiteral("\\u\{1F600\}"), "😀")
+
+  quoted = quoteTextLiteral("hi\n\"quds\"")
+  expect(quoted, "\"hi\\n\\\"quds\\\"\"")
+  expect(unquoteTextLiteral(quoted), "hi\n\"quds\"")
+  expect(unquoteTextLiteral(quoteTextLiteral("a'b", quote: "'"), quote: "'"), "a'b")
+
+  expect(_throws(() -> unescapeTextLiteral("bad\\")), true)
+  expect(_throws(() -> unescapeTextLiteral("bad\\z")), true)
+  expect(_throws(() -> unescapeTextLiteral("bad\\x1")), true)
+  expect(_throws(() -> unquoteTextLiteral("no-quotes")), true)
+  expect(_throws(() -> quoteTextLiteral("a", quote: "`")), true)
+
+  meta = "a+b(c)[0]?.*^$"
+  pat = TextPattern.regex(escapeRegexLiteral(meta))
+  expect(containsTextPattern("xx" + meta + "yy", pat), true)
+  expect(containsTextPattern("xxabcyy", pat), false)
+
+test "encoding: UTF-8, UTF-16 LE/BE, ASCII, Latin-1, BOM, malformed and bounds errors":
+  sample = "قدس Quds 😀"
+  utf8Bytes = encodeText(sample)
+  expect(decodeText(utf8Bytes), sample)
+
+  utf8Bom = encodeText(sample, includeBom: true)
+  expect(detectTextBom(utf8Bom), TextBom.utf8)
+  expect(decodeText(utf8Bom, stripBom: true), sample)
+  expect(decodeText(utf8Bom, stripBom: false).codeUnitAt(0), 0xFEFF)
+
+  leBytes = encodeText(sample, encoding: TextEncoding.utf16Le, includeBom: true)
+  expect(detectTextBom(leBytes), TextBom.utf16Le)
+  expect(decodeText(leBytes, encoding: TextEncoding.utf16Le, stripBom: true), sample)
+
+  beBytes = encodeText(sample, encoding: TextEncoding.utf16Be, includeBom: true)
+  expect(detectTextBom(beBytes), TextBom.utf16Be)
+  expect(decodeText(beBytes, encoding: TextEncoding.utf16Be, stripBom: true), sample)
+
+  expect(detectTextBom([65, 66]), TextBom.none)
+
+  # ASCII & Latin-1 strict vs allowMalformed
+  asciiBytes = encodeText("Quds 123", encoding: TextEncoding.ascii)
+  expect(decodeText(asciiBytes, encoding: TextEncoding.ascii), "Quds 123")
+  expect(_throws(() -> encodeText("é", encoding: TextEncoding.ascii)), true)
+  expect(decodeText(encodeText("aé", encoding: TextEncoding.ascii, allowMalformed: true), encoding: TextEncoding.ascii), "a?")
+  expect(_throws(() -> decodeText([65, 200], encoding: TextEncoding.ascii)), true)
+  expect(decodeText([65, 200], encoding: TextEncoding.ascii, allowMalformed: true), "A" + String.fromCharCode(0xFFFD))
+
+  latinBytes = encodeText("Café", encoding: TextEncoding.latin1)
+  expect(decodeText(latinBytes, encoding: TextEncoding.latin1), "Café")
+  expect(_throws(() -> encodeText("قدس", encoding: TextEncoding.latin1)), true)
+  expect(decodeText(encodeText("aق", encoding: TextEncoding.latin1, allowMalformed: true), encoding: TextEncoding.latin1), "a?")
+
+  # Out-of-range bytes (> 255 or < 0) always rejected with TextEncodingError
+  var outOfRange = false
+  try:
+    decodeText([65, 256])
+  catch err:
+    expect(err is TextEncodingError, true)
+    ee = err as TextEncodingError
+    outOfRange = ee.offset == 1 and ee.unit == "byte"
+  expect(outOfRange, true)
+  expect(_throws(() -> decodeText([-1])), true)
+
+  # Malformed UTF-8 & UTF-16
+  expect(_throws(() -> decodeText([0xFF, 0xFE], encoding: TextEncoding.utf8)), true)
+  expect(decodeText([0xFF], encoding: TextEncoding.utf8, allowMalformed: true), String.fromCharCode(0xFFFD))
+  expect(_throws(() -> decodeText([65], encoding: TextEncoding.utf16Le)), true)
+  expect(decodeText([65], encoding: TextEncoding.utf16Le, allowMalformed: true), String.fromCharCode(0xFFFD))
+
+  # Unpaired surrogate in encodeText
+  lone = "a" + String.fromCharCode(0xD800)
+  expect(_throws(() -> encodeText(lone)), true)
+  expect(decodeText(encodeText(lone, allowMalformed: true)), "a" + String.fromCharCode(0xFFFD))

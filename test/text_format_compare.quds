@@ -1,0 +1,90 @@
+use quds:text::unicode
+use quds:text::format
+use quds:text::lines
+use quds:text::compare
+
+_throws(action: () -> void) -> bool:
+  try:
+    action()
+    return false
+  catch _:
+    return true
+
+test "format: alignText, truncateText, wrapText, wrapTextJoined on grapheme clusters":
+  expect(alignText("hi", 5), "hi   ")
+  expect(alignText("hi", 5, alignment: TextAlignment.end, fill: "."), "...hi")
+  expect(alignText("hi", 5, alignment: TextAlignment.center, fill: "-"), "-hi--")
+  expect(alignText("قُدس", 5, alignment: TextAlignment.end, fill: "★☆"), "★☆قُدس")
+  expect(alignText("longer", 3), "longer")
+  expect(alignText("ok", 2, fill: ""), "ok")
+  expect(_throws(() -> alignText("a", 4, fill: "")), true)
+  expect(_throws(() -> alignText("a", -1)), true)
+
+  expect(truncateText("hello world", 8, suffix: "..."), "hello...")
+  expect(truncateText("hello", 5, suffix: "..."), "hello")
+  expect(truncateText("hello", 0, suffix: "..."), "")
+  expect(truncateText("hello", 2, suffix: "..."), "..")
+  expect(truncateText("قُدسنا", 4, suffix: "…"), "قُدس…")
+  expect(truncateText("👨‍👩‍👧‍👦abc", 2, suffix: "…"), "👨‍👩‍👧‍👦…")
+  expect(_throws(() -> truncateText("a", -1)), true)
+
+  wrapped = wrapText("one two three four", TextWrapOptions(7))
+  expect(wrapped.length, 3)
+  expect(wrapped[0], "one two")
+  expect(wrapped[1], "three")
+  expect(wrapped[2], "four")
+
+  opts = TextWrapOptions(maxCharacters: 4, breakLongWords: true)
+  broken = wrapText("abcdef", opts)
+  expect(broken.length, 2)
+  expect(broken[0], "abcd")
+  expect(broken[1], "ef")
+
+  unbroken = wrapText("abcdef hi", TextWrapOptions(4, breakLongWords: false))
+  expect(unbroken.length, 2)
+  expect(unbroken[0], "abcdef")
+  expect(unbroken[1], "hi")
+
+  expect(wrapTextJoined("a b c", TextWrapOptions(3), ending: TextLineEnding.crlf), "a b\r\nc")
+  expect(_throws(() -> TextWrapOptions(maxCharacters: 0)), true)
+
+test "compare: compareText, equalsText, natural order, prefix/suffix, editDistance, similarity":
+  opts = TextComparisonOptions(ignoreCase: true, normalization: TextNormalizationForm.nfc)
+  expect(opts.ignoreCase, true)
+
+  expect(compareText("a", "b"), -1)
+  expect(compareText("b", "a"), 1)
+  expect(compareText("a", "a"), 0)
+  expect(equalsText("Straße", "STRASSE", ignoreCase: true), true)
+
+  decomposed = "e" + String.fromCharCode(0x0301)
+  composed = String.fromCharCode(0x00E9)
+  expect(equalsText(decomposed, composed), false)
+  expect(equalsText(decomposed, composed, normalization: TextNormalizationForm.nfc), true)
+
+  # Natural ordering: anti-symmetric, transitive, deterministic leading-zero tie-break
+  expect(compareTextNaturally("file2", "file10"), -1)
+  expect(compareTextNaturally("file10", "file2"), 1)
+  expect(compareTextNaturally("v1", "v01"), -1)
+  expect(compareTextNaturally("v01", "v1"), 1)
+  expect(compareTextNaturally("v1", "v01") < 0 and compareTextNaturally("v01", "v2") < 0 and compareTextNaturally("v1", "v2") < 0, true)
+  expect(compareTextNaturally("item999999999999999999999", "item1000000000000000000000"), -1)
+
+  # Grapheme-safe common prefix and suffix
+  expect(commonTextPrefix("قُدس", "قُدم"), "قُد")
+  expect(commonTextPrefix("قُ", "قَ"), "")
+  expect(commonTextSuffix("hello.quds", "app.quds"), ".quds")
+
+  # Levenshtein distance & bounded & similarity
+  expect(editDistance("kitten", "sitting"), 3)
+  expect(editDistance("", ""), 0)
+  expect(editDistance("قُدس", "قُدم"), 1)
+  expect(editDistance("👨‍👩‍👧‍👦a", "👨‍👩‍👧‍👦b"), 1)
+  expect(boundedEditDistance("kitten", "sitting", 3), 3)
+  expect(boundedEditDistance("kitten", "sitting", 2), null)
+  expect(boundedEditDistance("abc", "abcdefg", 2), null)
+  expect(_throws(() -> boundedEditDistance("a", "b", -1)), true)
+
+  expect(textSimilarity("", ""), 1.0)
+  expect(textSimilarity("quds", "quds"), 1.0)
+  expect(textSimilarity("abcd", "abef"), 0.5)

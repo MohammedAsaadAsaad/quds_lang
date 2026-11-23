@@ -36,4 +36,13 @@ main():
   _check(collapseRepeatedCharacters("قُقُدس") == "قُدس", "collapseRepeatedCharacters")
   reader = TextReader("age=42")
   _check(reader.tryReadText("age=") and reader.readInt() == 42, "TextReader")
+
+  _check(alignText("قُدس", 5, alignment: TextAlignment.end, fill: ".") == "..قُدس", "alignText")
+  _check(truncateText("hello world", 8, suffix: "...") == "hello...", "truncateText")
+  _check(wrapTextJoined("a b c", TextWrapOptions(3)) == "a b\nc", "wrapTextJoined")
+  _check(compareTextNaturally("file2", "file10") < 0, "compareTextNaturally")
+  _check(editDistance("kitten", "sitting") == 3, "editDistance")
+  _check(unescapeTextLiteral(escapeTextLiteral("a\nb\"c")) == "a\nb\"c", "escape round-trip")
+  _check(decodeText(encodeText("قدس 😀", includeBom: true), stripBom: true) == "قدس 😀", "utf8 BOM round-trip")
+  _check(decodeText(encodeText("قدس 😀", encoding: TextEncoding.utf16Le), encoding: TextEncoding.utf16Le) == "قدس 😀", "utf16Le round-trip")
   print "TEXT SDK VM WEB OK"

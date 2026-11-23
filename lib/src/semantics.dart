@@ -1411,11 +1411,7 @@ class Analyzer {
           statement.kind == 'enum' ? '$key.${item.name}' : item.name;
       final caseSymbol = Symbol(item.name, dartName, key,
           classDeclaration: statement, classCase: item);
-      if (statement.kind == 'enum') {
-        if (scopeName == null && !_global.symbols.containsKey(item.name)) {
-          _global.symbols[item.name] = caseSymbol;
-        }
-      } else {
+      if (statement.kind != 'enum') {
         if (_global.symbols.containsKey(item.name)) {
           fail('Duplicate case: ${item.name}', item);
         }
@@ -5229,6 +5225,18 @@ class Analyzer {
           }
         }
       case BindingPattern():
+        final enumType = nonNullableType(type);
+        final enumDecl = _typeSymbol(_genericHead(enumType))?.classDeclaration;
+        if (enumDecl != null && enumDecl.kind == 'enum' && !pattern.shadow) {
+          final enumCase =
+              enumDecl.cases.where((c) => c.name == pattern.name).firstOrNull;
+          if (enumCase != null) {
+            model.references[pattern] = model.declarations[enumCase] ??
+                Symbol(enumCase.name, '$enumType.${enumCase.name}', enumType,
+                    classDeclaration: enumDecl, classCase: enumCase);
+            return;
+          }
+        }
         final existing = _scope.lookup(pattern.name);
         if (existing?.classCase != null ||
             (existing != null &&

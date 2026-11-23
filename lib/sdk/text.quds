@@ -7,6 +7,9 @@
 #   use quds:text::compose as text
 #   print text.repeatText("ha", 3, separator: "-")
 
+use dart:convert as _convert
+use dart:typed_data show Uint8List
+
 :: types
 
 # How an offset that falls inside a multi-unit character should be handled.
@@ -1375,6 +1378,149 @@ interleaveText(parts: Iterable<String>, separator: String) sync* -> String:
     first = false
 
 
+:: format
+
+# Logical text alignment independent of visual display direction.
+# Example:
+#   print alignText("hi", 6, alignment: TextAlignment.center)
+enum TextAlignment:
+  start
+  end
+  center
+
+# Reusable options for wrapping text on grapheme cluster limits.
+# Example:
+#   opts = TextWrapOptions(maxCharacters: 20, breakLongWords: true)
+#   print opts.maxCharacters
+class TextWrapOptions:
+  maxCharacters: int required
+  breakLongWords: bool = true
+  preserveBlankLines: bool = true
+
+  init(this.maxCharacters, this.breakLongWords = true, this.preserveBlankLines = true):
+    if maxCharacters < 1:
+      throw ArgumentError.value(maxCharacters, "maxCharacters", "maxCharacters must be >= 1")
+
+# Aligns [text] to [width] UAX #29 grapheme clusters using [fill].
+# Never truncates text whose grapheme count is already >= [width].
+# When padding is needed, rejects empty [fill] and slices repeated [fill] on
+# grapheme cluster boundaries.
+# Example:
+#   print alignText("قُدس", 6, alignment: TextAlignment.end, fill: ".")
+alignText(text: String, width: int, alignment: TextAlignment = TextAlignment.start, fill: String = " ") -> String:
+  if width < 0:
+    throw RangeError.value(width, "width", "width must be non-negative")
+  count = TextCharacters(text).count
+  if count >= width:
+    return text
+  needed = width - count
+  if alignment == TextAlignment.start:
+    return text + _repeatFillChars(fill, needed)
+  if alignment == TextAlignment.end:
+    return _repeatFillChars(fill, needed) + text
+  leftPad = needed ~/ 2
+  rightPad = needed - leftPad
+  return _repeatFillChars(fill, leftPad) + text + _repeatFillChars(fill, rightPad)
+
+# Truncates [text] to at most [maxCharacters] UAX #29 grapheme clusters,
+# including [suffix] within the limit. If [maxCharacters] is 0, returns "".
+# If [suffix] exceeds [maxCharacters], truncates [suffix] on grapheme boundaries.
+# Example:
+#   print truncateText("hello world", 8, suffix: "...")
+truncateText(text: String, maxCharacters: int, suffix: String = "...") -> String:
+  if maxCharacters < 0:
+    throw RangeError.value(maxCharacters, "maxCharacters", "maxCharacters must be non-negative")
+  if maxCharacters == 0:
+    return ""
+  chars = TextCharacters(text)
+  if chars.count <= maxCharacters:
+    return text
+  sufChars = TextCharacters(suffix)
+  if sufChars.count >= maxCharacters:
+    return sufChars.slice(0, maxCharacters)
+  return chars.slice(0, maxCharacters - sufChars.count) + suffix
+
+# Wraps [text] into lines bounded by [options.maxCharacters] UAX #29 grapheme clusters.
+# Splits paragraphs on line breaks and words on Unicode whitespace.
+# Example:
+#   print wrapText("one two three", TextWrapOptions(7))
+wrapText(text: String, options: TextWrapOptions) -> List<String>:
+  maxCharacters = options.maxCharacters
+  breakLongWords = options.breakLongWords
+  preserveBlankLines = options.preserveBlankLines
+  if text.isEmpty:
+    return []
+  paragraphs = splitTextLines(text, keepTrailingEmpty: false)
+  out: List<String> = []
+  for para in paragraphs:
+    if isBlankText(para):
+      if preserveBlankLines:
+        out.add("")
+      continue
+    words: List<String> = []
+    var i = 0
+    n = para.length
+    while i < n:
+      while i < n and _isUnicodeWhitespaceUnit(para.codeUnitAt(i)):
+        i = i + 1
+      if i >= n:
+        break
+      wordStart = i
+      while i < n and not _isUnicodeWhitespaceUnit(para.codeUnitAt(i)):
+        i = i + 1
+      words.add(para.substring(wordStart, i))
+    var current = ""
+    var currentLen = 0
+    for word in words:
+      wChars = TextCharacters(word)
+      wLen = wChars.count
+      if currentLen == 0:
+        if wLen <= maxCharacters or not breakLongWords:
+          current = word
+          currentLen = wLen
+        else:
+          var pos = 0
+          while pos < wLen:
+            end = if pos + maxCharacters < wLen: pos + maxCharacters else: wLen
+            chunk = wChars.slice(pos, end)
+            if end < wLen:
+              out.add(chunk)
+            else:
+              current = chunk
+              currentLen = end - pos
+            pos = end
+      else if currentLen + 1 + wLen <= maxCharacters:
+        current = current + " " + word
+        currentLen = currentLen + 1 + wLen
+      else:
+        out.add(current)
+        current = ""
+        currentLen = 0
+        if wLen <= maxCharacters or not breakLongWords:
+          current = word
+          currentLen = wLen
+        else:
+          var pos = 0
+          while pos < wLen:
+            end = if pos + maxCharacters < wLen: pos + maxCharacters else: wLen
+            chunk = wChars.slice(pos, end)
+            if end < wLen:
+              out.add(chunk)
+            else:
+              current = chunk
+              currentLen = end - pos
+            pos = end
+    if currentLen > 0:
+      out.add(current)
+  return out
+
+# Wraps [text] using [options] and joins the resulting lines with [ending].
+# Example:
+#   print wrapTextJoined("one two three", TextWrapOptions(7))
+wrapTextJoined(text: String, options: TextWrapOptions, ending: TextLineEnding = TextLineEnding.lf) -> String:
+  return joinTextLines(wrapText(text, options), ending: ending)
+
+
 :: builder
 
 # Mutable builder for constructing strings in linear time.
@@ -1960,7 +2106,648 @@ class TextReader:
     throw TextParseError("Expected floating-point number", _pos, textPositionAt(source, _pos))
 
 
+:: compare
+
+# Reusable options for text comparison.
+# Example:
+#   opts = TextComparisonOptions(ignoreCase: true)
+#   print opts.ignoreCase
+class TextComparisonOptions:
+  ignoreCase: bool = false
+  normalization: TextNormalizationForm? = null
+
+  init(this.ignoreCase = false, this.normalization = null):
+    assert true
+
+# Deterministic, locale-independent text comparison returning -1, 0, or 1.
+# Applies explicit [normalization] (if non-null) and full Unicode [ignoreCase]
+# folding before comparing.
+# Example:
+#   print compareText("Straße", "STRASSE", ignoreCase: true)
+compareText(left: String, right: String, ignoreCase: bool = false, normalization: TextNormalizationForm? = null) -> int:
+  a = _prepareCompare(left, ignoreCase, normalization)
+  b = _prepareCompare(right, ignoreCase, normalization)
+  cmp = a.compareTo(b)
+  if cmp < 0:
+    return -1
+  if cmp > 0:
+    return 1
+  return 0
+
+# True when [left] and [right] are equal under the explicit comparison options.
+# Example:
+#   print equalsText("Straße", "STRASSE", ignoreCase: true)
+equalsText(left: String, right: String, ignoreCase: bool = false, normalization: TextNormalizationForm? = null) -> bool:
+  return compareText(left, right, ignoreCase: ignoreCase, normalization: normalization) == 0
+
+# Natural comparison splitting ASCII digit runs from non-digit text.
+# Digit runs compare numerically without integer overflow; numerically equal
+# runs with different leading zeros (e.g. "1" vs "01") break ties by shorter
+# digit run first for a strict, anti-symmetric, transitive total order.
+# Example:
+#   print compareTextNaturally("file2", "file10") < 0
+compareTextNaturally(left: String, right: String, ignoreCase: bool = false) -> int:
+  a = if ignoreCase: caseFoldText(left) else: left
+  b = if ignoreCase: caseFoldText(right) else: right
+  var ia = 0
+  var ib = 0
+  na = a.length
+  nb = b.length
+  while ia < na and ib < nb:
+    da = _isAsciiDigit(a.codeUnitAt(ia))
+    db = _isAsciiDigit(b.codeUnitAt(ib))
+    if da and db:
+      var ea = ia
+      while ea < na and _isAsciiDigit(a.codeUnitAt(ea)):
+        ea = ea + 1
+      var eb = ib
+      while eb < nb and _isAsciiDigit(b.codeUnitAt(eb)):
+        eb = eb + 1
+      cmpNum = _compareDigitRuns(a.substring(ia, ea), b.substring(ib, eb))
+      if cmpNum != 0:
+        return cmpNum
+      ia = ea
+      ib = eb
+    else:
+      ua = a.codeUnitAt(ia)
+      ub = b.codeUnitAt(ib)
+      if ua != ub:
+        if ua < ub:
+          return -1
+        return 1
+      ia = ia + 1
+      ib = ib + 1
+  if ia < na:
+    return 1
+  if ib < nb:
+    return -1
+  return 0
+
+# Longest common prefix of [left] and [right] on UAX #29 grapheme boundaries.
+# Example:
+#   print commonTextPrefix("قُدس", "قُدم")
+commonTextPrefix(left: String, right: String) -> String:
+  ca = TextCharacters(left)
+  cb = TextCharacters(right)
+  limit = if ca.count < cb.count: ca.count else: cb.count
+  var matched = 0
+  while matched < limit and ca.characterAt(matched) == cb.characterAt(matched):
+    matched = matched + 1
+  return ca.slice(0, matched)
+
+# Longest common suffix of [left] and [right] on UAX #29 grapheme boundaries.
+# Example:
+#   print commonTextSuffix("hello.quds", "app.quds")
+commonTextSuffix(left: String, right: String) -> String:
+  ca = TextCharacters(left)
+  cb = TextCharacters(right)
+  limit = if ca.count < cb.count: ca.count else: cb.count
+  var matched = 0
+  while matched < limit and ca.characterAt(ca.count - 1 - matched) == cb.characterAt(cb.count - 1 - matched):
+    matched = matched + 1
+  return ca.slice(ca.count - matched, ca.count)
+
+# Levenshtein edit distance between [left] and [right] measured in UAX #29
+# grapheme clusters. Enforces a work guard (lenA * lenB <= 2,000,000) to avoid
+# runaway quadratic computation.
+# Example:
+#   print editDistance("kitten", "sitting")
+editDistance(left: String, right: String) -> int:
+  a = TextCharacters(left).toList()
+  b = TextCharacters(right).toList()
+  m = a.length
+  n = b.length
+  if m == 0:
+    return n
+  if n == 0:
+    return m
+  if m * n > 2000000:
+    throw ArgumentError("editDistance input exceeds the 2,000,000 cell work limit")
+  var prev: List<int> = []
+  var j = 0
+  while j <= n:
+    prev.add(j)
+    j = j + 1
+  var curr: List<int> = []
+  j = 0
+  while j <= n:
+    curr.add(0)
+    j = j + 1
+  var i = 1
+  while i <= m:
+    curr[0] = i
+    ai = a[i - 1]
+    j = 1
+    while j <= n:
+      cost = if ai == b[j - 1]: 0 else: 1
+      delCost = prev[j] + 1
+      insCost = curr[j - 1] + 1
+      subCost = prev[j - 1] + cost
+      var best = if delCost < insCost: delCost else: insCost
+      if subCost < best:
+        best = subCost
+      curr[j] = best
+      j = j + 1
+    tmp = prev
+    prev = curr
+    curr = tmp
+    i = i + 1
+  return prev[n]
+
+# Levenshtein edit distance in grapheme clusters when <= [maxDistance], or null
+# when the true distance exceeds [maxDistance].
+# Example:
+#   print boundedEditDistance("kitten", "sitting", 2)
+boundedEditDistance(left: String, right: String, maxDistance: int) -> int?:
+  if maxDistance < 0:
+    throw RangeError.value(maxDistance, "maxDistance", "maxDistance must be non-negative")
+  a = TextCharacters(left).toList()
+  b = TextCharacters(right).toList()
+  m = a.length
+  n = b.length
+  diff = if m > n: m - n else: n - m
+  if diff > maxDistance:
+    return null
+  if m == 0:
+    return n
+  if n == 0:
+    return m
+  if m * n > 2000000:
+    throw ArgumentError("boundedEditDistance input exceeds the 2,000,000 cell work limit")
+  var prev: List<int> = []
+  var j = 0
+  while j <= n:
+    prev.add(j)
+    j = j + 1
+  var curr: List<int> = []
+  j = 0
+  while j <= n:
+    curr.add(0)
+    j = j + 1
+  var i = 1
+  while i <= m:
+    curr[0] = i
+    var rowMin = i
+    ai = a[i - 1]
+    j = 1
+    while j <= n:
+      cost = if ai == b[j - 1]: 0 else: 1
+      delCost = prev[j] + 1
+      insCost = curr[j - 1] + 1
+      subCost = prev[j - 1] + cost
+      var best = if delCost < insCost: delCost else: insCost
+      if subCost < best:
+        best = subCost
+      curr[j] = best
+      if best < rowMin:
+        rowMin = best
+      j = j + 1
+    if rowMin > maxDistance:
+      return null
+    tmp = prev
+    prev = curr
+    curr = tmp
+    i = i + 1
+  dist = prev[n]
+  if dist > maxDistance:
+    return null
+  return dist
+
+# Normalized edit similarity: 1 - editDistance(left, right) / max(lenA, lenB)
+# in grapheme clusters. Two empty strings return 1.0.
+# Example:
+#   print textSimilarity("quds", "quds")
+textSimilarity(left: String, right: String) -> double:
+  ca = TextCharacters(left).count
+  cb = TextCharacters(right).count
+  denom = if ca > cb: ca else: cb
+  if denom == 0:
+    return 1.0
+  dist = editDistance(left, right)
+  return 1.0 - (dist.toDouble() / denom.toDouble())
+
+
+:: escape
+
+# Escapes backslash, single/double quotes, LF, CR, TAB, and ASCII control
+# characters (< 0x20 or 0x7F as \xHH). Not a JSON, HTML, or URL encoder.
+# Example:
+#   print escapeTextLiteral("a\nb\"c")
+escapeTextLiteral(text: String) -> String:
+  buffer = StringBuffer()
+  var i = 0
+  n = text.length
+  while i < n:
+    u = text.codeUnitAt(i)
+    if u == 92:
+      buffer.write("\\\\")
+    else if u == 34:
+      buffer.write("\\\"")
+    else if u == 39:
+      buffer.write("\\'")
+    else if u == 10:
+      buffer.write("\\n")
+    else if u == 13:
+      buffer.write("\\r")
+    else if u == 9:
+      buffer.write("\\t")
+    else if u < 32 or u == 127:
+      buffer.write("\\x")
+      buffer.write(_hexByte(u))
+    else:
+      buffer.writeCharCode(u)
+    i = i + 1
+  return buffer.toString()
+
+# Decodes escape sequences produced by [escapeTextLiteral] (\\, \", \', \n, \r,
+# \t, \xHH, and \u{H...}). Throws ArgumentError on malformed escapes.
+# Example:
+#   print unescapeTextLiteral("a\\nb")
+unescapeTextLiteral(text: String) -> String:
+  buffer = StringBuffer()
+  var i = 0
+  n = text.length
+  while i < n:
+    u = text.codeUnitAt(i)
+    if u != 92:
+      buffer.writeCharCode(u)
+      i = i + 1
+      continue
+    if i + 1 >= n:
+      throw ArgumentError("Unterminated escape sequence at offset {i}")
+    esc = text.codeUnitAt(i + 1)
+    if esc == 92:
+      buffer.write("\\")
+      i = i + 2
+    else if esc == 34:
+      buffer.write("\"")
+      i = i + 2
+    else if esc == 39:
+      buffer.write("'")
+      i = i + 2
+    else if esc == 110:
+      buffer.write("\n")
+      i = i + 2
+    else if esc == 114:
+      buffer.write("\r")
+      i = i + 2
+    else if esc == 116:
+      buffer.write("\t")
+      i = i + 2
+    else if esc == 120:
+      if i + 3 >= n:
+        throw ArgumentError("Incomplete \\x escape at offset {i}")
+      hi = _digitValue(text.codeUnitAt(i + 2))
+      lo = _digitValue(text.codeUnitAt(i + 3))
+      if hi < 0 or hi > 15 or lo < 0 or lo > 15:
+        throw ArgumentError("Invalid \\x hex digits at offset {i}")
+      buffer.writeCharCode(hi * 16 + lo)
+      i = i + 4
+    else if esc == 117 and i + 2 < n and text.codeUnitAt(i + 2) == 123:
+      close = text.indexOf("\}", i + 3)
+      if close < 0 or close == i + 3:
+        throw ArgumentError("Malformed \\u escape at offset {i}")
+      hex = text.substring(i + 3, close)
+      if let cp = int.tryParse(hex, radix: 16):
+        if cp < 0 or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF):
+          throw ArgumentError("Invalid Unicode scalar in \\u escape at offset {i}")
+        buffer.writeCharCode(cp)
+      else:
+        throw ArgumentError("Invalid Unicode scalar in \\u escape at offset {i}")
+      i = close + 1
+    else:
+      throw ArgumentError("Unsupported escape sequence at offset {i}")
+  return buffer.toString()
+
+# Escapes [text] and surrounds it with [quote] (either "\"" or "'").
+# Example:
+#   print quoteTextLiteral("a\nb")
+quoteTextLiteral(text: String, quote: String = "\"") -> String:
+  if quote != "\"" and quote != "'":
+    throw ArgumentError.value(quote, "quote", "quote must be '\"' or \"'\"")
+  return quote + escapeTextLiteral(text) + quote
+
+# Removes surrounding [quote] delimiters and unescapes the interior.
+# Throws ArgumentError if [text] is not wrapped in [quote] or has invalid escapes.
+# Example:
+#   print unquoteTextLiteral("\"a\\nb\"")
+unquoteTextLiteral(text: String, quote: String = "\"") -> String:
+  if quote != "\"" and quote != "'":
+    throw ArgumentError.value(quote, "quote", "quote must be '\"' or \"'\"")
+  if text.length < 2 or not text.startsWith(quote) or not text.endsWith(quote):
+    throw ArgumentError("Input is not wrapped in matching quote delimiters")
+  return unescapeTextLiteral(text.substring(1, text.length - 1))
+
+# Escapes all regex metacharacters in [text] so it matches literally in RegExp.
+# Example:
+#   print escapeRegexLiteral("a+b[0]?")
+escapeRegexLiteral(text: String) -> String = RegExp.escape(text)
+
+
+:: encoding
+
+# Explicit text encodings supported by [encodeText] and [decodeText].
+# Example:
+#   enc = TextEncoding.utf8
+#   print enc.name
+enum TextEncoding:
+  utf8
+  utf16Le
+  utf16Be
+  ascii
+  latin1
+
+# Byte-order mark detected at the start of a byte sequence.
+# Example:
+#   print detectTextBom([0xEF, 0xBB, 0xBF])
+enum TextBom:
+  none
+  utf8
+  utf16Le
+  utf16Be
+
+# Error raised when encoding or decoding text fails, recording the [encoding],
+# failing [offset], [unit] ("byte" or "codeUnit"), and [message].
+# Example:
+#   err = TextEncodingError(TextEncoding.ascii, 0, "codeUnit", "Non-ASCII")
+#   print err.offset
+class TextEncodingError:
+  encoding: TextEncoding required
+  offset: int required
+  unit: String required
+  message: String required
+
+  init(this.encoding, this.offset, this.unit, this.message):
+    assert true
+
+  toString() -> String = "TextEncodingError({encoding.name} at {unit} {offset}): {message}"
+
+# Detects a leading UTF-8 or UTF-16 BOM in [bytes]. Does not guess arbitrary
+# encodings from plain content.
+# Example:
+#   print detectTextBom([0xFF, 0xFE, 0x41, 0x00])
+detectTextBom(bytes: List<int>) -> TextBom:
+  var idx = 0
+  for b in bytes:
+    if b < 0 or b > 255:
+      throw TextEncodingError(TextEncoding.utf8, idx, "byte", "Byte value {b} is outside 0..255")
+    idx = idx + 1
+  if bytes.length >= 3 and bytes[0] == 0xEF and bytes[1] == 0xBB and bytes[2] == 0xBF:
+    return TextBom.utf8
+  if bytes.length >= 2 and bytes[0] == 0xFF and bytes[1] == 0xFE:
+    return TextBom.utf16Le
+  if bytes.length >= 2 and bytes[0] == 0xFE and bytes[1] == 0xFF:
+    return TextBom.utf16Be
+  return TextBom.none
+
+# Encodes [text] into bytes (each in 0..255) using [encoding] (strict UTF-8 by
+# default). Set [allowMalformed] to replace invalid surrogates or out-of-range
+# characters explicitly instead of throwing [TextEncodingError].
+# Example:
+#   bytes = encodeText("قدس")
+#   print bytes.length
+encodeText(text: String, encoding: TextEncoding = TextEncoding.utf8, includeBom: bool = false, allowMalformed: bool = false) -> List<int>:
+  if encoding == TextEncoding.utf8:
+    checked = _prepareUtfText(text, encoding, allowMalformed)
+    encoded = _convert.utf8.encode(checked)
+    out: List<int> = []
+    if includeBom:
+      out.add(0xEF)
+      out.add(0xBB)
+      out.add(0xBF)
+    for b in encoded:
+      out.add(b)
+    return out
+  if encoding == TextEncoding.utf16Le or encoding == TextEncoding.utf16Be:
+    checked = _prepareUtfText(text, encoding, allowMalformed)
+    out: List<int> = []
+    if includeBom:
+      if encoding == TextEncoding.utf16Le:
+        out.add(0xFF)
+        out.add(0xFE)
+      else:
+        out.add(0xFE)
+        out.add(0xFF)
+    var i = 0
+    n = checked.length
+    while i < n:
+      u = checked.codeUnitAt(i)
+      lo = u & 0xFF
+      hi = (u >> 8) & 0xFF
+      if encoding == TextEncoding.utf16Le:
+        out.add(lo)
+        out.add(hi)
+      else:
+        out.add(hi)
+        out.add(lo)
+      i = i + 1
+    return out
+  if encoding == TextEncoding.ascii:
+    out: List<int> = []
+    var i = 0
+    n = text.length
+    while i < n:
+      u = text.codeUnitAt(i)
+      if u > 0x7F:
+        if not allowMalformed:
+          throw TextEncodingError(encoding, i, "codeUnit", "Code unit {u} exceeds ASCII range 0..127")
+        out.add(0x3F)
+      else:
+        out.add(u)
+      i = i + 1
+    return out
+  out: List<int> = []
+  var i = 0
+  n = text.length
+  while i < n:
+    u = text.codeUnitAt(i)
+    if u > 0xFF:
+      if not allowMalformed:
+        throw TextEncodingError(encoding, i, "codeUnit", "Code unit {u} exceeds Latin-1 range 0..255")
+      out.add(0x3F)
+    else:
+      out.add(u)
+    i = i + 1
+  return out
+
+# Decodes [bytes] (each validated to be in 0..255) using [encoding] (strict
+# UTF-8 by default). Set [stripBom] to explicitly strip a matching leading BOM,
+# and [allowMalformed] to substitute U+FFFD on invalid sequences.
+# Example:
+#   print decodeText(encodeText("قدس"))
+decodeText(bytes: List<int>, encoding: TextEncoding = TextEncoding.utf8, stripBom: bool = false, allowMalformed: bool = false) -> String:
+  var idx = 0
+  for b in bytes:
+    if b < 0 or b > 255:
+      throw TextEncodingError(encoding, idx, "byte", "Byte value {b} is outside 0..255")
+    idx = idx + 1
+  var start = 0
+  if stripBom:
+    bom = detectTextBom(bytes)
+    if encoding == TextEncoding.utf8 and bom == TextBom.utf8:
+      start = 3
+    else if encoding == TextEncoding.utf16Le and bom == TextBom.utf16Le:
+      start = 2
+    else if encoding == TextEncoding.utf16Be and bom == TextBom.utf16Be:
+      start = 2
+  slice = if start == 0: bytes else: bytes.sublist(start)
+  if encoding == TextEncoding.utf8:
+    try:
+      if not stripBom and detectTextBom(slice) == TextBom.utf8:
+        return String.fromCharCode(0xFEFF) + _convert.utf8.decode(slice.sublist(3), allowMalformed: allowMalformed)
+      return _convert.utf8.decode(slice, allowMalformed: allowMalformed)
+    catch err:
+      throw TextEncodingError(encoding, start, "byte", err.toString())
+  if encoding == TextEncoding.utf16Le or encoding == TextEncoding.utf16Be:
+    buffer = StringBuffer()
+    var i = 0
+    n = slice.length
+    while i + 1 < n:
+      u = if encoding == TextEncoding.utf16Le: slice[i] | (slice[i + 1] << 8) else: (slice[i] << 8) | slice[i + 1]
+      if u >= 0xD800 and u <= 0xDBFF:
+        if i + 3 < n:
+          u2 = if encoding == TextEncoding.utf16Le: slice[i + 2] | (slice[i + 3] << 8) else: (slice[i + 2] << 8) | slice[i + 3]
+          if u2 >= 0xDC00 and u2 <= 0xDFFF:
+            buffer.writeCharCode(u)
+            buffer.writeCharCode(u2)
+            i = i + 4
+            continue
+        if not allowMalformed:
+          throw TextEncodingError(encoding, start + i, "byte", "Unpaired UTF-16 high surrogate")
+        buffer.writeCharCode(0xFFFD)
+        i = i + 2
+      else if u >= 0xDC00 and u <= 0xDFFF:
+        if not allowMalformed:
+          throw TextEncodingError(encoding, start + i, "byte", "Unpaired UTF-16 low surrogate")
+        buffer.writeCharCode(0xFFFD)
+        i = i + 2
+      else:
+        buffer.writeCharCode(u)
+        i = i + 2
+    if i < n:
+      if not allowMalformed:
+        throw TextEncodingError(encoding, start + i, "byte", "Truncated odd trailing byte in UTF-16 input")
+      buffer.writeCharCode(0xFFFD)
+    return buffer.toString()
+  if encoding == TextEncoding.ascii:
+    buffer = StringBuffer()
+    var i = 0
+    n = slice.length
+    while i < n:
+      b = slice[i]
+      if b > 0x7F:
+        if not allowMalformed:
+          throw TextEncodingError(encoding, start + i, "byte", "Byte {b} exceeds ASCII range 0..127")
+        buffer.writeCharCode(0xFFFD)
+      else:
+        buffer.writeCharCode(b)
+      i = i + 1
+    return buffer.toString()
+  buffer = StringBuffer()
+  for b in slice:
+    buffer.writeCharCode(b)
+  return buffer.toString()
+
+
 :: support
+
+_prepareCompare(text: String, ignoreCase: bool, normalization: TextNormalizationForm?) -> String:
+  var current = text
+  if let form = normalization:
+    current = normalizeUnicode(current, form: form)
+  if ignoreCase:
+    current = caseFoldText(current)
+  return current
+
+_isAsciiDigit(unit: int) -> bool = unit >= 48 and unit <= 57
+
+_compareDigitRuns(a: String, b: String) -> int:
+  var za = 0
+  while za < a.length and a.codeUnitAt(za) == 48:
+    za = za + 1
+  var zb = 0
+  while zb < b.length and b.codeUnitAt(zb) == 48:
+    zb = zb + 1
+  sa = a.substring(za)
+  sb = b.substring(zb)
+  if sa.length != sb.length:
+    if sa.length < sb.length:
+      return -1
+    return 1
+  cmp = sa.compareTo(sb)
+  if cmp != 0:
+    if cmp < 0:
+      return -1
+    return 1
+  if a.length != b.length:
+    if a.length < b.length:
+      return -1
+    return 1
+  return 0
+
+_hexByte(value: int) -> String:
+  hex = "0123456789abcdef"
+  hi = (value >> 4) & 0xF
+  lo = value & 0xF
+  return hex[hi] + hex[lo]
+
+_prepareUtfText(text: String, encoding: TextEncoding, allowMalformed: bool) -> String:
+  if isWellFormedUnicode(text):
+    return text
+  if not allowMalformed:
+    var i = 0
+    n = text.length
+    while i < n:
+      u = text.codeUnitAt(i)
+      if u >= 0xD800 and u <= 0xDBFF:
+        if i + 1 < n:
+          lo = text.codeUnitAt(i + 1)
+          if lo >= 0xDC00 and lo <= 0xDFFF:
+            i = i + 2
+            continue
+        throw TextEncodingError(encoding, i, "codeUnit", "Unpaired high surrogate")
+      if u >= 0xDC00 and u <= 0xDFFF:
+        throw TextEncodingError(encoding, i, "codeUnit", "Unpaired low surrogate")
+      i = i + 1
+  buffer = StringBuffer()
+  var i = 0
+  n = text.length
+  while i < n:
+    u = text.codeUnitAt(i)
+    if u >= 0xD800 and u <= 0xDBFF:
+      if i + 1 < n:
+        lo = text.codeUnitAt(i + 1)
+        if lo >= 0xDC00 and lo <= 0xDFFF:
+          buffer.writeCharCode(u)
+          buffer.writeCharCode(lo)
+          i = i + 2
+          continue
+      buffer.writeCharCode(0xFFFD)
+      i = i + 1
+    else if u >= 0xDC00 and u <= 0xDFFF:
+      buffer.writeCharCode(0xFFFD)
+      i = i + 1
+    else:
+      buffer.writeCharCode(u)
+      i = i + 1
+  return buffer.toString()
+
+_repeatFillChars(fill: String, count: int) -> String:
+  if count <= 0:
+    return ""
+  fillChars = TextCharacters(fill)
+  if fillChars.count == 0:
+    throw ArgumentError.value(fill, "fill", "fill must not be empty when padding is required")
+  buffer = StringBuffer()
+  full = count ~/ fillChars.count
+  rem = count % fillChars.count
+  var i = 0
+  while i < full:
+    buffer.write(fill)
+    i = i + 1
+  if rem > 0:
+    buffer.write(fillChars.slice(0, rem))
+  return buffer.toString()
 
 _toTextMatch(text: String, raw: RegExpMatch) -> TextMatch:
   val = text.substring(raw.start, raw.end)

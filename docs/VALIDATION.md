@@ -1,3 +1,18 @@
+# Scoped `using`, `Disposable` / `AsyncDisposable`, and Dart `dispose()` / `close()` interop (Batch 1) — 2026-11-23
+
+Base: `09f2ee7`.
+
+| Check | Observed result |
+| --- | --- |
+| Core SDK interfaces | Added `Disposable` and `AsyncDisposable` to `lib/sdk/core.quds` and synced `lib/src/sdk.dart` via `python3 tool/sync_sdk.py core` |
+| Block & scoped `using` | Added block-less `using x = expr` / `using async x = expr` in `lib/src/parser.dart` (`_wrapScopedUsing`), desugaring trailing statements in enclosing blocks into LIFO `UsingStatement`s |
+| Static cleanup & definite return | Added `_resolveUsingCleanup` in `lib/src/semantics.dart` resolving `dispose()` then `close()` across Quds classes/interfaces/generic bounds and Dart/Flutter native classes (`StreamController`, etc.); fixed definite-return (`returns()`) and `_mentionsBreak()` for `UsingStatement` |
+| Quds primary suite & driver | `/opt/flutter/bin/dart test test/using_disposable_test.dart`: **4 passed, 0 failed** (26s; `quds test test/using_disposable.quds`, negative checks, formatter + LSP completion, strict `quds analyze --fatal-infos`, VM + `quds compile js` + `node` parity) |
+| Language regression | `/opt/flutter/bin/dart test test/language_test.dart --name "using\|defer\|QUDS-04"`: **1 passed, 0 failed** |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suites were run rather than the full repository suite.
+
 # Dart CLI parity upgrade (`quds compile`, VM flags, directory `analyze`/`test`, templates) — 2026-11-23
 
 Base: `a5a13bc`.

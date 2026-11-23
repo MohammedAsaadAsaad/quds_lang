@@ -552,6 +552,9 @@ class SemanticModel {
 
   /// Emit `@protected` because this package depends on `package:meta`.
   var protectWithMeta = false;
+
+  /// Resolved cleanup method (`dispose` or `close`) and whether to `await` it.
+  final usingCleanup = <UsingStatement, ({String method, bool awaitCleanup})>{};
 }
 
 class _FilteredImport {
@@ -3999,6 +4002,9 @@ class Analyzer {
           statement.statement is ReturnStatement) {
         return true;
       }
+      if (statement is UsingStatement && returns(statement.body)) {
+        return true;
+      }
       if (statement is TryStatement &&
           (returns(statement.finallyBody) ||
               (returns([...statement.body, ...statement.elseBody]) &&
@@ -4039,6 +4045,8 @@ class Analyzer {
       switch (statement) {
         case BreakStatement():
           return true;
+        case UsingStatement():
+          if (_mentionsBreak(statement.body)) return true;
         case IfStatement():
           if (_mentionsBreak(statement.thenBody) ||
               _mentionsBreak(statement.elseBody)) {
@@ -4763,10 +4771,11 @@ class Analyzer {
         final used = expression(node.value);
         final usedType =
             unwrap(used.startsWith('readonly ') ? used.substring(9) : used);
-        final declaration = _global.symbols[usedType]?.classDeclaration;
-        if (declaration == null || _method(declaration, 'dispose') == null) {
-          fail('using requires a value with dispose', node.value);
+        final cleanup = _resolveUsingCleanup(used, asyncUsing: node.async);
+        if (cleanup == null) {
+          fail('using requires a value with dispose or close', node.value);
         }
+        model.usingCleanup[node] = cleanup;
         final savedUsing = _scope;
         _scope = _Scope(savedUsing);
         final resource = create(node.name, usedType);
@@ -7091,6 +7100,145 @@ class Analyzer {
       return null;
     }
     return _methods(type, name, visited: visited).firstOrNull;
+  }
+
+  ({String method, bool awaitCleanup})? _resolveUsingCleanup(
+    String rawType, {
+    required bool asyncUsing,
+    Set<String>? visited,
+  }) {
+    var type = rawType.trim();
+    if (type.startsWith('readonly ')) type = type.substring(9).trim();
+    if (type.endsWith('?')) return null;
+    type = unwrap(type);
+    final seen = visited ?? <String>{};
+    if (type.endsWith('?') || !seen.add(type)) return null;
+    final head = _genericHead(type);
+    if (_typeBounds.containsKey(head)) {
+      return _resolveUsingCleanup(_typeBounds[head]!,
+          asyncUsing: asyncUsing, visited: seen);
+    }
+    final symbol = _typeSymbol(head);
+    final declaration = symbol?.classDeclaration;
+    if (declaration != null) {
+      final found = _findQudsCleanup(declaration);
+      if (found != null) {
+        final canAwait = asyncUsing &&
+            (found.isAsync ||
+                (found.returnType != null &&
+                    _isAwaitableType(found.returnType!)));
+        return (method: found.name, awaitCleanup: canAwait);
+      }
+    }
+    final shape = symbol?.nativeClass ?? model.dartShapes[head];
+    if (shape != null) {
+      final found = _findDartCleanup(shape);
+      if (found != null) {
+        final canAwait = asyncUsing && _isAwaitableType(found.member.type);
+        return (method: found.name, awaitCleanup: canAwait);
+      }
+    }
+    return null;
+  }
+
+  FunctionDeclaration? _findQudsCleanup(ClassDeclaration type) {
+    for (final name in const ['dispose', 'close']) {
+      final found = _findQudsZeroArgMethod(type, name, <ClassDeclaration>{});
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  FunctionDeclaration? _findQudsZeroArgMethod(
+    ClassDeclaration type,
+    String name,
+    Set<ClassDeclaration> visited,
+  ) {
+    if (!visited.add(type)) return null;
+    for (final method in type.methods) {
+      if (method.name == name &&
+          !method.isOperator &&
+          method.parameters.isEmpty) {
+        return method;
+      }
+    }
+    for (final mixin in type.mixins.reversed) {
+      final decl = _typeSymbol(_genericHead(_classMemberType(mixin, type)))
+          ?.classDeclaration;
+      if (decl != null) {
+        final found = _findQudsZeroArgMethod(decl, name, visited);
+        if (found != null) return found;
+      }
+    }
+    if (type.superclass != null) {
+      final parent =
+          _typeSymbol(_genericHead(_classMemberType(type.superclass!, type)))
+              ?.classDeclaration;
+      if (parent != null) {
+        final found = _findQudsZeroArgMethod(parent, name, visited);
+        if (found != null) return found;
+      }
+    }
+    for (final iface in type.interfaces) {
+      final decl = _typeSymbol(_genericHead(_classMemberType(iface, type)))
+          ?.classDeclaration;
+      if (decl != null) {
+        final found = _findQudsZeroArgMethod(decl, name, visited);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  ({String name, DartMember member})? _findDartCleanup(DartShape shape) {
+    for (final name in const ['dispose', 'close']) {
+      final found = _findDartZeroArgMember(shape, name, <String>{});
+      if (found != null) return (name: name, member: found);
+    }
+    return null;
+  }
+
+  DartMember? _findDartZeroArgMember(
+    DartShape shape,
+    String name,
+    Set<String> visited,
+  ) {
+    final key = shape.name.isEmpty ? '${identityHashCode(shape)}' : shape.name;
+    if (!visited.add(key)) return null;
+    final direct = shape.members[name];
+    if (direct != null && _dartCallableWithZeroArgs(direct)) {
+      return direct;
+    }
+    for (final supertype in shape.supertypes) {
+      final superHead = _genericHead(supertype);
+      final superShape =
+          model.dartShapes[superHead] ?? _typeSymbol(superHead)?.nativeClass;
+      if (superShape != null) {
+        final found = _findDartZeroArgMember(superShape, name, visited);
+        if (found != null) return found;
+      }
+    }
+    return null;
+  }
+
+  bool _dartCallableWithZeroArgs(DartMember member) {
+    if (member.getter) return false;
+    final positional = member.parameters
+        .where((p) => !member.namedParameters.contains(p.$1))
+        .length;
+    final requiredNamed = member.namedParameters
+        .where((n) => !member.optionalNames.contains(n))
+        .length;
+    return (positional - member.optional) <= 0 && requiredNamed == 0;
+  }
+
+  bool _isAwaitableType(String raw) {
+    final type = raw.trim();
+    return type == 'Future' ||
+        type.startsWith('Future<') ||
+        type == 'FutureOr' ||
+        type.startsWith('FutureOr<') ||
+        type == 'dynamic';
   }
 
   /// Visible methods of [name], with a same-signature child replacing a parent.

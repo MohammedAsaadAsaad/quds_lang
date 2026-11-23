@@ -1273,8 +1273,13 @@ class Parser {
     final resource = name();
     expect(TokenKind.equals, '=');
     final value = expression();
-    return UsingStatement(resource.lexeme, value, block(), extent(span),
-        async: async);
+    if (at(TokenKind.colon)) {
+      return UsingStatement(resource.lexeme, value, block(), extent(span),
+          async: async);
+    }
+    endLine();
+    return UsingStatement(resource.lexeme, value, const [], extent(span),
+        async: async, scoped: true);
   }
 
   void _checkModifiers(List<String> modifiers, SourceSpan span) {
@@ -2475,7 +2480,37 @@ class Parser {
       }
     }
     expect(TokenKind.dedent, 'end of block');
-    return body;
+    return topLevel ? body : _wrapScopedUsing(body);
+  }
+
+  List<Statement> _wrapScopedUsing(List<Statement> statements) {
+    var result = statements;
+    for (var i = result.length - 1; i >= 0; i--) {
+      final stmt = result[i];
+      if (stmt is UsingStatement && stmt.scoped && stmt.body.isEmpty) {
+        final tail = result.sublist(i + 1);
+        final span = tail.isEmpty
+            ? stmt.span
+            : SourceSpan(
+                stmt.span.line,
+                stmt.span.column,
+                (tail.last.span.offset + tail.last.span.length) -
+                    stmt.span.offset,
+                file: stmt.span.file,
+                offset: stmt.span.offset,
+              );
+        final wrapped = UsingStatement(
+          stmt.name,
+          stmt.value,
+          tail,
+          span,
+          async: stmt.async,
+          scoped: true,
+        );
+        result = [...result.sublist(0, i), wrapped];
+      }
+    }
+    return result;
   }
 
   void endLine() => expect(TokenKind.newline, 'end of line');

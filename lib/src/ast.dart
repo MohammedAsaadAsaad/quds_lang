@@ -463,11 +463,12 @@ class WhenStatement extends Statement {
 
 class UsingStatement extends Statement {
   const UsingStatement(this.name, this.value, this.body, super.span,
-      {this.async = false});
+      {this.async = false, this.scoped = false});
   final String name;
   final Expression value;
   final List<Statement> body;
   final bool async;
+  final bool scoped;
 }
 
 class IndexAssignment extends Statement {

@@ -3511,6 +3511,9 @@ class DartEmitter {
         statements(node.body);
       case UsingStatement():
         final resource = model.declarations[node]!;
+        final cleanup = model.usingCleanup[node];
+        final method = cleanup?.method ?? 'dispose';
+        final awaitCleanup = cleanup?.awaitCleanup ?? node.async;
         line('{');
         _depth++;
         line('final ${resource.dartName} = ${expression(node.value)};');
@@ -3518,9 +3521,9 @@ class DartEmitter {
         _depth++;
         statements(node.body);
         _depth--;
-        line(node.async
-            ? '} finally { await ${resource.dartName}.dispose(); }'
-            : '} finally { ${resource.dartName}.dispose(); }');
+        line(awaitCleanup
+            ? '} finally { await ${resource.dartName}.$method(); }'
+            : '} finally { ${resource.dartName}.$method(); }');
         _depth--;
         line('}');
       case IndexAssignment():

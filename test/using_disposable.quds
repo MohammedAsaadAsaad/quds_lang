@@ -1,0 +1,102 @@
+use quds:core
+use dart:async show StreamController
+
+class SyncResource implements Disposable:
+  name: String
+  events: List<String>
+
+  useIt() -> void:
+    events.add("use:{name}")
+
+  dispose() -> void:
+    events.add("dispose:{name}")
+
+class AsyncResource implements AsyncDisposable:
+  name: String
+  events: List<String>
+
+  work() async -> void:
+    events.add("work:{name}")
+
+  dispose() async -> void:
+    events.add("async-dispose:{name}")
+
+class CloseOnly:
+  name: String
+  events: List<String>
+
+  close() -> void:
+    events.add("close:{name}")
+
+runWithDisposable<T: Disposable, R>(resource: T, work: (T) -> R) -> R:
+  using r = resource:
+    return work(r)
+
+runWithAsyncDisposable<T: AsyncDisposable>(resource: T, work: (T) -> Future<void>) async -> void:
+  using async r = resource
+  await work(r)
+
+earlyReturnScoped(events: List<String>) -> String:
+  using first = SyncResource(name: "first", events: events)
+  using second = SyncResource(name: "second", events: events)
+  defer events.add("defer")
+  first.useIt()
+  second.useIt()
+  return "done"
+
+test "block and scoped using with Disposable and AsyncDisposable preserve LIFO order" async:
+  events: List<String> = []
+  using a = SyncResource(name: "block", events: events):
+    a.useIt()
+  expect(events, equals(["use:block", "dispose:block"]))
+
+  scopedEvents: List<String> = []
+  res = earlyReturnScoped(scopedEvents)
+  expect(res, equals("done"))
+  expect(scopedEvents, equals(["use:first", "use:second", "defer", "dispose:second", "dispose:first"]))
+
+  asyncEvents: List<String> = []
+  if true:
+    using s = SyncResource(name: "s", events: asyncEvents)
+    using async aRes = AsyncResource(name: "a", events: asyncEvents)
+    s.useIt()
+    await aRes.work()
+  expect(asyncEvents, equals(["use:s", "work:a", "async-dispose:a", "dispose:s"]))
+
+test "using disposes on thrown exception":
+  events: List<String> = []
+  var caught = false
+  try:
+    using res = SyncResource(name: "err", events: events)
+    res.useIt()
+    throw StateError("boom")
+  catch e:
+    caught = true
+  expect(caught, isTrue)
+  expect(events, equals(["use:err", "dispose:err"]))
+
+test "generic constraints Disposable and AsyncDisposable work with using" async:
+  events: List<String> = []
+  r1 = SyncResource(name: "g1", events: events)
+  out = runWithDisposable(r1, (r: SyncResource) -> "ok:{r.name}")
+  expect(out, equals("ok:g1"))
+  expect(events, equals(["dispose:g1"]))
+
+  asyncEvents: List<String> = []
+  r2 = AsyncResource(name: "g2", events: asyncEvents)
+  await runWithAsyncDisposable(r2, (r: AsyncResource) -> r.work())
+  expect(asyncEvents, equals(["work:g2", "async-dispose:g2"]))
+
+test "using supports close() on Quds classes and Dart StreamController" async:
+  events: List<String> = []
+  using c = CloseOnly(name: "sock", events: events):
+    events.add("inside")
+  expect(events, equals(["inside", "close:sock"]))
+
+  var captured: StreamController<int>? = null
+  if true:
+    using async controller = StreamController<int>.broadcast()
+    captured = controller
+    controller.add(7)
+    expect(controller.isClosed, isFalse)
+  expect(captured?.isClosed, isTrue)

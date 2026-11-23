@@ -495,18 +495,22 @@ with button:
 
 ### QUDS-028 — Deterministic resource management
 
-**Approved decision.** `using` and `using async` dispose resources on scope exit, including exceptional paths.
+**Approved decision.** `using` and `using async` dispose resources on scope exit, including exceptional paths. Both block form (`using resource = expr:`) and enclosing-scope form (`using resource = expr`, disposed in LIFO order at the end of the enclosing block) are supported. `quds:core` provides standard `Disposable` and `AsyncDisposable` interfaces, while `using` also resolves zero-argument `dispose()` or `close()` statically on Quds classes, generic bounds, and Dart/Flutter native classes (such as `StreamController`).
 
 **Quds syntax illustration** (may be a fragment):
 
 ```quds
 using resource = openResource():
   process(resource)
+
+using file = openFile("a.txt")
+using async db = openDb()
+await db.save(file.readAll())
 ```
 
-**Compiler / runtime requirements.** Lower to try/finally; specify disposal interface contracts.
+**Compiler / runtime requirements.** Lower to try/finally; resolve `dispose()` then `close()` statically; only `await` awaitable cleanup methods in `using async`; include `UsingStatement` in definite-return and `break` analysis.
 
-**Required conformance coverage.** Early return, exception, async disposal.
+**Required conformance coverage.** Early return, exception, async disposal, scoped LIFO order, `Disposable`/`AsyncDisposable`, and Dart `close()` interop.
 
 ### QUDS-029 — Pattern matching
 

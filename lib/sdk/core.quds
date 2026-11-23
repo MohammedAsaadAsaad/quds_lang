@@ -186,6 +186,30 @@ class Bag<T>:
     else:
       return local.values.sum()
 
+# A resource that releases unmanaged or scoped state synchronously via [dispose].
+# Example:
+#   class TempFile implements Disposable:
+#     dispose() -> void:
+#       print "closed"
+#   using file = TempFile():
+#     print "working"
+interface Disposable:
+  # Releases resources held by this object.
+  dispose() -> void:
+    return
+
+# A resource that releases unmanaged or scoped state asynchronously via [dispose].
+# Example:
+#   class DbSession implements AsyncDisposable:
+#     dispose() async -> void:
+#       print "disconnected"
+#   using async db = DbSession():
+#     print "querying"
+interface AsyncDisposable:
+  # Asynchronously releases resources held by this object.
+  dispose() async -> void:
+    return
+
 
 :: typed
 

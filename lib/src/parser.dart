@@ -314,20 +314,45 @@ class Parser {
       return sectionHeader(span);
     }
     final notes = takeAnnotations();
-    if (topLevel && word('use')) return useImport(span);
-    if (topLevel && word('export')) return exportDirective(span);
-    if (topLevel && word('part')) return partDirective(span);
-    if (word('annotation')) return annotationDeclaration(span);
-    if (topLevel && word('config')) return configDeclaration(span);
-    if (topLevel && word('augment') && peek().kind == TokenKind.identifier)
-      return typeDeclaration(span, notes, forced: 'augment');
-    if (word('extend')) return extensionDeclaration(span, notes);
-    if (word('type') && peek().kind == TokenKind.identifier) {
-      return typeForm(span);
+    var topVisibility = '';
+    if (topLevel &&
+        word('internal') &&
+        peek().kind != TokenKind.colon &&
+        peek().kind != TokenKind.equals &&
+        peek().kind != TokenKind.leftParen &&
+        peek().kind != TokenKind.dot &&
+        peek().kind != TokenKind.newline &&
+        peek().kind != TokenKind.eof) {
+      topVisibility = take().lexeme;
     }
-    if (word('enum')) return enumDeclaration(span, notes);
+    if (topLevel && topVisibility.isEmpty && word('use'))
+      return useImport(span);
+    if (topLevel && topVisibility.isEmpty && word('export')) {
+      return exportDirective(span);
+    }
+    if (topLevel && topVisibility.isEmpty && word('part')) {
+      return partDirective(span);
+    }
+    if (topVisibility.isEmpty && word('annotation')) {
+      return annotationDeclaration(span);
+    }
+    if (topLevel && topVisibility.isEmpty && word('config')) {
+      return configDeclaration(span);
+    }
+    if (topLevel && word('augment') && peek().kind == TokenKind.identifier)
+      return typeDeclaration(span, notes,
+          forced: 'augment', visibility: topVisibility);
+    if (word('extend')) {
+      return extensionDeclaration(span, notes, visibility: topVisibility);
+    }
+    if (word('type') && peek().kind == TokenKind.identifier) {
+      return typeForm(span, visibility: topVisibility);
+    }
+    if (word('enum')) {
+      return enumDeclaration(span, notes, visibility: topVisibility);
+    }
     if (word('sealed') && peek().lexeme == 'type') {
-      return typeDeclaration(span, notes);
+      return typeDeclaration(span, notes, visibility: topVisibility);
     }
     final modifiers = <String>[];
     const modifierWords = {
@@ -346,16 +371,22 @@ class Parser {
       modifiers.add(take().lexeme);
     }
     if (word('mixin')) {
-      return mixinDeclaration(span, notes, modifiers: modifiers);
+      return mixinDeclaration(span, notes,
+          modifiers: modifiers, visibility: topVisibility);
     }
     if (word('interface') && peek().kind == TokenKind.identifier) {
       take();
-      return typeDeclaration(span, notes, forced: 'interface');
+      return typeDeclaration(span, notes,
+          forced: 'interface', visibility: topVisibility);
     }
     if (word('class') || modifiers.isNotEmpty) {
-      return typeDeclaration(span, notes, modifiers: modifiers);
+      return typeDeclaration(span, notes,
+          modifiers: modifiers, visibility: topVisibility);
     }
-    if (functionAhead()) return function(notes);
+    if (functionAhead()) return function(notes, visibility: topVisibility);
+    if (topVisibility.isNotEmpty) {
+      fail('internal must precede a declaration', span);
+    }
     if (notes.isNotEmpty) {
       fail('Annotation is not attached to a declaration', span);
     }
@@ -1305,7 +1336,9 @@ class Parser {
   }
 
   ClassDeclaration typeDeclaration(SourceSpan span, List<Metadata> notes,
-      {String? forced, List<String> modifiers = const []}) {
+      {String? forced,
+      List<String> modifiers = const [],
+      String visibility = ''}) {
     final documentation = current.documentation;
     _checkModifiers(modifiers, span);
     var kind = forced ?? 'class';
@@ -1406,12 +1439,18 @@ class Parser {
         methods.add(method);
         continue;
       }
-      var visibility = '';
-      if (word('private') || word('protected')) {
-        visibility = take().lexeme;
+      var memberVisibility = '';
+      if (word('private') ||
+          word('protected') ||
+          (word('internal') &&
+              peek().kind != TokenKind.colon &&
+              peek().kind != TokenKind.equals &&
+              peek().kind != TokenKind.leftParen &&
+              peek().kind != TokenKind.dot)) {
+        memberVisibility = take().lexeme;
       }
       if (word('property')) {
-        properties.add(propertyDeclaration(visibility));
+        properties.add(propertyDeclaration(memberVisibility));
         continue;
       }
       if (word('operator')) {
@@ -1429,12 +1468,12 @@ class Parser {
         take();
         isStatic = true;
         if (word('const') && peek().lexeme != 'init') {
-          fields.add(staticConstant());
+          fields.add(staticConstant(visibility: memberVisibility));
           continue;
         }
         if (!functionAhead() &&
             !(word('readonly') && functionAhead(from: index + 1))) {
-          fields.add(staticField());
+          fields.add(staticField(visibility: memberVisibility));
           continue;
         }
       }
@@ -1445,7 +1484,7 @@ class Parser {
       }
       if (functionAhead()) {
         methods.add(function(const [],
-            visibility: visibility,
+            visibility: memberVisibility,
             readonlyMethod: readonlyMethod,
             isStatic: isStatic));
         continue;
@@ -1459,7 +1498,7 @@ class Parser {
         endLine();
         fields.add(FieldDeclaration(fieldName.lexeme, 'Event<$payload>', false,
             false, null, fieldName.span,
-            visibility: visibility, isEvent: true));
+            visibility: memberVisibility, isEvent: true));
         continue;
       }
       if (isStatic) fail('static applies to a field, function, or const');
@@ -1475,7 +1514,7 @@ class Parser {
         take();
         fields.add(FieldDeclaration(
             fieldName.lexeme, fieldType, false, false, null, fieldName.span,
-            visibility: visibility, lazyBody: suite()));
+            visibility: memberVisibility, lazyBody: suite()));
         continue;
       }
       var requiredField = false;
@@ -1488,7 +1527,7 @@ class Parser {
       endLine();
       fields.add(FieldDeclaration(fieldName.lexeme, fieldType, mutable,
           requiredField || initializer == null, initializer, fieldName.span,
-          visibility: visibility));
+          visibility: memberVisibility));
     }
     expect(TokenKind.dedent, 'end of block');
     return ClassDeclaration(
@@ -1500,7 +1539,8 @@ class Parser {
         constructors: constructors,
         properties: properties,
         typeParameters: typeParameters,
-        documentation: documentation);
+        documentation: documentation,
+        visibility: visibility);
   }
 
   PropertyDeclaration propertyDeclaration(String visibility) {
@@ -1597,7 +1637,7 @@ class Parser {
         factory: factory, constant: constant);
   }
 
-  Statement typeForm(SourceSpan span) {
+  Statement typeForm(SourceSpan span, {String visibility = ''}) {
     final documentation = current.documentation;
     take();
     final typeNameToken = name();
@@ -1636,17 +1676,18 @@ class Parser {
           const [],
           const [],
           extent(span),
-          requirements: requirements);
+          requirements: requirements,
+          visibility: visibility);
     }
     expect(TokenKind.equals, '=');
     final target = typeName();
     endLine();
     return AliasDeclaration(typeNameToken.lexeme, target, extent(span),
-        documentation: documentation);
+        documentation: documentation, visibility: visibility);
   }
 
   ClassDeclaration mixinDeclaration(SourceSpan span, List<Metadata> notes,
-      {List<String> modifiers = const []}) {
+      {List<String> modifiers = const [], String visibility = ''}) {
     _checkModifiers([...modifiers, 'mixin'], span);
     take();
     final typeNameToken = name();
@@ -1658,11 +1699,14 @@ class Parser {
     final body = typeMembers(const []);
     return ClassDeclaration(typeNameToken.lexeme, 'mixin', body.$1, body.$2,
         const [], notes, extent(span),
-        onType: onType, modifiers: [...modifiers, 'mixin']);
+        onType: onType,
+        modifiers: [...modifiers, 'mixin'],
+        visibility: visibility);
   }
 
   ExtensionDeclaration extensionDeclaration(
-      SourceSpan span, List<Metadata> notes) {
+      SourceSpan span, List<Metadata> notes,
+      {String visibility = ''}) {
     take();
     final target = typeName();
     final typeParameters = extensionParameters(target, span);
@@ -1687,7 +1731,9 @@ class Parser {
     }
     expect(TokenKind.dedent, 'end of extension');
     return ExtensionDeclaration(extensionName, target, methods, extent(span),
-        typeParameters: typeParameters, properties: properties);
+        typeParameters: typeParameters,
+        properties: properties,
+        visibility: visibility);
   }
 
   List<TypeParameter> extensionParameters(String target, SourceSpan span) {
@@ -2168,7 +2214,7 @@ class Parser {
     return BindingPattern(typeOrName.lexeme, typeOrName.span);
   }
 
-  FieldDeclaration staticField() {
+  FieldDeclaration staticField({String visibility = ''}) {
     final mutable = word('var');
     if (mutable) take();
     final fieldName = name();
@@ -2180,17 +2226,17 @@ class Parser {
       take();
       return FieldDeclaration(
           fieldName.lexeme, type, false, false, null, fieldName.span,
-          isStatic: true, lazyBody: suite());
+          visibility: visibility, isStatic: true, lazyBody: suite());
     }
     expect(TokenKind.equals, '=');
     final value = expression(bare: true);
     endLine();
     return FieldDeclaration(
         fieldName.lexeme, type, mutable, false, value, fieldName.span,
-        isStatic: true);
+        visibility: visibility, isStatic: true);
   }
 
-  FieldDeclaration staticConstant() {
+  FieldDeclaration staticConstant({String visibility = ''}) {
     take();
     final fieldName = name();
     var type = '<infer>';
@@ -2200,7 +2246,7 @@ class Parser {
     endLine();
     return FieldDeclaration(
         fieldName.lexeme, type, false, false, value, fieldName.span,
-        isStatic: true, isConst: true);
+        visibility: visibility, isStatic: true, isConst: true);
   }
 
   FunctionDeclaration function(List<Metadata> notes,
@@ -2351,7 +2397,8 @@ class Parser {
     return value ?? (optionalPositional ? Literal(null, span) : null);
   }
 
-  ClassDeclaration enumDeclaration(SourceSpan span, List<Metadata> notes) {
+  ClassDeclaration enumDeclaration(SourceSpan span, List<Metadata> notes,
+      {String visibility = ''}) {
     take();
     final typeNameToken = name();
     expect(TokenKind.colon, ':');
@@ -2366,7 +2413,8 @@ class Parser {
     expect(TokenKind.dedent, 'end of enum');
     if (cases.isEmpty) fail('An enum needs a value', span);
     return ClassDeclaration(typeNameToken.lexeme, 'enum', const [], const [],
-        cases, notes, extent(span));
+        cases, notes, extent(span),
+        visibility: visibility);
   }
 
   Statement tryStatement(SourceSpan span) {

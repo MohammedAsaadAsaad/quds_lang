@@ -1462,9 +1462,14 @@ Map<String, String>? _extensionArgs(
 
 bool _completionVisible(Compilation compilation, ClassDeclaration declaration,
     String visibility, ClassDeclaration? owner) {
-  if (visibility != 'private' && visibility != 'protected') return true;
+  if (visibility != 'private' &&
+      visibility != 'protected' &&
+      visibility != 'internal') return true;
   final home = compilation.semantics.libraryOf[declaration] ?? '';
   final current = compilation.program.span.file;
+  if (visibility == 'internal') {
+    return home.isEmpty || samePackage(current, home);
+  }
   if (home.isEmpty || home == current || home == File(current).absolute.path)
     return true;
   return visibility == 'protected' &&

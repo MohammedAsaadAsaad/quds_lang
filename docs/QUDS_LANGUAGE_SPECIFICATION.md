@@ -2573,7 +2573,7 @@ A property suite contains `get = expression` or `get suite`, and optionally `set
 
 `annotation Name :` defines a const class used as metadata. `@Name` and `@Name(...)` attach const metadata. The arguments are constant expressions.
 
-`private` is library-private and lowers to a Dart `_` name. `protected` is visible to the declaring library and to subtypes; the Quds checker enforces it, and the emitter writes `@protected` when `package:meta` is a dependency, otherwise a documentation comment. The Dart VM does not enforce `protected`. A Quds name that itself starts with `_` is already the Dart private spelling.
+`private` is library-private and lowers to a Dart `_` name. `protected` is visible to the declaring library and to subtypes; the Quds checker enforces it, and the emitter writes `@protected` when `package:meta` is a dependency, otherwise a documentation comment. `internal` is package-private (`pub(crate)`-style) on top-level declarations (`class`, `enum`, `interface`, `mixin`, `sealed type`, `extend`, `type`, functions) and class members (`field`, `static`, `property`, methods); it is accessible from any file in the same package (`lib/`, `bin/`, `test/`), rejected with `E209` outside its package, hidden from external LSP completions, and lowers to `@internal` when `package:meta` is a dependency (otherwise `/// internal`). `internal` remains a contextual modifier so identifiers named `internal` stay valid. The Dart VM does not enforce `protected` or `internal`. A Quds name that itself starts with `_` is already the Dart private spelling.
 
 `readonly` on a reference rejects assignment, compound assignment, and any call that is not a read. Reads are getters, `[]` when it does not write, `==`, `hashCode`, `toString`, and a method declared `readonly`. For `List`, `Map`, and `Set`, methods that add, remove, reorder, or replace elements are writes, and methods that only return a value or a new collection are reads. A `readonly` method may itself perform only reads on `this` (`E307`). Another alias of the same object is not affected.
 
@@ -2670,6 +2670,7 @@ A diagnostic is `path:line:column: severity[CODE]: message`, using the original 
 | `E206` | A private name is used outside its library |
 | `E207` | A protected name is used outside a subtype or its library |
 | `E208` | An internal library under `lib/src/` or `lib/internal/` is imported or exported from outside its package |
+| `E209` | An `internal` declaration or class member is used outside its package |
 | `E300` | A type does not match |
 | `E302` | A type cannot be inferred, including an empty literal with no expected type |
 | `E304` | A variance annotation is not sound |

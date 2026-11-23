@@ -846,6 +846,8 @@ class Analyzer {
   /// the importer's scope, which cannot see `_names` or `use dart:math as math`.
   final _libraryScopes = <String, _Scope>{};
   final _libraryTypes = <String, Map<String, String>>{};
+  final _blockedInternalNames = <String>{};
+  final _blockedInternalByPrefix = <String, Set<String>>{};
   final _core = _Scope();
   late final _global = _Scope(_core);
   late _Scope _scope = _global;
@@ -3057,6 +3059,56 @@ class Analyzer {
     return names;
   }
 
+  Set<String> _internalNames(Program program, String path, Set<String> seen) {
+    if (!seen.add(path)) return {};
+    final names = <String>{};
+    for (final statement in program.statements) {
+      switch (statement) {
+        case ClassDeclaration()
+            when statement.visibility == 'internal' &&
+                !statement.name.startsWith('_'):
+          names.add(statement.name);
+        case FunctionDeclaration()
+            when statement.visibility == 'internal' &&
+                statement.name != 'main' &&
+                !statement.name.startsWith('_'):
+          names.add(statement.name);
+        case AliasDeclaration()
+            when statement.visibility == 'internal' &&
+                !statement.name.startsWith('_'):
+          names.add(statement.name);
+        case ExtensionDeclaration()
+            when statement.visibility == 'internal' &&
+                statement.name != null &&
+                !statement.name!.startsWith('_'):
+          names.add(statement.name!);
+        case ImportDeclaration()
+            when statement.export && !statement.uri.startsWith('dart:'):
+          final exportedPath = _resolveLibrary(path, statement.uri);
+          final exported = _libraries[exportedPath];
+          if (exported != null) {
+            names.addAll(_internalNames(exported, exportedPath, seen)
+                .where((name) => _keeps(name, statement)));
+          }
+        case PartDirective() when !statement.of:
+          final partPath = _resolveLibrary(path, statement.uri);
+          final part = _libraries[partPath];
+          if (part != null) names.addAll(_internalNames(part, partPath, seen));
+        default:
+          break;
+      }
+    }
+    return names;
+  }
+
+  void _recordBlockedInternal(String name, String? qualify) {
+    if (qualify == null) {
+      _blockedInternalNames.add(name);
+    } else {
+      _blockedInternalByPrefix.putIfAbsent(qualify, () => <String>{}).add(name);
+    }
+  }
+
   void _importLibrary(Program imported, String path,
       {Set<String>? seen,
       ImportDeclaration? filter,
@@ -3067,9 +3119,19 @@ class Analyzer {
     final visited = seen ?? <String>{};
     if (!visited.add(path)) return;
     final home = privacy ?? path;
+    final inSamePackage = samePackage(_file, home);
     if (check && filter != null && filter.show.isNotEmpty) {
       final available = _publicNames(imported, path, {});
+      final internals =
+          inSamePackage ? const <String>{} : _internalNames(imported, path, {});
       for (final name in filter.show) {
+        if (internals.contains(name)) {
+          error(
+            'E209',
+            'An internal name $name is used outside its package',
+            filter,
+          );
+        }
         if (!available.contains(name)) {
           error('E200', 'Name $name is not defined', filter);
         }
@@ -3081,8 +3143,13 @@ class Analyzer {
         case ClassDeclaration()
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
+          if (statement.visibility == 'internal' && !inSamePackage) {
+            _recordBlockedInternal(statement.name, qualify);
+            break;
+          }
           _importClass(statement, home: home, qualify: qualify);
         case FunctionDeclaration() when statement.conversionKind.isNotEmpty:
+          if (statement.visibility == 'internal' && !inSamePackage) break;
           if (_keeps(statement.conversionOwner.split('<').first, filter)) {
             _conversionDefinitions[statement] = home;
             _importFunction(statement, library: home);
@@ -3090,15 +3157,27 @@ class Analyzer {
         case FunctionDeclaration()
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
+          if (statement.visibility == 'internal' && !inSamePackage) {
+            _recordBlockedInternal(statement.name, qualify);
+            break;
+          }
           _importFunction(statement, qualify: qualify, library: home);
         case AliasDeclaration()
             when _importable(statement.name, home) &&
                 _keeps(statement.name, filter):
+          if (statement.visibility == 'internal' && !inSamePackage) {
+            _recordBlockedInternal(statement.name, qualify);
+            break;
+          }
           _importAlias(statement, home: home, qualify: qualify);
         case ExtensionDeclaration()
             when statement.name != null &&
                 _importable(statement.name!, home) &&
                 _keeps(statement.name!, filter):
+          if (statement.visibility == 'internal' && !inSamePackage) {
+            _recordBlockedInternal(statement.name!, qualify);
+            break;
+          }
           _importExtension(statement, home: home, qualify: qualify);
         case ImportDeclaration() when statement.export:
           if (statement.uri.startsWith('dart:')) {
@@ -3363,6 +3442,10 @@ class Analyzer {
     if (visibility == 'protected' && !_insideSubtype(owner)) {
       error('E207', 'A protected name is used outside a subtype or its library',
           node);
+    }
+    if (visibility == 'internal' && !samePackage(_file, home)) {
+      error(
+          'E209', 'An internal member $name is used outside its package', node);
     }
   }
 
@@ -6486,6 +6569,14 @@ class Analyzer {
         }
         final found = owner.namespace![node.name];
         if (found == null) {
+          if (owner.type == 'prefix' &&
+              _blockedInternalByPrefix[owner.name]?.contains(node.name) ==
+                  true) {
+            error(
+                'E209',
+                'An internal name ${node.name} is used outside its package',
+                node);
+          }
           if (owner.nativeTop?.isType == true &&
               _nativeShape(owner.type)?.members.containsKey(node.name) ==
                   true) {
@@ -8496,6 +8587,10 @@ class Analyzer {
       }
     }
     if (symbol == null) {
+      if (_blockedInternalNames.contains(node.name)) {
+        error('E209',
+            'An internal name ${node.name} is used outside its package', node);
+      }
       if (!_externalDart) {
         fail(
             _hinted(
@@ -9058,6 +9153,13 @@ class Analyzer {
     }
     final found = owner.namespace![callee.name];
     if (found == null) {
+      if (owner.type == 'prefix' &&
+          _blockedInternalByPrefix[owner.name]?.contains(callee.name) == true) {
+        error(
+            'E209',
+            'An internal name ${callee.name} is used outside its package',
+            callee);
+      }
       if (owner.nativeTop?.isType == true &&
           _nativeShape(owner.type)?.members.containsKey(callee.name) == true) {
         fail('Instance member ${callee.name} is used on the type', callee);
@@ -9578,6 +9680,12 @@ class Analyzer {
           node, Symbol(callee.name, callee.name, 'dynamic', external: true));
     }
     if (symbol == null) {
+      if (_blockedInternalNames.contains(callee.name)) {
+        error(
+            'E209',
+            'An internal name ${callee.name} is used outside its package',
+            callee);
+      }
       fail(
           _hinted('Undefined function: ${callee.name}', callee.name,
               _visibleNames()),
@@ -10043,6 +10151,10 @@ class Analyzer {
       final name = (applied.callee as Identifier).name;
       final symbol = _scope.lookup(name);
       if (symbol == null) {
+        if (_blockedInternalNames.contains(name)) {
+          error('E209', 'An internal name $name is used outside its package',
+              node);
+        }
         fail(_hinted('Undefined function: $name', name, _visibleNames()), node);
       }
       model.references[applied.callee as Identifier] = symbol;

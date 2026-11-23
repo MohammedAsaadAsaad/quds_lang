@@ -344,6 +344,21 @@ String? externalInternalPackageOwner(String from, String targetPath) {
   return parts.isEmpty ? 'package' : parts.last;
 }
 
+/// True when [from] and [targetPath] belong to the same package (or neither
+/// belongs to a separate package, e.g., `<input>` or loose sibling files).
+bool samePackage(String from, String targetPath) {
+  if (from == '<input>' || targetPath == '<input>' || targetPath.isEmpty) {
+    return true;
+  }
+  if (targetPath.startsWith('quds:')) return false;
+  final targetRoot = packageRoot(targetPath);
+  final fromRoot = packageRoot(from);
+  if (targetRoot == null && fromRoot == null) return true;
+  if (targetRoot == null || fromRoot == null) return false;
+  return _canonicalPath(fromRoot.directory) ==
+      _canonicalPath(targetRoot.directory);
+}
+
 /// Package name and relative path inside `lib/` for a file belonging to a
 /// package, used to mirror external Quds dependencies under `.dart_tool/quds/`.
 ({String name, String relativeInsideLib})? packageFileInfo(String path,

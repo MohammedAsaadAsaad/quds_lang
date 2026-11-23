@@ -1003,12 +1003,20 @@ class DartEmitter {
   }
 
   void _markProtected(String visibility) {
-    if (visibility != 'protected') return;
-    if (model.protectWithMeta) {
-      _useProtected = true;
-      line('@protected');
-    } else {
-      line('/// protected');
+    if (visibility == 'protected') {
+      if (model.protectWithMeta) {
+        _useProtected = true;
+        line('@protected');
+      } else {
+        line('/// protected');
+      }
+    } else if (visibility == 'internal') {
+      if (model.protectWithMeta) {
+        _useProtected = true;
+        line('@internal');
+      } else {
+        line('/// internal');
+      }
     }
   }
 
@@ -2168,6 +2176,7 @@ class DartEmitter {
 
   void emitClass(ClassDeclaration node) {
     _span = node.span;
+    _markProtected(node.visibility);
     if (node.kind == 'enum') {
       final values = node.cases.map((item) => item.name).join(', ');
       line('enum ${node.name} { $values }');

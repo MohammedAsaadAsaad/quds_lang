@@ -412,7 +412,8 @@ class ClassDeclaration extends Statement {
       this.constructors = const [],
       this.properties = const [],
       this.typeParameters = const [],
-      this.documentation});
+      this.documentation,
+      this.visibility = ''});
   final String name;
 
   /// `class`, `value`, `sealed`, `sealedType`, `mixin`, `mixinClass`, or `interface`.
@@ -433,6 +434,9 @@ class ClassDeclaration extends Statement {
 
   /// `#` or `///` lines immediately above this declaration.
   final String? documentation;
+
+  /// Empty or `internal`.
+  final String visibility;
 }
 
 class IfLetStatement extends Statement {
@@ -489,12 +493,15 @@ class MemberAssignment extends Statement {
 
 class AliasDeclaration extends Statement {
   const AliasDeclaration(this.name, this.target, super.span,
-      {this.documentation});
+      {this.documentation, this.visibility = ''});
   final String name;
   final String target;
 
   /// `#` or `///` lines immediately above this declaration.
   final String? documentation;
+
+  /// Empty or `internal`.
+  final String visibility;
 }
 
 class RequireStatement extends Statement {
@@ -526,12 +533,17 @@ class NameofExpression extends Expression {
 
 class ExtensionDeclaration extends Statement {
   const ExtensionDeclaration(this.name, this.target, this.methods, super.span,
-      {this.typeParameters = const [], this.properties = const []});
+      {this.typeParameters = const [],
+      this.properties = const [],
+      this.visibility = ''});
   final String? name;
   final String target;
   final List<FunctionDeclaration> methods;
   final List<TypeParameter> typeParameters;
   final List<PropertyDeclaration> properties;
+
+  /// Empty or `internal`.
+  final String visibility;
 }
 
 class ThisExpression extends Expression {

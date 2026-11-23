@@ -1,3 +1,17 @@
+# Package-private `internal` symbol visibility (`E209`, Batch 2) — 2026-11-23
+
+Base: `c845527`.
+
+| Check | Observed result |
+| --- | --- |
+| Contextual `internal` modifier | Parsed on top-level `class`, `enum`, `interface`, `mixin`, `sealed type`, `extend`, `type`, and functions, plus class members (`field`, `static`, `property`, methods), while preserving identifiers literally named `internal` (`internal: bool = true`) |
+| Static enforcement (`E209`) | Accessible across all files in the owning package (`lib/`, `bin/`, `test/` via `samePackage`); rejected with `E209` from outside the package across `show`, direct calls, prefixed calls, constructors, enums, fields, properties, methods, and static fields; wildcard imports do not leak internal symbols into external scopes |
+| Dart lowering & LSP | Emits `/// internal` by default and `@internal` (`package:meta/meta.dart`) when `meta:` is in `pubspec.yaml`; `_completionVisible` hides external `internal` members while showing them inside the owning package |
+| Test suite | `/opt/flutter/bin/dart test test/internal_visibility_test.dart`: **2 passed, 0 failed** (15s) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # Scoped `using`, `Disposable` / `AsyncDisposable`, and Dart `dispose()` / `close()` interop (Batch 1) — 2026-11-23
 
 Base: `09f2ee7`.

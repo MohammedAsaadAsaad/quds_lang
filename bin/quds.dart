@@ -20,7 +20,37 @@ Future<void> main(List<String> arguments) async {
     _usage();
     return;
   }
-  switch (arguments.first) {
+  final first = arguments.first;
+  if (first == '--version' || first == '-v' || first == 'version') {
+    await _version(arguments);
+    return;
+  }
+  if (first.endsWith('.quds') && !first.startsWith('-')) {
+    await _run(['run', ...arguments]);
+    return;
+  }
+  const qudsHelpCommands = {
+    'build',
+    'compile',
+    'analyze',
+    'test',
+    'format',
+    'create',
+    'doc',
+    'migrate',
+    'benchmark',
+    'doctor',
+    'install',
+    'lsp',
+    'debug',
+  };
+  if (qudsHelpCommands.contains(first) &&
+      first != 'compile' &&
+      _hasHelpFlag(arguments.skip(1))) {
+    _help(['help', first]);
+    return;
+  }
+  switch (first) {
     case 'build':
       if (arguments.length > 1 &&
           const {
@@ -38,6 +68,8 @@ Future<void> main(List<String> arguments) async {
       } else {
         _build(arguments);
       }
+    case 'compile':
+      await _compile(arguments);
     case 'run':
       await _run(arguments);
     case 'analyze':
@@ -47,19 +79,27 @@ Future<void> main(List<String> arguments) async {
     case 'format':
       _format(arguments);
     case 'create':
-      _create(arguments);
+      await _create(arguments);
     case 'doc-preview':
       await _docPreviewService();
     case 'flutter':
       await _flutterCommand(arguments.skip(1).toList());
+    case 'dart':
+      await _dartCommand(arguments.skip(1).toList());
+    case 'devtools':
+      await _devtools(arguments.skip(1).toList());
+    case 'info':
+      await _info(arguments.skip(1).toList());
     case 'pub':
       await _pubCommand(arguments.skip(1).toList());
     case 'add':
-      await _pub('add', arguments);
     case 'remove':
-      await _pub('remove', arguments);
     case 'get':
-      await _pub('get', arguments);
+    case 'upgrade':
+    case 'outdated':
+    case 'deps':
+    case 'publish':
+      await _pub(first, arguments);
     case 'doc':
       _doc(arguments);
     case 'migrate':
@@ -82,6 +122,57 @@ Future<void> main(List<String> arguments) async {
     default:
       _usage();
   }
+}
+
+bool _hasHelpFlag(Iterable<String> args) {
+  for (final arg in args) {
+    if (arg == '--') return false;
+    if (arg == '-h' || arg == '--help') return true;
+  }
+  return false;
+}
+
+Future<void> _version(List<String> arguments) async {
+  if (arguments.length != 1) {
+    stderr.writeln('Usage: quds --version');
+    exitCode = 64;
+    return;
+  }
+  final root = await _compilerRoot();
+  final version = root == null ? '' : _pubspecVersion(root);
+  final dartVersion = Platform.version.split(' ').first;
+  stdout.writeln(version.isEmpty
+      ? 'Quds CLI (Dart $dartVersion)'
+      : 'Quds CLI $version (Dart $dartVersion)');
+}
+
+Future<void> _dartCommand(List<String> arguments) async {
+  if (arguments.isEmpty) {
+    stderr.writeln('Usage: quds dart <arguments>');
+    exitCode = 64;
+    return;
+  }
+  final child = await Process.start(_dartExecutable(), arguments,
+      mode: ProcessStartMode.inheritStdio);
+  exitCode = await child.exitCode;
+}
+
+Future<void> _devtools(List<String> arguments) async {
+  final child = await Process.start(
+      _dartExecutable(), ['devtools', ...arguments],
+      mode: ProcessStartMode.inheritStdio);
+  exitCode = await child.exitCode;
+}
+
+Future<void> _info(List<String> arguments) async {
+  final root = await _compilerRoot();
+  final version = root == null ? '' : _pubspecVersion(root);
+  if (version.isNotEmpty && !_hasHelpFlag(arguments)) {
+    stdout.writeln('Quds CLI $version');
+  }
+  final child = await Process.start(_dartExecutable(), ['info', ...arguments],
+      mode: ProcessStartMode.inheritStdio);
+  exitCode = await child.exitCode;
 }
 
 /// Prints process output with generated `.dart` frames rewritten to `.quds`.
@@ -132,37 +223,45 @@ void _help(List<String> arguments) {
 String? _helpText(String? topic) {
   const entries = <String, String>{
     'build': 'quds build [--watch] <input.quds>\n'
-        '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n'
+        '    Compile to Dart under .dart_tool/quds/out/ (defaults to lib/main.quds or main.quds). --watch rebuilds when a source changes.\n'
         'quds build --package [dir]\n'
         '    Compile all lib/**/*.quds files to lib/**/*.dart beside sources for Quds and Dart/Flutter publishing.\n'
         'quds build <apk|appbundle|web|linux|windows|macos|ios|ipa|bundle> [Quds target and Flutter options]\n'
         '    Build a Flutter application from lib/main.quds or an explicit .quds target.\n',
-    'run': 'quds run [input.quds] [arguments] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
-        '    Run the program. Plain values and values after -- reach main(args: List<String>). An unchanged file reuses the previous build. A Flutter package watches saved Quds files and hot reloads. r: reload, R: restart, q: quit.\n',
-    'analyze': 'quds analyze <input.quds>\n'
-        '    Compile and run dart analyze on the generated Dart.\n',
-    'test': 'quds test <input.quds>\n'
-        '    Run the test declarations in the file.\n',
+    'compile': 'quds compile <exe|aot-snapshot|jit-snapshot|kernel|js|wasm> [options] <input.quds>\n'
+        '    Compile a Quds program to a native binary, snapshot, JavaScript, or WebAssembly via Dart.\n'
+        '    Forwards Dart compile options (-o/--output, -D/--define, -O0..-O4, --target-os, --target-arch, etc.).\n',
+    'run': 'quds run [vm-options] [input.quds] [arguments] [-e <code>] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
+        '    Run the program (or evaluate a Quds snippet with -e/--eval). Supports Dart VM options (--enable-asserts, -D/--define, --observe, --verbosity) and Flutter hot reload.\n',
+    'analyze':
+        'quds analyze [--fatal-infos] [--[no-]fatal-warnings] [file.quds|dir ...]\n'
+            '    Compile and run dart analyze on Quds file(s) or directory (defaults to the current directory).\n',
+    'test': 'quds test [file.quds|dir ...] [-n/--name <regex>] [-N/--plain-name <text>] [--fail-fast] [--[no-]enable-asserts] [-r/--reporter <compact|expanded>]\n'
+        '    Run Quds test declarations (defaults to test/ when no target is given).\n',
     'format':
-        'quds format [file.quds|dir ...] [--check] [--stdout] [--indent N] [--width N] [--no-single-line-if]\n'
-            '    Format Quds source files in place (defaults to the current directory). --check verifies without writing.\n',
-    'create':
-        'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
-            '    Add Flutter platform support in the current project, preserving Quds sources.\n'
-            'quds create <name>\n'
-            '    Create a directory containing a Quds program.\n'
-            'quds create flutter <name>\n'
-            '    Create a Flutter app whose program is lib/main.quds.\n',
+        'quds format [file.quds|dir ...] [--check|--set-exit-if-changed] [-o/--output <write|show|none>] [--stdout] [--indent N] [-l/--width/--line-length N] [--no-single-line-if]\n'
+            '    Format Quds source files in place (defaults to the current directory).\n',
+    'create': 'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
+        '    Add Flutter platform support in the current project, preserving Quds sources.\n'
+        'quds create [-t/--template <console|cli|package|flutter>] [--force] [--[no-]pub] <name>\n'
+        '    Create a new Quds project or publishable Quds package.\n'
+        'quds create flutter <name>\n'
+        '    Create a Flutter app whose program is lib/main.quds.\n',
     'pub':
-        'quds pub [arguments]\n    Forward all pub commands to Dart, or Flutter in a Flutter project.\n',
+        'quds pub [arguments]\n    Forward all pub commands (add, remove, get, upgrade, outdated, deps, publish, ...) to Dart, or Flutter in a Flutter project.\n',
     'add':
         'quds add <package>\n    Forward to native pub add (Flutter in Flutter projects).\n',
     'remove':
         'quds remove <package>\n    Forward to native pub remove (Flutter in Flutter projects).\n',
     'get':
         'quds get\n    Forward to native pub get (Flutter in Flutter projects).\n',
-    'doc': 'quds doc <input.quds>\n'
-        '    Print /// documentation.\n'
+    'upgrade': 'quds upgrade [arguments]\n    Forward to native pub upgrade.\n',
+    'outdated':
+        'quds outdated [arguments]\n    Forward to native pub outdated.\n',
+    'deps': 'quds deps [arguments]\n    Forward to native pub deps.\n',
+    'publish': 'quds publish [arguments]\n    Forward to native pub publish.\n',
+    'doc': 'quds doc [-o/--output <path>] <input.quds|dir>\n'
+        '    Print /// documentation (or write HTML with -o <out.html|dir>).\n'
         'quds doc test <input.quds>\n'
         '    Check documentation examples.\n'
         'quds doc html <input.quds> <output.html>\n'
@@ -178,8 +277,16 @@ String? _helpText(String? topic) {
         '    Proxy the debug adapter. A Flutter package uses flutter debug-adapter.\n',
     'help': 'quds help [command]\n'
         '    Show every command, or the usage of one command.\n',
+    'version': 'quds --version\n'
+        '    Print the Quds CLI and Dart SDK versions.\n',
     'doctor': 'quds doctor\n'
         '    Check Dart, the quds command, Flutter, and the editors on this machine.\n',
+    'info': 'quds info [arguments]\n'
+        '    Show Quds and Dart diagnostic tooling information.\n',
+    'devtools': 'quds devtools [arguments]\n'
+        '    Launch Dart DevTools.\n',
+    'dart': 'quds dart <arguments>\n'
+        '    Forward any Dart CLI command with its normal arguments.\n',
     'flutter': 'quds flutter <arguments>\n'
         '    Forward Flutter commands, including clean, with their normal arguments.\n',
     'install': 'quds install [--no-update]\n'
@@ -540,13 +647,6 @@ void _add32(BytesBuilder out, int value) {
   out.addByte((value >> 24) & 0xff);
 }
 
-void _requireQuds(List<String> arguments) {
-  if (arguments.length != 2 || !arguments[1].endsWith('.quds')) {
-    stderr.writeln('Usage: quds ${arguments.first} <input.quds>');
-    exitCode = 64;
-  }
-}
-
 const _generatedHeader = '// Generated by Quds MVP-0. Do not edit.\n';
 // Bump when previously generated Dart cannot satisfy the current lowering ABI.
 const _generatedAbi = 'provider-defaults-v16';
@@ -565,21 +665,187 @@ void _build(List<String> arguments) {
     return;
   }
   final watch = arguments.length > 1 && arguments[1] == '--watch';
-  final path = watch
-      ? (arguments.length == 3 ? arguments[2] : null)
-      : (arguments.length == 2 ? arguments[1] : null);
-  if (path == null || !path.endsWith('.quds')) {
+  final rest = watch ? arguments.skip(2).toList() : arguments.skip(1).toList();
+  if (rest.length > 1) {
     stderr.writeln(
-        'Usage: quds build [--watch] <input.quds> | quds build --package [dir]');
+        'Usage: quds build [--watch] [input.quds] | quds build --package [dir]');
     exitCode = 64;
     return;
   }
-  final input = File(path);
+  File input;
+  if (rest.isEmpty) {
+    final root = _packageRoot(Directory.current);
+    input = File(
+        '${root.path}/${File('${root.path}/lib/main.quds').existsSync() ? 'lib/main.quds' : 'main.quds'}');
+    if (!input.existsSync()) {
+      stderr.writeln(
+          'No lib/main.quds or main.quds found. Specify a .quds entry point.');
+      exitCode = 64;
+      return;
+    }
+  } else {
+    final path = rest.single;
+    if (!path.endsWith('.quds')) {
+      stderr.writeln(
+          'Usage: quds build [--watch] [input.quds] | quds build --package [dir]');
+      exitCode = 64;
+      return;
+    }
+    input = File(path);
+  }
   if (!watch) {
     _writeTree(input, <String>{});
     return;
   }
   _watch(input);
+}
+
+Future<void> _compile(List<String> arguments) async {
+  const targets = {
+    'exe',
+    'aot-snapshot',
+    'jit-snapshot',
+    'kernel',
+    'js',
+    'wasm',
+  };
+  if (arguments.length < 2 ||
+      arguments[1] == '-h' ||
+      arguments[1] == '--help') {
+    _help(['help', 'compile']);
+    return;
+  }
+  final target = arguments[1];
+  if (!targets.contains(target)) {
+    stderr.writeln('Unknown compile target: $target');
+    stderr.writeln(
+        'Supported targets: exe, aot-snapshot, jit-snapshot, kernel, js, wasm');
+    exitCode = 64;
+    return;
+  }
+  final rest = arguments.skip(2).toList();
+  if (_hasHelpFlag(rest)) {
+    final helpProc = await Process.start(
+      _dartExecutable(),
+      ['compile', target, '--help'],
+      mode: ProcessStartMode.inheritStdio,
+    );
+    exitCode = await helpProc.exitCode;
+    return;
+  }
+  const valuedFlags = {
+    '-o',
+    '--output',
+    '-D',
+    '--define',
+    '-p',
+    '--packages',
+    '-S',
+    '--save-debugging-info',
+    '--depfile',
+    '--target-os',
+    '--target-arch',
+    '--verbosity',
+    '--extra-gen-snapshot-options',
+    '--extra-compiler-option',
+    '--dump-info',
+    '--server-snapshots',
+    '-m',
+  };
+  final flags = <String>[];
+  final trainingArgs = <String>[];
+  String? entry;
+  var hasOutput = false;
+  var hasPackages = false;
+  for (var i = 0; i < rest.length; i++) {
+    final arg = rest[i];
+    if (arg == '--') {
+      trainingArgs.addAll(rest.skip(i + 1));
+      break;
+    }
+    if (entry != null && target == 'jit-snapshot' && !arg.startsWith('-')) {
+      trainingArgs.add(arg);
+      continue;
+    }
+    if (arg == '-o' ||
+        arg == '--output' ||
+        arg.startsWith('--output=') ||
+        (arg.startsWith('-o') && arg.length > 2 && !arg.startsWith('--'))) {
+      hasOutput = true;
+    }
+    if (arg == '-p' || arg == '--packages' || arg.startsWith('--packages=')) {
+      hasPackages = true;
+    }
+    if (valuedFlags.contains(arg)) {
+      if (i + 1 >= rest.length) {
+        stderr.writeln('Missing value for $arg');
+        exitCode = 64;
+        return;
+      }
+      flags.add(arg);
+      flags.add(rest[++i]);
+    } else if (arg.startsWith('-')) {
+      flags.add(arg);
+    } else if (entry == null && arg.endsWith('.quds')) {
+      entry = arg;
+    } else if (target == 'jit-snapshot' && entry != null) {
+      trainingArgs.add(arg);
+    } else {
+      stderr.writeln('Expected a .quds input file, got: $arg');
+      exitCode = 64;
+      return;
+    }
+  }
+  final root = _packageRoot(Directory.current);
+  final input = entry != null
+      ? File(entry)
+      : File(
+          '${root.path}/${File('${root.path}/lib/main.quds').existsSync() ? 'lib/main.quds' : 'main.quds'}');
+  if (!input.existsSync()) {
+    stderr.writeln(entry == null
+        ? 'No lib/main.quds or main.quds found. Specify a .quds entry point.'
+        : 'Cannot open file: ${input.path}');
+    exitCode = entry == null ? 64 : 74;
+    return;
+  }
+  try {
+    final output = _ensureOutput(input);
+    if (output == null) return;
+    final compileArgs = <String>['compile', target, ...flags];
+    if (!hasOutput) {
+      final stem = input.path.endsWith('.quds')
+          ? input.path.substring(0, input.path.length - 5)
+          : input.path;
+      final ext = switch (target) {
+        'exe' => '.exe',
+        'aot-snapshot' => '.aot',
+        'jit-snapshot' => '.jit',
+        'kernel' => '.dill',
+        'js' => '.js',
+        'wasm' => '.wasm',
+        _ => '',
+      };
+      compileArgs.addAll(['-o', '$stem$ext']);
+    }
+    if (!hasPackages && target != 'js' && target != 'wasm') {
+      final pkgArgs = _withPackages(const [], input: input);
+      compileArgs.addAll(pkgArgs);
+    }
+    compileArgs.add(output.path);
+    compileArgs.addAll(trainingArgs);
+    final child = await Process.start(
+      _dartExecutable(),
+      compileArgs,
+      mode: ProcessStartMode.inheritStdio,
+    );
+    exitCode = await child.exitCode;
+  } on CompilerException catch (error) {
+    stderr.writeln(error);
+    exitCode = 65;
+  } on FileSystemException catch (error) {
+    stderr.writeln(error.message);
+    exitCode = 74;
+  }
 }
 
 void _buildPackage(Directory target) {
@@ -1126,6 +1392,7 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
   final options = <String>[];
   final programArguments = <String>[];
   String? entry;
+  String? evalCode;
   final rest = arguments.skip(1).toList();
   final separator = rest.indexOf('--');
   final toolArguments = separator < 0 ? rest : rest.take(separator).toList();
@@ -1146,13 +1413,30 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
     '--device-timeout',
     '--target-platform',
     '--dds-port',
-    '--host-vmservice-port'
+    '--host-vmservice-port',
+    '-D',
+    '--define',
+    '--verbosity',
+    '--write-service-info',
   };
   for (var i = 0; i < rest.length; i++) {
     final arg = rest[i];
     if (arg == '--') {
       programArguments.addAll(rest.skip(i + 1));
       break;
+    }
+    if (arg == '-e' || arg == '--eval' || arg.startsWith('--eval=')) {
+      if (arg.startsWith('--eval=')) {
+        evalCode = arg.substring('--eval='.length);
+      } else {
+        if (++i >= rest.length) {
+          stderr.writeln('Missing code for $arg.');
+          exitCode = 64;
+          return;
+        }
+        evalCode = rest[i];
+      }
+      continue;
     }
     if (arg == '-t' ||
         arg == '--target' ||
@@ -1190,6 +1474,24 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
       options.add(arg);
     }
   }
+  Directory? evalTemp;
+  if (evalCode != null) {
+    if (entry != null || buildTarget != null) {
+      stderr.writeln(
+          'Cannot combine -e/--eval with a .quds file or platform build.');
+      exitCode = 64;
+      return;
+    }
+    evalTemp = Directory.systemTemp.createTempSync('quds-eval-');
+    final trimmed = evalCode.trimLeft();
+    final hasMain = RegExp(r'(^|\n)main\s*\(').hasMatch(trimmed);
+    final source = hasMain
+        ? '$evalCode\n'
+        : 'main():\n${evalCode.split('\n').map((line) => '  $line').join('\n')}\n';
+    final evalFile = File('${evalTemp.path}/eval.quds')
+      ..writeAsStringSync(source);
+    entry = evalFile.path;
+  }
   final root = _packageRoot(Directory.current);
   final input = entry != null
       ? File(entry)
@@ -1202,7 +1504,7 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
     return;
   }
   try {
-    if (_flutterPackage(input)) {
+    if (evalTemp == null && _flutterPackage(input)) {
       await _runFlutter(
           input,
           [
@@ -1217,11 +1519,49 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
       exitCode = 64;
       return;
     }
-    if (options.any((arg) => arg.startsWith('-'))) {
-      stderr.writeln(
-          'Flags require a Flutter project. Pass program arguments as plain values or after --.');
-      exitCode = 64;
-      return;
+    final vmFlags = <String>[];
+    final plainArgs = <String>[];
+    for (var i = 0; i < options.length; i++) {
+      final arg = options[i];
+      if (!arg.startsWith('-')) {
+        plainArgs.add(arg);
+        continue;
+      }
+      if (arg == '--enable-asserts' ||
+          arg == '--no-enable-asserts' ||
+          arg == '--observe' ||
+          arg.startsWith('--observe=') ||
+          arg == '--enable-vm-service' ||
+          arg.startsWith('--enable-vm-service=') ||
+          arg == '--pause-isolates-on-start' ||
+          arg == '--pause-isolates-on-exit' ||
+          arg == '--pause-isolates-on-unhandled-exceptions' ||
+          arg == '--disable-service-auth-codes' ||
+          arg.startsWith('--write-service-info=') ||
+          arg.startsWith('--verbosity=') ||
+          arg.startsWith('--define=') ||
+          (arg.startsWith('-D') && arg.length > 2)) {
+        if (arg != '--no-enable-asserts') vmFlags.add(arg);
+      } else if (arg == '-D' || arg == '--define') {
+        if (i + 1 >= options.length) {
+          stderr.writeln('Missing value for $arg.');
+          exitCode = 64;
+          return;
+        }
+        vmFlags.add('-D${options[++i]}');
+      } else if (arg == '--verbosity' || arg == '--write-service-info') {
+        if (i + 1 >= options.length) {
+          stderr.writeln('Missing value for $arg.');
+          exitCode = 64;
+          return;
+        }
+        vmFlags.add('$arg=${options[++i]}');
+      } else {
+        stderr.writeln(
+            'Unknown flag for quds run: $arg. Pass program flags after --.');
+        exitCode = 64;
+        return;
+      }
     }
     final output = _ensureOutput(input);
     if (output == null) return;
@@ -1231,9 +1571,12 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
     final qudsSource = input.existsSync() ? input.readAsStringSync() : null;
     final process = await Process.start(
       _dartExecutable(),
-      _withPackages([output.path, ...options, ...programArguments],
-          input: input),
-      workingDirectory: _packageRoot(input.absolute.parent).path,
+      _withPackages(
+          [...vmFlags, output.path, ...plainArgs, ...programArguments],
+          input: evalTemp == null ? input : null),
+      workingDirectory: evalTemp == null
+          ? _packageRoot(input.absolute.parent).path
+          : Directory.current.path,
     );
     final streams = Future.wait([
       _copyMapped(process.stdout, stdout, sourceMap, generatedName,
@@ -1249,6 +1592,10 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
     exitCode = 74;
+  } finally {
+    if (evalTemp != null && evalTemp.existsSync()) {
+      evalTemp.deleteSync(recursive: true);
+    }
   }
 }
 
@@ -1357,53 +1704,282 @@ Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
 }
 
 void _analyze(List<String> arguments) {
-  _requireQuds(arguments);
-  if (exitCode != 0) return;
-  final input = File(arguments[1]);
+  final dartFlags = <String>[];
+  final targets = <String>[];
+  for (var i = 1; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if (arg == '--fatal-infos' ||
+        arg == '--fatal-warnings' ||
+        arg == '--no-fatal-warnings') {
+      dartFlags.add(arg);
+    } else if (arg.startsWith('-')) {
+      stderr.writeln('Unknown option for analyze: $arg');
+      exitCode = 64;
+      return;
+    } else {
+      targets.add(arg);
+    }
+  }
+  if (targets.isEmpty) targets.add('.');
+
+  final files = <File>[];
+  final seen = <String>{};
+  for (final target in targets) {
+    final type = FileSystemEntity.typeSync(target);
+    if (type == FileSystemEntityType.notFound) {
+      stderr.writeln('Cannot open file: $target');
+      exitCode = 74;
+      return;
+    }
+    if (type == FileSystemEntityType.file) {
+      if (!target.endsWith('.quds')) {
+        stderr.writeln('Expected a .quds file: $target');
+        exitCode = 64;
+        return;
+      }
+      final file = File(target);
+      if (seen.add(file.absolute.path)) files.add(file);
+    } else if (type == FileSystemEntityType.directory) {
+      _collectQudsFiles(Directory(target), files, seen);
+    }
+  }
+  files.sort((a, b) => a.path.compareTo(b.path));
+  if (files.isEmpty) {
+    stdout.writeln('No .quds files found.');
+    return;
+  }
+
+  final singleExplicitFile =
+      targets.length == 1 && FileSystemEntity.isFileSync(targets.first);
+  var worstExit = 0;
+  var failedCount = 0;
+  for (final input in files) {
+    final code =
+        _analyzeOne(input, dartFlags, quietSuccess: !singleExplicitFile);
+    if (code != 0) {
+      failedCount++;
+      if (worstExit == 0) worstExit = code;
+    }
+  }
+  if (!singleExplicitFile) {
+    if (failedCount == 0) {
+      stdout.writeln(
+          'Analyzed ${files.length} file${files.length == 1 ? '' : 's'}: no issues found.');
+    } else {
+      stderr.writeln(
+          'Analyzed ${files.length} file${files.length == 1 ? '' : 's'}: $failedCount failed.');
+    }
+  }
+  exitCode = worstExit;
+}
+
+int _analyzeOne(File input, List<String> dartFlags,
+    {bool quietSuccess = false}) {
   try {
     final result = compile(input.readAsStringSync(), file: input.path);
     final directory = Directory.systemTemp.createTempSync('quds-analyze-');
     try {
       final (output, staged) = _temporaryDartTree(input, result, directory);
       final analysis = Process.runSync(_dartExecutable(),
-          _withPackages(['analyze', output.path], input: input));
-      _writeQuds(analysis.stdout, analysis.stderr, staged.sourceMap,
-          output.uri.pathSegments.last);
-      exitCode = analysis.exitCode;
+          _withPackages(['analyze', ...dartFlags, output.path], input: input));
+      if (!quietSuccess || analysis.exitCode != 0) {
+        _writeQuds(analysis.stdout, analysis.stderr, staged.sourceMap,
+            output.uri.pathSegments.last);
+      }
+      return analysis.exitCode;
     } finally {
       directory.deleteSync(recursive: true);
     }
   } on CompilerException catch (error) {
     stderr.writeln(error);
-    exitCode = 65;
+    return 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
-    exitCode = 74;
+    return 74;
   }
 }
 
 void _test(List<String> arguments) {
-  _requireQuds(arguments);
-  if (exitCode != 0) return;
-  final input = File(arguments[1]);
+  final regexPatterns = <String>[];
+  final plainPatterns = <String>[];
+  var failFast = false;
+  var enableAsserts = true;
+  var reporter = 'compact';
+  final targets = <String>[];
+
+  for (var i = 1; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if (arg == '-n' || arg == '--name') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing pattern for $arg');
+        exitCode = 64;
+        return;
+      }
+      regexPatterns.add(arguments[++i]);
+    } else if (arg.startsWith('--name=')) {
+      regexPatterns.add(arg.substring('--name='.length));
+    } else if (arg == '-N' || arg == '--plain-name') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing substring for $arg');
+        exitCode = 64;
+        return;
+      }
+      plainPatterns.add(arguments[++i]);
+    } else if (arg.startsWith('--plain-name=')) {
+      plainPatterns.add(arg.substring('--plain-name='.length));
+    } else if (arg == '--fail-fast') {
+      failFast = true;
+    } else if (arg == '--enable-asserts') {
+      enableAsserts = true;
+    } else if (arg == '--no-enable-asserts') {
+      enableAsserts = false;
+    } else if (arg == '-r' || arg == '--reporter') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing value for $arg');
+        exitCode = 64;
+        return;
+      }
+      reporter = arguments[++i];
+    } else if (arg.startsWith('--reporter=')) {
+      reporter = arg.substring('--reporter='.length);
+    } else if (arg.startsWith('-')) {
+      stderr.writeln('Unknown option for test: $arg');
+      exitCode = 64;
+      return;
+    } else {
+      targets.add(arg);
+    }
+  }
+  if (reporter != 'compact' && reporter != 'expanded') {
+    stderr
+        .writeln('Unknown reporter: $reporter (expected compact or expanded)');
+    exitCode = 64;
+    return;
+  }
+  for (final pattern in regexPatterns) {
+    try {
+      RegExp(pattern);
+    } on FormatException catch (error) {
+      stderr.writeln('Invalid --name regex "$pattern": ${error.message}');
+      exitCode = 64;
+      return;
+    }
+  }
+
+  final explicitSingleFile =
+      targets.length == 1 && FileSystemEntity.isFileSync(targets.first);
+  if (targets.isEmpty) {
+    if (Directory('test').existsSync()) {
+      targets.add('test');
+    } else {
+      targets.add('.');
+    }
+  }
+
+  final files = <File>[];
+  final seen = <String>{};
+  for (final target in targets) {
+    final type = FileSystemEntity.typeSync(target);
+    if (type == FileSystemEntityType.notFound) {
+      stderr.writeln('Cannot open file: $target');
+      exitCode = 74;
+      return;
+    }
+    if (type == FileSystemEntityType.file) {
+      if (!target.endsWith('.quds')) {
+        stderr.writeln('Expected a .quds file: $target');
+        exitCode = 64;
+        return;
+      }
+      final file = File(target);
+      if (seen.add(file.absolute.path)) files.add(file);
+    } else if (type == FileSystemEntityType.directory) {
+      final collected = <File>[];
+      _collectQudsFiles(Directory(target), collected, <String>{});
+      final namedTests =
+          collected.where((f) => f.path.endsWith('_test.quds')).toList();
+      final selected = namedTests.isNotEmpty
+          ? namedTests
+          : collected.where((f) {
+              final text = f.readAsStringSync();
+              return RegExp(r'^(test|group)\s+"', multiLine: true)
+                  .hasMatch(text);
+            }).toList();
+      for (final file in selected) {
+        if (seen.add(file.absolute.path)) files.add(file);
+      }
+    }
+  }
+  files.sort((a, b) => a.path.compareTo(b.path));
+  if (files.isEmpty) {
+    stderr.writeln('No test files found.');
+    exitCode = 1;
+    return;
+  }
+
+  var passedSuites = 0;
+  var worstExit = 0;
+  for (final input in files) {
+    if (!explicitSingleFile || reporter == 'expanded') {
+      stdout.writeln('==> ${input.path}');
+    }
+    final code = _runTestFile(
+      input,
+      regexPatterns: regexPatterns,
+      plainPatterns: plainPatterns,
+      failFast: failFast,
+      enableAsserts: enableAsserts,
+    );
+    if (code == 0) {
+      passedSuites++;
+    } else {
+      if (worstExit == 0) worstExit = code;
+      if (failFast) break;
+    }
+  }
+  if (!explicitSingleFile || reporter == 'expanded') {
+    stdout.writeln(
+        '$passedSuites/${files.length} test file${files.length == 1 ? '' : 's'} passed.');
+  }
+  exitCode = worstExit;
+}
+
+int _runTestFile(
+  File input, {
+  required List<String> regexPatterns,
+  required List<String> plainPatterns,
+  required bool failFast,
+  required bool enableAsserts,
+}) {
   try {
     final result = compile(input.readAsStringSync(), file: input.path);
     final tests =
         result.program.statements.whereType<TestDeclaration>().toList();
+    final hasFilter = regexPatterns.isNotEmpty || plainPatterns.isNotEmpty;
+    bool matchesName(String name) {
+      for (final pattern in regexPatterns) {
+        if (!RegExp(pattern).hasMatch(name)) return false;
+      }
+      for (final plain in plainPatterns) {
+        if (!name.contains(plain)) return false;
+      }
+      return true;
+    }
+
     final legacy = result.program.statements
         .whereType<FunctionDeclaration>()
         .where((function) =>
             (function.name == 'test' || function.name.startsWith('test')) &&
             function.parameters.isEmpty &&
-            function.generator.isEmpty)
+            function.generator.isEmpty &&
+            (!hasFilter || matchesName(function.name)))
         .toList();
     bool hasTest(TestDeclaration declaration) =>
         declaration.kind == 'test' ||
         declaration.body.whereType<TestDeclaration>().any(hasTest);
     if (!tests.any(hasTest) && legacy.isEmpty) {
       stderr.writeln('No tests found in ${input.path}');
-      exitCode = 1;
-      return;
+      return 1;
     }
     // Use a separate driver so a source main() cannot bypass test discovery.
     // Only this appended bridge sees private generated test declarations.
@@ -1414,6 +1990,19 @@ void _test(List<String> arguments) {
     var suffix = 0;
     while (occupied.contains(entry)) {
       entry = 'qudsTestEntrypoint${++suffix}';
+    }
+    final setup = StringBuffer();
+    if (tests.isNotEmpty && failFast) {
+      setup.writeln('  _qTestFailFast = true;');
+    }
+    if (tests.isNotEmpty && hasFilter) {
+      final checks = <String>[
+        for (final p in regexPatterns)
+          'RegExp(${jsonEncode(p).replaceAll(r'$', r'\$')}).hasMatch(name)',
+        for (final p in plainPatterns)
+          'name.contains(${jsonEncode(p).replaceAll(r'$', r'\$')})',
+      ];
+      setup.writeln('  _qTestFilter = (name) => ${checks.join(' && ')};');
     }
     final calls = [
       ...tests.map((test) =>
@@ -1426,14 +2015,13 @@ void _test(List<String> arguments) {
     if (result.dart.contains('package:matcher/') &&
         _packageConfigPath() == null) {
       stderr.writeln('Could not find the package config for matcher');
-      exitCode = 1;
-      return;
+      return 1;
     }
     final directory = Directory.systemTemp.createTempSync('quds-test-');
     try {
       final (suite, staged) = _temporaryDartTree(input, result, directory);
       suite.writeAsStringSync('${staged.dart}\nFuture<int> $entry() async {\n'
-          '$calls\n  return $status;\n}\n');
+          '$setup$calls\n  return $status;\n}\n');
       final suiteUri = jsonEncode(suite.uri.toString()).replaceAll(r'$', r'\$');
       final output = File('${directory.path}/main.dart')
         ..writeAsStringSync("import 'dart:io' as io;\n"
@@ -1441,25 +2029,27 @@ void _test(List<String> arguments) {
             'Future<void> main() async {\n'
             '  io.exitCode = await suite.$entry();\n}\n');
       final run = Process.runSync(
-          _dartExecutable(), _withPackages([output.path], input: input));
+          _dartExecutable(),
+          _withPackages([if (enableAsserts) '--enable-asserts', output.path],
+              input: input));
       _writeQuds(run.stdout, run.stderr, staged.sourceMap,
           suite.uri.pathSegments.last);
-      exitCode = run.exitCode;
+      return run.exitCode;
     } finally {
       directory.deleteSync(recursive: true);
     }
   } on CompilerException catch (error) {
     stderr.writeln(error);
-    exitCode = 65;
+    return 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
-    exitCode = 74;
+    return 74;
   }
 }
 
 void _format(List<String> arguments) {
   var check = false;
-  var toStdout = false;
+  var outputMode = 'write';
   var indent = 2;
   var width = 80;
   var singleLineIf = true;
@@ -1480,7 +2070,16 @@ void _format(List<String> arguments) {
     if (arg == '--check' || arg == '--set-exit-if-changed') {
       check = true;
     } else if (arg == '--stdout') {
-      toStdout = true;
+      outputMode = 'show';
+    } else if (arg == '-o' || arg == '--output') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing value for $arg');
+        exitCode = 64;
+        return;
+      }
+      outputMode = arguments[++i];
+    } else if (arg.startsWith('--output=')) {
+      outputMode = arg.substring('--output='.length);
     } else if (arg == '--no-single-line-if') {
       singleLineIf = false;
     } else if (arg == '--indent') {
@@ -1497,7 +2096,7 @@ void _format(List<String> arguments) {
           parsePositiveInt('--indent', arg.substring('--indent='.length));
       if (parsed == null) return;
       indent = parsed;
-    } else if (arg == '--width' || arg == '--line-length') {
+    } else if (arg == '-l' || arg == '--width' || arg == '--line-length') {
       if (i + 1 >= arguments.length) {
         stderr.writeln('Missing value for $arg');
         exitCode = 64;
@@ -1516,6 +2115,10 @@ void _format(List<String> arguments) {
           '--line-length', arg.substring('--line-length='.length));
       if (parsed == null) return;
       width = parsed;
+    } else if (arg.startsWith('-l') && arg.length > 2) {
+      final parsed = parsePositiveInt('-l', arg.substring(2));
+      if (parsed == null) return;
+      width = parsed;
     } else if (arg.startsWith('-')) {
       stderr.writeln('Unknown option for format: $arg');
       exitCode = 64;
@@ -1524,6 +2127,15 @@ void _format(List<String> arguments) {
       targets.add(arg);
     }
   }
+
+  if (!const {'write', 'show', 'none'}.contains(outputMode)) {
+    stderr.writeln(
+        'Invalid value for --output: $outputMode (expected write, show, or none)');
+    exitCode = 64;
+    return;
+  }
+  final toStdout = outputMode == 'show';
+  final dryRun = outputMode == 'none' || check;
 
   if (targets.isEmpty) targets.add('.');
 
@@ -1551,7 +2163,7 @@ void _format(List<String> arguments) {
   }
 
   if (toStdout && files.length != 1) {
-    stderr.writeln('--stdout requires a single .quds file.');
+    stderr.writeln('--stdout / --output=show requires a single .quds file.');
     exitCode = 64;
     return;
   }
@@ -1574,10 +2186,11 @@ void _format(List<String> arguments) {
       );
       if (toStdout) {
         stdout.write(formatted);
+        if (check && formatted != source) exitCode = 1;
         return;
       }
       final diff = formatted != source;
-      if (check) {
+      if (dryRun) {
         if (diff) {
           changed++;
           stdout.writeln('Unformatted ${input.path}');
@@ -1631,7 +2244,7 @@ void _collectQudsFiles(Directory dir, List<File> out, Set<String> seen) {
   }
 }
 
-void _create(List<String> arguments) {
+Future<void> _create(List<String> arguments) async {
   if (arguments.length >= 2 && arguments[1] == '.') {
     _createPlatforms(arguments.skip(2).toList());
     return;
@@ -1645,25 +2258,128 @@ void _create(List<String> arguments) {
     _createFlutter(arguments[2]);
     return;
   }
-  if (arguments.length != 2) {
+  var template = 'console';
+  var force = false;
+  var runPub = false;
+  String? name;
+  for (var i = 1; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if (arg == '-t' || arg == '--template') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing template name for $arg');
+        exitCode = 64;
+        return;
+      }
+      template = arguments[++i];
+    } else if (arg.startsWith('--template=')) {
+      template = arg.substring('--template='.length);
+    } else if (arg == '--force') {
+      force = true;
+    } else if (arg == '--pub') {
+      runPub = true;
+    } else if (arg == '--no-pub') {
+      runPub = false;
+    } else if (arg.startsWith('-')) {
+      stderr.writeln('Unknown option for create: $arg');
+      exitCode = 64;
+      return;
+    } else if (name == null) {
+      name = arg;
+    } else {
+      stderr.writeln(
+          'Usage: quds create [-t <console|cli|package|flutter>] [--force] [--[no-]pub] <name>');
+      exitCode = 64;
+      return;
+    }
+  }
+  if (name == null) {
     stderr.writeln('Usage: quds create <name>');
+    stderr
+        .writeln('       quds create -t <console|cli|package|flutter> <name>');
     stderr.writeln('       quds create flutter <name>');
     exitCode = 64;
     return;
   }
-  final name = arguments[1];
+  if (!const {'console', 'cli', 'package', 'flutter'}.contains(template)) {
+    stderr.writeln(
+        'Unknown template: $template (expected console, cli, package, or flutter)');
+    exitCode = 64;
+    return;
+  }
+  if (template == 'flutter') {
+    _createFlutter(name);
+    return;
+  }
   final directory = Directory(name);
-  if (directory.existsSync()) {
+  if (directory.existsSync() && !force) {
     stderr.writeln('Directory already exists: $name');
     exitCode = 73;
     return;
   }
+  final pkgName = name
+      .replaceAll('\\', '/')
+      .split('/')
+      .where((part) => part.isNotEmpty)
+      .last
+      .replaceAll('-', '_');
   directory.createSync(recursive: true);
-  File('$name/quds.yaml').writeAsStringSync('language: 1.2\nname: $name\n');
-  File('$name/pubspec.yaml').writeAsStringSync('name: $name\nenvironment:\n'
-      '  sdk: ">=3.3.0 <4.0.0"\n');
-  File('$name/main.quds').writeAsStringSync('main():\n  print "$name"\n');
+  File('$name/quds.yaml').writeAsStringSync('language: 1.2\nname: $pkgName\n');
+  File('$name/pubspec.yaml').writeAsStringSync(
+      'name: $pkgName\nversion: 0.1.0\nenvironment:\n  sdk: ">=3.3.0 <4.0.0"\n');
+  if (template == 'console') {
+    File('$name/main.quds').writeAsStringSync('main():\n  print "$pkgName"\n');
+  } else if (template == 'cli') {
+    Directory('$name/bin').createSync(recursive: true);
+    Directory('$name/lib').createSync(recursive: true);
+    Directory('$name/test').createSync(recursive: true);
+    File('$name/lib/$pkgName.quds')
+        .writeAsStringSync('greet(who: String) -> String = "Hello, {who}!"\n');
+    File('$name/bin/$pkgName.quds').writeAsStringSync('''
+use package:$pkgName
+
+main(args: List<String>):
+  who = if args.isEmpty: "$pkgName" else: args.first
+  print greet(who)
+''');
+    File('$name/test/${pkgName}_test.quds').writeAsStringSync('''
+use package:$pkgName
+
+test "greet formats name":
+  expect(greet("Quds"), equals("Hello, Quds!"))
+''');
+  } else if (template == 'package') {
+    Directory('$name/lib/src').createSync(recursive: true);
+    Directory('$name/test').createSync(recursive: true);
+    File('$name/lib/src/${pkgName}_base.quds').writeAsStringSync('''
+class ${pkgName[0].toUpperCase()}${pkgName.substring(1)}Info:
+  name: String
+''');
+    File('$name/lib/$pkgName.quds').writeAsStringSync('''
+use package:$pkgName/src/${pkgName}_base
+export package:$pkgName/src/${pkgName}_base
+
+/// Returns a greeting from $pkgName.
+greet(who: String) -> String = "Hello from $pkgName, {who}!"
+''');
+    File('$name/test/${pkgName}_test.quds').writeAsStringSync('''
+use package:$pkgName
+
+test "$pkgName public API":
+  expect(greet("Quds"), equals("Hello from $pkgName, Quds!"))
+''');
+    File('$name/README.md').writeAsStringSync('''
+# $pkgName
+
+A Quds package.
+
+- Run tests: `quds test`
+- Build Dart files for dual Quds + Dart/Flutter publishing: `quds build --package`
+''');
+  }
   stdout.writeln('Created $name');
+  if (runPub) {
+    await _pubCommand(['get', '-C', directory.path]);
+  }
 }
 
 void _createPlatforms(List<String> arguments) {
@@ -2244,40 +2960,108 @@ Future<void> _pubCommand(List<String> arguments) async {
 void _doc(List<String> arguments) {
   final testing = arguments.length >= 2 && arguments[1] == 'test';
   final html = arguments.length >= 2 && arguments[1] == 'html';
-  final path = testing || html
-      ? (arguments.length >= 3 ? arguments[2] : null)
-      : (arguments.length == 2 ? arguments[1] : null);
-  final destination = html && arguments.length == 4 ? arguments[3] : null;
-  if (path == null ||
-      !path.endsWith('.quds') ||
-      (html && (destination == null || !destination.endsWith('.html')))) {
-    stderr.writeln(testing
-        ? 'Usage: quds doc test <input.quds>'
-        : html
-            ? 'Usage: quds doc html <input.quds> <output.html>'
-            : 'Usage: quds doc <input.quds>');
-    exitCode = 64;
+  if (testing || html) {
+    final path = arguments.length >= 3 ? arguments[2] : null;
+    final destination = html && arguments.length == 4 ? arguments[3] : null;
+    if (path == null ||
+        !path.endsWith('.quds') ||
+        (html && (destination == null || !destination.endsWith('.html')))) {
+      stderr.writeln(testing
+          ? 'Usage: quds doc test <input.quds>'
+          : 'Usage: quds doc html <input.quds> <output.html>');
+      exitCode = 64;
+      return;
+    }
+    final input = File(path);
+    try {
+      if (testing) {
+        _docTest(input);
+      } else {
+        _docHtml(input, File(destination!));
+      }
+    } on CompilerException catch (error) {
+      stderr.writeln(error);
+      exitCode = 65;
+    } on FileSystemException catch (error) {
+      stderr.writeln(error.message);
+      exitCode = 74;
+    }
     return;
   }
-  final input = File(path);
+
+  String? outputPath;
+  String? target;
+  for (var i = 1; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if (arg == '-o' || arg == '--output') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing value for $arg');
+        exitCode = 64;
+        return;
+      }
+      outputPath = arguments[++i];
+    } else if (arg.startsWith('--output=')) {
+      outputPath = arg.substring('--output='.length);
+    } else if (arg.startsWith('-')) {
+      stderr.writeln('Unknown option for doc: $arg');
+      exitCode = 64;
+      return;
+    } else if (target == null) {
+      target = arg;
+    } else {
+      stderr.writeln('Usage: quds doc [-o/--output <path>] <input.quds|dir>');
+      exitCode = 64;
+      return;
+    }
+  }
+  target ??= Directory('lib').existsSync() ? 'lib' : '.';
+  final type = FileSystemEntity.typeSync(target);
+  if (type == FileSystemEntityType.notFound) {
+    stderr.writeln('Cannot open file: $target');
+    exitCode = 74;
+    return;
+  }
   try {
-    if (testing) {
-      _docTest(input);
+    if (type == FileSystemEntityType.file) {
+      if (!target.endsWith('.quds')) {
+        stderr.writeln('Usage: quds doc [-o/--output <path>] <input.quds|dir>');
+        exitCode = 64;
+        return;
+      }
+      final input = File(target);
+      if (outputPath != null) {
+        _docHtml(input, File(outputPath));
+        return;
+      }
+      _printFileDocs(input);
       return;
     }
-    if (html) {
-      _docHtml(input, File(destination!));
+    final files = <File>[];
+    _collectQudsFiles(Directory(target), files, <String>{});
+    files.sort((a, b) => a.path.compareTo(b.path));
+    if (files.isEmpty) {
+      stdout.writeln('No .quds files found.');
       return;
     }
-    final lines = input.readAsLinesSync();
-    final docs = <String>[];
-    for (var i = 0; i < lines.length; i++) {
-      if (!lines[i].trimLeft().startsWith('///')) continue;
-      final comment = lines[i].trimLeft().substring(3).trim();
-      final next = i + 1 < lines.length ? lines[i + 1].trim() : '';
-      docs.add(next.isEmpty ? comment : '$next — $comment');
+    if (outputPath != null) {
+      final outDir = Directory(outputPath)..createSync(recursive: true);
+      final base = Directory(target).absolute.uri.normalizePath().toFilePath();
+      final prefix = base.endsWith(Platform.pathSeparator)
+          ? base
+          : '$base${Platform.pathSeparator}';
+      for (final file in files) {
+        var rel = file.absolute.uri.normalizePath().toFilePath();
+        if (rel.startsWith(prefix)) rel = rel.substring(prefix.length);
+        final htmlRel = rel.endsWith('.quds')
+            ? '${rel.substring(0, rel.length - 5)}.html'
+            : '$rel.html';
+        _docHtml(file, File('${outDir.path}${Platform.pathSeparator}$htmlRel'));
+      }
+      return;
     }
-    stdout.write(docs.isEmpty ? '' : '${docs.join('\n')}\n');
+    for (final file in files) {
+      _printFileDocs(file);
+    }
   } on CompilerException catch (error) {
     stderr.writeln(error);
     exitCode = 65;
@@ -2285,6 +3069,18 @@ void _doc(List<String> arguments) {
     stderr.writeln(error.message);
     exitCode = 74;
   }
+}
+
+void _printFileDocs(File input) {
+  final lines = input.readAsLinesSync();
+  final docs = <String>[];
+  for (var i = 0; i < lines.length; i++) {
+    if (!lines[i].trimLeft().startsWith('///')) continue;
+    final comment = lines[i].trimLeft().substring(3).trim();
+    final next = i + 1 < lines.length ? lines[i + 1].trim() : '';
+    docs.add(next.isEmpty ? comment : '$next — $comment');
+  }
+  stdout.write(docs.isEmpty ? '' : '${docs.join('\n')}\n');
 }
 
 void _docHtml(File input, File output) {

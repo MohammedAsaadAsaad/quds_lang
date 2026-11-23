@@ -568,7 +568,11 @@ class DartEmitter {
           '}');
     }
     if (_useTests) {
-      helpers.writeln('var _qTestFailed = 0;');
+      helpers.writeln('var _qTestFailed = 0;\n'
+          'var _qTestMatched = 0;\n'
+          'var _qTestFailFast = false;\n'
+          'bool Function(String)? _qTestFilter;\n'
+          'final _qTestGroups = <String>[];');
     }
     if (_useDefaultOmitted) {
       helpers.writeln(
@@ -3222,9 +3226,22 @@ class DartEmitter {
         _useTests = true;
         final tested = model.declarations[node]!;
         final title = quote(node.title);
+        final isGroup = node.kind == 'group';
         line('Future<void> ${tested.dartName}() async {');
         _depth++;
-        line('final _qBefore = _qTestFailed;');
+        line('if (_qTestFailFast && _qTestFailed > 0) return;');
+        if (isGroup) {
+          line('final _qBefore = _qTestFailed;');
+          line('final _qBeforeMatched = _qTestMatched;');
+          line('_qTestGroups.add($title);');
+        } else {
+          line(
+              "final _qFullName = _qTestGroups.isEmpty ? $title : '\${_qTestGroups.join(' ')} ' + $title;");
+          line(
+              'if (_qTestFilter != null && !_qTestFilter!(_qFullName)) return;');
+          line('_qTestMatched = _qTestMatched + 1;');
+          line('final _qBefore = _qTestFailed;');
+        }
         line('try {');
         _depth++;
         for (final child in node.body) {
@@ -3244,8 +3261,18 @@ class DartEmitter {
         line('_qTestFailed = _qTestFailed + 1;');
         line("print('FAIL ' + $title + ': ' + error.toString());");
         _depth--;
-        line('}');
-        line("if (_qTestFailed == _qBefore) print('ok ' + $title);");
+        if (isGroup) {
+          line('} finally {');
+          _depth++;
+          line('_qTestGroups.removeLast();');
+          _depth--;
+          line('}');
+          line(
+              "if (_qTestFailed == _qBefore && (_qTestFilter == null || _qTestMatched > _qBeforeMatched)) print('ok ' + $title);");
+        } else {
+          line('}');
+          line("if (_qTestFailed == _qBefore) print('ok ' + $title);");
+        }
         _depth--;
         line('}');
       case ExpressionStatement():

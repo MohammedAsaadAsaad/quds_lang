@@ -1,3 +1,20 @@
+# Dart CLI parity upgrade (`quds compile`, VM flags, directory `analyze`/`test`, templates) — 2026-11-23
+
+Base: `a5a13bc`.
+
+| Check | Observed result |
+| --- | --- |
+| Global & passthrough commands | Added `quds --version` / `-v` / `version`, per-command `-h` / `--help`, direct `quds <file.quds> [args]` execution, `quds dart <args>`, `quds devtools`, `quds info`, and `pub` shortcuts (`upgrade`, `outdated`, `deps`, `publish`) |
+| `quds compile` | Added `quds compile <exe\|aot-snapshot\|jit-snapshot\|kernel\|js\|wasm> [options] [input.quds]` forwarding Dart compiler options (`-o/--output`, `-D/--define`, `-O0..-O4`, `--target-os`, `--target-arch`, etc.) with default outputs beside the `.quds` source |
+| `quds run` | Added `-e` / `--eval=<code>` snippet execution and Dart VM flags (`--[no-]enable-asserts`, `-D`/`--define`, `--observe`, `--enable-vm-service`, `--pause-isolates-on-*`, `--verbosity`, `--disable-service-auth-codes`, `--write-service-info`) for non-Flutter projects |
+| `quds analyze` & `quds test` | Added directory/multi-file/default targets (`.` for `analyze`, `test/` for `test`), `--fatal-infos` / `--[no-]fatal-warnings` on `analyze`, and `-n/--name`, `-N/--plain-name`, `--fail-fast`, `--[no-]enable-asserts`, `-r/--reporter` on `test` (backed by group/filter/fail-fast hooks in `lib/src/emitter.dart`) |
+| `quds create`, `format`, `build`, `doc` | Added `-t/--template <console\|cli\|package\|flutter>`, `--force`, `--[no-]pub` to `create`; `-o/--output <write\|show\|none>` and `-l` to `format`; default entry detection to `build`; `-o/--output` and directory docs to `doc` |
+| New CLI parity suite | `/opt/flutter/bin/dart test test/cli_dart_parity_test.dart`: **6 passed, 0 failed** (3m46s; real `compile exe` binary run, `compile js` + `node`, `compile kernel` + `dart`, `-e`/`-D`/`--enable-asserts`, directory `analyze`, filtered/`--fail-fast` `test`, `create -t package`/`cli`, `format -o/-l`, default `build`, `doc -o`) |
+| Existing CLI/format/runner regressions | `test/quds_test_runner_test.dart` (**7/7**), `test/format_test.dart` (**5/5**), `test/project_cli_test.dart` (**7/7** across combined + targeted rerun), `test/compiler_test.dart --name "help, doctor\|CLI build\|quds create"` (**3/3**) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suites were run rather than the full repository suite.
+
 # External Quds packages, package-internal visibility (`E208`), and `quds build --package` — 2026-11-23
 
 Base: `982cc74`.

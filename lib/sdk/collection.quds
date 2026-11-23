@@ -1538,3 +1538,833 @@ applyListDiff<T>(before: List<T>, steps: List<ListDiffStep<T>>, itemEquals: ((T,
   if idx != before.length:
     throw CollectionError("applyListDiff", "Diff did not consume all elements of source ({idx} of {before.length})")
   return out
+
+
+:: queue
+
+# Double-ended queue backed by a growable circular buffer with amortized O(1)
+# insertion and removal at both ends.
+# Example:
+#   d = Deque<int>()
+#   d.addLast(1)
+#   d.addFirst(0)
+#   print d.removeFirst()
+class Deque<T>:
+  private var buffer: List<T?> = [null, null, null, null, null, null, null, null]
+  private var head: int = 0
+  private var count: int = 0
+
+  # Creates a Deque populated in order from [items].
+  # Example:
+  #   d = Deque.from([1, 2, 3])
+  static from<E>(items: Iterable<E>) -> Deque<E>:
+    out = Deque<E>()
+    for item in items:
+      out.addLast(item)
+    return out
+
+  # Number of elements stored in this deque.
+  # Example:
+  #   print d.length
+  property length: int:
+    get = count
+
+  # True when this deque holds no elements.
+  # Example:
+  #   print d.isEmpty
+  property isEmpty: bool:
+    get = count == 0
+
+  # True when this deque holds at least one element.
+  # Example:
+  #   print d.isNotEmpty
+  property isNotEmpty: bool:
+    get = count > 0
+
+  private grow():
+    oldCap = buffer.length
+    newCap = oldCap * 2
+    nextBuf: List<T?> = []
+    var i = 0
+    while i < count:
+      nextBuf.add(buffer[(head + i) % oldCap])
+      i = i + 1
+    while nextBuf.length < newCap:
+      nextBuf.add(null)
+    buffer = nextBuf
+    head = 0
+
+  # Inserts [value] at the front of this deque in amortized O(1) time.
+  # Example:
+  #   d.addFirst(10)
+  addFirst(value: T):
+    if count == buffer.length:
+      grow()
+    cap = buffer.length
+    head = (head - 1 + cap) % cap
+    buffer[head] = value
+    count = count + 1
+
+  # Appends [value] at the back of this deque in amortized O(1) time.
+  # Example:
+  #   d.addLast(20)
+  addLast(value: T):
+    if count == buffer.length:
+      grow()
+    cap = buffer.length
+    buffer[(head + count) % cap] = value
+    count = count + 1
+
+  # Removes and returns the front element. Throws CollectionError when empty.
+  # Example:
+  #   first = d.removeFirst()
+  removeFirst() -> T:
+    if count == 0:
+      throw CollectionError("Deque.removeFirst", "Cannot remove from an empty Deque")
+    value = buffer[head] as T
+    buffer[head] = null
+    head = (head + 1) % buffer.length
+    count = count - 1
+    return value
+
+  # Removes and returns the front element, or null when empty.
+  # Example:
+  #   maybe = d.removeFirstOrNull()
+  removeFirstOrNull() -> T?:
+    if count == 0:
+      return null
+    return removeFirst()
+
+  # Removes and returns the back element. Throws CollectionError when empty.
+  # Example:
+  #   last = d.removeLast()
+  removeLast() -> T:
+    if count == 0:
+      throw CollectionError("Deque.removeLast", "Cannot remove from an empty Deque")
+    idx = (head + count - 1) % buffer.length
+    value = buffer[idx] as T
+    buffer[idx] = null
+    count = count - 1
+    return value
+
+  # Removes and returns the back element, or null when empty.
+  # Example:
+  #   maybe = d.removeLastOrNull()
+  removeLastOrNull() -> T?:
+    if count == 0:
+      return null
+    return removeLast()
+
+  # Returns the front element without removing it, or null when empty.
+  # Example:
+  #   print d.peekFirst()
+  peekFirst() -> T?:
+    if count == 0:
+      return null
+    return buffer[head]
+
+  # Returns the back element without removing it, or null when empty.
+  # Example:
+  #   print d.peekLast()
+  peekLast() -> T?:
+    if count == 0:
+      return null
+    return buffer[(head + count - 1) % buffer.length]
+
+  # Returns the element at zero-based [index] from the front.
+  # Throws RangeError if [index] is out of bounds.
+  # Example:
+  #   print d.at(0)
+  at(index: int) -> T:
+    if index < 0 or index >= count:
+      throw RangeError.range(index, 0, count - 1, "index")
+    return buffer[(head + index) % buffer.length] as T
+
+  # Replaces the element at zero-based [index] from the front.
+  # Throws RangeError if [index] is out of bounds.
+  # Example:
+  #   d.setAt(0, 99)
+  setAt(index: int, value: T):
+    if index < 0 or index >= count:
+      throw RangeError.range(index, 0, count - 1, "index")
+    buffer[(head + index) % buffer.length] = value
+
+  # Removes all elements from this deque.
+  # Example:
+  #   d.clear()
+  clear():
+    var i = 0
+    while i < count:
+      buffer[(head + i) % buffer.length] = null
+      i = i + 1
+    head = 0
+    count = 0
+
+  # Returns a list snapshot of elements from front to back.
+  # Example:
+  #   print d.toList()
+  toList() -> List<T>:
+    out: List<T> = []
+    cap = buffer.length
+    var i = 0
+    while i < count:
+      out.add(buffer[(head + i) % cap] as T)
+      i = i + 1
+    return out
+
+
+# Fixed-capacity circular buffer retaining up to [capacity] most recent items.
+# Example:
+#   rb = RingBuffer<int>(3)
+#   rb.push(1)
+#   rb.push(2)
+class RingBuffer<T>:
+  private var buffer: List<T?> = []
+  private var maxCap: int = 1
+  private var head: int = 0
+  private var count: int = 0
+
+  init(capacity: int):
+    if capacity < 1:
+      throw CollectionError("RingBuffer", "Capacity must be at least 1, got {capacity}")
+    maxCap = capacity
+    var i = 0
+    while i < capacity:
+      buffer.add(null)
+      i = i + 1
+
+  # Fixed maximum number of elements this buffer can hold.
+  # Example:
+  #   print rb.capacity
+  property capacity: int:
+    get = maxCap
+
+  # Number of elements currently stored.
+  # Example:
+  #   print rb.length
+  property length: int:
+    get = count
+
+  # True when no elements are stored.
+  # Example:
+  #   print rb.isEmpty
+  property isEmpty: bool:
+    get = count == 0
+
+  # True when at least one element is stored.
+  # Example:
+  #   print rb.isNotEmpty
+  property isNotEmpty: bool:
+    get = count > 0
+
+  # True when length equals capacity.
+  # Example:
+  #   print rb.isFull
+  property isFull: bool:
+    get = count == maxCap
+
+  # Appends [value]. When full, overwrites and returns the evicted oldest item;
+  # otherwise returns null.
+  # Example:
+  #   evicted = rb.push(4)
+  push(value: T) -> T?:
+    if count == maxCap:
+      evicted = buffer[head] as T
+      buffer[head] = value
+      head = (head + 1) % maxCap
+      return evicted
+    buffer[(head + count) % maxCap] = value
+    count = count + 1
+    return null
+
+  # Appends [value] only when not full; returns true if added, false if full.
+  # Example:
+  #   added = rb.tryPush(5)
+  tryPush(value: T) -> bool:
+    if count == maxCap:
+      return false
+    buffer[(head + count) % maxCap] = value
+    count = count + 1
+    return true
+
+  # Removes and returns the oldest element. Throws CollectionError when empty.
+  # Example:
+  #   oldest = rb.pop()
+  pop() -> T:
+    if count == 0:
+      throw CollectionError("RingBuffer.pop", "Cannot pop from an empty RingBuffer")
+    value = buffer[head] as T
+    buffer[head] = null
+    head = (head + 1) % maxCap
+    count = count - 1
+    return value
+
+  # Removes and returns the oldest element, or null when empty.
+  # Example:
+  #   maybe = rb.popOrNull()
+  popOrNull() -> T?:
+    if count == 0:
+      return null
+    return pop()
+
+  # Returns the oldest element without removing it, or null when empty.
+  # Example:
+  #   print rb.peekOldest()
+  peekOldest() -> T?:
+    if count == 0:
+      return null
+    return buffer[head]
+
+  # Returns the newest element without removing it, or null when empty.
+  # Example:
+  #   print rb.peekNewest()
+  peekNewest() -> T?:
+    if count == 0:
+      return null
+    return buffer[(head + count - 1) % maxCap]
+
+  # Returns the element at zero-based [index] from oldest to newest.
+  # Example:
+  #   print rb.at(0)
+  at(index: int) -> T:
+    if index < 0 or index >= count:
+      throw RangeError.range(index, 0, count - 1, "index")
+    return buffer[(head + index) % maxCap] as T
+
+  # Clears all stored elements.
+  # Example:
+  #   rb.clear()
+  clear():
+    var i = 0
+    while i < count:
+      buffer[(head + i) % maxCap] = null
+      i = i + 1
+    head = 0
+    count = 0
+
+  # Returns a list snapshot ordered from oldest to newest.
+  # Example:
+  #   print rb.toList()
+  toList() -> List<T>:
+    out: List<T> = []
+    var i = 0
+    while i < count:
+      out.add(buffer[(head + i) % maxCap] as T)
+      i = i + 1
+    return out
+
+
+# Binary min-heap priority queue ordered by an explicit [compare] function.
+# The smallest element according to [compare] is removed first.
+# Example:
+#   pq = PriorityQueue<int>((a: int, b: int) -> a.compareTo(b))
+#   pq.add(3)
+#   pq.add(1)
+#   print pq.removeFirst()
+class PriorityQueue<T>:
+  private compareFn: (T, T) -> int
+  private var heap: List<T> = []
+
+  init(compare: (T, T) -> int):
+    compareFn = compare
+
+  # Creates a PriorityQueue containing all elements of [items].
+  # Example:
+  #   pq = PriorityQueue.from([3, 1, 2], (a: int, b: int) -> a.compareTo(b))
+  static from<E>(items: Iterable<E>, compare: (E, E) -> int) -> PriorityQueue<E>:
+    out = PriorityQueue<E>(compare)
+    out.addAll(items)
+    return out
+
+  # Number of elements currently in this priority queue.
+  # Example:
+  #   print pq.length
+  property length: int:
+    get = heap.length
+
+  # True when this priority queue is empty.
+  # Example:
+  #   print pq.isEmpty
+  property isEmpty: bool:
+    get = heap.isEmpty
+
+  # True when this priority queue has at least one element.
+  # Example:
+  #   print pq.isNotEmpty
+  property isNotEmpty: bool:
+    get = heap.isNotEmpty
+
+  private siftUp(startIndex: int):
+    var idx = startIndex
+    while idx > 0:
+      parent = (idx - 1) ~/ 2
+      if compareFn(heap[idx], heap[parent]) < 0:
+        tmp = heap[idx]
+        heap[idx] = heap[parent]
+        heap[parent] = tmp
+        idx = parent
+      else:
+        break
+
+  private siftDown(startIndex: int):
+    n = heap.length
+    var idx = startIndex
+    while true:
+      left = idx * 2 + 1
+      right = left + 1
+      var smallest = idx
+      if left < n and compareFn(heap[left], heap[smallest]) < 0:
+        smallest = left
+      if right < n and compareFn(heap[right], heap[smallest]) < 0:
+        smallest = right
+      if smallest == idx:
+        break
+      tmp = heap[idx]
+      heap[idx] = heap[smallest]
+      heap[smallest] = tmp
+      idx = smallest
+
+  # Inserts [value] in O(log n) time.
+  # Example:
+  #   pq.add(5)
+  add(value: T):
+    heap.add(value)
+    siftUp(heap.length - 1)
+
+  # Inserts every element of [items].
+  # Example:
+  #   pq.addAll([4, 2, 8])
+  addAll(items: Iterable<T>):
+    for item in items:
+      add(item)
+
+  # Returns the smallest element without removing it. Throws CollectionError
+  # when empty.
+  # Example:
+  #   print pq.peek()
+  peek() -> T:
+    if heap.isEmpty:
+      throw CollectionError("PriorityQueue.peek", "Cannot peek an empty PriorityQueue")
+    return heap[0]
+
+  # Returns the smallest element without removing it, or null when empty.
+  # Example:
+  #   print pq.peekOrNull()
+  peekOrNull() -> T?:
+    if heap.isEmpty:
+      return null
+    return heap[0]
+
+  # Removes and returns the smallest element in O(log n) time. Throws
+  # CollectionError when empty.
+  # Example:
+  #   next = pq.removeFirst()
+  removeFirst() -> T:
+    if heap.isEmpty:
+      throw CollectionError("PriorityQueue.removeFirst", "Cannot remove from an empty PriorityQueue")
+    top = heap[0]
+    last = heap.removeLast()
+    if heap.isNotEmpty:
+      heap[0] = last
+      siftDown(0)
+    return top
+
+  # Removes and returns the smallest element, or null when empty.
+  # Example:
+  #   next = pq.removeFirstOrNull()
+  removeFirstOrNull() -> T?:
+    if heap.isEmpty:
+      return null
+    return removeFirst()
+
+  # Removes all elements from this priority queue.
+  # Example:
+  #   pq.clear()
+  clear():
+    heap.clear()
+
+  # Returns all elements sorted in ascending priority order without modifying
+  # this priority queue.
+  # Example:
+  #   print pq.toSortedList()
+  toSortedList() -> List<T>:
+    clone = PriorityQueue<T>(compareFn)
+    for item in heap:
+      clone.add(item)
+    out: List<T> = []
+    while clone.isNotEmpty:
+      out.add(clone.removeFirst())
+    return out
+
+
+:: assoc
+
+# Bounded Least-Recently-Used (LRU) cache with O(1) get/put/eviction backed by
+# Dart's insertion-ordered Map.
+# Example:
+#   cache = LruCache<String, int>(2)
+#   cache.put("a", 1)
+#   cache.put("b", 2)
+#   cache.get("a")
+#   cache.put("c", 3) # evicts "b"
+class LruCache<K, V>:
+  private var store: Map<K, V> = Map<K, V>()
+  private var maxCap: int = 1
+  private evictFn: ((K, V) -> void)?
+
+  init(capacity: int, onEvict: ((K, V) -> void)? = null):
+    if capacity < 1:
+      throw CollectionError("LruCache", "Capacity must be at least 1, got {capacity}")
+    maxCap = capacity
+    evictFn = onEvict
+
+  # Maximum number of entries retained before evicting the least-recently-used.
+  # Example:
+  #   print cache.capacity
+  property capacity: int:
+    get = maxCap
+
+  # Number of entries currently cached.
+  # Example:
+  #   print cache.length
+  property length: int:
+    get = store.length
+
+  # True when the cache holds no entries.
+  # Example:
+  #   print cache.isEmpty
+  property isEmpty: bool:
+    get = store.isEmpty
+
+  # True when the cache holds at least one entry.
+  # Example:
+  #   print cache.isNotEmpty
+  property isNotEmpty: bool:
+    get = store.isNotEmpty
+
+  # Cached keys ordered from least-recently-used to most-recently-used.
+  # Example:
+  #   print cache.keys
+  property keys: List<K>:
+    get = store.keys.toList()
+
+  # True when [key] is present (does not alter recency).
+  # Example:
+  #   print cache.containsKey("a")
+  containsKey(key: K) -> bool = store.containsKey(key)
+
+  # Returns the value for [key] without altering recency, or null when absent.
+  # Example:
+  #   print cache.peek("a")
+  peek(key: K) -> V?:
+    if not store.containsKey(key):
+      return null
+    return store[key]
+
+  # Returns the value for [key] and marks it most-recently-used, or null when
+  # absent.
+  # Example:
+  #   val = cache.get("a")
+  get(key: K) -> V?:
+    if not store.containsKey(key):
+      return null
+    value = store[key] as V
+    store.remove(key)
+    store[key] = value
+    return value
+
+  # Inserts or updates [key] with [value] and marks it most-recently-used.
+  # Evicts the least-recently-used entry if inserting exceeds [capacity].
+  # Example:
+  #   cache.put("a", 1)
+  put(key: K, value: V):
+    if store.containsKey(key):
+      store.remove(key)
+      store[key] = value
+      return
+    if store.length >= maxCap:
+      oldestKey = store.keys.first
+      oldestVal = store[oldestKey] as V
+      store.remove(oldestKey)
+      cb = evictFn
+      if cb != null:
+        cb(oldestKey, oldestVal)
+    store[key] = value
+
+  # Removes [key] and returns its value, or null when absent.
+  # Example:
+  #   old = cache.remove("a")
+  remove(key: K) -> V?:
+    if not store.containsKey(key):
+      return null
+    value = store[key] as V
+    store.remove(key)
+    return value
+
+  # Removes all entries from the cache without invoking [onEvict].
+  # Example:
+  #   cache.clear()
+  clear():
+    store.clear()
+
+
+# Map associating each key with an ordered list of one or more values.
+# Example:
+#   mm = MultiMap<String, int>()
+#   mm.add("a", 1)
+#   mm.add("a", 2)
+class MultiMap<K, V>:
+  private var buckets: Map<K, List<V>> = Map<K, List<V>>()
+  private var totalCount: int = 0
+
+  # Number of distinct keys with at least one value.
+  # Example:
+  #   print mm.keyCount
+  property keyCount: int:
+    get = buckets.length
+
+  # Total number of (key, value) entries across all buckets.
+  # Example:
+  #   print mm.totalLength
+  property totalLength: int:
+    get = totalCount
+
+  # True when no entries are stored.
+  # Example:
+  #   print mm.isEmpty
+  property isEmpty: bool:
+    get = totalCount == 0
+
+  # True when at least one entry is stored.
+  # Example:
+  #   print mm.isNotEmpty
+  property isNotEmpty: bool:
+    get = totalCount > 0
+
+  # Distinct keys currently stored in insertion order.
+  # Example:
+  #   print mm.keys
+  property keys: List<K>:
+    get = buckets.keys.toList()
+
+  # True when [key] has at least one associated value.
+  # Example:
+  #   print mm.containsKey("a")
+  containsKey(key: K) -> bool = buckets.containsKey(key)
+
+  # True when [value] is associated with [key].
+  # Example:
+  #   print mm.containsEntry("a", 1)
+  containsEntry(key: K, value: V) -> bool:
+    bucket = buckets[key]
+    if bucket == null:
+      return false
+    else:
+      return bucket.contains(value)
+
+  # Appends [value] to the bucket for [key].
+  # Example:
+  #   mm.add("tag", 1)
+  add(key: K, value: V):
+    bucket = buckets[key]
+    if bucket == null:
+      fresh: List<V> = [value]
+      buckets[key] = fresh
+    else:
+      bucket.add(value)
+    totalCount = totalCount + 1
+
+  # Appends every element of [values] to the bucket for [key].
+  # Example:
+  #   mm.addAll("tag", [1, 2])
+  addAll(key: K, values: Iterable<V>):
+    for value in values:
+      add(key, value)
+
+  # Returns a copy of all values associated with [key], or an empty list.
+  # Example:
+  #   print mm.valuesFor("tag")
+  valuesFor(key: K) -> List<V>:
+    bucket = buckets[key]
+    if bucket == null:
+      empty: List<V> = []
+      return empty
+    else:
+      return bucket.toList()
+
+  # Removes the first occurrence of [value] under [key]. Removes [key] when its
+  # bucket becomes empty. Returns true if an entry was removed.
+  # Example:
+  #   removed = mm.removeValue("tag", 1)
+  removeValue(key: K, value: V) -> bool:
+    bucket = buckets[key]
+    if bucket == null:
+      return false
+    else:
+      removed = bucket.remove(value)
+      if not removed:
+        return false
+      totalCount = totalCount - 1
+      if bucket.isEmpty:
+        buckets.remove(key)
+      return true
+
+  # Removes [key] and returns all its previously associated values.
+  # Example:
+  #   old = mm.removeKey("tag")
+  removeKey(key: K) -> List<V>:
+    bucket = buckets[key]
+    if bucket == null:
+      empty: List<V> = []
+      return empty
+    else:
+      buckets.remove(key)
+      totalCount = totalCount - bucket.length
+      return bucket
+
+  # Removes all entries from this multimap.
+  # Example:
+  #   mm.clear()
+  clear():
+    buckets.clear()
+    totalCount = 0
+
+  # Returns a defensive snapshot map of keys to copied value lists.
+  # Example:
+  #   print mm.toMap()
+  toMap() -> Map<K, List<V>>:
+    out: Map<K, List<V>> = map:
+    for entry in buckets.entries:
+      out[entry.key] = entry.value.toList()
+    return out
+
+
+# Bidirectional 1-to-1 map maintaining strict uniqueness on both keys and values.
+# Example:
+#   bi = BiMap<String, int>()
+#   bi.put("one", 1)
+#   print bi.getByValue(1)
+class BiMap<K, V>:
+  private var forward: Map<K, V> = Map<K, V>()
+  private var backward: Map<V, K> = Map<V, K>()
+
+  # Number of key-value pairs stored.
+  # Example:
+  #   print bi.length
+  property length: int:
+    get = forward.length
+
+  # True when this bimap is empty.
+  # Example:
+  #   print bi.isEmpty
+  property isEmpty: bool:
+    get = forward.isEmpty
+
+  # True when this bimap has at least one pair.
+  # Example:
+  #   print bi.isNotEmpty
+  property isNotEmpty: bool:
+    get = forward.isNotEmpty
+
+  # Keys currently stored in insertion order.
+  # Example:
+  #   print bi.keys
+  property keys: List<K>:
+    get = forward.keys.toList()
+
+  # Values currently stored in insertion order.
+  # Example:
+  #   print bi.values
+  property values: List<V>:
+    get = backward.keys.toList()
+
+  # True when [key] is present.
+  # Example:
+  #   print bi.containsKey("one")
+  containsKey(key: K) -> bool = forward.containsKey(key)
+
+  # True when [value] is present.
+  # Example:
+  #   print bi.containsValue(1)
+  containsValue(value: V) -> bool = backward.containsKey(value)
+
+  # Looks up the value mapped to [key], or null when absent.
+  # Example:
+  #   print bi.getByKey("one")
+  getByKey(key: K) -> V?:
+    if not forward.containsKey(key):
+      return null
+    return forward[key]
+
+  # Looks up the key mapped to [value], or null when absent.
+  # Example:
+  #   print bi.getByValue(1)
+  getByValue(value: V) -> K?:
+    if not backward.containsKey(value):
+      return null
+    return backward[value]
+
+  # Binds [key] <-> [value]. Throws CollectionError if [value] is already bound
+  # to a different key unless [force] is true (which replaces both old links).
+  # Example:
+  #   bi.put("one", 1)
+  put(key: K, value: V, force: bool = false):
+    if backward.containsKey(value):
+      existingKey = backward[value] as K
+      if existingKey != key:
+        if not force:
+          throw CollectionError("BiMap.put", "Value {value} is already mapped to key {existingKey}")
+        forward.remove(existingKey)
+        backward.remove(value)
+    if forward.containsKey(key):
+      oldVal = forward[key] as V
+      backward.remove(oldVal)
+    forward[key] = value
+    backward[value] = key
+
+  # Removes the pair for [key] and returns its value, or null when absent.
+  # Example:
+  #   old = bi.removeByKey("one")
+  removeByKey(key: K) -> V?:
+    if not forward.containsKey(key):
+      return null
+    val = forward[key] as V
+    forward.remove(key)
+    backward.remove(val)
+    return val
+
+  # Removes the pair for [value] and returns its key, or null when absent.
+  # Example:
+  #   old = bi.removeByValue(1)
+  removeByValue(value: V) -> K?:
+    if not backward.containsKey(value):
+      return null
+    key = backward[value] as K
+    backward.remove(value)
+    forward.remove(key)
+    return key
+
+  # Removes all pairs from this bimap.
+  # Example:
+  #   bi.clear()
+  clear():
+    forward.clear()
+    backward.clear()
+
+  # Returns a new BiMap with keys and values swapped.
+  # Example:
+  #   inv = bi.inverse()
+  inverse() -> BiMap<V, K>:
+    out = BiMap<V, K>()
+    for entry in forward.entries:
+      out.put(entry.value, entry.key)
+    return out
+
+  # Returns a copy of the forward key -> value map.
+  # Example:
+  #   print bi.toMap()
+  toMap() -> Map<K, V>:
+    out: Map<K, V> = map:
+    for entry in forward.entries:
+      out[entry.key] = entry.value
+    return out

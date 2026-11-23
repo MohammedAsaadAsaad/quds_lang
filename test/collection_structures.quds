@@ -1,0 +1,188 @@
+use quds:collection
+
+test "queue: Deque growth, both ends, indexing, clear":
+  d = Deque<int>()
+  expect(d.isEmpty, true)
+  expect(d.peekFirst(), null)
+  expect(d.removeFirstOrNull(), null)
+  expect(d.removeLastOrNull(), null)
+
+  # Push past initial capacity (8) from both ends to exercise circular grow().
+  var i = 1
+  while i <= 12:
+    d.addLast(i)
+    i = i + 1
+  d.addFirst(0)
+  d.addFirst(-1)
+  expect(d.length, 14)
+  expect(d.peekFirst(), -1)
+  expect(d.peekLast(), 12)
+  expect(d.at(0), -1)
+  expect(d.at(2), 1)
+  d.setAt(2, 100)
+  expect(d.at(2), 100)
+
+  expect(d.removeFirst(), -1)
+  expect(d.removeFirst(), 0)
+  expect(d.removeFirst(), 100)
+  expect(d.removeLast(), 12)
+  expect(d.length, 10)
+  expect(d.toList(), [2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+
+  d.clear()
+  expect(d.isEmpty, true)
+  var emptyErr = false
+  try:
+    d.removeFirst()
+  catch e:
+    emptyErr = e is CollectionError
+  expect(emptyErr, true)
+
+  fromList = Deque.from(["a", "b", "c"])
+  expect(fromList.toList(), ["a", "b", "c"])
+
+test "queue: RingBuffer overwrite, tryPush, pop, wraparound":
+  rb = RingBuffer<int>(3)
+  expect(rb.capacity, 3)
+  expect(rb.isEmpty, true)
+  expect(rb.isFull, false)
+
+  expect(rb.push(10), null)
+  expect(rb.push(20), null)
+  expect(rb.tryPush(30), true)
+  expect(rb.isFull, true)
+  expect(rb.tryPush(40), false)
+
+  # Overwrite evicts oldest (10)
+  expect(rb.push(40), 10)
+  expect(rb.toList(), [20, 30, 40])
+  expect(rb.peekOldest(), 20)
+  expect(rb.peekNewest(), 40)
+  expect(rb.at(1), 30)
+
+  expect(rb.pop(), 20)
+  expect(rb.length, 2)
+  expect(rb.push(50), null)
+  expect(rb.toList(), [30, 40, 50])
+  rb.clear()
+  expect(rb.popOrNull(), null)
+
+  var badCap = false
+  try:
+    RingBuffer<int>(0)
+  catch e:
+    badCap = e is CollectionError
+  expect(badCap, true)
+
+test "queue: PriorityQueue min-heap order and non-destructive snapshot":
+  cmp = (a: int, b: int) -> a.compareTo(b)
+  pq = PriorityQueue.from([5, 1, 9, 3, 7, 1, 4], cmp)
+  expect(pq.length, 7)
+  expect(pq.peek(), 1)
+  expect(pq.toSortedList(), [1, 1, 3, 4, 5, 7, 9])
+  expect(pq.length, 7)
+
+  drained: List<int> = []
+  while pq.isNotEmpty:
+    drained.add(pq.removeFirst())
+  expect(drained, [1, 1, 3, 4, 5, 7, 9])
+  expect(pq.peekOrNull(), null)
+  expect(pq.removeFirstOrNull(), null)
+
+  # Max-heap via inverted comparator
+  maxPq = PriorityQueue<int>((a: int, b: int) -> b.compareTo(a))
+  maxPq.addAll([2, 8, 5])
+  expect(maxPq.removeFirst(), 8)
+  expect(maxPq.removeFirst(), 5)
+  expect(maxPq.removeFirst(), 2)
+
+test "assoc: LruCache recency, peek, eviction callback, remove":
+  evicted: List<String> = []
+  cache = LruCache<String, int>(2, onEvict: (k: String, v: int) -> evicted.add("{k}:{v}"))
+  cache.put("a", 1)
+  cache.put("b", 2)
+  expect(cache.keys, ["a", "b"])
+
+  # peek does NOT promote "a"
+  expect(cache.peek("a"), 1)
+  expect(cache.keys, ["a", "b"])
+
+  # get promotes "a" to MRU
+  expect(cache.get("a"), 1)
+  expect(cache.keys, ["b", "a"])
+
+  # inserting "c" evicts LRU "b"
+  cache.put("c", 3)
+  expect(cache.containsKey("b"), false)
+  expect(cache.keys, ["a", "c"])
+  expect(evicted, ["b:2"])
+
+  # updating existing key updates value & recency without eviction
+  cache.put("a", 10)
+  expect(cache.peek("a"), 10)
+  expect(cache.keys, ["c", "a"])
+  expect(evicted.length, 1)
+
+  expect(cache.remove("c"), 3)
+  expect(cache.length, 1)
+  cache.clear()
+  expect(cache.isEmpty, true)
+
+test "assoc: MultiMap add, removeValue, removeKey, snapshot":
+  mm = MultiMap<String, int>()
+  mm.add("x", 1)
+  mm.addAll("x", [2, 3])
+  mm.add("y", 10)
+  expect(mm.keyCount, 2)
+  expect(mm.totalLength, 4)
+  expect(mm.containsEntry("x", 2), true)
+  expect(mm.containsEntry("x", 99), false)
+  expect(mm.valuesFor("x"), [1, 2, 3])
+  expect(mm.valuesFor("missing").length, 0)
+
+  expect(mm.removeValue("y", 10), true)
+  expect(mm.containsKey("y"), false)
+  expect(mm.keyCount, 1)
+  expect(mm.removeValue("x", 2), true)
+  expect(mm.valuesFor("x"), [1, 3])
+
+  snap = mm.toMap()
+  expect(snap["x"], [1, 3])
+  expect(mm.removeKey("x"), [1, 3])
+  expect(mm.isEmpty, true)
+
+test "assoc: BiMap strict bijection, force overwrite, remove, inverse":
+  bi = BiMap<String, int>()
+  bi.put("one", 1)
+  bi.put("two", 2)
+  expect(bi.length, 2)
+  expect(bi.getByKey("one"), 1)
+  expect(bi.getByValue(2), "two")
+
+  # Duplicate value without force throws CollectionError
+  var dupErr = false
+  try:
+    bi.put("uno", 1)
+  catch e:
+    dupErr = e is CollectionError
+  expect(dupErr, true)
+  expect(bi.containsKey("uno"), false)
+
+  # force: true cleanly removes old conflicting key
+  bi.put("uno", 1, force: true)
+  expect(bi.containsKey("one"), false)
+  expect(bi.getByKey("uno"), 1)
+  expect(bi.getByValue(1), "uno")
+
+  # Updating existing key's value cleans up old reverse entry
+  bi.put("uno", 11)
+  expect(bi.containsValue(1), false)
+  expect(bi.getByValue(11), "uno")
+
+  inv = bi.inverse()
+  expect(inv.getByKey(11), "uno")
+  expect(inv.getByValue("two"), 2)
+
+  expect(bi.removeByValue(11), "uno")
+  expect(bi.removeByKey("two"), 2)
+  expect(bi.isEmpty, true)

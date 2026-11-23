@@ -17,6 +17,7 @@ void main() {
     'test/collection_core.quds',
     'test/collection_imports.quds',
     'test/collection_sort_equality_diff.quds',
+    'test/collection_structures.quds',
   ]) {
     test('Quds primary suite ${suite.split('/').last}', () async {
       final result = await Process.run(

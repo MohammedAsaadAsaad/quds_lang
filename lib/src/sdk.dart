@@ -205,110 +205,7 @@ use dart:typed_data show Float32List, Float64List, Int8List, Uint8List, Uint8Cla
 export dart:typed_data show Float32List, Float64List, Int8List, Uint8List, Uint8ClampedList, Int16List, Uint16List, Int32List, Uint32List, ByteData, ByteBuffer, Endian, TypedData
 ''';
 
-const extSdkSource = '''extend String Text:
-  # True when the text is empty or only spaces.
-  # Example:
-  #   print "  ".blank()
-  blank() -> bool:
-    if length == 0:
-      return true
-    for ch in this.chars:
-      if ch != " ":
-        return false
-    return true
-  # The first character in upper case, and the rest unchanged.
-  # Example:
-  #   print "ab".capitalized()
-  capitalized() -> String:
-    if length == 0:
-      return this
-    return this[0].toUpperCase() + this.substring(1)
-  # The characters from last to first.
-  # Example:
-  #   print "ab".reversed()
-  reversed() -> String:
-    var out = ""
-    for ch in this.chars:
-      out = ch + out
-    return out
-  # How many times [part] occurs.
-  # Example:
-  #   print "ababa".count("ab")
-  count(part: String) -> int:
-    if part.length == 0:
-      return 0
-    var total = 0
-    var index = 0
-    while index <= length - part.length:
-      if this.substring(index, index + part.length) == part:
-        total = total + 1
-      index = index + 1
-    return total
-  # This text without [prefix] when it starts with that prefix.
-  # Example:
-  #   print "prefix-value".removePrefix("prefix-")
-  removePrefix(prefix: String) -> String:
-    if this.startsWith(prefix):
-      return this.substring(prefix.length)
-    return this
-  # This text without [suffix] when it ends with that suffix.
-  # Example:
-  #   print "value-suffix".removeSuffix("-suffix")
-  removeSuffix(suffix: String) -> String:
-    if this.endsWith(suffix):
-      return this.substring(0, length - suffix.length)
-    return this
-  # The text before the first [marker].
-  # Example:
-  #   print "a-b".before("-")
-  before(marker: String) -> String:
-    found = this.indexOf(marker)
-    if found < 0:
-      return this
-    return this.substring(0, found)
-  # The text after the first [marker].
-  # Example:
-  #   print "a-b".after("-")
-  after(marker: String) -> String:
-    found = this.indexOf(marker)
-    if found < 0:
-      return ""
-    return this.substring(found + marker.length)
-  # This text repeated [times] times.
-  # Example:
-  #   print "ab".repeated(3)
-  repeated(times: int) -> String:
-    var out = ""
-    var left = times
-    while left > 0:
-      out = out + this
-      left = left - 1
-    return out
-  # The words separated by spaces.
-  # Example:
-  #   print "a b".words().length
-  words() -> List<String>:
-    parts = this.split(" ")
-    kept: List<String> = []
-    for part in parts:
-      if part.length > 0:
-        kept.add(part)
-    return kept
-  # At most [limit] characters.
-  # Example:
-  #   print "abcdef".truncate(3)
-  truncate(limit: int) -> String:
-    if limit <= 0:
-      return ""
-    if length <= limit:
-      return this
-    return this.substring(0, limit)
-  # This text inside double quotes.
-  # Example:
-  #   print "ab".quoted()
-  quoted() -> String = '"' + this + '"'
-
-extend List<T> Lists:
+const extSdkSource = r'''extend List<T> Lists:
   # The value at index 1, or null when it is missing.
   # Example:
   #   numbers: List<int> = [1, 2, 3]
@@ -13080,6 +12977,149 @@ decodeText(bytes: List<int>, encoding: TextEncoding = TextEncoding.utf8, stripBo
   for b in slice:
     buffer.writeCharCode(b)
   return buffer.toString()
+
+
+:: extensions
+
+# String convenience methods migrated from quds:ext with their original contracts
+# preserved. For Unicode-aware or strict alternatives (such as Unicode whitespace,
+# grapheme reversal, or nullable markers), see the top-level functions in quds:text.
+extend String Text:
+  # True when the text is empty or only ASCII spaces (" ").
+  # For full Unicode whitespace checking, use isBlankText.
+  # Example:
+  #   print "  ".blank()
+  blank() -> bool:
+    if length == 0:
+      return true
+    for ch in this.chars:
+      if ch != " ":
+        return false
+    return true
+
+  # The first character in upper case, and the rest unchanged.
+  # Example:
+  #   print "ab".capitalized()
+  capitalized() -> String:
+    if length == 0:
+      return this
+    return this[0].toUpperCase() + this.substring(1)
+
+  # The code-unit characters from last to first.
+  # For grapheme-cluster-safe reversal, use reverseCharacters.
+  # Example:
+  #   print "ab".reversed()
+  reversed() -> String:
+    var out = ""
+    for ch in this.chars:
+      out = ch + out
+    return out
+
+  # How many times [part] occurs (including overlaps; 0 for empty [part]).
+  # Example:
+  #   print "ababa".count("ab")
+  count(part: String) -> int:
+    if part.length == 0:
+      return 0
+    return countTextMatches(this, TextPattern.literal(part), allowOverlap: true)
+
+  # This text without [prefix] when it starts with that prefix.
+  # Example:
+  #   print "prefix-value".removePrefix("prefix-")
+  removePrefix(prefix: String) -> String = removeTextPrefix(this, prefix)
+
+  # This text without [suffix] when it ends with that suffix.
+  # Example:
+  #   print "value-suffix".removeSuffix("-suffix")
+  removeSuffix(suffix: String) -> String = removeTextSuffix(this, suffix)
+
+  # The text before the first [marker], or this text when [marker] is absent.
+  # For nullable absence signaling, use beforeText.
+  # Example:
+  #   print "a-b".before("-")
+  before(marker: String) -> String:
+    found = this.indexOf(marker)
+    if found < 0:
+      return this
+    return this.substring(0, found)
+
+  # The text after the first [marker], or "" when [marker] is absent.
+  # For nullable absence signaling, use afterText.
+  # Example:
+  #   print "a-b".after("-")
+  after(marker: String) -> String:
+    found = this.indexOf(marker)
+    if found < 0:
+      return ""
+    return this.substring(found + marker.length)
+
+  # This text repeated [times] times (returns "" when [times] <= 0).
+  # Example:
+  #   print "ab".repeated(3)
+  repeated(times: int) -> String:
+    if times <= 0:
+      return ""
+    return repeatText(this, times)
+
+  # The words separated by ASCII spaces, dropping empty parts.
+  # Example:
+  #   print "a b".words().length
+  words() -> List<String>:
+    parts = this.split(" ")
+    kept: List<String> = []
+    for part in parts:
+      if part.length > 0:
+        kept.add(part)
+    return kept
+
+  # At most [limit] UTF-16 code units without a suffix (returns "" when <= 0).
+  # For grapheme-aware truncation with an ellipsis, use truncateText.
+  # Example:
+  #   print "abcdef".truncate(3)
+  truncate(limit: int) -> String:
+    if limit <= 0:
+      return ""
+    if length <= limit:
+      return this
+    return this.substring(0, limit)
+
+  # This text inside double quotes without escaping its contents.
+  # For escaping + quoting, use quoteTextLiteral.
+  # Example:
+  #   print "ab".quoted()
+  quoted() -> String = '"' + this + '"'
+
+# Additional opt-in String extensions forwarding directly to quds:text functions
+# with distinct names that never collide with core String or Text methods.
+extend String TextStringExtensions:
+  # Creates a UAX #29 grapheme cluster view over this string.
+  # Example:
+  #   print "قُدس".asTextCharacters().count
+  asTextCharacters() -> TextCharacters = TextCharacters(this)
+
+  # Creates a Unicode code-point view over this string.
+  # Example:
+  #   print "A😀".asTextCodePoints().count
+  asTextCodePoints(strict: bool = false, replaceMalformed: bool = false) -> TextCodePoints:
+    return TextCodePoints(this, strict: strict, replaceMalformed: replaceMalformed)
+
+  # Normalizes this string according to UAX #15 [form] (defaults to NFC).
+  # Example:
+  #   print "Cafe".normalizedUnicode()
+  normalizedUnicode(form: TextNormalizationForm = TextNormalizationForm.nfc) -> String:
+    return normalizeUnicode(this, form: form)
+
+  # Finds the first match of [pattern] in this string starting at [start].
+  # Example:
+  #   print "a=b".findTextMatch(TextPattern.literal("=")) != null
+  findTextMatch(pattern: TextPattern, start: int = 0) -> TextMatch?:
+    return findText(this, pattern, start: start)
+
+  # Repeats this string [count] times separated by [separator].
+  # Example:
+  #   print "some".repeatedWithSeparator(3, "-")
+  repeatedWithSeparator(count: int, separator: String) -> String:
+    return repeatText(this, count, separator: separator)
 
 
 :: support

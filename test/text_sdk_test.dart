@@ -5,9 +5,10 @@ import 'package:quds_lang/src/sdk.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('embedded quds:text matches lib/sdk/text.quds', () {
-    final disk = File('lib/sdk/text.quds').readAsStringSync();
-    expect(embeddedSdk['text'], disk);
+  test('embedded quds:text and quds:ext match lib/sdk/*.quds', () {
+    expect(embeddedSdk['text'], File('lib/sdk/text.quds').readAsStringSync());
+    expect(embeddedSdk['ext'], File('lib/sdk/ext.quds').readAsStringSync());
+    expect(embeddedSdk['ext'], isNot(contains('extend String Text')));
   });
 
   const suites = [
@@ -19,6 +20,7 @@ void main() {
     'text_replace_reader.quds',
     'text_format_compare.quds',
     'text_escape_encoding.quds',
+    'text_extensions.quds',
   ];
 
   for (final name in suites) {
@@ -47,6 +49,28 @@ void main() {
     }, timeout: const Timeout(Duration(minutes: 3)));
   }
 
+  test('quds:ext alone no longer exposes migrated String Text extension', () {
+    final reject = File('test/text_reject_ext_string.quds');
+    expect(
+      () => compile(reject.readAsStringSync(), file: reject.path),
+      throwsA(isA<CompilerException>()),
+    );
+    expect(
+      () => compile('use quds:text hide Text\nmain():\n  print " ".blank()\n'),
+      throwsA(isA<CompilerException>()),
+    );
+    final shown =
+        compile('use quds:text show Text\nmain():\n  print " ".blank()\n');
+    expect(shown.dart, contains('blank'));
+  });
+
+  test('quds:text generated Dart matches deterministic golden', () {
+    final input = File('test/text_slice_golden.quds');
+    final compiled = compile(input.readAsStringSync(), file: input.path);
+    final golden = File('test/goldens/text_slice.dart.txt').readAsStringSync();
+    expect(compiled.dart, golden);
+  });
+
   test(
       'quds:text executes identically on Dart VM and JavaScript with clean dart analyze',
       () async {
@@ -73,31 +97,84 @@ void main() {
     expect(web.stdout, vm.stdout);
   }, timeout: const Timeout(Duration(minutes: 3)));
 
-  test('editor completion suggests quds:text enums and section members', () {
-    const uri = 'file:///tmp/text_enum_complete.quds';
-    const source = '''use quds:text::lines show TextLineEnding
-main():
-  e = TextLineEnding.
-''';
+  test(
+      'editor completion and definition reflect quds:text sections and migrated Text',
+      () {
+    Set<String> completeLabels(String uri, String source, int line, int col) {
+      final session = LspSession();
+      session.handle({
+        'method': 'textDocument/didOpen',
+        'params': {
+          'textDocument': {'uri': uri, 'version': 1, 'text': source},
+        },
+      });
+      final result = session.handle({
+        'id': 1,
+        'method': 'textDocument/completion',
+        'params': {
+          'textDocument': {'uri': uri},
+          'position': {'line': line, 'character': col},
+        },
+      }).response!['result'] as Map;
+      session.dispose();
+      return (result['items'] as List)
+          .cast<Map>()
+          .map((item) => item['label'] as String)
+          .toSet();
+    }
+
+    final enumLabels = completeLabels(
+      'file:///tmp/text_enum_complete.quds',
+      'use quds:text::lines show TextLineEnding\nmain():\n  e = TextLineEnding.\n',
+      2,
+      '  e = TextLineEnding.'.length,
+    );
+    expect(enumLabels, containsAll(['lf', 'crlf', 'cr', 'values']));
+
+    final textExtLabels = completeLabels(
+      'file:///tmp/text_ext_complete.quds',
+      'use quds:text::extensions\nmain():\n  s = "hi"\n  x = s.\n',
+      3,
+      '  x = s.'.length,
+    );
+    expect(
+      textExtLabels,
+      containsAll([
+        'blank',
+        'capitalized',
+        'asTextCharacters',
+        'normalizedUnicode',
+        'repeatedWithSeparator'
+      ]),
+    );
+
+    final oldExtLabels = completeLabels(
+      'file:///tmp/ext_only_complete.quds',
+      'use quds:ext\nmain():\n  s = "hi"\n  x = s.\n',
+      3,
+      '  x = s.'.length,
+    );
+    expect(oldExtLabels, isNot(contains('blank')));
+
     final session = LspSession();
+    const defUri = 'file:///tmp/text_def.quds';
+    const defSource =
+        'use quds:text::extensions\nmain():\n  print "hi".blank()\n';
     session.handle({
       'method': 'textDocument/didOpen',
       'params': {
-        'textDocument': {'uri': uri, 'version': 1, 'text': source},
+        'textDocument': {'uri': defUri, 'version': 1, 'text': defSource},
       },
     });
-    final result = session.handle({
-      'id': 1,
-      'method': 'textDocument/completion',
+    final def = session.handle({
+      'id': 2,
+      'method': 'textDocument/definition',
       'params': {
-        'textDocument': {'uri': uri},
-        'position': {'line': 2, 'character': '  e = TextLineEnding.'.length},
+        'textDocument': {'uri': defUri},
+        'position': {'line': 2, 'character': '  print "hi".bl'.length},
       },
     }).response!['result'] as Map;
-    final labels = (result['items'] as List)
-        .cast<Map>()
-        .map((item) => item['label'] as String)
-        .toSet();
-    expect(labels, containsAll(['lf', 'crlf', 'cr', 'values']));
+    session.dispose();
+    expect(def['uri'], 'quds-sdk://library/text.quds');
   });
 }

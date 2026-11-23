@@ -162,7 +162,7 @@ main():
     expect(doubleLabels, containsAll(['parse', 'tryParse', 'infinity', 'nan']));
 
     final strLabels =
-        completeAtTarget('use quds:ext\nmain():\n  s = String.\n', 'String.')
+        completeAtTarget('use quds:text\nmain():\n  s = String.\n', 'String.')
             .map((i) => i['label']);
     expect(strLabels,
         containsAll(['fromCharCode', 'fromCharCodes', 'fromEnvironment']));

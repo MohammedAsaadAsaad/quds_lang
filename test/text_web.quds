@@ -45,4 +45,6 @@ main():
   _check(unescapeTextLiteral(escapeTextLiteral("a\nb\"c")) == "a\nb\"c", "escape round-trip")
   _check(decodeText(encodeText("قدس 😀", includeBom: true), stripBom: true) == "قدس 😀", "utf8 BOM round-trip")
   _check(decodeText(encodeText("قدس 😀", encoding: TextEncoding.utf16Le), encoding: TextEncoding.utf16Le) == "قدس 😀", "utf16Le round-trip")
+  _check("  ".blank() and "quds".capitalized() == "Quds" and "ab".quoted() == "\"ab\"", "Text extension")
+  _check("قُدس".asTextCharacters().count == 3 and "some".repeatedWithSeparator(3, "-") == "some-some-some", "TextStringExtensions")
   print "TEXT SDK VM WEB OK"

@@ -1,0 +1,4 @@
+use quds:ext
+
+main():
+  print "  ".blank()

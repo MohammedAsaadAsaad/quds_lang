@@ -1,0 +1,40 @@
+use quds:text::extensions
+use quds:text::patterns show TextPattern
+use quds:text::unicode show TextNormalizationForm
+use quds:ext
+
+test "extensions: migrated Text methods and TextStringExtensions coexist with quds:ext":
+  # All 12 migrated Text extension methods
+  expect("   ".blank(), true)
+  expect(" a ".blank(), false)
+  expect("quds".capitalized(), "Quds")
+  expect("abc".reversed(), "cba")
+  expect("ababa".count("aba"), 2)
+  expect("abc".count(""), 0)
+  expect("pre-val".removePrefix("pre-"), "val")
+  expect("val-suf".removeSuffix("-suf"), "val")
+  expect("a-b-c".before("-"), "a")
+  expect("plain".before("-"), "plain")
+  expect("a-b-c".after("-"), "b-c")
+  expect("plain".after("-"), "")
+  expect("ha".repeated(3), "hahaha")
+  expect("ha".repeated(0), "")
+  expect("  a  b  c ".words().length, 3)
+  expect("abcdef".truncate(3), "abc")
+  expect("abcdef".truncate(0), "")
+  expect("quds".quoted(), "\"quds\"")
+
+  # TextStringExtensions forwarding to quds:text functions
+  expect("قُدس 👨‍👩‍👧‍👦".asTextCharacters().count, 5)
+  expect("A😀".asTextCodePoints().count, 2)
+  decomposed = "e" + String.fromCharCode(0x0301)
+  expect(decomposed.normalizedUnicode(form: TextNormalizationForm.nfc), String.fromCharCode(0x00E9))
+  hit = "k=42".findTextMatch(TextPattern.literal("="))
+  expect(hit != null, true)
+  if let m = hit:
+    expect(m.range.start, 1)
+  expect("some".repeatedWithSeparator(3, "-"), "some-some-some")
+
+  # Coexistence with non-String extensions from quds:ext
+  expect([1, 2, 3].second(), 2)
+  expect(4.even(), true)

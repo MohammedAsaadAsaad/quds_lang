@@ -1820,8 +1820,10 @@ class Analyzer {
     final saved = _scope;
     final savedThis = _thisType;
     final savedReadonly = _readonlyMethod;
+    final home = model.libraryOf[type] ?? '';
     _readonlyMethod = isReadonlyMethod(method);
-    _scope = _Scope(_global);
+    _scope = _Scope(
+        home.isNotEmpty && home != library ? _libraryScope(home) : _global);
     _thisType = type.target;
     final savedTypes = {..._typeNames};
     _typeNames.addAll(type.typeParameters.map((item) => item.name));
@@ -3137,7 +3139,18 @@ class Analyzer {
     if (model.extensions.contains(statement)) return;
     if (qualify != null &&
         !(statement.name?.startsWith(r'$QudsAugment') ?? false)) return;
-    registerExtension(statement, library: home);
+    final saved = _scope;
+    final savedAliasShadows = {...model.activeAliasShadows};
+    _scope = _libraryScope(home);
+    model.activeAliasShadows.addAll(_scope.symbols.keys);
+    try {
+      registerExtension(statement, library: home);
+    } finally {
+      _scope = saved;
+      model.activeAliasShadows
+        ..clear()
+        ..addAll(savedAliasShadows);
+    }
   }
 
   void _importFunction(FunctionDeclaration statement,
@@ -10583,10 +10596,17 @@ class Analyzer {
             parameters.any((parameter) => parameter.needsAdapter) ||
             node.arguments.any((argument) => argument.name != null))) {
       final owner = _methodOwners[function];
-      if (owner == null) {
-        analyzeFunction(function);
-      } else {
+      if (owner != null) {
         analyzeMethod(owner, function);
+      } else {
+        final extOwner = model.extensions
+            .where((item) => item.methods.contains(function))
+            .firstOrNull;
+        if (extOwner != null) {
+          analyzeExtension(extOwner, function);
+        } else {
+          analyzeFunction(function);
+        }
       }
     }
     final verified = checked ?? _CheckedArguments();

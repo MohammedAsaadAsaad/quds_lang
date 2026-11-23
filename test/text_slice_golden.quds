@@ -1,0 +1,12 @@
+use quds:text::types show TextRange
+use quds:text::split as split
+use quds:text::compose as compose
+use quds:text::extensions show Text
+
+main():
+  r = TextRange(0, 4)
+  part = split.splitTextOnce("name=value", "=")
+  joined = compose.repeatText(part.before, 2, separator: "-")
+  print r.length
+  print joined
+  print "  ".blank()

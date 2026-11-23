@@ -1,5 +1,4 @@
 use quds:text
-use quds:ext
 
 _throws(action: () -> void) -> bool:
   try:

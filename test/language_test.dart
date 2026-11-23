@@ -3212,6 +3212,7 @@ total(values: List<int>) -> int = values.length
     expect(File('lib/sdk/ext.quds').readAsStringSync(), extSdkSource);
     await execute('''
 use quds:ext
+use quds:text
 main():
   print "  ".blank()
   print "ab".capitalized()

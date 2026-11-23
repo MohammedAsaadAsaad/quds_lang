@@ -1,28 +1,21 @@
 # مخطط حزمة النصوص العامة — quds:text
 
-**التاريخ:** 2026-11-21. **أساس المراجعة:** `21fce97`.
-**الحالة:** مخطط تصميم وتنفيذ مقترح، وليس إعلانًا عن مكتبة منفّذة.
+**التاريخ:** 2026-11-23. **أساس المراجعة الأصلي:** `21fce97`.
+**الحالة:** منفّذ بالكامل (الدفعات 0 إلى 5) في `lib/sdk/text.quds` مع التضمين في `lib/src/sdk.dart`، والمرجع الإنجليزي في `docs/TEXT_REFERENCE.md`.
 
 هذه الحزمة للنصوص في أي برنامج: القراءة، البناء، التقسيم، البحث، التحويل،
 المقارنة والترميز. لا نضع فيها ميزات خاصة بمحرر أو Flutter أو البريد أو
 الهواتف أو لغة بشرية بعينها.
 
-المطلوب ملف SDK واحد منظم بـsections، على نمط `lib/sdk/math.quds`، مع أنواع
-مشتركة قليلة وواجهات قابلة للاستيراد حسب الحاجة. لا يُنشأ ملف
-`lib/sdk/text.quds` فارغًا الآن حتى لا يبدو أن المكتبة متاحة قبل تنفيذها.
+نُفّذت الحزمة في ملف SDK واحد منظم بـ17 قسمًا (`:: types` حتى `:: extensions`) على نمط `lib/sdk/math.quds`، مع أنواع مشتركة قليلة وواجهات قابلة للاستيراد حسب الحاجة.
 
 ## تسمية الحزمة وحدود هذا التحديث
 
-**التوصية: `quds:text` بدل `quds:strings`.** `String` هو نوع القيمة، بينما
+**التسمية المعتمدة: `quds:text` بدل `quds:strings`.** `String` هو نوع القيمة، بينما
 text يصف المجال الأوسع: Unicode، الأسطر، القراءة والبناء، الأنماط والترميز.
-الاسم قصير، واضح، ومتسق مع `quds:math`. `quds:strings` مفهوم أيضًا لكنه يوحي
-أكثر بمجموعة مساعدات لـString؛ لا ننشئ الاسمين معًا أو alias دون حاجة.
+الاسم قصير، واضح، ومتسق مع `quds:math`. لا ننشئ الاسمين معًا أو alias دون حاجة.
 
-**طلب المالك في هذا التحديث:** نقل كل إضافات النصوص من `quds:ext` إلى
-الحزمة الجديدة ضمن الخطة فقط. تصبح `quds:text` موطن التعريف والتنفيذ والتوثيق
-والاختبارات لهذه الإضافات. أكّد المالك عدم وجود برامج قديمة تحتاج توافقًا؛
-لذلك يُحذف تعريف النصوص من ext دون إعادة تصدير أو alias أو طبقة توافق.
-لا توجد حزمة نصوص منفّذة بعد، ولا ينقل هذا المستند أي مصدر فعلي.
+**ترحيل `quds:ext` المنفّذ:** نُقل `extend String Text` كاملًا (جميع أعضائه الاثني عشر) من `lib/sdk/ext.quds` إلى `quds:text::extensions` في `lib/sdk/text.quds` مع تحديث الاستيرادات والاختبارات والتوثيق. حُذف تعريف `Text` من `lib/sdk/ext.quds` دون إعادة تصدير أو alias أو طبقة توافق بناءً على قرار المالك.
 
 ## 1. الصورة العامة
 
@@ -110,9 +103,9 @@ lib/sdk/text.quds
 أسماء الأقسام كاملة وواضحة. يمكن لاحقًا إضافة قسم فرعي عند اتساع مجال معين،
 مثل `:: unicode::normalization`، دون توزيع المجال الواحد عشوائيًا بين أقسام.
 
-### نمط الاستيراد المستهدف
+### نمط الاستيراد المعتمد
 
-الأمثلة التالية **تصميم للواجهة المستقبلية**؛ `quds:text` غير منفّذة الآن.
+الأمثلة التالية تعمل مباشرةً مع `lib/sdk/text.quds` (ومغطاة في `test/text_imports.quds`):
 
 ```quds
 use quds:text::search as search
@@ -508,9 +501,9 @@ extensions واجهة أخيرة فوق الأقسام؛ لا يعتمد أي ت
 بناء النص يحتاج استيراد regex أو codecs. تختبر تبعيات الاستيراد الفعلية قبل
 القول إن الأقسام أصبحت مستقلة؛ الرسم هدف تصميمي لا ادعاء عن pruning المولّد.
 
-## 8. أمثلة الواجهة المستهدفة
+## 8. أمثلة الواجهة
 
-كل الأمثلة في هذا القسم **مستقبلية**، ولا تعمل بمجرد إضافة هذا المخطط.
+الأمثلة التالية تعكس الواجهة المنفّذة في `lib/sdk/text.quds` والمختبرة في ملفات `test/text_*.quds`.
 
 ### بناء نص
 
@@ -570,123 +563,101 @@ main():
   # some-some-some
 ```
 
-## 9. خطة التنفيذ والترحيل
+## 9. خطة التنفيذ والترحيل — حالة الدفعات
 
-| الدفعة | المحتوى | شرط الإغلاق |
+| الدفعة | المحتوى | الحالة والمرجع |
 |---|---|---|
-| 0 — تثبيت الأساس | جرد APIs، توثيق وحدات String الحالية، تجارب import/sections/extensions/callbacks/iterators | أمثلة قدس فعلية تكشف قدرات المترجم وأي نقص قبل اعتماد التصميم النهائي |
-| 1 — نصوص يومية | types، inspect، slice، split الحرفي، compose، builder، lines | كل API عام له استعمال Quds إيجابي وسلبي وعقد للأفرغ/الغياب/الحدود |
-| 2 — Unicode | views، grapheme segmentation، normalization، القياس والقص المرئي | اختبارات Unicode رسمية وإصدار بيانات مثبت؛ لا كسر للمحارف المركبة |
-| 3 — أنماط وتحويل | patterns، search، replace، reader | نفس النتائج والعقود على VM وJS، مع zero-length matches وrollback |
-| 4 — عرض ومقارنة وترميز | format، compare، escape، encoding | حدود كلفة واضحة، اختبارات round-trip وفروق المنصات موثقة |
-| 5 — واجهة وترحيل | extensions، الإكمال والتلميحات، إغلاق نقل إضافات ext النصية | تحديث كل الاستيرادات وعدم بقاء تعريف نصوص أو إعادة تصدير له في ext |
+| 0 — تثبيت الأساس | جرد APIs، تجارب import/sections/extensions/iterators، وإصلاحات المترجم المرتبطة | **مكتمل** (`78cb96c`) — `test/text_imports.quds` |
+| 1 — نصوص يومية | `types`، `inspect`، `slice`، `split` الحرفي، `compose`، `builder`، `lines` | **مكتمل** (`78cb96c`) — `test/text_core.quds` |
+| 2 — Unicode | `unicode` (`TextCodePoints`، `TextCharacters`، `TextNormalizer`، NFC/NFD/NFKC/NFKD، `caseFoldText`، `reverseCharacters`، `sliceCharacters`) | **مكتمل** (`6be6474`) — بيانات **Unicode 15.0.0** مولّدة عبر `tool/generate_text_unicode.py` ومختبرة في `test/text_unicode_reference.quds` (980 فحصًا) |
+| 3 — أنماط وتحويل | `patterns`، `search`، `splitTextPattern`، `replace`، `reader` | **مكتمل** (`7e20446`) — `test/text_patterns_search.quds`، `test/text_replace_reader.quds` |
+| 4 — عرض ومقارنة وترميز | `format`، `compare`، `escape`، `encoding` | **مكتمل** (`13219eb`) — `test/text_format_compare.quds`، `test/text_escape_encoding.quds` |
+| 5 — واجهة وترحيل | `extensions` (`Text` المنقول + `TextStringExtensions`)، حذف `Text` من `quds:ext`، golden، LSP، وتوثيق المرجع | **مكتمل** — `test/text_extensions.quds`، `test/text_reject_ext_string.quds`، `test/goldens/text_slice.dart.txt`، `docs/TEXT_REFERENCE.md` |
 
-### ترحيل `quds:ext` — نقل كامل لملكية إضافات النصوص
+### ترحيل `quds:ext` — نقل كامل لملكية إضافات النصوص (مكتمل)
 
-النقل مخطط وليس منفّذًا. يشمل أعضاء `extend String Text` الثلاثة عشر جميعها:
+نُقلت جميع أعضاء `extend String Text` الاثني عشر من `lib/sdk/ext.quds` إلى `quds:text::extensions` في `lib/sdk/text.quds` (حصر المصدر الفعلي 12 عضوًا)، وحُذف تعريف `Text` بالكامل من `lib/sdk/ext.quds` دون alias أو إعادة تصدير:
 
-| الأعضاء الحالية | القسم المالك للمنطق داخل text | السلوك الحالي المراد تثبيته أثناء النقل |
+| الأعضاء المنقولة | القسم المالك للمنطق داخل text | السلوك المثبّت بعد النقل |
 |---|---|---|
-| `blank` | inspect | الفراغ الحالي هو المسافة العادية، لا Unicode whitespace |
-| `capitalized` | format | أول وحدة مفهرسة upper case، والباقي كما هو |
-| `reversed` | unicode | تثبيت السلوك الحالي؛ لا استبداله ضمنيًا بعكس graphemes |
-| `count` | search | تداخلات محسوبة؛ النمط الفارغ يعطي صفرًا |
-| `removePrefix`, `removeSuffix` | replace | حفظ المعاملات وسلوك البادئة/اللاحقة الفارغة |
-| `before`, `after` | slice | غياب العلامة يعطي الأصل للأولى والفارغ للثانية |
-| `repeated` | compose | العدد غير الموجب يعطي نصًا فارغًا |
-| `words` | split | تقسيم بالمسافة العادية وإسقاط الأجزاء الفارغة |
-| `truncate` | format | قص بلا suffix؛ الحد غير الموجب يعطي الفارغ |
-| `quoted` | escape | إحاطة باقتباسين فقط، دون escaping |
+| `blank` | `inspect` | الفراغ الحالي هو المسافة العادية (`trim().isEmpty`)، لا Unicode whitespace |
+| `capitalized` | `format` | أول وحدة مفهرسة upper case، والباقي كما هو |
+| `reversed` | `unicode` | السلوك القديم على وحدات UTF-16 (`split("").reversed.join()`)؛ لعكس graphemes تُستخدم `reverseCharacters` |
+| `count` | `search` | تداخلات محسوبة؛ النمط الفارغ يعطي صفرًا |
+| `removePrefix`, `removeSuffix` | `replace` | حفظ المعاملات وسلوك البادئة/اللاحقة الفارغة |
+| `before`, `after` | `slice` | غياب العلامة يعطي الأصل للأولى والفارغ للثانية |
+| `repeated` | `compose` | العدد غير الموجب يعطي نصًا فارغًا |
+| `words` | `split` | تقسيم بالمسافة العادية وإسقاط الأجزاء الفارغة |
+| `truncate` | `format` | قص بلا suffix؛ الحد غير الموجب يعطي الفارغ |
+| `quoted` | `escape` | إحاطة باقتباسين فقط، دون escaping |
 
-هذا توزيع ملكية للمنطق والتوثيق؛ جميع methods تبقى مجمّعة تحت extension
-`Text` في section `extensions`. الدوال الجديدة ذات العقود المختلفة تبقى
-متميزة، مثل `isBlankText` و`truncateText`، ولا تصبح بدائل صامتة للأعضاء القديمة.
-إذا احتاج العقد القديم مساعدًا داخليًا خاصًا، يبقى داخل text ولا نفرض له API عامًا.
+جميع هذه الأعضاء مجمّعة تحت `extend String Text` في `quds:text::extensions`، وأضيفت الواجهة الاختيارية المميزة `extend String TextStringExtensions` (`asTextCharacters`، `asTextCodePoints`، `normalizedUnicode`، `findTextMatch`، `repeatedWithSeparator`). الدوال العليا الجديدة ذات العقود الصريحة (`isBlankText`، `truncateText`، `quoteTextLiteral`، `reverseCharacters`...) تبقى منفصلة ولا تستبدل عقود `Text` بصمت.
 
-خطة النقل عند بدء التنفيذ:
+ما نُفّذ في خطوة الترحيل:
 
-1. تثبيت الأعضاء الثلاثة عشر باختبارات Quds قبل النقل، بما يشمل الحدود والغياب
-   وUnicode والحالات الفارغة. فصل النقل البنيوي عن أي تغيير سلوكي موثّق لاحقًا.
-2. نقل تعريف `Text` وتنفيذه إلى `lib/sdk/text.quds`، وتوزيع المنطق على الأقسام
-   أعلاه حيث يناسب، دون نسختين من الخوارزمية.
-3. حذف تعريف النصوص من ext دون إعادة تصدير أو alias أو deprecation؛ تبقى
-   إضافات List والأرقام وبقية الأنواع في ext ولا تدخل هذه الدفعة.
-4. تحديث جميع استيرادات النصوص داخل أمثلة المستودع واختباراته وSDK وتوثيقه
-   إلى `quds:text` أو قسم extensions حسب الحاجة. الملفات التي تحتاج إضافات
-   غير نصية من ext تستورد الحزمتين صراحةً.
-5. اختبار الاستيراد الجديد والأقسام و`show Text` وhide وprefix وفق القواعد
-   الفعلية، واستيراد ext وtext معًا؛ والتحقق أن ext وحده لم يعد يتيح امتداد
-   النصوص المنقول، وأن الإكمال والتلميحات تعكسان الموطن الجديد.
-6. حذف التوثيق الذي يوصي باستيراد ext للنصوص، وتحديث روابط المصدر والاختبارات.
-   لا حاجة لاختبارات توافق مع مسار الاستيراد السابق أو فترة انتقال للمستخدمين.
+1. تثبيت الأعضاء الاثني عشر باختبارات Quds في `test/text_extensions.quds` و`test/text_web.quds`.
+2. نقل تعريف `extend String Text` إلى `lib/sdk/text.quds` تحت `:: extensions`.
+3. حذف `extend String Text` من `lib/sdk/ext.quds` وإعادة مزامنة `lib/src/sdk.dart` (بقيت `Lists` و`Maps` و`Sets` و`Ints` و`Doubles` في `quds:ext`).
+4. تحديث الاستيرادات في `test/language_test.dart` و`test/dart_core_static_editor_test.dart` و`docs/QUDS_LANGUAGE_SPECIFICATION.md`.
+5. اختبار `use quds:text::extensions`، `show Text`، `hide Text`، والتعايش مع `use quds:ext`، والرفض الصريح في `test/text_reject_ext_string.quds` عند استيراد `quds:ext` وحده، بالإضافة إلى فحوص الإكمال والانتقال للتعريف في LSP عبر `test/text_sdk_test.dart`.
 
-ترتيب الدفعات: تثبيت الاختبارات في الدفعة 0، ونقل الأعضاء تدريجيًا مع أقسامها
-ابتداءً من الدفعة 1، وإغلاق النقل كاملًا في الدفعة 5. كل عضو يُنقل يُحذف تعريفه
-من ext وتُحدّث استعمالاته في الدفعة نفسها؛ لا توجد مرحلة إعادة تصدير وسيطة.
-النقل لا يشمل عمليات String الأصلية في المترجم؛ لا تتغير تبعياتها أو صياغتها
-لمجرد تنظيم SDK. عدم وجود برامج قديمة يلغي الحاجة للتوافق، ولا يبرر تغيير
-صياغة اللغة المعتمدة أو تغيير دلالات النصوص دون تفسير واختبارات.
+### إصلاحات المترجم المكشوفة أثناء التنفيذ
 
-### تجارب المترجم المطلوبة قبل التوسع
+- دعم الوصول المؤهَّل لأعضاء الـ`enum` (`Enum.case`) وعزل حالات الـ`enum` عن النطاق العام (`lib/src/semantics.dart`، `lib/src/complete.dart`).
+- دعم معاملات Dart SDK غير المصرّح بنوعها مثل `ArgumentError.value` (`lib/src/dart_api.dart`).
+- دعم استدعاء `String.indexOf`/`lastIndexOf`/`startsWith` بمعاملين (`lib/src/semantics.dart`).
+- تحليل مهيّئات الحقول غير الساكنة (`analyzeInstanceField`) وتغليف أنواع إرجاع `sync*`/`async*` للدوال المستوردة ودوال الكلاسات (`lib/src/semantics.dart`).
+- عزل الدوال الـ`static` عن حقول النسخة و`_thisType` في `analyzeMethod` (`lib/src/semantics.dart`).
+- تبديل النطاق إلى مكتبة الامتداد عند استيراد وتحليل `extend` في `quds:text::extensions` وتوجيه استدعاءات الامتداد ذات المعاملات المسماة إلى `analyzeExtension` (`lib/src/semantics.dart`).
 
-- إرجاع `Iterable<TextMatch>` وviews والتكرار عليها من مكتبة مستوردة.
-- قيم callbacks typed عبر حدود المكتبات، خصوصًا مع optional/named arguments.
-- enums والأنواع المشتركة في signatures عند استيراد section فقط.
-- نتائج nullable والقراءة الآمنة والـnamed constructors المستعملة فعلًا.
-- extension imports المتزامنة مع quds:ext ومنع الالتباس.
-- Native Dart RegExp/codecs وعملها في VM وJS دون erasure غير مبرر.
-
-إذا كشف التنفيذ نقصًا في المترجم، يُصلح مع regression في قدس أو يُوثّق E910
-للنطاق غير المدعوم؛ لا نستبدل النوع بـdynamic ولا نغيّر صياغة معتمدة لتجاوزه.
-
-## 10. ملفات التنفيذ والاختبارات والتوثيق المخططة
+## 10. ملفات التنفيذ والاختبارات والتوثيق المنفّذة
 
 ```text
-lib/sdk/text.quds                     تنفيذ قدس، مقسم بالـsections أعلاه
-lib/src/sdk.dart                      ربط المكتبة إن احتاج registry تعديلًا
+lib/sdk/text.quds                     تنفيذ quds:text بـ17 قسمًا
+lib/sdk/ext.quds                      بقية امتدادات ext بعد حذف Text
+lib/src/sdk.dart                      المصدر المضمّن المتزامن مع lib/sdk/*.quds
+tool/generate_text_unicode.py         مولّد جداول Unicode 15.0.0 واختباراتها
 
-test/text_<section>.quds              الحالات الأساسية بقدس
-test/text_unicode_reference.quds     مرجع Unicode مستقل عند جاهزية القسم
-test/text_imports.quds               sections وprefix وshow/hide والتعارضات
-test/text_reject_<case>.quds         الحالات المرفوضة عند الحاجة
-test/text_sdk_test.dart              تشغيل suites وتحليل الناتج وVM/JS
-test/goldens/text_<slice>.dart.txt    الناتج الحتمي للشرائح المختارة
+test/text_core.quds                   types/inspect/slice/split/compose/builder/lines
+test/text_imports.quds                sections وprefix وshow/hide والتعايش
+test/text_unicode_reference.quds      مرجع Unicode 15.0.0 (980 فحصًا)
+test/text_patterns_search.quds        patterns/search/splitTextPattern
+test/text_replace_reader.quds         replace/reader
+test/text_format_compare.quds         format/compare
+test/text_escape_encoding.quds        escape/encoding
+test/text_extensions.quds             Text المنقول وTextStringExtensions مع quds:ext
+test/text_reject_ext_string.quds      رفض Text عند استيراد quds:ext وحده
+test/text_slice_golden.quds           مدخل الاختبار الذهبي الحتمي
+test/text_web.quds                    تشغيل فعلي على Dart VM وcompiled JS
+test/text_sdk_test.dart               مجموعة التشغيل الشاملة (quds test + golden + VM/JS + LSP)
+test/goldens/text_slice.dart.txt      الناتج الحتمي المولّد لـDart
 
 docs/TEXT_SDK_PLAN_AR.md              هذا المخطط وحالة الدفعات
-docs/TEXT_REFERENCE.md               مرجع API الإنجليزي عند التنفيذ
-docs/VALIDATION.md                   أوامر الفحص ونتائجها الدقيقة
+docs/TEXT_REFERENCE.md                مرجع API الإنجليزي الكامل للأقسام الـ17
+docs/VALIDATION.md                    أوامر الفحص ونتائجها الدقيقة
 ```
-
-تُضاف الملفات عند بدء دفعتها الفعلية، لا تُنشأ tests فارغة لإظهار تقدم غير حقيقي.
 
 ## 11. مصفوفة الاختبارات
 
-| الجانب | أمثلة إلزامية |
+| الجانب | أمثلة مغطاة |
 |---|---|
 | حدود | فارغ، عنصر واحد، بداية/نهاية، مجال فارغ، سالب وخارج النطاق |
-| Unicode | ASCII، نص مشكّل، combining marks، supplementary characters، أعلام وإيموجي ZWJ، UTF-16 تالف |
+| Unicode | ASCII، نص مشكّل، combining marks، supplementary characters، أعلام وإيموجي ZWJ، UTF-16 تالف، وتطبيع NFC/NFD/NFKC/NFKD |
 | البحث | غياب، تكرار، تداخل، pattern فارغ، match صفرية، مجموعات غير مشاركة |
-| التقسيم | فواصل متجاورة، بداية/نهاية، غياب، حد عدد الفواصل، فواصل متعددة متداخلة |
+| التقسيم | فواصل متجاورة، بداية/نهاية، غياب، حد عدد الفواصل، فواصل متعددة وأنماط regex |
 | الأسطر | LF وCRLF وCR، سطر أخير فارغ، tabs، نص مختلط النهايات |
 | reader | نجاح، فشل مع rollback، checkpoint، نهاية المدخل، خطأ موقعه صحيح |
-| encodings | round-trip، بايت خارج 0..255، تسلسل تالف، BOM، حدود ASCII/Latin-1 |
+| encodings | round-trip، بايت خارج 0..255، تسلسل تالف، BOM (حفظ/إزالة)، حدود ASCII/Latin-1 وUTF-16 LE/BE |
 | خواص | تطبيع idempotent، قص/وصل عند حدود صحيحة، compare مضاد التماثل ومتعدٍ |
-| كلفة | نصوص طويلة، أجزاء كثيرة، iterator أحادي الاستهلاك، regex دون وعود timeout وهمية |
-| تكامل | import انتقائي ومسبوق، ext مع text، إكمال وhover، VM وJS فعليان |
-
-ليس كل تحول قابلًا للعكس؛ لا نكتب property من نوع normalize→denormalize
-أو إزالة مسافات→استرجاع الأصل. وjoin(split(x)) يساوي x فقط تحت شروط معلنة.
+| كلفة | نصوص طويلة، `TextBuilder` و`TextReader` بلا نسخ غير لازمة، `boundedEditDistance` |
+| تكامل | import انتقائي ومسبوق، `quds:ext` مع `quds:text`، إكمال وتعريف LSP، VM وJS فعليان، و`dart analyze --fatal-infos` على Dart المولّد |
 
 ## 12. بوابة القبول وحالة التسليم
 
-عند تنفيذ أي دفعة:
+**حالة التسليم النهائية (الدفعات 0–5):**
 
-1. تحديث هذا الملف بجدول APIs المنفّذة والمتبقية وروابط الاختبارات.
-2. اختبار السلوك الأساسي بقدس، ثم تحليل Dart المولّد وتنفيذه على VM وJS.
-3. تشغيل format/analyze/tests والفحوص المطلوبة للمستودع وفق حجم التغيير.
-4. توثيق النتائج الفعلية، والكلفة أو القيود المهمة، دون ادعاء شهادة كل Unicode.
-5. رفع كل دفعة مكتملة ومختبرة إلى main وفق تعليمات المستودع.
-
-**حالة هذه الدفعة:** توثيق وتصميم فقط؛ لا SDK جديد ولا تعديل لصياغة اللغة.
-جرد الموجود أعلاه قائم على قراءة المصدر. لم تُشغّل اختبارات runtime لإثبات
-واجهات مستقبلية غير منفّذة، ولم تتغير حالات جاهزية القواعد الـ115.
+- نُفّذت جميع الأقسام الـ17 في `lib/sdk/text.quds` وزومنت مع `lib/src/sdk.dart`.
+- ثُبّتت بيانات Unicode على الإصدار **15.0.0** عبر `tool/generate_text_unicode.py` (تطبيع كامل NFC/NFD/NFKC/NFKD وcase folding وتقسيم extended grapheme clusters وفق UAX #29؛ بدون ادعاء تغطية locale collation أو word/sentence segmentation الكامل).
+- حُذف `extend String Text` من `lib/sdk/ext.quds` بالكامل ونُقل إلى `quds:text::extensions`.
+- وُثّقت الواجهة الإنجليزية الكاملة في `docs/TEXT_REFERENCE.md`، وتُسجَّل نتائج التحقق الدقيقة وأوامرها في `docs/VALIDATION.md`.
+- لم تتغير صياغة اللغة المعتمدة، ولم تتغير حالات جاهزية القواعد الـ115.

@@ -2019,6 +2019,7 @@ class DartEmitter {
     }
     for (final entry in model.moduleSymbols.entries) {
       if (entry.value.namespace != null &&
+          entry.value.type == 'prefix' &&
           _dartImportPrefix(entry.key) != entry.key) {
         type = type.replaceAll(RegExp('\\b${RegExp.escape(entry.key)}\\.'),
             '${_dartImportPrefix(entry.key)}.');
@@ -4155,8 +4156,15 @@ class DartEmitter {
   }
 
   String _functionInstantiation(TypeApplication node) {
-    if (!model.instantiatedFunctionValues.contains(node))
+    if (!model.instantiatedFunctionValues.contains(node)) {
+      final symbol = model.references[node.callee];
+      if (symbol != null &&
+          (symbol.nativeTop?.isType == true ||
+              symbol.classDeclaration != null)) {
+        return '${expression(node.callee)}<${node.arguments.map(_dartType).join(', ')}>';
+      }
       return expression(node.callee);
+    }
     if (model.qudsValueLowerings.containsKey(node.callee))
       return expression(node.callee);
     return _instantiateNativeValue(node.callee, node.arguments);
@@ -4646,7 +4654,9 @@ class DartEmitter {
       return _cell(symbol);
     }
     final dart = _use(node);
-    if (symbol?.namespace != null) return _dartImportPrefix(dart);
+    if (symbol?.namespace != null && symbol?.type == 'prefix') {
+      return _dartImportPrefix(dart);
+    }
     return _names[dart] ?? dart;
   }
 
@@ -5558,7 +5568,17 @@ class DartEmitter {
                         node.callee is TypeApplication)
                 ? constructed
                 : targetSymbol.dartName;
-    if (node.callee case TypeApplication applied) {
+    if (targetSymbol.nativeConstructor &&
+        member != null &&
+        model.references[member.object]?.type != 'prefix') {
+      if (member.object is! TypeApplication &&
+          model.inferredTypeArguments[node] != null) {
+        final args =
+            model.inferredTypeArguments[node]!.map(_dartType).join(', ');
+        target =
+            '${expression(member.object, constantContext: constantContext)}<$args>.${model.references[member]?.dartName ?? member.name}';
+      }
+    } else if (node.callee case TypeApplication applied) {
       final original = model.references[applied.callee];
       final explicitQudsConstructor =
           original?.classDeclaration != null && targetSymbol.function != null;

@@ -91,6 +91,24 @@ class LibraryPlace {
 /// A missing source keeps the whole declaration span.
 SourceSpan? definitionAt(Compilation compilation, int line, int column,
     {String? Function(String file)? sourceOf}) {
+  final currentText = sourceOf?.call(compilation.program.span.file);
+  if (currentText != null) {
+    final hit = _smallestNode(compilation, line, column);
+    if (hit != null) {
+      final typeSymbol =
+          _typeSymbolAt(compilation, currentText, hit, line, column);
+      if (typeSymbol != null) {
+        final declared = _nodeForSymbol(compilation, typeSymbol);
+        if (declared != null) {
+          final name = _declaredName(declared);
+          final text = name == null ? null : sourceOf?.call(declared.span.file);
+          if (name == null || text == null) return declared.span;
+          return _nameSpan(text, declared.span, name) ?? declared.span;
+        }
+        return _originSpan(typeSymbol);
+      }
+    }
+  }
   final node = _definitionNode(compilation, line, column);
   if (node == null) {
     return _originSpan(_symbolAt(compilation, line, column));
@@ -171,7 +189,7 @@ String? hoverAt(Compilation compilation, String source, int line, int column) {
   });
   final node = hit;
   if (node == null) return null;
-  return _hoverText(compilation, source, node, offset);
+  return _hoverText(compilation, source, node, offset, line, column);
 }
 
 /// Legend shared with the editor. A property is not a function.
@@ -403,10 +421,12 @@ Node? _declaredNode(Compilation compilation, Node node, int line, int column) {
     if (!_onMemberName(node, line, column)) {
       return _declaredNode(compilation, node.object, line, column);
     }
+    final member = _findMember(compilation.semantics, node);
+    if (member is _ConstructorFound) return member.declaration;
     final linked =
         _nodeForSymbol(compilation, compilation.semantics.references[node]);
     if (linked != null) return linked;
-    return switch (_findMember(compilation.semantics, node)) {
+    return switch (member) {
       _PropertyFound(:final declaration) => declaration,
       _FieldFound(:final declaration) => declaration,
       _MethodFound(:final declaration) => declaration,
@@ -415,6 +435,9 @@ Node? _declaredNode(Compilation compilation, Node node, int line, int column) {
   }
   if (node is Identifier) {
     return _nodeForSymbol(compilation, compilation.semantics.references[node]);
+  }
+  if (node is TypeApplication) {
+    return _declaredNode(compilation, node.callee, line, column);
   }
   if (node is CallExpression) {
     return _declaredNode(compilation, node.callee, line, column);
@@ -470,6 +493,7 @@ String? _declaredName(Node node) => switch (node) {
       ClassDeclaration(:final name) => name,
       FieldDeclaration(:final name) => name,
       PropertyDeclaration(:final name) => name,
+      ConstructorDeclaration(:final name) => name,
       _ => null,
     };
 
@@ -484,11 +508,15 @@ SourceSpan? _nameSpan(String source, SourceSpan span, String name) {
       file: span.file, offset: span.offset + match.start);
 }
 
-String? _hoverText(
-    Compilation compilation, String source, Node node, int offset) {
+String? _hoverText(Compilation compilation, String source, Node node,
+    int offset, int line, int column) {
   final model = compilation.semantics;
   if (node is Identifier) return _identifierHover(model, node);
   if (node is MemberAccess) return _memberHover(model, node);
+  final typeSymbol = _typeSymbolAt(compilation, source, node, line, column);
+  if (typeSymbol != null) {
+    return _libraryHover(model, typeSymbol) ?? 'class ${typeSymbol.name}';
+  }
   if (node is Expression) return model.types[node];
   if (!_onName(source, node, offset)) return null;
   return switch (node) {
@@ -610,6 +638,9 @@ Symbol? _symbolOf(Compilation compilation, Node node, int line, int column) {
     return compilation.semantics.references[node];
   }
   if (node is Identifier) return compilation.semantics.references[node];
+  if (node is TypeApplication) {
+    return _symbolOf(compilation, node.callee, line, column);
+  }
   if (node is CallExpression) {
     return _symbolOf(compilation, node.callee, line, column);
   }
@@ -631,9 +662,12 @@ String? _memberHover(SemanticModel model, MemberAccess node) {
   if (model.loopContextMembers.containsKey(node)) {
     return '`${r'$.'}${node.name}: ${model.displayType(model.types[node]!)}`\n\n${loopContextDocs[node.name]}';
   }
+  final found = _findMember(model, node);
+  if (found is _ConstructorFound) {
+    return _constructorHover(found.owner, found.declaration);
+  }
   final library = _libraryHover(model, model.references[node]);
   if (library != null) return library;
-  final found = _findMember(model, node);
   if (found is _PropertyFound) return _propertyHover(found.declaration);
   if (found is _FieldFound) {
     return _valueHover(
@@ -650,6 +684,28 @@ String? _memberHover(SemanticModel model, MemberAccess node) {
   if (type == null) return null;
   if (type.startsWith('(') && type.contains('->')) return '${node.name}: $type';
   return 'get ${node.name}: $type';
+}
+
+String _constructorHover(
+    ClassDeclaration owner, ConstructorDeclaration constructor) {
+  final parameters = constructor.parameters.map((parameter) {
+    final fieldType = parameter.initializing.isEmpty
+        ? parameter.type
+        : owner.fields
+                .where((field) => field.name == parameter.name)
+                .firstOrNull
+                ?.type ??
+            parameter.type;
+    final stored = parameter.variadic ? 'List<$fieldType>' : fieldType;
+    final prefix = parameter.mutable ? 'var ' : '';
+    return '$prefix${parameter.name}: $stored';
+  }).join(', ');
+  final kind = constructor.factory
+      ? 'factory '
+      : constructor.constant
+          ? 'const '
+          : '';
+  return '$kind${owner.name}.${constructor.name}($parameters) -> ${owner.name}';
 }
 
 String _propertyHover(PropertyDeclaration node) {
@@ -701,7 +757,9 @@ String? _valueHover(String name, String? type, {required bool mutable}) {
   if (function != null) {
     return (methods.contains(function) ? _method : _function, 0);
   }
-  if (symbol.classDeclaration != null) return (_classType, 0);
+  if (symbol.classDeclaration != null || symbol.nativeTop?.isType == true) {
+    return (_classType, 0);
+  }
   if (symbol.field) {
     return (_property, _bits(readonly: !symbol.mutable));
   }
@@ -731,7 +789,13 @@ String? _valueHover(String name, String? type, {required bool mutable}) {
       return (_property, _bits(readonly: !declaration.mutable));
     case _MethodFound():
       return (_method, 0);
+    case _ConstructorFound():
+      return (_method, 0);
     case null:
+      final ref = model.references[node];
+      if (ref != null && (ref.callable || ref.nativeMember?.getter == false)) {
+        return (_method, 0);
+      }
       final type = model.types[node];
       if (type != null && type.startsWith('(') && type.contains('->')) {
         return (_function, 0);
@@ -741,11 +805,24 @@ String? _valueHover(String name, String? type, {required bool mutable}) {
 }
 
 _Found? _findMember(SemanticModel model, MemberAccess node) {
-  var typeName = _classHead(model.types[node.object] ?? '');
+  final direct = model.references[node.object]?.classDeclaration;
+  if (direct != null) {
+    for (final constructor in direct.constructors) {
+      if (constructor.name == node.name) {
+        return _ConstructorFound(direct, constructor);
+      }
+    }
+  }
+  var typeName = _classHead(model.types[node.object] ?? direct?.name ?? '');
   final seen = <String>{};
   while (typeName.isNotEmpty && seen.add(typeName)) {
     final declaration = model.classes[typeName];
     if (declaration == null) break;
+    for (final constructor in declaration.constructors) {
+      if (constructor.name == node.name) {
+        return _ConstructorFound(declaration, constructor);
+      }
+    }
     for (final property in declaration.properties) {
       if (property.name == node.name) return _PropertyFound(property);
     }
@@ -857,6 +934,58 @@ class _MethodFound extends _Found {
   final FunctionDeclaration declaration;
 }
 
+class _ConstructorFound extends _Found {
+  _ConstructorFound(this.owner, this.declaration);
+  final ClassDeclaration owner;
+  final ConstructorDeclaration declaration;
+}
+
+Symbol? _typeSymbolAt(
+    Compilation compilation, String source, Node node, int line, int column) {
+  final isTypeCarrier = node is Binding ||
+      node is Parameter ||
+      node is FieldDeclaration ||
+      node is PropertyDeclaration ||
+      node is FunctionDeclaration ||
+      node is ClassDeclaration ||
+      node is AliasDeclaration ||
+      node is ExtensionDeclaration ||
+      node is TypeTestExpression ||
+      node is ConversionExpression ||
+      node is TypeApplication;
+  if (!isTypeCarrier) return null;
+  final offset = _byteOffsetAt(source, line, column);
+  if (_onName(source, node, offset)) return null;
+  final word = _wordAt(source, line, column);
+  if (word == null) return null;
+  final model = compilation.semantics;
+  final symbol = model.moduleSymbols[word];
+  if (symbol != null &&
+      (symbol.nativeTop?.isType == true || symbol.classDeclaration != null)) {
+    return symbol;
+  }
+  final declared = model.classes[word];
+  if (declared != null) return model.declarations[declared];
+  return null;
+}
+
+String? _wordAt(String source, int line, int column) {
+  final index = _indexAt(source, line, column);
+  if (index < 0 || index > source.length) return null;
+  var end = index < source.length && _word(source.codeUnitAt(index))
+      ? index
+      : index - 1;
+  if (end < 0 || !_word(source.codeUnitAt(end))) return null;
+  var start = end;
+  while (start > 0 && _word(source.codeUnitAt(start - 1))) {
+    start--;
+  }
+  while (end + 1 < source.length && _word(source.codeUnitAt(end + 1))) {
+    end++;
+  }
+  return source.substring(start, end + 1);
+}
+
 bool _onName(String source, Node node, int offset) {
   final names = <String>[
     if (node is ForStatement && node.index != null) node.index!,
@@ -953,10 +1082,29 @@ DartPlace? dartPlaceAt(String source, int line, int column) {
   while (cursor >= 0 && _gap(source.codeUnitAt(cursor))) {
     cursor--;
   }
-  if (cursor < 0 || source.codeUnitAt(cursor) != 46) return null;
+  if (cursor < 0 || source.codeUnitAt(cursor) != 46) {
+    return _unprefixedDartTop(source, name);
+  }
   cursor--;
   while (cursor >= 0 && _gap(source.codeUnitAt(cursor))) {
     cursor--;
+  }
+  if (cursor >= 0 && source.codeUnitAt(cursor) == 62) {
+    var depth = 0;
+    var scan = cursor;
+    while (scan >= 0) {
+      final unit = source.codeUnitAt(scan);
+      if (unit == 62) {
+        depth++;
+      } else if (unit == 60) {
+        depth--;
+        if (depth == 0) break;
+      }
+      scan--;
+    }
+    if (scan > 0 && _word(source.codeUnitAt(scan - 1))) {
+      cursor = scan - 1;
+    }
   }
   if (cursor >= 0 && source.codeUnitAt(cursor) == 41) {
     var depth = 0;
@@ -1016,11 +1164,88 @@ DartPlace? dartPlaceAt(String source, int line, int column) {
   final prefix = _wordBefore(source, cursor);
   if (prefix == null) return null;
   final library = _dartPrefix(source, prefix.text);
-  if (library == null || !_visible(library, name)) return null;
-  final top = readDartLibrary(library.uri)?.names[name];
-  if (top == null || top.file.isEmpty) return null;
+  if (library != null && _visible(library, name)) {
+    final top = readDartLibrary(library.uri)?.names[name];
+    if (top != null && top.file.isNotEmpty) {
+      return _place(describeDartTop(top), top.file, top.line, top.column,
+          top.offset, name.length);
+    }
+  }
+  final outer = _prefixBefore(source, prefix.start - 1);
+  if (outer != null) {
+    final outerLibrary = _dartPrefix(source, outer);
+    if (outerLibrary != null && _visible(outerLibrary, prefix.text)) {
+      final shape = readDartLibrary(outerLibrary.uri)?.types[prefix.text];
+      final member = shape?.statics[name] ?? shape?.constructors[name];
+      if (member != null && member.file.isNotEmpty) {
+        return _place(describeDartMember(member), member.file, member.line,
+            member.column, member.offset, name.length);
+      }
+    }
+    return null;
+  }
+  return _unprefixedDartMember(source, prefix.text, name);
+}
+
+DartPlace? _unprefixedDartTop(String source, String name) {
+  for (final library in _unprefixedDartImports(source)) {
+    if (!_visible(library, name)) continue;
+    final top = readDartLibrary(library.uri)?.names[name];
+    if (top != null && top.file.isNotEmpty) {
+      return _place(describeDartTop(top), top.file, top.line, top.column,
+          top.offset, name.length);
+    }
+  }
+  if (name == 'print' || name == 'Error') return null;
+  final top = readDartLibrary('dart:core')?.names[name];
+  if (top == null || !top.isType || top.file.isEmpty) return null;
   return _place(describeDartTop(top), top.file, top.line, top.column,
       top.offset, name.length);
+}
+
+DartPlace? _unprefixedDartMember(String source, String owner, String name) {
+  for (final library in _unprefixedDartImports(source)) {
+    if (!_visible(library, owner)) continue;
+    final shape = readDartLibrary(library.uri)?.types[owner];
+    final member = shape?.statics[name] ?? shape?.constructors[name];
+    if (member != null && member.file.isNotEmpty) {
+      return _place(describeDartMember(member), member.file, member.line,
+          member.column, member.offset, name.length);
+    }
+  }
+  final shape = readDartLibrary('dart:core')?.types[owner];
+  final member = shape?.statics[name] ?? shape?.constructors[name];
+  if (member == null || member.file.isEmpty) return null;
+  return _place(describeDartMember(member), member.file, member.line,
+      member.column, member.offset, name.length);
+}
+
+List<({String uri, List<String>? show, List<String>? hide})>
+    _unprefixedDartImports(String source) {
+  final results = <({String uri, List<String>? show, List<String>? hide})>[];
+  final pattern =
+      RegExp(r'^\s*use\s+(dart:[A-Za-z0-9_]+)([^\n]*)', multiLine: true);
+  for (final match in pattern.allMatches(source)) {
+    final tail = match.group(2)!;
+    if (RegExp(r'\bas\b').hasMatch(tail)) continue;
+    List<String>? names(String keyword) {
+      final found = RegExp('$keyword\\s+([A-Za-z0-9_,\\s]+)').firstMatch(tail);
+      if (found == null) return null;
+      return found
+          .group(1)!
+          .split(',')
+          .map((item) => item.trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    results.add((
+      uri: match.group(1)!,
+      show: names('show'),
+      hide: names('hide'),
+    ));
+  }
+  return results;
 }
 
 DartPlace _place(

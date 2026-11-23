@@ -466,7 +466,7 @@ class LspSession {
       final keyword = keywordHoverAt(opened.text, line, character);
       if (keyword != null) return keyword;
     }
-    final located = _tryCompile(params);
+    final located = _tryCompile(params, line: line);
     if (located != null) {
       final text = hoverAt(located.$1, located.$3, line + 1, character + 1);
       if (text != null) {
@@ -560,7 +560,7 @@ class LspSession {
           from: openedFirst.file);
       if (library != null) return _libraryDefinition(library);
     }
-    final located = _tryCompile(params);
+    final located = _tryCompile(params, line: line);
     if (located != null) {
       final span = definitionAt(
         located.$1,
@@ -699,18 +699,21 @@ class LspSession {
     return _documents[uri];
   }
 
-  (Compilation, String, String)? _tryCompile(Map<String, dynamic> params) {
+  (Compilation, String, String)? _tryCompile(Map<String, dynamic> params,
+      {int? line}) {
     try {
-      return _compile(params);
+      return _compile(params, line: line);
     } on CompilerException {
       return null;
     }
   }
 
-  (Compilation, String, String)? _compile(Map<String, dynamic> params) {
+  (Compilation, String, String)? _compile(Map<String, dynamic> params,
+      {int? line}) {
     final opened = _document(params);
     if (opened != null) {
-      final compilation = opened.compilation();
+      final compilation =
+          line == null ? opened.compilation() : opened.compilationForLine(line);
       if (compilation == null) return null;
       return (compilation, opened.uri, opened.text);
     }
@@ -763,6 +766,24 @@ class _OpenDocument {
     if (live) return _good;
     _ensure();
     return _compilation;
+  }
+
+  /// Analysis valid for hovering or navigating at zero-based [line].
+  ///
+  /// Avoids pairing stale AST offsets with an edited line that failed to compile.
+  Compilation? compilationForLine(int line) {
+    if (!live) {
+      _ensure();
+      return _compilation;
+    }
+    final good = _good;
+    final previous = _goodText;
+    if (good != null &&
+        previous != null &&
+        (previous == text || _samePrefix(previous, text, line + 1))) {
+      return good;
+    }
+    return null;
   }
 
   /// The last analysis kept in memory. Lines above [line] must still match.

@@ -838,7 +838,8 @@ class Analyzer {
   /// the importer's scope, which cannot see `_names` or `use dart:math as math`.
   final _libraryScopes = <String, _Scope>{};
   final _libraryTypes = <String, Map<String, String>>{};
-  final _global = _Scope();
+  final _core = _Scope();
+  late final _global = _Scope(_core);
   late _Scope _scope = _global;
   final _checked = <FunctionDeclaration>{};
   final _checking = <FunctionDeclaration>{};
@@ -1007,6 +1008,7 @@ class Analyzer {
         }
       }
     }
+    _installDartCore();
     _global.symbols['print'] = Symbol('print', 'print', 'void');
     _installChecks();
     _global.symbols['range'] = Symbol(
@@ -1232,9 +1234,32 @@ class Analyzer {
         }
       }
     }
-    model.moduleSymbols.addAll(_global.symbols);
+    model.moduleSymbols
+      ..addAll(_core.symbols)
+      ..addAll(_global.symbols);
     _checkEntryPoint();
     return model;
+  }
+
+  void _installDartCore() {
+    DartSurface? surface;
+    try {
+      surface = readDartLibrary('dart:core');
+    } catch (_) {
+      surface = null;
+    }
+    if (surface == null) return;
+    model.dartShapes.addAll(surface.types);
+    for (final entry in surface.names.entries) {
+      _core.symbols[entry.key] =
+          symbolForDart(entry.value, surface.types[entry.key]);
+    }
+  }
+
+  Symbol? _lookupNonCore(String name) {
+    final found = _scope.lookup(name);
+    if (found != null && identical(found, _core.symbols[name])) return null;
+    return found;
   }
 
   /// Dart launches `main()` or `main(List<String> args)`.
@@ -1366,7 +1391,7 @@ class Analyzer {
       model.libraryOf[statement] = owner;
       return;
     }
-    if (_global.lookup(key) != null) {
+    if (_global.symbols.containsKey(key)) {
       fail('Duplicate name: $key', statement);
     }
     final symbol = Symbol(key, key, key,
@@ -1379,7 +1404,7 @@ class Analyzer {
     model.declarations[statement] = symbol;
     model.classes[key] = statement;
     for (final item in statement.cases) {
-      if (_global.lookup(item.name) != null) {
+      if (_global.symbols.containsKey(item.name)) {
         fail('Duplicate case: ${item.name}', item);
       }
       final dartName = statement.kind == 'enum'
@@ -2752,6 +2777,13 @@ class Analyzer {
         }
       }
     }
+    if (node.uri == 'dart:core' &&
+        node.prefix == null &&
+        node.hide.isNotEmpty) {
+      for (final name in node.hide) {
+        _core.symbols.remove(name);
+      }
+    }
     final selected = node.show.isNotEmpty
         ? node.show
         : surface.names.keys.where((name) => !node.hide.contains(name));
@@ -3048,7 +3080,7 @@ class Analyzer {
     final key = qualify == null ? statement.name : '$qualify.${statement.name}';
     if (model.sdkAliases[key] == home) return;
     if (model.aliases.containsKey(key) ||
-        (qualify == null && _global.lookup(statement.name) != null)) {
+        (qualify == null && _global.symbols.containsKey(statement.name))) {
       error('E204', 'Two imports define ${statement.name}', statement);
     }
     _libraryScope(home);
@@ -3771,7 +3803,7 @@ class Analyzer {
       final stored =
           parameter.variadic ? 'List<${parameter.type}>' : parameter.type;
       validateType(stored, parameter, allowVoid: false);
-      if (_scope.lookup(parameter.name) != null)
+      if (_lookupNonCore(parameter.name) != null)
         fail('Parameter would shadow an existing symbol: ${parameter.name}',
             parameter);
       final symbol = create(parameter.name, stored, mutable: parameter.mutable);
@@ -3986,7 +4018,7 @@ class Analyzer {
       case Binding():
         if (node.mode == BindingMode.state ||
             node.mode == BindingMode.computed) {
-          if (_scope.lookup(node.name) != null) {
+          if (_lookupNonCore(node.name) != null) {
             fail(
                 'Binding would shadow ${node.name}; use shadow in an inner scope',
                 node);
@@ -4019,7 +4051,7 @@ class Analyzer {
           }
           return;
         }
-        final existing = _scope.lookup(node.name);
+        final existing = _lookupNonCore(node.name);
         final savedExpected = _expected;
         if (node.type != null) {
           _expected = _resolveType(node.type!);
@@ -4180,13 +4212,13 @@ class Analyzer {
                         .substring(7, stripReadonlyType(type).length - 1))
                 : fail('await for requires a Stream', node.iterable))
             : elementType(type, node.iterable);
-        if (_scope.lookup(node.name) != null)
+        if (_lookupNonCore(node.name) != null)
           fail('Loop binding would shadow ${node.name}', node);
         if (node.index != null) {
           if (node.index == node.name) {
             fail('Loop bindings must have different names', node);
           }
-          if (_scope.lookup(node.index!) != null) {
+          if (_lookupNonCore(node.index!) != null) {
             fail('Loop binding would shadow ${node.index}', node);
           }
         }
@@ -4589,7 +4621,7 @@ class Analyzer {
         if (!isNullableType(raw) && raw != 'Null') {
           fail('if let requires a nullable value', node.value);
         }
-        if (_scope.lookup(node.name) != null) {
+        if (_lookupNonCore(node.name) != null) {
           fail(
               'Binding would shadow ${node.name}; use shadow in an inner scope',
               node);
@@ -5049,7 +5081,7 @@ class Analyzer {
 
   void _bindPatternName(String name, String type, Pattern node,
       {required bool declare, required bool shadow}) {
-    final existing = _scope.lookup(name);
+    final existing = _lookupNonCore(name);
     if (shadow) {
       if (existing == null || _scope.symbols.containsKey(name)) {
         fail('shadow requires a binding in an outer scope', node);
@@ -5094,7 +5126,7 @@ class Analyzer {
 
   void _withLet(
       String name, Expression value, Node owner, void Function() body) {
-    if (_scope.lookup(name) != null) {
+    if (_lookupNonCore(name) != null) {
       fail('Binding would shadow $name; use shadow in an inner scope', owner);
     }
     final raw = expression(value);
@@ -5313,6 +5345,10 @@ class Analyzer {
     }
     if (from.contains(' & ')) {
       return from.split(' & ').any((part) => compatible(part.trim(), to));
+    }
+    if (to.startsWith('FutureOr<') && to.endsWith('>')) {
+      final inner = to.substring(9, to.length - 1);
+      return compatible(from, inner) || compatible(from, 'Future<$inner>');
     }
     if (_implementsType(from, to)) return true;
     if (to.startsWith('readonly ')) {
@@ -6302,7 +6338,8 @@ class Analyzer {
       if (owner != null && owner.namespace != null) {
         _touch(owner);
         model.references[node.object] = owner;
-        model.types[node.object] = 'prefix';
+        model.types[node.object] =
+            owner.type == 'prefix' ? 'prefix' : owner.type;
         if (node.name == 'loadLibrary') {
           if (!_deferredPrefix((node.object as Identifier).name))
             error('E300', 'loadLibrary requires a deferred import', node);
@@ -6312,6 +6349,11 @@ class Analyzer {
         }
         final found = owner.namespace![node.name];
         if (found == null) {
+          if (owner.nativeTop?.isType == true &&
+              _nativeShape(owner.type)?.members.containsKey(node.name) ==
+                  true) {
+            fail('Instance member ${node.name} is used on the type', node);
+          }
           if (!owner.external) {
             fail(
                 _hinted(
@@ -7400,7 +7442,7 @@ class Analyzer {
     if (node.name != null) {
       final iterable = expression(node.iterable!);
       final element = elementType(iterable, node.iterable!);
-      if (_scope.lookup(node.name!) != null) {
+      if (_lookupNonCore(node.name!) != null) {
         fail('Loop binding would shadow ${node.name}', node);
       }
       final symbol = create(node.name!, element);
@@ -8141,7 +8183,9 @@ class Analyzer {
           Symbol(node.name, node.name, 'dynamic', external: true);
       return 'dynamic';
     }
-    if (symbol.namespace != null) fail('A prefix is not a value', node);
+    if (symbol.namespace != null && symbol.type == 'prefix') {
+      fail('A prefix is not a value', node);
+    }
     if (symbol.field && _thisType != null) {
       final current = _typeSymbol(_genericHead(_thisType!))?.classDeclaration;
       if (current != null) _checkMember(current, node.name, node);
@@ -8675,7 +8719,7 @@ class Analyzer {
     _touch(owner);
     final id = callee.object as Identifier;
     model.references[id] = owner;
-    model.types[id] = 'prefix';
+    model.types[id] = owner.type == 'prefix' ? 'prefix' : owner.type;
     if (callee.name == 'loadLibrary') {
       if (!_deferredPrefix(owner.name))
         error('E300', 'loadLibrary requires a deferred import', callee);
@@ -8691,6 +8735,10 @@ class Analyzer {
     }
     final found = owner.namespace![callee.name];
     if (found == null) {
+      if (owner.nativeTop?.isType == true &&
+          _nativeShape(owner.type)?.members.containsKey(callee.name) == true) {
+        fail('Instance member ${callee.name} is used on the type', callee);
+      }
       if (!owner.external) {
         fail(
             _hinted('Name ${callee.name} is not defined', callee.name,
@@ -8797,6 +8845,7 @@ class Analyzer {
           .toList();
       if (type != null && named != null && named.isNotEmpty) {
         model.references[callee.object as Identifier] = owner!;
+        model.types[callee.object] = owner.type;
         final home = model.libraryOf[type] ?? '';
         if (callee.name.startsWith('_') &&
             home.isNotEmpty &&
@@ -8808,6 +8857,67 @@ class Analyzer {
         model.references[callee] =
             Symbol(callee.name, callee.name, returned).withFunction(function);
         return returned;
+      }
+    }
+    if (callee is MemberAccess && callee.object is TypeApplication) {
+      final applied = callee.object as TypeApplication;
+      Symbol? owner;
+      if (applied.callee is Identifier) {
+        owner = _scope.lookup((applied.callee as Identifier).name);
+      } else if (applied.callee is MemberAccess &&
+          (applied.callee as MemberAccess).object is Identifier) {
+        final member = applied.callee as MemberAccess;
+        final prefix = _scope.lookup((member.object as Identifier).name);
+        if (prefix?.namespace != null) {
+          model.references[member.object] = prefix!;
+          model.types[member.object] = 'prefix';
+          owner = prefix.namespace![member.name];
+        }
+      }
+      if (owner != null && owner.nativeTop?.isType == true) {
+        _touch(owner);
+        model.references[applied.callee] = owner;
+        model.references[applied] = owner;
+        model.types[applied] = owner.type;
+        final nested = owner.namespace?[callee.name];
+        if (nested != null &&
+            (nested.callable || nested.parameterTypes.isNotEmpty)) {
+          model.references[callee] = nested;
+          return _nativeCall(node, nested, explicitTypes: applied.arguments);
+        }
+        if (_nativeShape(owner.type)?.members.containsKey(callee.name) ==
+            true) {
+          fail('Instance member ${callee.name} is used on the type', callee);
+        }
+      }
+      if (owner?.classDeclaration != null) {
+        final type = owner!.classDeclaration!;
+        final named = type.constructors
+            .where((constructor) => constructor.name == callee.name)
+            .toList();
+        if (named.isNotEmpty) {
+          _touch(owner);
+          model.references[applied.callee] = owner;
+          model.references[applied] = owner;
+          model.types[applied] = owner.type;
+          final home = model.libraryOf[type] ?? '';
+          if (callee.name.startsWith('_') &&
+              home.isNotEmpty &&
+              home != _activeLibrary) {
+            error('E204', 'Private constructor is not accessible', callee);
+          }
+          final returned = _finishConstruct(
+              node,
+              type,
+              _ctorParameters(type, named.first),
+              applied.arguments,
+              named.first);
+          final function = model.references[node.callee]?.function;
+          final qualified = _qualifyType(owner.dartName, returned, type.name);
+          model.references[callee] = Symbol(callee.name, callee.name, qualified)
+              .withFunction(function);
+          return qualified;
+        }
       }
     }
     if (callee is MemberAccess) {
@@ -10016,6 +10126,14 @@ class Analyzer {
       // Null satisfies the nullable shell but supplies no evidence for its inner type.
       if (actual == 'Null') return true;
       return _inferGeneric(unwrap(pattern), unwrap(actual), found, parameters);
+    }
+    if (pattern.startsWith('FutureOr<') && pattern.endsWith('>')) {
+      final inner = pattern.substring(9, pattern.length - 1);
+      if (actual.startsWith('Future<') && actual.endsWith('>')) {
+        return _inferGeneric(
+            inner, actual.substring(7, actual.length - 1), found, parameters);
+      }
+      return _inferGeneric(inner, actual, found, parameters);
     }
     if (isNullableType(actual)) return compatible(actual, pattern);
     final expectedFunction = functionTypeParts(pattern);
@@ -11489,14 +11607,14 @@ class Analyzer {
   String collectionForType(CollectionFor node) {
     final iterable = expression(node.iterable);
     final element = elementType(iterable, node.iterable);
-    if (_scope.lookup(node.name) != null) {
+    if (_lookupNonCore(node.name) != null) {
       fail('Loop binding would shadow ${node.name}', node);
     }
     if (node.index != null) {
       if (node.index == node.name) {
         fail('Loop bindings must have different names', node);
       }
-      if (_scope.lookup(node.index!) != null) {
+      if (_lookupNonCore(node.index!) != null) {
         fail('Loop binding would shadow ${node.index}', node);
       }
     }

@@ -151,6 +151,7 @@ List<Map<String, Object?>> completeAt({
     final compilation = resolved ?? _recover(source, word, dot, compile);
     if (compilation == null) {
       if (allowUncompiledDart) _uncompiledDart(source, dot, range, add);
+      if (items.isEmpty) _uncompiledCore(source, dot, range, add);
       return items.values.toList();
     }
     final scope = _scopeAt(compilation, source, _lineStart(source, cursor));
@@ -600,6 +601,12 @@ String? _receiverName(String source, int dot) {
   if (index > 0 && source.codeUnitAt(index - 1) == 63) index--;
   while (index > 0 && _space(source.codeUnitAt(index - 1))) {
     index--;
+  }
+  if (index > 0 && source.codeUnitAt(index - 1) == 62) {
+    final open = _skipBack(source, index - 1, 60, 62);
+    if (open > 0 && _ident(source.codeUnitAt(open - 1))) {
+      index = open;
+    }
   }
   final end = index;
   while (index > 0 && _ident(source.codeUnitAt(index - 1))) {
@@ -1550,33 +1557,76 @@ void _typeMembers(
             sort: '1'));
       }
       if (onType) {
+        if (identical(current, declaration)) {
+          for (final constructor in current.constructors) {
+            final ctorName = constructor.name;
+            if (ctorName == null ||
+                ctorName.isEmpty ||
+                !_name(ctorName) ||
+                !_completionVisible(
+                    compilation,
+                    current,
+                    ctorName.startsWith('_') ? 'private' : '',
+                    accessOwner ?? known) ||
+                !seen.add(ctorName)) {
+              continue;
+            }
+            final parameters = [
+              for (final p in constructor.parameters)
+                '${p.name}: ${_applyArgs(p.initializing.isEmpty ? p.type : _fieldType(current, p.name), args)}'
+            ].join(', ');
+            final kindPrefix = constructor.factory
+                ? 'factory '
+                : constructor.constant
+                    ? 'const '
+                    : '';
+            add(_plain(
+              ctorName,
+              4,
+              '$kindPrefix($parameters) -> ${compilation.semantics.displayType(instantiated)}',
+              range,
+              sort: '0',
+            ));
+          }
+        }
         for (final item in current.cases) {
           add(_plain(item.name, 4, 'case ${current.name}', range, sort: '0'));
         }
       }
     }
   }
-  for (final extension in compilation.semantics.extensions) {
-    final extensionArgs = _extensionArgs(compilation, extension, bare);
-    if (extensionArgs == null) continue;
-    for (final method in extension.methods) {
-      if (!_name(method.name)) continue;
-      add(_plain(method.name, 2,
-          _applyArgs(_signature(compilation, method), extensionArgs), range,
-          sort: '1'));
-    }
-    for (final property in extension.properties) {
-      if (!_name(property.name)) continue;
-      add(_plain(property.name, 10,
-          'get ${_applyArgs(property.type, extensionArgs)}', range,
-          sort: '0'));
+  if (!onType) {
+    for (final extension in compilation.semantics.extensions) {
+      final extensionArgs = _extensionArgs(compilation, extension, bare);
+      if (extensionArgs == null) continue;
+      for (final method in extension.methods) {
+        if (!_name(method.name)) continue;
+        add(_plain(method.name, 2,
+            _applyArgs(_signature(compilation, method), extensionArgs), range,
+            sort: '1'));
+      }
+      for (final property in extension.properties) {
+        if (!_name(property.name)) continue;
+        add(_plain(property.name, 10,
+            'get ${_applyArgs(property.type, extensionArgs)}', range,
+            sort: '0'));
+      }
     }
   }
   final typed = compilation.semantics.classes.containsKey(_head(bare))
       ? null
       : compilation.semantics.dartShapes[_head(bare)]?.listElement;
-  _builtinMembers(typed == null ? bare : 'List<$typed>', onType, range, add);
-  _sdkMembers(compilation, bare, onType, range, add);
+  final builtinLabels = <String>{};
+  _builtinMembers(typed == null ? bare : 'List<$typed>', onType, range, (item) {
+    final label = item['label'];
+    if (label is String) builtinLabels.add(label);
+    add(item);
+  });
+  _sdkMembers(compilation, bare, onType, range, (item) {
+    final label = item['label'];
+    if (!onType && label is String && builtinLabels.contains(label)) return;
+    add(item);
+  });
 }
 
 void _sdkMembers(
@@ -1601,6 +1651,7 @@ void _sdkMembers(
           : shape.members)
       .values) {
     if (!_name(member.name)) continue;
+    final isCtor = onType && shape.constructors.containsKey(member.name);
     if (member.getter) {
       add(_plain(member.name, 10,
           compilation.semantics.displayType(member.type), range,
@@ -1613,10 +1664,10 @@ void _sdkMembers(
     ].join(', ');
     add(_plain(
         member.name,
-        2,
+        isCtor ? 4 : 2,
         '($parameters) -> ${compilation.semantics.displayType(member.type)}',
         range,
-        sort: '1'));
+        sort: isCtor ? '0' : '1'));
   }
 }
 
@@ -1647,10 +1698,39 @@ void _uncompiledDart(
   if (library == null) return;
   final shape = library.$1.types[name];
   if (shape == null) return;
+  _emitDartTypeMembers(shape, name, range, add);
+}
+
+void _uncompiledCore(
+  String source,
+  int dot,
+  Map<String, Object> range,
+  void Function(Map<String, Object?>) add,
+) {
+  final name = _receiverName(source, dot);
+  if (name == null) return;
+  final start = _receiverStart(source, dot);
+  if (start > 0 && source[start - 1] == '.') return;
+  final surface = readDartLibrary('dart:core');
+  final shape = surface?.types[name];
+  if (shape == null) return;
+  _emitDartTypeMembers(shape, name, range, add);
+}
+
+void _emitDartTypeMembers(
+  DartShape shape,
+  String ownerName,
+  Map<String, Object> range,
+  void Function(Map<String, Object?>) add,
+) {
   for (final member in [
-    ...shape.constructors.values.where((item) => item.name != name),
+    ...shape.constructors.entries
+        .where((entry) => entry.key.isNotEmpty)
+        .map((entry) => entry.value),
     ...shape.statics.values,
   ]) {
+    if (!_name(member.name)) continue;
+    final isCtor = shape.constructors.containsKey(member.name);
     if (member.getter) {
       add(_plain(member.name, 10, member.type, range, sort: '0'));
       continue;
@@ -1659,9 +1739,9 @@ void _uncompiledDart(
       for (final parameter in member.parameters)
         '${parameter.$1}: ${parameter.$2}'
     ].join(', ');
-    add(_plain(member.name, member.name == name ? 4 : 2,
-        '($parameters) -> ${member.type}', range,
-        sort: '1'));
+    add(_plain(
+        member.name, isCtor ? 4 : 2, '($parameters) -> ${member.type}', range,
+        sort: isCtor ? '0' : '1'));
   }
 }
 
@@ -1670,6 +1750,12 @@ int _receiverStart(String source, int dot) {
   if (index > 0 && source.codeUnitAt(index - 1) == 63) index--;
   while (index > 0 && _space(source.codeUnitAt(index - 1))) {
     index--;
+  }
+  if (index > 0 && source.codeUnitAt(index - 1) == 62) {
+    final open = _skipBack(source, index - 1, 60, 62);
+    if (open > 0 && _ident(source.codeUnitAt(open - 1))) {
+      index = open;
+    }
   }
   final end = index;
   while (index > 0 && _ident(source.codeUnitAt(index - 1))) {
@@ -2164,11 +2250,28 @@ Iterable<_Param> _parametersOf(
       for (final p in function.parameters) yield _Param(p.name, p.type);
     if (imported.overloads.isNotEmpty) return;
   }
+  final declaration = symbol.classDeclaration;
+  if (declaration != null && symbol.classCase == null) {
+    for (final constructor in declaration.constructors) {
+      if (constructor.name != member) continue;
+      for (final p in constructor.parameters) {
+        yield _Param(
+          p.name,
+          p.initializing.isEmpty ? p.type : _fieldType(declaration, p.name),
+        );
+      }
+      return;
+    }
+  }
   final type = compilation.semantics
       .resolve(symbol.classDeclaration?.name ?? symbol.type);
   final raw = compilation.semantics.dartShapes[_head(type)];
   if (raw != null && readonlyClassFor(compilation.semantics, type) == null) {
-    final method = instantiateDartShape(raw, type).members[member];
+    final shape = instantiateDartShape(raw, type);
+    final method = (symbol.nativeTop?.isType == true
+            ? (shape.statics[member] ?? shape.constructors[member])
+            : shape.members[member]) ??
+        shape.members[member];
     if (method != null)
       for (final p in method.parameters) yield _Param(p.$1, p.$2);
     return;

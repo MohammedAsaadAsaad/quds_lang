@@ -493,7 +493,8 @@ _Loaded _load(File entry, {String? from}) {
       final beforeClasses = Map<String, _Class>.of(classes);
       File? resolved;
       if (exported.startsWith('dart:')) {
-        final target = embeddedDartFile(from ?? path, exported);
+        final target = embeddedDartFile(from ?? path, exported) ??
+            dartLibraryFile(exported);
         resolved = target;
         if (target != null) {
           libraryUris[target.absolute.uri.normalizePath().toFilePath()] =
@@ -1604,6 +1605,14 @@ class _Parser {
         if ((name == 'this' || name == 'super') && peek == '.') {
           take();
           name = isIdent ? take() : '';
+        }
+        if (name.isNotEmpty && peek == '(') {
+          final fnParams = _parameters(params, const {}, allowUnnamed: true);
+          final nullableFn = peek == '?';
+          if (nullableFn) i++;
+          final paramTypes = [for (final p in fnParams.$1) p.$2].join(', ');
+          final fnType = '($paramTypes) -> $type';
+          type = nullableFn ? '($fnType)?' : fnType;
         }
       }
       if (allowUnnamed && name.isEmpty) name = '_p${list.length}';

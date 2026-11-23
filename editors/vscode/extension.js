@@ -569,8 +569,66 @@ function quote(value) {
   return `'${String(value).replaceAll("'", `'\\''`)}'`;
 }
 
-function cliBinary(root) {
-  return path.join(root, '.dart_tool', 'quds', 'quds');
+function quotePowerShell(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function quoteCmd(value) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+function shellName(shell) {
+  const text = String(shell || '').trim();
+  if (!text) return '';
+  const base = text.split(/[\\/]/).pop() || '';
+  return base.toLowerCase().replace(/\.exe$/i, '');
+}
+
+function terminalShell(terminal) {
+  const options = terminal && terminal.creationOptions;
+  if (options && typeof options.shellPath === 'string' && options.shellPath) {
+    return options.shellPath;
+  }
+  if (vscode.env && typeof vscode.env.shell === 'string' && vscode.env.shell) {
+    return vscode.env.shell;
+  }
+  return '';
+}
+
+function terminalShellKind(platform = process.platform, shell = '') {
+  const name = shellName(shell);
+  if (name === 'powershell' || name === 'pwsh') return 'powershell';
+  if (name === 'cmd') return 'cmd';
+  if (
+    name === 'bash' ||
+    name === 'sh' ||
+    name === 'zsh' ||
+    name === 'fish' ||
+    name === 'dash' ||
+    name === 'ksh' ||
+    name === 'git-bash' ||
+    name === 'wsl'
+  ) {
+    return 'posix';
+  }
+  return platform === 'win32' ? 'powershell' : 'posix';
+}
+
+function formatTerminalCommand(command, options = {}) {
+  const platform = options.platform ?? process.platform;
+  const shell = options.shell ?? '';
+  const kind = terminalShellKind(platform, shell);
+  if (kind === 'powershell') {
+    return `& ${command.map(quotePowerShell).join(' ')}`;
+  }
+  if (kind === 'cmd') {
+    return command.map(quoteCmd).join(' ');
+  }
+  return command.map(quote).join(' ');
+}
+
+function cliBinary(root, platform = process.platform) {
+  return path.join(root, '.dart_tool', 'quds', platform === 'win32' ? 'quds.exe' : 'quds');
 }
 
 function sourcesNewer(root, stamp) {
@@ -620,7 +678,7 @@ function launchSpec(file, verb) {
     if (binary) {
       return { command: [binary, verb, file], cwd: root, env: toolEnv(dart) };
     }
-    if (verb !== 'debug') {
+    if (verb !== 'debug' && process.platform !== 'win32') {
       const target = cliBinary(root);
       const script = [
         quote(dart),
@@ -684,7 +742,10 @@ async function runTool(verb, uriArgument) {
     terminal = vscode.window.createTerminal({ name: 'Quds', cwd: spec.cwd, env: spec.env });
   }
   terminal.show();
-  terminal.sendText(spec.command.map(quote).join(' '));
+  terminal.sendText(formatTerminalCommand(spec.command, {
+    platform: process.platform,
+    shell: terminalShell(terminal),
+  }));
 }
 
 async function hotUpdate(command) {

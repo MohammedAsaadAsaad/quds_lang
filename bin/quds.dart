@@ -141,8 +141,9 @@ String? _helpText(String? topic) {
         '    Compile and run dart analyze on the generated Dart.\n',
     'test': 'quds test <input.quds>\n'
         '    Run the test declarations in the file.\n',
-    'format': 'quds format <input.quds>\n'
-        '    Rewrite the file with the Quds formatter.\n',
+    'format':
+        'quds format [file.quds|dir ...] [--check] [--stdout] [--indent N] [--width N] [--no-single-line-if]\n'
+            '    Format Quds source files in place (defaults to the current directory). --check verifies without writing.\n',
     'create':
         'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
             '    Add Flutter platform support in the current project, preserving Quds sources.\n'
@@ -1187,20 +1188,176 @@ void _test(List<String> arguments) {
 }
 
 void _format(List<String> arguments) {
-  _requireQuds(arguments);
-  if (exitCode != 0) return;
-  final input = File(arguments[1]);
-  try {
-    final source = input.readAsStringSync();
-    Parser(Lexer().tokenize(source, file: input.path)).parse();
-    input.writeAsStringSync(formatQuds(source));
-    stdout.writeln('Formatted ${input.path}');
-  } on CompilerException catch (error) {
-    stderr.writeln(error);
-    exitCode = 65;
-  } on FileSystemException catch (error) {
-    stderr.writeln(error.message);
-    exitCode = 74;
+  var check = false;
+  var toStdout = false;
+  var indent = 2;
+  var width = 80;
+  var singleLineIf = true;
+  final targets = <String>[];
+
+  int? parsePositiveInt(String flag, String raw) {
+    final value = int.tryParse(raw);
+    if (value == null || value < 1) {
+      stderr.writeln('Invalid value for $flag: $raw');
+      exitCode = 64;
+      return null;
+    }
+    return value;
+  }
+
+  for (var i = 1; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if (arg == '--check' || arg == '--set-exit-if-changed') {
+      check = true;
+    } else if (arg == '--stdout') {
+      toStdout = true;
+    } else if (arg == '--no-single-line-if') {
+      singleLineIf = false;
+    } else if (arg == '--indent') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing value for --indent');
+        exitCode = 64;
+        return;
+      }
+      final parsed = parsePositiveInt('--indent', arguments[++i]);
+      if (parsed == null) return;
+      indent = parsed;
+    } else if (arg.startsWith('--indent=')) {
+      final parsed =
+          parsePositiveInt('--indent', arg.substring('--indent='.length));
+      if (parsed == null) return;
+      indent = parsed;
+    } else if (arg == '--width' || arg == '--line-length') {
+      if (i + 1 >= arguments.length) {
+        stderr.writeln('Missing value for $arg');
+        exitCode = 64;
+        return;
+      }
+      final parsed = parsePositiveInt(arg, arguments[++i]);
+      if (parsed == null) return;
+      width = parsed;
+    } else if (arg.startsWith('--width=')) {
+      final parsed =
+          parsePositiveInt('--width', arg.substring('--width='.length));
+      if (parsed == null) return;
+      width = parsed;
+    } else if (arg.startsWith('--line-length=')) {
+      final parsed = parsePositiveInt(
+          '--line-length', arg.substring('--line-length='.length));
+      if (parsed == null) return;
+      width = parsed;
+    } else if (arg.startsWith('-')) {
+      stderr.writeln('Unknown option for format: $arg');
+      exitCode = 64;
+      return;
+    } else {
+      targets.add(arg);
+    }
+  }
+
+  if (targets.isEmpty) targets.add('.');
+
+  final files = <File>[];
+  final seen = <String>{};
+  for (final target in targets) {
+    final type = FileSystemEntity.typeSync(target);
+    if (type == FileSystemEntityType.notFound) {
+      stderr.writeln('Cannot open file: $target');
+      exitCode = 74;
+      return;
+    }
+    if (type == FileSystemEntityType.file) {
+      if (!target.endsWith('.quds')) {
+        stderr.writeln('Expected a .quds file: $target');
+        exitCode = 64;
+        return;
+      }
+      final file = File(target);
+      final key = file.absolute.path;
+      if (seen.add(key)) files.add(file);
+    } else if (type == FileSystemEntityType.directory) {
+      _collectQudsFiles(Directory(target), files, seen);
+    }
+  }
+
+  if (toStdout && files.length != 1) {
+    stderr.writeln('--stdout requires a single .quds file.');
+    exitCode = 64;
+    return;
+  }
+
+  files.sort((a, b) => a.path.compareTo(b.path));
+  var changed = 0;
+  var hadError = false;
+  final singleFileTarget =
+      targets.length == 1 && FileSystemEntity.isFileSync(targets.first);
+
+  for (final input in files) {
+    try {
+      final source = input.readAsStringSync();
+      Parser(Lexer().tokenize(source, file: input.path)).parse();
+      final formatted = formatQuds(
+        source,
+        indent: indent,
+        width: width,
+        singleLineIf: singleLineIf,
+      );
+      if (toStdout) {
+        stdout.write(formatted);
+        return;
+      }
+      final diff = formatted != source;
+      if (check) {
+        if (diff) {
+          changed++;
+          stdout.writeln('Unformatted ${input.path}');
+        }
+      } else {
+        if (diff) {
+          input.writeAsStringSync(formatted);
+          changed++;
+        }
+        if (singleFileTarget || diff) {
+          stdout.writeln('Formatted ${input.path}');
+        }
+      }
+    } on CompilerException catch (error) {
+      stderr.writeln(error);
+      hadError = true;
+      exitCode = 65;
+    } on FileSystemException catch (error) {
+      stderr.writeln(error.message);
+      hadError = true;
+      exitCode = 74;
+    }
+  }
+
+  if (hadError) return;
+  if (check) {
+    if (changed > 0) {
+      exitCode = 1;
+    }
+    return;
+  }
+  if (!singleFileTarget) {
+    stdout.writeln(
+        'Formatted ${files.length} file${files.length == 1 ? '' : 's'} ($changed changed).');
+  }
+}
+
+void _collectQudsFiles(Directory dir, List<File> out, Set<String> seen) {
+  const skipped = {'.git', '.dart_tool', 'build', 'node_modules'};
+  for (final entity in dir.listSync(followLinks: false)) {
+    final name = entity.uri.pathSegments
+        .where((segment) => segment.isNotEmpty)
+        .lastOrNull;
+    if (entity is Directory) {
+      if (name != null && skipped.contains(name)) continue;
+      _collectQudsFiles(entity, out, seen);
+    } else if (entity is File && entity.path.endsWith('.quds')) {
+      final key = entity.absolute.path;
+      if (seen.add(key)) out.add(entity);
+    }
   }
 }
 

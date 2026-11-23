@@ -111,6 +111,32 @@ function indentWidth(line) {
   return indent;
 }
 
+function shouldAutoFormatOnSave(event) {
+  if (!event || !event.document || event.document.languageId !== languageId) {
+    return false;
+  }
+  const manualReason =
+    vscode.TextDocumentSaveReason && vscode.TextDocumentSaveReason.Manual;
+  if (
+    manualReason !== undefined &&
+    event.reason !== undefined &&
+    event.reason !== manualReason
+  ) {
+    return false;
+  }
+  const qudsConfig = vscode.workspace.getConfiguration(
+    languageId,
+    event.document.uri,
+  );
+  if (qudsConfig.get('format.onSave') === false) return false;
+  const editorConfig = vscode.workspace.getConfiguration(
+    'editor',
+    event.document.uri,
+  );
+  if (editorConfig.get('formatOnSave') === true) return false;
+  return true;
+}
+
 function activate(context) {
   const diagnostics = vscode.languages.createDiagnosticCollection(languageId);
   const output = vscode.window.createOutputChannel('Quds');
@@ -200,6 +226,19 @@ function activate(context) {
     vscode.workspace.onDidChangeTextDocument((event) =>
       client.change(event.document),
     ),
+    vscode.workspace.onWillSaveTextDocument((event) => {
+      if (!shouldAutoFormatOnSave(event)) return;
+      const editorConfig = vscode.workspace.getConfiguration(
+        'editor',
+        event.document.uri,
+      );
+      const rawTabSize = Number(editorConfig.get('tabSize'));
+      const tabSize =
+        Number.isInteger(rawTabSize) && rawTabSize > 0 ? rawTabSize : 2;
+      event.waitUntil(
+        client.format(event.document, { tabSize }, { silent: true }),
+      );
+    }),
     vscode.workspace.onDidCloseTextDocument((document) =>
       client.close(document),
     ),
@@ -1254,8 +1293,8 @@ class QudsClient {
     this.sendChange(document);
   }
 
-  async format(document, options) {
-    const config = vscode.workspace.getConfiguration(languageId);
+  async format(document, options, extra = {}) {
+    const config = vscode.workspace.getConfiguration(languageId, document.uri);
     const tabSize =
       options && Number.isInteger(options.tabSize) ? options.tabSize : 2;
     const lineWidth = Number(config.get('format.lineWidth'));
@@ -1285,7 +1324,9 @@ class QudsClient {
           ),
       );
     } catch (error) {
-      vscode.window.showErrorMessage(`Quds format failed: ${error.message}`);
+      if (!extra.silent) {
+        vscode.window.showErrorMessage(`Quds format failed: ${error.message}`);
+      }
       return [];
     }
   }

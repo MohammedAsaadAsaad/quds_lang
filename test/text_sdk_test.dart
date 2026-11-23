@@ -13,6 +13,8 @@ void main() {
   const suites = [
     'text_core.quds',
     'text_imports.quds',
+    'text_unicode.quds',
+    'text_unicode_reference.quds',
   ];
 
   for (final name in suites) {

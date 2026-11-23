@@ -1464,11 +1464,20 @@ class Analyzer {
           (method.expressionBody == null
               ? (method.isAsync ? 'Future<void>' : 'void')
               : '<infer>');
-      final effective = method.isAsync &&
-              method.returnType != null &&
-              !stripReadonlyType(method.returnType!).startsWith('Future<')
-          ? 'Future<${method.returnType}>'
-          : type;
+      final effective = method.generator == 'sync'
+          ? (method.returnType == null
+              ? '<infer>'
+              : 'Iterable<${method.returnType}>')
+          : method.generator == 'async'
+              ? (method.returnType == null
+                  ? '<infer>'
+                  : 'Stream<${method.returnType}>')
+              : method.isAsync &&
+                      method.returnType != null &&
+                      !stripReadonlyType(method.returnType!)
+                          .startsWith('Future<')
+                  ? 'Future<${method.returnType}>'
+                  : type;
       final added = method.typeParameters
           .map((item) => item.name)
           .where((name) => !_typeNames.contains(name))

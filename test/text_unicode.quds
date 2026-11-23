@@ -1,0 +1,109 @@
+use quds:text::types
+use quds:text::unicode
+use quds:text::inspect
+use quds:text::slice
+
+_throws(action: () -> void) -> bool:
+  try:
+    action()
+    return false
+  catch _:
+    return true
+
+test "unicode: TextCodePoints strict, replacement, ranges, and iter":
+  cps = TextCodePoints("A😀ب")
+  assert cps.count == 3
+  assert not cps.isEmpty and cps.isNotEmpty
+  assert cps.codePointAt(0) == 65
+  assert cps.codePointAt(1) == 0x1F600
+  assert cps.codePointAt(2) == 0x0628
+  assert cps.rangeAt(0) == TextRange(0, 1)
+  assert cps.rangeAt(1) == TextRange(1, 3)
+  assert cps.rangeAt(2) == TextRange(3, 4)
+  assert cps.offsetFor(0) == 0
+  assert cps.offsetFor(1) == 1
+  assert cps.offsetFor(2) == 3
+  assert cps.offsetFor(3) == 4
+  assert _throws(() -> cps.codePointAt(-1))
+  assert _throws(() -> cps.codePointAt(3))
+  assert _throws(() -> cps.offsetFor(4))
+
+  collected: List<int> = []
+  for cp in cps.iter():
+    collected.add(cp)
+  assert collected.length == 3 and collected[1] == 0x1F600
+
+  lone = String.fromCharCode(0xD800) + "x" + String.fromCharCode(0xDC00)
+  raw = TextCodePoints(lone)
+  assert raw.count == 3
+  assert raw.codePointAt(0) == 0xD800
+  assert raw.codePointAt(2) == 0xDC00
+  replaced = TextCodePoints(lone, replaceMalformed: true)
+  assert replaced.codePointAt(0) == 0xFFFD
+  assert replaced.codePointAt(1) == 120
+  assert replaced.codePointAt(2) == 0xFFFD
+  assert _throws(() -> TextCodePoints(lone, strict: true))
+
+test "unicode: TextCharacters grapheme clusters (Arabic diacritics, ZWJ emoji, flags, CRLF, Hangul)":
+  sample = "قُدس 👨‍👩‍👧‍👦"
+  chars = TextCharacters(sample)
+  assert chars.count == 5
+  assert chars.characterAt(0) == "قُ"
+  assert chars.characterAt(1) == "د"
+  assert chars.characterAt(2) == "س"
+  assert chars.characterAt(3) == " "
+  assert chars.characterAt(4) == "👨‍👩‍👧‍👦"
+  assert chars.rangeAt(0) == TextRange(0, 2)
+  assert chars.slice(0, 2) == "قُد"
+  assert chars.slice(4, 5) == "👨‍👩‍👧‍👦"
+  assert sliceCharacters(sample, 0, 3) == "قُدس"
+  assert reverseCharacters("قُدس") == "سدقُ"
+  assert reverseCharacters("a👨‍👩‍👧‍👦b") == "b👨‍👩‍👧‍👦a"
+
+  flags = TextCharacters("🇵🇸🇺🇸")
+  assert flags.count == 2
+  assert flags.characterAt(0) == "🇵🇸"
+  assert flags.characterAt(1) == "🇺🇸"
+  assert reverseCharacters("🇵🇸🇺🇸") == "🇺🇸🇵🇸"
+
+  crlf = TextCharacters("a\r\nb")
+  assert crlf.count == 3
+  assert crlf.characterAt(1) == "\r\n"
+
+  skin = TextCharacters("👋🏽!")
+  assert skin.count == 2
+  assert skin.characterAt(0) == "👋🏽"
+
+  jamo = TextCharacters(String.fromCharCodes([0x1112, 0x1161, 0x11AB]))
+  assert jamo.count == 1
+
+  assert containsOnlyCharacters("قُدس", ["قُ", "د", "س"])
+  assert not containsOnlyCharacters("قُدس", ["ق", "د", "س"])
+
+  # Boundary policy on UTF-16 offset inside surrogate/grapheme cluster
+  assert chars.boundaryOffset(0) == 0
+  assert chars.boundaryOffset(2) == 2
+  assert _throws(() -> chars.boundaryOffset(1, policy: TextBoundaryPolicy.reject))
+  assert chars.boundaryOffset(1, policy: TextBoundaryPolicy.previous) == 0
+  assert chars.boundaryOffset(1, policy: TextBoundaryPolicy.next) == 2
+
+test "unicode: TextNormalizer, normalizeUnicode, isNormalizedUnicode, caseFoldText":
+  decomposed = "e" + String.fromCharCode(0x0301)
+  composed = String.fromCharCode(0x00E9)
+  nfc = TextNormalizer(TextNormalizationForm.nfc)
+  nfd = TextNormalizer(TextNormalizationForm.nfd)
+  assert nfc.normalize(decomposed) == composed
+  assert nfc.isNormalized(composed)
+  assert not nfc.isNormalized(decomposed)
+  assert nfd.normalize(composed) == decomposed
+  assert nfd.isNormalized(decomposed)
+  assert not nfd.isNormalized(composed)
+
+  ligature = String.fromCharCode(0xFB01)
+  assert normalizeUnicode(ligature, form: TextNormalizationForm.nfkc) == "fi"
+  assert normalizeUnicode(ligature, form: TextNormalizationForm.nfkd) == "fi"
+  assert normalizeUnicode(ligature, form: TextNormalizationForm.nfc) == ligature
+
+  assert caseFoldText("Straße") == "strasse"
+  assert caseFoldText("HELLO") == "hello"
+  assert caseFoldText("ΌΣΟΣ") == caseFoldText("όσος")

@@ -15,4 +15,10 @@ main():
   assert b.build() == "Hello Quds\n😀"
   assert normalizeLineEndings("a\r\nb\rc") == "a\nb\nc"
   assert dedentText("  a\n  b") == "a\nb"
+  chars = TextCharacters("قُدس 👨‍👩‍👧‍👦")
+  assert chars.count == 5 and chars.characterAt(0) == "قُ" and chars.characterAt(4) == "👨‍👩‍👧‍👦"
+  assert sliceCharacters("قُدس", 0, 2) == "قُد"
+  assert reverseCharacters("قُدس") == "سدقُ"
+  assert normalizeUnicode("e" + String.fromCharCode(0x0301)) == String.fromCharCode(0x00E9)
+  assert caseFoldText("Straße") == "strasse"
   print "TEXT SDK VM WEB OK"

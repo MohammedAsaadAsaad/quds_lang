@@ -1,0 +1,117 @@
+use quds:collection
+
+test "specialized: BitSet operations across word boundaries and tail masking":
+  bits = BitSet(70)
+  expect(bits.length, 70)
+  expect(bits.isEmpty, true)
+  expect(bits.cardinality, 0)
+  expect(bits.nextSetBit(0), -1)
+
+  bits.setBit(0)
+  bits.setBit(31)
+  bits.setBit(32)
+  bits.setBit(69)
+  expect(bits.isNotEmpty, true)
+  expect(bits.cardinality, 4)
+  expect(bits.getBit(31), true)
+  expect(bits.getBit(30), false)
+  expect(bits.setIndices(), [0, 31, 32, 69])
+  expect(bits.nextSetBit(1), 31)
+  expect(bits.nextSetBit(33), 69)
+
+  bits.toggleBit(31)
+  expect(bits.getBit(31), false)
+  bits.clearBit(0)
+  expect(bits.setIndices(), [32, 69])
+
+  other = BitSet(70)
+  other.setBit(32)
+  other.setBit(50)
+  expect(bits.bitAnd(other).setIndices(), [32])
+  expect(bits.bitOr(other).setIndices(), [32, 50, 69])
+  expect(bits.bitXor(other).setIndices(), [50, 69])
+
+  # Tail masking: inverted() of empty 5-bit set must have cardinality 5, not 32.
+  small = BitSet(5)
+  inv = small.inverted()
+  expect(inv.cardinality, 5)
+  expect(inv.setIndices(), [0, 1, 2, 3, 4])
+
+  small.setAll()
+  expect(small.equalsBitSet(inv), true)
+  small.clearAll()
+  expect(small.isEmpty, true)
+
+  var mismatchErr = false
+  try:
+    bits.bitAnd(small)
+  catch e:
+    mismatchErr = e is CollectionError
+  expect(mismatchErr, true)
+
+test "specialized: DisjointSet unite, find, componentSize, components":
+  uf = DisjointSet(6)
+  expect(uf.size, 6)
+  expect(uf.componentCount, 6)
+  expect(uf.connected(0, 1), false)
+
+  expect(uf.unite(0, 1), true)
+  expect(uf.unite(1, 2), true)
+  expect(uf.unite(0, 2), false)
+  expect(uf.unite(3, 4), true)
+  expect(uf.componentCount, 3)
+  expect(uf.connected(0, 2), true)
+  expect(uf.connected(0, 3), false)
+  expect(uf.componentSize(2), 3)
+  expect(uf.componentSize(4), 2)
+  expect(uf.componentSize(5), 1)
+
+  comps = uf.components()
+  expect(comps.length, 3)
+  expect(comps[0], [0, 1, 2])
+  expect(comps[1], [3, 4])
+  expect(comps[2], [5])
+
+test "specialized: Trie put, get, prefix search, longestPrefixMatch, remove, Unicode":
+  trie = Trie<int>()
+  expect(trie.isEmpty, true)
+  trie.put("quds", 1)
+  trie.put("quick", 2)
+  trie.put("qu", 3)
+  trie.put("قدس", 4)
+  trie.put("قدسي", 5)
+
+  expect(trie.length, 5)
+  expect(trie.containsKey("quds"), true)
+  expect(trie.containsKey("qud"), false)
+  expect(trie.hasPrefix("qud"), true)
+  expect(trie.hasPrefix("xyz"), false)
+  expect(trie.get("قدس"), 4)
+
+  expect(trie.keysWithPrefix("qu"), ["qu", "quds", "quick"])
+  expect(trie.keysWithPrefix("قدس"), ["قدس", "قدسي"])
+
+  # Longest prefix match (e.g. URL/command routing)
+  routes = Trie<String>()
+  routes.put("/", "root")
+  routes.put("/api", "api")
+  routes.put("/api/v1", "v1")
+  m1 = routes.longestPrefixMatch("/api/v1/users")
+  expect(m1 != null, true)
+  if m1 != null:
+    expect(m1.first, "/api/v1")
+    expect(m1.second, "v1")
+  m2 = routes.longestPrefixMatch("/about")
+  expect(m2 != null, true)
+  if m2 != null:
+    expect(m2.first, "/")
+    expect(m2.second, "root")
+  expect(routes.longestPrefixMatch("nomatch"), null)
+
+  # Remove prunes dead branches cleanly
+  expect(trie.remove("quick"), 2)
+  expect(trie.length, 4)
+  expect(trie.hasPrefix("qui"), false)
+  expect(trie.remove("missing"), null)
+  trie.clear()
+  expect(trie.isEmpty, true)

@@ -65,4 +65,20 @@ main():
   bi.put("k", 7)
   _check(bi.getByValue(7) == "k", "BiMap")
 
+  bits = BitSet(40)
+  bits.setBit(1)
+  bits.setBit(35)
+  _check(bits.cardinality == 2 and bits.nextSetBit(2) == 35, "BitSet")
+
+  uf = DisjointSet(4)
+  uf.unite(0, 2)
+  uf.unite(2, 3)
+  _check(uf.connected(0, 3) and uf.componentCount == 2, "DisjointSet")
+
+  trie = Trie<int>()
+  trie.put("/a", 1)
+  trie.put("/a/b", 2)
+  best = trie.longestPrefixMatch("/a/b/c")
+  _check(best != null and best.first == "/a/b" and best.second == 2, "Trie")
+
   print "COLLECTION_WEB_OK"

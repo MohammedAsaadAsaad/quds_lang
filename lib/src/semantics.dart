@@ -2190,7 +2190,8 @@ class Analyzer {
         _typeBounds[parameter.name] = parameter.bound!;
     }
     _typeNames.addAll(owner.typeParameters.map((item) => item.name));
-    _scope = _Scope(home.isEmpty ? _global : _libraryScope(home));
+    _scope = _Scope(
+        home.isEmpty || home == _activeLibrary ? _global : _libraryScope(home));
     try {
       final declared =
           field.type == '<infer>' ? null : _resolveType(field.type);

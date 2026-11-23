@@ -14522,6 +14522,8 @@ const collectionSdkSource = r'''# General-purpose collections and data structure
 #   use quds:collection::transform as col
 #   print col.chunkList([1, 2, 3, 4, 5], 2)
 
+use dart:typed_data show Uint32List
+
 :: types
 
 # An item paired with its zero-based index in a sequence.
@@ -16884,6 +16886,549 @@ class BiMap<K, V>:
     for entry in forward.entries:
       out[entry.key] = entry.value
     return out
+
+
+:: specialized
+
+# Internal helper counting set bits in an unsigned 32-bit word (VM and JS safe).
+_popcount32(word: int) -> int:
+  var x = word & 0xffffffff
+  var count = 0
+  while x != 0:
+    x = x & (x - 1)
+    count = count + 1
+  return count
+
+# Fixed-length compact bit array backed by Uint32List with O(words) bitwise
+# operations, cardinality counting, and fast next-set-bit scanning.
+# Example:
+#   bits = BitSet(64)
+#   bits.setBit(5)
+#   print bits.getBit(5)
+class BitSet:
+  private var words: Uint32List = Uint32List(0)
+  private var bitCount: int = 0
+
+  init(bitLength: int):
+    if bitLength < 0:
+      throw CollectionError("BitSet", "bitLength must be non-negative, got {bitLength}")
+    bitCount = bitLength
+    wordCount = (bitLength + 31) ~/ 32
+    words = Uint32List(wordCount)
+
+  # Fixed number of addressable bits (0..<length).
+  # Example:
+  #   print bits.length
+  property length: int:
+    get = bitCount
+
+  # Number of bits currently set to 1.
+  # Example:
+  #   print bits.cardinality
+  property cardinality: int:
+    get:
+      var total = 0
+      var i = 0
+      while i < words.length:
+        total = total + _popcount32(words[i])
+        i = i + 1
+      return total
+
+  # True when no bit is set.
+  # Example:
+  #   print bits.isEmpty
+  property isEmpty: bool:
+    get:
+      var i = 0
+      while i < words.length:
+        if words[i] != 0:
+          return false
+        i = i + 1
+      return true
+
+  # True when at least one bit is set.
+  # Example:
+  #   print bits.isNotEmpty
+  property isNotEmpty: bool:
+    get = not this.isEmpty
+
+  private checkIndex(index: int):
+    if index < 0 or index >= bitCount:
+      throw RangeError.range(index, 0, bitCount - 1, "index")
+
+  private maskTail():
+    rem = bitCount % 32
+    if rem != 0 and words.isNotEmpty:
+      mask = (1 << rem) - 1
+      words[words.length - 1] = words[words.length - 1] & mask
+
+  # Returns true if bit [index] is set.
+  # Example:
+  #   print bits.getBit(3)
+  getBit(index: int) -> bool:
+    checkIndex(index)
+    wordIdx = index ~/ 32
+    bitIdx = index % 32
+    return ((words[wordIdx] >> bitIdx) & 1) != 0
+
+  # Sets bit [index] to 1.
+  # Example:
+  #   bits.setBit(3)
+  setBit(index: int):
+    checkIndex(index)
+    wordIdx = index ~/ 32
+    bitIdx = index % 32
+    words[wordIdx] = words[wordIdx] | (1 << bitIdx)
+
+  # Clears bit [index] to 0.
+  # Example:
+  #   bits.clearBit(3)
+  clearBit(index: int):
+    checkIndex(index)
+    wordIdx = index ~/ 32
+    bitIdx = index % 32
+    words[wordIdx] = words[wordIdx] & (0xffffffff ^ (1 << bitIdx))
+
+  # Flips bit [index] between 0 and 1.
+  # Example:
+  #   bits.toggleBit(3)
+  toggleBit(index: int):
+    checkIndex(index)
+    wordIdx = index ~/ 32
+    bitIdx = index % 32
+    words[wordIdx] = words[wordIdx] ^ (1 << bitIdx)
+
+  # Sets every addressable bit to 1.
+  # Example:
+  #   bits.setAll()
+  setAll():
+    var i = 0
+    while i < words.length:
+      words[i] = 0xffffffff
+      i = i + 1
+    maskTail()
+
+  # Clears every bit to 0.
+  # Example:
+  #   bits.clearAll()
+  clearAll():
+    var i = 0
+    while i < words.length:
+      words[i] = 0
+      i = i + 1
+
+  # Returns the smallest set bit index >= [fromIndex], or -1 if none exists.
+  # Example:
+  #   next = bits.nextSetBit(0)
+  nextSetBit(fromIndex: int) -> int:
+    if fromIndex < 0:
+      throw RangeError.range(fromIndex, 0, bitCount, "fromIndex")
+    if fromIndex >= bitCount:
+      return -1
+    var wordIdx = fromIndex ~/ 32
+    var bitOffset = fromIndex % 32
+    while wordIdx < words.length:
+      word = words[wordIdx]
+      if word != 0:
+        var b = bitOffset
+        while b < 32:
+          idx = wordIdx * 32 + b
+          if idx >= bitCount:
+            return -1
+          if ((word >> b) & 1) != 0:
+            return idx
+          b = b + 1
+      wordIdx = wordIdx + 1
+      bitOffset = 0
+    return -1
+
+  # Returns all set bit indices in ascending order.
+  # Example:
+  #   print bits.setIndices()
+  setIndices() -> List<int>:
+    out: List<int> = []
+    var idx = nextSetBit(0)
+    while idx >= 0:
+      out.add(idx)
+      idx = nextSetBit(idx + 1)
+    return out
+
+  # Returns a new BitSet representing the bitwise AND of this and [other].
+  # Throws CollectionError if lengths differ.
+  # Example:
+  #   shared = a.bitAnd(b)
+  bitAnd(other: BitSet) -> BitSet:
+    if bitCount != other.bitCount:
+      throw CollectionError("BitSet.bitAnd", "BitSet lengths differ ({bitCount} vs {other.bitCount})")
+    out = BitSet(bitCount)
+    var i = 0
+    while i < words.length:
+      out.words[i] = words[i] & other.words[i]
+      i = i + 1
+    return out
+
+  # Returns a new BitSet representing the bitwise OR of this and [other].
+  # Throws CollectionError if lengths differ.
+  # Example:
+  #   combined = a.bitOr(b)
+  bitOr(other: BitSet) -> BitSet:
+    if bitCount != other.bitCount:
+      throw CollectionError("BitSet.bitOr", "BitSet lengths differ ({bitCount} vs {other.bitCount})")
+    out = BitSet(bitCount)
+    var i = 0
+    while i < words.length:
+      out.words[i] = words[i] | other.words[i]
+      i = i + 1
+    return out
+
+  # Returns a new BitSet representing the bitwise XOR of this and [other].
+  # Throws CollectionError if lengths differ.
+  # Example:
+  #   diff = a.bitXor(b)
+  bitXor(other: BitSet) -> BitSet:
+    if bitCount != other.bitCount:
+      throw CollectionError("BitSet.bitXor", "BitSet lengths differ ({bitCount} vs {other.bitCount})")
+    out = BitSet(bitCount)
+    var i = 0
+    while i < words.length:
+      out.words[i] = words[i] ^ other.words[i]
+      i = i + 1
+    return out
+
+  # Returns a new BitSet with all addressable bits flipped.
+  # Example:
+  #   flipped = a.inverted()
+  inverted() -> BitSet:
+    out = BitSet(bitCount)
+    var i = 0
+    while i < words.length:
+      out.words[i] = words[i] ^ 0xffffffff
+      i = i + 1
+    out.maskTail()
+    return out
+
+  # True when [other] has the same length and identical bits.
+  # Example:
+  #   print a.equalsBitSet(b)
+  equalsBitSet(other: BitSet) -> bool:
+    if bitCount != other.bitCount:
+      return false
+    var i = 0
+    while i < words.length:
+      if words[i] != other.words[i]:
+        return false
+      i = i + 1
+    return true
+
+
+# Disjoint-set (Union-Find) data structure over elements 0..<size using
+# iterative path compression and union by rank.
+# Example:
+#   uf = DisjointSet(5)
+#   uf.unite(0, 1)
+#   print uf.connected(0, 1)
+class DisjointSet:
+  private var parents: List<int> = []
+  private var ranks: List<int> = []
+  private var sizes: List<int> = []
+  private var groups: int = 0
+
+  init(size: int):
+    if size < 0:
+      throw CollectionError("DisjointSet", "Size must be non-negative, got {size}")
+    groups = size
+    var i = 0
+    while i < size:
+      parents.add(i)
+      ranks.add(0)
+      sizes.add(1)
+      i = i + 1
+
+  # Total number of elements (0..<size).
+  # Example:
+  #   print uf.size
+  property size: int:
+    get = parents.length
+
+  # Current number of disjoint connected components.
+  # Example:
+  #   print uf.componentCount
+  property componentCount: int:
+    get = groups
+
+  private checkElement(element: int):
+    if element < 0 or element >= parents.length:
+      throw RangeError.range(element, 0, parents.length - 1, "element")
+
+  # Returns the canonical representative root of [element]'s component.
+  # Example:
+  #   root = uf.find(2)
+  find(element: int) -> int:
+    checkElement(element)
+    var root = element
+    while parents[root] != root:
+      root = parents[root]
+    var curr = element
+    while parents[curr] != root:
+      next = parents[curr]
+      parents[curr] = root
+      curr = next
+    return root
+
+  # Merges the components containing [first] and [second]. Returns true if a
+  # merge occurred, or false if they were already in the same component.
+  # Example:
+  #   merged = uf.unite(0, 1)
+  unite(first: int, second: int) -> bool:
+    ra = find(first)
+    rb = find(second)
+    if ra == rb:
+      return false
+    if ranks[ra] < ranks[rb]:
+      parents[ra] = rb
+      sizes[rb] = sizes[rb] + sizes[ra]
+    else if ranks[ra] > ranks[rb]:
+      parents[rb] = ra
+      sizes[ra] = sizes[ra] + sizes[rb]
+    else:
+      parents[rb] = ra
+      ranks[ra] = ranks[ra] + 1
+      sizes[ra] = sizes[ra] + sizes[rb]
+    groups = groups - 1
+    return true
+
+  # True when [first] and [second] belong to the same component.
+  # Example:
+  #   print uf.connected(0, 2)
+  connected(first: int, second: int) -> bool = find(first) == find(second)
+
+  # Number of elements in the component containing [element].
+  # Example:
+  #   print uf.componentSize(0)
+  componentSize(element: int) -> int = sizes[find(element)]
+
+  # Returns all connected components as lists of elements in ascending order.
+  # Example:
+  #   print uf.components()
+  components() -> List<List<int>>:
+    grouped: Map<int, List<int>> = map:
+    var i = 0
+    while i < parents.length:
+      root = find(i)
+      bucket = grouped[root]
+      if bucket == null:
+        fresh: List<int> = [i]
+        grouped[root] = fresh
+      else:
+        bucket.add(i)
+      i = i + 1
+    out: List<List<int>> = []
+    for entry in grouped.entries:
+      out.add(entry.value)
+    return out
+
+
+# Internal node for Trie<V>.
+class _TrieNode<V>:
+  var children: Map<int, _TrieNode<V>> = Map<int, _TrieNode<V>>()
+  var hasValue: bool = false
+  var value: V? = null
+
+
+# Prefix tree mapping String keys to values with O(key.length) lookup,
+# prefix enumeration, and longest-prefix matching.
+# Example:
+#   trie = Trie<int>()
+#   trie.put("quds", 1)
+#   trie.put("quick", 2)
+#   print trie.keysWithPrefix("qu")
+class Trie<V>:
+  private var root: _TrieNode<V> = _TrieNode<V>()
+  private var count: int = 0
+
+  # Number of keys stored in this trie.
+  # Example:
+  #   print trie.length
+  property length: int:
+    get = count
+
+  # True when this trie contains no keys.
+  # Example:
+  #   print trie.isEmpty
+  property isEmpty: bool:
+    get = count == 0
+
+  # True when this trie contains at least one key.
+  # Example:
+  #   print trie.isNotEmpty
+  property isNotEmpty: bool:
+    get = count > 0
+
+  private findNode(prefix: String) -> _TrieNode<V>?:
+    var curr = root
+    var i = 0
+    while i < prefix.length:
+      unit = prefix.codeUnitAt(i)
+      next = curr.children[unit]
+      if next == null:
+        return null
+      else:
+        curr = next
+      i = i + 1
+    return curr
+
+  # Inserts or updates [key] with [value].
+  # Example:
+  #   trie.put("api/v1", 1)
+  put(key: String, value: V):
+    var curr = root
+    var i = 0
+    while i < key.length:
+      unit = key.codeUnitAt(i)
+      existing = curr.children[unit]
+      if existing == null:
+        created = _TrieNode<V>()
+        curr.children[unit] = created
+        curr = created
+      else:
+        curr = existing
+      i = i + 1
+    if not curr.hasValue:
+      curr.hasValue = true
+      count = count + 1
+    curr.value = value
+
+  # Returns the value associated with [key], or null when absent.
+  # Example:
+  #   print trie.get("quds")
+  get(key: String) -> V?:
+    node = findNode(key)
+    if node == null:
+      return null
+    else:
+      if not node.hasValue:
+        return null
+      return node.value
+
+  # True when [key] is stored in this trie.
+  # Example:
+  #   print trie.containsKey("quds")
+  containsKey(key: String) -> bool:
+    node = findNode(key)
+    if node == null:
+      return false
+    else:
+      return node.hasValue
+
+  # True when at least one stored key starts with [prefix].
+  # Example:
+  #   print trie.hasPrefix("qu")
+  hasPrefix(prefix: String) -> bool:
+    node = findNode(prefix)
+    if node == null:
+      return false
+    else:
+      return node.hasValue or node.children.isNotEmpty
+
+  # Removes [key] and returns its previous value, or null when absent.
+  # Prunes unused branch nodes.
+  # Example:
+  #   old = trie.remove("quds")
+  remove(key: String) -> V?:
+    path: List<_TrieNode<V>> = [root]
+    units: List<int> = []
+    var curr = root
+    var i = 0
+    while i < key.length:
+      unit = key.codeUnitAt(i)
+      next = curr.children[unit]
+      if next == null:
+        return null
+      else:
+        path.add(next)
+        units.add(unit)
+        curr = next
+      i = i + 1
+    if not curr.hasValue:
+      return null
+    old = curr.value
+    curr.hasValue = false
+    curr.value = null
+    count = count - 1
+    var step = units.length - 1
+    while step >= 0:
+      child = path[step + 1]
+      if child.hasValue or child.children.isNotEmpty:
+        break
+      path[step].children.remove(units[step])
+      step = step - 1
+    return old
+
+  # Removes all entries from this trie.
+  # Example:
+  #   trie.clear()
+  clear():
+    root = _TrieNode<V>()
+    count = 0
+
+  private collectEntries(node: _TrieNode<V>, currentKey: String, out: List<CollectionPair<String, V>>):
+    if node.hasValue:
+      out.add(CollectionPair<String, V>(first: currentKey, second: node.value as V))
+    # Sort child code units deterministically.
+    keys = sortedWith<int>(node.children.keys, (a: int, b: int) -> a.compareTo(b))
+    for unit in keys:
+      child = node.children[unit] as _TrieNode<V>
+      collectEntries(child, currentKey + String.fromCharCode(unit), out)
+
+  # Returns all stored (key, value) pairs whose key starts with [prefix],
+  # sorted deterministically in code-unit order.
+  # Example:
+  #   print trie.entriesWithPrefix("qu")
+  entriesWithPrefix(prefix: String) -> List<CollectionPair<String, V>>:
+    out: List<CollectionPair<String, V>> = []
+    node = findNode(prefix)
+    if node == null:
+      return out
+    else:
+      collectEntries(node, prefix, out)
+      return out
+
+  # Returns all stored keys starting with [prefix] in deterministic order.
+  # Example:
+  #   print trie.keysWithPrefix("qu")
+  keysWithPrefix(prefix: String) -> List<String>:
+    pairs = entriesWithPrefix(prefix)
+    out: List<String> = []
+    for pair in pairs:
+      out.add(pair.first)
+    return out
+
+  # Finds the longest stored key that is a prefix of [input], returning its
+  # (key, value) pair or null if no stored key is a prefix of [input].
+  # Example:
+  #   found = trie.longestPrefixMatch("/api/v1/users")
+  longestPrefixMatch(input: String) -> CollectionPair<String, V>?:
+    var curr = root
+    var bestLen = -1
+    var bestVal: V? = null
+    if curr.hasValue:
+      bestLen = 0
+      bestVal = curr.value
+    var i = 0
+    while i < input.length:
+      unit = input.codeUnitAt(i)
+      next = curr.children[unit]
+      if next == null:
+        break
+      else:
+        curr = next
+      if curr.hasValue:
+        bestLen = i + 1
+        bestVal = curr.value
+      i = i + 1
+    if bestLen < 0:
+      return null
+    return CollectionPair<String, V>(first: input.substring(0, bestLen), second: bestVal as V)
 ''';
 
 const embeddedSdk = <String, String>{

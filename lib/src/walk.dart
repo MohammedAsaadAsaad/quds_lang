@@ -328,9 +328,10 @@ void walkAst(Node node, void Function(Node node) visit,
         _nodes(finallyBody, visit);
       case CatchClause(:final body):
         _nodes(body, visit);
-      case DestructureStatement(:final pattern, :final value):
+      case DestructureStatement(:final pattern, :final value, :final elseBody):
         walkAst(pattern, visit);
         walkAst(value, visit);
+        if (elseBody != null) _nodes(elseBody, visit);
       case CollectionIf(
           :final condition,
           :final thenElements,

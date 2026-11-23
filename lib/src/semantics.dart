@@ -911,6 +911,7 @@ class Analyzer {
   String? _thisType;
   String? _methodLibrary;
   final _promoted = <String, String>{};
+  final _consumed = <Symbol, SourceSpan>{};
   final _fieldSymbols = <Symbol>{};
   var _readonlyMethod = false;
   var _ffi = false;
@@ -3961,7 +3962,9 @@ class Analyzer {
         savedFunction = _function,
         savedReturn = _returnType;
     final savedPromoted = Map<String, String>.from(_promoted);
+    final savedConsumed = Map<Symbol, SourceSpan>.from(_consumed);
     _promoted.clear();
+    _consumed.clear();
     // A top-level function does not close over the caller's locals. Calls
     // re-check a function that has defaults, and that call may sit inside
     // another function. Parent the body at the global scope in that case.
@@ -4067,6 +4070,9 @@ class Analyzer {
     _promoted
       ..clear()
       ..addAll(savedPromoted);
+    _consumed
+      ..clear()
+      ..addAll(savedConsumed);
     _checking.remove(function);
     _checked.add(function);
     _typeNames
@@ -4075,6 +4081,20 @@ class Analyzer {
     _typeBounds
       ..clear()
       ..addAll(savedBounds);
+  }
+
+  void _checkLoopConsumed(
+      List<Statement> body, _Scope outerScope, Map<Symbol, SourceSpan> before) {
+    if (_alwaysExits(body)) return;
+    for (final entry in _consumed.entries) {
+      if (before.containsKey(entry.key)) continue;
+      if (outerScope.lookup(entry.key.name) == entry.key) {
+        throw CompilerException(
+            'E315',
+            'Value ${entry.key.name} cannot be consumed inside a loop that may run more than once',
+            entry.value);
+      }
+    }
   }
 
   bool returns(List<Statement> body) {
@@ -4141,6 +4161,11 @@ class Analyzer {
         case WhenStatement():
           if (!model.skipped.contains(statement) &&
               _mentionsBreak(statement.body)) {
+            return true;
+          }
+        case DestructureStatement():
+          if (statement.elseBody != null &&
+              _mentionsBreak(statement.elseBody!)) {
             return true;
           }
         case IfStatement():
@@ -4221,6 +4246,9 @@ class Analyzer {
         BreakStatement() ||
         ContinueStatement() =>
           true,
+        UsingStatement() => _alwaysExits(node.body),
+        WhenStatement() =>
+          !model.skipped.contains(node) && _alwaysExits(node.body),
         IfStatement() => node.elseBody.isNotEmpty &&
             _alwaysExits(node.thenBody) &&
             _alwaysExits(node.elseBody),
@@ -4334,6 +4362,17 @@ class Analyzer {
               fail('Cannot assign $result to ${existing.type}', node);
             }
           }
+          if (node.operator != '=') {
+            final consumedAt = _consumed[existing];
+            if (consumedAt != null) {
+              error(
+                  'E315',
+                  'Value ${existing.name} was already consumed at line ${consumedAt.line}',
+                  node);
+            }
+          } else {
+            _consumed.remove(existing);
+          }
           model.references[node] = existing;
           model.assignments.add(node);
           if (_valueHasGap(node.value)) {
@@ -4394,10 +4433,31 @@ class Analyzer {
         _rememberGapValue(symbol, node.value);
       case IfStatement():
         _requireBool(node.condition, 'if condition must be bool');
+        final beforeIf = Map<Symbol, SourceSpan>.from(_consumed);
         _withPromotions(_promotions(node.condition, whenTrue: true),
             () => statements(node.thenBody, nested: true));
+        final afterThen = Map<Symbol, SourceSpan>.from(_consumed);
+        final thenExits = _alwaysExits(node.thenBody);
+        _consumed
+          ..clear()
+          ..addAll(beforeIf);
         _withPromotions(_promotions(node.condition, whenTrue: false),
             () => statements(node.elseBody, nested: true));
+        final afterElse = Map<Symbol, SourceSpan>.from(_consumed);
+        final elseExits =
+            node.elseBody.isNotEmpty && _alwaysExits(node.elseBody);
+        _consumed.clear();
+        if (thenExits && elseExits) {
+          _consumed.addAll(beforeIf);
+        } else if (thenExits) {
+          _consumed.addAll(afterElse);
+        } else if (elseExits) {
+          _consumed.addAll(afterThen);
+        } else {
+          _consumed
+            ..addAll(afterThen)
+            ..addAll(afterElse);
+        }
       case ForStatement():
         final asValue = _armValueLoop;
         _armValueLoop = false;
@@ -4451,6 +4511,7 @@ class Analyzer {
           _scope.symbols[node.index!] = index;
           if (pair != null) model.loopPairs.add(node);
         }
+        final beforeFor = Map<Symbol, SourceSpan>.from(_consumed);
         final frame = _LoopFrame(asValue);
         _loops.add(frame);
         _loopDepth++;
@@ -4459,10 +4520,13 @@ class Analyzer {
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
         _scope = saved;
+        _checkLoopConsumed(node.body, saved, beforeFor);
         if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
       case WhileStatement():
         final asValue = _armValueLoop;
         _armValueLoop = false;
+        final beforeWhile = Map<Symbol, SourceSpan>.from(_consumed);
+        final outerWhileScope = _scope;
         if (node.letName != null) {
           final frame = _LoopFrame(asValue);
           _loops.add(frame);
@@ -4474,6 +4538,7 @@ class Analyzer {
           _loopDepth--;
           _loops.removeLast();
           if (asValue) _valueBreakType = frame.breakType;
+          _checkLoopConsumed(node.body, outerWhileScope, beforeWhile);
           if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
           break;
         }
@@ -4488,6 +4553,7 @@ class Analyzer {
           _loopDepth--;
           _loops.removeLast();
           if (asValue) _valueBreakType = frame.breakType;
+          _checkLoopConsumed(node.body, outerWhileScope, beforeWhile);
           if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
           break;
         }
@@ -4502,6 +4568,7 @@ class Analyzer {
         _loopDepth--;
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
+        _checkLoopConsumed(node.body, outerWhileScope, beforeWhile);
         if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
       case GuardedStatement():
         final elseType =
@@ -4598,7 +4665,13 @@ class Analyzer {
       case MatchStatement():
         final matched = expression(node.value);
         if (node.arms.isEmpty) fail('match needs at least one arm', node);
+        final beforeMatch = Map<Symbol, SourceSpan>.from(_consumed);
+        final mergedMatch = <Symbol, SourceSpan>{};
+        var anyFallthrough = false;
         for (final arm in node.arms) {
+          _consumed
+            ..clear()
+            ..addAll(beforeMatch);
           final saved = _scope;
           _scope = _Scope(saved);
           bindPattern(arm.pattern, matched);
@@ -4607,17 +4680,45 @@ class Analyzer {
           }
           statements(arm.body);
           _scope = saved;
+          if (!_alwaysExits(arm.body)) {
+            anyFallthrough = true;
+            mergedMatch.addAll(_consumed);
+          }
+        }
+        _consumed.clear();
+        if (anyFallthrough) {
+          _consumed.addAll(mergedMatch);
+        } else {
+          _consumed.addAll(beforeMatch);
         }
         checkExhaustive(node, matched, node.arms.map((arm) => arm.pattern),
             node.arms.map((arm) => arm.guard));
       case DestructureStatement():
         final type = expression(node.value);
-        if (_refutable(node.pattern)) {
-          error('E100', 'A refutable pattern cannot be assigned', node.pattern);
+        if (node.elseBody == null) {
+          if (_refutable(node.pattern)) {
+            error(
+                'E100', 'A refutable pattern cannot be assigned', node.pattern);
+          }
+          _assignPattern = true;
+          bindPattern(node.pattern, type, declare: true);
+          _assignPattern = false;
+        } else {
+          final beforeElse = Map<Symbol, SourceSpan>.from(_consumed);
+          statements(node.elseBody!, nested: true);
+          if (!_alwaysExits(node.elseBody!)) {
+            error(
+                'E316',
+                'Guard destructuring else branch must exit the enclosing scope (return, throw, break, or continue)',
+                node);
+          }
+          // elseBody always exits, so any consumption inside it never reaches
+          // the happy path after the guard destructuring statement.
+          _consumed
+            ..clear()
+            ..addAll(beforeElse);
+          bindPattern(node.pattern, type, declare: true);
         }
-        _assignPattern = true;
-        bindPattern(node.pattern, type, declare: true);
-        _assignPattern = false;
       case ReturnStatement():
         if (_function == null && _returnType != '<infer>') {
           fail('return is only valid inside a function', node);
@@ -4676,6 +4777,7 @@ class Analyzer {
           }
           expression(step);
         }
+        final beforeCFor = Map<Symbol, SourceSpan>.from(_consumed);
         final frame = _LoopFrame(asValue);
         _loops.add(frame);
         _loopDepth++;
@@ -4684,10 +4786,16 @@ class Analyzer {
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
         _scope = savedFor;
+        _checkLoopConsumed(node.body, savedFor, beforeCFor);
         if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
       case TryStatement():
+        final beforeTry = Map<Symbol, SourceSpan>.from(_consumed);
         statements(node.body, nested: true);
+        final mergedTry = Map<Symbol, SourceSpan>.from(_consumed);
         for (final clause in node.catches) {
+          _consumed
+            ..clear()
+            ..addAll(beforeTry);
           final savedCatch = _scope;
           _scope = _Scope(savedCatch);
           final caught = clause.type ?? 'Object';
@@ -4704,7 +4812,13 @@ class Analyzer {
           statements(clause.body);
           _catchDepth--;
           _scope = savedCatch;
+          if (!_alwaysExits(clause.body)) {
+            mergedTry.addAll(_consumed);
+          }
         }
+        _consumed
+          ..clear()
+          ..addAll(mergedTry);
         if (node.elseBody.isNotEmpty) {
           statements(node.elseBody, nested: true);
         }
@@ -4750,6 +4864,8 @@ class Analyzer {
         final asValue = _armValueLoop;
         _armValueLoop = false;
         if (node.body.isEmpty) fail('repeat needs a body', node);
+        final beforeRepeat = Map<Symbol, SourceSpan>.from(_consumed);
+        final outerRepeatScope = _scope;
         if (node.count != null) {
           if (expression(node.count!) != 'int') {
             fail('repeat count must be int', node.count!);
@@ -4761,6 +4877,7 @@ class Analyzer {
           _loopDepth--;
           _loops.removeLast();
           if (asValue) _valueBreakType = frame.breakType;
+          _checkLoopConsumed(node.body, outerRepeatScope, beforeRepeat);
           if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
           break;
         }
@@ -4771,6 +4888,7 @@ class Analyzer {
         _loopDepth--;
         _loops.removeLast();
         if (asValue) _valueBreakType = frame.breakType;
+        _checkLoopConsumed(node.body, outerRepeatScope, beforeRepeat);
         if (_withIteration(node, null, () => expression(node.condition!)) !=
             'bool') {
           fail('repeat condition must be bool', node.condition!);
@@ -4781,7 +4899,9 @@ class Analyzer {
             create(node.title, node.isAsync ? 'Future<void>' : 'void');
         final savedFunction = _function;
         final savedPromoted = Map<String, String>.from(_promoted);
+        final savedConsumed = Map<Symbol, SourceSpan>.from(_consumed);
         _promoted.clear();
+        _consumed.clear();
         if (node.isAsync) {
           _function = FunctionDeclaration(
               node.title, const [], 'void', node.body, null, node.span,
@@ -4792,6 +4912,9 @@ class Analyzer {
         _promoted
           ..clear()
           ..addAll(savedPromoted);
+        _consumed
+          ..clear()
+          ..addAll(savedConsumed);
       case FunctionDeclaration():
         registerFunction(node, _scope);
         analyzeFunction(node);
@@ -4812,6 +4935,7 @@ class Analyzer {
         _raise(node);
       case IfCaseStatement():
         final matched = expression(node.scrutinee);
+        final beforeCase = Map<Symbol, SourceSpan>.from(_consumed);
         final savedCase = _scope;
         _scope = _Scope(savedCase);
         bindPattern(node.pattern, matched, declare: true);
@@ -4822,6 +4946,13 @@ class Analyzer {
         }
         _withPromotions(facts, () => statements(node.body));
         _scope = savedCase;
+        if (_alwaysExits(node.body)) {
+          _consumed
+            ..clear()
+            ..addAll(beforeCase);
+        } else {
+          _consumed.addAll(beforeCase);
+        }
       case WhenStatement():
         final selected = _constBool(node.condition);
         if (selected == null) {
@@ -4843,6 +4974,7 @@ class Analyzer {
               'Binding would shadow ${node.name}; use shadow in an inner scope',
               node);
         }
+        final beforeLet = Map<Symbol, SourceSpan>.from(_consumed);
         final savedLet = _scope;
         _scope = _Scope(savedLet);
         final bound = create(node.name, unwrap(raw));
@@ -4850,7 +4982,27 @@ class Analyzer {
         model.declarations[node] = bound;
         statements(node.thenBody);
         _scope = savedLet;
+        final afterLetThen = Map<Symbol, SourceSpan>.from(_consumed);
+        final letThenExits = _alwaysExits(node.thenBody);
+        _consumed
+          ..clear()
+          ..addAll(beforeLet);
         if (node.elseBody.isNotEmpty) statements(node.elseBody, nested: true);
+        final afterLetElse = Map<Symbol, SourceSpan>.from(_consumed);
+        final letElseExits =
+            node.elseBody.isNotEmpty && _alwaysExits(node.elseBody);
+        _consumed.clear();
+        if (letThenExits && letElseExits) {
+          _consumed.addAll(beforeLet);
+        } else if (letThenExits) {
+          _consumed.addAll(afterLetElse);
+        } else if (letElseExits) {
+          _consumed.addAll(afterLetThen);
+        } else {
+          _consumed
+            ..addAll(afterLetThen)
+            ..addAll(afterLetElse);
+        }
       case DeferStatement():
         if (_containsAwait(node.expression)) {
           model.asyncDefers.add(node);
@@ -5459,10 +5611,21 @@ class Analyzer {
         }
         final declaration =
             pattern.typeName.isEmpty ? null : _global.symbols[pattern.typeName];
-        final fields =
-            declaration?.classCase?.fields ?? const <FieldDeclaration>[];
+        if (declaration != null) model.references[pattern] = declaration;
+        final fields = declaration?.classCase?.fields ??
+            declaration?.classDeclaration?.fields ??
+            const <FieldDeclaration>[];
         for (var i = 0; i < pattern.fields.length; i++) {
-          final fieldType = i < fields.length ? fields[i].type : type;
+          final explicitName =
+              i < pattern.names.length ? pattern.names[i] : null;
+          FieldDeclaration? matchedField;
+          if (explicitName != null) {
+            matchedField =
+                fields.where((f) => f.name == explicitName).firstOrNull;
+          } else if (i < fields.length) {
+            matchedField = fields[i];
+          }
+          final fieldType = matchedField?.type ?? type;
           bindPattern(pattern.fields[i], fieldType, declare: declare);
         }
       case MapPattern():
@@ -5971,7 +6134,9 @@ class Analyzer {
 
   void _checkMetadata(List<Metadata> notes) {
     for (final note in notes) {
-      if (note.name == 'Reflectable' || note.name == 'macro') {
+      if (note.name == 'Reflectable' ||
+          note.name == 'macro' ||
+          note.name == 'consumes') {
         if (note.arguments.isNotEmpty) {
           fail('${note.name} takes no arguments', note);
         }
@@ -6324,6 +6489,7 @@ class Analyzer {
     }
     final saved = _scope;
     final savedPromoted = Map<String, String>.from(_promoted);
+    final savedConsumed = Map<Symbol, SourceSpan>.from(_consumed);
     _promoted.clear();
     _scope = _Scope(saved);
     final parameterNames = <String>[];
@@ -6380,6 +6546,9 @@ class Analyzer {
     _promoted
       ..clear()
       ..addAll(savedPromoted);
+    _consumed
+      ..clear()
+      ..addAll(savedConsumed);
     final parts = <String>[];
     final named = <String>[];
     for (final parameter in node.parameters) {
@@ -8416,7 +8585,83 @@ class Analyzer {
     };
     final resolved = _resolveType(type);
     model.types[node] = resolved;
+    if (node is CallExpression) _markConsumedCall(node);
     return resolved;
+  }
+
+  void _markConsumedCall(CallExpression node) {
+    final callee = node.callee is TypeApplication
+        ? (node.callee as TypeApplication).callee
+        : node.callee;
+    if (callee is! MemberAccess || callee.object is! Identifier) return;
+    final target = callee.object as Identifier;
+    final symbol = model.references[target];
+    if (symbol == null ||
+        symbol.classDeclaration != null ||
+        symbol.namespace != null ||
+        symbol.function != null) {
+      return;
+    }
+    final resolvedMethod = model.references[callee]?.function ??
+        model.references[node.callee]?.function;
+    final targetType = model.types[target];
+    if ((resolvedMethod != null &&
+            hasAnnotation(resolvedMethod.annotations, 'consumes')) ||
+        (targetType != null && _isConsumingMethod(targetType, callee.name))) {
+      final already = _consumed[symbol];
+      if (already != null) {
+        error(
+            'E315',
+            'Value ${symbol.name} was already consumed at line ${already.line}',
+            node);
+      }
+      _consumed[symbol] = node.span;
+    }
+  }
+
+  bool _isConsumingMethod(String rawType, String methodName,
+      {Set<String>? visited}) {
+    final seen = visited ?? <String>{};
+    final unwrapped = unwrap(stripReadonlyType(rawType));
+    final head = _genericHead(unwrapped);
+    if (!seen.add(head)) return false;
+    final bound = _typeBounds[head];
+    if (bound != null && _isConsumingMethod(bound, methodName, visited: seen)) {
+      return true;
+    }
+    final cls = _typeSymbol(head)?.classDeclaration;
+    if (cls != null) {
+      for (final method in cls.methods) {
+        if (!method.isStatic &&
+            method.name == methodName &&
+            hasAnnotation(method.annotations, 'consumes')) {
+          return true;
+        }
+      }
+      if (cls.superclass != null &&
+          _isConsumingMethod(cls.superclass!, methodName, visited: seen)) {
+        return true;
+      }
+      for (final iface in cls.interfaces) {
+        if (_isConsumingMethod(iface, methodName, visited: seen)) return true;
+      }
+      for (final mixin in cls.mixins) {
+        if (_isConsumingMethod(mixin, methodName, visited: seen)) return true;
+      }
+    }
+    for (final extension in model.extensions) {
+      if (_extensionMatch(extension, unwrapped) == null &&
+          _extensionMatch(extension, head) == null) {
+        continue;
+      }
+      for (final extMethod in extension.methods) {
+        if (extMethod.name == methodName &&
+            hasAnnotation(extMethod.annotations, 'consumes')) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   String _hinted(String message, String name, Iterable<String> candidates) {
@@ -8620,6 +8865,13 @@ class Analyzer {
     if (symbol.field && _thisType != null) {
       final current = _typeSymbol(_genericHead(_thisType!))?.classDeclaration;
       if (current != null) _checkMember(current, node.name, node);
+    }
+    final consumedAt = _consumed[symbol];
+    if (consumedAt != null) {
+      error(
+          'E315',
+          'Value ${symbol.name} was already consumed at line ${consumedAt.line}',
+          node);
     }
     final qudsValue = _qudsFunctionValue(symbol, node);
     if (qudsValue != null) return qudsValue;

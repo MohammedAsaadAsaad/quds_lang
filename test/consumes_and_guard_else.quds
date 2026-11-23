@@ -1,0 +1,146 @@
+interface Closeable:
+  @consumes
+  close() -> void:
+    return
+
+class Connection implements Closeable:
+  name: String
+  var closed: bool = false
+
+  read() -> String = "data:{name}"
+
+  @consumes
+  close() -> void:
+    closed = true
+
+extend Connection:
+  @consumes
+  shutdown() -> String:
+    closed = true
+    return "down:{name}"
+
+sealed type MaybeInt:
+  SomeInt(value: int)
+  NoInt
+
+class Account:
+  name: String
+  nickname: String?
+
+_loadAccount(id: int) -> Result<Account, String>:
+  if id == 1:
+    return Ok(Account(name: "Alice", nickname: "Ali"))
+  if id == 2:
+    return Ok(Account(name: "Bob", nickname: null))
+  return Error("missing-{id}")
+
+_describeAccount(id: int) -> String:
+  Ok(acc) = _loadAccount(id) else:
+    return "not-found"
+  let nick = acc.nickname else:
+    return "no-nick:{acc.name}"
+  return "{acc.name}({nick})"
+
+_lookupMaybe(x: int) -> MaybeInt:
+  if x > 0:
+    return SomeInt(value: x * 10)
+  return NoInt()
+
+_extractMaybe(x: int) -> int:
+  SomeInt(v) = _lookupMaybe(x) else: return -1
+  return v + 1
+
+_headAndRest(items: List<int>) -> String:
+  [first, second, ...rest] = items else:
+    return "too-short"
+  return "{first}+{second}+{rest.length}"
+
+_sumOnlyOk(ids: List<int>) -> int:
+  var total = 0
+  for id in ids:
+    SomeInt(v) = _lookupMaybe(id) else:
+      continue
+    total += v
+  return total
+
+_stopOnMissing(ids: List<int>) -> int:
+  var total = 0
+  for id in ids:
+    SomeInt(v) = _lookupMaybe(id) else:
+      break
+    total += v
+  return total
+
+_guardWithDefer(id: int, trace: List<String>) -> String:
+  defer trace.add("outer")
+  Ok(acc) = _loadAccount(id) else:
+    trace.add("else")
+    return "err"
+  defer trace.add("inner")
+  return acc.name
+
+_earlyExitConsume(abort: bool) -> String:
+  conn = Connection(name: "db")
+  if abort:
+    conn.close()
+    return "aborted"
+  out = conn.read()
+  conn.close()
+  return out
+
+_reassignConsumed() -> String:
+  var conn = Connection(name: "first")
+  a = conn.read()
+  conn.close()
+  conn = Connection(name: "second")
+  b = conn.read()
+  conn.close()
+  return "{a}|{b}"
+
+_loopLocalConsume() -> List<String>:
+  out: List<String> = []
+  for i in 0..<3:
+    conn = Connection(name: "c{i}")
+    out.add(conn.read())
+    conn.close()
+  return out
+
+_loopBreakConsume() -> String:
+  conn = Connection(name: "once")
+  var res = ""
+  for i in 0..3:
+    res = conn.read()
+    conn.close()
+    break
+  return res
+
+_consumeViaExtension() -> String:
+  conn = Connection(name: "ext")
+  return conn.shutdown()
+
+test "@consumes allows valid branch-exit, reassignment, loop-local, break, and extension flows":
+  expect(_earlyExitConsume(true), equals("aborted"))
+  expect(_earlyExitConsume(false), equals("data:db"))
+  expect(_reassignConsumed(), equals("data:first|data:second"))
+  expect(_loopLocalConsume(), equals(["data:c0", "data:c1", "data:c2"]))
+  expect(_loopBreakConsume(), equals("data:once"))
+  expect(_consumeViaExtension(), equals("down:ext"))
+
+test "guard destructuring supports Ok, let, sealed cases, lists, loops, and defer":
+  expect(_describeAccount(1), equals("Alice(Ali)"))
+  expect(_describeAccount(2), equals("no-nick:Bob"))
+  expect(_describeAccount(9), equals("not-found"))
+  expect(_extractMaybe(4), equals(41))
+  expect(_extractMaybe(0), equals(-1))
+  expect(_headAndRest([10, 20, 30, 40]), equals("10+20+2"))
+  expect(_headAndRest([10]), equals("too-short"))
+  expect(_sumOnlyOk([1, 0, 2, -5, 3]), equals(60))
+  expect(_stopOnMissing([1, 2, 0, 3]), equals(30))
+
+  trace1: List<String> = []
+  expect(_guardWithDefer(1, trace1), equals("Alice"))
+  expect(trace1, equals(["inner", "outer"]))
+
+  trace2: List<String> = []
+  expect(_guardWithDefer(9, trace2), equals("err"))
+  expect(trace2, equals(["else", "outer"]))

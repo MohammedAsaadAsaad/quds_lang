@@ -473,9 +473,7 @@ class DartEmitter {
     final deferred = body.whereType<DeferStatement>().toList();
     final watched = body.whereType<WatchStatement>().isNotEmpty;
     if (deferred.isEmpty && !watched) {
-      for (final node in body) {
-        statement(node);
-      }
+      _emitSequence(body);
       return;
     }
     final id = _temps++;
@@ -492,14 +490,7 @@ class DartEmitter {
     }
     line('try {');
     _depth++;
-    for (final node in body) {
-      if (node is DeferStatement) {
-        final closure = asyncScope ? '() async' : '()';
-        line('_qd$id.add($closure { ${_deferBody(node.expression)} });');
-      } else {
-        statement(node);
-      }
-    }
+    _emitSequence(body, deferId: id, asyncScope: asyncScope);
     _depth--;
     final cleanup = <String>[];
     if (deferred.isNotEmpty) {
@@ -512,6 +503,62 @@ class DartEmitter {
     }
     line('} finally { ${cleanup.join(' ')} }');
     _watchList = previousWatch;
+  }
+
+  void _emitSequence(List<Statement> body,
+      {int? deferId, bool asyncScope = false}) {
+    for (var i = 0; i < body.length; i++) {
+      final node = body[i];
+      if (deferId != null && node is DeferStatement) {
+        final closure = asyncScope ? '() async' : '()';
+        line('_qd$deferId.add($closure { ${_deferBody(node.expression)} });');
+      } else if (node is DestructureStatement && node.elseBody != null) {
+        _emitGuardDestructure(node, body.sublist(i + 1),
+            deferId: deferId, asyncScope: asyncScope);
+        return;
+      } else {
+        statement(node);
+      }
+    }
+  }
+
+  void _emitGuardDestructure(
+    DestructureStatement node,
+    List<Statement> tail, {
+    int? deferId,
+    bool asyncScope = false,
+  }) {
+    final temp = '_qt${_temps++}';
+    line('final $temp = ${expression(node.value)};');
+    final matched = model.types[node.value];
+    final savedMatched = _matched;
+    if (matched != null && matched.contains(' | ')) _matched = matched;
+    final pat = node.pattern;
+    if (pat is NullCheckPattern && pat.inner is BindingPattern) {
+      final bound = model.declarations[pat.inner]!;
+      line('if ($temp != null) {');
+      _depth++;
+      line('final ${_dartType(bound.type)} ${bound.dartName} = $temp;');
+      _emitSequence(tail, deferId: deferId, asyncScope: asyncScope);
+      _depth--;
+      line('} else {');
+      _depth++;
+      statements(node.elseBody!);
+      _depth--;
+      line('}');
+      _matched = savedMatched;
+      return;
+    }
+    line('if ($temp case ${_pattern(pat)}) {');
+    _matched = savedMatched;
+    _depth++;
+    _emitSequence(tail, deferId: deferId, asyncScope: asyncScope);
+    _depth--;
+    line('} else {');
+    _depth++;
+    statements(node.elseBody!);
+    _depth--;
+    line('}');
   }
 
   String _withHelpers(String source) {
@@ -2148,6 +2195,8 @@ class DartEmitter {
         LabelStatement() => _statementPropagates(node.statement),
         MatchStatement() =>
           node.arms.any((arm) => _containsPropagate(arm.body)),
+        DestructureStatement() => _expressionPropagates(node.value) ||
+            (node.elseBody != null && _containsPropagate(node.elseBody!)),
         _ => false,
       };
 
@@ -3741,13 +3790,17 @@ class DartEmitter {
 
   String _resultField(ConstructorPattern pattern, int index) {
     final inner = _pattern(pattern.fields[index]);
-    final field = pattern.typeName == 'Ok'
-        ? 'value'
-        : pattern.typeName == 'Error'
-            ? 'error'
-            : null;
-    if (field == null) return inner;
-    return '$field: $inner';
+    if (pattern.typeName == 'Ok' || pattern.typeName == 'Error') {
+      _useResult = true;
+      final field = pattern.typeName == 'Ok' ? 'value' : 'error';
+      return '$field: $inner';
+    }
+    final sym = model.references[pattern];
+    final fields = sym?.classCase?.fields ?? sym?.classDeclaration?.fields;
+    if (fields != null && index < fields.length) {
+      return '${fields[index].name}: $inner';
+    }
+    return inner;
   }
 
   void _openPattern(String keyword, Expression scrutinee, Pattern pattern) {
@@ -5946,6 +5999,8 @@ class DartEmitter {
           node.body.any(_doReturns) || node.elseBody.any(_doReturns),
         LabelStatement() => _doReturns(node.statement),
         MatchStatement() => node.arms.any((arm) => arm.body.any(_doReturns)),
+        DestructureStatement() =>
+          node.elseBody != null && node.elseBody!.any(_doReturns),
         ExpressionStatement() => _exprReturns(node.expression),
         Binding() => _exprReturns(node.value),
         ReturnStatement() => node.value != null && _exprReturns(node.value!),

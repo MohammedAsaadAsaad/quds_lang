@@ -131,21 +131,21 @@ No row is declared complete merely because a sample or the full test suite passe
 This is a source inventory, not a claim that every deliberate rejection is a missing feature.
 Readonly erasure constraints and unsupported signatures must remain rejected until proved safe.
 
-- [lib/src/semantics.dart:1617](../lib/src/semantics.dart#L1617): `'E910', 'A generic superclass needs explicit type arguments in this subset', type); }`
-- [lib/src/semantics.dart:1626](../lib/src/semantics.dart#L1626): `'E910', 'Synthesizing a constructor over explicit parent constructors needs further conformance', type); }`
-- [lib/src/semantics.dart:4941](../lib/src/semantics.dart#L4941): `'E910', 'Explicit function values require a supported function or method', node); }`
-- [lib/src/semantics.dart:6851](../lib/src/semantics.dart#L6851): `error('E910', 'This method value needs unambiguous owner metadata', node); final ownerDeclaration = owner.$2; if (method.isStatic && ownerDeclaration != declaration) model.staticValueOwners[node] = _genericHead(owner.$1);`
-- [lib/src/semantics.dart:8146](../lib/src/semantics.dart#L8146): `'E910', 'This readonly shape has no runtime guard for an erased or Dart boundary', node); }`
-- [lib/src/semantics.dart:8653](../lib/src/semantics.dart#L8653): `'E910', 'These Quds function values need a method/default/variadic adapter', node); final expected =`
-- [lib/src/semantics.dart:8811](../lib/src/semantics.dart#L8811): `error('E910', 'This native function value needs additional conformance', node); final contextual = explicit == null && formals.isNotEmpty &&`
-- [lib/src/semantics.dart:8822](../lib/src/semantics.dart#L8822): `error('E910', 'This native function value needs additional conformance', node); } final substitution = explicit == null`
-- [lib/src/semantics.dart:9529](../lib/src/semantics.dart#L9529): `'E910', 'No supported generic native signature for ${callee.name}', callee); }`
-- [lib/src/semantics.dart:9957](../lib/src/semantics.dart#L9957): `'E910', 'A later optional positional argument requires earlier values explicitly', node); } else {`
-- [lib/src/semantics.dart:9988](../lib/src/semantics.dart#L9988): `error('E910', 'This Dart callback signature needs additional conformance', node); final named = top?.namedParameters ?? member!.namedParameters; final optional = top?.optionalNames ?? member!.optionalNames;`
-- [lib/src/semantics.dart:10086](../lib/src/semantics.dart#L10086): `'E910', 'A later optional Dart positional argument requires earlier values explicitly', node); layout.add((named.contains(name) ? name : null, order[i]));`
-- [lib/src/semantics.dart:10911](../lib/src/semantics.dart#L10911): `'E910', 'Imported union partial application needs additional boundary conformance', node); }`
-- [lib/src/semantics.dart:10925](../lib/src/semantics.dart#L10925): `'E910', 'This imported union signature needs additional boundary conformance', node); }`
-- [lib/src/emitter.dart:1658](../lib/src/emitter.dart#L1658): `'E910', 'No sound runtime readonly boundary for $type', _span ?? const SourceSpan(1, 1, 1)); }`
+- [lib/src/semantics.dart:1618](../lib/src/semantics.dart#L1618): `'E910', 'A generic superclass needs explicit type arguments in this subset', type); }`
+- [lib/src/semantics.dart:1627](../lib/src/semantics.dart#L1627): `'E910', 'Synthesizing a constructor over explicit parent constructors needs further conformance', type); }`
+- [lib/src/semantics.dart:5093](../lib/src/semantics.dart#L5093): `'E910', 'Explicit function values require a supported function or method', node); }`
+- [lib/src/semantics.dart:7020](../lib/src/semantics.dart#L7020): `error('E910', 'This method value needs unambiguous owner metadata', node); final ownerDeclaration = owner.$2; if (method.isStatic && ownerDeclaration != declaration) model.staticValueOwners[node] = _genericHead(owner.$1);`
+- [lib/src/semantics.dart:8315](../lib/src/semantics.dart#L8315): `'E910', 'This readonly shape has no runtime guard for an erased or Dart boundary', node); }`
+- [lib/src/semantics.dart:8905](../lib/src/semantics.dart#L8905): `'E910', 'These Quds function values need a method/default/variadic adapter', node); final expected =`
+- [lib/src/semantics.dart:9063](../lib/src/semantics.dart#L9063): `error('E910', 'This native function value needs additional conformance', node); final contextual = explicit == null && formals.isNotEmpty &&`
+- [lib/src/semantics.dart:9074](../lib/src/semantics.dart#L9074): `error('E910', 'This native function value needs additional conformance', node); } final substitution = explicit == null`
+- [lib/src/semantics.dart:9781](../lib/src/semantics.dart#L9781): `'E910', 'No supported generic native signature for ${callee.name}', callee); }`
+- [lib/src/semantics.dart:10209](../lib/src/semantics.dart#L10209): `'E910', 'A later optional positional argument requires earlier values explicitly', node); } else {`
+- [lib/src/semantics.dart:10240](../lib/src/semantics.dart#L10240): `error('E910', 'This Dart callback signature needs additional conformance', node); final named = top?.namedParameters ?? member!.namedParameters; final optional = top?.optionalNames ?? member!.optionalNames;`
+- [lib/src/semantics.dart:10338](../lib/src/semantics.dart#L10338): `'E910', 'A later optional Dart positional argument requires earlier values explicitly', node); layout.add((named.contains(name) ? name : null, order[i]));`
+- [lib/src/semantics.dart:11163](../lib/src/semantics.dart#L11163): `'E910', 'Imported union partial application needs additional boundary conformance', node); }`
+- [lib/src/semantics.dart:11177](../lib/src/semantics.dart#L11177): `'E910', 'This imported union signature needs additional boundary conformance', node); }`
+- [lib/src/emitter.dart:1705](../lib/src/emitter.dart#L1705): `'E910', 'No sound runtime readonly boundary for $type', _span ?? const SourceSpan(1, 1, 1)); }`
 
 ## Exit gate
 

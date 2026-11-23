@@ -340,9 +340,10 @@ List<Map<String, Object>> _qudsLocals(
         }
         visitStatements(elseBody, endLine(node.span));
         visitStatements(finallyBody, endLine(node.span));
-      case DestructureStatement(:final pattern, :final value):
+      case DestructureStatement(:final pattern, :final value, :final elseBody):
         patterns(pattern, end);
         visitExpression(value, end);
+        if (elseBody != null) visitStatements(elseBody, endLine(node.span));
       case LabelStatement():
         visitStatement(node.statement, end);
       case ClassDeclaration(

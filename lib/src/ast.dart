@@ -838,9 +838,11 @@ class YieldStatement extends Statement {
 }
 
 class DestructureStatement extends Statement {
-  const DestructureStatement(this.pattern, this.value, super.span);
+  const DestructureStatement(this.pattern, this.value, super.span,
+      {this.elseBody});
   final Pattern pattern;
   final Expression value;
+  final List<Statement>? elseBody;
 }
 
 class NullAwareElement extends Expression {

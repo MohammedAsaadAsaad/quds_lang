@@ -499,6 +499,9 @@ class Parser {
       return LabelStatement(label, child, extent(span));
     }
     if (word('match') || word('switch')) return matchStatement(span);
+    if (guardDestructureAhead()) {
+      return destructure(span);
+    }
     if ((at(TokenKind.leftParen) || at(TokenKind.leftBracket)) &&
         destructureAhead()) {
       return finishLine(destructure(span));
@@ -1439,6 +1442,7 @@ class Parser {
         methods.add(method);
         continue;
       }
+      final memberNotes = takeAnnotations();
       var memberVisibility = '';
       if (word('private') ||
           word('protected') ||
@@ -1483,7 +1487,7 @@ class Parser {
         readonlyMethod = true;
       }
       if (functionAhead()) {
-        methods.add(function(const [],
+        methods.add(function(memberNotes,
             visibility: memberVisibility,
             readonlyMethod: readonlyMethod,
             isStatic: isStatic));
@@ -1720,6 +1724,7 @@ class Parser {
     endLine();
     expect(TokenKind.indent, 'indented block');
     while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
+      final memberNotes = takeAnnotations();
       if (word('property')) {
         properties.add(propertyDeclaration(''));
         continue;
@@ -1727,7 +1732,8 @@ class Parser {
       final readonlyMethod = word('readonly');
       if (readonlyMethod) take();
       if (!functionAhead()) fail('An extension member must be a function');
-      methods.add(function(notes, readonlyMethod: readonlyMethod));
+      methods.add(
+          function([...notes, ...memberNotes], readonlyMethod: readonlyMethod));
     }
     expect(TokenKind.dedent, 'end of extension');
     return ExtensionDeclaration(extensionName, target, methods, extent(span),
@@ -2003,11 +2009,70 @@ class Parser {
     return false;
   }
 
+  bool guardDestructureAhead() {
+    var depth = 0;
+    var sawEquals = false;
+    var elseOwners = 0;
+    for (var j = index; j < tokens.length; j++) {
+      final token = tokens[j];
+      final kind = token.kind;
+      if (kind == TokenKind.leftParen || kind == TokenKind.leftBracket) {
+        depth++;
+      } else if (kind == TokenKind.rightParen ||
+          kind == TokenKind.rightBracket) {
+        depth--;
+        if (depth < 0) return false;
+      } else if (depth == 0) {
+        if (kind == TokenKind.newline || kind == TokenKind.eof) return false;
+        if (!sawEquals) {
+          if (kind == TokenKind.equals) {
+            if (j == index) return false;
+            sawEquals = true;
+          }
+        } else {
+          if (kind == TokenKind.identifier &&
+              (token.lexeme == 'if' ||
+                  token.lexeme == 'try' ||
+                  token.lexeme == 'for' ||
+                  token.lexeme == 'while' ||
+                  token.lexeme == 'repeat' ||
+                  token.lexeme == 'loop')) {
+            elseOwners++;
+          } else if (kind == TokenKind.identifier && token.lexeme == 'else') {
+            if (elseOwners > 0) {
+              elseOwners--;
+            } else if (j + 1 < tokens.length &&
+                tokens[j + 1].kind == TokenKind.colon) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
   DestructureStatement destructure(SourceSpan span) {
-    final pattern = patternLiteral();
+    final Pattern pattern;
+    if (word('let') &&
+        peek().kind == TokenKind.identifier &&
+        peek(2).kind == TokenKind.equals) {
+      take();
+      final bound = name();
+      pattern = NullCheckPattern(
+          BindingPattern(bound.lexeme, bound.span), bound.span);
+    } else {
+      pattern = patternLiteral();
+    }
     expect(TokenKind.equals, '=');
     final value = expression(bare: true);
-    return DestructureStatement(pattern, value, extent(span));
+    List<Statement>? elseBody;
+    if (word('else')) {
+      take();
+      elseBody = suite();
+    }
+    return DestructureStatement(pattern, value, extent(span),
+        elseBody: elseBody);
   }
 
   MatchStatement matchStatement(SourceSpan span) {

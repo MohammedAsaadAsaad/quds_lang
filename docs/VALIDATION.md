@@ -1,3 +1,17 @@
+# `@consumes` static use-after-consume (`E315`) & guard destructuring `... else:` (`E316`, Batch 4) — 2026-11-23
+
+Base: `777dc12`.
+
+| Check | Observed result |
+| --- | --- |
+| `@consumes` annotation & parser | Enabled member annotation parsing (`takeAnnotations()`) inside `class`/`interface`/`mixin` and `extend` declarations; recognized built-in `@consumes` (no arguments) in `_checkMetadata` |
+| Static flow analysis (`E315`) | Tracks consumed local/parameter symbols across sequences, branches (`if`/`else`, `if let`, `if ... is`, `match`, `try`/`catch`), and loops (`for`, `while`, `repeat`, C-`for`); resolves `@consumes` across classes, superclasses, interfaces, mixins, generic bounds, and extensions; allows re-initialization of mutable `var` bindings via `=` and ignores exiting branches |
+| Guard destructuring (`E316`) | Added `elseBody` to `DestructureStatement` (`Ok(x) = expr else:`, `Some(v) = expr else:`, `[a, b, ...rest] = expr else:`, `let x = expr else:`), enforcing scope-exiting `else:` branches (`E316`) and lowering to idiomatic Dart 3 `if (temp case Pattern) { <rest> } else { <elseBody> }` with `defer` LIFO preservation and positional/named sealed-case/class field resolution |
+| Primary Quds suite & driver | `/opt/flutter/bin/dart test test/consumes_and_guard_else_test.dart`: **4 passed, 0 failed** (46s; `quds test test/consumes_and_guard_else.quds`, `E315` negative checks, `E316` negative checks, strict `quds analyze --fatal-infos`, VM + `quds compile js` + `node` parity) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # Inline `when test:` blocks (Batch 3) — 2026-11-23
 
 Base: `63b2962`.

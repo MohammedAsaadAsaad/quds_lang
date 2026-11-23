@@ -2231,7 +2231,7 @@ A statement that starts with an identifier, or with a contextual keyword whose k
 2. A name, optional `: type`, then `=`, is a binding when no binding of that name is visible. It is an assignment when a mutable binding is visible. It is `E202` when an immutable binding is visible.
 3. In statement or member position, a name followed by a parameter list and then `->`, `:`, `=`, `async`, or `sync` is a function declaration. A parameter list is a parenthesized group whose every item is a parameter. In expression position those parentheses are a call.
 4. `test` or `group`, followed by a string literal and `:`, is a test declaration. `test` or `group`, followed by a string, `async`, and `:`, is an async test declaration.
-5. A list, map, record, or object pattern followed by `=` is destructuring. Names separated by commas are the same assignment: `a, b = b, a` reads every right-hand value, and `name, age = person` reads one record. The right-hand side runs completely before any name is written. Each name follows the binding rule: an invisible name is declared immutable, a visible mutable name is assigned, and a visible immutable name is `E202`. `shadow` before a name declares a new immutable binding that hides an outer one. `var` before the pattern declares every new name mutable. A list pattern of names is assigned, and a list with too few elements throws at run time. A pattern that tests a value — a literal, a relation, an alternative, a type test, or an object case — is `E100`.
+5. A list, map, record, or object pattern followed by `=` is destructuring. Names separated by commas are the same assignment: `a, b = b, a` reads every right-hand value, and `name, age = person` reads one record. The right-hand side runs completely before any name is written. Each name follows the binding rule: an invisible name is declared immutable, a visible mutable name is assigned, and a visible immutable name is `E202`. `shadow` before a name declares a new immutable binding that hides an outer one. `var` before the pattern declares every new name mutable. A list pattern of names is assigned, and a list with too few elements throws at run time. Without `else:`, a refutable pattern — a literal, a relation, an alternative, a type test, or an object case — is `E100`. With a trailing `else:` suite (`Ok(user) = loadUser() else: return ...`, `Some(v) = opt else: ...`, `[a, b, ...rest] = xs else: ...`, or `let name = expr else: return ...`), refutable patterns bind their names into the enclosing scope for all subsequent statements, and the `else:` branch must exit the enclosing scope (`return`, `throw`, `rethrow`, `break`, or `continue`; otherwise `E316`).
 6. Otherwise a name followed by an argument is a call statement. A name alone is an expression statement, which is a tear-off or a value. A zero-argument call is `name()`. A bare name is never a call (`E110`).
 
 ```
@@ -2577,6 +2577,8 @@ A property suite contains `get = expression` or `get suite`, and optionally `set
 
 `readonly` on a reference rejects assignment, compound assignment, and any call that is not a read. Reads are getters, `[]` when it does not write, `==`, `hashCode`, `toString`, and a method declared `readonly`. For `List`, `Map`, and `Set`, methods that add, remove, reorder, or replace elements are writes, and methods that only return a value or a new collection are reads. A `readonly` method may itself perform only reads on `this` (`E307`). Another alias of the same object is not affected.
 
+`@consumes` is a built-in annotation (taking no arguments) on instance methods of classes, interfaces, mixins, and extensions (such as `@consumes close() -> void:`). Calling a `@consumes` method on a local variable or parameter marks that binding consumed along subsequent control flow; any further read, member access, method call, or argument use is rejected statically with `E315` until a mutable `var` binding is reassigned with `=`. Flow analysis merges branches (ignoring paths that always exit) and rejects consuming an outer variable inside a loop that may execute more than once (`E315`).
+
 `in` and `out` are accepted only when every use of the type parameter is in the matching variance position and the emitted Dart type is sound. A violation is `E304`. Dart generics without `in` or `out` keep Dart's generic rules.
 
 A function type in type position uses the parameter grammar. A lambda in expression position uses the lambda grammar. The two arrows are the same token in different positions.
@@ -2682,6 +2684,8 @@ A diagnostic is `path:line:column: severity[CODE]: message`, using the original 
 | `E312` | A value-returning path has no `return` |
 | `E313` | A match arm is unreachable |
 | `E314` | A match expression is not exhaustive |
+| `E315` | A value consumed by a `@consumes` method is used after consumption or consumed across loop iterations |
+| `E316` | A guard destructuring `else:` branch does not exit the enclosing scope |
 | `E401` | A constant cannot be evaluated |
 | `E402` | A const initializer uses a const declared later in the library |
 | `E500` | A required argument is missing or an argument is unexpected or duplicated |

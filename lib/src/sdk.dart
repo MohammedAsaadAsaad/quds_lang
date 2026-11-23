@@ -10430,10 +10430,1090 @@ _homologyRoot(parents: List<int>, start: int) -> int:
   return vertex
 ''';
 
+/// Source of `quds:text`. Kept equal to `lib/sdk/text.quds`.
+const textSdkSource = r'''# General-purpose text library for Quds.
+# Provides UTF-16 ranges and spans, line/column mapping, Unicode inspection,
+# literal slicing, splitting, composition, efficient building, and line tools.
+# A column-0 :: name opens a section. use quds:text::builder imports that
+# section and any subsection under it. use quds:text imports every public name.
+# Example:
+#   use quds:text::compose as text
+#   print text.repeatText("ha", 3, separator: "-")
+
+:: types
+
+# How an offset that falls inside a multi-unit character should be handled.
+# Example:
+#   policy = TextBoundaryPolicy.reject
+#   print policy.name
+enum TextBoundaryPolicy:
+  reject
+  previous
+  next
+
+# A half-open UTF-16 code-unit range [start, end) inside a string.
+# Both bounds are zero-based and satisfy 0 <= start <= end.
+# Example:
+#   range = TextRange(1, 4)
+#   print range.length
+value class TextRange:
+  start: int required
+  end: int required
+
+  init(this.start, this.end):
+    if start < 0:
+      throw RangeError.value(start, "start", "TextRange.start must be non-negative")
+    if end < start:
+      throw RangeError.value(end, "end", "TextRange.end must be >= start")
+
+  # Number of UTF-16 code units covered by this range.
+  # Example:
+  #   print TextRange(2, 5).length
+  property length: int:
+    get = end - start
+
+  # True when start equals end.
+  # Example:
+  #   print TextRange(2, 2).isEmpty
+  property isEmpty: bool:
+    get = start == end
+
+  # True when the range covers at least one UTF-16 code unit.
+  # Example:
+  #   print TextRange(2, 5).isNotEmpty
+  property isNotEmpty: bool:
+    get = start < end
+
+  # True when [offset] lies within [start, end).
+  # Example:
+  #   print TextRange(1, 4).contains(2)
+  contains(offset: int) -> bool = offset >= start and offset < end
+
+  # True when this range shares at least one code unit with [other].
+  # Example:
+  #   print TextRange(0, 3).overlaps(TextRange(2, 5))
+  overlaps(other: TextRange) -> bool = start < other.end and other.start < end
+
+
+  toString() -> String = "TextRange($start, $end)"
+
+# A validated slice view over a [source] string using a UTF-16 [range].
+# Retaining a TextSpan may retain the full [source]; call materialize() to
+# detach a copy that only holds the slice.
+# Example:
+#   span = TextSpan("hello world", TextRange(0, 5))
+#   print span.value
+value class TextSpan:
+  source: String required
+  range: TextRange required
+
+  init(this.source, this.range):
+    validateTextRange(source, range)
+
+  # Substring covered by this span.
+  # Example:
+  #   print TextSpan("hello", TextRange(1, 4)).value
+  property value: String:
+    get = source.substring(range.start, range.end)
+
+  # Number of UTF-16 code units in this span.
+  # Example:
+  #   print TextSpan("hello", TextRange(1, 4)).length
+  property length: int:
+    get = range.length
+
+  # True when this span covers zero UTF-16 code units.
+  # Example:
+  #   print TextSpan("hello", TextRange(2, 2)).isEmpty
+  property isEmpty: bool:
+    get = range.isEmpty
+
+  # Derives a sub-span using UTF-16 offsets relative to this span.
+  # Example:
+  #   span = TextSpan("abcdef", TextRange(1, 5))
+  #   print span.slice(1, 3).value
+  slice(start: int, end: int) -> TextSpan:
+    sub = TextRange(start, end)
+    if sub.end > range.length:
+      throw RangeError.range(sub.end, 0, range.length, "end")
+    return TextSpan(source, TextRange(range.start + sub.start, range.start + sub.end))
+
+  # Returns a span backed only by the sliced text, releasing the original source.
+  # Example:
+  #   detached = TextSpan("hello world", TextRange(6, 11)).materialize()
+  #   print detached.value
+  materialize() -> TextSpan:
+    copied = value
+    return TextSpan(copied, TextRange(0, copied.length))
+
+
+  toString() -> String = "TextSpan(${range.start}..${range.end}: $value)"
+
+# A position in text with zero-based UTF-16 [offset], one-based [line], and
+# one-based UTF-16 [column]. CRLF counts as a single line break.
+# Example:
+#   pos = textPositionAt("a\nb", 2)
+#   print pos.line
+value class TextPosition:
+  offset: int required
+  line: int required
+  column: int required
+
+  init(this.offset, this.line, this.column):
+    if offset < 0:
+      throw RangeError.value(offset, "offset", "TextPosition.offset must be non-negative")
+    if line < 1:
+      throw RangeError.value(line, "line", "TextPosition.line must be >= 1")
+    if column < 1:
+      throw RangeError.value(column, "column", "TextPosition.column must be >= 1")
+
+
+  toString() -> String = "TextPosition(offset: $offset, line: $line, column: $column)"
+
+# Validates that [range] lies within [text] and returns it unchanged.
+# Throws RangeError if end exceeds text.length.
+# Example:
+#   r = validateTextRange("hello", TextRange(0, 5))
+#   print r.length
+validateTextRange(text: String, bounds: TextRange) -> TextRange:
+  if bounds.end > text.length:
+    throw RangeError.range(bounds.end, 0, text.length, "bounds.end")
+  return bounds
+
+# Returns the intersection of [first] and [second], or null when disjoint.
+# Adjacent non-empty ranges such as [0, 2) and [2, 4) return null.
+# Example:
+#   hit = intersectTextRanges(TextRange(0, 4), TextRange(2, 6))
+#   print hit
+intersectTextRanges(first: TextRange, second: TextRange) -> TextRange?:
+  s = if first.start > second.start: first.start else: second.start
+  e = if first.end < second.end: first.end else: second.end
+  if s > e:
+    return null
+  if s == e and first.isNotEmpty and second.isNotEmpty:
+    return null
+  return TextRange(s, e)
+
+# Computes the 1-based line and UTF-16 column for a 0-based UTF-16 [offset].
+# Treats CRLF, LF, and CR as single line breaks.
+# Example:
+#   pos = textPositionAt("a\r\nb", 3)
+#   print pos.line
+textPositionAt(text: String, offset: int) -> TextPosition:
+  if offset < 0 or offset > text.length:
+    throw RangeError.range(offset, 0, text.length, "offset")
+  var line = 1
+  var column = 1
+  var i = 0
+  while i < offset:
+    unit = text.codeUnitAt(i)
+    if unit == 13:
+      if i + 1 < offset and text.codeUnitAt(i + 1) == 10:
+        line = line + 1
+        column = 1
+        i = i + 2
+      else if i + 1 == offset and i + 1 < text.length and text.codeUnitAt(i + 1) == 10:
+        # Offset sits between CR and LF inside CRLF.
+        column = column + 1
+        i = i + 1
+      else:
+        line = line + 1
+        column = 1
+        i = i + 1
+    else if unit == 10:
+      line = line + 1
+      column = 1
+      i = i + 1
+    else:
+      column = column + 1
+      i = i + 1
+  return TextPosition(offset, line, column)
+
+# Computes the 0-based UTF-16 offset for a 1-based [line] and UTF-16 [column].
+# Throws RangeError if [line] or [column] is out of bounds for [text].
+# Example:
+#   print textOffsetAt("ab\ncd", 2, 2)
+textOffsetAt(text: String, line: int, column: int) -> int:
+  if line < 1:
+    throw RangeError.value(line, "line", "line must be >= 1")
+  if column < 1:
+    throw RangeError.value(column, "column", "column must be >= 1")
+  var currentLine = 1
+  var i = 0
+  n = text.length
+  while currentLine < line:
+    if i >= n:
+      throw RangeError.value(line, "line", "line exceeds total lines in text")
+    unit = text.codeUnitAt(i)
+    if unit == 13:
+      if i + 1 < n and text.codeUnitAt(i + 1) == 10:
+        i = i + 2
+      else:
+        i = i + 1
+      currentLine = currentLine + 1
+    else if unit == 10:
+      i = i + 1
+      currentLine = currentLine + 1
+    else:
+      i = i + 1
+  var lineEnd = i
+  while lineEnd < n:
+    unit = text.codeUnitAt(lineEnd)
+    if unit == 10 or unit == 13:
+      break
+    lineEnd = lineEnd + 1
+  lineLength = lineEnd - i
+  if column - 1 > lineLength:
+    throw RangeError.range(column, 1, lineLength + 1, "column")
+  return i + (column - 1)
+
+
+:: inspect
+
+# True when [text] is empty or consists solely of Unicode White_Space code points
+# (Unicode 15.1: U+0009..U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000..U+200A,
+# U+2028, U+2029, U+202F, U+205F, U+3000).
+# Example:
+#   print isBlankText(" \t\u00A0")
+isBlankText(text: String) -> bool:
+  var i = 0
+  n = text.length
+  while i < n:
+    unit = text.codeUnitAt(i)
+    if not _isUnicodeWhitespaceUnit(unit):
+      return false
+    i = i + 1
+  return true
+
+# True when [text] is non-null and not blank according to isBlankText.
+# Example:
+#   print hasText("Quds")
+hasText(text: String?) -> bool:
+  if let value = text:
+    return not isBlankText(value)
+  return false
+
+# Returns null when [text] is null or blank; otherwise returns [text] verbatim
+# without trimming.
+# Example:
+#   print blankTextToNull("  hi  ")
+blankTextToNull(text: String?) -> String?:
+  if let value = text:
+    if not isBlankText(value):
+      return value
+  return null
+
+# True when every character unit in [text] belongs to [allowed].
+# Example:
+#   print containsOnlyCharacters("1010", ["0", "1"])
+containsOnlyCharacters(text: String, allowed: Iterable<String>) -> bool:
+  permitted: Set<String> = set:
+  for item in allowed:
+    permitted.add(item)
+  if text.isEmpty:
+    return true
+  var i = 0
+  n = text.length
+  while i < n:
+    unit = text.codeUnitAt(i)
+    var step = 1
+    if unit >= 0xD800 and unit <= 0xDBFF and i + 1 < n:
+      low = text.codeUnitAt(i + 1)
+      if low >= 0xDC00 and low <= 0xDFFF:
+        step = 2
+    piece = text.substring(i, i + step)
+    if not permitted.contains(piece):
+      return false
+    i = i + step
+  return true
+
+# True when [text] contains a recognized line break (LF, CR, NEL, LS, or PS).
+# Example:
+#   print hasLineBreak("a\nb")
+hasLineBreak(text: String) -> bool:
+  var i = 0
+  n = text.length
+  while i < n:
+    unit = text.codeUnitAt(i)
+    if unit == 10 or unit == 13 or unit == 0x85 or unit == 0x2028 or unit == 0x2029:
+      return true
+    i = i + 1
+  return false
+
+# True when [text] is well-formed UTF-16 with no unpaired surrogates.
+# Example:
+#   print isWellFormedUnicode("قدس")
+isWellFormedUnicode(text: String) -> bool:
+  var i = 0
+  n = text.length
+  while i < n:
+    unit = text.codeUnitAt(i)
+    if unit >= 0xD800 and unit <= 0xDBFF:
+      if i + 1 >= n:
+        return false
+      low = text.codeUnitAt(i + 1)
+      if low < 0xDC00 or low > 0xDFFF:
+        return false
+      i = i + 2
+    else if unit >= 0xDC00 and unit <= 0xDFFF:
+      return false
+    else:
+      i = i + 1
+  return true
+
+
+:: slice
+
+# Returns the substring of [text] covered by [range] in UTF-16 code units.
+# Throws RangeError if [range] exceeds [text].
+# Example:
+#   print sliceText("hello world", TextRange(6, 11))
+sliceText(text: String, bounds: TextRange) -> String:
+  validateTextRange(text, bounds)
+  return text.substring(bounds.start, bounds.end)
+
+# Substring before the first occurrence of [marker], or null if absent.
+# Rejects an empty [marker] with ArgumentError.
+# Example:
+#   print beforeText("key=value", "=")
+beforeText(text: String, marker: String) -> String?:
+  if marker.isEmpty:
+    throw ArgumentError.value(marker, "marker", "marker must not be empty")
+  found = text.indexOf(marker)
+  if found < 0:
+    return null
+  return text.substring(0, found)
+
+# Substring after the first occurrence of [marker], or null if absent.
+# Rejects an empty [marker] with ArgumentError.
+# Example:
+#   print afterText("key=value", "=")
+afterText(text: String, marker: String) -> String?:
+  if marker.isEmpty:
+    throw ArgumentError.value(marker, "marker", "marker must not be empty")
+  found = text.indexOf(marker)
+  if found < 0:
+    return null
+  return text.substring(found + marker.length)
+
+# Substring before the last occurrence of [marker], or null if absent.
+# Rejects an empty [marker] with ArgumentError.
+# Example:
+#   print beforeLastText("a.b.c", ".")
+beforeLastText(text: String, marker: String) -> String?:
+  if marker.isEmpty:
+    throw ArgumentError.value(marker, "marker", "marker must not be empty")
+  found = text.lastIndexOf(marker)
+  if found < 0:
+    return null
+  return text.substring(0, found)
+
+# Substring after the last occurrence of [marker], or null if absent.
+# Rejects an empty [marker] with ArgumentError.
+# Example:
+#   print afterLastText("a.b.c", ".")
+afterLastText(text: String, marker: String) -> String?:
+  if marker.isEmpty:
+    throw ArgumentError.value(marker, "marker", "marker must not be empty")
+  found = text.lastIndexOf(marker)
+  if found < 0:
+    return null
+  return text.substring(found + marker.length)
+
+# Substring strictly between the first [startMarker] and the first [endMarker]
+# occurring after it, or null if either marker is absent.
+# Rejects empty markers with ArgumentError.
+# Example:
+#   print betweenText("[quds]", "[", "]")
+betweenText(text: String, startMarker: String, endMarker: String) -> String?:
+  if startMarker.isEmpty:
+    throw ArgumentError.value(startMarker, "startMarker", "startMarker must not be empty")
+  if endMarker.isEmpty:
+    throw ArgumentError.value(endMarker, "endMarker", "endMarker must not be empty")
+  first = text.indexOf(startMarker)
+  if first < 0:
+    return null
+  afterStart = first + startMarker.length
+  second = text.indexOf(endMarker, afterStart)
+  if second < 0:
+    return null
+  return text.substring(afterStart, second)
+
+# Sliding windows of UTF-16 length [size] advancing by [step] code units.
+# Returns an empty list when [text] is shorter than [size].
+# Example:
+#   print textWindows("abcd", 2)
+textWindows(text: String, size: int, step: int = 1) -> List<String>:
+  if size < 1:
+    throw ArgumentError.value(size, "size", "size must be >= 1")
+  if step < 1:
+    throw ArgumentError.value(step, "step", "step must be >= 1")
+  out: List<String> = []
+  var i = 0
+  while i + size <= text.length:
+    out.add(text.substring(i, i + size))
+    i = i + step
+  return out
+
+
+:: split
+
+# Reusable options for text splitting operations.
+# [maxSplits] limits how many separator splits occur (0 means no split).
+# Example:
+#   opts = TextSplitOptions(keepEmpty: false, maxSplits: 2)
+#   print opts.keepEmpty
+class TextSplitOptions:
+  keepEmpty: bool = true
+  maxSplits: int? = null
+  keepSeparators: bool = false
+
+  init(this.keepEmpty = true, this.maxSplits = null, this.keepSeparators = false):
+    limit = maxSplits
+    if limit != null and limit < 0:
+      throw ArgumentError.value(limit, "maxSplits", "maxSplits must be non-negative")
+
+# Result of splitting a string at a single occurrence of a separator.
+# Example:
+#   part = splitTextOnce("name=value", "=")
+#   print part.before
+value class TextPartition:
+  before: String required
+  separator: String required
+  after: String required
+  found: bool required
+
+  init(this.before, this.separator, this.after, this.found):
+    assert true
+
+
+  toString() -> String = "TextPartition(before: $before, separator: $separator, after: $after, found: $found)"
+
+# Splits [text] on literal [separator].
+# Keeps empty segments by default; [maxSplits] counts splits (0 means no split).
+# Rejects an empty [separator] or negative [maxSplits].
+# Example:
+#   print splitText("a,,b", ",")
+splitText(text: String, separator: String, keepEmpty: bool = true, maxSplits: int? = null, keepSeparators: bool = false) -> List<String>:
+  if separator.isEmpty:
+    throw ArgumentError.value(separator, "separator", "separator must not be empty")
+  if maxSplits != null and maxSplits < 0:
+    throw ArgumentError.value(maxSplits, "maxSplits", "maxSplits must be non-negative")
+  out: List<String> = []
+  if maxSplits == 0:
+    if keepEmpty or text.isNotEmpty:
+      out.add(text)
+    return out
+  var start = 0
+  var splits = 0
+  while true:
+    if maxSplits != null and splits >= maxSplits:
+      break
+    found = text.indexOf(separator, start)
+    if found < 0:
+      break
+    piece = text.substring(start, found)
+    if keepEmpty or piece.isNotEmpty:
+      out.add(piece)
+    if keepSeparators:
+      out.add(separator)
+    start = found + separator.length
+    splits = splits + 1
+  tail = text.substring(start)
+  if keepEmpty or tail.isNotEmpty:
+    out.add(tail)
+  return out
+
+# Splits [text] on any literal separator in [separators].
+# When multiple separators match at the same position, prefers the longest match
+# and breaks ties by definition order in [separators].
+# Example:
+#   print splitTextAny("a--b-c", ["-", "--"])
+splitTextAny(text: String, separators: List<String>, keepEmpty: bool = true, maxSplits: int? = null, keepSeparators: bool = false) -> List<String>:
+  if separators.isEmpty:
+    throw ArgumentError.value(separators, "separators", "separators must not be empty")
+  for sep in separators:
+    if sep.isEmpty:
+      throw ArgumentError("separators must not contain an empty string")
+  if maxSplits != null and maxSplits < 0:
+    throw ArgumentError.value(maxSplits, "maxSplits", "maxSplits must be non-negative")
+  out: List<String> = []
+  if maxSplits == 0:
+    if keepEmpty or text.isNotEmpty:
+      out.add(text)
+    return out
+  var start = 0
+  var cursor = 0
+  var splits = 0
+  n = text.length
+  while cursor < n:
+    if maxSplits != null and splits >= maxSplits:
+      break
+    var hasMatch = false
+    var matched = ""
+    for sep in separators:
+      if cursor + sep.length <= n and text.startsWith(sep, cursor):
+        if not hasMatch or sep.length > matched.length:
+          matched = sep
+          hasMatch = true
+    if hasMatch:
+      piece = text.substring(start, cursor)
+      if keepEmpty or piece.isNotEmpty:
+        out.add(piece)
+      if keepSeparators:
+        out.add(matched)
+      cursor = cursor + matched.length
+      start = cursor
+      splits = splits + 1
+    else:
+      cursor = cursor + 1
+  tail = text.substring(start)
+  if keepEmpty or tail.isNotEmpty:
+    out.add(tail)
+  return out
+
+# Splits [text] once at the first occurrence of [separator].
+# Example:
+#   part = splitTextOnce("name=a=b", "=")
+#   print part.after
+splitTextOnce(text: String, separator: String) -> TextPartition:
+  if separator.isEmpty:
+    throw ArgumentError.value(separator, "separator", "separator must not be empty")
+  found = text.indexOf(separator)
+  if found < 0:
+    return TextPartition(text, "", "", false)
+  return TextPartition(text.substring(0, found), separator, text.substring(found + separator.length), true)
+
+# Splits [text] once at the last occurrence of [separator].
+# Example:
+#   part = splitTextLastOnce("a/b/c", "/")
+#   print part.after
+splitTextLastOnce(text: String, separator: String) -> TextPartition:
+  if separator.isEmpty:
+    throw ArgumentError.value(separator, "separator", "separator must not be empty")
+  found = text.lastIndexOf(separator)
+  if found < 0:
+    return TextPartition(text, "", "", false)
+  return TextPartition(text.substring(0, found), separator, text.substring(found + separator.length), true)
+
+# Splits [text] on literal [separator] into [TextSpan] views referencing [text].
+# Example:
+#   spans = textSegments("a,b,c", ",")
+#   print spans[1].range.start
+textSegments(text: String, separator: String, keepEmpty: bool = true, maxSplits: int? = null) -> List<TextSpan>:
+  if separator.isEmpty:
+    throw ArgumentError.value(separator, "separator", "separator must not be empty")
+  if maxSplits != null and maxSplits < 0:
+    throw ArgumentError.value(maxSplits, "maxSplits", "maxSplits must be non-negative")
+  out: List<TextSpan> = []
+  if maxSplits == 0:
+    if keepEmpty or text.isNotEmpty:
+      out.add(TextSpan(text, TextRange(0, text.length)))
+    return out
+  var start = 0
+  var splits = 0
+  while true:
+    if maxSplits != null and splits >= maxSplits:
+      break
+    found = text.indexOf(separator, start)
+    if found < 0:
+      break
+    if keepEmpty or found > start:
+      out.add(TextSpan(text, TextRange(start, found)))
+    start = found + separator.length
+    splits = splits + 1
+  if keepEmpty or text.length > start:
+    out.add(TextSpan(text, TextRange(start, text.length)))
+  return out
+
+
+:: compose
+
+# Joins [parts] in a single pass with [separator] between consecutive elements.
+# Example:
+#   print joinText(["a", "b", "c"], separator: ", ")
+joinText(parts: Iterable<String>, separator: String = "") -> String:
+  buffer = StringBuffer()
+  var first = true
+  for part in parts:
+    if not first and separator.isNotEmpty:
+      buffer.write(separator)
+    buffer.write(part)
+    first = false
+  return buffer.toString()
+
+# Joins non-blank elements of [parts] (according to isBlankText) with [separator].
+# Example:
+#   print joinNonBlankText(["a", "  ", "b"], separator: "-")
+joinNonBlankText(parts: Iterable<String>, separator: String = "") -> String:
+  buffer = StringBuffer()
+  var first = true
+  for part in parts:
+    if isBlankText(part):
+      continue
+    if not first and separator.isNotEmpty:
+      buffer.write(separator)
+    buffer.write(part)
+    first = false
+  return buffer.toString()
+
+# Repeats [text] [count] times with optional [separator] between copies.
+# Throws RangeError if [count] is negative.
+# Example:
+#   print repeatText("some", 3, separator: "-")
+repeatText(text: String, count: int, separator: String = "") -> String:
+  if count < 0:
+    throw RangeError.value(count, "count", "count must be non-negative")
+  if count == 0:
+    return ""
+  if count == 1:
+    return text
+  buffer = StringBuffer()
+  var i = 0
+  while i < count:
+    if i > 0 and separator.isNotEmpty:
+      buffer.write(separator)
+    buffer.write(text)
+    i = i + 1
+  return buffer.toString()
+
+# Wraps [text] with [prefix] and [suffix].
+# Example:
+#   print surroundText("quds", "[", "]")
+surroundText(text: String, prefix: String, suffix: String) -> String = prefix + text + suffix
+
+# Ensures [text] starts with [prefix] without duplicating an existing prefix.
+# Example:
+#   print ensureTextPrefix("home", "/")
+ensureTextPrefix(text: String, prefix: String) -> String:
+  if prefix.isEmpty or text.startsWith(prefix):
+    return text
+  return prefix + text
+
+# Ensures [text] ends with [suffix] without duplicating an existing suffix.
+# Example:
+#   print ensureTextSuffix("dir", "/")
+ensureTextSuffix(text: String, suffix: String) -> String:
+  if suffix.isEmpty or text.endsWith(suffix):
+    return text
+  return text + suffix
+
+# Lazily yields elements of [parts] with [separator] inserted between adjacent
+# items without consuming [parts] upfront.
+# Example:
+#   for piece in interleaveText(["a", "b"], ","):
+#     print piece
+interleaveText(parts: Iterable<String>, separator: String) sync* -> String:
+  var first = true
+  for part in parts:
+    if not first:
+      yield separator
+    yield part
+    first = false
+
+
+:: builder
+
+# Mutable builder for constructing strings in linear time.
+# Does not expose a fake constant-time grapheme count because appending a
+# combining mark can merge with the preceding character.
+# Example:
+#   builder = TextBuilder()
+#   builder.append("Hello")
+#   builder.appendLine(" Quds")
+#   print builder.build()
+class TextBuilder:
+  private _buffer: StringBuffer = StringBuffer()
+
+  init():
+    assert true
+
+  # Current length in UTF-16 code units.
+  # Example:
+  #   b = TextBuilder()
+  #   b.append("hi")
+  #   print b.utf16Length
+  property utf16Length: int:
+    get = _buffer.length
+
+  # True when nothing has been written since creation or clear().
+  # Example:
+  #   print TextBuilder().isEmpty
+  property isEmpty: bool:
+    get = _buffer.isEmpty
+
+  # True when at least one code unit has been written.
+  # Example:
+  #   b = TextBuilder()
+  #   b.append("a")
+  #   print b.isNotEmpty
+  property isNotEmpty: bool:
+    get = _buffer.isNotEmpty
+
+  # Appends [text] to the buffer.
+  # Example:
+  #   b = TextBuilder()
+  #   b.append("Quds")
+  append(text: String):
+    _buffer.write(text)
+
+  # Appends [text] followed by [lineEnding] (defaults to LF "\n").
+  # Example:
+  #   b = TextBuilder()
+  #   b.appendLine("line 1")
+  appendLine(text: String, lineEnding: String = "\n"):
+    if text.isNotEmpty:
+      _buffer.write(text)
+    _buffer.write(lineEnding)
+
+  # Appends an empty line break ("\n").
+  # Example:
+  #   b = TextBuilder()
+  #   b.appendLine()
+  appendLine():
+    _buffer.write("\n")
+
+  # Appends every item of [parts] in a single pass.
+  # Example:
+  #   b = TextBuilder()
+  #   b.appendAll(["a", "b"])
+  appendAll(parts: Iterable<String>):
+    for part in parts:
+      _buffer.write(part)
+
+  # Appends every item of [parts] in a single pass separated by [separator].
+  # Example:
+  #   b = TextBuilder()
+  #   b.appendJoined(["a", "b", "c"], separator: ", ")
+  appendJoined(parts: Iterable<String>, separator: String = ""):
+    var first = true
+    for part in parts:
+      if not first and separator.isNotEmpty:
+        _buffer.write(separator)
+      _buffer.write(part)
+      first = false
+
+  # Appends a single Unicode scalar value [codePoint] (0..0x10FFFF, non-surrogate).
+  # Example:
+  #   b = TextBuilder()
+  #   b.appendCodePoint(0x1F600)
+  appendCodePoint(codePoint: int):
+    if codePoint < 0 or codePoint > 0x10FFFF or (codePoint >= 0xD800 and codePoint <= 0xDFFF):
+      throw RangeError.value(codePoint, "codePoint", "Expected a valid Unicode scalar value")
+    _buffer.writeCharCode(codePoint)
+
+  # Returns the accumulated string. Further mutations do not affect the result.
+  # Example:
+  #   b = TextBuilder()
+  #   b.append("ok")
+  #   print b.build()
+  build() -> String = _buffer.toString()
+
+  # Clears all accumulated content.
+  # Example:
+  #   b = TextBuilder()
+  #   b.append("tmp")
+  #   b.clear()
+  clear():
+    _buffer.clear()
+
+
+:: lines
+
+# Explicit line ending representation. Library default is LF across all platforms.
+# Example:
+#   print normalizeLineEndings("a\r\nb", ending: TextLineEnding.lf)
+enum TextLineEnding:
+  lf
+  crlf
+  cr
+
+# One line parsed from a source string, preserving its content, ending, and ranges.
+# Example:
+#   lines = TextLines("a\r\nb")
+#   print lines.lineAt(0).ending.length
+value class TextLine:
+  lineNumber: int required
+  content: String required
+  ending: String required
+  contentRange: TextRange required
+  fullRange: TextRange required
+
+  init(this.lineNumber, this.content, this.ending, this.contentRange, this.fullRange):
+    assert true
+
+
+  toString() -> String = "TextLine($lineNumber: $content)"
+
+# Parsed view of lines in [source], distinguishing line content from line endings.
+# Example:
+#   view = TextLines("first\r\nsecond")
+#   print view.count
+class TextLines:
+  source: String required
+  keepTrailingEmpty: bool = false
+  private _lines: List<TextLine>
+
+  init(this.source, this.keepTrailingEmpty = false):
+    _lines = _parseTextLines(source, keepTrailingEmpty)
+
+  # Number of lines in this view.
+  # Example:
+  #   print TextLines("a\nb").count
+  property count: int:
+    get = _lines.length
+
+  # True when there are no lines.
+  # Example:
+  #   print TextLines("").isEmpty
+  property isEmpty: bool:
+    get = _lines.isEmpty
+
+  # Returns the line at zero-based [index].
+  # Example:
+  #   print TextLines("a\nb").lineAt(1).content
+  lineAt(index: int) -> TextLine:
+    if index < 0 or index >= _lines.length:
+      throw RangeError.index(index, _lines, "index")
+    return _lines[index]
+
+  # Returns a copy of all parsed [TextLine] entries.
+  # Example:
+  #   print TextLines("a\nb").toList().length
+  toList() -> List<TextLine> = _lines.toList()
+
+  # Returns the content of each line without its line ending.
+  # Example:
+  #   print TextLines("a\r\nb").contents()
+  contents() -> List<String>:
+    out: List<String> = []
+    for entry in _lines:
+      out.add(entry.content)
+    return out
+
+# Splits [text] into line contents without line endings.
+# Recognizes CRLF as a single line break, plus LF and CR.
+# [keepTrailingEmpty] explicitly controls whether a trailing line break adds an
+# empty final line (defaults to false, independent of platform).
+# Example:
+#   print splitTextLines("a\r\nb\n")
+splitTextLines(text: String, keepTrailingEmpty: bool = false) -> List<String>:
+  return TextLines(text, keepTrailingEmpty: keepTrailingEmpty).contents()
+
+# Joins [lines] using explicit [ending] (defaults to LF across all platforms).
+# Example:
+#   print joinTextLines(["a", "b"], ending: TextLineEnding.crlf)
+joinTextLines(lines: Iterable<String>, ending: TextLineEnding = TextLineEnding.lf, trailingNewline: bool = false) -> String:
+  sep = _lineEndingString(ending)
+  buffer = StringBuffer()
+  var any = false
+  for entry in lines:
+    if any:
+      buffer.write(sep)
+    buffer.write(entry)
+    any = true
+  if any and trailingNewline:
+    buffer.write(sep)
+  return buffer.toString()
+
+# Converts all CRLF, CR, and LF line endings in [text] to [ending].
+# Example:
+#   print normalizeLineEndings("a\r\nb\rc", ending: TextLineEnding.lf)
+normalizeLineEndings(text: String, ending: TextLineEnding = TextLineEnding.lf) -> String:
+  sep = _lineEndingString(ending)
+  buffer = StringBuffer()
+  var i = 0
+  n = text.length
+  while i < n:
+    unit = text.codeUnitAt(i)
+    if unit == 13:
+      buffer.write(sep)
+      if i + 1 < n and text.codeUnitAt(i + 1) == 10:
+        i = i + 2
+      else:
+        i = i + 1
+    else if unit == 10:
+      buffer.write(sep)
+      i = i + 1
+    else:
+      buffer.writeCharCode(unit)
+      i = i + 1
+  return buffer.toString()
+
+# Prepends [prefix] to each line of [text], preserving original line endings.
+# When [skipBlankLines] is true, blank lines are left unchanged.
+# Example:
+#   print indentText("a\nb", "  ")
+indentText(text: String, prefix: String, skipBlankLines: bool = false) -> String:
+  if text.isEmpty:
+    return text
+  parsed = _parseTextLines(text, true)
+  buffer = StringBuffer()
+  for entry in parsed:
+    if not (skipBlankLines and isBlankText(entry.content)):
+      buffer.write(prefix)
+    buffer.write(entry.content)
+    buffer.write(entry.ending)
+  return buffer.toString()
+
+# Removes common leading indentation across non-blank lines while preserving
+# original line endings. Never silently converts tabs to spaces: when
+# [preserveTabs] is true, computes the exact shared character prefix of tabs
+# and spaces; when false, only spaces (U+0020) participate in common indentation.
+# Example:
+#   print dedentText("  a\n  b")
+dedentText(text: String, preserveTabs: bool = true) -> String:
+  if text.isEmpty:
+    return text
+  parsed = _parseTextLines(text, true)
+  var hasCommon = false
+  var common = ""
+  for entry in parsed:
+    if isBlankText(entry.content):
+      continue
+    lead = _leadingIndent(entry.content, preserveTabs)
+    if hasCommon:
+      common = _sharedPrefix(common, lead)
+    else:
+      common = lead
+      hasCommon = true
+  if not hasCommon or common.isEmpty:
+    return text
+  buffer = StringBuffer()
+  for entry in parsed:
+    if isBlankText(entry.content):
+      if entry.content.startsWith(common):
+        buffer.write(entry.content.substring(common.length))
+      else:
+        buffer.write(entry.content)
+    else:
+      buffer.write(entry.content.substring(common.length))
+    buffer.write(entry.ending)
+  return buffer.toString()
+
+# Removes leading and trailing blank lines while keeping interior blank lines
+# and original line endings intact.
+# Example:
+#   print trimBlankLines("\n  \nhello\n\nworld\n  ")
+trimBlankLines(text: String) -> String:
+  if text.isEmpty:
+    return ""
+  parsed = _parseTextLines(text, true)
+  var first = 0
+  while first < parsed.length and isBlankText(parsed[first].content):
+    first = first + 1
+  if first >= parsed.length:
+    return ""
+  var last = parsed.length - 1
+  while last >= first and isBlankText(parsed[last].content):
+    last = last - 1
+  buffer = StringBuffer()
+  var i = first
+  while i <= last:
+    buffer.write(parsed[i].content)
+    if i < last:
+      buffer.write(parsed[i].ending)
+    i = i + 1
+  return buffer.toString()
+
+
+:: support
+
+_isUnicodeWhitespaceUnit(unit: int) -> bool:
+  if unit == 0x20:
+    return true
+  if unit >= 0x09 and unit <= 0x0D:
+    return true
+  if unit == 0x85 or unit == 0xA0 or unit == 0x1680:
+    return true
+  if unit >= 0x2000 and unit <= 0x200A:
+    return true
+  if unit == 0x2028 or unit == 0x2029 or unit == 0x202F or unit == 0x205F or unit == 0x3000:
+    return true
+  return false
+
+_lineEndingString(ending: TextLineEnding) -> String:
+  if ending == TextLineEnding.crlf:
+    return "\r\n"
+  if ending == TextLineEnding.cr:
+    return "\r"
+  return "\n"
+
+_parseTextLines(text: String, keepTrailingEmpty: bool) -> List<TextLine>:
+  out: List<TextLine> = []
+  n = text.length
+  if n == 0:
+    return out
+  var start = 0
+  var i = 0
+  var lineNumber = 1
+  var endedWithBreak = false
+  while i < n:
+    unit = text.codeUnitAt(i)
+    if unit == 13:
+      var endBreak = i + 1
+      if i + 1 < n and text.codeUnitAt(i + 1) == 10:
+        endBreak = i + 2
+      out.add(TextLine(
+        lineNumber,
+        text.substring(start, i),
+        text.substring(i, endBreak),
+        TextRange(start, i),
+        TextRange(start, endBreak),
+      ))
+      lineNumber = lineNumber + 1
+      start = endBreak
+      i = endBreak
+      endedWithBreak = true
+    else if unit == 10:
+      endBreak = i + 1
+      out.add(TextLine(
+        lineNumber,
+        text.substring(start, i),
+        "\n",
+        TextRange(start, i),
+        TextRange(start, endBreak),
+      ))
+      lineNumber = lineNumber + 1
+      start = endBreak
+      i = endBreak
+      endedWithBreak = true
+    else:
+      i = i + 1
+      endedWithBreak = false
+  if start < n or (endedWithBreak and keepTrailingEmpty):
+    out.add(TextLine(
+      lineNumber,
+      text.substring(start, n),
+      "",
+      TextRange(start, n),
+      TextRange(start, n),
+    ))
+  return out
+
+_leadingIndent(line: String, includeTabs: bool) -> String:
+  var i = 0
+  while i < line.length:
+    unit = line.codeUnitAt(i)
+    if unit == 32 or (includeTabs and unit == 9):
+      i = i + 1
+    else:
+      break
+  return line.substring(0, i)
+
+_sharedPrefix(a: String, b: String) -> String:
+  limit = if a.length < b.length: a.length else: b.length
+  var i = 0
+  while i < limit and a.codeUnitAt(i) == b.codeUnitAt(i):
+    i = i + 1
+  return a.substring(0, i)
+''';
+
 const embeddedSdk = <String, String>{
   'core': coreSdkSource,
   'ext': extSdkSource,
   'math': mathSdkSource,
+  'text': textSdkSource,
 };
 
 List<String>? _sdkLibraryNames;

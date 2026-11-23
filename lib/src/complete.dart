@@ -1491,6 +1491,26 @@ void _typeMembers(
   final declaration = known ?? readonlyClassFor(compilation.semantics, bare);
   if (declaration != null) {
     final seen = <String>{};
+    if (declaration.kind == 'enum') {
+      if (onType) {
+        for (final item in declaration.cases) {
+          if (_name(item.name) && seen.add(item.name)) {
+            add(_plain(item.name, 20, declaration.name, range, sort: '0'));
+          }
+        }
+        if (seen.add('values')) {
+          add(_plain('values', 5, 'List<${declaration.name}>', range,
+              sort: '1'));
+        }
+      } else {
+        if (seen.add('name')) {
+          add(_plain('name', 10, 'String', range, sort: '0'));
+        }
+        if (seen.add('index')) {
+          add(_plain('index', 10, 'int', range, sort: '0'));
+        }
+      }
+    }
     for (final (current, instantiated) in _typedLineage(compilation, bare)) {
       final args = _typeArgs(current, instantiated);
       for (final field in current.fields) {

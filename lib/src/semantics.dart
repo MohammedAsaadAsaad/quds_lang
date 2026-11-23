@@ -1146,6 +1146,9 @@ class Analyzer {
         }
         for (final field in statement.fields) {
           if (field.lazyBody != null) analyzeLazy(statement, field);
+          if (!field.isStatic && field.initializer != null) {
+            analyzeInstanceField(statement, field);
+          }
         }
       }
       if (statement is ExtensionDeclaration) {
@@ -1404,15 +1407,20 @@ class Analyzer {
     model.declarations[statement] = symbol;
     model.classes[key] = statement;
     for (final item in statement.cases) {
-      if (_global.symbols.containsKey(item.name)) {
-        fail('Duplicate case: ${item.name}', item);
-      }
-      final dartName = statement.kind == 'enum'
-          ? '${statement.name}.${item.name}'
-          : item.name;
-      final caseSymbol = Symbol(item.name, dartName, statement.name,
+      final dartName =
+          statement.kind == 'enum' ? '$key.${item.name}' : item.name;
+      final caseSymbol = Symbol(item.name, dartName, key,
           classDeclaration: statement, classCase: item);
-      _global.symbols[item.name] = caseSymbol;
+      if (statement.kind == 'enum') {
+        if (scopeName == null && !_global.symbols.containsKey(item.name)) {
+          _global.symbols[item.name] = caseSymbol;
+        }
+      } else {
+        if (_global.symbols.containsKey(item.name)) {
+          fail('Duplicate case: ${item.name}', item);
+        }
+        _global.symbols[item.name] = caseSymbol;
+      }
       model.declarations[item] = caseSymbol;
     }
     final savedTypes = {..._typeNames};
@@ -2159,6 +2167,37 @@ class Analyzer {
       fail('Cannot initialize $declared with $type', value);
     }
     model.declarations[field] = Symbol(field.name, field.name, declared);
+  }
+
+  void analyzeInstanceField(ClassDeclaration owner, FieldDeclaration field) {
+    final value = field.initializer;
+    if (value == null) return;
+    final savedTypes = {..._typeNames};
+    final savedBounds = {..._typeBounds};
+    final savedExpected = _expected;
+    for (final parameter in owner.typeParameters) {
+      _typeBounds.remove(parameter.name);
+      if (parameter.bound != null)
+        _typeBounds[parameter.name] = parameter.bound!;
+    }
+    _typeNames.addAll(owner.typeParameters.map((item) => item.name));
+    try {
+      final declared =
+          field.type == '<infer>' ? null : _resolveType(field.type);
+      _expected = declared;
+      final actual = expression(value);
+      if (declared != null && !compatible(actual, declared)) {
+        fail('Cannot initialize $declared with $actual', value);
+      }
+    } finally {
+      _expected = savedExpected;
+      _typeNames
+        ..clear()
+        ..addAll(savedTypes);
+      _typeBounds
+        ..clear()
+        ..addAll(savedBounds);
+    }
   }
 
   void _installFields(ClassDeclaration type, {bool assignable = false}) {
@@ -3110,11 +3149,20 @@ class Analyzer {
             : statement.isAsync
                 ? 'Future<void>'
                 : 'void');
-    final effective = statement.isAsync &&
-            statement.returnType != null &&
-            !stripReadonlyType(statement.returnType!).startsWith('Future<')
-        ? 'Future<${statement.returnType}>'
-        : type;
+    final effective = statement.generator == 'sync'
+        ? (statement.returnType == null
+            ? '<infer>'
+            : 'Iterable<${statement.returnType}>')
+        : statement.generator == 'async'
+            ? (statement.returnType == null
+                ? '<infer>'
+                : 'Stream<${statement.returnType}>')
+            : statement.isAsync &&
+                    statement.returnType != null &&
+                    !stripReadonlyType(statement.returnType!)
+                        .startsWith('Future<')
+                ? 'Future<${statement.returnType}>'
+                : type;
     if (existing != null &&
         existing.classDeclaration == null &&
         existing.overloads.isNotEmpty &&
@@ -6441,6 +6489,31 @@ class Analyzer {
       return declaration.name;
     }
     final onType = _isTypeReference(node.object);
+    if (declaration != null && declaration.kind == 'enum') {
+      if (onType) {
+        if (node.name == 'values') {
+          model.references[node] = Symbol('values', 'values', 'List<$look>');
+          return 'List<$look>';
+        }
+        final matched =
+            declaration.cases.where((item) => item.name == node.name).toList();
+        if (matched.isNotEmpty) {
+          final item = matched.single;
+          model.references[node] = Symbol(item.name, item.name, look,
+              classDeclaration: declaration, classCase: item);
+          return look;
+        }
+      } else {
+        if (node.name == 'name') {
+          model.references[node] = Symbol('name', 'name', 'String');
+          return node.nullAware || isNullableType(type) ? 'String?' : 'String';
+        }
+        if (node.name == 'index') {
+          model.references[node] = Symbol('index', 'index', 'int');
+          return node.nullAware || isNullableType(type) ? 'int?' : 'int';
+        }
+      }
+    }
     if (declaration != null) {
       final field =
           _fieldsOf(declaration).where((item) => item.name == node.name);
@@ -11155,6 +11228,33 @@ class Analyzer {
     switch (name) {
       case 'substring':
         return _substringCall(node);
+      case 'indexOf' || 'lastIndexOf':
+        if (node.arguments.isEmpty || node.arguments.length > 2) {
+          fail('$name expects one or two arguments', node);
+        }
+        final parameters = [
+          Parameter('pattern', 'String', false, node.span),
+          if (node.arguments.length == 2)
+            Parameter('start', 'int', false, node.span),
+        ];
+        final signature = node.arguments.length == 1
+            ? '$name(pattern: String) -> int'
+            : '$name(pattern: String, start: int) -> int';
+        return _bindCollection(name, name, parameters, 'int', node, signature);
+      case 'startsWith':
+        if (node.arguments.isEmpty || node.arguments.length > 2) {
+          fail('startsWith expects one or two arguments', node);
+        }
+        final parameters = [
+          Parameter('pattern', 'String', false, node.span),
+          if (node.arguments.length == 2)
+            Parameter('index', 'int', false, node.span),
+        ];
+        final signature = node.arguments.length == 1
+            ? 'startsWith(pattern: String) -> bool'
+            : 'startsWith(pattern: String, index: int) -> bool';
+        return _bindCollection(
+            'startsWith', 'startsWith', parameters, 'bool', node, signature);
       case 'take' || 'drop' || 'takeLast' || 'dropLast':
         return _bindCollection(
             name,

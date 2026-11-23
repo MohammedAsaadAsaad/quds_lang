@@ -1,0 +1,321 @@
+use quds:text
+use quds:ext
+
+_throws(action: () -> void) -> bool:
+  try:
+    action()
+    return false
+  catch _:
+    return true
+
+test "batch 0 baseline: core String helpers and quds:ext Text methods":
+  assert "abcdef".take(3) == "abc"
+  assert "abcdef".drop(2) == "cdef"
+  assert "abcdef".takeLast(2) == "ef"
+  assert "abcdef".dropLast(2) == "abcd"
+  assert "42".padStart(4, "0") == "0042"
+  assert "42".padEnd(4, ".") == "42.."
+  assert "ab".chars.length == 2
+  assert "a\nb".lines.length == 2
+
+  assert "".blank()
+  assert "   ".blank()
+  assert not " a ".blank()
+  assert "ab".capitalized() == "Ab"
+  assert "".capitalized() == ""
+  assert "abc".reversed() == "cba"
+  assert "ababa".count("aba") == 2
+  assert "abc".count("") == 0
+  assert "prefix-val".removePrefix("prefix-") == "val"
+  assert "val".removePrefix("prefix-") == "val"
+  assert "val-suffix".removeSuffix("-suffix") == "val"
+  assert "val".removeSuffix("-suffix") == "val"
+  assert "a-b-c".before("-") == "a"
+  assert "abc".before("-") == "abc"
+  assert "a-b-c".after("-") == "b-c"
+  assert "abc".after("-") == ""
+  assert "ab".repeated(3) == "ababab"
+  assert "ab".repeated(0) == ""
+  assert "ab".repeated(-1) == ""
+  assert "  a  b c ".words().length == 3
+  assert "abcdef".truncate(3) == "abc"
+  assert "abcdef".truncate(0) == ""
+  assert "abcdef".truncate(-2) == ""
+  assert "ab".quoted() == "\"ab\""
+
+test "types: TextRange, TextSpan, TextPosition, validate, intersect, position/offset":
+  assert TextBoundaryPolicy.reject != TextBoundaryPolicy.previous
+  assert TextBoundaryPolicy.values.length == 3
+  assert TextBoundaryPolicy.next.name == "next"
+
+  r = TextRange(1, 4)
+  assert r.start == 1
+  assert r.end == 4
+  assert r.length == 3
+  assert not r.isEmpty
+  assert r.isNotEmpty
+  assert r.contains(1)
+  assert r.contains(3)
+  assert not r.contains(0)
+  assert not r.contains(4)
+  assert r.overlaps(TextRange(3, 5))
+  assert not r.overlaps(TextRange(4, 6))
+  assert r == TextRange(1, 4)
+  assert TextRange(2, 2).isEmpty
+
+  assert _throws(() -> TextRange(-1, 2))
+  assert _throws(() -> TextRange(4, 2))
+
+  validated = validateTextRange("hello", TextRange(0, 5))
+  assert validated == TextRange(0, 5)
+  assert _throws(() -> validateTextRange("hi", TextRange(0, 3)))
+
+  assert intersectTextRanges(TextRange(0, 4), TextRange(2, 6)) == TextRange(2, 4)
+  assert intersectTextRanges(TextRange(0, 2), TextRange(2, 4)) == null
+  assert intersectTextRanges(TextRange(0, 2), TextRange(5, 6)) == null
+  assert intersectTextRanges(TextRange(2, 2), TextRange(0, 4)) == TextRange(2, 2)
+
+  span = TextSpan("hello world", TextRange(0, 5))
+  assert span.value == "hello"
+  assert span.length == 5
+  assert not span.isEmpty
+  sub = span.slice(1, 4)
+  assert sub.value == "ell"
+  assert sub.range == TextRange(1, 4)
+  mat = sub.materialize()
+  assert mat.source == "ell"
+  assert mat.range == TextRange(0, 3)
+  assert mat.value == "ell"
+  assert _throws(() -> span.slice(0, 6))
+  assert _throws(() -> TextSpan("hi", TextRange(0, 3)))
+
+  sample = "ab\r\ncd\nef\rgh"
+  assert textPositionAt(sample, 0) == TextPosition(0, 1, 1)
+  assert textPositionAt(sample, 2) == TextPosition(2, 1, 3)
+  assert textPositionAt(sample, 3) == TextPosition(3, 1, 4)
+  assert textPositionAt(sample, 4) == TextPosition(4, 2, 1)
+  assert textPositionAt(sample, 6) == TextPosition(6, 2, 3)
+  assert textPositionAt(sample, 7) == TextPosition(7, 3, 1)
+  assert textPositionAt(sample, 10) == TextPosition(10, 4, 1)
+  assert textPositionAt(sample, sample.length) == TextPosition(12, 4, 3)
+
+  assert textOffsetAt(sample, 1, 1) == 0
+  assert textOffsetAt(sample, 1, 3) == 2
+  assert textOffsetAt(sample, 2, 1) == 4
+  assert textOffsetAt(sample, 2, 3) == 6
+  assert textOffsetAt(sample, 3, 1) == 7
+  assert textOffsetAt(sample, 4, 3) == 12
+  assert _throws(() -> textPositionAt(sample, -1))
+  assert _throws(() -> textPositionAt(sample, 99))
+  assert _throws(() -> textOffsetAt(sample, 0, 1))
+  assert _throws(() -> textOffsetAt(sample, 1, 0))
+  assert _throws(() -> textOffsetAt(sample, 5, 1))
+  assert _throws(() -> textOffsetAt(sample, 1, 4))
+
+test "inspect: blank, hasText, blankTextToNull, containsOnly, lineBreak, wellFormed":
+  nbsp = String.fromCharCode(0x00A0)
+  emSpace = String.fromCharCode(0x2003)
+  ideographicSpace = String.fromCharCode(0x3000)
+  lineSep = String.fromCharCode(0x2028)
+  assert isBlankText("")
+  assert isBlankText("   \t\r\n" + nbsp + emSpace + ideographicSpace)
+  assert not isBlankText(" a ")
+  assert not isBlankText("قدس")
+
+  assert hasText("Quds")
+  assert not hasText(null)
+  assert not hasText(" \t ")
+
+  assert blankTextToNull(null) == null
+  assert blankTextToNull("  " + nbsp + " ") == null
+  assert blankTextToNull("  hi  ") == "  hi  "
+
+  assert containsOnlyCharacters("", ["a"])
+  assert containsOnlyCharacters("10110", ["0", "1"])
+  assert not containsOnlyCharacters("102", ["0", "1"])
+  assert containsOnlyCharacters("😀😁", ["😀", "😁"])
+
+  assert hasLineBreak("a\nb")
+  assert hasLineBreak("a\rb")
+  assert hasLineBreak("a" + lineSep + "b")
+  assert not hasLineBreak("single line")
+
+  assert isWellFormedUnicode("")
+  assert isWellFormedUnicode("hello قدس 😀")
+  loneHigh = String.fromCharCode(0xD800)
+  loneLow = String.fromCharCode(0xDC00)
+  assert not isWellFormedUnicode("a" + loneHigh + "b")
+  assert not isWellFormedUnicode("a" + loneLow)
+  assert not isWellFormedUnicode(loneHigh)
+
+test "slice: sliceText, before/after/last, between, textWindows":
+  assert sliceText("hello world", TextRange(6, 11)) == "world"
+  assert sliceText("hello", TextRange(2, 2)) == ""
+  assert _throws(() -> sliceText("hi", TextRange(0, 5)))
+
+  assert beforeText("a=b=c", "=") == "a"
+  assert beforeText("abc", "=") == null
+  assert afterText("a=b=c", "=") == "b=c"
+  assert afterText("abc", "=") == null
+  assert beforeLastText("a=b=c", "=") == "a=b"
+  assert beforeLastText("abc", "=") == null
+  assert afterLastText("a=b=c", "=") == "c"
+  assert afterLastText("abc", "=") == null
+  assert betweenText("pre[one][two]", "[", "]") == "one"
+  assert betweenText("a::b::c", "::", "::") == "b"
+  assert betweenText("no-end[abc", "[", "]") == null
+  assert betweenText("no-start]abc", "[", "]") == null
+  assert _throws(() -> beforeText("a", ""))
+  assert _throws(() -> afterText("a", ""))
+  assert _throws(() -> beforeLastText("a", ""))
+  assert _throws(() -> afterLastText("a", ""))
+  assert _throws(() -> betweenText("a", "", "b"))
+  assert _throws(() -> betweenText("a", "b", ""))
+
+  w1 = textWindows("abcd", 2)
+  assert w1.length == 3
+  assert w1[0] == "ab" and w1[1] == "bc" and w1[2] == "cd"
+  w2 = textWindows("abcde", 2, step: 2)
+  assert w2.length == 2
+  assert w2[0] == "ab" and w2[1] == "cd"
+  assert textWindows("a", 3).isEmpty
+  assert _throws(() -> textWindows("ab", 0))
+  assert _throws(() -> textWindows("ab", 1, step: 0))
+
+test "split: splitText, splitTextAny, splitTextOnce, splitTextLastOnce, textSegments":
+  p1 = splitText("a,,b,", ",")
+  assert p1.length == 4
+  assert p1[0] == "a" and p1[1] == "" and p1[2] == "b" and p1[3] == ""
+
+  p2 = splitText("a,,b,", ",", keepEmpty: false)
+  assert p2.length == 2
+  assert p2[0] == "a" and p2[1] == "b"
+
+  p3 = splitText("a,b,c,d", ",", maxSplits: 2)
+  assert p3.length == 3
+  assert p3[0] == "a" and p3[1] == "b" and p3[2] == "c,d"
+
+  p0 = splitText("a,b", ",", maxSplits: 0)
+  assert p0.length == 1 and p0[0] == "a,b"
+
+  pk = splitText("a,b,c", ",", keepSeparators: true)
+  assert pk.length == 5
+  assert pk[1] == "," and pk[3] == ","
+
+  # Longest match wins at same offset ("--" beats "-").
+  pa = splitTextAny("a--b-c", ["-", "--"], keepSeparators: true)
+  assert pa.length == 5
+  assert pa[0] == "a" and pa[1] == "--" and pa[2] == "b" and pa[3] == "-" and pa[4] == "c"
+
+  once = splitTextOnce("name=a=b", "=")
+  assert once == TextPartition("name", "=", "a=b", true)
+  miss = splitTextOnce("plain", "=")
+  assert miss == TextPartition("plain", "", "", false)
+
+  lastOnce = splitTextLastOnce("a/b/c", "/")
+  assert lastOnce == TextPartition("a/b", "/", "c", true)
+  assert not splitTextLastOnce("plain", "/").found
+
+  segs = textSegments("x,,y", ",")
+  assert segs.length == 3
+  assert segs[0].range == TextRange(0, 1) and segs[0].value == "x"
+  assert segs[1].range == TextRange(2, 2) and segs[1].value == ""
+  assert segs[2].range == TextRange(3, 4) and segs[2].value == "y"
+
+  opts = TextSplitOptions(keepEmpty: false, maxSplits: 1, keepSeparators: true)
+  assert not opts.keepEmpty and opts.maxSplits == 1 and opts.keepSeparators
+  assert _throws(() -> TextSplitOptions(maxSplits: -1))
+  assert _throws(() -> splitText("a", ""))
+  assert _throws(() -> splitText("a", ",", maxSplits: -1))
+  assert _throws(() -> splitTextAny("a", []))
+  assert _throws(() -> splitTextAny("a", [""]))
+  assert _throws(() -> splitTextOnce("a", ""))
+  assert _throws(() -> splitTextLastOnce("a", ""))
+  assert _throws(() -> textSegments("a", ""))
+
+test "compose: join, joinNonBlank, repeat, surround, ensurePrefix/Suffix, interleave":
+  emptyParts: List<String> = []
+  assert joinText(["a", "b", "c"], separator: ", ") == "a, b, c"
+  assert joinText(emptyParts, separator: ",") == ""
+  assert joinNonBlankText(["a", "", "  \t ", "b", String.fromCharCode(0x00A0), "c"], separator: "-") == "a-b-c"
+
+  assert repeatText("some", 3, separator: "-") == "some-some-some"
+  assert repeatText("x", 0, separator: "-") == ""
+  assert repeatText("x", 1, separator: "-") == "x"
+  assert repeatText("ab", 3) == "ababab"
+  assert _throws(() -> repeatText("x", -1))
+
+  assert surroundText("quds", "[", "]") == "[quds]"
+  assert surroundText("quds", "*", "*") == "*quds*"
+  assert ensureTextPrefix("home", "/") == "/home"
+  assert ensureTextPrefix("/home", "/") == "/home"
+  assert ensureTextSuffix("dir", "/") == "dir/"
+  assert ensureTextSuffix("dir/", "/") == "dir/"
+
+  parts: List<String> = []
+  for item in interleaveText(["a", "b", "c"], "|"):
+    parts.add(item)
+  assert parts.length == 5
+  assert joinText(parts) == "a|b|c"
+
+test "builder: TextBuilder linear building, single-pass, codePoint, clear":
+  b = TextBuilder()
+  assert b.isEmpty
+  assert not b.isNotEmpty
+  assert b.utf16Length == 0
+
+  b.append("Hello")
+  b.appendLine(" Quds")
+  b.appendJoined(["a", "b", "c"], separator: ", ")
+  b.appendAll(["!", "!"])
+  b.appendCodePoint(0x1F600)
+  built = b.build()
+  assert built == "Hello Quds\na, b, c!!😀"
+  assert b.utf16Length == built.length
+  assert b.isNotEmpty
+
+  b.append(" extra")
+  assert built == "Hello Quds\na, b, c!!😀"
+  b.clear()
+  assert b.isEmpty
+  assert b.build() == ""
+  assert _throws(() -> b.appendCodePoint(-1))
+  assert _throws(() -> b.appendCodePoint(0xD800))
+  assert _throws(() -> b.appendCodePoint(0x110000))
+
+test "lines: TextLines, splitTextLines, joinTextLines, normalize, indent, dedent, trimBlankLines":
+  sample = "a\r\nb\rc\n"
+  view = TextLines(sample)
+  assert view.count == 3
+  assert view.lineAt(0).content == "a" and view.lineAt(0).ending == "\r\n"
+  assert view.lineAt(0).contentRange == TextRange(0, 1)
+  assert view.lineAt(0).fullRange == TextRange(0, 3)
+  assert view.lineAt(1).content == "b" and view.lineAt(1).ending == "\r"
+  assert view.lineAt(2).content == "c" and view.lineAt(2).ending == "\n"
+  assert _throws(() -> view.lineAt(3))
+
+  keep = TextLines(sample, keepTrailingEmpty: true)
+  assert keep.count == 4
+  assert keep.lineAt(3).content == "" and keep.lineAt(3).ending == ""
+
+  assert splitTextLines("").isEmpty
+  assert splitTextLines("a\r\nb\n").length == 2
+  assert splitTextLines("a\r\nb\n", keepTrailingEmpty: true).length == 3
+
+  assert joinTextLines(["a", "b"]) == "a\nb"
+  assert joinTextLines(["a", "b"], ending: TextLineEnding.crlf, trailingNewline: true) == "a\r\nb\r\n"
+  assert joinTextLines(["a", "b"], ending: TextLineEnding.cr) == "a\rb"
+
+  assert normalizeLineEndings("a\r\nb\rc\nd") == "a\nb\nc\nd"
+  assert normalizeLineEndings("a\nb", ending: TextLineEnding.crlf) == "a\r\nb"
+
+  assert indentText("a\n\nb", "  ", skipBlankLines: true) == "  a\n\n  b"
+  assert indentText("a\r\nb", "> ") == "> a\r\n> b"
+
+  assert dedentText("    a\n      b\n\n    c") == "a\n  b\n\nc"
+  assert dedentText("\ta\n\tb", preserveTabs: true) == "a\nb"
+  assert dedentText("\ta\n  b", preserveTabs: true) == "\ta\n  b"
+  assert dedentText("\ta\n\tb", preserveTabs: false) == "\ta\n\tb"
+
+  assert trimBlankLines("\n  \nfirst\n\nsecond\n  \n") == "first\n\nsecond"
+  assert trimBlankLines("  \n\t\n  ") == ""

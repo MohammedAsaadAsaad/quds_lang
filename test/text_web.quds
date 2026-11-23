@@ -1,0 +1,18 @@
+use quds:text
+
+main():
+  r = TextRange(0, 4)
+  assert sliceText("QudsLang", r) == "Quds"
+  assert isBlankText(" \t\r\n")
+  assert beforeText("k=v", "=") == "k"
+  part = splitTextOnce("a=b=c", "=")
+  assert part.found and part.before == "a" and part.after == "b=c"
+  assert repeatText("ha", 3, separator: "-") == "ha-ha-ha"
+  b = TextBuilder()
+  b.append("Hello")
+  b.appendLine(" Quds")
+  b.appendCodePoint(0x1F600)
+  assert b.build() == "Hello Quds\n😀"
+  assert normalizeLineEndings("a\r\nb\rc") == "a\nb\nc"
+  assert dedentText("  a\n  b") == "a\nb"
+  print "TEXT SDK VM WEB OK"

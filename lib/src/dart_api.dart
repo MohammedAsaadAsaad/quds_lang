@@ -1600,11 +1600,23 @@ class _Parser {
         name = isIdent ? take() : '';
         type = forwarded ? '@super.$name' : fields[name] ?? '@field.$name';
       } else {
-        type = _simplify(_rawType(), params);
+        final rawType = _rawType();
+        type = _simplify(rawType, params);
         name = isIdent ? take() : '';
         if ((name == 'this' || name == 'super') && peek == '.') {
           take();
           name = isIdent ? take() : '';
+        }
+        if (name.isEmpty &&
+            !allowUnnamed &&
+            RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(rawType) &&
+            (peek == ',' ||
+                peek == ')' ||
+                peek == ']' ||
+                peek == '}' ||
+                peek == '=')) {
+          name = rawType;
+          type = 'dynamic';
         }
         if (name.isNotEmpty && peek == '(') {
           final fnParams = _parameters(params, const {}, allowUnnamed: true);

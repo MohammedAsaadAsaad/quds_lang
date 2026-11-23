@@ -1,0 +1,972 @@
+# General-purpose collections and data structures library for Quds.
+#
+# A column-0 :: name opens a section. use quds:collection::query imports that
+# section and any subsection under it. use quds:collection imports every public name.
+# Example:
+#   use quds:collection::transform as col
+#   print col.chunkList([1, 2, 3, 4, 5], 2)
+
+:: types
+
+# An item paired with its zero-based index in a sequence.
+# Example:
+#   entry = IndexedValue<String>(index: 0, value: "a")
+#   print entry.index
+class IndexedValue<T>:
+  index: int required
+  value: T required
+
+  # Human-readable representation of this indexed entry.
+  # Example:
+  #   print IndexedValue<int>(index: 1, value: 42).toString()
+  toString() -> String = "IndexedValue({index}: {value})"
+
+# A typed two-element pair returned by zip, unzip, and map helpers.
+# Example:
+#   pair = CollectionPair<String, int>(first: "a", second: 1)
+#   print pair.first
+class CollectionPair<A, B>:
+  first: A required
+  second: B required
+
+  # Human-readable representation of this pair.
+  # Example:
+  #   print CollectionPair<int, String>(first: 1, second: "x").toString()
+  toString() -> String = "CollectionPair({first}, {second})"
+
+# The result of splitting items into matching and non-matching lists.
+# Example:
+#   parts = partitionList([1, 2, 3, 4], (n: int) -> n % 2 == 0)
+#   print parts.matching
+class PartitionResult<T>:
+  matching: List<T> required
+  nonMatching: List<T> required
+
+  # Human-readable representation of this partition result.
+  # Example:
+  #   print PartitionResult<int>(matching: [2], nonMatching: [1]).toString()
+  toString() -> String = "PartitionResult(matching: {matching.length}, nonMatching: {nonMatching.length})"
+
+# The minimum and maximum elements computed in a single pass.
+# Example:
+#   bounds = minMaxBy([3, 1, 4], (a: int, b: int) -> a.compareTo(b))
+#   if bounds != null: print bounds.minimum
+class MinMaxResult<T>:
+  minimum: T required
+  maximum: T required
+
+  # Human-readable representation of this min/max result.
+  # Example:
+  #   print MinMaxResult<int>(minimum: 1, maximum: 5).toString()
+  toString() -> String = "MinMaxResult(min: {minimum}, max: {maximum})"
+
+# Policy controlling how mergeMaps resolves duplicate keys.
+# Example:
+#   policy = MapConflictPolicy.keepLast
+enum MapConflictPolicy:
+  keepFirst
+  keepLast
+  fail
+
+# Structural difference between two sets.
+# Example:
+#   d = SetDiff<int>(added: set: 3, removed: set: 1, common: set: 2)
+#   print d.added
+class SetDiff<T>:
+  added: Set<T> required
+  removed: Set<T> required
+  common: Set<T> required
+
+  # True when both sets contain the exact same elements.
+  # Example:
+  #   print diff.isEmpty
+  property isEmpty: bool:
+    get = added.isEmpty and removed.isEmpty
+
+# Structural difference between two maps.
+# Example:
+#   print diff.changed
+class MapDiff<K, V>:
+  added: Map<K, V> required
+  removed: Map<K, V> required
+  changed: Map<K, CollectionPair<V, V>> required
+  unchanged: Map<K, V> required
+
+  # True when both maps have identical keys and equal values.
+  # Example:
+  #   print diff.isEmpty
+  property isEmpty: bool:
+    get = added.isEmpty and removed.isEmpty and changed.isEmpty
+
+# Operation kind for a single entry in a sequence diff.
+# Example:
+#   kind = ListDiffOp.insert
+enum ListDiffOp:
+  keep
+  insert
+  delete
+
+# A contiguous diff step comparing two lists.
+# Example:
+#   step = ListDiffStep<String>(op: ListDiffOp.keep, value: "a")
+class ListDiffStep<T>:
+  op: ListDiffOp required
+  value: T required
+
+  # Human-readable representation of this diff step.
+  # Example:
+  #   print step.toString()
+  toString() -> String = "ListDiffStep({op.name}: {value})"
+
+# Error thrown when a collection operation violates an explicit contract
+# (for example, duplicate keys with MapConflictPolicy.fail or invalid bounds).
+# Example:
+#   throw CollectionError("mergeMaps", "Duplicate key")
+class CollectionError:
+  operation: String required
+  message: String required
+
+  # Human-readable description of this error.
+  # Example:
+  #   print CollectionError("chunkList", "size must be positive").toString()
+  toString() -> String = "CollectionError({operation}): {message}"
+
+
+:: query
+
+# Returns the first element of [items], or null when [items] is empty.
+# Example:
+#   print firstOrNull([10, 20])
+firstOrNull<T>(items: Iterable<T>) -> T?:
+  for item in items:
+    return item
+  return null
+
+# Returns the last element of [items], or null when [items] is empty.
+# Example:
+#   print lastOrNull([10, 20])
+lastOrNull<T>(items: Iterable<T>) -> T?:
+  var found = false
+  var latest: T? = null
+  for item in items:
+    found = true
+    latest = item
+  if not found:
+    return null
+  return latest
+
+# Returns the single element of [items], or null when [items] is empty or has
+# more than one element.
+# Example:
+#   print singleOrNull([42])
+singleOrNull<T>(items: Iterable<T>) -> T?:
+  var count = 0
+  var only: T? = null
+  for item in items:
+    count = count + 1
+    if count > 1:
+      return null
+    only = item
+  if count != 1:
+    return null
+  return only
+
+# Returns the first element in [items] that satisfies [test], or null if none.
+# Example:
+#   print firstWhereOrNull([1, 2, 3], (n: int) -> n > 1)
+firstWhereOrNull<T>(items: Iterable<T>, test: (T) -> bool) -> T?:
+  for item in items:
+    if test(item):
+      return item
+  return null
+
+# Returns the last element in [items] that satisfies [test], or null if none.
+# Example:
+#   print lastWhereOrNull([1, 2, 3, 4], (n: int) -> n % 2 == 0)
+lastWhereOrNull<T>(items: Iterable<T>, test: (T) -> bool) -> T?:
+  var matched = false
+  var latest: T? = null
+  for item in items:
+    if test(item):
+      matched = true
+      latest = item
+  if not matched:
+    return null
+  return latest
+
+# Returns the element at zero-based [index] in [items], or null when [index]
+# is negative or out of bounds.
+# Example:
+#   print elementAtOrNull(["a", "b"], 1)
+elementAtOrNull<T>(items: List<T>, index: int) -> T?:
+  if index < 0 or index >= items.length:
+    return null
+  return items[index]
+
+# Returns the first index at or after [start] where [test] holds, or -1.
+# Throws RangeError if [start] is negative or greater than items.length.
+# Example:
+#   print indexWhereFrom([1, 2, 3, 2], (n: int) -> n == 2, start: 2)
+indexWhereFrom<T>(items: List<T>, test: (T) -> bool, start: int = 0) -> int:
+  if start < 0 or start > items.length:
+    throw RangeError.range(start, 0, items.length, "start")
+  var i = start
+  while i < items.length:
+    if test(items[i]):
+      return i
+    i = i + 1
+  return -1
+
+# Returns the last index at or before [start] where [test] holds, or -1.
+# When [start] is null, searches from the last element.
+# Example:
+#   print lastIndexWhereFrom([1, 2, 3, 2], (n: int) -> n == 2, start: 2)
+lastIndexWhereFrom<T>(items: List<T>, test: (T) -> bool, start: int? = null) -> int:
+  if items.isEmpty:
+    if start != null and (start < 0 or start > 0):
+      throw RangeError.range(start, 0, 0, "start")
+    return -1
+  var i = items.length - 1
+  if start != null:
+    i = start
+  if i < 0 or i >= items.length:
+    throw RangeError.range(i, 0, items.length - 1, "start")
+  while i >= 0:
+    if test(items[i]):
+      return i
+    i = i - 1
+  return -1
+
+# Counts how many elements in [items] satisfy [test].
+# Example:
+#   print countWhere([1, 2, 3, 4], (n: int) -> n % 2 == 0)
+countWhere<T>(items: Iterable<T>, test: (T) -> bool) -> int:
+  var total = 0
+  for item in items:
+    if test(item):
+      total = total + 1
+  return total
+
+# True when no element in [items] satisfies [test] (vacuously true when empty).
+# Example:
+#   print noneMatch([1, 3, 5], (n: int) -> n % 2 == 0)
+noneMatch<T>(items: Iterable<T>, test: (T) -> bool) -> bool:
+  for item in items:
+    if test(item):
+      return false
+  return true
+
+# True when every element in [items] equals the first (true for 0 or 1 items).
+# Example:
+#   print allEqual([7, 7, 7])
+allEqual<T>(items: Iterable<T>) -> bool:
+  var hasFirst = false
+  var expected: T? = null
+  for item in items:
+    if not hasFirst:
+      hasFirst = true
+      expected = item
+    else if item != expected:
+      return false
+  return true
+
+# True when [items] is non-decreasing according to [compare].
+# When [strict] is true, adjacent elements must strictly increase.
+# Example:
+#   print isListSorted([1, 2, 2, 5], (a: int, b: int) -> a.compareTo(b))
+isListSorted<T>(items: List<T>, compare: (T, T) -> int, strict: bool = false) -> bool:
+  var i = 1
+  while i < items.length:
+    cmp = compare(items[i - 1], items[i])
+    if strict:
+      if cmp >= 0:
+        return false
+    else:
+      if cmp > 0:
+        return false
+    i = i + 1
+  return true
+
+# Returns the minimum element of [items] according to [compare], or null when
+# [items] is empty. Ties keep the earliest element.
+# Example:
+#   print minBy(["pear", "fig", "apple"], (a: String, b: String) -> a.length.compareTo(b.length))
+minBy<T>(items: Iterable<T>, compare: (T, T) -> int) -> T?:
+  var found = false
+  var best: T? = null
+  for item in items:
+    if not found:
+      found = true
+      best = item
+    else:
+      current = best as T
+      if compare(item, current) < 0:
+        best = item
+  if not found:
+    return null
+  return best
+
+# Returns the maximum element of [items] according to [compare], or null when
+# [items] is empty. Ties keep the earliest element.
+# Example:
+#   print maxBy(["pear", "fig", "apple"], (a: String, b: String) -> a.length.compareTo(b.length))
+maxBy<T>(items: Iterable<T>, compare: (T, T) -> int) -> T?:
+  var found = false
+  var best: T? = null
+  for item in items:
+    if not found:
+      found = true
+      best = item
+    else:
+      current = best as T
+      if compare(item, current) > 0:
+        best = item
+  if not found:
+    return null
+  return best
+
+# Computes both minimum and maximum elements of [items] in one pass, or null
+# when [items] is empty. Ties keep the earliest element.
+# Example:
+#   print minMaxBy([3, 1, 4, 1], (a: int, b: int) -> a.compareTo(b))
+minMaxBy<T>(items: Iterable<T>, compare: (T, T) -> int) -> MinMaxResult<T>?:
+  var found = false
+  var lo: T? = null
+  var hi: T? = null
+  for item in items:
+    if not found:
+      found = true
+      lo = item
+      hi = item
+    else:
+      if compare(item, lo as T) < 0:
+        lo = item
+      if compare(item, hi as T) > 0:
+        hi = item
+  if not found:
+    return null
+  return MinMaxResult<T>(minimum: lo as T, maximum: hi as T)
+
+
+:: transform
+
+# Pairs each element of [items] with its zero-based index.
+# Example:
+#   print indexedValues(["a", "b"])
+indexedValues<T>(items: Iterable<T>) -> List<IndexedValue<T>>:
+  out: List<IndexedValue<T>> = []
+  var idx = 0
+  for item in items:
+    out.add(IndexedValue<T>(index: idx, value: item))
+    idx = idx + 1
+  return out
+
+# Splits [items] into contiguous chunks of length [size]. The final chunk may
+# be shorter. Throws CollectionError if [size] is less than 1.
+# Example:
+#   print chunkList([1, 2, 3, 4, 5], 2)
+chunkList<T>(items: List<T>, size: int) -> List<List<T>>:
+  if size < 1:
+    throw CollectionError("chunkList", "Chunk size must be at least 1, got {size}")
+  out: List<List<T>> = []
+  var i = 0
+  while i < items.length:
+    var end = i + size
+    if end > items.length:
+      end = items.length
+    row: List<T> = []
+    var j = i
+    while j < end:
+      row.add(items[j])
+      j = j + 1
+    out.add(row)
+    i = end
+  return out
+
+# Returns sliding windows of length [size] advancing by [step]. When [partial]
+# is true, trailing shorter windows are included. Throws CollectionError if
+# [size] < 1 or [step] < 1.
+# Example:
+#   print windowList([1, 2, 3, 4], 2)
+windowList<T>(items: List<T>, size: int, step: int = 1, partial: bool = false) -> List<List<T>>:
+  if size < 1:
+    throw CollectionError("windowList", "Window size must be at least 1, got {size}")
+  if step < 1:
+    throw CollectionError("windowList", "Window step must be at least 1, got {step}")
+  out: List<List<T>> = []
+  var i = 0
+  while i < items.length:
+    var end = i + size
+    if end > items.length:
+      if not partial:
+        break
+      end = items.length
+    row: List<T> = []
+    var j = i
+    while j < end:
+      row.add(items[j])
+      j = j + 1
+    out.add(row)
+    i = i + step
+  return out
+
+# Splits [items] into elements matching [test] and elements not matching [test],
+# preserving original relative order in both lists.
+# Example:
+#   parts = partitionList([1, 2, 3, 4], (n: int) -> n % 2 == 0)
+partitionList<T>(items: Iterable<T>, test: (T) -> bool) -> PartitionResult<T>:
+  yes: List<T> = []
+  no: List<T> = []
+  for item in items:
+    if test(item):
+      yes.add(item)
+    else:
+      no.add(item)
+  return PartitionResult<T>(matching: yes, nonMatching: no)
+
+# Groups [items] into lists keyed by [keyOf], preserving insertion order of
+# keys and element order within each group.
+# Example:
+#   groups = groupBy(["ant", "ape", "bat"], (s: String) -> s[0])
+groupBy<T, K>(items: Iterable<T>, keyOf: (T) -> K) -> Map<K, List<T>>:
+  out: Map<K, List<T>> = map:
+  for item in items:
+    key = keyOf(item)
+    existing = out[key]
+    if existing == null:
+      bucket: List<T> = [item]
+      out[key] = bucket
+    else:
+      existing.add(item)
+  return out
+
+# Groups [items] by [keyOf] and folds each group starting from [initial] using
+# [combine].
+# Example:
+#   sums = groupFold([1, 2, 3, 4], (n: int) -> n % 2, 0, (acc: int, n: int) -> acc + n)
+groupFold<T, K, R>(items: Iterable<T>, keyOf: (T) -> K, initial: R, combine: (R, T) -> R) -> Map<K, R>:
+  out: Map<K, R> = map:
+  for item in items:
+    key = keyOf(item)
+    if out.containsKey(key):
+      prev = out[key] as R
+      out[key] = combine(prev, item)
+    else:
+      out[key] = combine(initial, item)
+  return out
+
+# Builds a map keyed by [keyOf]. When duplicate keys appear, [onConflict]
+# controls whether the first value wins, the last value wins (default), or
+# CollectionError is thrown.
+# Example:
+#   byId = associateBy(["a", "bb"], (s: String) -> s.length)
+associateBy<T, K>(items: Iterable<T>, keyOf: (T) -> K, onConflict: MapConflictPolicy = MapConflictPolicy.keepLast) -> Map<K, T>:
+  out: Map<K, T> = map:
+  for item in items:
+    key = keyOf(item)
+    if out.containsKey(key):
+      if onConflict == MapConflictPolicy.keepFirst:
+        continue
+      if onConflict == MapConflictPolicy.fail:
+        throw CollectionError("associateBy", "Duplicate key: {key}")
+    out[key] = item
+  return out
+
+# Combines [left] and [right] element-by-element into pairs up to the length
+# of the shorter list.
+# Example:
+#   print zipLists([1, 2], ["a", "b", "c"])
+zipLists<A, B>(left: List<A>, right: List<B>) -> List<CollectionPair<A, B>>:
+  var limit = left.length
+  if right.length < limit:
+    limit = right.length
+  out: List<CollectionPair<A, B>> = []
+  var i = 0
+  while i < limit:
+    out.add(CollectionPair<A, B>(first: left[i], second: right[i]))
+    i = i + 1
+  return out
+
+# Separates a sequence of pairs into a pair of parallel lists.
+# Example:
+#   unpacked = unzipPairs([CollectionPair<int, String>(first: 1, second: "a")])
+unzipPairs<A, B>(pairs: Iterable<CollectionPair<A, B>>) -> CollectionPair<List<A>, List<B>>:
+  firsts: List<A> = []
+  seconds: List<B> = []
+  for pair in pairs:
+    firsts.add(pair.first)
+    seconds.add(pair.second)
+  return CollectionPair<List<A>, List<B>>(first: firsts, second: seconds)
+
+# Flattens one level of nested iterables into a single list.
+# Example:
+#   print flattenOnce([[1, 2], [3]])
+flattenOnce<T>(nested: Iterable<Iterable<T>>) -> List<T>:
+  out: List<T> = []
+  for inner in nested:
+    for item in inner:
+      out.add(item)
+  return out
+
+# Returns elements of [items] keeping only the first occurrence for each key
+# returned by [keyOf].
+# Example:
+#   print distinctBy(["a", "bb", "c"], (s: String) -> s.length)
+distinctBy<T, K>(items: Iterable<T>, keyOf: (T) -> K) -> List<T>:
+  seen: Set<K> = set:
+  out: List<T> = []
+  for item in items:
+    key = keyOf(item)
+    if not seen.contains(key):
+      seen.add(key)
+      out.add(item)
+  return out
+
+# Alternates elements from [left] and [right], appending any remaining tail
+# from the longer list.
+# Example:
+#   print interleave([1, 3], [2, 4, 6])
+interleave<T>(left: List<T>, right: List<T>) -> List<T>:
+  out: List<T> = []
+  var i = 0
+  while i < left.length or i < right.length:
+    if i < left.length:
+      out.add(left[i])
+    if i < right.length:
+      out.add(right[i])
+    i = i + 1
+  return out
+
+# Inserts [separator] between consecutive elements of [items].
+# Example:
+#   print intersperse(["a", "b", "c"], "-")
+intersperse<T>(items: Iterable<T>, separator: T) -> List<T>:
+  out: List<T> = []
+  var first = true
+  for item in items:
+    if not first:
+      out.add(separator)
+    first = false
+    out.add(item)
+  return out
+
+# Computes prefix-fold intermediate states starting from [initial]. Always
+# begins with [initial], so an empty input returns [initial].
+# Example:
+#   print scanLeft([1, 2, 3], 0, (acc: int, n: int) -> acc + n)
+scanLeft<T, R>(items: Iterable<T>, initial: R, combine: (R, T) -> R) -> List<R>:
+  out: List<R> = [initial]
+  var acc = initial
+  for item in items:
+    acc = combine(acc, item)
+    out.add(acc)
+  return out
+
+
+:: maps
+
+# Returns a new map whose keys are transformed by [transform]. Duplicate
+# target keys follow [onConflict] (default keepLast).
+# Example:
+#   print mapKeys(map: "a": 1, (k: String) -> k.toUpperCase())
+mapKeys<K, V, K2>(source: Map<K, V>, transform: (K) -> K2, onConflict: MapConflictPolicy = MapConflictPolicy.keepLast) -> Map<K2, V>:
+  out: Map<K2, V> = map:
+  for entry in source.entries:
+    nextKey = transform(entry.key)
+    if out.containsKey(nextKey):
+      if onConflict == MapConflictPolicy.keepFirst:
+        continue
+      if onConflict == MapConflictPolicy.fail:
+        throw CollectionError("mapKeys", "Duplicate mapped key: {nextKey}")
+    out[nextKey] = entry.value
+  return out
+
+# Returns a new map with the same keys and values transformed by [transform].
+# Example:
+#   print mapValues(map: "a": 2, (v: int) -> v * 10)
+mapValues<K, V, V2>(source: Map<K, V>, transform: (V) -> V2) -> Map<K, V2>:
+  out: Map<K, V2> = map:
+  for entry in source.entries:
+    out[entry.key] = transform(entry.value)
+  return out
+
+# Returns a new map containing only entries satisfying [test].
+# Example:
+#   print filterMap(scores, (k: String, v: int) -> v >= 50)
+filterMap<K, V>(source: Map<K, V>, test: (K, V) -> bool) -> Map<K, V>:
+  out: Map<K, V> = map:
+  for entry in source.entries:
+    if test(entry.key, entry.value):
+      out[entry.key] = entry.value
+  return out
+
+# Returns a new map containing only entries whose key satisfies [test].
+# Example:
+#   print filterKeys(scores, (k: String) -> k.startsWith("a"))
+filterKeys<K, V>(source: Map<K, V>, test: (K) -> bool) -> Map<K, V>:
+  out: Map<K, V> = map:
+  for entry in source.entries:
+    if test(entry.key):
+      out[entry.key] = entry.value
+  return out
+
+# Returns a new map containing only entries whose value satisfies [test].
+# Example:
+#   print filterValues(scores, (v: int) -> v > 0)
+filterValues<K, V>(source: Map<K, V>, test: (V) -> bool) -> Map<K, V>:
+  out: Map<K, V> = map:
+  for entry in source.entries:
+    if test(entry.value):
+      out[entry.key] = entry.value
+  return out
+
+# Merges [first] and [second] into a new map, resolving duplicate keys using
+# [onConflict] (default keepLast).
+# Example:
+#   merged = mergeMaps(a, b, onConflict: MapConflictPolicy.keepFirst)
+mergeMaps<K, V>(first: Map<K, V>, second: Map<K, V>, onConflict: MapConflictPolicy = MapConflictPolicy.keepLast) -> Map<K, V>:
+  out: Map<K, V> = map:
+  for entry in first.entries:
+    out[entry.key] = entry.value
+  for entry in second.entries:
+    if out.containsKey(entry.key):
+      if onConflict == MapConflictPolicy.keepFirst:
+        continue
+      if onConflict == MapConflictPolicy.fail:
+        throw CollectionError("mergeMaps", "Duplicate key: {entry.key}")
+    out[entry.key] = entry.value
+  return out
+
+# Merges [first] and [second] into a new map, resolving duplicate keys with
+# [combine](firstValue, secondValue).
+# Example:
+#   merged = mergeMapsWith(a, b, (x: int, y: int) -> x + y)
+mergeMapsWith<K, V>(first: Map<K, V>, second: Map<K, V>, combine: (V, V) -> V) -> Map<K, V>:
+  out: Map<K, V> = map:
+  for entry in first.entries:
+    out[entry.key] = entry.value
+  for entry in second.entries:
+    if out.containsKey(entry.key):
+      prev = out[entry.key] as V
+      out[entry.key] = combine(prev, entry.value)
+    else:
+      out[entry.key] = entry.value
+  return out
+
+# Swaps keys and values of [source]. Duplicate values follow [onConflict]
+# (default keepLast).
+# Example:
+#   inv = invertMap(codes, onConflict: MapConflictPolicy.fail)
+invertMap<K, V>(source: Map<K, V>, onConflict: MapConflictPolicy = MapConflictPolicy.keepLast) -> Map<V, K>:
+  out: Map<V, K> = map:
+  for entry in source.entries:
+    if out.containsKey(entry.value):
+      if onConflict == MapConflictPolicy.keepFirst:
+        continue
+      if onConflict == MapConflictPolicy.fail:
+        throw CollectionError("invertMap", "Duplicate value: {entry.value}")
+    out[entry.value] = entry.key
+  return out
+
+# Swaps keys and values of [source], grouping all original keys sharing a value.
+# Example:
+#   grouped = invertMapMulti(roles)
+invertMapMulti<K, V>(source: Map<K, V>) -> Map<V, List<K>>:
+  out: Map<V, List<K>> = map:
+  for entry in source.entries:
+    bucket = out[entry.value]
+    if bucket == null:
+      fresh: List<K> = [entry.key]
+      out[entry.value] = fresh
+    else:
+      bucket.add(entry.key)
+  return out
+
+# Returns a new map containing only keys present in both [source] and [keys].
+# Example:
+#   print pickKeys(user, ["id", "name"])
+pickKeys<K, V>(source: Map<K, V>, keys: Iterable<K>) -> Map<K, V>:
+  out: Map<K, V> = map:
+  for key in keys:
+    if source.containsKey(key):
+      out[key] = source[key] as V
+  return out
+
+# Returns a new map containing entries from [source] whose key is not in [keys].
+# Example:
+#   print omitKeys(user, ["password"])
+omitKeys<K, V>(source: Map<K, V>, keys: Iterable<K>) -> Map<K, V>:
+  excluded: Set<K> = set:
+  for key in keys:
+    excluded.add(key)
+  out: Map<K, V> = map:
+  for entry in source.entries:
+    if not excluded.contains(entry.key):
+      out[entry.key] = entry.value
+  return out
+
+# Returns the value for [key] in [target], inserting and returning [create]()
+# if [key] is absent. Handles nullable V accurately via containsKey.
+# Example:
+#   count = getOrPut(counts, "a", () -> 0)
+getOrPut<K, V>(target: Map<K, V>, key: K, create: () -> V) -> V:
+  if target.containsKey(key):
+    return target[key] as V
+  made = create()
+  target[key] = made
+  return made
+
+# Builds a map from [pairs], resolving duplicate keys with [onConflict].
+# Example:
+#   m = mapFromPairs([CollectionPair<String, int>(first: "a", second: 1)])
+mapFromPairs<K, V>(pairs: Iterable<CollectionPair<K, V>>, onConflict: MapConflictPolicy = MapConflictPolicy.keepLast) -> Map<K, V>:
+  out: Map<K, V> = map:
+  for pair in pairs:
+    if out.containsKey(pair.first):
+      if onConflict == MapConflictPolicy.keepFirst:
+        continue
+      if onConflict == MapConflictPolicy.fail:
+        throw CollectionError("mapFromPairs", "Duplicate key: {pair.first}")
+    out[pair.first] = pair.second
+  return out
+
+
+:: sets
+
+# Returns elements present in either [first] or [second], but not both.
+# Example:
+#   print symmetricDifference(a, b)
+symmetricDifference<T>(first: Set<T>, second: Set<T>) -> Set<T>:
+  out: Set<T> = set:
+  for item in first:
+    if not second.contains(item):
+      out.add(item)
+  for item in second:
+    if not first.contains(item):
+      out.add(item)
+  return out
+
+# True when every element of [subset] is contained in [superset].
+# Example:
+#   print isSubsetOf(small, big)
+isSubsetOf<T>(subset: Set<T>, superset: Set<T>) -> bool:
+  if subset.length > superset.length:
+    return false
+  for item in subset:
+    if not superset.contains(item):
+      return false
+  return true
+
+# True when [superset] contains every element of [subset].
+# Example:
+#   print isSupersetOf(big, small)
+isSupersetOf<T>(superset: Set<T>, subset: Set<T>) -> bool = isSubsetOf<T>(subset, superset)
+
+# True when [first] and [second] share no elements.
+# Example:
+#   print isDisjoint(a, b)
+isDisjoint<T>(first: Set<T>, second: Set<T>) -> bool:
+  if first.length <= second.length:
+    for item in first:
+      if second.contains(item):
+        return false
+  else:
+    for item in second:
+      if first.contains(item):
+        return false
+  return true
+
+# Counts occurrences of each distinct element in [items].
+# Example:
+#   print frequencies(["a", "b", "a"])
+frequencies<T>(items: Iterable<T>) -> Map<T, int>:
+  counts: Map<T, int> = map:
+  for item in items:
+    prev = counts[item] ?? 0
+    counts[item] = prev + 1
+  return counts
+
+# Computes the Cartesian product of [left] and [right] in row-major order.
+# Example:
+#   print cartesianProduct([1, 2], ["a", "b"])
+cartesianProduct<A, B>(left: List<A>, right: List<B>) -> List<CollectionPair<A, B>>:
+  out: List<CollectionPair<A, B>> = []
+  for a in left:
+    for b in right:
+      out.add(CollectionPair<A, B>(first: a, second: b))
+  return out
+
+# A mutable multiset (counted bag) tracking non-negative multiplicities for
+# distinct elements with O(1) average add/remove/count.
+# Example:
+#   ms = Multiset<String>()
+#   ms.add("a", count: 2)
+#   print ms.countOf("a")
+class Multiset<T>:
+  private var counts: Map<T, int> = Map<T, int>()
+  private var totalCount: int = 0
+
+  # Creates a multiset populated from [items].
+  # Example:
+  #   ms = Multiset.from(["a", "b", "a"])
+  static from<E>(items: Iterable<E>) -> Multiset<E>:
+    out = Multiset<E>()
+    for item in items:
+      out.add(item)
+    return out
+
+  # Total number of occurrences across all elements.
+  # Example:
+  #   print ms.length
+  property length: int:
+    get = totalCount
+
+  # Number of distinct elements with count > 0.
+  # Example:
+  #   print ms.distinctCount
+  property distinctCount: int:
+    get = counts.length
+
+  # True when the multiset holds no elements.
+  # Example:
+  #   print ms.isEmpty
+  property isEmpty: bool:
+    get = totalCount == 0
+
+  # True when the multiset holds at least one element.
+  # Example:
+  #   print ms.isNotEmpty
+  property isNotEmpty: bool:
+    get = totalCount > 0
+
+  # Distinct elements currently stored with positive count.
+  # Example:
+  #   print ms.distinctElements
+  property distinctElements: List<T>:
+    get = counts.keys.toList()
+
+  # Returns the multiplicity of [value], or 0 when absent.
+  # Example:
+  #   print ms.countOf("a")
+  countOf(value: T) -> int = counts[value] ?? 0
+
+  # True when [value] has count > 0.
+  # Example:
+  #   print ms.contains("a")
+  contains(value: T) -> bool = counts.containsKey(value)
+
+  # Adds [count] occurrences of [value]. Throws CollectionError if [count] < 0.
+  # Example:
+  #   ms.add("x", count: 3)
+  add(value: T, count: int = 1):
+    if count < 0:
+      throw CollectionError("Multiset.add", "Count must be non-negative, got {count}")
+    if count == 0:
+      return
+    prev = counts[value] ?? 0
+    counts[value] = prev + count
+    totalCount = totalCount + count
+
+  # Removes up to [count] occurrences of [value] and returns how many were
+  # actually removed. Throws CollectionError if [count] < 0.
+  # Example:
+  #   removed = ms.remove("x", count: 2)
+  remove(value: T, count: int = 1) -> int:
+    if count < 0:
+      throw CollectionError("Multiset.remove", "Count must be non-negative, got {count}")
+    if count == 0:
+      return 0
+    prev = counts[value] ?? 0
+    if prev == 0:
+      return 0
+    var taken = prev
+    if count < taken:
+      taken = count
+    remaining = prev - taken
+    if remaining == 0:
+      counts.remove(value)
+    else:
+      counts[value] = remaining
+    totalCount = totalCount - taken
+    return taken
+
+  # Removes all occurrences of [value] and returns the previous count.
+  # Example:
+  #   removed = ms.removeAll("x")
+  removeAll(value: T) -> int:
+    prev = counts[value] ?? 0
+    if prev == 0:
+      return 0
+    counts.remove(value)
+    totalCount = totalCount - prev
+    return prev
+
+  # Removes all elements from this multiset.
+  # Example:
+  #   ms.clear()
+  clear():
+    counts.clear()
+    totalCount = 0
+
+  # Returns a snapshot map from each distinct element to its positive count.
+  # Example:
+  #   print ms.toCountMap()
+  toCountMap() -> Map<T, int>:
+    out: Map<T, int> = map:
+    for entry in counts.entries:
+      out[entry.key] = entry.value
+    return out
+
+  # Returns up to [limit] most frequent elements as (element, count) pairs,
+  # ordered by descending count (ties preserve insertion order).
+  # Example:
+  #   print ms.mostCommon(2)
+  mostCommon(limit: int? = null) -> List<CollectionPair<T, int>>:
+    if limit != null and limit < 0:
+      throw CollectionError("Multiset.mostCommon", "Limit must be non-negative, got {limit}")
+    pairs: List<CollectionPair<T, int>> = []
+    for entry in counts.entries:
+      pairs.add(CollectionPair<T, int>(first: entry.key, second: entry.value))
+    # Stable insertion sort by descending count.
+    var i = 1
+    while i < pairs.length:
+      current = pairs[i]
+      var j = i - 1
+      while j >= 0 and pairs[j].second < current.second:
+        pairs[j + 1] = pairs[j]
+        j = j - 1
+      pairs[j + 1] = current
+      i = i + 1
+    if limit != null and limit < pairs.length:
+      out: List<CollectionPair<T, int>> = []
+      var k = 0
+      while k < limit:
+        out.add(pairs[k])
+        k = k + 1
+      return out
+    return pairs
+
+  # Returns a new multiset containing the sum of counts from this and [other].
+  # Example:
+  #   combined = a.sum(b)
+  sum(other: Multiset<T>) -> Multiset<T>:
+    out = Multiset<T>()
+    for entry in counts.entries:
+      out.add(entry.key, count: entry.value)
+    for entry in other.toCountMap().entries:
+      out.add(entry.key, count: entry.value)
+    return out
+
+  # Returns a new multiset whose counts are the minimum of counts in this and [other].
+  # Example:
+  #   shared = a.intersect(b)
+  intersect(other: Multiset<T>) -> Multiset<T>:
+    out = Multiset<T>()
+    for entry in counts.entries:
+      otherCount = other.countOf(entry.key)
+      if otherCount > 0:
+        var keep = otherCount
+        if entry.value < keep:
+          keep = entry.value
+        out.add(entry.key, count: keep)
+    return out

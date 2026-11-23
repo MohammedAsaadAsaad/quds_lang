@@ -1,0 +1,289 @@
+use quds:collection
+
+test "query: firstOrNull, lastOrNull, singleOrNull, elementAtOrNull, where":
+  empty: List<int> = []
+  expect(firstOrNull(empty), null)
+  expect(firstOrNull([10, 20, 30]), 10)
+  expect(lastOrNull(empty), null)
+  expect(lastOrNull([10, 20, 30]), 30)
+  expect(singleOrNull(empty), null)
+  expect(singleOrNull([42]), 42)
+  expect(singleOrNull([1, 2]), null)
+
+  expect(elementAtOrNull(["a", "b"], -1), null)
+  expect(elementAtOrNull(["a", "b"], 0), "a")
+  expect(elementAtOrNull(["a", "b"], 1), "b")
+  expect(elementAtOrNull(["a", "b"], 2), null)
+
+  expect(firstWhereOrNull([1, 2, 3, 4], (n: int) -> n % 2 == 0), 2)
+  expect(firstWhereOrNull([1, 3, 5], (n: int) -> n % 2 == 0), null)
+  expect(lastWhereOrNull([1, 2, 3, 4], (n: int) -> n % 2 == 0), 4)
+  expect(lastWhereOrNull([1, 3, 5], (n: int) -> n % 2 == 0), null)
+
+test "query: indexWhereFrom, lastIndexWhereFrom, countWhere, noneMatch, allEqual, isSorted, minMax":
+  nums = [1, 2, 3, 2, 5]
+  expect(indexWhereFrom(nums, (n: int) -> n == 2), 1)
+  expect(indexWhereFrom(nums, (n: int) -> n == 2, start: 2), 3)
+  expect(indexWhereFrom(nums, (n: int) -> n == 9), -1)
+  expect(indexWhereFrom(nums, (n: int) -> n == 2, start: 5), -1)
+
+  expect(lastIndexWhereFrom(nums, (n: int) -> n == 2), 3)
+  expect(lastIndexWhereFrom(nums, (n: int) -> n == 2, start: 2), 1)
+  emptyNums: List<int> = []
+  expect(lastIndexWhereFrom(emptyNums, (n: int) -> n == 1), -1)
+
+  expect(countWhere(nums, (n: int) -> n == 2), 2)
+  expect(noneMatch([1, 3, 5], (n: int) -> n % 2 == 0), true)
+  expect(noneMatch(emptyNums, (n: int) -> n > 0), true)
+  expect(noneMatch([1, 2, 3], (n: int) -> n == 2), false)
+
+  expect(allEqual(emptyNums), true)
+  expect(allEqual([7]), true)
+  expect(allEqual([7, 7, 7]), true)
+  expect(allEqual([7, 8, 7]), false)
+
+  cmp = (a: int, b: int) -> a.compareTo(b)
+  expect(isListSorted(emptyNums, cmp), true)
+  expect(isListSorted([1, 2, 2, 5], cmp), true)
+  expect(isListSorted([1, 2, 2, 5], cmp, strict: true), false)
+  expect(isListSorted([1, 2, 4, 5], cmp, strict: true), true)
+  expect(isListSorted([3, 1, 2], cmp), false)
+
+  words = ["pear", "fig", "apple", "kiwi"]
+  byLen = (a: String, b: String) -> a.length.compareTo(b.length)
+  expect(minBy(words, byLen), "fig")
+  expect(maxBy(words, byLen), "apple")
+  expect(minBy(emptyNums, cmp), null)
+  expect(maxBy(emptyNums, cmp), null)
+  expect(minMaxBy(emptyNums, cmp), null)
+  mm = minMaxBy([3, 1, 4, 1, 5], cmp)
+  expect(mm != null, true)
+  if mm != null:
+    expect(mm.minimum, 1)
+    expect(mm.maximum, 5)
+
+test "transform: indexedValues, chunkList, windowList, partitionList":
+  idx = indexedValues(["x", "y"])
+  expect(idx.length, 2)
+  expect(idx[0].index, 0)
+  expect(idx[0].value, "x")
+  expect(idx[1].index, 1)
+  expect(idx[1].value, "y")
+
+  chunks = chunkList([1, 2, 3, 4, 5], 2)
+  expect(chunks.length, 3)
+  expect(chunks[0], [1, 2])
+  expect(chunks[1], [3, 4])
+  expect(chunks[2], [5])
+  emptyInts: List<int> = []
+  expect(chunkList(emptyInts, 3).length, 0)
+
+  var badChunk = false
+  try:
+    chunkList([1, 2], 0)
+  catch e:
+    badChunk = e is CollectionError
+  expect(badChunk, true)
+
+  wins = windowList([1, 2, 3, 4], 2)
+  expect(wins.length, 3)
+  expect(wins[0], [1, 2])
+  expect(wins[1], [2, 3])
+  expect(wins[2], [3, 4])
+
+  stepped = windowList([1, 2, 3, 4, 5], 3, step: 2, partial: true)
+  expect(stepped.length, 3)
+  expect(stepped[0], [1, 2, 3])
+  expect(stepped[1], [3, 4, 5])
+  expect(stepped[2], [5])
+
+  parts = partitionList([1, 2, 3, 4, 5], (n: int) -> n % 2 == 0)
+  expect(parts.matching, [2, 4])
+  expect(parts.nonMatching, [1, 3, 5])
+
+test "transform: groupBy, groupFold, associateBy, zip/unzip, flatten, distinct, interleave, intersperse, scanLeft":
+  groups = groupBy(["ant", "ape", "bat", "bee"], (s: String) -> s.substring(0, 1))
+  expect(groups["a"], ["ant", "ape"])
+  expect(groups["b"], ["bat", "bee"])
+
+  folded = groupFold([1, 2, 3, 4, 5], (n: int) -> n % 2, 0, (acc: int, n: int) -> acc + n)
+  expect(folded[1], 9)
+  expect(folded[0], 6)
+
+  byLenLast = associateBy(["a", "bb", "c"], (s: String) -> s.length)
+  expect(byLenLast[1], "c")
+  expect(byLenLast[2], "bb")
+  byLenFirst = associateBy(["a", "bb", "c"], (s: String) -> s.length, onConflict: MapConflictPolicy.keepFirst)
+  expect(byLenFirst[1], "a")
+  var dupFailed = false
+  try:
+    associateBy(["a", "c"], (s: String) -> s.length, onConflict: MapConflictPolicy.fail)
+  catch e:
+    dupFailed = e is CollectionError
+  expect(dupFailed, true)
+
+  zipped = zipLists([1, 2], ["a", "b", "c"])
+  expect(zipped.length, 2)
+  expect(zipped[0].first, 1)
+  expect(zipped[0].second, "a")
+  expect(zipped[1].first, 2)
+  expect(zipped[1].second, "b")
+
+  unpacked = unzipPairs(zipped)
+  expect(unpacked.first, [1, 2])
+  expect(unpacked.second, ["a", "b"])
+
+  nested: List<List<int>> = [[1, 2], [3], []]
+  expect(flattenOnce(nested), [1, 2, 3])
+  expect(distinctBy(["ant", "ape", "bat", "bear"], (s: String) -> s.substring(0, 1)), ["ant", "bat"])
+  expect(interleave([1, 3], [2, 4, 6]), [1, 2, 3, 4, 6])
+  expect(intersperse(["a", "b", "c"], "-"), ["a", "-", "b", "-", "c"])
+  emptyStrs: List<String> = []
+  expect(intersperse(emptyStrs, "-").length, 0)
+  expect(scanLeft([1, 2, 3], 0, (acc: int, n: int) -> acc + n), [0, 1, 3, 6])
+  emptyInts: List<int> = []
+  expect(scanLeft(emptyInts, 10, (acc: int, n: int) -> acc + n), [10])
+
+test "maps: mapKeys, mapValues, filter, merge, invert, pick, omit, getOrPut, mapFromPairs":
+  base: Map<String, int> = map:
+    "a": 1
+    "b": 2
+    "c": 3
+  upper = mapKeys(base, (k: String) -> k.toUpperCase())
+  expect(upper["A"], 1)
+  expect(upper["C"], 3)
+
+  var keyClash = false
+  try:
+    mapKeys(base, (k: String) -> "same", onConflict: MapConflictPolicy.fail)
+  catch e:
+    keyClash = e is CollectionError
+  expect(keyClash, true)
+
+  doubled = mapValues(base, (v: int) -> v * 2)
+  expect(doubled["a"], 2)
+  expect(doubled["b"], 4)
+
+  expect(filterMap(base, (k: String, v: int) -> k != "b" and v >= 2).length, 1)
+  expect(filterKeys(base, (k: String) -> k == "a" or k == "c").length, 2)
+  expect(filterValues(base, (v: int) -> v > 1).length, 2)
+
+  other: Map<String, int> = map:
+    "b": 20
+    "d": 4
+  mergedLast = mergeMaps(base, other)
+  expect(mergedLast["b"], 20)
+  expect(mergedLast["d"], 4)
+  mergedFirst = mergeMaps(base, other, onConflict: MapConflictPolicy.keepFirst)
+  expect(mergedFirst["b"], 2)
+  mergedSum = mergeMapsWith(base, other, (x: int, y: int) -> x + y)
+  expect(mergedSum["b"], 22)
+  expect(mergedSum["a"], 1)
+
+  var mergeClash = false
+  try:
+    mergeMaps(base, other, onConflict: MapConflictPolicy.fail)
+  catch e:
+    mergeClash = e is CollectionError
+  expect(mergeClash, true)
+
+  inv = invertMap(base)
+  expect(inv[1], "a")
+  expect(inv[3], "c")
+
+  roles: Map<String, String> = map:
+    "ali": "dev"
+    "sara": "dev"
+    "omar": "qa"
+  invMulti = invertMapMulti(roles)
+  expect(invMulti["dev"], ["ali", "sara"])
+  expect(invMulti["qa"], ["omar"])
+
+  picked = pickKeys(base, ["a", "z", "c"])
+  expect(picked.length, 2)
+  expect(picked["a"], 1)
+  expect(picked["c"], 3)
+
+  omitted = omitKeys(base, ["b"])
+  expect(omitted.length, 2)
+  expect(omitted.containsKey("b"), false)
+
+  cache: Map<String, int?> = map:
+    "presentNull": null
+  expect(getOrPut(cache, "presentNull", () -> 99), null)
+  expect(getOrPut(cache, "fresh", () -> 7), 7)
+  expect(cache["fresh"], 7)
+
+  built = mapFromPairs([CollectionPair<String, int>(first: "k", second: 5)])
+  expect(built["k"], 5)
+
+test "sets: symmetricDifference, subset/superset/disjoint, frequencies, cartesianProduct, Multiset":
+  a: Set<int> = set:
+    1
+    2
+    3
+  b: Set<int> = set:
+    3
+    4
+    5
+  c: Set<int> = set:
+    1
+    2
+  d: Set<int> = set:
+    8
+    9
+  sym = symmetricDifference(a, b)
+  expect(sym.length, 4)
+  expect(sym.contains(1), true)
+  expect(sym.contains(3), false)
+  expect(sym.contains(5), true)
+
+  expect(isSubsetOf(c, a), true)
+  expect(isSubsetOf(a, c), false)
+  expect(isSupersetOf(a, c), true)
+  expect(isDisjoint(a, d), true)
+  expect(isDisjoint(a, b), false)
+
+  freq = frequencies(["x", "y", "x", "z", "x"])
+  expect(freq["x"], 3)
+  expect(freq["y"], 1)
+  expect(freq["z"], 1)
+
+  prod = cartesianProduct([1, 2], ["a", "b"])
+  expect(prod.length, 4)
+  expect(prod[0].first, 1)
+  expect(prod[0].second, "a")
+  expect(prod[3].first, 2)
+  expect(prod[3].second, "b")
+
+  ms = Multiset.from(["a", "b", "a", "c", "a", "b"])
+  expect(ms.length, 6)
+  expect(ms.distinctCount, 3)
+  expect(ms.countOf("a"), 3)
+  expect(ms.countOf("missing"), 0)
+  expect(ms.contains("b"), true)
+
+  top2 = ms.mostCommon(limit: 2)
+  expect(top2.length, 2)
+  expect(top2[0].first, "a")
+  expect(top2[0].second, 3)
+  expect(top2[1].first, "b")
+  expect(top2[1].second, 2)
+
+  expect(ms.remove("a", count: 2), 2)
+  expect(ms.countOf("a"), 1)
+  expect(ms.remove("a", count: 5), 1)
+  expect(ms.contains("a"), false)
+  expect(ms.distinctCount, 2)
+
+  otherMs = Multiset.from(["b", "d"])
+  summed = ms.sum(otherMs)
+  expect(summed.countOf("b"), 3)
+  expect(summed.countOf("d"), 1)
+  shared = ms.intersect(otherMs)
+  expect(shared.countOf("b"), 1)
+  expect(shared.countOf("d"), 0)
+  expect(ms.removeAll("b"), 2)
+  expect(ms.countOf("b"), 0)
+  ms.clear()
+  expect(ms.isEmpty, true)

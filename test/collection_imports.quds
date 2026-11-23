@@ -1,0 +1,32 @@
+use quds:collection::types show CollectionPair, MapConflictPolicy
+use quds:collection::query as q
+use quds:collection::transform as tr
+use quds:collection::maps as mp
+use quds:collection::sets show Multiset, isDisjoint
+use quds:core show Stack
+use quds:ext
+
+test "selective section imports, prefixes, show, and quds:core/quds:ext coexistence":
+  expect(q.firstOrNull([9, 8]), 9)
+  chunks = tr.chunkList([1, 2, 3], 2)
+  expect(chunks.length, 2)
+  m = mp.mapFromPairs([CollectionPair<String, int>(first: "a", second: 1)], onConflict: MapConflictPolicy.fail)
+  expect(m["a"], 1)
+
+  ms = Multiset<String>()
+  ms.add("go", count: 2)
+  expect(ms.countOf("go"), 2)
+
+  a: Set<int> = set:
+    1
+  b: Set<int> = set:
+    2
+  expect(isDisjoint(a, b), true)
+
+  # quds:core Stack remains intact and coexists cleanly
+  st = Stack<int>()
+  st.push(7)
+  expect(st.pop(), 7)
+
+  # quds:ext numeric extensions coexist cleanly
+  expect(4.even(), true)

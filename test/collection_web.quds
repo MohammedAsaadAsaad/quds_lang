@@ -1,0 +1,34 @@
+use quds:collection
+
+_check(ok: bool, message: String):
+  if not ok:
+    throw StateError(message)
+
+main():
+  _check(firstOrNull([1, 2, 3]) == 1, "firstOrNull")
+  _check(lastOrNull([1, 2, 3]) == 3, "lastOrNull")
+  _check(singleOrNull([9]) == 9, "singleOrNull")
+
+  chunks = chunkList([1, 2, 3, 4, 5], 2)
+  _check(chunks.length == 3 and chunks[2].length == 1, "chunkList")
+
+  parts = partitionList([1, 2, 3, 4], (n: int) -> n % 2 == 0)
+  _check(parts.matching.length == 2 and parts.nonMatching.length == 2, "partitionList")
+
+  groups = groupBy(["ant", "ape", "bat"], (s: String) -> s.substring(0, 1))
+  _check(groups["a"]?.length == 2, "groupBy")
+
+  leftMap: Map<String, int> = map:
+    "a": 1
+    "b": 2
+  rightMap: Map<String, int> = map:
+    "b": 3
+    "c": 4
+  merged = mergeMapsWith(leftMap, rightMap, (x: int, y: int) -> x + y)
+  _check(merged["b"] == 5 and merged["c"] == 4, "mergeMapsWith")
+
+  ms = Multiset.from(["x", "y", "x", "x"])
+  top = ms.mostCommon(limit: 1)
+  _check(top.length == 1 and top[0].first == "x" and top[0].second == 3, "Multiset")
+
+  print "COLLECTION_WEB_OK"

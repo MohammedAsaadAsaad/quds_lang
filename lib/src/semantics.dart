@@ -2178,16 +2178,19 @@ class Analyzer {
 
   void analyzeInstanceField(ClassDeclaration owner, FieldDeclaration field) {
     final value = field.initializer;
-    if (value == null) return;
+    if (value == null || model.types.containsKey(value)) return;
     final savedTypes = {..._typeNames};
     final savedBounds = {..._typeBounds};
     final savedExpected = _expected;
+    final savedScope = _scope;
+    final home = model.libraryOf[owner] ?? library;
     for (final parameter in owner.typeParameters) {
       _typeBounds.remove(parameter.name);
       if (parameter.bound != null)
         _typeBounds[parameter.name] = parameter.bound!;
     }
     _typeNames.addAll(owner.typeParameters.map((item) => item.name));
+    _scope = _Scope(home.isEmpty ? _global : _libraryScope(home));
     try {
       final declared =
           field.type == '<infer>' ? null : _resolveType(field.type);
@@ -2198,6 +2201,7 @@ class Analyzer {
       }
     } finally {
       _expected = savedExpected;
+      _scope = savedScope;
       _typeNames
         ..clear()
         ..addAll(savedTypes);
@@ -5461,8 +5465,11 @@ class Analyzer {
       final target =
           _splitTypes(to.substring(toHead.length + 1, to.length - 1));
       if (source.length == target.length) {
-        return List.generate(source.length,
-                (index) => _sameType(source[index], target[index]))
+        return List.generate(
+                source.length,
+                (index) => toHead == 'Iterable'
+                    ? compatible(source[index], target[index])
+                    : _sameType(source[index], target[index]))
             .every((value) => value);
       }
     }
@@ -7882,7 +7889,25 @@ class Analyzer {
       final right = _withPromoted(facts, () => expression(node.right));
       return binaryType(left, node.operator, right, node);
     }
-    final left = expression(node.left), right = expression(node.right);
+    final clearExpected = const {
+      '==',
+      '!=',
+      '<',
+      '<=',
+      '>',
+      '>=',
+      'in',
+      'not in',
+    }.contains(node.operator);
+    final savedExpected = _expected;
+    if (clearExpected) _expected = null;
+    final String left, right;
+    try {
+      left = expression(node.left);
+      right = expression(node.right);
+    } finally {
+      _expected = savedExpected;
+    }
     try {
       return binaryType(left, node.operator, right, node);
     } on CompilerException catch (failure) {
@@ -10072,7 +10097,15 @@ class Analyzer {
       if (constructor != null)
         model.constructorGapDeclarations[node] = constructor;
     }
-    if (constructor != null) _typeConstructorDefaults(type, constructor);
+    if (constructor != null) {
+      _typeConstructorDefaults(type, constructor);
+    } else {
+      for (final field in _fieldsOf(type)) {
+        if (!field.isStatic && !field.isEvent && field.initializer != null) {
+          analyzeInstanceField(type, field);
+        }
+      }
+    }
     if (substitution.isNotEmpty) {
       model.constructorSubstitutions[node] = substitution;
     }

@@ -1902,7 +1902,8 @@ void _test(List<String> arguments) {
           ? namedTests
           : collected.where((f) {
               final text = f.readAsStringSync();
-              return RegExp(r'^(test|group)\s+"', multiLine: true)
+              return RegExp(r'^(test|group)\s+"|^when\s+test\s*:',
+                      multiLine: true)
                   .hasMatch(text);
             }).toList();
       for (final file in selected) {
@@ -1944,6 +1945,18 @@ void _test(List<String> arguments) {
   exitCode = worstExit;
 }
 
+Iterable<Statement> _activeTestStatements(
+    List<Statement> statements, SemanticModel semantics) sync* {
+  for (final statement in statements) {
+    if (semantics.skipped.contains(statement)) continue;
+    if (statement is WhenStatement) {
+      yield* _activeTestStatements(statement.body, semantics);
+    } else {
+      yield statement;
+    }
+  }
+}
+
 int _runTestFile(
   File input, {
   required List<String> regexPatterns,
@@ -1952,9 +1965,12 @@ int _runTestFile(
   required bool enableAsserts,
 }) {
   try {
-    final result = compile(input.readAsStringSync(), file: input.path);
-    final tests =
-        result.program.statements.whereType<TestDeclaration>().toList();
+    final result =
+        compile(input.readAsStringSync(), file: input.path, testing: true);
+    final activeTop =
+        _activeTestStatements(result.program.statements, result.semantics)
+            .toList();
+    final tests = activeTop.whereType<TestDeclaration>().toList();
     final hasFilter = regexPatterns.isNotEmpty || plainPatterns.isNotEmpty;
     bool matchesName(String name) {
       for (final pattern in regexPatterns) {
@@ -1966,7 +1982,7 @@ int _runTestFile(
       return true;
     }
 
-    final legacy = result.program.statements
+    final legacy = activeTop
         .whereType<FunctionDeclaration>()
         .where((function) =>
             (function.name == 'test' || function.name.startsWith('test')) &&

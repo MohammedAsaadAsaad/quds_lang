@@ -130,7 +130,8 @@ Compilation compile(String source,
     bool emitDart = true,
     String? targetPlatform,
     bool? flutter,
-    String? packageConfigFrom}) {
+    String? packageConfigFrom,
+    bool testing = false}) {
   final parser = Parser(Lexer().tokenize(source, file: file));
   final parsed = parser.parse(partial: partial);
   if (partial && parser.errors.isNotEmpty && parsed.statements.isEmpty) {
@@ -150,7 +151,8 @@ Compilation compile(String source,
       file: sourcePath,
       targetPlatform: target,
       flutter: framework,
-      packageConfigFrom: configOrigin);
+      packageConfigFrom: configOrigin,
+      testing: testing);
   final libraries = <String, Program>{};
   var library = sourcePath;
   _loadSdkImports(program, libraries, selector);
@@ -177,7 +179,8 @@ Compilation compile(String source,
           file: sourcePath,
           targetPlatform: target,
           flutter: framework,
-          packageConfigFrom: configOrigin)
+          packageConfigFrom: configOrigin,
+          testing: testing)
       .analyze(program, libraries: libraries);
   semantics.protectWithMeta =
       sourcePath != '<input>' && packageDependsOnMeta(sourcePath);

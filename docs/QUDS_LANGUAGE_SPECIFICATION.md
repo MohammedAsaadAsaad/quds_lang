@@ -2221,7 +2221,7 @@ Two unprefixed imports that bring in the same name from different declarations a
 
 `part` and `part of` follow Dart: parts share one library privacy scope. A mismatched `part of` is `E903`. The owner's 2026-11-18 clarification makes unquoted module paths the canonical spelling, consistent with `use` and `export`: `part src.details` includes `src/details.quds`, and `part of ^.main` in that child names `../main.quds`. Both directives offer local path completion. Existing quoted paths remain literal file paths for backward compatibility; quoting is not required. Parts select source files, not library sections or SDK imports.
 
-A `when` condition is a constant boolean. The names available in it are `platform` (`"vm"`, `"web"`, or `"flutter"`) and the Dart `dart.library.*` flags. The branch that is not selected is not type-checked and is not emitted. A condition that is not a constant boolean is `E902`.
+A `when` condition is a constant boolean. The names available in it are `platform` (`"vm"`, `"web"`, or `"flutter"`), `test` (`true` during `quds test`, `false` during `quds build`, `quds compile`, `quds run`, and `quds analyze`), and the Dart `dart.library.*` flags. Top-level `when test:` blocks may contain `test`, `group`, test-only helper functions, constants, and mock classes with direct access to library-private `_` declarations, and are stripped completely from non-test builds. The branch that is not selected is not type-checked and is not emitted. A condition that is not a constant boolean is `E902`.
 
 ### Declarations and statements
 

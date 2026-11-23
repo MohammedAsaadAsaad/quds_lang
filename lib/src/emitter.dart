@@ -147,20 +147,21 @@ class DartEmitter {
           '_${sha256Hex(utf8.encode(program.span.file)).substring(0, 12)}';
       _requireReadonlyRuntime();
     }
+    final topLevel = _topLevel(program.statements).toList();
     _directives(program.statements);
     _classes = {
       ...model.classes,
-      for (final node in program.statements)
+      for (final node in topLevel)
         if (node is ClassDeclaration) node.name: node
     };
-    final configs = program.statements.whereType<ConfigDeclaration>().toList();
+    final configs = topLevel.whereType<ConfigDeclaration>().toList();
     if (configs.isNotEmpty) _emitConfigs(configs);
-    for (final node in program.statements) {
+    for (final node in topLevel) {
       if (node is AnnotationDeclaration) _emitAnnotation(node);
       if (node is ClassDeclaration) emitClass(node);
       if (node is ExtensionDeclaration) emitExtension(node);
     }
-    for (final owner in program.statements.whereType<ClassDeclaration>()) {
+    for (final owner in topLevel.whereType<ClassDeclaration>()) {
       if (owner.kind != 'interface') continue;
       for (final method in owner.methods) {
         if (model.providerDefaultMethods[method] == owner)
@@ -168,7 +169,7 @@ class DartEmitter {
       }
     }
     _emitReflectableRegistry(program);
-    for (final node in program.statements) {
+    for (final node in topLevel) {
       _out.writeln();
       _nextOutputLine++;
       if (node is FunctionDeclaration) {
@@ -182,9 +183,20 @@ class DartEmitter {
         statement(node);
       }
     }
-    _emitPublicNames(program);
+    _emitPublicNames(program, topLevel);
     if (_useReadonlyRuntime) _emitKnownReadonlyGuards(program);
     return _suppressUnreadConsts(_withHelpers(_out.toString()));
+  }
+
+  Iterable<Statement> _topLevel(List<Statement> statements) sync* {
+    for (final node in statements) {
+      if (model.skipped.contains(node)) continue;
+      if (node is WhenStatement) {
+        yield* _topLevel(node.body);
+      } else {
+        yield node;
+      }
+    }
   }
 
   void _emitConfigs(List<ConfigDeclaration> items) {
@@ -302,12 +314,12 @@ class DartEmitter {
     return show.isEmpty ? '' : ' show ${show.join(', ')}';
   }
 
-  void _emitPublicNames(Program program) {
+  void _emitPublicNames(Program program, List<Statement> topLevel) {
     final groups = <String, List<FunctionDeclaration>>{};
-    for (final node in program.statements) {
+    for (final node in topLevel) {
       if (node is! FunctionDeclaration || node.name == 'main') continue;
       if (node.name.startsWith('_') &&
-          !program.statements.any((item) => item is PartDirective)) continue;
+          !topLevel.any((item) => item is PartDirective)) continue;
       groups.putIfAbsent(node.name, () => []).add(node);
     }
     for (final entry in groups.entries) {

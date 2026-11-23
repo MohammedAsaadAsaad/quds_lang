@@ -355,6 +355,7 @@ class SemanticModel {
   String library = '';
   String targetPlatform = 'vm';
   bool flutter = false;
+  bool testing = false;
   final implicitConversions = <Expression, ConversionPlan>{};
   final explicitConversions = <ConversionExpression, ConversionPlan>{};
   final references = <Node, Symbol>{};
@@ -814,14 +815,17 @@ class Analyzer {
       String? file,
       this.targetPlatform = 'vm',
       this.flutter = false,
-      String? packageConfigFrom})
+      String? packageConfigFrom,
+      this.testing = false})
       : _file = file ?? library,
         _packageConfigFrom = packageConfigFrom {
     model.targetPlatform = targetPlatform;
     model.flutter = flutter;
+    model.testing = testing;
   }
   final String targetPlatform;
   final bool flutter;
+  final bool testing;
   bool? compileTimeCondition(Expression node) => _constBool(node);
   final model = SemanticModel();
   final _conversionDefinitions = <FunctionDeclaration, String>{};
@@ -1054,10 +1058,11 @@ class Analyzer {
         'ConversionError', 'ConversionError', 'ConversionError',
         parameterTypes: const ['String']);
     _installLog();
-    for (final f in program.statements.whereType<FunctionDeclaration>()) {
+    final topLevel = _flattenTopLevel(program.statements);
+    for (final f in topLevel.whereType<FunctionDeclaration>()) {
       if (f.conversionKind.isNotEmpty) _conversionDefinitions[f] = library;
     }
-    for (final statement in program.statements) {
+    for (final statement in topLevel) {
       if (statement is AliasDeclaration) {
         model.aliases[statement.name] = statement.target;
       }
@@ -1066,7 +1071,7 @@ class Analyzer {
     _bindParts(program);
     final functions = <FunctionDeclaration>[];
     final tests = <TestDeclaration>[];
-    for (final statement in program.statements) {
+    for (final statement in topLevel) {
       switch (statement) {
         case FunctionDeclaration():
           registerFunction(statement, _global, functions);
@@ -1088,8 +1093,6 @@ class Analyzer {
           model.parts.add(statement);
         case SectionDeclaration():
           break;
-        case WhenStatement():
-          registerWhen(statement);
         case TestDeclaration():
           tests.add(statement);
         default:
@@ -1100,12 +1103,12 @@ class Analyzer {
     }
     // Initializers run in source order and see only consts already evaluated.
     // Function bodies then see every top-level const, same as other functions.
-    for (final statement in program.statements) {
+    for (final statement in topLevel) {
       if (statement is Binding && statement.mode == BindingMode.constant) {
         check(statement);
       }
     }
-    for (final statement in program.statements) {
+    for (final statement in topLevel) {
       switch (statement) {
         case ClassDeclaration():
           _checkMetadata(statement.annotations);
@@ -1141,7 +1144,7 @@ class Analyzer {
     for (final statement in tests) {
       check(statement);
     }
-    for (final statement in program.statements) {
+    for (final statement in topLevel) {
       if (statement is ClassDeclaration) {
         checkShape(statement);
         checkRequirements(statement);
@@ -2315,30 +2318,30 @@ class Analyzer {
     return null;
   }
 
-  void registerWhen(WhenStatement node) {
-    final selected = _constBool(node.condition);
-    if (selected == null) {
-      error(
-          'E902', 'A when condition is not a constant boolean', node.condition);
-    }
-    if (!selected) {
-      model.skipped.add(node);
-      return;
-    }
-    for (final statement in node.body) {
-      switch (statement) {
-        case ImportDeclaration():
-          registerImport(statement);
-        case WhenStatement():
-          registerWhen(statement);
-        default:
-          fail('A top-level when contains use directives', statement);
+  List<Statement> _flattenTopLevel(List<Statement> statements) {
+    final result = <Statement>[];
+    for (final statement in statements) {
+      if (statement is WhenStatement) {
+        final selected = _constBool(statement.condition);
+        if (selected == null) {
+          error('E902', 'A when condition is not a constant boolean',
+              statement.condition);
+        }
+        if (!selected) {
+          model.skipped.add(statement);
+          continue;
+        }
+        result.addAll(_flattenTopLevel(statement.body));
+      } else {
+        result.add(statement);
       }
     }
+    return result;
   }
 
   bool? _constBool(Expression node) {
     if (node is Literal && node.value is bool) return node.value as bool;
+    if (node is Identifier && node.name == 'test') return testing;
     final flag = _libraryFlag(node);
     if (flag != null) return flag;
     if (node is UnaryExpression &&
@@ -4088,6 +4091,11 @@ class Analyzer {
       if (statement is UsingStatement && returns(statement.body)) {
         return true;
       }
+      if (statement is WhenStatement &&
+          !model.skipped.contains(statement) &&
+          returns(statement.body)) {
+        return true;
+      }
       if (statement is TryStatement &&
           (returns(statement.finallyBody) ||
               (returns([...statement.body, ...statement.elseBody]) &&
@@ -4130,6 +4138,11 @@ class Analyzer {
           return true;
         case UsingStatement():
           if (_mentionsBreak(statement.body)) return true;
+        case WhenStatement():
+          if (!model.skipped.contains(statement) &&
+              _mentionsBreak(statement.body)) {
+            return true;
+          }
         case IfStatement():
           if (_mentionsBreak(statement.thenBody) ||
               _mentionsBreak(statement.elseBody)) {

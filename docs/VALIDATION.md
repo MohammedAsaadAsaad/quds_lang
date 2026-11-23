@@ -1,3 +1,17 @@
+# Inline `when test:` blocks (Batch 3) — 2026-11-23
+
+Base: `63b2962`.
+
+| Check | Observed result |
+| --- | --- |
+| Built-in `test` flag | Added `testing: bool = false` to `compile`, `SemanticModel`, and `Analyzer`; `_constBool` resolves `test` to `testing`, enabling `when test:` and `when not test:` at top level and inside function bodies |
+| Top-level flattening & stripping | Flattened active `WhenStatement`s in `Analyzer` (`_flattenTopLevel`) and `Emitter` (`_topLevel`) so `when test:` blocks can declare `test`, `group`, `const`, helper functions, and mock classes with library-private `_` access while being completely stripped from `quds build`, `quds compile`, `quds run`, and `quds analyze`; handled active `WhenStatement` in `returns()` and `_mentionsBreak()` |
+| Runner & discovery | `quds test` compiles with `testing: true`, collects tests inside active `WhenStatement`s, supports `-n`/`-N` filtering, and directory discovery matches files containing `when test:` |
+| Test suites | `/opt/flutter/bin/dart test test/when_test_blocks_test.dart test/quds_test_runner_test.dart`: **8 passed, 0 failed** (verified private access, mock classes, `runtimeMode()`, `quds analyze --fatal-infos`, `quds run`, `quds compile js` + `node`, `quds test`, `quds test lib`, and `-n` filter) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # Package-private `internal` symbol visibility (`E209`, Batch 2) — 2026-11-23
 
 Base: `c845527`.

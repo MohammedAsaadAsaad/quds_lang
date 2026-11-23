@@ -81,4 +81,7 @@ main():
   best = trie.longestPrefixMatch("/a/b/c")
   _check(best != null and best.first == "/a/b" and best.second == 2, "Trie")
 
+  _check([10, 20, 30].second() == 20 and [10, 20, 30].rotated(1)[0] == 30, "Lists ext")
+  _check(leftMap.missing("z") and leftMap.pickedKeys(["a"]).length == 1, "Maps ext")
+
   print "COLLECTION_WEB_OK"

@@ -205,106 +205,7 @@ use dart:typed_data show Float32List, Float64List, Int8List, Uint8List, Uint8Cla
 export dart:typed_data show Float32List, Float64List, Int8List, Uint8List, Uint8ClampedList, Int16List, Uint16List, Int32List, Uint32List, ByteData, ByteBuffer, Endian, TypedData
 ''';
 
-const extSdkSource = r'''extend List<T> Lists:
-  # The value at index 1, or null when it is missing.
-  # Example:
-  #   numbers: List<int> = [1, 2, 3]
-  #   print numbers.second()
-  second() -> T?:
-    if length < 2:
-      return null
-    return this[1]
-  # The value at index 2, or null when it is missing.
-  # Example:
-  #   numbers: List<int> = [1, 2, 3]
-  #   print numbers.third()
-  third() -> T?:
-    if length < 3:
-      return null
-    return this[2]
-  # A new list from last to first.
-  # Example:
-  #   print numbers.reversedCopy()
-  reversedCopy() -> List<T>:
-    made: List<T> = []
-    var index = length - 1
-    while index >= 0:
-      made.add(this[index])
-      index = index - 1
-    return made
-  # A new list without [value].
-  # Example:
-  #   print numbers.without(2)
-  without(value: T) -> List<T>:
-    made: List<T> = []
-    for item in this:
-      if item != value:
-        made.add(item)
-    return made
-  # A new list containing only [value].
-  # Example:
-  #   print numbers.keeping(2)
-  keeping(value: T) -> List<T>:
-    made: List<T> = []
-    for item in this:
-      if item == value:
-        made.add(item)
-    return made
-  # Groups of [size] values. The last group may be shorter.
-  # Example:
-  #   print numbers.chunk(2).length
-  chunk(size: int) -> List<List<T>>:
-    groups: List<List<T>> = []
-    if size < 1:
-      return groups
-    var index = 0
-    while index < length:
-      row: List<T> = []
-      var taken = 0
-      while taken < size:
-        if index >= length:
-          break
-        row.add(this[index])
-        index = index + 1
-        taken = taken + 1
-      groups.add(row)
-    return groups
-
-extend Map<K, V> Maps:
-  # The keys whose value is [value].
-  # Example:
-  #   ages: Map<String, int> = map:
-  #     "Ada": 1
-  #   print ages.keysOf(1)
-  keysOf(value: V) -> List<K>:
-    found: List<K> = []
-    for key in this.keys:
-      if this[key] == value:
-        found.add(key)
-    return found
-  # True when [key] is absent.
-  # Example:
-  #   print ages.missing("Cara")
-  missing(key: K) -> bool:
-    if this.containsKey(key):
-      return false
-    return true
-
-extend Set<T> Sets:
-  # A new set without [value].
-  # Example:
-  #   flags: Set<int> = set:
-  #     1
-  #     2
-  #   print flags.without(1)
-  without(value: T) -> Set<T>:
-    made: Set<T> = set:
-    for item in this:
-      if item != value:
-        made.add(item)
-    return made
-
-extend int Ints:
+const extSdkSource = r'''extend int Ints:
   # True when this integer is divisible by 2.
   # Example:
   #   print 4.even()
@@ -17429,6 +17330,227 @@ class Trie<V>:
     if bestLen < 0:
       return null
     return CollectionPair<String, V>(first: input.substring(0, bestLen), second: bestVal as V)
+
+
+:: extensions
+
+# List convenience methods migrated from quds:ext with their original contracts
+# preserved. For stricter throwing chunking or richer transforms, see the
+# top-level functions in quds:collection.
+# Example:
+#   use quds:collection::extensions
+#   numbers: List<int> = [1, 2, 3]
+#   print numbers.second()
+extend List<T> Lists:
+  # The value at index 1, or null when it is missing.
+  # Example:
+  #   numbers: List<int> = [1, 2, 3]
+  #   print numbers.second()
+  second() -> T?:
+    if length < 2:
+      return null
+    return this[1]
+
+  # The value at index 2, or null when it is missing.
+  # Example:
+  #   numbers: List<int> = [1, 2, 3]
+  #   print numbers.third()
+  third() -> T?:
+    if length < 3:
+      return null
+    return this[2]
+
+  # A new list from last to first.
+  # Example:
+  #   print numbers.reversedCopy()
+  reversedCopy() -> List<T>:
+    made: List<T> = []
+    var index = length - 1
+    while index >= 0:
+      made.add(this[index])
+      index = index - 1
+    return made
+
+  # A new list without [value].
+  # Example:
+  #   print numbers.without(2)
+  without(value: T) -> List<T>:
+    made: List<T> = []
+    for item in this:
+      if item != value:
+        made.add(item)
+    return made
+
+  # A new list containing only [value].
+  # Example:
+  #   print numbers.keeping(2)
+  keeping(value: T) -> List<T>:
+    made: List<T> = []
+    for item in this:
+      if item == value:
+        made.add(item)
+    return made
+
+  # Groups of [size] values. The last group may be shorter. Non-positive [size]
+  # returns an empty list (legacy contract).
+  # Example:
+  #   print numbers.chunk(2).length
+  chunk(size: int) -> List<List<T>>:
+    groups: List<List<T>> = []
+    if size < 1:
+      return groups
+    var index = 0
+    while index < length:
+      row: List<T> = []
+      var taken = 0
+      while taken < size:
+        if index >= length:
+          break
+        row.add(this[index])
+        index = index + 1
+        taken = taken + 1
+      groups.add(row)
+    return groups
+
+# Map convenience methods migrated from quds:ext with their original contracts
+# preserved.
+# Example:
+#   use quds:collection::extensions
+#   ages: Map<String, int> = map:
+#     "Ada": 1
+#   print ages.keysOf(1)
+extend Map<K, V> Maps:
+  # The keys whose value is [value].
+  # Example:
+  #   ages: Map<String, int> = map:
+  #     "Ada": 1
+  #   print ages.keysOf(1)
+  keysOf(value: V) -> List<K>:
+    found: List<K> = []
+    for key in this.keys:
+      if this[key] == value:
+        found.add(key)
+    return found
+
+  # True when [key] is absent.
+  # Example:
+  #   print ages.missing("Cara")
+  missing(key: K) -> bool:
+    if this.containsKey(key):
+      return false
+    return true
+
+# Set convenience methods migrated from quds:ext with their original contracts
+# preserved.
+# Example:
+#   use quds:collection::extensions
+#   flags: Set<int> = set:
+#     1
+#     2
+#   print flags.without(1)
+extend Set<T> Sets:
+  # A new set without [value].
+  # Example:
+  #   flags: Set<int> = set:
+  #     1
+  #     2
+  #   print flags.without(1)
+  without(value: T) -> Set<T>:
+    made: Set<T> = set:
+    for item in this:
+      if item != value:
+        made.add(item)
+    return made
+
+# Opt-in List extensions forwarding directly to quds:collection functions.
+# Example:
+#   use quds:collection::extensions
+#   print [1, 2, 3, 4].chunked(2)
+extend List<T> ListCollectionExtensions:
+  # First element, or null when empty.
+  # Example:
+  #   print [1, 2].firstItemOrNull()
+  firstItemOrNull() -> T? = firstOrNull<T>(this)
+
+  # Last element, or null when empty.
+  # Example:
+  #   print [1, 2].lastItemOrNull()
+  lastItemOrNull() -> T? = lastOrNull<T>(this)
+
+  # Element at [index], or null when out of bounds.
+  # Example:
+  #   print [1, 2].elementOrNull(5)
+  elementOrNull(index: int) -> T? = elementAtOrNull<T>(this, index)
+
+  # Chunks this list into groups of [size]; throws CollectionError if size < 1.
+  # Example:
+  #   print [1, 2, 3].chunked(2)
+  chunked(size: int) -> List<List<T>> = chunkList<T>(this, size)
+
+  # Sliding windows of length [size] advancing by [step].
+  # Example:
+  #   print [1, 2, 3, 4].windowed(2)
+  windowed(size: int, step: int = 1, partial: bool = false) -> List<List<T>> = windowList<T>(this, size, step: step, partial: partial)
+
+  # Partitions elements by [test].
+  # Example:
+  #   print [1, 2, 3].partitioned((n: int) -> n % 2 == 0)
+  partitioned(test: (T) -> bool) -> PartitionResult<T> = partitionList<T>(this, test)
+
+  # Returns a copy rotated right by [shift] positions.
+  # Example:
+  #   print [1, 2, 3].rotated(1)
+  rotated(shift: int) -> List<T> = rotateList<T>(this, shift)
+
+# Opt-in Map extensions forwarding directly to quds:collection functions.
+# Example:
+#   use quds:collection::extensions
+#   print scores.pickedKeys(["a"])
+extend Map<K, V> MapCollectionExtensions:
+  # Returns a new map containing only keys in [keys] present in this map.
+  # Example:
+  #   print scores.pickedKeys(["a"])
+  pickedKeys(keys: Iterable<K>) -> Map<K, V> = pickKeys<K, V>(this, keys)
+
+  # Returns a new map omitting keys in [keys].
+  # Example:
+  #   print scores.omittedKeys(["secret"])
+  omittedKeys(keys: Iterable<K>) -> Map<K, V> = omitKeys<K, V>(this, keys)
+
+  # Returns a new map keeping entries whose value satisfies [test].
+  # Example:
+  #   print scores.filteredValues((v: int) -> v > 0)
+  filteredValues(test: (V) -> bool) -> Map<K, V> = filterValues<K, V>(this, test)
+
+  # Inverts keys and values, grouping duplicate values into lists of keys.
+  # Example:
+  #   print roles.invertedMulti()
+  invertedMulti() -> Map<V, List<K>> = invertMapMulti<K, V>(this)
+
+# Opt-in Set extensions forwarding directly to quds:collection functions.
+# Example:
+#   use quds:collection::extensions
+#   print a.symmetricDiff(b)
+extend Set<T> SetCollectionExtensions:
+  # Elements in either this set or [other], but not both.
+  # Example:
+  #   print a.symmetricDiff(b)
+  symmetricDiff(other: Set<T>) -> Set<T> = symmetricDifference<T>(this, other)
+
+  # True when every element of this set is contained in [superset].
+  # Example:
+  #   print small.subsetOf(big)
+  subsetOf(superset: Set<T>) -> bool = isSubsetOf<T>(this, superset)
+
+  # True when this set contains every element of [subset].
+  # Example:
+  #   print big.supersetOf(small)
+  supersetOf(subset: Set<T>) -> bool = isSupersetOf<T>(this, subset)
+
+  # True when this set and [other] share no elements.
+  # Example:
+  #   print a.disjointWith(b)
+  disjointWith(other: Set<T>) -> bool = isDisjoint<T>(this, other)
 ''';
 
 const embeddedSdk = <String, String>{

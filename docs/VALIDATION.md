@@ -1,3 +1,25 @@
+# General-purpose collections SDK (`quds:collection`, Batches 0–5) — 2026-11-23
+
+Base: `4197acf` (Batches 0–4 pushed as `66fdadc`, `823ba76`, `ee8b432`, `7bfd419`; Batch 5 closes `:: extensions`, `quds:ext` `Lists`/`Maps`/`Sets` migration, golden, LSP, and docs).
+Design/plan: [COLLECTION_SDK_PLAN_AR.md](COLLECTION_SDK_PLAN_AR.md). API reference: [COLLECTION_REFERENCE.md](COLLECTION_REFERENCE.md).
+
+| Check | Observed result |
+| --- | --- |
+| Embedded SDK sync | `lib/sdk/collection.quds` (12 sections) and `lib/sdk/ext.quds` (`Lists`/`Maps`/`Sets` removed with no alias/re-export; `Ints`/`Doubles` retained; `lib/sdk/core.quds` kept intact) match `lib/src/sdk.dart` |
+| Quds primary suites (`quds test`) | All 6 suites pass via `test/collection_sdk_test.dart`: `collection_core.quds`, `collection_imports.quds`, `collection_sort_equality_diff.quds`, `collection_structures.quds`, `collection_specialized.quds`, `collection_extensions.quds` |
+| `quds:ext` migration check | `test/collection_reject_ext_collections.quds`, `Map.missing`/`Set.without` rejection on `quds:ext` alone, `hide Lists`, and `show Lists` confirm full migration while `quds:collection::extensions` coexists with `quds:ext` and `quds:core` |
+| Generated output & VM/JS parity | Deterministic golden `test/goldens/collection_slice.dart.txt` matches; `test/collection_web.quds` passes strict `dart analyze --fatal-infos` on generated Dart and executes identically on Dart VM and `dart compile js` + `node` |
+| Editor LSP checks | Completion (`MapConflictPolicy.`, `quds:collection::extensions` vs `quds:ext` alone) and go-to-definition (`quds-sdk://library/collection.quds`) pass inside `test/collection_sdk_test.dart` |
+| `quds:collection` driver | `/opt/flutter/bin/dart test test/collection_sdk_test.dart --reporter expanded`: **11 passed, 0 failed** (1m06s) |
+| `quds:text` driver | `/opt/flutter/bin/dart test test/text_sdk_test.dart`: **14 passed, 0 failed** (1m42s) |
+| Editor suite | `/opt/flutter/bin/dart test test/editor_test.dart`: **15 passed, 0 failed** (2s) |
+| Filtered compiler/SDK/LSP regressions | `/opt/flutter/bin/dart test test/compiler_test.dart --name "ext|sdk|lsp"`: **9 passed, 0 failed** (6s) |
+| Language suite | `/opt/flutter/bin/dart test test/language_test.dart`: **57 passed, 0 failed** (1m58s) |
+| Format & analysis | `dart format` (touched Dart files clean), `/opt/flutter/bin/dart analyze`: no issues found |
+| Inventory/keyword/diff sync | `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed (`READINESS: 115 decisions indexed; no unearned completeness claims`) |
+
+Targeted regression suites were run rather than the full repository suite; no full-suite run or interactive VS Code GUI session is claimed for this entry.
+
 # General-purpose text SDK (`quds:text`, Batches 0–5) — 2026-11-23
 
 Base: `7f238d1` (Batches 0–4 pushed as `78cb96c`, `6be6474`, `7e20446`, `13219eb`; Batch 5 closes extensions, `quds:ext` `Text` migration, golden, and docs).

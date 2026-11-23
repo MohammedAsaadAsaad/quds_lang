@@ -79,7 +79,7 @@ main():
     expect(result.map((i) => i['label']), containsAll(['value', 'fallback']));
   });
   test('generic SDK extensions appear with instantiated details', () {
-    final result = items('''use quds:ext
+    final result = items('''use quds:collection
 main():
   values = [1, 2]
   print values.

@@ -3213,6 +3213,7 @@ total(values: List<int>) -> int = values.length
     await execute('''
 use quds:ext
 use quds:text
+use quds:collection
 main():
   print "  ".blank()
   print "ab".capitalized()

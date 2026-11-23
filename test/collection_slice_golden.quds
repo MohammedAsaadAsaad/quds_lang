@@ -1,0 +1,7 @@
+use quds:collection::transform show chunkList
+use quds:collection::extensions show Lists
+
+main():
+  nums = [1, 2, 3, 4, 5]
+  print chunkList(nums, 2)
+  print nums.second()

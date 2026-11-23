@@ -1,0 +1,72 @@
+use quds:collection::extensions
+use quds:ext
+use quds:core show Stack
+
+test "extensions: migrated Lists/Maps/Sets and opt-in collection extensions coexist with quds:ext and quds:core":
+  # Migrated Lists extension (6 methods, original contracts)
+  numbers: List<int> = [1, 2, 3, 2]
+  expect(numbers.second(), 2)
+  expect(numbers.third(), 3)
+  expect([9].second(), null)
+  expect([9, 8].third(), null)
+  expect(numbers.reversedCopy(), [2, 3, 2, 1])
+  expect(numbers.without(2), [1, 3])
+  expect(numbers.keeping(2), [2, 2])
+  expect(numbers.chunk(2), [[1, 2], [3, 2]])
+  expect(numbers.chunk(0).length, 0)
+
+  # Migrated Maps extension (2 methods, original contracts)
+  ages: Map<String, int> = map:
+    "Ada": 1
+    "Bea": 1
+    "Cara": 2
+  expect(ages.keysOf(1), ["Ada", "Bea"])
+  expect(ages.missing("Dan"), true)
+  expect(ages.missing("Ada"), false)
+
+  # Migrated Sets extension (1 method, original contract)
+  flags: Set<int> = set:
+    1
+    2
+    3
+  withoutTwo = flags.without(2)
+  expect(withoutTwo.length, 2)
+  expect(withoutTwo.contains(2), false)
+
+  # New opt-in ListCollectionExtensions
+  expect(numbers.firstItemOrNull(), 1)
+  expect(numbers.lastItemOrNull(), 2)
+  expect(numbers.elementOrNull(10), null)
+  expect(numbers.chunked(3), [[1, 2, 3], [2]])
+  expect([1, 2, 3, 4].windowed(2, step: 1, partial: false), [[1, 2], [2, 3], [3, 4]])
+  parts = [1, 2, 3, 4].partitioned((n: int) -> n % 2 == 0)
+  expect(parts.matching, [2, 4])
+  expect(parts.nonMatching, [1, 3])
+  expect([1, 2, 3, 4].rotated(1), [4, 1, 2, 3])
+
+  # New opt-in MapCollectionExtensions
+  expect(ages.pickedKeys(["Ada", "Cara"]).length, 2)
+  expect(ages.omittedKeys(["Bea"]).containsKey("Bea"), false)
+  expect(ages.filteredValues((v: int) -> v > 1)["Cara"], 2)
+  expect(ages.invertedMulti()[1], ["Ada", "Bea"])
+
+  # New opt-in SetCollectionExtensions
+  other: Set<int> = set:
+    3
+    4
+  sub: Set<int> = set:
+    1
+    2
+  disj: Set<int> = set:
+    9
+  expect(flags.symmetricDiff(other).length, 3)
+  expect(sub.subsetOf(flags), true)
+  expect(flags.supersetOf(sub), true)
+  expect(flags.disjointWith(disj), true)
+
+  # Coexistence with quds:ext (Ints/Doubles) and quds:core (Stack)
+  expect(4.even(), true)
+  expect(1.5.whole(), 1)
+  st = Stack<int>()
+  st.push(42)
+  expect(st.pop(), 42)

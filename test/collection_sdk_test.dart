@@ -5,12 +5,14 @@ import 'package:quds_lang/src/sdk.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('embedded quds:collection matches lib/sdk/collection.quds', () {
+  test('embedded quds:collection and quds:ext match lib/sdk/*.quds', () {
     expect(
       collectionSdkSource,
       File('lib/sdk/collection.quds').readAsStringSync(),
     );
     expect(embeddedSdk['collection'], collectionSdkSource);
+    expect(extSdkSource, File('lib/sdk/ext.quds').readAsStringSync());
+    expect(embeddedSdk['ext'], extSdkSource);
   });
 
   for (final suite in const [
@@ -19,6 +21,7 @@ void main() {
     'test/collection_sort_equality_diff.quds',
     'test/collection_structures.quds',
     'test/collection_specialized.quds',
+    'test/collection_extensions.quds',
   ]) {
     test('Quds primary suite ${suite.split('/').last}', () async {
       final result = await Process.run(
@@ -33,6 +36,47 @@ void main() {
       expect(result.stdout, contains('ok '));
     });
   }
+
+  test('quds:ext alone no longer exposes migrated Lists/Maps/Sets extensions',
+      () {
+    final reject =
+        File('test/collection_reject_ext_collections.quds').readAsStringSync();
+    expect(
+      () =>
+          compile(reject, file: 'test/collection_reject_ext_collections.quds'),
+      throwsA(isA<CompilerException>()),
+    );
+    expect(
+      () => compile(
+          'use quds:ext\nmain():\n  m = map:\n    "a": 1\n  print m.missing("b")\n'),
+      throwsA(isA<CompilerException>()),
+    );
+    expect(
+      () => compile(
+          'use quds:ext\nmain():\n  s = set:\n    1\n  print s.without(1)\n'),
+      throwsA(isA<CompilerException>()),
+    );
+    expect(
+      () => compile(
+          'use quds:collection hide Lists\nmain():\n  xs = [1, 2]\n  print xs.second()\n'),
+      throwsA(isA<CompilerException>()),
+    );
+    expect(
+      () {
+        compile(
+            'use quds:collection show Lists\nmain():\n  xs = [1, 2]\n  print xs.second()\n');
+      },
+      returnsNormally,
+    );
+  });
+
+  test('quds:collection generated Dart matches deterministic golden', () {
+    final input = File('test/collection_slice_golden.quds');
+    final compiled = compile(input.readAsStringSync(), file: input.path);
+    final golden =
+        File('test/goldens/collection_slice.dart.txt').readAsStringSync();
+    expect(compiled.dart, golden);
+  });
 
   test(
       'quds:collection executes identically on Dart VM and JavaScript with clean dart analyze',
@@ -68,4 +112,77 @@ void main() {
     expect(web.exitCode, 0, reason: '${web.stdout}\n${web.stderr}');
     expect(web.stdout, vm.stdout);
   }, timeout: const Timeout(Duration(minutes: 3)));
+
+  test(
+      'editor completion and definition reflect quds:collection sections and migrated Lists',
+      () {
+    Set<String> completeLabels(String uri, String source, int line, int col) {
+      final session = LspSession();
+      session.handle({
+        'method': 'textDocument/didOpen',
+        'params': {
+          'textDocument': {'uri': uri, 'version': 1, 'text': source},
+        },
+      });
+      final result = session.handle({
+        'id': 1,
+        'method': 'textDocument/completion',
+        'params': {
+          'textDocument': {'uri': uri},
+          'position': {'line': line, 'character': col},
+        },
+      }).response!['result'] as Map;
+      session.dispose();
+      return (result['items'] as List)
+          .cast<Map>()
+          .map((item) => item['label'] as String)
+          .toSet();
+    }
+
+    final enumLabels = completeLabels(
+      'file:///collection_enum_complete.quds',
+      'use quds:collection::types show MapConflictPolicy\nmain():\n  p = MapConflictPolicy.\n',
+      2,
+      24,
+    );
+    expect(enumLabels, containsAll(['keepFirst', 'keepLast', 'fail']));
+
+    final extLabels = completeLabels(
+      'file:///collection_ext_complete.quds',
+      'use quds:collection::extensions\nmain():\n  xs = [1, 2]\n  y = xs.\n',
+      3,
+      9,
+    );
+    expect(extLabels, containsAll(['second', 'third', 'chunked', 'rotated']));
+
+    final oldExtLabels = completeLabels(
+      'file:///collection_old_ext_complete.quds',
+      'use quds:ext\nmain():\n  xs = [1, 2]\n  y = xs.\n',
+      3,
+      9,
+    );
+    expect(oldExtLabels, isNot(contains('second')));
+    expect(oldExtLabels, isNot(contains('chunk')));
+
+    final session = LspSession();
+    const defUri = 'file:///collection_def.quds';
+    const defSource =
+        'use quds:collection::extensions\nmain():\n  xs = [1, 2]\n  print xs.second()\n';
+    session.handle({
+      'method': 'textDocument/didOpen',
+      'params': {
+        'textDocument': {'uri': defUri, 'version': 1, 'text': defSource},
+      },
+    });
+    final defResponse = session.handle({
+      'id': 2,
+      'method': 'textDocument/definition',
+      'params': {
+        'textDocument': {'uri': defUri},
+        'position': {'line': 3, 'character': 13},
+      },
+    }).response!['result'] as Map;
+    session.dispose();
+    expect(defResponse['uri'], 'quds-sdk://library/collection.quds');
+  });
 }

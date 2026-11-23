@@ -26,4 +26,4 @@ test "selective section imports, prefixes, show, and quds:ext coexistence":
   expect(compose.repeatText("some", 3, separator: "-") == "some-some-some", true)
   expect(lines.normalizeLineEndings("x\r\ny", ending: lines.TextLineEnding.lf) == "x\ny", true)
   expect(inspect.isBlankText("  \t "), true)
-  expect([10, 20, 30].second() == 20, true)
+  expect(4.even(), true)

@@ -1,0 +1,149 @@
+use quds:collection
+
+class Tagged:
+  key: int required
+  tag: String required
+
+test "sort: stable merge sort, sortedByKey, binarySearch, bounds, topK/bottomK, reverse/rotate/shuffle":
+  cmp = (a: int, b: int) -> a.compareTo(b)
+  orig = [3, 1, 4, 1, 5, 9, 2]
+  expect(sortedWith(orig, cmp), [1, 1, 2, 3, 4, 5, 9])
+  expect(orig, [3, 1, 4, 1, 5, 9, 2])
+
+  # Stability check: equal keys preserve original relative order.
+  tagged = [
+    Tagged(key: 2, tag: "a"),
+    Tagged(key: 1, tag: "b"),
+    Tagged(key: 2, tag: "c"),
+    Tagged(key: 1, tag: "d"),
+  ]
+  stable = sortedByKey(tagged, (t: Tagged) -> t.key, cmp)
+  expect(stable[0].tag, "b")
+  expect(stable[1].tag, "d")
+  expect(stable[2].tag, "a")
+  expect(stable[3].tag, "c")
+
+  desc = sortedByKey(tagged, (t: Tagged) -> t.key, cmp, descending: true)
+  expect(desc[0].tag, "a")
+  expect(desc[1].tag, "c")
+  expect(desc[2].tag, "b")
+  expect(desc[3].tag, "d")
+
+  sorted = [1, 2, 2, 2, 5, 8]
+  expect(lowerBound(sorted, 2, cmp), 1)
+  expect(upperBound(sorted, 2, cmp), 4)
+  expect(lowerBound(sorted, 0, cmp), 0)
+  expect(upperBound(sorted, 9, cmp), 6)
+  expect(binarySearch(sorted, 5, cmp), 4)
+  expect(binarySearch(sorted, 3, cmp), -1)
+
+  expect(topK([5, 1, 9, 3, 7], 3, cmp), [9, 7, 5])
+  expect(bottomK([5, 1, 9, 3, 7], 3, cmp), [1, 3, 5])
+  expect(topK([5, 1], 0, cmp).length, 0)
+  expect(bottomK([5, 1], 10, cmp), [1, 5])
+
+  expect(reverseRange([1, 2, 3, 4, 5], 1, 4), [1, 4, 3, 2, 5])
+  expect(rotateList([1, 2, 3, 4, 5], 2), [4, 5, 1, 2, 3])
+  expect(rotateList([1, 2, 3, 4, 5], -1), [2, 3, 4, 5, 1])
+  emptyInts: List<int> = []
+  expect(rotateList(emptyInts, 3).length, 0)
+
+  s1 = shuffleSeeded([1, 2, 3, 4, 5, 6], 42)
+  s2 = shuffleSeeded([1, 2, 3, 4, 5, 6], 42)
+  expect(s1, s2)
+  expect(sortedWith(s1, cmp), [1, 2, 3, 4, 5, 6])
+
+test "equality: listEquals, setEquals, mapEquals, hashes, and Equality<T>":
+  expect(listEquals([1, 2, 3], [1, 2, 3]), true)
+  expect(listEquals([1, 2], [1, 3]), false)
+  expect(listEquals(["a", "B"], ["A", "b"], itemEquals: (x: String, y: String) -> x.toLowerCase() == y.toLowerCase()), true)
+
+  sa: Set<int> = set:
+    1
+    2
+  sb: Set<int> = set:
+    2
+    1
+  sc: Set<int> = set:
+    1
+    3
+  expect(setEquals(sa, sb), true)
+  expect(setEquals(sa, sc), false)
+
+  ma: Map<String, int?> = map:
+    "a": 1
+    "b": null
+  mb: Map<String, int?> = map:
+    "b": null
+    "a": 1
+  mc: Map<String, int?> = map:
+    "a": 1
+    "c": null
+  expect(mapEquals(ma, mb), true)
+  expect(mapEquals(ma, mc), false)
+
+  expect(listHash([1, 2, 3]), listHash([1, 2, 3]))
+  expect(listHash([1, 2, 3]) != listHash([3, 2, 1]), true)
+  expect(unorderedHash([1, 2, 3]), unorderedHash([3, 1, 2]))
+  expect(mapHash(ma), mapHash(mb))
+
+  ci = Equality.custom<String>(
+    (a: String, b: String) -> a.toLowerCase() == b.toLowerCase(),
+    (s: String) -> s.toLowerCase().hashCode,
+  )
+  expect(ci.isEqual("Quds", "quds"), true)
+  expect(ci.listsEqual(["A", "b"], ["a", "B"]), true)
+  expect(ci.hashList(["A", "b"]), ci.hashList(["a", "B"]))
+
+  def = Equality.defaultOf<int>()
+  expect(def.isEqual(5, 5), true)
+  expect(def.listsEqual([1, 2], [1, 2]), true)
+
+test "diff: diffSets, diffMaps, longestCommonSubsequence, diffLists, applyListDiff":
+  sOld: Set<int> = set:
+    1
+    2
+    3
+  sNew: Set<int> = set:
+    2
+    3
+    4
+  sd = diffSets(sOld, sNew)
+  expect(sd.isEmpty, false)
+  expect(sd.added.contains(4) and sd.added.length == 1, true)
+  expect(sd.removed.contains(1) and sd.removed.length == 1, true)
+  expect(sd.common.length, 2)
+  expect(diffSets(sOld, sOld).isEmpty, true)
+
+  mOld: Map<String, int> = map:
+    "a": 1
+    "b": 2
+    "c": 3
+  mNew: Map<String, int> = map:
+    "b": 20
+    "c": 3
+    "d": 4
+  md = diffMaps(mOld, mNew)
+  expect(md.isEmpty, false)
+  expect(md.added["d"], 4)
+  expect(md.removed["a"], 1)
+  expect(md.unchanged["c"], 3)
+  expect(md.changed["b"]?.first, 2)
+  expect(md.changed["b"]?.second, 20)
+  expect(diffMaps(mOld, mOld).isEmpty, true)
+
+  lcs = longestCommonSubsequence(["a", "b", "c", "d", "e"], ["b", "x", "d", "e", "z"])
+  expect(lcs, ["b", "d", "e"])
+
+  before = ["a", "b", "c", "d"]
+  after = ["a", "x", "c", "y", "d"]
+  steps = diffLists(before, after)
+  rebuilt = applyListDiff(before, steps)
+  expect(rebuilt, after)
+
+  var badApply = false
+  try:
+    applyListDiff(["wrong"], steps)
+  catch e:
+    badApply = e is CollectionError
+  expect(badApply, true)

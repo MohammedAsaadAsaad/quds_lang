@@ -31,4 +31,14 @@ main():
   top = ms.mostCommon(limit: 1)
   _check(top.length == 1 and top[0].first == "x" and top[0].second == 3, "Multiset")
 
+  cmp = (a: int, b: int) -> a.compareTo(b)
+  _check(listEquals(sortedWith([3, 1, 2], cmp), [1, 2, 3]), "sortedWith")
+  _check(binarySearch([1, 3, 5, 7], 5, cmp) == 2, "binarySearch")
+  shuf1 = shuffleSeeded([1, 2, 3, 4, 5], 99)
+  shuf2 = shuffleSeeded([1, 2, 3, 4, 5], 99)
+  _check(listEquals(shuf1, shuf2), "shuffleSeeded")
+  _check(unorderedHash([1, 2, 3]) == unorderedHash([3, 1, 2]), "unorderedHash")
+  steps = diffLists(["a", "b", "c"], ["a", "x", "c"])
+  _check(listEquals(applyListDiff(["a", "b", "c"], steps), ["a", "x", "c"]), "diffLists")
+
   print "COLLECTION_WEB_OK"

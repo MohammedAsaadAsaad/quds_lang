@@ -6675,6 +6675,10 @@ class Analyzer {
           : dartGetter;
       return _readonlyView(raw, foundType);
     }
+    if (node.name == 'hashCode' && type != 'void') {
+      model.references[node] = Symbol('hashCode', 'hashCode', 'int');
+      return node.nullAware ? 'int?' : 'int';
+    }
     fail(
         _hinted('No member ${node.name} on $type', node.name,
             _memberCandidates(type)),
@@ -9930,16 +9934,8 @@ class Analyzer {
     final selected = candidates.single;
     final substitution = _checkTypeArguments(
         selected.name, selected.typeParameters, applied.arguments, node);
-    final parameters = [
-      for (final parameter in selected.parameters)
-        Parameter(parameter.name, _substitute(parameter.type, substitution),
-            parameter.mutable, parameter.span,
-            kind: parameter.kind,
-            defaultValue: parameter.defaultValue,
-            variadic: parameter.variadic)
-    ];
-    return applyArguments(node, parameters, selected,
-        typeArguments: substitution);
+    return applyArguments(node, selected.parameters, selected,
+        typeArguments: substitution, defaultSubstitution: substitution);
   }
 
   void _rememberGapValue(Symbol symbol, Expression value) {

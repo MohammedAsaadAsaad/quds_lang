@@ -970,3 +970,571 @@ class Multiset<T>:
           keep = entry.value
         out.add(entry.key, count: keep)
     return out
+
+
+:: sort
+
+# Internal stable merge sort returning a new list.
+_mergeSort<T>(items: List<T>, compare: (T, T) -> int) -> List<T>:
+  n = items.length
+  if n <= 1:
+    out: List<T> = []
+    for item in items:
+      out.add(item)
+    return out
+  mid = n ~/ 2
+  leftSlice: List<T> = []
+  var i = 0
+  while i < mid:
+    leftSlice.add(items[i])
+    i = i + 1
+  rightSlice: List<T> = []
+  while i < n:
+    rightSlice.add(items[i])
+    i = i + 1
+  left = _mergeSort<T>(leftSlice, compare)
+  right = _mergeSort<T>(rightSlice, compare)
+  merged: List<T> = []
+  var li = 0
+  var ri = 0
+  while li < left.length and ri < right.length:
+    if compare(left[li], right[ri]) <= 0:
+      merged.add(left[li])
+      li = li + 1
+    else:
+      merged.add(right[ri])
+      ri = ri + 1
+  while li < left.length:
+    merged.add(left[li])
+    li = li + 1
+  while ri < right.length:
+    merged.add(right[ri])
+    ri = ri + 1
+  return merged
+
+# Returns a new list containing the elements of [items] stably sorted using
+# [compare]. Does not mutate [items].
+# Example:
+#   print sortedWith([3, 1, 2], (a: int, b: int) -> a.compareTo(b))
+sortedWith<T>(items: Iterable<T>, compare: (T, T) -> int) -> List<T>:
+  copy: List<T> = []
+  for item in items:
+    copy.add(item)
+  return _mergeSort<T>(copy, compare)
+
+# Returns a new list stably sorted by a key computed once per element via
+# [keyOf] and compared with [compareKeys]. Set [descending] to true to reverse
+# the ordering while preserving stability for equal keys.
+# Example:
+#   print sortedByKey(["pear", "fig", "kiwi"], (s: String) -> s.length, (a: int, b: int) -> a.compareTo(b))
+sortedByKey<T, K>(items: Iterable<T>, keyOf: (T) -> K, compareKeys: (K, K) -> int, descending: bool = false) -> List<T>:
+  decorated: List<CollectionPair<T, K>> = []
+  for item in items:
+    decorated.add(CollectionPair<T, K>(first: item, second: keyOf(item)))
+  var sorted: List<CollectionPair<T, K>> = []
+  if descending:
+    sorted = _mergeSort<CollectionPair<T, K>>(decorated, (a: CollectionPair<T, K>, b: CollectionPair<T, K>) -> compareKeys(b.second, a.second))
+  else:
+    sorted = _mergeSort<CollectionPair<T, K>>(decorated, (a: CollectionPair<T, K>, b: CollectionPair<T, K>) -> compareKeys(a.second, b.second))
+  out: List<T> = []
+  for pair in sorted:
+    out.add(pair.first)
+  return out
+
+# Returns the first index in sorted [items] where compare(items[i], target) >= 0,
+# or items.length when all elements are strictly less than [target].
+# Example:
+#   print lowerBound([1, 2, 2, 4], 2, (a: int, b: int) -> a.compareTo(b))
+lowerBound<T>(items: List<T>, target: T, compare: (T, T) -> int) -> int:
+  var lo = 0
+  var hi = items.length
+  while lo < hi:
+    mid = lo + ((hi - lo) ~/ 2)
+    if compare(items[mid], target) < 0:
+      lo = mid + 1
+    else:
+      hi = mid
+  return lo
+
+# Returns the first index in sorted [items] where compare(items[i], target) > 0,
+# or items.length when no element is strictly greater than [target].
+# Example:
+#   print upperBound([1, 2, 2, 4], 2, (a: int, b: int) -> a.compareTo(b))
+upperBound<T>(items: List<T>, target: T, compare: (T, T) -> int) -> int:
+  var lo = 0
+  var hi = items.length
+  while lo < hi:
+    mid = lo + ((hi - lo) ~/ 2)
+    if compare(items[mid], target) <= 0:
+      lo = mid + 1
+    else:
+      hi = mid
+  return lo
+
+# Searches sorted [items] for [target] using [compare]. Returns a matching
+# index, or -1 when [target] is not present.
+# Example:
+#   print binarySearch([1, 3, 5, 7], 5, (a: int, b: int) -> a.compareTo(b))
+binarySearch<T>(items: List<T>, target: T, compare: (T, T) -> int) -> int:
+  idx = lowerBound<T>(items, target, compare)
+  if idx < items.length and compare(items[idx], target) == 0:
+    return idx
+  return -1
+
+# Returns up to [k] largest elements of [items] in descending order according
+# to [compare]. Equal elements keep their earlier appearance. Throws
+# CollectionError when [k] is negative.
+# Example:
+#   print topK([5, 1, 9, 3, 7], 3, (a: int, b: int) -> a.compareTo(b))
+topK<T>(items: Iterable<T>, k: int, compare: (T, T) -> int) -> List<T>:
+  if k < 0:
+    throw CollectionError("topK", "k must be non-negative, got {k}")
+  if k == 0:
+    empty: List<T> = []
+    return empty
+  sorted = sortedWith<T>(items, (a: T, b: T) -> compare(b, a))
+  if k >= sorted.length:
+    return sorted
+  out: List<T> = []
+  var i = 0
+  while i < k:
+    out.add(sorted[i])
+    i = i + 1
+  return out
+
+# Returns up to [k] smallest elements of [items] in ascending order according
+# to [compare]. Equal elements keep their earlier appearance. Throws
+# CollectionError when [k] is negative.
+# Example:
+#   print bottomK([5, 1, 9, 3, 7], 3, (a: int, b: int) -> a.compareTo(b))
+bottomK<T>(items: Iterable<T>, k: int, compare: (T, T) -> int) -> List<T>:
+  if k < 0:
+    throw CollectionError("bottomK", "k must be non-negative, got {k}")
+  if k == 0:
+    empty: List<T> = []
+    return empty
+  sorted = sortedWith<T>(items, compare)
+  if k >= sorted.length:
+    return sorted
+  out: List<T> = []
+  var i = 0
+  while i < k:
+    out.add(sorted[i])
+    i = i + 1
+  return out
+
+# Returns a new list with the half-open slice [start, end) reversed.
+# Throws RangeError when bounds are outside 0..items.length or start > end.
+# Example:
+#   print reverseRange([1, 2, 3, 4, 5], 1, 4)
+reverseRange<T>(items: List<T>, start: int, end: int) -> List<T>:
+  if start < 0 or start > items.length:
+    throw RangeError.range(start, 0, items.length, "start")
+  if end < start or end > items.length:
+    throw RangeError.range(end, start, items.length, "end")
+  out: List<T> = []
+  var i = 0
+  while i < items.length:
+    out.add(items[i])
+    i = i + 1
+  var lo = start
+  var hi = end - 1
+  while lo < hi:
+    tmp = out[lo]
+    out[lo] = out[hi]
+    out[hi] = tmp
+    lo = lo + 1
+    hi = hi - 1
+  return out
+
+# Returns a new list rotated right by [shift] positions (negative rotates left).
+# Example:
+#   print rotateList([1, 2, 3, 4], 1)
+rotateList<T>(items: List<T>, shift: int) -> List<T>:
+  n = items.length
+  if n == 0:
+    empty: List<T> = []
+    return empty
+  var k = shift % n
+  if k < 0:
+    k = k + n
+  out: List<T> = []
+  var i = 0
+  while i < n:
+    src = (i - k + n) % n
+    out.add(items[src])
+    i = i + 1
+  return out
+
+# Returns a deterministically shuffled copy of [items] using a portable 31-bit
+# Park-Miller LCG seeded with [seed] (identical results on Dart VM and JS).
+# Example:
+#   print shuffleSeeded([1, 2, 3, 4], 42)
+shuffleSeeded<T>(items: Iterable<T>, seed: int) -> List<T>:
+  out: List<T> = []
+  for item in items:
+    out.add(item)
+  if out.length <= 1:
+    return out
+  modulus = 2147483647
+  var rng = seed % modulus
+  if rng <= 0:
+    rng = rng + modulus - 1
+  if rng <= 0:
+    rng = 1
+  var i = out.length - 1
+  while i > 0:
+    # Schrage's method for 16807 * rng mod (2^31 - 1), overflow-safe on 32-bit/JS.
+    q = 127773
+    r = 2836
+    hi = rng ~/ q
+    lo = rng - hi * q
+    rng = 16807 * lo - r * hi
+    if rng <= 0:
+      rng = rng + modulus
+    j = rng % (i + 1)
+    tmp = out[i]
+    out[i] = out[j]
+    out[j] = tmp
+    i = i - 1
+  return out
+
+
+:: equality
+
+# Internal 30-bit Jenkins-style hash combiner (safe on both VM and JS).
+_combineHash(hash: int, value: int) -> int:
+  var h = (hash + (value & 0x3fffffff)) & 0x3fffffff
+  h = (h + ((h << 10) & 0x3fffffff)) & 0x3fffffff
+  return h ^ (h >> 6)
+
+# Internal 30-bit hash finalizer.
+_finishHash(hash: int) -> int:
+  var h = (hash + ((hash << 3) & 0x3fffffff)) & 0x3fffffff
+  h = h ^ (h >> 11)
+  return (h + ((h << 15) & 0x3fffffff)) & 0x3fffffff
+
+# Element-wise structural equality for two lists, optionally using [itemEquals].
+# Example:
+#   print listEquals([1, 2], [1, 2])
+listEquals<T>(first: List<T>, second: List<T>, itemEquals: ((T, T) -> bool)? = null) -> bool:
+  if first.length != second.length:
+    return false
+  var i = 0
+  while i < first.length:
+    if itemEquals != null:
+      if not itemEquals(first[i], second[i]):
+        return false
+    else:
+      if first[i] != second[i]:
+        return false
+    i = i + 1
+  return true
+
+# Structural equality for two sets (same length and identical membership).
+# Example:
+#   print setEquals(a, b)
+setEquals<T>(first: Set<T>, second: Set<T>) -> bool:
+  if first.length != second.length:
+    return false
+  for item in first:
+    if not second.contains(item):
+      return false
+  return true
+
+# Structural equality for two maps (same keys and equal values, optionally
+# compared with [valueEquals]). Distinguishes absent keys from null values.
+# Example:
+#   print mapEquals(a, b)
+mapEquals<K, V>(first: Map<K, V>, second: Map<K, V>, valueEquals: ((V, V) -> bool)? = null) -> bool:
+  if first.length != second.length:
+    return false
+  for entry in first.entries:
+    if not second.containsKey(entry.key):
+      return false
+    otherVal = second[entry.key] as V
+    if valueEquals != null:
+      if not valueEquals(entry.value, otherVal):
+        return false
+    else:
+      if entry.value != otherVal:
+        return false
+  return true
+
+# Order-sensitive structural hash code for a sequence, optionally using [hashOf].
+# Example:
+#   print listHash([1, 2, 3])
+listHash<T>(items: Iterable<T>, hashOf: ((T) -> int)? = null) -> int:
+  var h = 0
+  for item in items:
+    var itemHash = item.hashCode
+    if hashOf != null:
+      itemHash = hashOf(item)
+    h = _combineHash(h, itemHash)
+  return _finishHash(h)
+
+# Order-independent structural hash code for sets or multisets.
+# Example:
+#   print unorderedHash([1, 2]) == unorderedHash([2, 1])
+unorderedHash<T>(items: Iterable<T>, hashOf: ((T) -> int)? = null) -> int:
+  var sum = 0
+  var count = 0
+  for item in items:
+    var itemHash = item.hashCode
+    if hashOf != null:
+      itemHash = hashOf(item)
+    mixed = _finishHash(_combineHash(0, itemHash))
+    sum = (sum + mixed) & 0x3fffffff
+    count = count + 1
+  return _finishHash(_combineHash(sum, count))
+
+# Order-independent structural hash code for a map.
+# Example:
+#   print mapHash(m1) == mapHash(m2)
+mapHash<K, V>(source: Map<K, V>, keyHash: ((K) -> int)? = null, valueHash: ((V) -> int)? = null) -> int:
+  var sum = 0
+  var count = 0
+  for entry in source.entries:
+    var kh = entry.key.hashCode
+    if keyHash != null:
+      kh = keyHash(entry.key)
+    var vh = entry.value.hashCode
+    if valueHash != null:
+      vh = valueHash(entry.value)
+    pairHash = _finishHash(_combineHash(_combineHash(0, kh), vh))
+    sum = (sum + pairHash) & 0x3fffffff
+    count = count + 1
+  return _finishHash(_combineHash(sum, count))
+
+# Bundles an explicit typed equality test and consistent hash function for [T].
+# Example:
+#   eq = Equality.defaultOf<String>()
+#   print eq.isEqual("a", "a")
+class Equality<T>:
+  private equalsFn: (T, T) -> bool required
+  private hashFn: (T) -> int required
+
+  # Creates an Equality using standard `==` and `hashCode`.
+  # Example:
+  #   eq = Equality.defaultOf<int>()
+  static defaultOf<E>() -> Equality<E>:
+    return Equality<E>(
+      equalsFn: (a: E, b: E) -> a == b,
+      hashFn: (v: E) -> v.hashCode,
+    )
+
+  # Creates an Equality with custom [itemEquals] and [itemHash] functions.
+  # Example:
+  #   ci = Equality.custom<String>((a: String, b: String) -> a.toLowerCase() == b.toLowerCase(), (s: String) -> s.toLowerCase().hashCode)
+  static custom<E>(itemEquals: (E, E) -> bool, itemHash: (E) -> int) -> Equality<E>:
+    return Equality<E>(equalsFn: itemEquals, hashFn: itemHash)
+
+  # Returns true when [first] and [second] are equal under this contract.
+  # Example:
+  #   print eq.isEqual(a, b)
+  isEqual(first: T, second: T) -> bool = equalsFn(first, second)
+
+  # Returns the hash code of [value] under this contract.
+  # Example:
+  #   print eq.hashOf(a)
+  hashOf(value: T) -> int = hashFn(value)
+
+  # Compares two lists element-by-element using this equality.
+  # Example:
+  #   print eq.listsEqual(a, b)
+  listsEqual(first: List<T>, second: List<T>) -> bool = listEquals<T>(first, second, itemEquals: equalsFn)
+
+  # Computes a list hash consistent with [listsEqual].
+  # Example:
+  #   print eq.hashList(a)
+  hashList(items: Iterable<T>) -> int = listHash<T>(items, hashOf: hashFn)
+
+
+:: diff
+
+# Computes the structural difference between [before] and [after] sets.
+# Example:
+#   d = diffSets(oldSet, newSet)
+diffSets<T>(before: Set<T>, after: Set<T>) -> SetDiff<T>:
+  added: Set<T> = set:
+  removed: Set<T> = set:
+  common: Set<T> = set:
+  for item in before:
+    if after.contains(item):
+      common.add(item)
+    else:
+      removed.add(item)
+  for item in after:
+    if not before.contains(item):
+      added.add(item)
+  return SetDiff<T>(added: added, removed: removed, common: common)
+
+# Computes the structural difference between [before] and [after] maps.
+# Optionally compares values with [valueEquals].
+# Example:
+#   d = diffMaps(oldMap, newMap)
+diffMaps<K, V>(before: Map<K, V>, after: Map<K, V>, valueEquals: ((V, V) -> bool)? = null) -> MapDiff<K, V>:
+  added: Map<K, V> = map:
+  removed: Map<K, V> = map:
+  changed: Map<K, CollectionPair<V, V>> = map:
+  unchanged: Map<K, V> = map:
+  for entry in before.entries:
+    if not after.containsKey(entry.key):
+      removed[entry.key] = entry.value
+    else:
+      nextVal = after[entry.key] as V
+      var matched = false
+      if valueEquals != null:
+        matched = valueEquals(entry.value, nextVal)
+      else:
+        matched = entry.value == nextVal
+      if matched:
+        unchanged[entry.key] = entry.value
+      else:
+        changed[entry.key] = CollectionPair<V, V>(first: entry.value, second: nextVal)
+  for entry in after.entries:
+    if not before.containsKey(entry.key):
+      added[entry.key] = entry.value
+  return MapDiff<K, V>(added: added, removed: removed, changed: changed, unchanged: unchanged)
+
+# Computes a longest common subsequence of [first] and [second] in O(n * m)
+# time and space. Optionally compares elements with [itemEquals].
+# Example:
+#   print longestCommonSubsequence(["a", "b", "c"], ["a", "x", "c"])
+longestCommonSubsequence<T>(first: List<T>, second: List<T>, itemEquals: ((T, T) -> bool)? = null) -> List<T>:
+  n = first.length
+  m = second.length
+  if n == 0 or m == 0:
+    empty: List<T> = []
+    return empty
+  cols = m + 1
+  dp: List<int> = []
+  var total = (n + 1) * cols
+  while total > 0:
+    dp.add(0)
+    total = total - 1
+  var i = n - 1
+  while i >= 0:
+    var j = m - 1
+    while j >= 0:
+      var matched = false
+      if itemEquals != null:
+        matched = itemEquals(first[i], second[j])
+      else:
+        matched = first[i] == second[j]
+      if matched:
+        dp[i * cols + j] = 1 + dp[(i + 1) * cols + (j + 1)]
+      else:
+        down = dp[(i + 1) * cols + j]
+        right = dp[i * cols + (j + 1)]
+        if down >= right:
+          dp[i * cols + j] = down
+        else:
+          dp[i * cols + j] = right
+      j = j - 1
+    i = i - 1
+  out: List<T> = []
+  var r = 0
+  var c = 0
+  while r < n and c < m:
+    var matched = false
+    if itemEquals != null:
+      matched = itemEquals(first[r], second[c])
+    else:
+      matched = first[r] == second[c]
+    if matched:
+      out.add(first[r])
+      r = r + 1
+      c = c + 1
+    else if dp[(r + 1) * cols + c] >= dp[r * cols + (c + 1)]:
+      r = r + 1
+    else:
+      c = c + 1
+  return out
+
+# Computes a minimal LCS-based sequence edit script transforming [before] into
+# [after] as keep/delete/insert steps.
+# Example:
+#   steps = diffLists(["a", "b", "c"], ["a", "x", "c"])
+diffLists<T>(before: List<T>, after: List<T>, itemEquals: ((T, T) -> bool)? = null) -> List<ListDiffStep<T>>:
+  n = before.length
+  m = after.length
+  cols = m + 1
+  dp: List<int> = []
+  var total = (n + 1) * cols
+  while total > 0:
+    dp.add(0)
+    total = total - 1
+  var i = n - 1
+  while i >= 0:
+    var j = m - 1
+    while j >= 0:
+      var matched = false
+      if itemEquals != null:
+        matched = itemEquals(before[i], after[j])
+      else:
+        matched = before[i] == after[j]
+      if matched:
+        dp[i * cols + j] = 1 + dp[(i + 1) * cols + (j + 1)]
+      else:
+        down = dp[(i + 1) * cols + j]
+        right = dp[i * cols + (j + 1)]
+        if down >= right:
+          dp[i * cols + j] = down
+        else:
+          dp[i * cols + j] = right
+      j = j - 1
+    i = i - 1
+  steps: List<ListDiffStep<T>> = []
+  var r = 0
+  var c = 0
+  while r < n and c < m:
+    var matched = false
+    if itemEquals != null:
+      matched = itemEquals(before[r], after[c])
+    else:
+      matched = before[r] == after[c]
+    if matched:
+      steps.add(ListDiffStep<T>(op: ListDiffOp.keep, value: before[r]))
+      r = r + 1
+      c = c + 1
+    else if dp[(r + 1) * cols + c] >= dp[r * cols + (c + 1)]:
+      steps.add(ListDiffStep<T>(op: ListDiffOp.delete, value: before[r]))
+      r = r + 1
+    else:
+      steps.add(ListDiffStep<T>(op: ListDiffOp.insert, value: after[c]))
+      c = c + 1
+  while r < n:
+    steps.add(ListDiffStep<T>(op: ListDiffOp.delete, value: before[r]))
+    r = r + 1
+  while c < m:
+    steps.add(ListDiffStep<T>(op: ListDiffOp.insert, value: after[c]))
+    c = c + 1
+  return steps
+
+# Applies [steps] produced by [diffLists] to [before], returning the target
+# list. Throws CollectionError if [steps] does not align with [before].
+# Example:
+#   rebuilt = applyListDiff(oldList, diffLists(oldList, newList))
+applyListDiff<T>(before: List<T>, steps: List<ListDiffStep<T>>, itemEquals: ((T, T) -> bool)? = null) -> List<T>:
+  out: List<T> = []
+  var idx = 0
+  for step in steps:
+    if step.op == ListDiffOp.insert:
+      out.add(step.value)
+    else:
+      if idx >= before.length:
+        throw CollectionError("applyListDiff", "Diff step exceeds source length at index {idx}")
+      var matched = false
+      if itemEquals != null:
+        matched = itemEquals(before[idx], step.value)
+      else:
+        matched = before[idx] == step.value
+      if not matched:
+        throw CollectionError("applyListDiff", "Diff mismatch at index {idx}")
+      if step.op == ListDiffOp.keep:
+        out.add(before[idx])
+      idx = idx + 1
+  if idx != before.length:
+    throw CollectionError("applyListDiff", "Diff did not consume all elements of source ({idx} of {before.length})")
+  return out

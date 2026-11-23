@@ -35,6 +35,7 @@ Future<void> main(List<String> arguments) async {
     'analyze',
     'test',
     'format',
+    'fix',
     'create',
     'doc',
     'migrate',
@@ -78,6 +79,8 @@ Future<void> main(List<String> arguments) async {
       _test(arguments);
     case 'format':
       _format(arguments);
+    case 'fix':
+      _fix(arguments);
     case 'create':
       await _create(arguments);
     case 'doc-preview':
@@ -241,6 +244,8 @@ String? _helpText(String? topic) {
     'format':
         'quds format [file.quds|dir ...] [--check|--set-exit-if-changed] [-o/--output <write|show|none>] [--stdout] [--indent N] [-l/--width/--line-length N] [--no-single-line-if]\n'
             '    Format Quds source files in place (defaults to the current directory).\n',
+    'fix': 'quds fix [--dry-run|-n|--apply] [file.quds|dir ...]\n'
+        '    Preview (--dry-run, default) or apply (--apply) safe automated fixes (missing shadow/var/(), unused use imports).\n',
     'create': 'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
         '    Add Flutter platform support in the current project, preserving Quds sources.\n'
         'quds create [-t/--template <console|cli|package|flutter>] [--force] [--[no-]pub] <name>\n'
@@ -302,6 +307,98 @@ String? _helpText(String? topic) {
     return buffer.toString();
   }
   return entries[topic];
+}
+
+void _reportCompilerError(CompilerException error, {String? source}) {
+  stderr.writeln(formatRichDiagnostic(error, source: source));
+}
+
+void _fix(List<String> arguments) {
+  var apply = false;
+  var dryRun = false;
+  final targets = <String>[];
+  for (var i = 1; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if (arg == '--apply') {
+      apply = true;
+    } else if (arg == '--dry-run' || arg == '-n') {
+      dryRun = true;
+    } else if (arg.startsWith('-')) {
+      stderr.writeln('Unknown option for quds fix: $arg');
+      stderr.writeln(
+          'Usage: quds fix [--dry-run|-n|--apply] [file.quds|dir ...]');
+      exitCode = 64;
+      return;
+    } else {
+      targets.add(arg);
+    }
+  }
+  if (apply && dryRun) {
+    stderr.writeln('Cannot combine --dry-run and --apply.');
+    exitCode = 64;
+    return;
+  }
+  final effectiveTargets = targets.isEmpty ? const ['.'] : targets;
+  final files = <File>[];
+  void collectDir(Directory dir) {
+    for (final entity in dir.listSync(followLinks: false)) {
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith('.') || name == 'build' || name == 'quds_gen') {
+        continue;
+      }
+      if (entity is Directory) {
+        collectDir(entity);
+      } else if (entity is File && name.endsWith('.quds')) {
+        files.add(entity);
+      }
+    }
+  }
+
+  for (final target in effectiveTargets) {
+    final dir = Directory(target);
+    final file = File(target);
+    if (dir.existsSync()) {
+      collectDir(dir);
+    } else if (file.existsSync()) {
+      files.add(file);
+    } else {
+      stderr.writeln('Path not found: $target');
+      exitCode = 64;
+      return;
+    }
+  }
+  files.sort((a, b) => a.path.compareTo(b.path));
+  if (files.isEmpty) {
+    stdout.writeln('No .quds files found.');
+    return;
+  }
+
+  var totalFixes = 0;
+  var changedFiles = 0;
+  for (final file in files) {
+    final source = file.readAsStringSync();
+    final result = fixQudsSource(source, file: file.path);
+    if (!result.changed) continue;
+    changedFiles++;
+    totalFixes += result.fixes.length;
+    for (final fix in result.fixes) {
+      stdout.writeln(
+          '${file.path}:${fix.line}: [${fix.code}] ${fix.description}');
+    }
+    if (apply) {
+      file.writeAsStringSync(result.source);
+    }
+  }
+
+  if (totalFixes == 0) {
+    stdout.writeln('Nothing to fix!');
+  } else if (apply) {
+    stdout.writeln(
+        'Applied $totalFixes fix${totalFixes == 1 ? '' : 'es'} in $changedFiles file${changedFiles == 1 ? '' : 's'}.');
+  } else {
+    stdout.writeln(
+        '$totalFixes proposed fix${totalFixes == 1 ? '' : 'es'} in $changedFiles file${changedFiles == 1 ? '' : 's'}. Run with --apply to write changes.');
+  }
 }
 
 Future<void> _doctor(List<String> arguments) async {
@@ -840,7 +937,7 @@ Future<void> _compile(List<String> arguments) async {
     );
     exitCode = await child.exitCode;
   } on CompilerException catch (error) {
-    stderr.writeln(error);
+    _reportCompilerError(error);
     exitCode = 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
@@ -917,7 +1014,7 @@ void _buildPackage(Directory target) {
       output.writeAsStringSync(result.dart);
       stdout.writeln('Built ${output.path}');
     } on CompilerException catch (error) {
-      stderr.writeln(error);
+      _reportCompilerError(error);
       exitCode = 65;
       return;
     } on FileSystemException catch (error) {
@@ -995,7 +1092,7 @@ bool _writeTree(File input, Set<String> seen,
     }
     return exitCode == 0;
   } on CompilerException catch (error) {
-    stderr.writeln(error);
+    _reportCompilerError(error);
     exitCode = 65;
     return false;
   } on FileSystemException catch (error) {
@@ -1587,7 +1684,7 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
     exitCode = await process.exitCode;
     await streams;
   } on CompilerException catch (error) {
-    stderr.writeln(error);
+    _reportCompilerError(error);
     exitCode = 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
@@ -1791,7 +1888,7 @@ int _analyzeOne(File input, List<String> dartFlags,
       directory.deleteSync(recursive: true);
     }
   } on CompilerException catch (error) {
-    stderr.writeln(error);
+    _reportCompilerError(error);
     return 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
@@ -2055,7 +2152,7 @@ int _runTestFile(
       directory.deleteSync(recursive: true);
     }
   } on CompilerException catch (error) {
-    stderr.writeln(error);
+    _reportCompilerError(error);
     return 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
@@ -2221,7 +2318,7 @@ void _format(List<String> arguments) {
         }
       }
     } on CompilerException catch (error) {
-      stderr.writeln(error);
+      _reportCompilerError(error);
       hadError = true;
       exitCode = 65;
     } on FileSystemException catch (error) {
@@ -2996,7 +3093,7 @@ void _doc(List<String> arguments) {
         _docHtml(input, File(destination!));
       }
     } on CompilerException catch (error) {
-      stderr.writeln(error);
+      _reportCompilerError(error);
       exitCode = 65;
     } on FileSystemException catch (error) {
       stderr.writeln(error.message);
@@ -3079,7 +3176,7 @@ void _doc(List<String> arguments) {
       _printFileDocs(file);
     }
   } on CompilerException catch (error) {
-    stderr.writeln(error);
+    _reportCompilerError(error);
     exitCode = 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
@@ -3271,7 +3368,7 @@ void _benchmark(List<String> arguments) {
     stderr.writeln(error.message);
     exitCode = 64;
   } on CompilerException catch (error) {
-    stderr.writeln(error);
+    _reportCompilerError(error);
     exitCode = 65;
   } on FileSystemException catch (error) {
     stderr.writeln(error.message);
@@ -3341,7 +3438,7 @@ void _docTest(File input) {
         return;
       }
     } on CompilerException catch (error) {
-      stderr.writeln(error);
+      _reportCompilerError(error);
       exitCode = 65;
       return;
     } finally {

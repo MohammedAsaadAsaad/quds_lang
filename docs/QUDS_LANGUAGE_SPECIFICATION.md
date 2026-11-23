@@ -2643,7 +2643,7 @@ One library is one `.quds` file plus its `part` files. Library privacy is that s
 
 The MVP-0 compiler reports `Q001`, `Q100`, and `Q200`. Those categories belong to that compiler. Design 1.2 uses the registry below and does not also use the `Q` categories.
 
-A diagnostic is `path:line:column: severity[CODE]: message`, using the original `.quds` coordinate. The object also carries related spans and, when one edit is determined by this specification, a replacement. Wording may change. A published code is never renumbered or reused. A new code takes the next free number in its class.
+A diagnostic is `path:line:column: severity[CODE]: message`, using the original `.quds` coordinate. The CLI prints that exact coordinate line first, followed by a `rustc`-style source snippet with line gutter, caret (`^`) underline span, and actionable `= help:` guidance when available. `quds fix [--dry-run|-n|--apply] [file.quds|dir ...]` previews (default `--dry-run`) or applies (`--apply`) safe AST/diagnostic-backed fixes (`E203` missing `shadow`, `E202` immutable binding changed to `var`, `E110` missing `()`, and `W002` unused `use` imports verified against both normal and `when test:` compilations). The object also carries related spans and, when one edit is determined by this specification, a replacement. Wording may change. A published code is never renumbered or reused. A new code takes the next free number in its class.
 
 `E` is an error, `W` a warning, `L` a lint. `W001` through `W007` are enabled by default. Lints are enabled only by `quds analyze`.
 

@@ -1,3 +1,16 @@
+# `rustc`-style rich CLI diagnostics & `quds fix` (Batch 5) — 2026-11-23
+
+Base: `aa0d6d0`.
+
+| Check | Observed result |
+| --- | --- |
+| Rich CLI diagnostics | Added `formatRichDiagnostic` and `diagnosticHelp` in `lib/src/diagnostics_format.dart`, exported from `lib/quds_lang.dart`, and wired into all CLI `CompilerException` handlers in `bin/quds.dart`; preserves exact `path:line:column: CODE: message` on line 1 while appending line gutter, source line, caret (`^`) underline span, and `= help:` hints |
+| `quds fix` engine & CLI | Added `fixQudsSource` (`FixResult`, `AppliedFix`) in `lib/src/fix.dart` and `quds fix [--dry-run|-n|--apply] [file.quds|dir ...]` in `bin/quds.dart` supporting `E203` (`shadow`), `E202` (`var`), `E110` (`()`), and `W002` unused `use` import removal (verified against both normal and `when test:` compilations), with safe `--dry-run` default and idempotent `--apply` |
+| Test suites | `/opt/flutter/bin/dart test test/diagnostics_and_fix_test.dart test/cli_dart_parity_test.dart`: **10 passed, 0 failed** (4 new diagnostics/`fix` tests + 6 CLI parity tests confirming backward-compatible stderr) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # `@consumes` static use-after-consume (`E315`) & guard destructuring `... else:` (`E316`, Batch 4) — 2026-11-23
 
 Base: `777dc12`.

@@ -498,13 +498,11 @@ class SourcePositions {
 
   /// Rewrites frames whose path is [generatedPath] back to the Quds source.
   String rewriteStack(String text, String generatedPath) {
-    final normalized = generatedPath.replaceAll('\\', '/');
+    final normalized = _normalizePath(generatedPath);
     final name = normalized.split('/').last;
     return text.replaceAllMapped(_frame, (match) {
       final path = match.group(1)!;
-      if (!_sameFile(path, name) &&
-          path != normalized &&
-          !path.endsWith('/$normalized')) {
+      if (!_pathsMatch(path, name) && !_pathsMatch(path, normalized)) {
         return match.group(0)!;
       }
       final hit = original(int.parse(match.group(2)!));
@@ -527,8 +525,27 @@ class SourcePositions {
   }
 }
 
-bool _pathsMatch(String left, String right) =>
-    left == right || left.endsWith('/$right') || right.endsWith('/$left');
+String _normalizePath(String value) {
+  var normalized = value.replaceAll('\\', '/');
+  if (RegExp(r'^/[A-Za-z]:/').hasMatch(normalized)) {
+    normalized = normalized.substring(1);
+  }
+  if (normalized.startsWith('//')) {
+    normalized = '//${normalized.substring(2).replaceAll(RegExp(r'/+'), '/')}';
+  } else {
+    normalized = normalized.replaceAll(RegExp(r'/+'), '/');
+  }
+  if (value.contains('\\') || RegExp(r'^[A-Za-z]:/').hasMatch(normalized)) {
+    normalized = normalized.toLowerCase();
+  }
+  return normalized;
+}
+
+bool _pathsMatch(String left, String right) {
+  final a = _normalizePath(left);
+  final b = _normalizePath(right);
+  return a == b || a.endsWith('/$b') || b.endsWith('/$a');
+}
 
 /// Rewrites each frame in [stack] that hits [sourceMap].
 ///
@@ -550,10 +567,9 @@ String mapStack(String stack, String sourceMap) {
   });
 }
 
-final _frame = RegExp(r'([\w./:+\-]+\.(?:dart|js)):(\d+):(\d+)');
+final _frame = RegExp(r'([\w./\\:+\-]+\.(?:dart|js)):(\d+):(\d+)');
 
-bool _sameFile(String path, String file) =>
-    path == file || path.endsWith('/$file');
+bool _sameFile(String path, String file) => _pathsMatch(path, file);
 
 /// Replaces a Dart compiler source listing that follows a `.quds` location
 /// with the Quds line itself.

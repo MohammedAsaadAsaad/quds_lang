@@ -116,7 +116,7 @@ class DartEmitter {
       _redirect!.writeln('${'  ' * _depth}$text');
       return;
     }
-    if (_span != null) {
+    if (_span != null && text.trim() != '{') {
       mappings.add((_nextOutputLine, _span!));
     }
     _out.writeln('${'  ' * _depth}$text');
@@ -3057,6 +3057,7 @@ class DartEmitter {
   }
 
   void statement(Statement node) {
+    _span = node.span;
     final contextIndex = model.loopContextIndexes[node];
     if (contextIndex != null && _contextLoopEmitting.add(node)) {
       line('{');
@@ -3071,7 +3072,6 @@ class DartEmitter {
       line('}');
       return;
     }
-    _span = node.span;
     switch (node) {
       case Binding():
         if (model.assignments.contains(node)) {

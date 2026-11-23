@@ -714,6 +714,127 @@ other():
     expect(translator.shouldPresent(entry), isFalse);
   });
 
+  test(
+      'debug translator normalizes Windows paths and maps repeat to executable Dart',
+      () {
+    const source = '''use dart:io
+
+main():
+  stdout.write('Enter: ')
+  a = int.tryParse('3') ?? 0
+  repeat a: stdout.write((' ' * (a - \$.iteration)) + ('* ' * \$.iteration) + '\\n')
+''';
+    const qudsPath = r'd:\test_quds_lang\test_lang\main.quds';
+    const dartPath =
+        r'd:\test_quds_lang\test_lang\.dart_tool\quds\out\main.dart';
+    const upperDartPath =
+        r'D:\test_quds_lang\test_lang\.dart_tool\quds\out\main.dart';
+    const upperQudsPath = r'D:\test_quds_lang\test_lang\main.quds';
+    final compiled = compile(source, file: qudsPath);
+    final dartLines = compiled.dart.split('\n');
+    final positions = SourcePositions.parse(compiled.sourceMap!);
+
+    final line5Dart = positions.generated(upperQudsPath, 5);
+    final line6Dart = positions.generated(upperQudsPath, 6);
+    expect(line5Dart, isNotNull);
+    expect(line6Dart, isNotNull);
+    expect(dartLines[line5Dart! - 1].trim(), isNot('{'));
+    expect(dartLines[line6Dart! - 1].trim(), isNot('{'));
+
+    final translator = DebugTranslator()
+      ..bind(DebugBinary(qudsPath, dartPath, compiled.sourceMap!));
+    final launch = translator.accept({
+      'seq': 1,
+      'type': 'request',
+      'command': 'launch',
+      'arguments': {'program': upperQudsPath},
+    });
+    expect(launch.message!['arguments']['program'], dartPath);
+    expect(launch.message!['arguments']['cwd'], r'd:\test_quds_lang\test_lang');
+
+    final set = translator.accept({
+      'seq': 2,
+      'type': 'request',
+      'command': 'setBreakpoints',
+      'arguments': {
+        'source': {'path': upperQudsPath, 'name': 'main.quds'},
+        'breakpoints': [
+          {'line': 5},
+          {'line': 6},
+        ],
+      },
+    });
+    expect(set.message!['arguments']['source']['name'], 'main.dart');
+    expect(set.message!['arguments']['breakpoints'], [
+      {'line': line5Dart},
+      {'line': line6Dart},
+    ]);
+
+    final stack = translator.present({
+      'type': 'response',
+      'command': 'stackTrace',
+      'body': {
+        'stackFrames': [
+          {
+            'id': 1,
+            'name': 'main',
+            'line': line5Dart,
+            'column': 1,
+            'source': {'path': upperDartPath, 'name': 'main.dart'},
+          },
+          {
+            'id': 2,
+            'name': 'main',
+            'line': line6Dart,
+            'column': 1,
+            'source': {
+              'adapterData': {
+                'uri':
+                    'file:///D:/test_quds_lang/test_lang/.dart_tool/quds/out/main.dart',
+              },
+            },
+          },
+        ],
+      },
+    });
+    final frames = ((stack['body'] as Map)['stackFrames'] as List)
+        .cast<Map<dynamic, dynamic>>();
+    expect(frames[0]['source']['path'], qudsPath);
+    expect(frames[0]['source']['name'], 'main.quds');
+    expect(frames[0]['line'], 5);
+    expect(frames[1]['source']['path'], qudsPath);
+    expect(frames[1]['source']['name'], 'main.quds');
+    expect(frames[1]['line'], 6);
+
+    final bpEvent = translator.present({
+      'type': 'event',
+      'event': 'breakpoint',
+      'body': {
+        'reason': 'changed',
+        'breakpoint': {
+          'id': 10,
+          'verified': true,
+          'line': line6Dart,
+          'source': {'path': upperDartPath, 'name': 'main.dart'},
+        },
+      },
+    });
+    final bp = (bpEvent['body'] as Map)['breakpoint'] as Map;
+    expect(bp['source']['path'], qudsPath);
+    expect(bp['source']['name'], 'main.quds');
+    expect(bp['line'], 6);
+
+    final output = translator.present({
+      'type': 'event',
+      'event': 'output',
+      'body': {'output': '#0 main ($upperDartPath:$line5Dart:3)\n'},
+    });
+    expect(
+      (output['body'] as Map)['output'],
+      contains('$qudsPath:5:'),
+    );
+  });
+
   test('quds debug stops on the quds line', () async {
     final directory = Directory.systemTemp.createTempSync('quds-debug-');
     addTearDown(() => directory.deleteSync(recursive: true));

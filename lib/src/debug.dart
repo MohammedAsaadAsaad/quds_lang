@@ -278,7 +278,7 @@ class DebugTranslator {
       final line = (frame['line'] as num?)?.toInt();
       final source = frame['source'];
       if (line == null || source is! Map) continue;
-      final hit = _original(_string(source['path']), line);
+      final hit = _original(_sourcePath(source), line);
       if (hit == null) continue;
       frame['source'] = _moved(source, hit);
       frame['line'] = hit.$2;
@@ -377,7 +377,7 @@ class DebugTranslator {
     final source = breakpoint['source'];
     if (line == null) return;
     final hit = source is Map
-        ? _original(_string(source['path']), line)
+        ? _original(_sourcePath(source), line)
         : _onlyOriginal(line);
     if (hit == null) return;
     breakpoint['source'] = source is Map
@@ -398,11 +398,19 @@ class DebugTranslator {
     final line = (body['line'] as num?)?.toInt();
     final source = body['source'];
     if (line == null || source is! Map) return;
-    final hit = _original(_string(source['path']), line);
+    final hit = _original(_sourcePath(source), line);
     if (hit == null) return;
     body['source'] = _moved(source, hit);
     body['line'] = hit.$2;
     body['column'] = hit.$3;
+  }
+
+  static String? _sourcePath(Map source) {
+    final direct = _string(source['path']);
+    if (direct != null && direct.isNotEmpty) return direct;
+    final data = source['adapterData'];
+    if (data is Map) return _string(data['uri']);
+    return null;
   }
 
   String _rewriteText(String text) {
@@ -487,11 +495,40 @@ class DebugTranslator {
     };
   }
 
-  static String _key(String path) => _filePath(path);
+  static String _key(String path) => _normalizePath(path);
 
   static String _filePath(String value) {
-    if (value.startsWith('file:')) return Uri.parse(value).toFilePath();
+    if (value.startsWith('file:')) {
+      final uri = Uri.parse(value);
+      final isWindowsUri =
+          RegExp(r'^/[A-Za-z]:/').hasMatch(uri.path) || Platform.isWindows;
+      return uri.toFilePath(windows: isWindowsUri);
+    }
     return value;
+  }
+
+  static bool _isWindowsPath(String path) =>
+      RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path) ||
+      path.startsWith(r'\\') ||
+      path.contains('\\');
+
+  static String _normalizePath(String value) {
+    var normalized = _filePath(value).replaceAll('\\', '/');
+    if (RegExp(r'^/[A-Za-z]:/').hasMatch(normalized)) {
+      normalized = normalized.substring(1);
+    }
+    if (normalized.startsWith('//')) {
+      normalized =
+          '//${normalized.substring(2).replaceAll(RegExp(r'/+'), '/')}';
+    } else {
+      normalized = normalized.replaceAll(RegExp(r'/+'), '/');
+    }
+    if (Platform.isWindows ||
+        _isWindowsPath(value) ||
+        RegExp(r'^[A-Za-z]:/').hasMatch(normalized)) {
+      normalized = normalized.toLowerCase();
+    }
+    return normalized;
   }
 
   static void _selectDevice(Map<String, dynamic> arguments) {
@@ -512,20 +549,29 @@ class DebugTranslator {
     }
   }
 
+  static int _lastSeparator(String path) {
+    final forward = path.lastIndexOf('/');
+    final backward = path.lastIndexOf('\\');
+    return forward > backward ? forward : backward;
+  }
+
   static String _directory(String path) {
-    final slash = path.lastIndexOf('/');
+    final slash = _lastSeparator(path);
     return slash < 0 ? path : path.substring(0, slash);
   }
 
   static String _name(String path) {
-    final slash = path.lastIndexOf('/');
+    final slash = _lastSeparator(path);
     return slash < 0 ? path : path.substring(slash + 1);
   }
 
   static String? _string(Object? value) => value is String ? value : null;
 
-  static bool _paths(String left, String right) =>
-      left == right || left.endsWith('/$right') || right.endsWith('/$left');
+  static bool _paths(String left, String right) {
+    final a = _normalizePath(left);
+    final b = _normalizePath(right);
+    return a == b || a.endsWith('/$b') || b.endsWith('/$a');
+  }
 }
 
 class _BoundFile {

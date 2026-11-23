@@ -2621,14 +2621,15 @@ pubspec.yaml
 quds.yaml
 lib/<package>.quds
 lib/src/<library>.quds
+lib/internal/<library>.quds
 bin/<tool>.quds
 test/<name>_test.quds
 .dart_tool/quds/cache/
 ```
 
-`quds.yaml` holds `language: "1.2"` and any `config:` map. The language version is this field. A comment does not select a version. `pubspec.yaml` holds the package name and the Dart SDK constraint. Published packages commit the generated `.dart` next to each `.quds` file so a Dart consumer needs no Quds compiler. `.dart_tool/quds/cache/` is the incremental cache and is not published.
+`quds.yaml` holds `language: "1.2"` and any `config:` map. The language version is this field. A comment does not select a version. `pubspec.yaml` holds the package name, dependencies (`git:`, `path:`, or `pub.dev`), and the Dart SDK constraint. External Quds packages resolved via `.dart_tool/package_config.json` can be consumed directly as pure `.quds` sources (`quds build`, `quds run`, `quds test`, `quds analyze` compile external `.quds` modules under the consumer's `.dart_tool/quds/out/_packages/<name>/` without writing to the dependency directory). Authors publishing dual Quds + Dart/Flutter packages can run `quds build --package [dir]` to generate `lib/**/*.dart` beside `lib/**/*.quds` (and shared SDK bundles under `lib/src/_quds_sdk/` when needed) while refusing to overwrite non-generated `.dart` files. `.dart_tool/quds/cache/` is the incremental cache and is not published.
 
-`use package:name` is `lib/name.quds`. `use package:name/src/util` is `lib/src/util.quds`. `use package:flutter.material` is `package:flutter/material.dart`: the first segment is the package, and each later dot is a directory. A `.quds` file at that path is the Quds library. Otherwise the `.dart` file is read, including a Flutter library. `use dart:math` is that Dart library. Its public names are read from the library sources in the Dart SDK, including `part` files, and a change to those files is visible on the next analysis. `use util` is `util.quds` beside the current file. `use src.sum` is `src/sum.quds` relative to that file, and each `^` climbs one directory: `use ^^^.sum` is `../../../sum.quds`. The generated import uses the `.dart` path. `use generated:user_models` is the generated library of that name in the same package.
+`use package:name` is `lib/name.quds` (in the current package or an external dependency resolved from `.dart_tool/package_config.json`). `use package:name/src/util` is `lib/src/util.quds`. `use package:flutter.material` is `package:flutter/material.dart`: the first segment is the package, and each later dot is a directory. A `.quds` file at that path is the Quds library. Otherwise the `.dart` file is read, including a Flutter library. Quds libraries under `lib/src/` or `lib/internal/` are package-internal: files in the same package (`lib/`, `bin/`, `test/`) may import or re-export them, while importing or exporting them from outside the owning package is a compile-time error (`E208`). Public symbols re-exported through the package's public facade (such as `lib/<package>.quds`) remain accessible to external consumers. `use dart:math` is that Dart library. Its public names are read from the library sources in the Dart SDK, including `part` files, and a change to those files is visible on the next analysis. `use util` is `util.quds` beside the current file. `use src.sum` is `src/sum.quds` relative to that file, and each `^` climbs one directory: `use ^^^.sum` is `../../../sum.quds`. The generated import uses the `.dart` path. `use generated:user_models` is the generated library of that name in the same package.
 
 One library is one `.quds` file plus its `part` files. Library privacy is that set. The emitter writes a generated-file header. `quds build` refuses to overwrite a `.dart` file that lacks the header.
 
@@ -2664,6 +2665,7 @@ A diagnostic is `path:line:column: severity[CODE]: message`, using the original 
 | `E205` | Two extensions apply and neither is more specific |
 | `E206` | A private name is used outside its library |
 | `E207` | A protected name is used outside a subtype or its library |
+| `E208` | An internal library under `lib/src/` or `lib/internal/` is imported or exported from outside its package |
 | `E300` | A type does not match |
 | `E302` | A type cannot be inferred, including an empty literal with no expected type |
 | `E304` | A variance annotation is not sound |

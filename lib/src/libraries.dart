@@ -269,30 +269,165 @@ int _indentWidth(String line) {
 /// Absolute path of a `.quds` library named by [uri], resolved from [from].
 ///
 /// `package:name` is `lib/name.quds`. `package:name/src/util` is
-/// `lib/src/util.quds`. `generated:user_models` is
+/// `lib/src/util.quds`. For another package, resolution looks up
+/// `.dart_tool/package_config.json` starting from [packageConfigFrom] (when
+/// provided) or [from]. `generated:user_models` is
 /// `lib/generated/user_models.quds` in the same package. A relative `.quds`
 /// path resolves beside [from].
-String? resolveLibraryPath(String from, String uri) {
+String? resolveLibraryPath(String from, String uri,
+    {String? packageConfigFrom}) {
   uri = libraryTarget(uri);
-  if (uri.endsWith('.quds')) {
+  if (!uri.startsWith('package:') &&
+      !uri.startsWith('generated:') &&
+      uri.endsWith('.quds')) {
     return Uri.file(from).resolve(uri).toFilePath();
   }
   final root = packageRoot(from);
-  if (root == null) return null;
   if (uri.startsWith('package:')) {
     var rest = uri.substring('package:'.length);
     if (rest.endsWith('.dart')) rest = rest.substring(0, rest.length - 5);
     if (rest.endsWith('.quds')) rest = rest.substring(0, rest.length - 5);
     if (rest.isEmpty || rest.endsWith('/')) return null;
     final slash = rest.indexOf('/');
-    final relative =
-        slash < 0 ? 'lib/$rest.quds' : 'lib/${rest.substring(slash + 1)}.quds';
-    return _join(root.directory, relative);
+    final packageName = slash < 0 ? rest : rest.substring(0, slash);
+    final relativeInsideLib =
+        slash < 0 ? '$packageName.quds' : '${rest.substring(slash + 1)}.quds';
+    if (relativeInsideLib.contains('\\') ||
+        relativeInsideLib.split('/').contains('..')) {
+      return null;
+    }
+    if (root != null && (root.name == null || root.name == packageName)) {
+      return _join(root.directory, 'lib/$relativeInsideLib');
+    }
+    final external = _findPackageLibrary(packageName, from,
+        packageConfigFrom: packageConfigFrom);
+    if (external != null) {
+      var base = Directory(external.libDirectory).uri;
+      if (!base.path.endsWith('/')) {
+        base = base.replace(path: '${base.path}/');
+      }
+      return base.resolve(relativeInsideLib).toFilePath();
+    }
+    return null;
   }
+  if (root == null) return null;
   if (uri.startsWith('generated:')) {
     final name = uri.substring('generated:'.length);
     if (name.isEmpty || name.contains('/') || name.contains(':')) return null;
     return _join(root.directory, 'lib/generated/$name.quds');
+  }
+  return null;
+}
+
+/// Returns the owning package name when [targetPath] is a package-internal
+/// library (`lib/src/...` or `lib/internal/...`) belonging to a different
+/// package than [from]. Returns null when access is permitted (same package,
+/// not under `lib/src/` or `lib/internal/`, or outside any package).
+String? externalInternalPackageOwner(String from, String targetPath) {
+  if (from == '<input>') return null;
+  final targetRoot = packageRoot(targetPath);
+  if (targetRoot == null) return null;
+  final targetDir = _canonicalPath(targetRoot.directory);
+  final targetFile = _canonicalPath(targetPath);
+  final relative = _relativeUnder(targetDir, targetFile);
+  if (relative == null) return null;
+  final segments = relative.split('/');
+  if (segments.length < 3 || segments[0] != 'lib') return null;
+  if (segments[1] != 'src' && segments[1] != 'internal') return null;
+  final fromRoot = packageRoot(from);
+  if (fromRoot != null && _canonicalPath(fromRoot.directory) == targetDir) {
+    return null;
+  }
+  final name = targetRoot.name;
+  if (name != null && name.isNotEmpty) return name;
+  final parts = targetDir.split('/').where((part) => part.isNotEmpty).toList();
+  return parts.isEmpty ? 'package' : parts.last;
+}
+
+/// Package name and relative path inside `lib/` for a file belonging to a
+/// package, used to mirror external Quds dependencies under `.dart_tool/quds/`.
+({String name, String relativeInsideLib})? packageFileInfo(String path,
+    {String? packageConfigFrom}) {
+  final fileCanon = _canonicalPath(path);
+  final origins = <String>[
+    if (packageConfigFrom != null && packageConfigFrom != '<input>')
+      packageConfigFrom,
+    path,
+  ];
+  for (final origin in origins) {
+    for (final library in packageLibraries(origin)) {
+      final libCanon = _canonicalPath(library.libDirectory);
+      final rel = _relativeUnder(libCanon, fileCanon);
+      if (rel != null && rel.isNotEmpty) {
+        return (name: library.name, relativeInsideLib: rel);
+      }
+    }
+  }
+  final root = packageRoot(path);
+  if (root != null) {
+    final libCanon = _canonicalPath(_join(root.directory, 'lib'));
+    final rel = _relativeUnder(libCanon, fileCanon);
+    if (rel != null && rel.isNotEmpty) {
+      final fallback = _canonicalPath(root.directory)
+          .split('/')
+          .where((part) => part.isNotEmpty)
+          .last;
+      return (name: root.name ?? fallback, relativeInsideLib: rel);
+    }
+  }
+  return null;
+}
+
+String _canonicalPath(String path) {
+  final file = File(path);
+  if (file.existsSync()) {
+    try {
+      return file.resolveSymbolicLinksSync().replaceAll('\\', '/');
+    } on FileSystemException {/* fall through */}
+  }
+  final dir = Directory(path);
+  if (dir.existsSync()) {
+    try {
+      return dir.resolveSymbolicLinksSync().replaceAll('\\', '/');
+    } on FileSystemException {/* fall through */}
+  }
+  final parent = file.parent;
+  if (parent.existsSync()) {
+    try {
+      final resolvedParent =
+          parent.resolveSymbolicLinksSync().replaceAll('\\', '/');
+      final base = file.uri.pathSegments
+          .lastWhere((s) => s.isNotEmpty, orElse: () => '');
+      return resolvedParent.endsWith('/')
+          ? '$resolvedParent$base'
+          : '$resolvedParent/$base';
+    } on FileSystemException {/* fall through */}
+  }
+  return File(path)
+      .absolute
+      .uri
+      .normalizePath()
+      .toFilePath()
+      .replaceAll('\\', '/');
+}
+
+String? _relativeUnder(String rootDir, String filePath) {
+  final prefix = rootDir.endsWith('/') ? rootDir : '$rootDir/';
+  if (!filePath.startsWith(prefix)) return null;
+  return filePath.substring(prefix.length);
+}
+
+PackageLibrary? _findPackageLibrary(String name, String from,
+    {String? packageConfigFrom}) {
+  if (packageConfigFrom != null && packageConfigFrom != '<input>') {
+    for (final library in packageLibraries(packageConfigFrom)) {
+      if (library.name == name) return library;
+    }
+  }
+  if (from != '<input>' && from != packageConfigFrom) {
+    for (final library in packageLibraries(from)) {
+      if (library.name == name) return library;
+    }
   }
   return null;
 }
@@ -372,7 +507,7 @@ List<PackageLibrary> packageLibraries(String file) {
 }
 
 /// The file named by a `package:` URI that already ends in `.dart`.
-File? packageDartFile(String from, String uri) {
+File? packageDartFile(String from, String uri, {String? packageConfigFrom}) {
   if (!uri.startsWith('package:') || !uri.endsWith('.dart')) return null;
   final rest = uri.substring('package:'.length);
   final slash = rest.indexOf('/');
@@ -382,17 +517,16 @@ File? packageDartFile(String from, String uri) {
   if (relative.contains('\\') || relative.split('/').contains('..')) {
     return null;
   }
-  for (final library in packageLibraries(from)) {
-    if (library.name != name) continue;
-    var base = Directory(library.libDirectory).uri;
-    if (!base.path.endsWith('/')) {
-      base = base.replace(path: '${base.path}/');
-    }
-    final file = File(base.resolve(relative).toFilePath());
-    if (!file.existsSync()) return null;
-    return file;
+  final library =
+      _findPackageLibrary(name, from, packageConfigFrom: packageConfigFrom);
+  if (library == null) return null;
+  var base = Directory(library.libDirectory).uri;
+  if (!base.path.endsWith('/')) {
+    base = base.replace(path: '${base.path}/');
   }
-  return null;
+  final file = File(base.resolve(relative).toFilePath());
+  if (!file.existsSync()) return null;
+  return file;
 }
 
 /// True when the package that contains [file] depends on `package:meta`.

@@ -10,7 +10,7 @@ import 'package:quds_lang/src/flutter_project.dart';
 import 'package:quds_lang/src/flutter_live.dart';
 import 'package:quds_lang/src/flutter_debug_live.dart';
 import 'package:quds_lang/src/libraries.dart'
-    show libraryTarget, resolveLibraryPath, packageUsesFlutter;
+    show libraryTarget, resolveLibraryPath, packageUsesFlutter, packageFileInfo;
 import 'package:quds_lang/src/walk.dart';
 import 'package:quds_lang/src/sdk.dart';
 import 'package:quds_lang/src/toolchain.dart';
@@ -133,6 +133,8 @@ String? _helpText(String? topic) {
   const entries = <String, String>{
     'build': 'quds build [--watch] <input.quds>\n'
         '    Compile to Dart under .dart_tool/quds/out/. --watch rebuilds when a source changes.\n'
+        'quds build --package [dir]\n'
+        '    Compile all lib/**/*.quds files to lib/**/*.dart beside sources for Quds and Dart/Flutter publishing.\n'
         'quds build <apk|appbundle|web|linux|windows|macos|ios|ipa|bundle> [Quds target and Flutter options]\n'
         '    Build a Flutter application from lib/main.quds or an explicit .quds target.\n',
     'run': 'quds run [input.quds] [arguments] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
@@ -552,12 +554,23 @@ final _watched = <String>{};
 final _compiledHash = <String, String>{};
 
 void _build(List<String> arguments) {
+  if (arguments.length > 1 && arguments[1] == '--package') {
+    if (arguments.length > 3) {
+      stderr.writeln('Usage: quds build --package [dir]');
+      exitCode = 64;
+      return;
+    }
+    final target = arguments.length == 3 ? arguments[2] : '.';
+    _buildPackage(Directory(target));
+    return;
+  }
   final watch = arguments.length > 1 && arguments[1] == '--watch';
   final path = watch
       ? (arguments.length == 3 ? arguments[2] : null)
       : (arguments.length == 2 ? arguments[1] : null);
   if (path == null || !path.endsWith('.quds')) {
-    stderr.writeln('Usage: quds build [--watch] <input.quds>');
+    stderr.writeln(
+        'Usage: quds build [--watch] <input.quds> | quds build --package [dir]');
     exitCode = 64;
     return;
   }
@@ -567,6 +580,86 @@ void _build(List<String> arguments) {
     return;
   }
   _watch(input);
+}
+
+void _buildPackage(Directory target) {
+  if (!target.existsSync()) {
+    stderr.writeln('Directory not found: ${target.path}');
+    exitCode = 64;
+    return;
+  }
+  final root = _packageRoot(target.absolute);
+  if (!File('${root.path}/pubspec.yaml').existsSync()) {
+    stderr.writeln('No pubspec.yaml found for ${target.path}');
+    exitCode = 64;
+    return;
+  }
+  final libDir = Directory('${root.path}/lib');
+  if (!libDir.existsSync()) {
+    stderr.writeln('No lib/ directory found in ${root.path}');
+    exitCode = 64;
+    return;
+  }
+  final sources = <File>[];
+  void collect(Directory dir) {
+    for (final entity in dir.listSync(followLinks: false)) {
+      final name = entity.path.split(Platform.pathSeparator).last;
+      if (name.startsWith('.') || name == 'quds_gen' || name == '_quds_sdk') {
+        continue;
+      }
+      if (entity is Directory) {
+        collect(entity);
+      } else if (entity is File && name.endsWith('.quds')) {
+        sources.add(entity);
+      }
+    }
+  }
+
+  collect(libDir);
+  sources.sort((a, b) => a.path.compareTo(b.path));
+  if (sources.isEmpty) {
+    stdout.writeln('No .quds files found under ${libDir.path}');
+    return;
+  }
+  final sdkDir = Directory('${root.path}/lib/src/_quds_sdk');
+  for (final input in sources) {
+    try {
+      final source = input.readAsStringSync();
+      var result = compile(source, file: input.path);
+      final output =
+          File('${input.path.substring(0, input.path.length - 5)}.dart');
+      if (result.bundles.isNotEmpty) {
+        final runtime = File('${sdkDir.path}/quds_readonly.dart');
+        final runtimeUri = _relativeGeneratedUri(output.parent, runtime);
+        final directory =
+            runtimeUri.substring(0, runtimeUri.lastIndexOf('/') + 1);
+        result = relocateGeneratedLibraries(result, directory);
+      }
+      final existing = output.existsSync() ? output.readAsStringSync() : null;
+      if (existing != null && !existing.startsWith(_generatedHeader)) {
+        stderr.writeln(
+            'Refusing to overwrite non-generated file: ${output.path}');
+        exitCode = 73;
+        return;
+      }
+      writeSdkBundles(output.parent.path, result);
+      if (existing != null && existing == result.dart) {
+        stdout.writeln('Unchanged ${output.path}');
+        continue;
+      }
+      output.parent.createSync(recursive: true);
+      output.writeAsStringSync(result.dart);
+      stdout.writeln('Built ${output.path}');
+    } on CompilerException catch (error) {
+      stderr.writeln(error);
+      exitCode = 65;
+      return;
+    } on FileSystemException catch (error) {
+      stderr.writeln(error.message);
+      exitCode = 74;
+      return;
+    }
+  }
 }
 
 Future<void> _watch(File input) async {
@@ -596,28 +689,43 @@ String _baseline() {
 }
 
 bool _writeTree(File input, Set<String> seen,
-    {bool announce = true, bool flutter = false, Compilation? initial}) {
+    {bool announce = true,
+    bool flutter = false,
+    Compilation? initial,
+    Directory? projectRoot,
+    String? configOrigin}) {
   final path = input.absolute.uri.normalizePath().toFilePath();
   if (!seen.add(path)) return exitCode == 0;
   try {
     final bytes = input.readAsBytesSync();
     _compiledHash[path] = sha256Hex(bytes);
-    final result = initial ?? compile(utf8.decode(bytes), file: input.path);
-    final root = _packageRoot(input.absolute.parent);
+    final ownerRoot = projectRoot ?? _packageRoot(input.absolute.parent);
+    final origin = configOrigin ?? path;
+    final source = utf8.decode(bytes);
+    final result =
+        initial ?? compile(source, file: input.path, packageConfigFrom: origin);
     final artifactRoot =
-        flutter ? Directory('${root.path}/lib/quds_gen') : null;
-    final destination = flutter ? _flutterGenerated(input, root) : null;
+        flutter ? Directory('${ownerRoot.path}/lib/quds_gen') : null;
+    final destination = _outputFileForRoot(input, ownerRoot,
+        flutter: flutter, configOrigin: origin);
     if (!_emitGenerated(input, result,
         announce: announce,
         destination: destination,
-        artifactRoot: artifactRoot)) return false;
+        artifactRoot: artifactRoot,
+        projectRoot: ownerRoot,
+        configOrigin: origin,
+        flutter: flutter,
+        sourceText: source)) return false;
     _watched.add(path);
     for (final dependency in result.dependencies) {
       if (!dependency.endsWith('.quds')) continue;
       _watched.add(dependency);
       if (dependency == path) continue;
       if (!_writeTree(File(dependency), seen,
-          announce: announce, flutter: flutter)) return false;
+          announce: announce,
+          flutter: flutter,
+          projectRoot: ownerRoot,
+          configOrigin: origin)) return false;
     }
     return exitCode == 0;
   } on CompilerException catch (error) {
@@ -631,11 +739,87 @@ bool _writeTree(File input, Set<String> seen,
   }
 }
 
+Compilation _rewriteTreeImports(File input, Compilation result, File output,
+    Directory ownerRoot, String origin, bool flutter, String? sourceText) {
+  final inputPath = input.absolute.uri.normalizePath().toFilePath();
+  var rewritten = false;
+  walkAst(result.program, (node) {
+    if (node is! ImportDeclaration || node.uri.startsWith('quds:')) return;
+    final target =
+        resolveLibraryPath(inputPath, node.uri, packageConfigFrom: origin);
+    if (target == null || !File(target).existsSync()) return;
+    final needsRewrite = node.uri.startsWith('package:') ||
+        node.uri.startsWith('generated:') ||
+        !_isUnderDirectory(target, ownerRoot.path) ||
+        !_isUnderDirectory(inputPath, ownerRoot.path);
+    if (!needsRewrite) return;
+    final targetOutput = _outputFileForRoot(File(target), ownerRoot,
+        flutter: flutter, configOrigin: origin);
+    final relative = _relativeGeneratedUri(output.parent, targetOutput);
+    if (result.semantics.resolvedImports[node] != relative) {
+      result.semantics.resolvedImports[node] = relative;
+      rewritten = true;
+    }
+  });
+  for (final entry in result.semantics.backendTypeImports.entries.toList()) {
+    String? target;
+    if (entry.value.startsWith('package:')) {
+      target =
+          resolveLibraryPath(inputPath, entry.value, packageConfigFrom: origin);
+    } else {
+      final uri = Uri.tryParse(entry.value);
+      final dartPath = uri == null
+          ? null
+          : uri.scheme == 'file'
+              ? uri.toFilePath()
+              : !uri.hasScheme
+                  ? Uri.file(inputPath).resolve(entry.value).toFilePath()
+                  : null;
+      if (dartPath != null && dartPath.endsWith('.dart')) {
+        target = '${dartPath.substring(0, dartPath.length - 5)}.quds';
+      }
+    }
+    if (target == null || !File(target).existsSync()) continue;
+    final targetOutput = _outputFileForRoot(File(target), ownerRoot,
+        flutter: flutter, configOrigin: origin);
+    final relative = _relativeGeneratedUri(output.parent, targetOutput);
+    if (entry.value != relative) {
+      result.semantics.backendTypeImports[entry.key] = relative;
+      rewritten = true;
+    }
+  }
+  if (!rewritten) return result;
+  final emitter = DartEmitter(result.semantics);
+  final dart = emitter.emit(result.program);
+  final source =
+      sourceText ?? (input.existsSync() ? input.readAsStringSync() : null);
+  return Compilation(result.program, result.semantics, dart,
+      sourceMap: source == null
+          ? result.sourceMap
+          : sourceMapFor(emitter, output.path, input.path,
+              program: result.program, source: source),
+      dependencies: result.dependencies,
+      models: result.models,
+      bundles: result.bundles);
+}
+
 bool _emitGenerated(File input, Compilation result,
-    {bool announce = true, File? destination, Directory? artifactRoot}) {
-  final output = destination ?? _outputFile(input);
-  final root = _packageRoot(input.absolute.parent);
-  final shared = artifactRoot ?? Directory('${root.path}/.dart_tool/quds/out');
+    {bool announce = true,
+    File? destination,
+    Directory? artifactRoot,
+    Directory? projectRoot,
+    String? configOrigin,
+    bool flutter = false,
+    String? sourceText}) {
+  final ownerRoot = projectRoot ?? _packageRoot(input.absolute.parent);
+  final origin = configOrigin ?? input.absolute.path;
+  final output = destination ??
+      _outputFileForRoot(input, ownerRoot,
+          flutter: flutter, configOrigin: origin);
+  result = _rewriteTreeImports(
+      input, result, output, ownerRoot, origin, flutter, sourceText);
+  final shared =
+      artifactRoot ?? Directory('${ownerRoot.path}/.dart_tool/quds/out');
   final runtime = File('${shared.path}/quds_readonly.dart');
   final runtimeUri = _relativeGeneratedUri(output.parent, runtime);
   final directory = runtimeUri.substring(0, runtimeUri.lastIndexOf('/') + 1);
@@ -646,12 +830,15 @@ bool _emitGenerated(File input, Compilation result,
     exitCode = 73;
     return false;
   }
-  _writeModels(input, result);
+  final isLocal = _isUnderDirectory(input.absolute.path, ownerRoot.path);
+  if (isLocal) {
+    _writeModels(input, result);
+  }
   writeSdkBundles(output.parent.path, result);
   final paths = {...result.dependencies, input.absolute.path}.toList()..sort();
   final sources = _digestListed(paths, input);
   final outputDigest = sha256Hex(utf8.encode(result.dart));
-  final cache = _cacheFile(input);
+  final cache = _cacheFile(input, projectRoot: ownerRoot);
   if (existing != null &&
       existing == result.dart &&
       _cacheFresh(cache, sources, outputDigest)) {
@@ -686,21 +873,73 @@ bool _emitGenerated(File input, Compilation result,
   return true;
 }
 
+bool _isUnderDirectory(String filePath, String directoryPath) {
+  final file = _canonicalPathCli(filePath);
+  final dir = _canonicalPathCli(directoryPath);
+  final prefix = dir.endsWith('/') ? dir : '$dir/';
+  return file.startsWith(prefix);
+}
+
+String _canonicalPathCli(String path) {
+  final file = File(path);
+  if (file.existsSync()) {
+    try {
+      return file.resolveSymbolicLinksSync().replaceAll('\\', '/');
+    } on FileSystemException {/* fall through */}
+  }
+  final dir = Directory(path);
+  if (dir.existsSync()) {
+    try {
+      return dir.resolveSymbolicLinksSync().replaceAll('\\', '/');
+    } on FileSystemException {/* fall through */}
+  }
+  return File(path)
+      .absolute
+      .uri
+      .normalizePath()
+      .toFilePath()
+      .replaceAll('\\', '/');
+}
+
 /// Generated Dart lives under the package's `.dart_tool/quds/out`, mirroring
 /// the source path. A lone file with no package root uses its own directory.
 File _outputFile(File input) {
+  final root = _packageRoot(input.absolute.parent);
+  return _outputFileForRoot(input, root);
+}
+
+File _outputFileForRoot(File input, Directory ownerRoot,
+    {bool flutter = false, String? configOrigin}) {
   final absolute = input.absolute;
-  final root = _packageRoot(absolute.parent);
-  var relative = absolute.path;
-  final prefix = root.path.endsWith(Platform.pathSeparator)
-      ? root.path
-      : '${root.path}${Platform.pathSeparator}';
-  if (relative.startsWith(prefix)) relative = relative.substring(prefix.length);
-  final dartName = relative.endsWith('.quds')
-      ? '${relative.substring(0, relative.length - 5)}.dart'
-      : '$relative.dart';
-  return File(
-      '${root.path}${Platform.pathSeparator}.dart_tool${Platform.pathSeparator}quds${Platform.pathSeparator}out${Platform.pathSeparator}$dartName');
+  final sep = Platform.pathSeparator;
+  final baseOut = flutter
+      ? '${ownerRoot.path}${sep}lib${sep}quds_gen'
+      : '${ownerRoot.path}$sep.dart_tool${sep}quds${sep}out';
+  if (_isUnderDirectory(absolute.path, ownerRoot.path)) {
+    if (flutter) return _flutterGenerated(input, ownerRoot);
+    final fileCanon = _canonicalPathCli(absolute.path);
+    final rootCanon = _canonicalPathCli(ownerRoot.path);
+    final prefix = rootCanon.endsWith('/') ? rootCanon : '$rootCanon/';
+    final relative = fileCanon.substring(prefix.length).replaceAll('/', sep);
+    final dartName = relative.endsWith('.quds')
+        ? '${relative.substring(0, relative.length - 5)}.dart'
+        : '$relative.dart';
+    return File('$baseOut$sep$dartName');
+  }
+  final info = packageFileInfo(absolute.path, packageConfigFrom: configOrigin);
+  if (info != null) {
+    final rel = info.relativeInsideLib.replaceAll('/', sep);
+    final dartRel = rel.endsWith('.quds')
+        ? '${rel.substring(0, rel.length - 5)}.dart'
+        : '$rel.dart';
+    return File('$baseOut${sep}_packages$sep${info.name}$sep$dartRel');
+  }
+  final hash = sha256Hex(utf8.encode(absolute.path)).substring(0, 12);
+  final name = absolute.uri.pathSegments.last;
+  final dartName = name.endsWith('.quds')
+      ? '${name.substring(0, name.length - 5)}.dart'
+      : '$name.dart';
+  return File('$baseOut${sep}_external$sep$hash$sep$dartName');
 }
 
 Directory _packageRoot(Directory start) {
@@ -716,8 +955,12 @@ Directory _packageRoot(Directory start) {
   }
 }
 
-File _cacheFile(File input) {
+File _cacheFile(File input, {Directory? projectRoot}) {
   final name = sha256Hex(utf8.encode(input.absolute.path));
+  if (projectRoot != null &&
+      !_isUnderDirectory(input.absolute.path, projectRoot.path)) {
+    return File('${projectRoot.path}/.dart_tool/quds/cache/$name.json');
+  }
   return File('${input.parent.path}/.dart_tool/quds/cache/$name.json');
 }
 
@@ -794,9 +1037,9 @@ String _digestListed(List<String> paths, File input) {
 }
 
 /// True when the generated Dart still matches the sources recorded last time.
-bool _cachedOutput(File input, File output) {
+bool _cachedOutput(File input, File output, {Directory? projectRoot}) {
   if (!output.existsSync()) return false;
-  final cache = _cacheFile(input);
+  final cache = _cacheFile(input, projectRoot: projectRoot);
   if (!cache.existsSync()) return false;
   final saved = jsonDecode(cache.readAsStringSync());
   if (saved is! Map) return false;
@@ -810,32 +1053,49 @@ bool _cachedOutput(File input, File output) {
       _artifactsFresh(saved);
 }
 
-File? _ensureOutput(File input, [Set<String>? visited]) {
+File? _ensureOutput(File input,
+    [Set<String>? visited, Directory? projectRoot, String? configOrigin]) {
   final seen = visited ?? <String>{};
   final path = input.absolute.uri.normalizePath().toFilePath();
-  final output = _outputFile(input);
+  final ownerRoot = projectRoot ?? _packageRoot(input.absolute.parent);
+  final origin = configOrigin ?? path;
+  final output = _outputFileForRoot(input, ownerRoot, configOrigin: origin);
   if (!seen.add(path)) return output;
   final List<String> dependencies;
-  final cached = _cachedOutput(input, output);
+  final cached = _cachedOutput(input, output, projectRoot: ownerRoot);
   if (cached) {
-    final saved = jsonDecode(_cacheFile(input).readAsStringSync()) as Map;
+    final saved =
+        jsonDecode(_cacheFile(input, projectRoot: ownerRoot).readAsStringSync())
+            as Map;
     dependencies = (saved['paths'] as List).cast<String>();
   } else {
-    final result = compile(input.readAsStringSync(), file: input.path);
-    if (!_emitGenerated(input, result, announce: false, destination: output))
-      return null;
+    final source = input.readAsStringSync();
+    final result = compile(source, file: input.path, packageConfigFrom: origin);
+    if (!_emitGenerated(input, result,
+        announce: false,
+        destination: output,
+        projectRoot: ownerRoot,
+        configOrigin: origin,
+        sourceText: source)) return null;
     dependencies = result.dependencies;
   }
   for (final dependency in dependencies) {
     if (!dependency.endsWith('.quds') || dependency == path) continue;
-    if (_ensureOutput(File(dependency), seen) == null) return null;
+    if (_ensureOutput(File(dependency), seen, ownerRoot, origin) == null) {
+      return null;
+    }
   }
   // A rebuilt dependency may replace a shared SDK bundle. Revalidate a cached
   // caller afterwards so it never calls helper names from the previous bundle.
-  if (cached && !_cachedOutput(input, output)) {
-    final result = compile(input.readAsStringSync(), file: input.path);
-    if (!_emitGenerated(input, result, announce: false, destination: output))
-      return null;
+  if (cached && !_cachedOutput(input, output, projectRoot: ownerRoot)) {
+    final source = input.readAsStringSync();
+    final result = compile(source, file: input.path, packageConfigFrom: origin);
+    if (!_emitGenerated(input, result,
+        announce: false,
+        destination: output,
+        projectRoot: ownerRoot,
+        configOrigin: origin,
+        sourceText: source)) return null;
   }
   return output;
 }
@@ -1034,10 +1294,12 @@ Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
   for (final path in paths) {
     final compiled = path == inputPath
         ? root
-        : compile(File(path).readAsStringSync(), file: path);
+        : compile(File(path).readAsStringSync(),
+            file: path, packageConfigFrom: inputPath);
     walkAst(compiled.program, (node) {
       if (node is ImportDeclaration && !node.uri.startsWith('quds:')) {
-        final target = resolveLibraryPath(path, node.uri);
+        final target =
+            resolveLibraryPath(path, node.uri, packageConfigFrom: inputPath);
         final staged = target == null ? null : targets[canonical(target)];
         if (staged != null) {
           compiled.semantics.resolvedImports[node] = fileUri(staged.path);
@@ -1057,14 +1319,22 @@ Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
     });
     for (final entry
         in compiled.semantics.backendTypeImports.entries.toList()) {
-      final uri = Uri.parse(entry.value);
-      final typePath = uri.scheme == 'file'
-          ? uri.toFilePath()
-          : !uri.hasScheme
-              ? Uri.file(path).resolve(entry.value).toFilePath()
-              : null;
-      if (typePath == null || !typePath.endsWith('.dart')) continue;
-      final sourcePath = '${typePath.substring(0, typePath.length - 5)}.quds';
+      String? sourcePath;
+      if (entry.value.startsWith('package:')) {
+        sourcePath =
+            resolveLibraryPath(path, entry.value, packageConfigFrom: inputPath);
+      } else {
+        final uri = Uri.parse(entry.value);
+        final typePath = uri.scheme == 'file'
+            ? uri.toFilePath()
+            : !uri.hasScheme
+                ? Uri.file(path).resolve(entry.value).toFilePath()
+                : null;
+        if (typePath != null && typePath.endsWith('.dart')) {
+          sourcePath = '${typePath.substring(0, typePath.length - 5)}.quds';
+        }
+      }
+      if (sourcePath == null) continue;
       final target = targets[canonical(sourcePath)];
       if (target != null)
         compiled.semantics.backendTypeImports[entry.key] = fileUri(target.path);

@@ -129,7 +129,8 @@ Compilation compile(String source,
     bool partial = false,
     bool emitDart = true,
     String? targetPlatform,
-    bool? flutter}) {
+    bool? flutter,
+    String? packageConfigFrom}) {
   final parser = Parser(Lexer().tokenize(source, file: file));
   final parsed = parser.parse(partial: partial);
   if (partial && parser.errors.isNotEmpty && parsed.statements.isEmpty) {
@@ -137,20 +138,26 @@ Compilation compile(String source,
   }
   var program = expandMacros(parsed);
   final sourcePath = file == '<input>' ? file : File(file).absolute.path;
+  final configOrigin =
+      packageConfigFrom ?? (sourcePath == '<input>' ? null : sourcePath);
   if (sourcePath != '<input>') _checkLanguage(sourcePath);
   final framework =
       flutter ?? (sourcePath != '<input>' && packageUsesFlutter(sourcePath));
   final target = targetPlatform ?? (framework ? 'flutter' : 'vm');
   if (!{'vm', 'web', 'flutter'}.contains(target))
     throw ArgumentError.value(target, 'targetPlatform');
-  final selector =
-      Analyzer(file: sourcePath, targetPlatform: target, flutter: framework);
+  final selector = Analyzer(
+      file: sourcePath,
+      targetPlatform: target,
+      flutter: framework,
+      packageConfigFrom: configOrigin);
   final libraries = <String, Program>{};
   var library = sourcePath;
   _loadSdkImports(program, libraries, selector);
   if (sourcePath != '<input>') {
     libraries[sourcePath] = program;
-    _loadLibraries(program, sourcePath, libraries, selector);
+    _loadLibraries(program, sourcePath, libraries, selector,
+        configOrigin: configOrigin);
     final parts = program.statements.whereType<PartDirective>().toList();
     final ofs = parts.where((item) => item.of).toList();
     final owned = parts.where((item) => !item.of).toList();
@@ -169,7 +176,8 @@ Compilation compile(String source,
           library: library,
           file: sourcePath,
           targetPlatform: target,
-          flutter: framework)
+          flutter: framework,
+          packageConfigFrom: configOrigin)
       .analyze(program, libraries: libraries);
   semantics.protectWithMeta =
       sourcePath != '<input>' && packageDependsOnMeta(sourcePath);
@@ -374,7 +382,8 @@ String _snake(String name) {
 }
 
 void _loadLibraries(Program program, String from,
-    Map<String, Program> libraries, Analyzer selector) {
+    Map<String, Program> libraries, Analyzer selector,
+    {String? configOrigin}) {
   for (final statement in _activeStatements(program.statements, selector)) {
     final uri = switch (statement) {
       ImportDeclaration()
@@ -386,7 +395,7 @@ void _loadLibraries(Program program, String from,
       _ => null,
     };
     if (uri == null) continue;
-    final path = resolveLibraryPath(from, uri);
+    final path = resolveLibraryPath(from, uri, packageConfigFrom: configOrigin);
     if (path == null || libraries.containsKey(path)) continue;
     final file = File(path);
     if (!file.existsSync()) continue;
@@ -395,7 +404,8 @@ void _loadLibraries(Program program, String from,
     final loaded = expandMacros(parsed);
     libraries[path] = loaded;
     _loadSdkImports(loaded, libraries, selector);
-    _loadLibraries(loaded, path, libraries, selector);
+    _loadLibraries(loaded, path, libraries, selector,
+        configOrigin: configOrigin);
   }
 }
 

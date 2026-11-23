@@ -2813,6 +2813,17 @@ String? _importedQudsFile(String? from, String libraryText) {
 
 List<Map<String, Object?>> _packageCompletion(
     String source, int cursor, String rest, String? file) {
+  final sectionMarker = rest.indexOf('::');
+  if (sectionMarker >= 0) {
+    final target = 'package:${rest.substring(0, sectionMarker)}';
+    final path = _importedQudsFile(file, target);
+    if (path == null ||
+        (file != null && externalInternalPackageOwner(file, path) != null)) {
+      return const [];
+    }
+    return _sectionItems(source, cursor, rest.substring(sectionMarker + 2),
+        fileSectionNames(path), target);
+  }
   final libraries = file == null || file == '<input>'
       ? const <PackageLibrary>[]
       : packageLibraries(file);
@@ -2829,6 +2840,14 @@ List<Map<String, Object?>> _packageCompletion(
       if (!library.name.startsWith(rest)) continue;
       items.add(_importItem(source, start, cursor, library.name, library.name,
           'package:${library.name}', 9));
+      final entryQuds =
+          File(_joinImport(library.libDirectory, '${library.name}.quds'));
+      if (entryQuds.existsSync() &&
+          fileSectionNames(entryQuds.path).isNotEmpty) {
+        items.add(_importItem(source, start, cursor, '${library.name}::',
+            '${library.name}::', 'package:${library.name}::', 9,
+            retrigger: true));
+      }
     }
     final lib = current == null || file == null
         ? null
@@ -2845,13 +2864,18 @@ List<Map<String, Object?>> _packageCompletion(
   final partial = separator < 0 ? path : path.substring(separator + 1);
   final dot = partial.lastIndexOf('.');
   final directory = _packageDirectory(library, current, name, file, parent);
+  final externalPackage = current != name;
+  final inExternalInternal = externalPackage && _isInternalRelative(parent);
   if (dot >= 0 && partial.endsWith('.') == false) {
     final folder = partial.substring(0, dot);
     final nested = Directory(_joinImport(directory?.path ?? '', folder));
     if (directory != null && nested.existsSync()) {
       final at = cursor - (partial.length - dot);
+      final nestedInternal = externalPackage &&
+          _isInternalRelative(parent.isEmpty ? folder : '$parent/$folder');
       return _directoryEntries(source, at, cursor, partial.substring(dot + 1),
-          nested, _packageFile(current, name));
+          nested, _packageFile(current, name),
+          externalLibRoot: false, hideQuds: nestedInternal);
     }
   }
   if (partial.endsWith('.')) {
@@ -2859,12 +2883,20 @@ List<Map<String, Object?>> _packageCompletion(
     final nested = folder.isEmpty
         ? directory
         : Directory(_joinImport(directory?.path ?? '', folder));
+    final nestedInternal = externalPackage &&
+        _isInternalRelative(folder.isEmpty
+            ? parent
+            : (parent.isEmpty ? folder : '$parent/$folder'));
     return _directoryEntries(
-        source, cursor - 1, cursor, '', nested, _packageFile(current, name));
+        source, cursor - 1, cursor, '', nested, _packageFile(current, name),
+        externalLibRoot: externalPackage && parent.isEmpty && folder.isEmpty,
+        hideQuds: nestedInternal);
   }
   final start = cursor - partial.length;
   return _directoryEntries(
-      source, start, cursor, partial, directory, _packageFile(current, name));
+      source, start, cursor, partial, directory, _packageFile(current, name),
+      externalLibRoot: externalPackage && parent.isEmpty,
+      hideQuds: inExternalInternal);
 }
 
 List<Map<String, Object?>> _dottedPackage(
@@ -2891,27 +2923,70 @@ List<Map<String, Object?>> _dottedPackage(
     directory = Directory(_joinImport(directory.path, folder));
     if (!directory.existsSync()) return const [];
   }
+  final externalPackage = current != package;
+  final inExternalInternal = externalPackage &&
+      folders.isNotEmpty &&
+      (folders.first == 'src' || folders.first == 'internal');
   final start = cursor - partial.length;
   final items = <Map<String, Object?>>[];
+  final seenStems = <String>{};
   for (final entity in _children(directory)) {
     final name = entity.path.split(Platform.pathSeparator).last;
     if (name.startsWith('.') || name.startsWith('_')) continue;
     if (entity is Directory) {
+      if (externalPackage &&
+          folders.isEmpty &&
+          (name == 'src' || name == 'internal') &&
+          _isQudsInternalDirectory(entity)) {
+        continue;
+      }
       if (!name.startsWith(partial)) continue;
       items.add(_importItem(
           source, start, cursor, name, '$name.', 'directory', 19,
           retrigger: true));
     } else if (entity is File &&
         (name.endsWith('.dart') || name.endsWith('.quds'))) {
+      if (inExternalInternal && name.endsWith('.quds')) continue;
       final stem = name.substring(0, name.length - 5);
       if (stem.isEmpty || stem.startsWith('_') || !stem.startsWith(partial)) {
         continue;
       }
+      if (!seenStems.add(stem)) continue;
       items.add(_importItem(source, start, cursor, stem, stem, name, 17));
+      if (name.endsWith('.quds') && fileSectionNames(entity.path).isNotEmpty) {
+        items.add(_importItem(
+            source, start, cursor, '$stem::', '$stem::', name, 17,
+            retrigger: true));
+      }
     }
   }
   items.sort((a, b) => (a['label'] as String).compareTo(b['label'] as String));
   return items;
+}
+
+bool _isInternalRelative(String parent) {
+  if (parent.isEmpty) return false;
+  final first = parent.split('/').first;
+  return first == 'src' || first == 'internal';
+}
+
+bool _isQudsInternalDirectory(Directory directory) {
+  var hasQuds = false;
+  var hasDart = false;
+  void scan(Directory dir) {
+    for (final entity in _children(dir)) {
+      if (entity is File) {
+        if (entity.path.endsWith('.quds')) hasQuds = true;
+        if (entity.path.endsWith('.dart')) hasDart = true;
+      } else if (entity is Directory) {
+        scan(entity);
+      }
+      if (hasQuds) return;
+    }
+  }
+
+  scan(directory);
+  return hasQuds || !hasDart;
 }
 
 bool _packageFile(String? current, String name) => current != name;
@@ -3051,29 +3126,52 @@ List<Map<String, Object?>> _namedFiles(
 }
 
 List<Map<String, Object?>> _directoryEntries(String source, int start, int end,
-    String partial, Directory? directory, bool dartFiles) {
+    String partial, Directory? directory, bool dartFiles,
+    {bool externalLibRoot = false, bool hideQuds = false}) {
   if (directory == null || !directory.existsSync()) return const [];
+  final children = _children(directory);
+  final qudsStems = <String>{
+    for (final entity in children)
+      if (entity is File && entity.path.endsWith('.quds'))
+        entity.path.split(Platform.pathSeparator).last.substring(
+            0, entity.path.split(Platform.pathSeparator).last.length - 5),
+  };
   final items = <Map<String, Object?>>[];
-  for (final entity in _children(directory)) {
+  for (final entity in children) {
     final name = entity.path.split(Platform.pathSeparator).last;
     if (name.startsWith('.')) continue;
     if (entity is Directory) {
+      if (externalLibRoot &&
+          (name == 'src' || name == 'internal') &&
+          _isQudsInternalDirectory(entity)) {
+        continue;
+      }
       if (!name.startsWith(partial)) continue;
       final replacingDot = start < end && source.codeUnitAt(start) == 46;
       final text = replacingDot ? '/$name/' : '$name/';
       items.add(_importItem(source, start, end, name, text, 'directory', 19,
           retrigger: true, filter: replacingDot ? '.$name/' : name));
     } else if (entity is File) {
-      final shown = dartFiles
-          ? (name.endsWith('.dart') ? name : null)
-          : (name.endsWith('.quds')
-              ? name.substring(0, name.length - 5)
-              : null);
+      final isQuds = name.endsWith('.quds');
+      if (isQuds && hideQuds) continue;
+      String? shown;
+      if (isQuds) {
+        shown = name.substring(0, name.length - 5);
+      } else if (dartFiles && name.endsWith('.dart')) {
+        final stem = name.substring(0, name.length - 5);
+        if (qudsStems.contains(stem)) continue;
+        shown = name;
+      }
       if (shown == null || !shown.startsWith(partial)) continue;
       final replacingDot = start < end && source.codeUnitAt(start) == 46;
       final text = replacingDot ? '/$shown' : shown;
       items.add(_importItem(source, start, end, shown, text, name, 17,
           filter: replacingDot ? '.$shown' : shown));
+      if (isQuds && fileSectionNames(entity.path).isNotEmpty) {
+        final secText = replacingDot ? '/$shown::' : '$shown::';
+        items.add(_importItem(source, start, end, '$shown::', secText, name, 17,
+            retrigger: true, filter: replacingDot ? '.$shown::' : '$shown::'));
+      }
     }
   }
   items.sort((a, b) => (a['label'] as String).compareTo(b['label'] as String));

@@ -1,3 +1,20 @@
+# External Quds packages, package-internal visibility (`E208`), and `quds build --package` — 2026-11-23
+
+Base: `982cc74`.
+
+| Check | Observed result |
+| --- | --- |
+| External Quds packages (`git:`, `path:`, transitive) | `resolveLibraryPath`, `packageDartFile`, `compile`, `Analyzer`, and CLI (`quds build`, `quds run`, `quds test`, `quds analyze`) resolve external `.quds` packages (including sections `package:name::section`, extensions, and transitive `app -> mid -> leaf` chains) via `.dart_tool/package_config.json`; consumer builds emit external modules under `.dart_tool/quds/out/_packages/<name>/` without writing to dependency/pub-cache directories |
+| Package-internal visibility (`E208`) | `lib/src/` and `lib/internal/` `.quds` libraries are accessible within the owning package (`lib/`, `bin/`, `test/`) and re-exportable through its public facade, while direct/dotted/relative cross-package imports and exports (and transitive cross-package re-exports) fail at compile time with `E208` |
+| Dual publishing (`quds build --package [dir]`) | Emits `lib/**/*.dart` beside `lib/**/*.quds` and shared SDK bundles under `lib/src/_quds_sdk/` when used, verifies plain Dart `import 'package:greeter/greeter.dart';` execution, and refuses (`exitCode == 73`) to overwrite non-generated `.dart` files |
+| LSP completion & navigation | `completeAt` suggests external `.quds` packages, `package:name::` sections, and public `.quds` modules while hiding external Quds `src/` and `internal/` folders (preserving pure-Dart `package:widgets/src/` completion); `libraryAt` and `definitionAt` jump to external `.quds` sources |
+| End-to-end suite (`test/external_packages_test.dart`) | `/opt/flutter/bin/dart test test/external_packages_test.dart`: **5 passed, 0 failed** (1m35s; real `git init` + `dart pub get` `git:` dependency, VM + `dart compile js` + `node` parity, transitive `app -> mid -> leaf`, 10+ `E208` cases, `quds build --package`, LSP) |
+| Editor/parts/interop regressions | `/opt/flutter/bin/dart test test/editor_test.dart test/parts_paths_test.dart test/academy_interop_test.dart`: **32 passed, 0 failed** (36s) |
+| Filtered compiler regressions | `/opt/flutter/bin/dart test test/compiler_test.dart --name "package|import|build|completion|library|export"` (**16 passed** + 1 stale `quds:c` expectation updated to include `quds:collection`), rerun `import completion reads files`: **1 passed, 0 failed** |
+| Format, analysis & sync | `dart format` (6 touched Dart files clean), `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suites were run rather than the full repository suite; no full-suite run or live `pub.dev` upload is claimed for this entry.
+
 # General-purpose collections SDK (`quds:collection`, Batches 0–5) — 2026-11-23
 
 Base: `4197acf` (Batches 0–4 pushed as `66fdadc`, `823ba76`, `ee8b432`, `7bfd419`; Batch 5 closes `:: extensions`, `quds:ext` `Lists`/`Maps`/`Sets` migration, golden, LSP, and docs).

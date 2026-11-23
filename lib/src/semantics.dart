@@ -810,8 +810,10 @@ class Analyzer {
       {this.library = '<input>',
       String? file,
       this.targetPlatform = 'vm',
-      this.flutter = false})
-      : _file = file ?? library {
+      this.flutter = false,
+      String? packageConfigFrom})
+      : _file = file ?? library,
+        _packageConfigFrom = packageConfigFrom {
     model.targetPlatform = targetPlatform;
     model.flutter = flutter;
   }
@@ -826,6 +828,9 @@ class Analyzer {
 
   /// Path of the source being checked. Imports and parts resolve from here.
   final String _file;
+
+  /// Consumer file whose `.dart_tool/package_config.json` resolves external packages.
+  final String? _packageConfigFrom;
   late final _namePrefix = library == _file
       ? '_q'
       : '_qp_${sha256Hex(utf8.encode(_file)).substring(0, 12)}_';
@@ -2417,30 +2422,13 @@ class Analyzer {
       return;
     }
     if (node.uri.startsWith('package:') && node.uri.endsWith('.dart')) {
-      final quds = resolveLibraryPath(_file, node.uri);
+      final quds = resolveLibraryPath(_file, node.uri,
+          packageConfigFrom: _packageConfigFrom);
       if (quds != null && File(quds).existsSync()) {
         _bindPackage(node);
         return;
       }
-      _externalDart = true;
-      final library = packageDartFile(_file, node.uri);
-      if (library != null) {
-        try {
-          final surface = readDartFile(library, from: _file);
-          if (surface != null) _bindSurface(node, surface);
-        } catch (_) {
-          // The file stays an external library. Unknown names remain dynamic.
-        }
-      }
-      if (node.prefix != null) {
-        final space = _space(node.prefix!, node);
-        final current = _global.symbols[node.prefix!]!;
-        if (!current.external) {
-          _global.symbols[node.prefix!] = Symbol(
-              current.name, current.dartName, current.type,
-              namespace: space, external: true);
-        }
-      }
+      _bindExternalDartPackage(node, node.uri);
       return;
     }
     if (node.uri.startsWith('package:') || node.uri.startsWith('generated:')) {
@@ -2455,6 +2443,7 @@ class Analyzer {
     if (path == _file) return;
     final imported = _libraries[path];
     if (imported == null) fail('Unknown import: ${node.uri}', node);
+    _checkInternalLibraryAccess(_file, path, node);
     final filtered = _filteredImport(node, imported, path);
     if (filtered.empty) return;
     if (node.export) {
@@ -2464,6 +2453,29 @@ class Analyzer {
     }
     _importLibrary(imported, path,
         filter: filtered.filter, qualify: node.prefix);
+  }
+
+  void _bindExternalDartPackage(ImportDeclaration node, String dartUri) {
+    _externalDart = true;
+    final library =
+        packageDartFile(_file, dartUri, packageConfigFrom: _packageConfigFrom);
+    if (library != null) {
+      try {
+        final surface = readDartFile(library, from: _file);
+        if (surface != null) _bindSurface(node, surface);
+      } catch (_) {
+        // The file stays an external library. Unknown names remain dynamic.
+      }
+    }
+    if (node.prefix != null) {
+      final space = _space(node.prefix!, node);
+      final current = _global.symbols[node.prefix!]!;
+      if (!current.external) {
+        _global.symbols[node.prefix!] = Symbol(
+            current.name, current.dartName, current.type,
+            namespace: space, external: true);
+      }
+    }
   }
 
   static const _preludeNames = [
@@ -2859,6 +2871,18 @@ class Analyzer {
     return space;
   }
 
+  void _checkInternalLibraryAccess(
+      String from, String targetPath, ImportDeclaration node) {
+    final owner = externalInternalPackageOwner(from, targetPath);
+    if (owner == null) return;
+    final verb = node.export ? 'export' : 'import';
+    error(
+      'E208',
+      'Cannot $verb internal library ${node.uri} from outside package $owner',
+      node,
+    );
+  }
+
   void _bindPackage(ImportDeclaration node) {
     if (_file == '<input>') {
       if (node.uri.startsWith('generated:')) {
@@ -2866,14 +2890,29 @@ class Analyzer {
       }
       return;
     }
-    final path = resolveLibraryPath(_file, node.uri);
+    final path = resolveLibraryPath(_file, node.uri,
+        packageConfigFrom: _packageConfigFrom);
     if (path == null) {
-      if (node.uri.startsWith('package:')) return;
+      if (node.uri.startsWith('package:') && packageRoot(_file) == null) return;
       fail('Unknown import: ${node.uri}', node);
     }
     final imported = _libraries[path];
-    if (imported == null) fail('Unknown import: ${node.uri}', node);
     final dartUri = dartLibraryUri(_file, node.uri);
+    if (imported == null) {
+      if (node.uri.startsWith('package:') &&
+          librarySection(node.uri) == null &&
+          dartUri != null) {
+        final dartFile = packageDartFile(_file, dartUri,
+            packageConfigFrom: _packageConfigFrom);
+        if (dartFile != null) {
+          model.resolvedImports[node] = dartUri;
+          _bindExternalDartPackage(node, dartUri);
+          return;
+        }
+      }
+      fail('Unknown import: ${node.uri}', node);
+    }
+    _checkInternalLibraryAccess(_file, path, node);
     if (dartUri != null) model.resolvedImports[node] = dartUri;
     if (path == _file) return;
     final filtered = _filteredImport(node, imported, path);
@@ -2889,7 +2928,8 @@ class Analyzer {
 
   String _resolveLibrary(String from, String uri) {
     if (uri.startsWith('quds:')) return uri;
-    final resolved = resolveLibraryPath(from, uri);
+    final resolved =
+        resolveLibraryPath(from, uri, packageConfigFrom: _packageConfigFrom);
     if (resolved != null) return resolved;
     final target = Uri.file(from).resolve(uri);
     if (target.scheme != 'file' && target.scheme.isNotEmpty) return uri;
@@ -3068,6 +3108,7 @@ class Analyzer {
           if (exported == null) {
             fail('Unknown import: ${statement.uri}', statement);
           }
+          _checkInternalLibraryAccess(path, exportedPath, statement);
           final restricted = _restrict(filter, statement);
           if (((filter?.show.isNotEmpty ?? false) ||
                   statement.show.isNotEmpty) &&
@@ -3764,7 +3805,8 @@ class Analyzer {
               ? (() {
                   final from =
                       node.span.file == '<input>' ? _file : node.span.file;
-                  final file = packageDartFile(from, node.uri);
+                  final file = packageDartFile(from, node.uri,
+                      packageConfigFrom: _packageConfigFrom);
                   return file == null ? null : readDartFile(file, from: from);
                 })()
               : readDartLibrary(node.uri);

@@ -8,22 +8,22 @@ use quds:text::slice as slice
 use quds:ext
 
 test "selective section imports, prefixes, show, and quds:ext coexistence":
-  assert TextBoundaryPolicy.reject != TextBoundaryPolicy.next
+  expect(TextBoundaryPolicy.reject != TextBoundaryPolicy.next, true)
   r = TextRange(0, 4)
-  assert slice.sliceText("QudsLang", r) == "Quds"
+  expect(slice.sliceText("QudsLang", r) == "Quds", true)
 
   b = TextBuilder()
   b.append("Hello")
   b.appendLine(" Quds")
   b.appendJoined(["a", "b", "c"], separator: ", ")
-  assert b.build() == "Hello Quds\na, b, c"
+  expect(b.build() == "Hello Quds\na, b, c", true)
 
   part = split.splitTextOnce("name=a=b", "=")
-  assert part.before == "name"
-  assert part.after == "a=b"
-  assert part.found
+  expect(part.before == "name", true)
+  expect(part.after == "a=b", true)
+  expect(part.found, true)
 
-  assert compose.repeatText("some", 3, separator: "-") == "some-some-some"
-  assert lines.normalizeLineEndings("x\r\ny", ending: lines.TextLineEnding.lf) == "x\ny"
-  assert inspect.isBlankText("  \t ")
-  assert [10, 20, 30].second() == 20
+  expect(compose.repeatText("some", 3, separator: "-") == "some-some-some", true)
+  expect(lines.normalizeLineEndings("x\r\ny", ending: lines.TextLineEnding.lf) == "x\ny", true)
+  expect(inspect.isBlankText("  \t "), true)
+  expect([10, 20, 30].second() == 20, true)

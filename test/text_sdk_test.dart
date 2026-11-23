@@ -15,6 +15,8 @@ void main() {
     'text_imports.quds',
     'text_unicode.quds',
     'text_unicode_reference.quds',
+    'text_patterns_search.quds',
+    'text_replace_reader.quds',
   ];
 
   for (final name in suites) {

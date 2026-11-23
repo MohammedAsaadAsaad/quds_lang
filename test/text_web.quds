@@ -1,24 +1,39 @@
 use quds:text
 
+_check(ok: bool, msg: String):
+  if not ok:
+    throw "FAILED: " + msg
+
 main():
   r = TextRange(0, 4)
-  assert sliceText("QudsLang", r) == "Quds"
-  assert isBlankText(" \t\r\n")
-  assert beforeText("k=v", "=") == "k"
+  _check(sliceText("QudsLang", r) == "Quds", "sliceText")
+  _check(isBlankText(" \t\r\n"), "isBlankText")
+  _check(beforeText("k=v", "=") == "k", "beforeText")
   part = splitTextOnce("a=b=c", "=")
-  assert part.found and part.before == "a" and part.after == "b=c"
-  assert repeatText("ha", 3, separator: "-") == "ha-ha-ha"
+  _check(part.found and part.before == "a" and part.after == "b=c", "splitTextOnce")
+  _check(repeatText("ha", 3, separator: "-") == "ha-ha-ha", "repeatText")
   b = TextBuilder()
   b.append("Hello")
   b.appendLine(" Quds")
   b.appendCodePoint(0x1F600)
-  assert b.build() == "Hello Quds\n😀"
-  assert normalizeLineEndings("a\r\nb\rc") == "a\nb\nc"
-  assert dedentText("  a\n  b") == "a\nb"
+  _check(b.build() == "Hello Quds\n😀", "TextBuilder")
+  _check(normalizeLineEndings("a\r\nb\rc") == "a\nb\nc", "normalizeLineEndings")
+  _check(dedentText("  a\n  b") == "a\nb", "dedentText")
+
   chars = TextCharacters("قُدس 👨‍👩‍👧‍👦")
-  assert chars.count == 5 and chars.characterAt(0) == "قُ" and chars.characterAt(4) == "👨‍👩‍👧‍👦"
-  assert sliceCharacters("قُدس", 0, 2) == "قُد"
-  assert reverseCharacters("قُدس") == "سدقُ"
-  assert normalizeUnicode("e" + String.fromCharCode(0x0301)) == String.fromCharCode(0x00E9)
-  assert caseFoldText("Straße") == "strasse"
+  _check(chars.count == 5 and chars.characterAt(0) == "قُ" and chars.characterAt(4) == "👨‍👩‍👧‍👦", "TextCharacters")
+  _check(sliceCharacters("قُدس", 0, 2) == "قُد", "sliceCharacters")
+  _check(reverseCharacters("قُدس") == "سدقُ", "reverseCharacters")
+  _check(normalizeUnicode("e" + String.fromCharCode(0x0301)) == String.fromCharCode(0x00E9), "normalizeUnicode")
+  _check(caseFoldText("Straße") == "strasse", "caseFoldText")
+
+  pat = TextPattern.regex("(?<k>[a-z]+)=([0-9]+)")
+  hit = findText("id=42", pat)
+  _check(hit != null, "findText")
+  if let m = hit:
+    _check(m.namedGroup("k") == "id" and m.group(2) == "42", "TextMatch groups")
+  _check(replaceAllText("a1b22", TextPattern.regex("[0-9]+"), "$1") == "a$1b$1", "replaceAllText literal")
+  _check(collapseRepeatedCharacters("قُقُدس") == "قُدس", "collapseRepeatedCharacters")
+  reader = TextReader("age=42")
+  _check(reader.tryReadText("age=") and reader.readInt() == 42, "TextReader")
   print "TEXT SDK VM WEB OK"

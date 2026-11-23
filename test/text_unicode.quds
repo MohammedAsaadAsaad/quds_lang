@@ -12,98 +12,98 @@ _throws(action: () -> void) -> bool:
 
 test "unicode: TextCodePoints strict, replacement, ranges, and iter":
   cps = TextCodePoints("A😀ب")
-  assert cps.count == 3
-  assert not cps.isEmpty and cps.isNotEmpty
-  assert cps.codePointAt(0) == 65
-  assert cps.codePointAt(1) == 0x1F600
-  assert cps.codePointAt(2) == 0x0628
-  assert cps.rangeAt(0) == TextRange(0, 1)
-  assert cps.rangeAt(1) == TextRange(1, 3)
-  assert cps.rangeAt(2) == TextRange(3, 4)
-  assert cps.offsetFor(0) == 0
-  assert cps.offsetFor(1) == 1
-  assert cps.offsetFor(2) == 3
-  assert cps.offsetFor(3) == 4
-  assert _throws(() -> cps.codePointAt(-1))
-  assert _throws(() -> cps.codePointAt(3))
-  assert _throws(() -> cps.offsetFor(4))
+  expect(cps.count == 3, true)
+  expect(not cps.isEmpty and cps.isNotEmpty, true)
+  expect(cps.codePointAt(0) == 65, true)
+  expect(cps.codePointAt(1) == 0x1F600, true)
+  expect(cps.codePointAt(2) == 0x0628, true)
+  expect(cps.rangeAt(0) == TextRange(0, 1), true)
+  expect(cps.rangeAt(1) == TextRange(1, 3), true)
+  expect(cps.rangeAt(2) == TextRange(3, 4), true)
+  expect(cps.offsetFor(0) == 0, true)
+  expect(cps.offsetFor(1) == 1, true)
+  expect(cps.offsetFor(2) == 3, true)
+  expect(cps.offsetFor(3) == 4, true)
+  expect(_throws(() -> cps.codePointAt(-1)), true)
+  expect(_throws(() -> cps.codePointAt(3)), true)
+  expect(_throws(() -> cps.offsetFor(4)), true)
 
   collected: List<int> = []
   for cp in cps.iter():
     collected.add(cp)
-  assert collected.length == 3 and collected[1] == 0x1F600
+  expect(collected.length == 3 and collected[1] == 0x1F600, true)
 
   lone = String.fromCharCode(0xD800) + "x" + String.fromCharCode(0xDC00)
   raw = TextCodePoints(lone)
-  assert raw.count == 3
-  assert raw.codePointAt(0) == 0xD800
-  assert raw.codePointAt(2) == 0xDC00
+  expect(raw.count == 3, true)
+  expect(raw.codePointAt(0) == 0xD800, true)
+  expect(raw.codePointAt(2) == 0xDC00, true)
   replaced = TextCodePoints(lone, replaceMalformed: true)
-  assert replaced.codePointAt(0) == 0xFFFD
-  assert replaced.codePointAt(1) == 120
-  assert replaced.codePointAt(2) == 0xFFFD
-  assert _throws(() -> TextCodePoints(lone, strict: true))
+  expect(replaced.codePointAt(0) == 0xFFFD, true)
+  expect(replaced.codePointAt(1) == 120, true)
+  expect(replaced.codePointAt(2) == 0xFFFD, true)
+  expect(_throws(() -> TextCodePoints(lone, strict: true)), true)
 
 test "unicode: TextCharacters grapheme clusters (Arabic diacritics, ZWJ emoji, flags, CRLF, Hangul)":
   sample = "قُدس 👨‍👩‍👧‍👦"
   chars = TextCharacters(sample)
-  assert chars.count == 5
-  assert chars.characterAt(0) == "قُ"
-  assert chars.characterAt(1) == "د"
-  assert chars.characterAt(2) == "س"
-  assert chars.characterAt(3) == " "
-  assert chars.characterAt(4) == "👨‍👩‍👧‍👦"
-  assert chars.rangeAt(0) == TextRange(0, 2)
-  assert chars.slice(0, 2) == "قُد"
-  assert chars.slice(4, 5) == "👨‍👩‍👧‍👦"
-  assert sliceCharacters(sample, 0, 3) == "قُدس"
-  assert reverseCharacters("قُدس") == "سدقُ"
-  assert reverseCharacters("a👨‍👩‍👧‍👦b") == "b👨‍👩‍👧‍👦a"
+  expect(chars.count == 5, true)
+  expect(chars.characterAt(0) == "قُ", true)
+  expect(chars.characterAt(1) == "د", true)
+  expect(chars.characterAt(2) == "س", true)
+  expect(chars.characterAt(3) == " ", true)
+  expect(chars.characterAt(4) == "👨‍👩‍👧‍👦", true)
+  expect(chars.rangeAt(0) == TextRange(0, 2), true)
+  expect(chars.slice(0, 2) == "قُد", true)
+  expect(chars.slice(4, 5) == "👨‍👩‍👧‍👦", true)
+  expect(sliceCharacters(sample, 0, 3) == "قُدس", true)
+  expect(reverseCharacters("قُدس") == "سدقُ", true)
+  expect(reverseCharacters("a👨‍👩‍👧‍👦b") == "b👨‍👩‍👧‍👦a", true)
 
   flags = TextCharacters("🇵🇸🇺🇸")
-  assert flags.count == 2
-  assert flags.characterAt(0) == "🇵🇸"
-  assert flags.characterAt(1) == "🇺🇸"
-  assert reverseCharacters("🇵🇸🇺🇸") == "🇺🇸🇵🇸"
+  expect(flags.count == 2, true)
+  expect(flags.characterAt(0) == "🇵🇸", true)
+  expect(flags.characterAt(1) == "🇺🇸", true)
+  expect(reverseCharacters("🇵🇸🇺🇸") == "🇺🇸🇵🇸", true)
 
   crlf = TextCharacters("a\r\nb")
-  assert crlf.count == 3
-  assert crlf.characterAt(1) == "\r\n"
+  expect(crlf.count == 3, true)
+  expect(crlf.characterAt(1) == "\r\n", true)
 
   skin = TextCharacters("👋🏽!")
-  assert skin.count == 2
-  assert skin.characterAt(0) == "👋🏽"
+  expect(skin.count == 2, true)
+  expect(skin.characterAt(0) == "👋🏽", true)
 
   jamo = TextCharacters(String.fromCharCodes([0x1112, 0x1161, 0x11AB]))
-  assert jamo.count == 1
+  expect(jamo.count == 1, true)
 
-  assert containsOnlyCharacters("قُدس", ["قُ", "د", "س"])
-  assert not containsOnlyCharacters("قُدس", ["ق", "د", "س"])
+  expect(containsOnlyCharacters("قُدس", ["قُ", "د", "س"]), true)
+  expect(not containsOnlyCharacters("قُدس", ["ق", "د", "س"]), true)
 
   # Boundary policy on UTF-16 offset inside surrogate/grapheme cluster
-  assert chars.boundaryOffset(0) == 0
-  assert chars.boundaryOffset(2) == 2
-  assert _throws(() -> chars.boundaryOffset(1, policy: TextBoundaryPolicy.reject))
-  assert chars.boundaryOffset(1, policy: TextBoundaryPolicy.previous) == 0
-  assert chars.boundaryOffset(1, policy: TextBoundaryPolicy.next) == 2
+  expect(chars.boundaryOffset(0) == 0, true)
+  expect(chars.boundaryOffset(2) == 2, true)
+  expect(_throws(() -> chars.boundaryOffset(1, policy: TextBoundaryPolicy.reject)), true)
+  expect(chars.boundaryOffset(1, policy: TextBoundaryPolicy.previous) == 0, true)
+  expect(chars.boundaryOffset(1, policy: TextBoundaryPolicy.next) == 2, true)
 
 test "unicode: TextNormalizer, normalizeUnicode, isNormalizedUnicode, caseFoldText":
   decomposed = "e" + String.fromCharCode(0x0301)
   composed = String.fromCharCode(0x00E9)
   nfc = TextNormalizer(TextNormalizationForm.nfc)
   nfd = TextNormalizer(TextNormalizationForm.nfd)
-  assert nfc.normalize(decomposed) == composed
-  assert nfc.isNormalized(composed)
-  assert not nfc.isNormalized(decomposed)
-  assert nfd.normalize(composed) == decomposed
-  assert nfd.isNormalized(decomposed)
-  assert not nfd.isNormalized(composed)
+  expect(nfc.normalize(decomposed) == composed, true)
+  expect(nfc.isNormalized(composed), true)
+  expect(not nfc.isNormalized(decomposed), true)
+  expect(nfd.normalize(composed) == decomposed, true)
+  expect(nfd.isNormalized(decomposed), true)
+  expect(not nfd.isNormalized(composed), true)
 
   ligature = String.fromCharCode(0xFB01)
-  assert normalizeUnicode(ligature, form: TextNormalizationForm.nfkc) == "fi"
-  assert normalizeUnicode(ligature, form: TextNormalizationForm.nfkd) == "fi"
-  assert normalizeUnicode(ligature, form: TextNormalizationForm.nfc) == ligature
+  expect(normalizeUnicode(ligature, form: TextNormalizationForm.nfkc) == "fi", true)
+  expect(normalizeUnicode(ligature, form: TextNormalizationForm.nfkd) == "fi", true)
+  expect(normalizeUnicode(ligature, form: TextNormalizationForm.nfc) == ligature, true)
 
-  assert caseFoldText("Straße") == "strasse"
-  assert caseFoldText("HELLO") == "hello"
-  assert caseFoldText("ΌΣΟΣ") == caseFoldText("όσος")
+  expect(caseFoldText("Straße") == "strasse", true)
+  expect(caseFoldText("HELLO") == "hello", true)
+  expect(caseFoldText("ΌΣΟΣ") == caseFoldText("όσος"), true)

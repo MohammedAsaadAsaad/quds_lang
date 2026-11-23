@@ -10495,7 +10495,7 @@ value class TextRange:
   overlaps(other: TextRange) -> bool = start < other.end and other.start < end
 
 
-  toString() -> String = "TextRange($start, $end)"
+  toString() -> String = "TextRange({start}, {end})"
 
 # A validated slice view over a [source] string using a UTF-16 [range].
 # Retaining a TextSpan may retain the full [source]; call materialize() to
@@ -10547,7 +10547,7 @@ value class TextSpan:
     return TextSpan(copied, TextRange(0, copied.length))
 
 
-  toString() -> String = "TextSpan(${range.start}..${range.end}: $value)"
+  toString() -> String = "TextSpan({range.start}..{range.end}: {value})"
 
 # A position in text with zero-based UTF-16 [offset], one-based [line], and
 # one-based UTF-16 [column]. CRLF counts as a single line break.
@@ -10568,7 +10568,7 @@ value class TextPosition:
       throw RangeError.value(column, "column", "TextPosition.column must be >= 1")
 
 
-  toString() -> String = "TextPosition(offset: $offset, line: $line, column: $column)"
+  toString() -> String = "TextPosition(offset: {offset}, line: {line}, column: {column})"
 
 # Validates that [range] lies within [text] and returns it unchanged.
 # Throws RangeError if end exceeds text.length.
@@ -10716,13 +10716,13 @@ class TextCodePoints:
             i = i + 2
             continue
         if strict:
-          throw ArgumentError("Unpaired high surrogate at UTF-16 offset $i")
+          throw ArgumentError("Unpaired high surrogate at UTF-16 offset {i}")
         pts.add(if replaceMalformed: 0xFFFD else: unit)
         rngs.add(TextRange(i, i + 1))
         i = i + 1
       else if unit >= 0xDC00 and unit <= 0xDFFF:
         if strict:
-          throw ArgumentError("Unpaired low surrogate at UTF-16 offset $i")
+          throw ArgumentError("Unpaired low surrogate at UTF-16 offset {i}")
         pts.add(if replaceMalformed: 0xFFFD else: unit)
         rngs.add(TextRange(i, i + 1))
         i = i + 1
@@ -10864,7 +10864,7 @@ class TextCharacters:
           return r.start
         if policy == TextBoundaryPolicy.next:
           return r.end
-        throw ArgumentError("UTF-16 offset $utf16Offset falls inside a grapheme cluster [${r.start}, ${r.end})")
+        throw ArgumentError("UTF-16 offset {utf16Offset} falls inside a grapheme cluster [{r.start}, {r.end})")
     return utf16Offset
 
   # Returns all grapheme clusters as a list of strings.
@@ -11166,6 +11166,259 @@ textWindows(text: String, size: int, step: int = 1) -> List<String>:
   return out
 
 
+:: patterns
+
+# Error raised when a regular expression pattern cannot be compiled.
+# Example:
+#   err = TextPatternError("[unclosed", "Unterminated character class")
+#   print err.pattern
+class TextPatternError:
+  pattern: String required
+  message: String required
+  offset: int? = null
+
+  init(this.pattern, this.message, this.offset = null):
+    assert true
+
+  toString() -> String:
+    if let at = offset:
+      return "TextPatternError at {at} for \"{pattern}\": {message}"
+    return "TextPatternError for \"{pattern}\": {message}"
+
+# Compiled literal or regular-expression pattern reusable across search, split,
+# and replace operations. Regex matching delegates to Dart RegExp (ECMAScript
+# syntax shared across Dart VM and JavaScript).
+# Example:
+#   p = TextPattern.literal("=")
+#   print p.hasMatch("a=b")
+class TextPattern:
+  source: String required
+  isRegex: bool required
+  caseSensitive: bool required
+  multiLine: bool required
+  dotAll: bool required
+  unicode: bool required
+  private regexObj: RegExp?
+
+  init _make(this.source, this.isRegex, this.caseSensitive, this.multiLine, this.dotAll, this.unicode, this.regexObj):
+    assert true
+
+  # Creates a literal text pattern. Case-sensitive by default without hidden normalization.
+  # Example:
+  #   p = TextPattern.literal("quds")
+  #   print p.hasMatch("hello quds")
+  static literal(value: String, caseSensitive: bool = true) -> TextPattern:
+    if caseSensitive:
+      return TextPattern._make(value, false, true, false, false, false, null)
+    compiled = RegExp(RegExp.escape(value), caseSensitive: false)
+    return TextPattern._make(value, false, false, false, false, false, compiled)
+
+  # Compiles a regular-expression pattern using Dart RegExp.
+  # Throws TextPatternError if [pattern] is syntactically invalid.
+  # Example:
+  #   p = TextPattern.regex("[0-9]+")
+  #   print p.hasMatch("x42y")
+  static regex(pattern: String, caseSensitive: bool = true, multiLine: bool = false, dotAll: bool = false, unicode: bool = false) -> TextPattern:
+    try:
+      compiled = RegExp(
+        pattern,
+        caseSensitive: caseSensitive,
+        multiLine: multiLine,
+        dotAll: dotAll,
+        unicode: unicode,
+      )
+      return TextPattern._make(pattern, true, caseSensitive, multiLine, dotAll, unicode, compiled)
+    catch err:
+      throw TextPatternError(pattern, err.toString())
+
+  # True when this pattern matches anywhere inside [text].
+  # Example:
+  #   print TextPattern.literal("ab").hasMatch("xxabyy")
+  hasMatch(text: String) -> bool:
+    if let r = regexObj:
+      return r.hasMatch(text)
+    return text.contains(source)
+
+  # The compiled RegExp backing this pattern, or null for case-sensitive literals.
+  # Example:
+  #   print TextPattern.regex("[0-9]+").compiledRegExp() != null
+  compiledRegExp() -> RegExp? = regexObj
+
+
+:: search
+
+# Reusable search options for pattern matching.
+# Example:
+#   opts = TextSearchOptions(start: 2, maxMatches: 5, allowOverlap: true)
+#   print opts.allowOverlap
+class TextSearchOptions:
+  start: int = 0
+  maxMatches: int? = null
+  allowOverlap: bool = false
+
+  init(this.start = 0, this.maxMatches = null, this.allowOverlap = false):
+    if start < 0:
+      throw RangeError.value(start, "start", "start must be non-negative")
+    if let limit = maxMatches:
+      if limit < 0:
+        throw ArgumentError.value(limit, "maxMatches", "maxMatches must be non-negative")
+
+# One pattern match in the original text with its UTF-16 [range], matched [value],
+# numbered capture [groups] (1-based via group(i)), and [namedGroups].
+# Note: Dart RegExpMatch exposes captured strings without per-group UTF-16 offsets.
+# Example:
+#   m = findText("id=42", TextPattern.regex("([a-z]+)=([0-9]+)"))
+#   if let hit = m:
+#     print hit.group(2)
+class TextMatch:
+  range: TextRange required
+  value: String required
+  groups: List<String?> required
+  namedGroups: Map<String, String?> required
+
+  init(this.range, this.value, this.groups, this.namedGroups):
+    assert true
+
+  # Number of numbered capture groups (excluding group 0, the full match).
+  # Example:
+  #   m = findText("a1", TextPattern.regex("([a-z])([0-9])"))
+  property groupCount: int:
+    get = groups.length
+
+  # Returns the full matched text for index 0, or the [index]-th capture group
+  # (1-based; null when an optional group did not participate in the match).
+  # Example:
+  #   m = findText("ab", TextPattern.regex("(a)(b)?"))
+  group(index: int) -> String?:
+    if index == 0:
+      return value
+    if index < 0 or index > groups.length:
+      throw RangeError.range(index, 0, groups.length, "index")
+    return groups[index - 1]
+
+  # Returns the captured string for named group [name], or null if absent or
+  # non-participating.
+  # Example:
+  #   m = findText("x=7", TextPattern.regex("(?<k>[a-z])=(?<v>[0-9])"))
+  namedGroup(name: String) -> String? = namedGroups[name]
+
+  toString() -> String = "TextMatch({range.start}..{range.end}: {value})"
+
+# Finds the first match of [pattern] in [text] at or after [start], or null.
+# Example:
+#   found = findText("name=value", TextPattern.literal("="))
+#   if let m = found:
+#     print m.range.start
+findText(text: String, pattern: TextPattern, start: int = 0) -> TextMatch?:
+  if start < 0 or start > text.length:
+    throw RangeError.range(start, 0, text.length, "start")
+  for m in findAllText(text, pattern, start: start, maxMatches: 1):
+    return m
+  return null
+
+# Finds the last non-overlapping match of [pattern] in [text] (ending at or before [end]),
+# or null when absent.
+# Example:
+#   found = findLastText("a=b=c", TextPattern.literal("="))
+findLastText(text: String, pattern: TextPattern, end: int? = null) -> TextMatch?:
+  limit = end ?? text.length
+  if limit < 0 or limit > text.length:
+    throw RangeError.range(limit, 0, text.length, "end")
+  subject = if limit == text.length: text else: text.substring(0, limit)
+  if pattern.compiledRegExp() == null:
+    needle = pattern.source
+    emptyNamed: Map<String, String?> = map:
+    emptyGroups: List<String?> = []
+    if needle.isEmpty:
+      return TextMatch(TextRange(subject.length, subject.length), "", emptyGroups, emptyNamed)
+    pos = subject.lastIndexOf(needle)
+    if pos < 0:
+      return null
+    return TextMatch(TextRange(pos, pos + needle.length), needle, emptyGroups, emptyNamed)
+  var last: TextMatch? = null
+  for m in findAllText(subject, pattern):
+    last = m
+  return last
+
+# Lazily yields matches of [pattern] in [text] starting at [start].
+# Non-overlapping by default; set [allowOverlap] to true to advance by one step
+# after each match. Zero-length matches advance cleanly so iteration always terminates.
+# Example:
+#   for m in findAllText("ababa", TextPattern.literal("aba"), allowOverlap: true):
+#     print m.range.start
+findAllText(text: String, pattern: TextPattern, start: int = 0, maxMatches: int? = null, allowOverlap: bool = false) sync* -> TextMatch:
+  if start < 0 or start > text.length:
+    throw RangeError.range(start, 0, text.length, "start")
+  if maxMatches != null and maxMatches < 0:
+    throw ArgumentError.value(maxMatches, "maxMatches", "maxMatches must be non-negative")
+  if maxMatches != 0:
+    var emitted = 0
+    if let re = pattern.compiledRegExp():
+      if not allowOverlap:
+        for raw in re.allMatches(text, start):
+          if maxMatches != null and emitted >= maxMatches:
+            break
+          yield _toTextMatch(text, raw)
+          emitted = emitted + 1
+      else:
+        var cursor = start
+        n = text.length
+        while cursor <= n:
+          if maxMatches != null and emitted >= maxMatches:
+            break
+          var foundOne = false
+          var matchStart = cursor
+          for raw in re.allMatches(text, cursor):
+            yield _toTextMatch(text, raw)
+            matchStart = raw.start
+            foundOne = true
+            emitted = emitted + 1
+            break
+          if not foundOne:
+            break
+          cursor = _advanceMatchCursor(text, matchStart, pattern.unicode)
+    else:
+      needle = pattern.source
+      n = text.length
+      var cursor = start
+      if needle.isEmpty:
+        while cursor <= n:
+          if maxMatches != null and emitted >= maxMatches:
+            break
+          emptyNamed: Map<String, String?> = map:
+          emptyGroups: List<String?> = []
+          yield TextMatch(TextRange(cursor, cursor), "", emptyGroups, emptyNamed)
+          emitted = emitted + 1
+          cursor = cursor + 1
+      else:
+        while cursor <= n - needle.length:
+          if maxMatches != null and emitted >= maxMatches:
+            break
+          found = text.indexOf(needle, cursor)
+          if found < 0:
+            break
+          emptyNamed: Map<String, String?> = map:
+          emptyGroups: List<String?> = []
+          yield TextMatch(TextRange(found, found + needle.length), needle, emptyGroups, emptyNamed)
+          emitted = emitted + 1
+          cursor = if allowOverlap: found + 1 else: found + needle.length
+
+# Counts matches of [pattern] in [text] starting at [start].
+# Example:
+#   print countTextMatches("ababa", TextPattern.literal("aba"), allowOverlap: true)
+countTextMatches(text: String, pattern: TextPattern, start: int = 0, allowOverlap: bool = false) -> int:
+  var total = 0
+  for m in findAllText(text, pattern, start: start, allowOverlap: allowOverlap):
+    total = total + 1
+  return total
+
+# True when [pattern] matches at least once in [text] at or after [start].
+# Example:
+#   print containsTextPattern("quds 2026", TextPattern.regex("[0-9]{4}"))
+containsTextPattern(text: String, pattern: TextPattern, start: int = 0) -> bool:
+  return findText(text, pattern, start: start) != null
+
+
 :: split
 
 # Reusable options for text splitting operations.
@@ -11197,7 +11450,7 @@ value class TextPartition:
     assert true
 
 
-  toString() -> String = "TextPartition(before: $before, separator: $separator, after: $after, found: $found)"
+  toString() -> String = "TextPartition(before: {before}, separator: {separator}, after: {after}, found: {found})"
 
 # Splits [text] on literal [separator].
 # Keeps empty segments by default; [maxSplits] counts splits (0 means no split).
@@ -11335,6 +11588,139 @@ textSegments(text: String, separator: String, keepEmpty: bool = true, maxSplits:
   if keepEmpty or text.length > start:
     out.add(TextSpan(text, TextRange(start, text.length)))
   return out
+
+# Splits [text] using [pattern] (literal or regex).
+# Rejects an empty literal pattern and negative [maxSplits].
+# Handles zero-length regex matches cleanly without infinite loops.
+# Example:
+#   print splitTextPattern("a12b3c", TextPattern.regex("[0-9]+"))
+splitTextPattern(text: String, pattern: TextPattern, keepEmpty: bool = true, maxSplits: int? = null, keepSeparators: bool = false) -> List<String>:
+  if not pattern.isRegex and pattern.source.isEmpty:
+    throw ArgumentError("literal separator pattern must not be empty")
+  if maxSplits != null and maxSplits < 0:
+    throw ArgumentError.value(maxSplits, "maxSplits", "maxSplits must be non-negative")
+  out: List<String> = []
+  if maxSplits == 0:
+    if keepEmpty or text.isNotEmpty:
+      out.add(text)
+    return out
+  var start = 0
+  var splits = 0
+  for m in findAllText(text, pattern):
+    if maxSplits != null and splits >= maxSplits:
+      break
+    if m.range.isEmpty and m.range.start == start and splits > 0:
+      continue
+    piece = text.substring(start, m.range.start)
+    if keepEmpty or piece.isNotEmpty:
+      out.add(piece)
+    if keepSeparators:
+      out.add(m.value)
+    start = m.range.end
+    splits = splits + 1
+  tail = text.substring(start)
+  if keepEmpty or tail.isNotEmpty:
+    out.add(tail)
+  return out
+
+
+:: replace
+
+# Replaces the first match of [pattern] in [text] with literal [replacement].
+# Never interprets $1 or similar backreferences in [replacement].
+# Example:
+#   print replaceFirstText("a=b=c", TextPattern.literal("="), ":")
+replaceFirstText(text: String, pattern: TextPattern, replacement: String) -> String:
+  if let hit = findText(text, pattern):
+    return text.substring(0, hit.range.start) + replacement + text.substring(hit.range.end)
+  return text
+
+# Replaces the last match of [pattern] in [text] with literal [replacement].
+# Never interprets $1 or similar backreferences in [replacement].
+# Example:
+#   print replaceLastText("a=b=c", TextPattern.literal("="), ":")
+replaceLastText(text: String, pattern: TextPattern, replacement: String) -> String:
+  if let hit = findLastText(text, pattern):
+    return text.substring(0, hit.range.start) + replacement + text.substring(hit.range.end)
+  return text
+
+# Replaces every non-overlapping match of [pattern] in [text] with literal
+# [replacement] in a single pass. Does not re-scan [replacement].
+# Example:
+#   print replaceAllText("a1b22c", TextPattern.regex("[0-9]+"), "#")
+replaceAllText(text: String, pattern: TextPattern, replacement: String) -> String:
+  return replaceTextMatches(text, pattern, (m: TextMatch) -> replacement)
+
+# Replaces matches of [pattern] in [text] by calling [transform] once per match
+# from left to right.
+# Example:
+#   print replaceTextMatches("a1b2", TextPattern.regex("[0-9]"), (m: TextMatch) -> "[{m.value}]")
+replaceTextMatches(text: String, pattern: TextPattern, transform: (TextMatch) -> String, maxReplacements: int? = null) -> String:
+  if maxReplacements != null and maxReplacements < 0:
+    throw ArgumentError.value(maxReplacements, "maxReplacements", "maxReplacements must be non-negative")
+  if maxReplacements == 0:
+    return text
+  buffer = StringBuffer()
+  var cursor = 0
+  var replaced = 0
+  for m in findAllText(text, pattern, maxMatches: maxReplacements):
+    buffer.write(text.substring(cursor, m.range.start))
+    buffer.write(transform(m))
+    cursor = m.range.end
+    replaced = replaced + 1
+  if replaced == 0:
+    return text
+  buffer.write(text.substring(cursor))
+  return buffer.toString()
+
+# Removes every non-overlapping match of [pattern] from [text].
+# Example:
+#   print removeTextMatches("a1b2c", TextPattern.regex("[0-9]+"))
+removeTextMatches(text: String, pattern: TextPattern) -> String:
+  return replaceAllText(text, pattern, "")
+
+# Removes [prefix] from the start of [text] if present; otherwise returns [text].
+# Example:
+#   print removeTextPrefix("pre_val", "pre_")
+removeTextPrefix(text: String, prefix: String) -> String:
+  if prefix.isEmpty or not text.startsWith(prefix):
+    return text
+  return text.substring(prefix.length)
+
+# Removes [suffix] from the end of [text] if present; otherwise returns [text].
+# Example:
+#   print removeTextSuffix("val_suf", "_suf")
+removeTextSuffix(text: String, suffix: String) -> String:
+  if suffix.isEmpty or not text.endsWith(suffix):
+    return text
+  return text.substring(0, text.length - suffix.length)
+
+# Removes both [prefix] and [suffix] when [text] starts with [prefix], ends with
+# [suffix], and is at least prefix.length + suffix.length code units long.
+# Example:
+#   print removeTextSurrounding("[quds]", "[", "]")
+removeTextSurrounding(text: String, prefix: String, suffix: String) -> String:
+  if text.length >= prefix.length + suffix.length and text.startsWith(prefix) and text.endsWith(suffix):
+    return text.substring(prefix.length, text.length - suffix.length)
+  return text
+
+# Collapses consecutive identical grapheme clusters in [text].
+# When [target] is specified, only consecutive occurrences of [target] are collapsed.
+# Example:
+#   print collapseRepeatedCharacters("a   b  c", target: " ")
+collapseRepeatedCharacters(text: String, target: String? = null) -> String:
+  if text.isEmpty:
+    return text
+  buffer = StringBuffer()
+  var hasPrev = false
+  var prev = ""
+  for ch in TextCharacters(text).iter():
+    shouldSkip = hasPrev and ch == prev and (target == null or ch == target)
+    if not shouldSkip:
+      buffer.write(ch)
+      prev = ch
+      hasPrev = true
+  return buffer.toString()
 
 
 :: compose
@@ -11553,7 +11939,7 @@ value class TextLine:
     assert true
 
 
-  toString() -> String = "TextLine($lineNumber: $content)"
+  toString() -> String = "TextLine({lineNumber}: {content})"
 
 # Parsed view of lines in [source], distinguishing line content from line endings.
 # Example:
@@ -11727,7 +12113,383 @@ trimBlankLines(text: String) -> String:
   return buffer.toString()
 
 
+:: reader
+
+# Error raised when a required [TextReader] operation fails, reporting the exact
+# UTF-16 [offset], [position], and [message].
+# Example:
+#   err = TextParseError("Expected digit", 0, TextPosition(0, 1, 1))
+#   print err.message
+class TextParseError:
+  message: String required
+  offset: int required
+  position: TextPosition required
+
+  init(this.message, this.offset, this.position):
+    assert true
+
+  toString() -> String = "TextParseError at line {position.line}, column {position.column} (offset {offset}): {message}"
+
+# Sequential UTF-16 text reader with checkpoints, rollback-safe tryRead methods,
+# grapheme-aware character reading, and explicit number/quoted-literal parsing.
+# Example:
+#   reader = TextReader("age=42")
+#   assert reader.tryReadText("age=")
+#   print reader.readInt()
+class TextReader:
+  source: String required
+  private var _pos: int = 0
+
+  init(this.source):
+    assert true
+
+  # Current zero-based UTF-16 read offset.
+  # Example:
+  #   print TextReader("abc").position
+  property position: int:
+    get = _pos
+
+  # Unread suffix starting at [position]. Computed on demand.
+  # Example:
+  #   print TextReader("abc").remaining
+  property remaining: String:
+    get = source.substring(_pos)
+
+  # True when the reader has reached the end of [source].
+  # Example:
+  #   print TextReader("").isAtEnd
+  property isAtEnd: bool:
+    get = _pos >= source.length
+
+  # Saves the current read offset as a checkpoint.
+  # Example:
+  #   r = TextReader("abc")
+  #   mark = r.savePosition()
+  savePosition() -> int = _pos
+
+  # Restores the read offset to a previously saved [checkpoint].
+  # Example:
+  #   r = TextReader("abc")
+  #   mark = r.savePosition()
+  #   r.restorePosition(mark)
+  restorePosition(checkpoint: int):
+    if checkpoint < 0 or checkpoint > source.length:
+      throw RangeError.range(checkpoint, 0, source.length, "checkpoint")
+    _pos = checkpoint
+
+  # Peeks the next grapheme cluster without advancing, or null at end of input.
+  # Example:
+  #   print TextReader("قُدس").peekCharacter()
+  peekCharacter() -> String?:
+    if _pos >= source.length:
+      return null
+    end = _nextGraphemeEnd(source, _pos)
+    return source.substring(_pos, end)
+
+  # Reads and advances past the next grapheme cluster, or throws TextParseError at end.
+  # Example:
+  #   r = TextReader("قُدس")
+  #   print r.readCharacter()
+  readCharacter() -> String:
+    if _pos >= source.length:
+      throw TextParseError("Unexpected end of text", _pos, textPositionAt(source, _pos))
+    end = _nextGraphemeEnd(source, _pos)
+    ch = source.substring(_pos, end)
+    _pos = end
+    return ch
+
+  # Reads characters up to the first occurrence of [marker] (or end of input).
+  # Rejects empty [marker]. When [consumeMarker] is true and [marker] is found,
+  # advances past [marker] while excluding it from the returned string.
+  # Example:
+  #   r = TextReader("key=val")
+  #   print r.readUntil("=", consumeMarker: true)
+  readUntil(marker: String, consumeMarker: bool = false) -> String:
+    if marker.isEmpty:
+      throw ArgumentError.value(marker, "marker", "marker must not be empty")
+    found = source.indexOf(marker, _pos)
+    if found < 0:
+      rest = source.substring(_pos)
+      _pos = source.length
+      return rest
+    taken = source.substring(_pos, found)
+    _pos = if consumeMarker: found + marker.length else: found
+    return taken
+
+  # Advances while [predicate] returns true for each grapheme cluster and returns
+  # the matched slice.
+  # Example:
+  #   r = TextReader("abc123")
+  #   print r.readWhile((c: String) -> c != "1")
+  readWhile(accept: (String) -> bool) -> String:
+    start = _pos
+    while _pos < source.length:
+      end = _nextGraphemeEnd(source, _pos)
+      ch = source.substring(_pos, end)
+      if not accept(ch):
+        break
+      _pos = end
+    return source.substring(start, _pos)
+
+  # Skips consecutive Unicode White_Space code units and returns how many were skipped.
+  # Example:
+  #   r = TextReader("  \thi")
+  #   print r.skipWhitespace()
+  skipWhitespace() -> int:
+    start = _pos
+    while _pos < source.length and _isUnicodeWhitespaceUnit(source.codeUnitAt(_pos)):
+      _pos = _pos + 1
+    return _pos - start
+
+  # Consumes exact literal [expected] or throws TextParseError without advancing.
+  # Example:
+  #   r = TextReader("quds")
+  #   r.expectText("quds")
+  expectText(expected: String):
+    if not tryReadText(expected):
+      throw TextParseError("Expected \"{expected}\"", _pos, textPositionAt(source, _pos))
+
+  # Consumes exact literal [expected] if present at [position] and returns true;
+  # otherwise leaves [position] unchanged and returns false.
+  # Example:
+  #   r = TextReader("quds")
+  #   print r.tryReadText("qu")
+  tryReadText(expected: String) -> bool:
+    if _pos + expected.length <= source.length and source.startsWith(expected, _pos):
+      _pos = _pos + expected.length
+      return true
+    return false
+
+  # Reads a quoted string delimited by [quote] with [escape] sequences
+  # (\n, \r, \t, \\, \", \', or escaped delimiter). Rolls back on error.
+  # Example:
+  #   r = TextReader("\"hi\\n\"")
+  #   print r.readQuoted()
+  readQuoted(quote: String = "\"", escape: String = "\\") -> String:
+    if quote.length != 1:
+      throw ArgumentError.value(quote, "quote", "quote must be a single UTF-16 code unit")
+    if escape.length != 1:
+      throw ArgumentError.value(escape, "escape", "escape must be a single UTF-16 code unit")
+    saved = _pos
+    qUnit = quote.codeUnitAt(0)
+    eUnit = escape.codeUnitAt(0)
+    if _pos >= source.length or source.codeUnitAt(_pos) != qUnit:
+      throw TextParseError("Expected opening quote {quote}", _pos, textPositionAt(source, _pos))
+    _pos = _pos + 1
+    buffer = StringBuffer()
+    while _pos < source.length:
+      unit = source.codeUnitAt(_pos)
+      if unit == qUnit:
+        _pos = _pos + 1
+        return buffer.toString()
+      if unit == eUnit:
+        if _pos + 1 >= source.length:
+          errAt = _pos
+          _pos = saved
+          throw TextParseError("Unterminated escape sequence", errAt, textPositionAt(source, errAt))
+        esc = source.codeUnitAt(_pos + 1)
+        if esc == 110:
+          buffer.write("\n")
+        else if esc == 114:
+          buffer.write("\r")
+        else if esc == 116:
+          buffer.write("\t")
+        else if esc == eUnit or esc == qUnit or esc == 34 or esc == 39:
+          buffer.writeCharCode(esc)
+        else:
+          errAt = _pos
+          _pos = saved
+          throw TextParseError("Unsupported escape sequence", errAt, textPositionAt(source, errAt))
+        _pos = _pos + 2
+      else:
+        buffer.writeCharCode(unit)
+        _pos = _pos + 1
+    errAt = saved
+    _pos = saved
+    throw TextParseError("Unterminated quoted string", errAt, textPositionAt(source, errAt))
+
+  # Attempts to parse a signed integer in [radix] (2..36). On failure, restores
+  # [position] and returns null.
+  # Example:
+  #   r = TextReader("-42abc")
+  #   print r.tryReadInt()
+  tryReadInt(radix: int = 10) -> int?:
+    if radix < 2 or radix > 36:
+      throw RangeError.range(radix, 2, 36, "radix")
+    saved = _pos
+    var cursor = _pos
+    n = source.length
+    if cursor < n and (source.codeUnitAt(cursor) == 43 or source.codeUnitAt(cursor) == 45):
+      cursor = cursor + 1
+    digitStart = cursor
+    while cursor < n and _digitValue(source.codeUnitAt(cursor)) >= 0 and _digitValue(source.codeUnitAt(cursor)) < radix:
+      cursor = cursor + 1
+    if cursor == digitStart:
+      _pos = saved
+      return null
+    parsed = int.tryParse(source.substring(saved, cursor), radix: radix)
+    if parsed == null:
+      _pos = saved
+      return null
+    _pos = cursor
+    return parsed
+
+  # Reads a signed integer in [radix] (2..36) or throws TextParseError without advancing.
+  # Example:
+  #   print TextReader("123").readInt()
+  readInt(radix: int = 10) -> int:
+    if let value = tryReadInt(radix: radix):
+      return value
+    throw TextParseError("Expected integer (radix {radix})", _pos, textPositionAt(source, _pos))
+
+  # Attempts to parse a standard decimal or scientific floating-point number.
+  # On failure, restores [position] and returns null.
+  # Example:
+  #   print TextReader("3.14e-2").tryReadDouble()
+  tryReadDouble() -> double?:
+    saved = _pos
+    var cursor = _pos
+    n = source.length
+    if cursor < n and (source.codeUnitAt(cursor) == 43 or source.codeUnitAt(cursor) == 45):
+      cursor = cursor + 1
+    intStart = cursor
+    while cursor < n and source.codeUnitAt(cursor) >= 48 and source.codeUnitAt(cursor) <= 57:
+      cursor = cursor + 1
+    hasInt = cursor > intStart
+    var hasFrac = false
+    if cursor < n and source.codeUnitAt(cursor) == 46:
+      var dotCursor = cursor + 1
+      fracStart = dotCursor
+      while dotCursor < n and source.codeUnitAt(dotCursor) >= 48 and source.codeUnitAt(dotCursor) <= 57:
+        dotCursor = dotCursor + 1
+      if dotCursor > fracStart:
+        hasFrac = true
+        cursor = dotCursor
+    if not hasInt and not hasFrac:
+      _pos = saved
+      return null
+    if cursor < n and (source.codeUnitAt(cursor) == 101 or source.codeUnitAt(cursor) == 69):
+      var expCursor = cursor + 1
+      if expCursor < n and (source.codeUnitAt(expCursor) == 43 or source.codeUnitAt(expCursor) == 45):
+        expCursor = expCursor + 1
+      expStart = expCursor
+      while expCursor < n and source.codeUnitAt(expCursor) >= 48 and source.codeUnitAt(expCursor) <= 57:
+        expCursor = expCursor + 1
+      if expCursor > expStart:
+        cursor = expCursor
+    parsed = double.tryParse(source.substring(saved, cursor))
+    if parsed == null:
+      _pos = saved
+      return null
+    _pos = cursor
+    return parsed
+
+  # Reads a standard decimal/scientific floating-point number or throws TextParseError.
+  # Example:
+  #   print TextReader("-2.5").readDouble()
+  readDouble() -> double:
+    if let value = tryReadDouble():
+      return value
+    throw TextParseError("Expected floating-point number", _pos, textPositionAt(source, _pos))
+
+
 :: support
+
+_toTextMatch(text: String, raw: RegExpMatch) -> TextMatch:
+  val = text.substring(raw.start, raw.end)
+  groups: List<String?> = []
+  var g = 1
+  while g <= raw.groupCount:
+    groups.add(raw.group(g))
+    g = g + 1
+  named: Map<String, String?> = map:
+  for gName in raw.groupNames:
+    named[gName] = raw.namedGroup(gName)
+  return TextMatch(TextRange(raw.start, raw.end), val, groups, named)
+
+_advanceMatchCursor(text: String, pos: int, unicodeMode: bool) -> int:
+  if pos >= text.length:
+    return text.length + 1
+  if unicodeMode and pos + 1 < text.length:
+    hi = text.codeUnitAt(pos)
+    lo = text.codeUnitAt(pos + 1)
+    if hi >= 0xD800 and hi <= 0xDBFF and lo >= 0xDC00 and lo <= 0xDFFF:
+      return pos + 2
+  return pos + 1
+
+_digitValue(unit: int) -> int:
+  if unit >= 48 and unit <= 57:
+    return unit - 48
+  if unit >= 65 and unit <= 90:
+    return unit - 55
+  if unit >= 97 and unit <= 122:
+    return unit - 87
+  return -1
+
+_nextGraphemeEnd(source: String, start: int) -> int:
+  n = source.length
+  if start >= n:
+    return n
+  tables = _unicodeTables()
+  unit0 = source.codeUnitAt(start)
+  var cp0 = unit0
+  var cursor = start + 1
+  if unit0 >= 0xD800 and unit0 <= 0xDBFF and start + 1 < n:
+    low0 = source.codeUnitAt(start + 1)
+    if low0 >= 0xDC00 and low0 <= 0xDFFF:
+      cp0 = 0x10000 + ((unit0 - 0xD800) << 10) + (low0 - 0xDC00)
+      cursor = start + 2
+  var prev = _graphemeClass(cp0, tables)
+  var riCount = if prev == 6: 1 else: 0
+  var extPictState = if prev == 14: 1 else: 0
+  while cursor < n:
+    u = source.codeUnitAt(cursor)
+    var cp = u
+    var step = 1
+    if u >= 0xD800 and u <= 0xDBFF and cursor + 1 < n:
+      lo = source.codeUnitAt(cursor + 1)
+      if lo >= 0xDC00 and lo <= 0xDFFF:
+        cp = 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00)
+        step = 2
+    curr = _graphemeClass(cp, tables)
+    var shouldBreak = true
+    if prev == 1 and curr == 2:
+      shouldBreak = false
+    else if prev == 1 or prev == 2 or prev == 3 or curr == 1 or curr == 2 or curr == 3:
+      shouldBreak = true
+    else if prev == 9 and (curr == 9 or curr == 10 or curr == 12 or curr == 13):
+      shouldBreak = false
+    else if (prev == 12 or prev == 10) and (curr == 10 or curr == 11):
+      shouldBreak = false
+    else if (prev == 13 or prev == 11) and curr == 11:
+      shouldBreak = false
+    else if curr == 4 or curr == 5:
+      shouldBreak = false
+    else if curr == 8:
+      shouldBreak = false
+    else if prev == 7:
+      shouldBreak = false
+    else if extPictState == 2 and curr == 14:
+      shouldBreak = false
+    else if prev == 6 and curr == 6 and (riCount % 2) == 1:
+      shouldBreak = false
+    if shouldBreak:
+      break
+    cursor = cursor + step
+    if curr == 6:
+      riCount = riCount + 1
+    else:
+      riCount = 0
+    if curr == 14:
+      extPictState = 1
+    else if extPictState == 1 and curr == 4:
+      extPictState = 1
+    else if extPictState == 1 and curr == 5:
+      extPictState = 2
+    else:
+      extPictState = 0
+    prev = curr
+  return cursor
 
 _isUnicodeWhitespaceUnit(unit: int) -> bool:
   if unit == 0x20:

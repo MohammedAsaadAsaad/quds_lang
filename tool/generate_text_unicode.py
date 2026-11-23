@@ -190,30 +190,6 @@ def generate_reference_suite() -> str:
     for cp in extra_cps:
         samples.append(chr(cp))
 
-    lines = [
-        f"# Independent Unicode {VERSION} reference suite generated from Python unicodedata.",
-        "use quds:text::unicode",
-        "",
-        f'test "unicode reference ({VERSION}): NFC, NFD, NFKC, NFKD, idempotence, and caseFoldText":',
-        f'  assert unicodeVersion() == "{VERSION}"',
-        "  var checks = 0",
-    ]
-    for s in samples:
-        expr = quds_codepoints_expr(s)
-        nfc = quds_codepoints_expr(unicodedata.normalize("NFC", s))
-        nfd = quds_codepoints_expr(unicodedata.normalize("NFD", s))
-        nfkc = quds_codepoints_expr(unicodedata.normalize("NFKC", s))
-        nfkd = quds_codepoints_expr(unicodedata.normalize("NFKD", s))
-        cf = quds_codepoints_expr(s.casefold())
-        lines.append(f"  s = {expr}")
-        lines.append(f"  assert normalizeUnicode(s, form: TextNormalizationForm.nfc) == {nfc}")
-        lines.append(f"  assert normalizeUnicode(s, form: TextNormalizationForm.nfd) == {nfd}")
-        lines.append(f"  assert normalizeUnicode(s, form: TextNormalizationForm.nfkc) == {nfkc}")
-        lines.append(f"  assert normalizeUnicode(s, form: TextNormalizationForm.nfkd) == {nfkd}")
-        lines.append(f"  assert caseFoldText(s) == {cf}")
-        lines.append("  checks = checks + 5")
-        # Remove variable reuse issue by wrapping each sample in a helper call!
-    # Actually let's use a helper function _check(src, nfc, nfd, nfkc, nfkd, cf) so there's zero local shadowing!
     out = [
         f"# Independent Unicode {VERSION} reference suite generated from Python unicodedata.",
         "use quds:text::unicode",
@@ -223,20 +199,20 @@ def generate_reference_suite() -> str:
         "  rNfd = normalizeUnicode(s, form: TextNormalizationForm.nfd)",
         "  rNfkc = normalizeUnicode(s, form: TextNormalizationForm.nfkc)",
         "  rNfkd = normalizeUnicode(s, form: TextNormalizationForm.nfkd)",
-        "  assert rNfc == nfc",
-        "  assert rNfd == nfd",
-        "  assert rNfkc == nfkc",
-        "  assert rNfkd == nfkd",
-        "  assert isNormalizedUnicode(rNfc, form: TextNormalizationForm.nfc)",
-        "  assert isNormalizedUnicode(rNfd, form: TextNormalizationForm.nfd)",
-        "  assert isNormalizedUnicode(rNfkc, form: TextNormalizationForm.nfkc)",
-        "  assert isNormalizedUnicode(rNfkd, form: TextNormalizationForm.nfkd)",
-        "  assert caseFoldText(s) == cf",
-        "  assert caseFoldText(cf) == cf",
+        "  expect(rNfc, nfc)",
+        "  expect(rNfd, nfd)",
+        "  expect(rNfkc, nfkc)",
+        "  expect(rNfkd, nfkd)",
+        "  expect(isNormalizedUnicode(rNfc, form: TextNormalizationForm.nfc), true)",
+        "  expect(isNormalizedUnicode(rNfd, form: TextNormalizationForm.nfd), true)",
+        "  expect(isNormalizedUnicode(rNfkc, form: TextNormalizationForm.nfkc), true)",
+        "  expect(isNormalizedUnicode(rNfkd, form: TextNormalizationForm.nfkd), true)",
+        "  expect(caseFoldText(s), cf)",
+        "  expect(caseFoldText(cf), cf)",
         "  return 10",
         "",
         f'test "unicode reference ({VERSION}): NFC, NFD, NFKC, NFKD, idempotence, and caseFoldText":',
-        f'  assert unicodeVersion() == "{VERSION}"',
+        f'  expect(unicodeVersion(), "{VERSION}")',
         "  var checks = 0",
     ]
     for s in samples:

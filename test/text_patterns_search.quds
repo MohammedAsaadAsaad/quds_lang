@@ -1,0 +1,106 @@
+use quds:text::types
+use quds:text::patterns
+use quds:text::search
+use quds:text::split
+
+_throws(action: () -> void) -> bool:
+  try:
+    action()
+    return false
+  catch _:
+    return true
+
+test "patterns: TextPattern literal/regex, invalid regex error, options":
+  lit = TextPattern.literal("quds")
+  expect(not lit.isRegex, true)
+  expect(lit.caseSensitive, true)
+  expect(lit.hasMatch("hello quds"), true)
+  expect(not lit.hasMatch("hello QUDS"), true)
+
+  litCi = TextPattern.literal("quds", caseSensitive: false)
+  expect(not litCi.isRegex, true)
+  expect(not litCi.caseSensitive, true)
+  expect(litCi.hasMatch("hello QUDS"), true)
+  expect(TextPattern.literal("a+b[0]", caseSensitive: false).hasMatch("X A+B[0] Y"), true)
+
+  re = TextPattern.regex("[0-9]+")
+  expect(re.isRegex, true)
+  expect(re.hasMatch("id=42"), true)
+  expect(not re.hasMatch("no digits"), true)
+
+  var badCaught = false
+  try:
+    TextPattern.regex("[unclosed")
+  catch err:
+    badCaught = err is TextPatternError and err.toString().contains("[unclosed")
+  expect(badCaught, true)
+
+test "search: findText, findLastText, findAllText, groups, namedGroups, overlap, zero-length":
+  opts = TextSearchOptions(start: 1, maxMatches: 3, allowOverlap: true)
+  expect(opts.start == 1 and opts.maxMatches == 3 and opts.allowOverlap, true)
+  expect(_throws(() -> TextSearchOptions(start: -1)), true)
+  expect(_throws(() -> TextSearchOptions(maxMatches: -1)), true)
+
+  eq = TextPattern.literal("=")
+  first = findText("name=a=b", eq)
+  expect(first != null, true)
+  if let m = first:
+    expect(m.range == TextRange(4, 5), true)
+    expect(m.value == "=", true)
+
+  last = findLastText("name=a=b", eq)
+  expect(last != null, true)
+  if let m = last:
+    expect(m.range == TextRange(6, 7), true)
+
+  expect(findText("plain", eq) == null, true)
+  expect(findLastText("plain", eq) == null, true)
+
+  # Groups and non-participating optional group + named groups
+  re = TextPattern.regex("(?<key>[a-z]+)=([0-9]+)(-[a-z]+)?")
+  hit = findText("x=12 y=34-ok", re)
+  expect(hit != null, true)
+  if let m = hit:
+    expect(m.value == "x=12", true)
+    expect(m.groupCount == 3, true)
+    expect(m.group(0) == "x=12", true)
+    expect(m.group(1) == "x", true)
+    expect(m.group(2) == "12", true)
+    expect(m.group(3) == null, true)
+    expect(m.namedGroup("key") == "x", true)
+    expect(m.namedGroup("missing") == null, true)
+
+  # Overlapping vs non-overlapping
+  aba = TextPattern.literal("aba")
+  expect(countTextMatches("ababa", aba) == 1, true)
+  expect(countTextMatches("ababa", aba, allowOverlap: true) == 2, true)
+
+  reOverlap = TextPattern.regex("a.a")
+  expect(countTextMatches("ababa", reOverlap) == 1, true)
+  expect(countTextMatches("ababa", reOverlap, allowOverlap: true) == 2, true)
+
+  # Anchor ^ stays anchored to true start even when searching from start > 0
+  anchored = TextPattern.regex("^abc")
+  expect(containsTextPattern("abcabc", anchored, start: 0), true)
+  expect(not containsTextPattern("abcabc", anchored, start: 3), true)
+
+  # Zero-length regex matches always terminate cleanly
+  zero = TextPattern.regex("a*")
+  zeroMatches: List<TextMatch> = []
+  for m in findAllText("bab", zero):
+    zeroMatches.add(m)
+  expect(zeroMatches.length == 4, true)
+
+  # Empty literal pattern terminates cleanly
+  expect(countTextMatches("ab", TextPattern.literal("")) == 3, true)
+
+test "split: splitTextPattern with regex, keepSeparators, maxSplits, and rejection":
+  digits = TextPattern.regex("[0-9]+")
+  p1 = splitTextPattern("a12b3c", digits)
+  expect(p1.length == 3 and p1[0] == "a" and p1[1] == "b" and p1[2] == "c", true)
+
+  p2 = splitTextPattern("a12b3c", digits, keepSeparators: true, maxSplits: 1)
+  expect(p2.length == 3 and p2[0] == "a" and p2[1] == "12" and p2[2] == "b3c", true)
+
+  expect(_throws(() -> splitTextPattern("abc", TextPattern.literal(""))), true)
+  expect(_throws(() -> splitTextPattern("abc", digits, maxSplits: -1)), true)

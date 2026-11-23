@@ -1951,7 +1951,7 @@ class Analyzer {
     _methodLibrary = home.isEmpty ? library : home;
     _scope = _Scope(
         home.isNotEmpty && home != library ? _libraryScope(home) : _global);
-    _thisType = type.onType ?? type.name;
+    _thisType = method.isStatic ? null : (type.onType ?? type.name);
     final savedTypes = {..._typeNames};
     _typeNames
       ..addAll(type.typeParameters.map((item) => item.name))
@@ -1967,7 +1967,7 @@ class Analyzer {
     }
     try {
       _readonlyMethod = isReadonlyMethod(method);
-      _installFields(type);
+      if (!method.isStatic) _installFields(type);
       analyzeFunction(method);
       _checkOverride(type, method);
     } finally {

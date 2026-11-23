@@ -9,260 +9,260 @@ _throws(action: () -> void) -> bool:
     return true
 
 test "batch 0 baseline: core String helpers and quds:ext Text methods":
-  assert "abcdef".take(3) == "abc"
-  assert "abcdef".drop(2) == "cdef"
-  assert "abcdef".takeLast(2) == "ef"
-  assert "abcdef".dropLast(2) == "abcd"
-  assert "42".padStart(4, "0") == "0042"
-  assert "42".padEnd(4, ".") == "42.."
-  assert "ab".chars.length == 2
-  assert "a\nb".lines.length == 2
+  expect("abcdef".take(3) == "abc", true)
+  expect("abcdef".drop(2) == "cdef", true)
+  expect("abcdef".takeLast(2) == "ef", true)
+  expect("abcdef".dropLast(2) == "abcd", true)
+  expect("42".padStart(4, "0") == "0042", true)
+  expect("42".padEnd(4, ".") == "42..", true)
+  expect("ab".chars.length == 2, true)
+  expect("a\nb".lines.length == 2, true)
 
-  assert "".blank()
-  assert "   ".blank()
-  assert not " a ".blank()
-  assert "ab".capitalized() == "Ab"
-  assert "".capitalized() == ""
-  assert "abc".reversed() == "cba"
-  assert "ababa".count("aba") == 2
-  assert "abc".count("") == 0
-  assert "prefix-val".removePrefix("prefix-") == "val"
-  assert "val".removePrefix("prefix-") == "val"
-  assert "val-suffix".removeSuffix("-suffix") == "val"
-  assert "val".removeSuffix("-suffix") == "val"
-  assert "a-b-c".before("-") == "a"
-  assert "abc".before("-") == "abc"
-  assert "a-b-c".after("-") == "b-c"
-  assert "abc".after("-") == ""
-  assert "ab".repeated(3) == "ababab"
-  assert "ab".repeated(0) == ""
-  assert "ab".repeated(-1) == ""
-  assert "  a  b c ".words().length == 3
-  assert "abcdef".truncate(3) == "abc"
-  assert "abcdef".truncate(0) == ""
-  assert "abcdef".truncate(-2) == ""
-  assert "ab".quoted() == "\"ab\""
+  expect("".blank(), true)
+  expect("   ".blank(), true)
+  expect(not " a ".blank(), true)
+  expect("ab".capitalized() == "Ab", true)
+  expect("".capitalized() == "", true)
+  expect("abc".reversed() == "cba", true)
+  expect("ababa".count("aba") == 2, true)
+  expect("abc".count("") == 0, true)
+  expect("prefix-val".removePrefix("prefix-") == "val", true)
+  expect("val".removePrefix("prefix-") == "val", true)
+  expect("val-suffix".removeSuffix("-suffix") == "val", true)
+  expect("val".removeSuffix("-suffix") == "val", true)
+  expect("a-b-c".before("-") == "a", true)
+  expect("abc".before("-") == "abc", true)
+  expect("a-b-c".after("-") == "b-c", true)
+  expect("abc".after("-") == "", true)
+  expect("ab".repeated(3) == "ababab", true)
+  expect("ab".repeated(0) == "", true)
+  expect("ab".repeated(-1) == "", true)
+  expect("  a  b c ".words().length == 3, true)
+  expect("abcdef".truncate(3) == "abc", true)
+  expect("abcdef".truncate(0) == "", true)
+  expect("abcdef".truncate(-2) == "", true)
+  expect("ab".quoted() == "\"ab\"", true)
 
 test "types: TextRange, TextSpan, TextPosition, validate, intersect, position/offset":
-  assert TextBoundaryPolicy.reject != TextBoundaryPolicy.previous
-  assert TextBoundaryPolicy.values.length == 3
-  assert TextBoundaryPolicy.next.name == "next"
+  expect(TextBoundaryPolicy.reject != TextBoundaryPolicy.previous, true)
+  expect(TextBoundaryPolicy.values.length == 3, true)
+  expect(TextBoundaryPolicy.next.name == "next", true)
 
   r = TextRange(1, 4)
-  assert r.start == 1
-  assert r.end == 4
-  assert r.length == 3
-  assert not r.isEmpty
-  assert r.isNotEmpty
-  assert r.contains(1)
-  assert r.contains(3)
-  assert not r.contains(0)
-  assert not r.contains(4)
-  assert r.overlaps(TextRange(3, 5))
-  assert not r.overlaps(TextRange(4, 6))
-  assert r == TextRange(1, 4)
-  assert TextRange(2, 2).isEmpty
+  expect(r.start == 1, true)
+  expect(r.end == 4, true)
+  expect(r.length == 3, true)
+  expect(not r.isEmpty, true)
+  expect(r.isNotEmpty, true)
+  expect(r.contains(1), true)
+  expect(r.contains(3), true)
+  expect(not r.contains(0), true)
+  expect(not r.contains(4), true)
+  expect(r.overlaps(TextRange(3, 5)), true)
+  expect(not r.overlaps(TextRange(4, 6)), true)
+  expect(r == TextRange(1, 4), true)
+  expect(TextRange(2, 2).isEmpty, true)
 
-  assert _throws(() -> TextRange(-1, 2))
-  assert _throws(() -> TextRange(4, 2))
+  expect(_throws(() -> TextRange(-1, 2)), true)
+  expect(_throws(() -> TextRange(4, 2)), true)
 
   validated = validateTextRange("hello", TextRange(0, 5))
-  assert validated == TextRange(0, 5)
-  assert _throws(() -> validateTextRange("hi", TextRange(0, 3)))
+  expect(validated == TextRange(0, 5), true)
+  expect(_throws(() -> validateTextRange("hi", TextRange(0, 3))), true)
 
-  assert intersectTextRanges(TextRange(0, 4), TextRange(2, 6)) == TextRange(2, 4)
-  assert intersectTextRanges(TextRange(0, 2), TextRange(2, 4)) == null
-  assert intersectTextRanges(TextRange(0, 2), TextRange(5, 6)) == null
-  assert intersectTextRanges(TextRange(2, 2), TextRange(0, 4)) == TextRange(2, 2)
+  expect(intersectTextRanges(TextRange(0, 4), TextRange(2, 6)) == TextRange(2, 4), true)
+  expect(intersectTextRanges(TextRange(0, 2), TextRange(2, 4)) == null, true)
+  expect(intersectTextRanges(TextRange(0, 2), TextRange(5, 6)) == null, true)
+  expect(intersectTextRanges(TextRange(2, 2), TextRange(0, 4)) == TextRange(2, 2), true)
 
   span = TextSpan("hello world", TextRange(0, 5))
-  assert span.value == "hello"
-  assert span.length == 5
-  assert not span.isEmpty
+  expect(span.value == "hello", true)
+  expect(span.length == 5, true)
+  expect(not span.isEmpty, true)
   sub = span.slice(1, 4)
-  assert sub.value == "ell"
-  assert sub.range == TextRange(1, 4)
+  expect(sub.value == "ell", true)
+  expect(sub.range == TextRange(1, 4), true)
   mat = sub.materialize()
-  assert mat.source == "ell"
-  assert mat.range == TextRange(0, 3)
-  assert mat.value == "ell"
-  assert _throws(() -> span.slice(0, 6))
-  assert _throws(() -> TextSpan("hi", TextRange(0, 3)))
+  expect(mat.source == "ell", true)
+  expect(mat.range == TextRange(0, 3), true)
+  expect(mat.value == "ell", true)
+  expect(_throws(() -> span.slice(0, 6)), true)
+  expect(_throws(() -> TextSpan("hi", TextRange(0, 3))), true)
 
   sample = "ab\r\ncd\nef\rgh"
-  assert textPositionAt(sample, 0) == TextPosition(0, 1, 1)
-  assert textPositionAt(sample, 2) == TextPosition(2, 1, 3)
-  assert textPositionAt(sample, 3) == TextPosition(3, 1, 4)
-  assert textPositionAt(sample, 4) == TextPosition(4, 2, 1)
-  assert textPositionAt(sample, 6) == TextPosition(6, 2, 3)
-  assert textPositionAt(sample, 7) == TextPosition(7, 3, 1)
-  assert textPositionAt(sample, 10) == TextPosition(10, 4, 1)
-  assert textPositionAt(sample, sample.length) == TextPosition(12, 4, 3)
+  expect(textPositionAt(sample, 0) == TextPosition(0, 1, 1), true)
+  expect(textPositionAt(sample, 2) == TextPosition(2, 1, 3), true)
+  expect(textPositionAt(sample, 3) == TextPosition(3, 1, 4), true)
+  expect(textPositionAt(sample, 4) == TextPosition(4, 2, 1), true)
+  expect(textPositionAt(sample, 6) == TextPosition(6, 2, 3), true)
+  expect(textPositionAt(sample, 7) == TextPosition(7, 3, 1), true)
+  expect(textPositionAt(sample, 10) == TextPosition(10, 4, 1), true)
+  expect(textPositionAt(sample, sample.length) == TextPosition(12, 4, 3), true)
 
-  assert textOffsetAt(sample, 1, 1) == 0
-  assert textOffsetAt(sample, 1, 3) == 2
-  assert textOffsetAt(sample, 2, 1) == 4
-  assert textOffsetAt(sample, 2, 3) == 6
-  assert textOffsetAt(sample, 3, 1) == 7
-  assert textOffsetAt(sample, 4, 3) == 12
-  assert _throws(() -> textPositionAt(sample, -1))
-  assert _throws(() -> textPositionAt(sample, 99))
-  assert _throws(() -> textOffsetAt(sample, 0, 1))
-  assert _throws(() -> textOffsetAt(sample, 1, 0))
-  assert _throws(() -> textOffsetAt(sample, 5, 1))
-  assert _throws(() -> textOffsetAt(sample, 1, 4))
+  expect(textOffsetAt(sample, 1, 1) == 0, true)
+  expect(textOffsetAt(sample, 1, 3) == 2, true)
+  expect(textOffsetAt(sample, 2, 1) == 4, true)
+  expect(textOffsetAt(sample, 2, 3) == 6, true)
+  expect(textOffsetAt(sample, 3, 1) == 7, true)
+  expect(textOffsetAt(sample, 4, 3) == 12, true)
+  expect(_throws(() -> textPositionAt(sample, -1)), true)
+  expect(_throws(() -> textPositionAt(sample, 99)), true)
+  expect(_throws(() -> textOffsetAt(sample, 0, 1)), true)
+  expect(_throws(() -> textOffsetAt(sample, 1, 0)), true)
+  expect(_throws(() -> textOffsetAt(sample, 5, 1)), true)
+  expect(_throws(() -> textOffsetAt(sample, 1, 4)), true)
 
 test "inspect: blank, hasText, blankTextToNull, containsOnly, lineBreak, wellFormed":
   nbsp = String.fromCharCode(0x00A0)
   emSpace = String.fromCharCode(0x2003)
   ideographicSpace = String.fromCharCode(0x3000)
   lineSep = String.fromCharCode(0x2028)
-  assert isBlankText("")
-  assert isBlankText("   \t\r\n" + nbsp + emSpace + ideographicSpace)
-  assert not isBlankText(" a ")
-  assert not isBlankText("قدس")
+  expect(isBlankText(""), true)
+  expect(isBlankText("   \t\r\n" + nbsp + emSpace + ideographicSpace), true)
+  expect(not isBlankText(" a "), true)
+  expect(not isBlankText("قدس"), true)
 
-  assert hasText("Quds")
-  assert not hasText(null)
-  assert not hasText(" \t ")
+  expect(hasText("Quds"), true)
+  expect(not hasText(null), true)
+  expect(not hasText(" \t "), true)
 
-  assert blankTextToNull(null) == null
-  assert blankTextToNull("  " + nbsp + " ") == null
-  assert blankTextToNull("  hi  ") == "  hi  "
+  expect(blankTextToNull(null) == null, true)
+  expect(blankTextToNull("  " + nbsp + " ") == null, true)
+  expect(blankTextToNull("  hi  ") == "  hi  ", true)
 
-  assert containsOnlyCharacters("", ["a"])
-  assert containsOnlyCharacters("10110", ["0", "1"])
-  assert not containsOnlyCharacters("102", ["0", "1"])
-  assert containsOnlyCharacters("😀😁", ["😀", "😁"])
+  expect(containsOnlyCharacters("", ["a"]), true)
+  expect(containsOnlyCharacters("10110", ["0", "1"]), true)
+  expect(not containsOnlyCharacters("102", ["0", "1"]), true)
+  expect(containsOnlyCharacters("😀😁", ["😀", "😁"]), true)
 
-  assert hasLineBreak("a\nb")
-  assert hasLineBreak("a\rb")
-  assert hasLineBreak("a" + lineSep + "b")
-  assert not hasLineBreak("single line")
+  expect(hasLineBreak("a\nb"), true)
+  expect(hasLineBreak("a\rb"), true)
+  expect(hasLineBreak("a" + lineSep + "b"), true)
+  expect(not hasLineBreak("single line"), true)
 
-  assert isWellFormedUnicode("")
-  assert isWellFormedUnicode("hello قدس 😀")
+  expect(isWellFormedUnicode(""), true)
+  expect(isWellFormedUnicode("hello قدس 😀"), true)
   loneHigh = String.fromCharCode(0xD800)
   loneLow = String.fromCharCode(0xDC00)
-  assert not isWellFormedUnicode("a" + loneHigh + "b")
-  assert not isWellFormedUnicode("a" + loneLow)
-  assert not isWellFormedUnicode(loneHigh)
+  expect(not isWellFormedUnicode("a" + loneHigh + "b"), true)
+  expect(not isWellFormedUnicode("a" + loneLow), true)
+  expect(not isWellFormedUnicode(loneHigh), true)
 
 test "slice: sliceText, before/after/last, between, textWindows":
-  assert sliceText("hello world", TextRange(6, 11)) == "world"
-  assert sliceText("hello", TextRange(2, 2)) == ""
-  assert _throws(() -> sliceText("hi", TextRange(0, 5)))
+  expect(sliceText("hello world", TextRange(6, 11)) == "world", true)
+  expect(sliceText("hello", TextRange(2, 2)) == "", true)
+  expect(_throws(() -> sliceText("hi", TextRange(0, 5))), true)
 
-  assert beforeText("a=b=c", "=") == "a"
-  assert beforeText("abc", "=") == null
-  assert afterText("a=b=c", "=") == "b=c"
-  assert afterText("abc", "=") == null
-  assert beforeLastText("a=b=c", "=") == "a=b"
-  assert beforeLastText("abc", "=") == null
-  assert afterLastText("a=b=c", "=") == "c"
-  assert afterLastText("abc", "=") == null
-  assert betweenText("pre[one][two]", "[", "]") == "one"
-  assert betweenText("a::b::c", "::", "::") == "b"
-  assert betweenText("no-end[abc", "[", "]") == null
-  assert betweenText("no-start]abc", "[", "]") == null
-  assert _throws(() -> beforeText("a", ""))
-  assert _throws(() -> afterText("a", ""))
-  assert _throws(() -> beforeLastText("a", ""))
-  assert _throws(() -> afterLastText("a", ""))
-  assert _throws(() -> betweenText("a", "", "b"))
-  assert _throws(() -> betweenText("a", "b", ""))
+  expect(beforeText("a=b=c", "=") == "a", true)
+  expect(beforeText("abc", "=") == null, true)
+  expect(afterText("a=b=c", "=") == "b=c", true)
+  expect(afterText("abc", "=") == null, true)
+  expect(beforeLastText("a=b=c", "=") == "a=b", true)
+  expect(beforeLastText("abc", "=") == null, true)
+  expect(afterLastText("a=b=c", "=") == "c", true)
+  expect(afterLastText("abc", "=") == null, true)
+  expect(betweenText("pre[one][two]", "[", "]") == "one", true)
+  expect(betweenText("a::b::c", "::", "::") == "b", true)
+  expect(betweenText("no-end[abc", "[", "]") == null, true)
+  expect(betweenText("no-start]abc", "[", "]") == null, true)
+  expect(_throws(() -> beforeText("a", "")), true)
+  expect(_throws(() -> afterText("a", "")), true)
+  expect(_throws(() -> beforeLastText("a", "")), true)
+  expect(_throws(() -> afterLastText("a", "")), true)
+  expect(_throws(() -> betweenText("a", "", "b")), true)
+  expect(_throws(() -> betweenText("a", "b", "")), true)
 
   w1 = textWindows("abcd", 2)
-  assert w1.length == 3
-  assert w1[0] == "ab" and w1[1] == "bc" and w1[2] == "cd"
+  expect(w1.length == 3, true)
+  expect(w1[0] == "ab" and w1[1] == "bc" and w1[2] == "cd", true)
   w2 = textWindows("abcde", 2, step: 2)
-  assert w2.length == 2
-  assert w2[0] == "ab" and w2[1] == "cd"
-  assert textWindows("a", 3).isEmpty
-  assert _throws(() -> textWindows("ab", 0))
-  assert _throws(() -> textWindows("ab", 1, step: 0))
+  expect(w2.length == 2, true)
+  expect(w2[0] == "ab" and w2[1] == "cd", true)
+  expect(textWindows("a", 3).isEmpty, true)
+  expect(_throws(() -> textWindows("ab", 0)), true)
+  expect(_throws(() -> textWindows("ab", 1, step: 0)), true)
 
 test "split: splitText, splitTextAny, splitTextOnce, splitTextLastOnce, textSegments":
   p1 = splitText("a,,b,", ",")
-  assert p1.length == 4
-  assert p1[0] == "a" and p1[1] == "" and p1[2] == "b" and p1[3] == ""
+  expect(p1.length == 4, true)
+  expect(p1[0] == "a" and p1[1] == "" and p1[2] == "b" and p1[3] == "", true)
 
   p2 = splitText("a,,b,", ",", keepEmpty: false)
-  assert p2.length == 2
-  assert p2[0] == "a" and p2[1] == "b"
+  expect(p2.length == 2, true)
+  expect(p2[0] == "a" and p2[1] == "b", true)
 
   p3 = splitText("a,b,c,d", ",", maxSplits: 2)
-  assert p3.length == 3
-  assert p3[0] == "a" and p3[1] == "b" and p3[2] == "c,d"
+  expect(p3.length == 3, true)
+  expect(p3[0] == "a" and p3[1] == "b" and p3[2] == "c,d", true)
 
   p0 = splitText("a,b", ",", maxSplits: 0)
-  assert p0.length == 1 and p0[0] == "a,b"
+  expect(p0.length == 1 and p0[0] == "a,b", true)
 
   pk = splitText("a,b,c", ",", keepSeparators: true)
-  assert pk.length == 5
-  assert pk[1] == "," and pk[3] == ","
+  expect(pk.length == 5, true)
+  expect(pk[1] == "," and pk[3] == ",", true)
 
   # Longest match wins at same offset ("--" beats "-").
   pa = splitTextAny("a--b-c", ["-", "--"], keepSeparators: true)
-  assert pa.length == 5
-  assert pa[0] == "a" and pa[1] == "--" and pa[2] == "b" and pa[3] == "-" and pa[4] == "c"
+  expect(pa.length == 5, true)
+  expect(pa[0] == "a" and pa[1] == "--" and pa[2] == "b" and pa[3] == "-" and pa[4] == "c", true)
 
   once = splitTextOnce("name=a=b", "=")
-  assert once == TextPartition("name", "=", "a=b", true)
+  expect(once == TextPartition("name", "=", "a=b", true), true)
   miss = splitTextOnce("plain", "=")
-  assert miss == TextPartition("plain", "", "", false)
+  expect(miss == TextPartition("plain", "", "", false), true)
 
   lastOnce = splitTextLastOnce("a/b/c", "/")
-  assert lastOnce == TextPartition("a/b", "/", "c", true)
-  assert not splitTextLastOnce("plain", "/").found
+  expect(lastOnce == TextPartition("a/b", "/", "c", true), true)
+  expect(not splitTextLastOnce("plain", "/").found, true)
 
   segs = textSegments("x,,y", ",")
-  assert segs.length == 3
-  assert segs[0].range == TextRange(0, 1) and segs[0].value == "x"
-  assert segs[1].range == TextRange(2, 2) and segs[1].value == ""
-  assert segs[2].range == TextRange(3, 4) and segs[2].value == "y"
+  expect(segs.length == 3, true)
+  expect(segs[0].range == TextRange(0, 1) and segs[0].value == "x", true)
+  expect(segs[1].range == TextRange(2, 2) and segs[1].value == "", true)
+  expect(segs[2].range == TextRange(3, 4) and segs[2].value == "y", true)
 
   opts = TextSplitOptions(keepEmpty: false, maxSplits: 1, keepSeparators: true)
-  assert not opts.keepEmpty and opts.maxSplits == 1 and opts.keepSeparators
-  assert _throws(() -> TextSplitOptions(maxSplits: -1))
-  assert _throws(() -> splitText("a", ""))
-  assert _throws(() -> splitText("a", ",", maxSplits: -1))
-  assert _throws(() -> splitTextAny("a", []))
-  assert _throws(() -> splitTextAny("a", [""]))
-  assert _throws(() -> splitTextOnce("a", ""))
-  assert _throws(() -> splitTextLastOnce("a", ""))
-  assert _throws(() -> textSegments("a", ""))
+  expect(not opts.keepEmpty and opts.maxSplits == 1 and opts.keepSeparators, true)
+  expect(_throws(() -> TextSplitOptions(maxSplits: -1)), true)
+  expect(_throws(() -> splitText("a", "")), true)
+  expect(_throws(() -> splitText("a", ",", maxSplits: -1)), true)
+  expect(_throws(() -> splitTextAny("a", [])), true)
+  expect(_throws(() -> splitTextAny("a", [""])), true)
+  expect(_throws(() -> splitTextOnce("a", "")), true)
+  expect(_throws(() -> splitTextLastOnce("a", "")), true)
+  expect(_throws(() -> textSegments("a", "")), true)
 
 test "compose: join, joinNonBlank, repeat, surround, ensurePrefix/Suffix, interleave":
   emptyParts: List<String> = []
-  assert joinText(["a", "b", "c"], separator: ", ") == "a, b, c"
-  assert joinText(emptyParts, separator: ",") == ""
-  assert joinNonBlankText(["a", "", "  \t ", "b", String.fromCharCode(0x00A0), "c"], separator: "-") == "a-b-c"
+  expect(joinText(["a", "b", "c"], separator: ", ") == "a, b, c", true)
+  expect(joinText(emptyParts, separator: ",") == "", true)
+  expect(joinNonBlankText(["a", "", "  \t ", "b", String.fromCharCode(0x00A0), "c"], separator: "-") == "a-b-c", true)
 
-  assert repeatText("some", 3, separator: "-") == "some-some-some"
-  assert repeatText("x", 0, separator: "-") == ""
-  assert repeatText("x", 1, separator: "-") == "x"
-  assert repeatText("ab", 3) == "ababab"
-  assert _throws(() -> repeatText("x", -1))
+  expect(repeatText("some", 3, separator: "-") == "some-some-some", true)
+  expect(repeatText("x", 0, separator: "-") == "", true)
+  expect(repeatText("x", 1, separator: "-") == "x", true)
+  expect(repeatText("ab", 3) == "ababab", true)
+  expect(_throws(() -> repeatText("x", -1)), true)
 
-  assert surroundText("quds", "[", "]") == "[quds]"
-  assert surroundText("quds", "*", "*") == "*quds*"
-  assert ensureTextPrefix("home", "/") == "/home"
-  assert ensureTextPrefix("/home", "/") == "/home"
-  assert ensureTextSuffix("dir", "/") == "dir/"
-  assert ensureTextSuffix("dir/", "/") == "dir/"
+  expect(surroundText("quds", "[", "]") == "[quds]", true)
+  expect(surroundText("quds", "*", "*") == "*quds*", true)
+  expect(ensureTextPrefix("home", "/") == "/home", true)
+  expect(ensureTextPrefix("/home", "/") == "/home", true)
+  expect(ensureTextSuffix("dir", "/") == "dir/", true)
+  expect(ensureTextSuffix("dir/", "/") == "dir/", true)
 
   parts: List<String> = []
   for item in interleaveText(["a", "b", "c"], "|"):
     parts.add(item)
-  assert parts.length == 5
-  assert joinText(parts) == "a|b|c"
+  expect(parts.length == 5, true)
+  expect(joinText(parts) == "a|b|c", true)
 
 test "builder: TextBuilder linear building, single-pass, codePoint, clear":
   b = TextBuilder()
-  assert b.isEmpty
-  assert not b.isNotEmpty
-  assert b.utf16Length == 0
+  expect(b.isEmpty, true)
+  expect(not b.isNotEmpty, true)
+  expect(b.utf16Length == 0, true)
 
   b.append("Hello")
   b.appendLine(" Quds")
@@ -270,52 +270,52 @@ test "builder: TextBuilder linear building, single-pass, codePoint, clear":
   b.appendAll(["!", "!"])
   b.appendCodePoint(0x1F600)
   built = b.build()
-  assert built == "Hello Quds\na, b, c!!😀"
-  assert b.utf16Length == built.length
-  assert b.isNotEmpty
+  expect(built == "Hello Quds\na, b, c!!😀", true)
+  expect(b.utf16Length == built.length, true)
+  expect(b.isNotEmpty, true)
 
   b.append(" extra")
-  assert built == "Hello Quds\na, b, c!!😀"
+  expect(built == "Hello Quds\na, b, c!!😀", true)
   b.clear()
-  assert b.isEmpty
-  assert b.build() == ""
-  assert _throws(() -> b.appendCodePoint(-1))
-  assert _throws(() -> b.appendCodePoint(0xD800))
-  assert _throws(() -> b.appendCodePoint(0x110000))
+  expect(b.isEmpty, true)
+  expect(b.build() == "", true)
+  expect(_throws(() -> b.appendCodePoint(-1)), true)
+  expect(_throws(() -> b.appendCodePoint(0xD800)), true)
+  expect(_throws(() -> b.appendCodePoint(0x110000)), true)
 
 test "lines: TextLines, splitTextLines, joinTextLines, normalize, indent, dedent, trimBlankLines":
   sample = "a\r\nb\rc\n"
   view = TextLines(sample)
-  assert view.count == 3
-  assert view.lineAt(0).content == "a" and view.lineAt(0).ending == "\r\n"
-  assert view.lineAt(0).contentRange == TextRange(0, 1)
-  assert view.lineAt(0).fullRange == TextRange(0, 3)
-  assert view.lineAt(1).content == "b" and view.lineAt(1).ending == "\r"
-  assert view.lineAt(2).content == "c" and view.lineAt(2).ending == "\n"
-  assert _throws(() -> view.lineAt(3))
+  expect(view.count == 3, true)
+  expect(view.lineAt(0).content == "a" and view.lineAt(0).ending == "\r\n", true)
+  expect(view.lineAt(0).contentRange == TextRange(0, 1), true)
+  expect(view.lineAt(0).fullRange == TextRange(0, 3), true)
+  expect(view.lineAt(1).content == "b" and view.lineAt(1).ending == "\r", true)
+  expect(view.lineAt(2).content == "c" and view.lineAt(2).ending == "\n", true)
+  expect(_throws(() -> view.lineAt(3)), true)
 
   keep = TextLines(sample, keepTrailingEmpty: true)
-  assert keep.count == 4
-  assert keep.lineAt(3).content == "" and keep.lineAt(3).ending == ""
+  expect(keep.count == 4, true)
+  expect(keep.lineAt(3).content == "" and keep.lineAt(3).ending == "", true)
 
-  assert splitTextLines("").isEmpty
-  assert splitTextLines("a\r\nb\n").length == 2
-  assert splitTextLines("a\r\nb\n", keepTrailingEmpty: true).length == 3
+  expect(splitTextLines("").isEmpty, true)
+  expect(splitTextLines("a\r\nb\n").length == 2, true)
+  expect(splitTextLines("a\r\nb\n", keepTrailingEmpty: true).length == 3, true)
 
-  assert joinTextLines(["a", "b"]) == "a\nb"
-  assert joinTextLines(["a", "b"], ending: TextLineEnding.crlf, trailingNewline: true) == "a\r\nb\r\n"
-  assert joinTextLines(["a", "b"], ending: TextLineEnding.cr) == "a\rb"
+  expect(joinTextLines(["a", "b"]) == "a\nb", true)
+  expect(joinTextLines(["a", "b"], ending: TextLineEnding.crlf, trailingNewline: true) == "a\r\nb\r\n", true)
+  expect(joinTextLines(["a", "b"], ending: TextLineEnding.cr) == "a\rb", true)
 
-  assert normalizeLineEndings("a\r\nb\rc\nd") == "a\nb\nc\nd"
-  assert normalizeLineEndings("a\nb", ending: TextLineEnding.crlf) == "a\r\nb"
+  expect(normalizeLineEndings("a\r\nb\rc\nd") == "a\nb\nc\nd", true)
+  expect(normalizeLineEndings("a\nb", ending: TextLineEnding.crlf) == "a\r\nb", true)
 
-  assert indentText("a\n\nb", "  ", skipBlankLines: true) == "  a\n\n  b"
-  assert indentText("a\r\nb", "> ") == "> a\r\n> b"
+  expect(indentText("a\n\nb", "  ", skipBlankLines: true) == "  a\n\n  b", true)
+  expect(indentText("a\r\nb", "> ") == "> a\r\n> b", true)
 
-  assert dedentText("    a\n      b\n\n    c") == "a\n  b\n\nc"
-  assert dedentText("\ta\n\tb", preserveTabs: true) == "a\nb"
-  assert dedentText("\ta\n  b", preserveTabs: true) == "\ta\n  b"
-  assert dedentText("\ta\n\tb", preserveTabs: false) == "\ta\n\tb"
+  expect(dedentText("    a\n      b\n\n    c") == "a\n  b\n\nc", true)
+  expect(dedentText("\ta\n\tb", preserveTabs: true) == "a\nb", true)
+  expect(dedentText("\ta\n  b", preserveTabs: true) == "\ta\n  b", true)
+  expect(dedentText("\ta\n\tb", preserveTabs: false) == "\ta\n\tb", true)
 
-  assert trimBlankLines("\n  \nfirst\n\nsecond\n  \n") == "first\n\nsecond"
-  assert trimBlankLines("  \n\t\n  ") == ""
+  expect(trimBlankLines("\n  \nfirst\n\nsecond\n  \n") == "first\n\nsecond", true)
+  expect(trimBlankLines("  \n\t\n  ") == "", true)

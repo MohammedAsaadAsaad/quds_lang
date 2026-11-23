@@ -1,0 +1,116 @@
+use quds:text::types
+use quds:text::patterns
+use quds:text::search
+use quds:text::replace
+use quds:text::reader
+
+_throws(action: () -> void) -> bool:
+  try:
+    action()
+    return false
+  catch _:
+    return true
+
+test "replace: literal replacement, no rescan, callback once left-to-right, trim/collapse":
+  eq = TextPattern.literal("=")
+  expect(replaceFirstText("a=b=c", eq, ":") == "a:b=c", true)
+  expect(replaceLastText("a=b=c", eq, ":") == "a=b:c", true)
+  expect(replaceFirstText("abc", eq, ":") == "abc", true)
+
+  # Literal replacement never expands $1 and never re-scans replacement text
+  digits = TextPattern.regex("([0-9]+)")
+  expect(replaceAllText("a1b22c", digits, "$1-$0") == "a$1-$0b$1-$0c", true)
+  expect(replaceAllText("aa", TextPattern.literal("a"), "aa") == "aaaa", true)
+
+  # Callback evaluated left-to-right exactly once per match
+  seen: List<String> = []
+  record(m: TextMatch) -> String:
+    seen.add(m.value)
+    return "[" + m.value + "]"
+  replaced = replaceTextMatches("x10 y20 z30", digits, record)
+  expect(replaced == "x[10] y[20] z[30]", true)
+  expect(seen.length == 3 and seen[0] == "10" and seen[1] == "20" and seen[2] == "30", true)
+
+  expect(replaceTextMatches("x1 y2 z3", digits, (m: TextMatch) -> "#", maxReplacements: 2) == "x# y# z3", true)
+  expect(removeTextMatches("a1b22c3", digits) == "abc", true)
+
+  expect(removeTextPrefix("pre_val", "pre_") == "val", true)
+  expect(removeTextPrefix("val", "pre_") == "val", true)
+  expect(removeTextSuffix("val_suf", "_suf") == "val", true)
+  expect(removeTextSuffix("val", "_suf") == "val", true)
+  expect(removeTextSurrounding("[quds]", "[", "]") == "quds", true)
+  expect(removeTextSurrounding("[quds", "[", "]") == "[quds", true)
+  expect(removeTextSurrounding("aa", "aa", "aa") == "aa", true)
+
+  expect(collapseRepeatedCharacters("a   b  c", target: " ") == "a b c", true)
+  expect(collapseRepeatedCharacters("aaabbbcc") == "abc", true)
+  expect(collapseRepeatedCharacters("قُقُدس") == "قُدس", true)
+  expect(collapseRepeatedCharacters("👨‍👩‍👧‍👦👨‍👩‍👧‍👦!") == "👨‍👩‍👧‍👦!", true)
+
+test "reader: sequential reading, graphemes, checkpoints, rollback, numbers, quoted":
+  r = TextReader("  age = -42, pi = 3.5e1, name = \"hi\\n\\\"quds\\\"\" قُ👨‍👩‍👧‍👦")
+  expect(not r.isAtEnd, true)
+  expect(r.position == 0, true)
+  expect(r.skipWhitespace() == 2, true)
+  expect(r.readUntil("=", consumeMarker: true).trim() == "age", true)
+  r.skipWhitespace()
+
+  # Failed tryRead does not consume input
+  mark = r.savePosition()
+  expect(not r.tryReadText("nope"), true)
+  expect(r.position == mark, true)
+  expect(r.readInt() == -42, true)
+
+  r.expectText(",")
+  r.skipWhitespace()
+  r.expectText("pi")
+  r.skipWhitespace()
+  r.expectText("=")
+  r.skipWhitespace()
+  expect(r.readDouble() == 35.0, true)
+
+  r.expectText(",")
+  r.skipWhitespace()
+  r.expectText("name")
+  r.skipWhitespace()
+  r.expectText("=")
+  r.skipWhitespace()
+  expect(r.readQuoted() == "hi\n\"quds\"", true)
+  r.skipWhitespace()
+
+  # Grapheme-aware peek/read
+  expect(r.peekCharacter() == "قُ", true)
+  expect(r.readCharacter() == "قُ", true)
+  expect(r.readCharacter() == "👨‍👩‍👧‍👦", true)
+  expect(r.isAtEnd, true)
+  expect(r.peekCharacter() == null, true)
+  expect(r.remaining == "", true)
+
+  # Checkpoint restore & readWhile
+  r2 = TextReader("abc123")
+  c = r2.savePosition()
+  expect(r2.readWhile((ch: String) -> ch != "1") == "abc", true)
+  expect(r2.tryReadInt() == 123, true)
+  r2.restorePosition(c)
+  expect(r2.position == 0, true)
+
+  # Rollback on tryReadInt / tryReadDouble / readQuoted errors
+  r3 = TextReader("+-abc")
+  expect(r3.tryReadInt() == null, true)
+  expect(r3.position == 0, true)
+  expect(r3.tryReadDouble() == null, true)
+  expect(r3.position == 0, true)
+
+  r4 = TextReader("\"unclosed")
+  var parseErr = false
+  try:
+    r4.readQuoted()
+  catch err:
+    expect(err is TextParseError, true)
+    pe = err as TextParseError
+    parseErr = pe.offset == 0 and pe.position == TextPosition(0, 1, 1)
+  expect(parseErr, true)
+  expect(r4.position == 0, true)
+
+  rHex = TextReader("ff")
+  expect(rHex.readInt(radix: 16) == 255, true)

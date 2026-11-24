@@ -1,0 +1,258 @@
+use package:flutter/material.dart
+use dart:math as math
+use package:quds_ledger
+use package:budget_ledger/src/theme
+
+# CustomPainter drawing rounded expense category arcs with animated sweep progress.
+class DonutRingPainter extends CustomPainter:
+  summaries: List<CategorySummary> required
+  progress: double required
+  trackColor: Color required
+
+  paint(canvas: Canvas, size: Size) -> void:
+    center = Offset(size.width / 2.0, size.height / 2.0)
+    radius = (math.min(size.width, size.height) / 2.0) - 14.0
+    strokeWidth = 18.0
+    rect = Rect.fromCircle(center: center, radius: radius)
+
+    trackPaint = Paint()
+    trackPaint.color = trackColor
+    trackPaint.style = PaintingStyle.stroke
+    trackPaint.strokeWidth = strokeWidth
+    canvas.drawCircle(center, radius, trackPaint)
+
+    if summaries.isEmpty:
+      return
+
+    var startAngle = -math.pi / 2.0
+    fullSweep = math.pi * 2.0 * progress
+    gap = 0.045
+    for item in summaries:
+      if item.share <= 0.001:
+        continue
+      rawSweep = item.share * fullSweep
+      sweep = (rawSweep - gap) if rawSweep > gap * 1.5 else rawSweep
+      if sweep <= 0.0:
+        continue
+      segPaint = Paint()
+      segPaint.color = categoryColor(item.category)
+      segPaint.style = PaintingStyle.stroke
+      segPaint.strokeWidth = strokeWidth
+      segPaint.strokeCap = StrokeCap.round
+      canvas.drawArc(rect, startAngle, sweep, false, segPaint)
+      startAngle = startAngle + rawSweep
+
+  shouldRepaint(oldDelegate: DonutRingPainter) -> bool:
+    return oldDelegate.progress != progress or oldDelegate.summaries.length != summaries.length or oldDelegate.trackColor != trackColor
+
+# Animated donut chart displaying category expense proportions and savings rate.
+class AnimatedDonutChart extends StatelessWidget:
+  summaries: List<CategorySummary> required
+  savingsRate: double required
+  totalExpense: Money required
+
+  build(context: BuildContext) -> Widget:
+    pct = (savingsRate * 100.0).round()
+    track = elevatedColor(context)
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: motionDuration(context, 780),
+      curve: Curves.easeOutQuart,
+      builder: (ctx: BuildContext, t: double, child: Widget?) -> SizedBox(
+        width: 196.0,
+        height: 196.0,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CustomPaint(
+              size: Size(196.0, 196.0),
+              painter: DonutRingPainter(
+                summaries: summaries,
+                progress: t,
+                trackColor: track,
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "{pct}%",
+                  style: TextStyle(
+                    fontSize: 30.0,
+                    fontWeight: FontWeight.w800,
+                    color: inkColor(context),
+                    letterSpacing: -1.0,
+                  ),
+                ),
+                Text(
+                  "Savings Rate",
+                  style: TextStyle(
+                    fontSize: 12.0,
+                    fontWeight: FontWeight.w500,
+                    color: mutedColor(context),
+                  ),
+                ),
+                SizedBox(height: 4.0),
+                Text(
+                  totalExpense.formatted(),
+                  style: TextStyle(
+                    fontSize: 12.0,
+                    fontWeight: FontWeight.w700,
+                    color: brandGold(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    )
+
+# Animated budget progress card evaluating sealed BudgetStatus (Healthy / Warning / Exceeded).
+class BudgetProgressCard extends StatelessWidget:
+  summary: CategorySummary required
+  currency: Currency required
+  onEdit: () -> void required
+
+  build(context: BuildContext) -> Widget:
+    catColor = categoryColor(summary.category)
+    st = summary.status
+    var statusLabel = "No limit"
+    var statusColor = mutedColor(context)
+    var ratio = summary.share
+    if st != null:
+      match st:
+        Healthy(ratio: r, remainingCents: rem):
+          ratio = r
+          remText = moneyFromCents(rem, currency: currency).formatted()
+          statusLabel = "{remText} left"
+          statusColor = brandEmerald()
+        Warning(ratio: r, remainingCents: rem):
+          ratio = r
+          remText = moneyFromCents(rem, currency: currency).formatted()
+          statusLabel = "Near limit · {remText} left"
+          statusColor = brandAmber()
+        Exceeded(ratio: r, overCents: over):
+          ratio = r
+          overText = moneyFromCents(over, currency: currency).formatted()
+          statusLabel = "Over by {overText}"
+          statusColor = brandCoral()
+
+    var clamped = ratio
+    if clamped > 1.0:
+      clamped = 1.0
+    if clamped < 0.0:
+      clamped = 0.0
+    pctText = "{(ratio * 100.0).round()}%"
+    limitText = summary.limit?.formatted() ?? "Tap to set"
+
+    return HoverCard(
+      onTap: onEdit,
+      padding: EdgeInsets.all(18.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40.0,
+                height: 40.0,
+                decoration: BoxDecoration(
+                  color: catColor.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(12.0),
+                ),
+                child: Icon(categoryIcon(summary.category), color: catColor, size: 20.0),
+              ),
+              SizedBox(width: 12.0),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      categoryLabel(summary.category),
+                      style: TextStyle(
+                        fontSize: 15.0,
+                        fontWeight: FontWeight.w700,
+                        color: inkColor(context),
+                      ),
+                    ),
+                    SizedBox(height: 2.0),
+                    Text(
+                      statusLabel,
+                      style: TextStyle(
+                        fontSize: 12.0,
+                        fontWeight: FontWeight.w600,
+                        color: statusColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(20.0),
+                ),
+                child: Text(
+                  pctText,
+                  style: TextStyle(
+                    fontSize: 12.0,
+                    fontWeight: FontWeight.w700,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 14.0),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: clamped),
+            duration: motionDuration(context, 560),
+            curve: Curves.easeOutCubic,
+            builder: (ctx: BuildContext, widthFactor: double, child: Widget?) -> ClipRRect(
+              borderRadius: BorderRadius.circular(8.0),
+              child: Container(
+                height: 8.0,
+                color: elevatedColor(context),
+                alignment: Alignment.centerLeft,
+                child: FractionallySizedBox(
+                  widthFactor: widthFactor,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: statusColor,
+                      borderRadius: BorderRadius.circular(8.0),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SizedBox(height: 10.0),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Flexible(
+                child: Text(
+                  "Spent {summary.spent.formatted()}",
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12.0, color: mutedColor(context)),
+                ),
+              ),
+              SizedBox(width: 8.0),
+              Flexible(
+                child: Text(
+                  "Limit {limitText}",
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.0,
+                    fontWeight: FontWeight.w600,
+                    color: inkColor(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    )

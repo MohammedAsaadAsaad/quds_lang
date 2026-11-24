@@ -1,0 +1,176 @@
+use package:flutter/material.dart
+use package:quds_ledger
+
+# Brand emerald & warm gold fintech palette matching the Quds Ledger icon.
+brandEmerald() -> Color = Color(0xFF1ED4A4)
+brandDeepEmerald() -> Color = Color(0xFF0E8F6E)
+brandGold() -> Color = Color(0xFFE9C46A)
+brandCoral() -> Color = Color(0xFFF26A6A)
+brandAmber() -> Color = Color(0xFFF5A623)
+
+isDarkTheme(context: BuildContext) -> bool = Theme.of(context).brightness == Brightness.dark
+
+bgColor(context: BuildContext) -> Color:
+  return Color(0xFF081412) if isDarkTheme(context) else Color(0xFFF3F7F5)
+
+surfaceColor(context: BuildContext) -> Color:
+  return Color(0xFF0F211D) if isDarkTheme(context) else Colors.white
+
+elevatedColor(context: BuildContext) -> Color:
+  return Color(0xFF152D27) if isDarkTheme(context) else Color(0xFFEBF3EF)
+
+borderColor(context: BuildContext) -> Color:
+  return Color(0xFF213F37) if isDarkTheme(context) else Color(0xFFD8E6E0)
+
+inkColor(context: BuildContext) -> Color:
+  return Color(0xFFECF7F3) if isDarkTheme(context) else Color(0xFF0E2420)
+
+mutedColor(context: BuildContext) -> Color:
+  return Color(0xFF8CB0A4) if isDarkTheme(context) else Color(0xFF5A756D)
+
+accentColor(context: BuildContext) -> Color:
+  return brandEmerald() if isDarkTheme(context) else brandDeepEmerald()
+
+motionDuration(context: BuildContext, milliseconds: int) -> Duration:
+  return Duration.zero if MediaQuery.disableAnimationsOf(context) else Duration(milliseconds: milliseconds)
+
+# Distinct color for each budget category (used in donut chart, icons, and pills).
+categoryColor(category: Category) -> Color:
+  return match category:
+    housing: Color(0xFF1ED4A4)
+    food: Color(0xFFE9C46A)
+    transport: Color(0xFF4CC9F0)
+    utilities: Color(0xFFA78BFA)
+    health: Color(0xFFF472B6)
+    education: Color(0xFF60A5FA)
+    entertainment: Color(0xFFF26A6A)
+    salary: Color(0xFF34D399)
+    freelance: Color(0xFFFBBF24)
+    savings: Color(0xFF2DD4BF)
+
+# Material icon for each category.
+categoryIcon(category: Category) -> IconData:
+  return match category:
+    housing: Icons.home_work_rounded
+    food: Icons.restaurant_rounded
+    transport: Icons.directions_transit_rounded
+    utilities: Icons.bolt_rounded
+    health: Icons.favorite_rounded
+    education: Icons.school_rounded
+    entertainment: Icons.movie_filter_rounded
+    salary: Icons.account_balance_wallet_rounded
+    freelance: Icons.auto_awesome_rounded
+    savings: Icons.savings_rounded
+
+# Builds Material 3 dark and light themes for Quds Ledger.
+buildLedgerTheme(dark: bool) -> ThemeData:
+  mode = Brightness.dark if dark else Brightness.light
+  bg = Color(0xFF081412) if dark else Color(0xFFF3F7F5)
+  scheme = ColorScheme.fromSeed(seedColor: Color(0xFF147D64), brightness: mode)
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    brightness: mode,
+    scaffoldBackgroundColor: bg,
+  )
+
+# Smooth staggered fade + upward glide entrance wrapper.
+class Entrance extends StatelessWidget:
+  child: Widget required
+  order: int = 0
+
+  build(context: BuildContext) -> Widget:
+    dur = motionDuration(context, 360 + order * 65)
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: dur,
+      curve: Curves.easeOutCubic,
+      child: child,
+      builder: (ctx: BuildContext, t: double, content: Widget?) -> Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0.0, (1.0 - t) * 16.0),
+          child: content,
+        ),
+      ),
+    )
+
+# Interactive card with subtle hover lift and emerald border highlight for Desktop & Web.
+class HoverCard extends StatefulWidget:
+  child: Widget required
+  onTap: (() -> void)? = null
+  padding: EdgeInsetsGeometry = EdgeInsets.all(20.0)
+  selected: bool = false
+
+  createState() -> State<HoverCard> = HoverCardState()
+
+class HoverCardState extends State<HoverCard>:
+  var hovered: bool = false
+
+  _onHover(value: bool) -> void:
+    update = () -> :
+      hovered = value
+    setState(update)
+
+  build(context: BuildContext) -> Widget:
+    highlighted = widget.selected or hovered
+    border = accentColor(context) if highlighted else borderColor(context)
+    borderW = 1.2 if highlighted else 1.0
+    scale = 1.01 if hovered else 1.0
+    shadowAlpha = 0.22 if isDarkTheme(context) else 0.05
+    blur = 20.0 if hovered else 12.0
+    dy = 8.0 if hovered else 4.0
+    inner = Padding(padding: widget.padding, child: widget.child)
+    content = InkWell(
+      onTap: widget.onTap,
+      onHover: _onHover,
+      borderRadius: BorderRadius.circular(22.0),
+      child: inner,
+    ) if widget.onTap != null else MouseRegion(
+      onEnter: (e: Object?) -> _onHover(true),
+      onExit: (e: Object?) -> _onHover(false),
+      child: inner,
+    )
+    return AnimatedScale(
+      scale: scale,
+      duration: motionDuration(context, 160),
+      curve: Curves.easeOut,
+      child: AnimatedContainer(
+        duration: motionDuration(context, 180),
+        decoration: BoxDecoration(
+          color: surfaceColor(context),
+          borderRadius: BorderRadius.circular(22.0),
+          border: Border.all(color: border, width: borderW),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: shadowAlpha),
+              blurRadius: blur,
+              offset: Offset(0.0, dy),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(22.0),
+          child: content,
+        ),
+      ),
+    )
+
+# Smoothly animates displayed monetary amounts when totals or currency change.
+class AnimatedMoneyText extends StatelessWidget:
+  cents: int required
+  currency: Currency required
+  style: TextStyle required
+
+  build(context: BuildContext) -> Widget:
+    target = cents to double
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: target),
+      duration: motionDuration(context, 520),
+      curve: Curves.easeOutCubic,
+      builder: (ctx: BuildContext, animatedCents: double, child: Widget?) -> Text(
+        moneyFromCents(animatedCents.round(), currency: currency).formatted(),
+        style: style,
+      ),
+    )

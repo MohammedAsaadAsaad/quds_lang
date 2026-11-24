@@ -1,0 +1,191 @@
+use quds:math::number show Fraction, fraction
+
+# Supported display and transaction currencies.
+@Json
+enum Currency:
+  usd
+  eur
+  gbp
+  jod
+  sar
+
+# Three-letter ISO code for [currency].
+currencyCode(currency: Currency) -> String:
+  return match currency:
+    usd: "USD"
+    eur: "EUR"
+    gbp: "GBP"
+    jod: "JOD"
+    sar: "SAR"
+
+# Compact display symbol for [currency].
+currencySymbol(currency: Currency) -> String:
+  return match currency:
+    usd: "\$"
+    eur: "€"
+    gbp: "£"
+    jod: "JOD "
+    sar: "SAR "
+
+# Human-readable currency name.
+currencyName(currency: Currency) -> String:
+  return match currency:
+    usd: "US Dollar"
+    eur: "Euro"
+    gbp: "British Pound"
+    jod: "Jordanian Dinar"
+    sar: "Saudi Riyal"
+
+# All supported currencies in display order.
+allCurrencies() -> List<Currency>:
+  return [Currency.usd, Currency.eur, Currency.gbp, Currency.jod, Currency.sar]
+
+# Exact rational value of 1 unit of [currency] expressed in USD.
+currencyRateToUsd(currency: Currency) -> Fraction:
+  return match currency:
+    usd: fraction(1, 1)
+    eur: fraction(109, 100)
+    gbp: fraction(127, 100)
+    jod: fraction(141, 100)
+    sar: fraction(4, 15)
+
+# Exact rational monetary value backed by [Fraction] to eliminate floating-point drift.
+class Money:
+  amount: Fraction required
+  currency: Currency = Currency.usd
+
+  implicit cast(source: int) -> Money:
+    return Money(amount: fraction(source, 1), currency: Currency.usd)
+
+  explicit cast(source: Money) -> double:
+    return source.amount.numerator / source.amount.denominator
+
+  explicit cast(source: String) -> Money:
+    guard let parsed = _parseDecimalFraction(source) else:
+      throw ConversionError("Invalid money amount: {source}")
+    return Money(amount: parsed, currency: Currency.usd)
+
+  # Converts this monetary value to [target] using exact rational exchange rates.
+  convertTo(target: Currency) -> Money:
+    if currency == target:
+      return this
+    inUsd = amount * currencyRateToUsd(currency)
+    converted = inUsd / currencyRateToUsd(target)
+    return Money(amount: converted, currency: target)
+
+  operator +(other: Money) -> Money:
+    aligned = other.convertTo(currency)
+    return Money(amount: amount + aligned.amount, currency: currency)
+
+  operator -(other: Money) -> Money:
+    aligned = other.convertTo(currency)
+    return Money(amount: amount - aligned.amount, currency: currency)
+
+  operator *(factor: int) -> Money:
+    return Money(amount: amount * fraction(factor, 1), currency: currency)
+
+  # Exact value in minor units (cents), rounded half-up away from zero.
+  cents() -> int:
+    scaled = amount * fraction(100, 1)
+    numVal = scaled.numerator
+    denVal = scaled.denominator
+    if numVal >= 0:
+      return (numVal * 2 + denVal) ~/ (denVal * 2)
+    return -((-numVal * 2 + denVal) ~/ (denVal * 2))
+
+  # Returns the exact rational amount as a floating-point number for chart ratios.
+  toDouble() -> double = amount.numerator / amount.denominator
+
+  # Formats as a plain two-decimal string without currency symbol (e.g. "1250.50").
+  decimalString() -> String:
+    total = cents()
+    neg = total < 0
+    absTotal = -total if neg else total
+    whole = absTotal ~/ 100
+    frac = absTotal % 100
+    fracText = "0{frac}" if frac < 10 else "{frac}"
+    sign = "-" if neg else ""
+    return "{sign}{whole}.{fracText}"
+
+  # Formats with thousands separators and currency symbol (e.g. "$1,250.50").
+  formatted() -> String:
+    total = cents()
+    neg = total < 0
+    absTotal = -total if neg else total
+    whole = absTotal ~/ 100
+    frac = absTotal % 100
+    fracText = "0{frac}" if frac < 10 else "{frac}"
+    wholeText = _groupThousands(whole)
+    sym = currencySymbol(currency)
+    sign = "-" if neg else ""
+    return "{sign}{sym}{wholeText}.{fracText}"
+
+# Creates an exact [Money] value from integer cents in [currency].
+moneyFromCents(cents: int, currency: Currency = Currency.usd) -> Money:
+  return Money(amount: fraction(cents, 100), currency: currency)
+
+# Creates zero [Money] in [currency].
+zeroMoney(currency: Currency = Currency.usd) -> Money:
+  return Money(amount: fraction(0, 1), currency: currency)
+
+# Parses user-entered decimal text like "125.50" or "1,250.25" into exact [Money].
+parseMoney(raw: String, currency: Currency = Currency.usd) -> Money?:
+  cleaned = raw.trim().replaceAll(",", "").replaceAll("\$", "").replaceAll("€", "").replaceAll("£", "").trim()
+  guard let parsed = cleaned to? Money else:
+    return null
+  return Money(amount: parsed.amount, currency: currency)
+
+_parseDecimalFraction(raw: String) -> Fraction?:
+  text = raw.trim()
+  if text.isEmpty:
+    return null
+  var negative = false
+  var body = text
+  if body.startsWith("-"):
+    negative = true
+    body = body.substring(1)
+  else if body.startsWith("+"):
+    body = body.substring(1)
+  if body.isEmpty:
+    return null
+  parts = body.split(".")
+  if parts.length > 2:
+    return null
+  wholePart = parts[0]
+  fracPart = parts[1] if parts.length == 2 else ""
+  if wholePart.isEmpty and fracPart.isEmpty:
+    return null
+  if wholePart.isNotEmpty and not _isDigits(wholePart):
+    return null
+  if fracPart.isNotEmpty and not _isDigits(fracPart):
+    return null
+  var denominator = 1
+  repeat fracPart.length:
+    denominator *= 10
+  combined = "{wholePart}{fracPart}"
+  guard let parsedNum = int.tryParse(combined) else:
+    return null
+  numerator = -parsedNum if negative else parsedNum
+  return fraction(numerator, denominator)
+
+_isDigits(text: String) -> bool:
+  for i in 0..<text.length:
+    code = text.codeUnitAt(i)
+    if code < 48 or code > 57:
+      return false
+  return true
+
+_groupThousands(whole: int) -> String:
+  raw = "{whole}"
+  if raw.length <= 3:
+    return raw
+  var out = ""
+  var count = 0
+  var idx = raw.length - 1
+  while idx >= 0:
+    if count > 0 and count % 3 == 0:
+      out = ",{out}"
+    out = "{raw[idx]}{out}"
+    count += 1
+    idx -= 1
+  return out

@@ -1,0 +1,7 @@
+name: quds_ledger
+description: Exact fractional multi-currency personal finance and budget ledger package written in Quds.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.13.0

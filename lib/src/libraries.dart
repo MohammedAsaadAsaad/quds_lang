@@ -565,6 +565,14 @@ String _join(String root, String relative) {
 /// Keep internal compiler imports relative too, rather than pointing at a Dart
 /// file beside the original source which the CLI deliberately never writes.
 String qudsBackendLibraryUri(String from, String home) {
+  final fromInfo = packageFileInfo(from, packageConfigFrom: from);
+  final targetInfo = packageFileInfo(home, packageConfigFrom: from);
+  if (targetInfo != null &&
+      (fromInfo == null || fromInfo.name != targetInfo.name)) {
+    final relative =
+        targetInfo.relativeInsideLib.replaceFirst(RegExp(r'\.quds$'), '.dart');
+    return 'package:${targetInfo.name}/$relative';
+  }
   final source = File(from).absolute.parent.uri.normalizePath();
   final target = File(home.replaceFirst(RegExp(r'\.quds$'), '.dart'))
       .absolute

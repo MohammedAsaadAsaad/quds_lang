@@ -1436,10 +1436,20 @@ class Analyzer {
       final dartName =
           statement.kind == 'enum' ? '$key.${item.name}' : item.name;
       final caseSymbol = Symbol(item.name, dartName, key,
-          classDeclaration: statement, classCase: item);
+          classDeclaration: statement, classCase: item, library: owner);
       if (statement.kind != 'enum') {
-        if (_global.symbols.containsKey(item.name)) {
-          fail('Duplicate case: ${item.name}', item);
+        final existingCase = _global.symbols[item.name];
+        if (existingCase != null) {
+          final sameCase = identical(existingCase.classCase, item) ||
+              (existingCase.library == owner &&
+                  existingCase.classDeclaration?.name == statement.name &&
+                  existingCase.classCase?.span.file == item.span.file &&
+                  existingCase.classCase?.span.offset == item.span.offset);
+          if (!sameCase) {
+            fail('Duplicate case: ${item.name}', item);
+          }
+          model.declarations[item] = existingCase;
+          continue;
         }
         _global.symbols[item.name] = caseSymbol;
       }
@@ -4152,15 +4162,16 @@ class Analyzer {
     for (final alias in program.statements.whereType<AliasDeclaration>()) {
       names[alias.name] = '@${_libraryTypes.length - 1}.${alias.name}';
     }
-    // Signatures in this library keep their lexical imported type identities,
-    // even when the caller uses a different prefix or imports no such type.
+    // Signatures and function bodies in this library keep their lexical
+    // imported identities, even when the caller imports different libraries.
     for (final directive in program.statements.whereType<ImportDeclaration>()) {
-      if (directive.export ||
-          directive.uri.startsWith('dart:') ||
+      if (directive.uri.startsWith('dart:') ||
+          (directive.uri.startsWith('package:') &&
+              directive.uri.endsWith('.dart')) ||
           _isLocalDart(directive)) continue;
       final target = _resolveLibrary(home, directive.uri);
       if (!_libraries.containsKey(target) || target == home) continue;
-      _libraryScope(target);
+      final targetScope = _libraryScope(target);
       for (final entry
           in (_libraryTypes[target] ?? <String, String>{}).entries.toList()) {
         if (entry.key.contains('.') ||
@@ -4170,6 +4181,26 @@ class Analyzer {
             ? entry.key
             : '${directive.prefix}.${entry.key}';
         names.putIfAbsent(local, () => entry.value);
+      }
+      if (directive.prefix == null) {
+        for (final entry in targetScope.symbols.entries) {
+          if (entry.key.startsWith('_') || !_keeps(entry.key, directive)) {
+            continue;
+          }
+          scope.symbols.putIfAbsent(entry.key, () => entry.value);
+        }
+      } else {
+        final members = <String, Symbol>{};
+        for (final entry in targetScope.symbols.entries) {
+          if (entry.key.startsWith('_') || !_keeps(entry.key, directive)) {
+            continue;
+          }
+          members[entry.key] = entry.value;
+        }
+        scope.symbols.putIfAbsent(
+            directive.prefix!,
+            () => Symbol(directive.prefix!, directive.prefix!, 'prefix',
+                namespace: members, library: target));
       }
     }
     final saved = _scope;
@@ -5687,16 +5718,18 @@ class Analyzer {
     }
     final type = unwrap(raw);
     final declaration = _typeSymbol(_genericHead(type))?.classDeclaration;
-    if (declaration == null) {
+    final qudsTargetType =
+        declaration == null ? null : memberType(type, node.name);
+    if (qudsTargetType == null) {
+      if (_assignNativeMember(node, raw, type)) return;
       fail(
           _hinted('No member ${node.name} on $raw', node.name,
               _memberCandidates(raw)),
           node);
     }
-    final targetType = memberType(type, node.name) ??
-        fail('No member ${node.name} on $raw', node);
+    final targetType = qudsTargetType;
     final properties =
-        _propertiesOf(declaration).where((item) => item.name == node.name);
+        _propertiesOf(declaration!).where((item) => item.name == node.name);
     if (properties.isNotEmpty) {
       final property = properties.first;
       if (property.setter == null && property.setterBody == null) {
@@ -5761,6 +5794,45 @@ class Analyzer {
     }
     model.references[node] = Symbol(
         fields.first.name, _dartMember(type, fields.first.name), targetType);
+  }
+
+  bool _assignNativeMember(MemberAssignment node, String raw, String type) {
+    final isTypeRef = model.references[node.object]?.nativeTop?.isType == true;
+    final shape = _nativeShape(type);
+    final sdk = isTypeRef
+        ? shape?.statics[node.name]
+        : (shape?.members[node.name] ?? _sdkMember(type, node.name));
+    if (sdk == null || !sdk.getter) return false;
+    if (!isTypeRef && isNullableType(type)) {
+      fail('Cannot assign member ${node.name} on nullable $raw', node);
+    }
+    if (!sdk.writable) {
+      fail('Property ${node.name} on $raw is read-only', node);
+    }
+    final readType = sdk.type;
+    final targetType = sdk.setterType ?? sdk.type;
+    final savedExpected = _expected;
+    _expected = targetType;
+    final value = expression(node.value);
+    _expected = savedExpected;
+    final written = node.operator == '=' || node.operator == '??='
+        ? value
+        : binaryType(
+            readType,
+            node.operator.substring(0, node.operator.length - 1),
+            value,
+            node,
+          );
+    if (node.operator == '??=') {
+      _checkIfNull(targetType, value, node);
+    }
+    if (!(node.operator == '=' || node.operator == '??='
+        ? _acceptExpected(node.value, written, targetType)
+        : compatible(written, targetType))) {
+      fail('Cannot assign $value to $targetType', node);
+    }
+    model.references[node] = _dartMemberSymbol(sdk, targetType);
+    return true;
   }
 
   void _installChecks() {
@@ -9804,25 +9876,24 @@ class Analyzer {
   }
 
   String list(ListExpression node) {
+    final bareExpected = _expected == null ? null : unwrap(_expected!);
     if (node.elements.isEmpty) {
-      final expected = _expected;
-      if (expected != null &&
-          expected.startsWith('List<') &&
-          expected.endsWith('>')) {
-        return expected;
+      if (bareExpected != null &&
+          bareExpected.startsWith('List<') &&
+          bareExpected.endsWith('>')) {
+        return bareExpected;
       }
       error('E302', 'Empty lists require a contextual List<T> type', node);
     }
-    final expected = _expected;
-    final wanted = expected != null &&
-            expected.startsWith('List<') &&
-            expected.endsWith('>')
-        ? expected.substring(5, expected.length - 1)
+    final wanted = bareExpected != null &&
+            bareExpected.startsWith('List<') &&
+            bareExpected.endsWith('>')
+        ? bareExpected.substring(5, bareExpected.length - 1)
         : null;
     final elements = <String>[];
     for (var i = 0; i < node.elements.length; i++) {
       final saved = _expected;
-      _expected = node.elements[i] is SpreadElement ? expected : wanted;
+      _expected = node.elements[i] is SpreadElement ? bareExpected : wanted;
       try {
         elements.add(elementTypeOf(node.elements[i], aware(node.nullAware, i)));
       } finally {
@@ -9830,13 +9901,17 @@ class Analyzer {
       }
     }
     if (wanted != null && elements.every((type) => compatible(type, wanted))) {
-      return expected!;
+      return bareExpected!;
     }
     var type = elements.first;
     for (var i = 1; i < elements.length; i++) {
       final next = elements[i];
       if (numeric(type) && numeric(next) && type != next) {
         type = 'num';
+      } else if (type != next && compatible(next, type)) {
+        // Keep the broader element type.
+      } else if (type != next && compatible(type, next)) {
+        type = next;
       } else if (type != next &&
           _externalNominal(type) &&
           _externalNominal(next)) {
@@ -9851,7 +9926,7 @@ class Analyzer {
 
   /// A non-empty collection keeps the expected type when every element fits it.
   String _widenCollection(String inferred, String prefix) {
-    final expected = _expected;
+    final expected = _expected == null ? null : unwrap(_expected!);
     if (expected == null ||
         !expected.startsWith(prefix) ||
         !expected.endsWith('>')) {
@@ -10377,6 +10452,54 @@ class Analyzer {
           }
           return dartCall;
         }
+        String? callableFieldType;
+        Symbol? callableSymbol;
+        if (declaration != null) {
+          final found = memberType(objectType, callee.name);
+          if (found != null) {
+            callableFieldType = found;
+            callableSymbol = Symbol(
+                callee.name, _dartMember(objectType, callee.name), found);
+          }
+        } else {
+          final sdkGetter = _sdkMember(objectType, callee.name);
+          if (sdkGetter != null && sdkGetter.getter) {
+            callableFieldType = sdkGetter.type;
+            callableSymbol = _dartMemberSymbol(sdkGetter, sdkGetter.type);
+          }
+        }
+        if (callableFieldType != null && callableSymbol != null) {
+          final resolvedField = _resolveType(unwrap(callableFieldType));
+          if (functionTypeParts(nonNullableType(resolvedField)) != null) {
+            if (declaration != null) {
+              _checkMember(declaration, callee.name, callee);
+            }
+            if (isNullableType(resolvedField)) {
+              error(
+                'E308',
+                'A nullable value is used where a non-null value is required',
+                callee,
+              );
+            }
+            model.references[callee] = callableSymbol;
+            final result =
+                _functionValueCall(node, nonNullableType(resolvedField));
+            return callee.nullAware || isNullableType(rawObject)
+                ? nullableType(result)
+                : result;
+          }
+          final invoked = _callOnType(resolvedField);
+          if (invoked != null) {
+            if (declaration != null) {
+              _checkMember(declaration, callee.name, callee);
+            }
+            model.references[callee] = callableSymbol;
+            final result = _applyCallMethod(node, resolvedField, invoked);
+            return callee.nullAware || isNullableType(rawObject)
+                ? nullableType(result)
+                : result;
+          }
+        }
         fail(
             _hinted('No method ${callee.name} on $objectType', callee.name,
                 _memberCandidates(objectType)),
@@ -10500,6 +10623,36 @@ class Analyzer {
         model.implicitThis.add(callee);
         model.references[callee] = model.declarations[resolved]!;
         return applyArguments(node, resolved.parameters, resolved);
+      }
+      final fieldType = memberType(_thisType!, callee.name);
+      if (fieldType != null) {
+        final resolvedField = _resolveType(unwrap(fieldType));
+        if (functionTypeParts(nonNullableType(resolvedField)) != null) {
+          if (isNullableType(resolvedField)) {
+            error(
+              'E308',
+              'A nullable value is used where a non-null value is required',
+              callee,
+            );
+          }
+          model.implicitThis.add(callee);
+          model.references[callee] = Symbol(
+            callee.name,
+            _dartMember(_thisType!, callee.name),
+            fieldType,
+          );
+          return _functionValueCall(node, nonNullableType(resolvedField));
+        }
+        final invoked = _callOnType(resolvedField);
+        if (invoked != null) {
+          model.implicitThis.add(callee);
+          model.references[callee] = Symbol(
+            callee.name,
+            _dartMember(_thisType!, callee.name),
+            fieldType,
+          );
+          return _applyCallMethod(node, resolvedField, invoked);
+        }
       }
     }
     if (symbol != null && symbol.external) return _passExternal(node, symbol);
@@ -11339,6 +11492,10 @@ class Analyzer {
 
   bool _satisfiesTypeBound(String argument, String bound,
       [Set<String> visited = const {}]) {
+    if (argument == 'void' &&
+        (bound == 'Object?' || bound == 'dynamic' || bound == 'void')) {
+      return true;
+    }
     if (compatible(argument, bound)) return true;
     if (visited.contains(argument)) return false;
     final evidence = _typeBounds[argument];
@@ -12166,6 +12323,17 @@ class Analyzer {
         (family == 'List' || family == 'Set' || family == 'Iterable')) {
       final eager = _eagerCollection(element, name, node);
       if (eager != null) return eager;
+    }
+    if (family == 'List' && name == 'sort' && node.arguments.isNotEmpty) {
+      final parameter =
+          Parameter('compare', _subst('(T, T) -> int', vars), false, node.span);
+      final function =
+          FunctionDeclaration(name, [parameter], 'void', null, null, node.span);
+      final symbol = Symbol(name, name, 'void').withFunction(function);
+      model.declarations[function] = symbol;
+      model.references[node.callee] = symbol;
+      applyArguments(node, [parameter], function);
+      return 'void';
     }
     final shape = _methodShape(family, name) ??
         ((family == 'List' || family == 'Set')

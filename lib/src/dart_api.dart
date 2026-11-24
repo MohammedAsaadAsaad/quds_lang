@@ -76,6 +76,8 @@ class DartMember {
     this.namedParameters = const {},
     this.optionalNames = const {},
     this.getter = false,
+    this.writable = false,
+    this.setterType,
     this.documentation,
     this.file = '',
     this.line = 0,
@@ -91,6 +93,8 @@ class DartMember {
   final Set<String> namedParameters;
   final Set<String> optionalNames;
   final bool getter;
+  final bool writable;
+  final String? setterType;
   final String? documentation;
   final String file;
   final int line;
@@ -166,6 +170,8 @@ DartMember instantiateDartMember(
     parameters: [for (final p in member.parameters) (p.$1, type(p.$2))],
     optional: member.optional,
     getter: member.getter,
+    writable: member.writable,
+    setterType: member.setterType == null ? null : type(member.setterType!),
     typeParameters: {
       for (final p in member.typeParameters.entries) p.key: type(p.value),
     },
@@ -244,6 +250,8 @@ DartSurface mapDartSurfaceTypes(
         namedParameters: source.namedParameters,
         optionalNames: source.optionalNames,
         getter: source.getter,
+        writable: source.writable,
+        setterType: source.setterType == null ? null : type(source.setterType!),
         documentation: source.documentation,
         file: source.file,
         line: source.line,
@@ -636,11 +644,33 @@ _Loaded _load(File entry, {String? from}) {
       }
       for (final entry in base.members.entries) {
         final member = instantiateDartMember(entry.value, substitution);
+        final existing = type.members[entry.key];
         if (type.implementationSupers.contains(parent) &&
             !declaredMembers.contains(entry.key)) {
           type.members[entry.key] = member;
-        } else {
-          type.members.putIfAbsent(entry.key, () => member);
+        } else if (existing == null) {
+          type.members[entry.key] = member;
+        } else if (existing.getter &&
+            member.getter &&
+            !existing.writable &&
+            member.writable) {
+          type.members[entry.key] = DartMember(
+            name: existing.name,
+            type: existing.type,
+            parameters: existing.parameters,
+            optional: existing.optional,
+            typeParameters: existing.typeParameters,
+            namedParameters: existing.namedParameters,
+            optionalNames: existing.optionalNames,
+            getter: true,
+            writable: true,
+            setterType: member.setterType ?? member.type,
+            documentation: existing.documentation ?? member.documentation,
+            file: existing.file,
+            line: existing.line,
+            column: existing.column,
+            offset: existing.offset,
+          );
         }
       }
     }
@@ -1009,6 +1039,8 @@ class _Parser {
     Set<String> namedParameters = const {},
     Set<String> optionalNames = const {},
     bool getter = false,
+    bool writable = false,
+    String? setterType,
   }) {
     return DartMember(
       name: name,
@@ -1019,6 +1051,8 @@ class _Parser {
       namedParameters: namedParameters,
       optionalNames: optionalNames,
       getter: getter,
+      writable: writable,
+      setterType: setterType,
       documentation: doc,
       file: file,
       line: at?.line ?? 0,
@@ -1325,7 +1359,17 @@ class _Parser {
           _skipMember();
         } else if (kind == 'get') {
           final shown = _simplify(leading ?? 'dynamic', params);
-          final dart = _noted(member, shown, at, doc, getter: true);
+          final targetMap = isStatic ? type.statics : type.members;
+          final existing = targetMap[member];
+          final dart = _noted(
+            member,
+            shown,
+            at,
+            doc,
+            getter: true,
+            writable: existing?.writable ?? false,
+            setterType: existing?.setterType,
+          );
           if (isStatic) {
             type.statics[member] = dart;
           } else {
@@ -1334,6 +1378,44 @@ class _Parser {
           }
           _skipMember();
         } else {
+          var setterType = 'dynamic';
+          if (peek == '(') {
+            final signature = _parameters(params, type.fields);
+            if (signature.$1.isNotEmpty) {
+              setterType = signature.$1.first.$2;
+            }
+          }
+          final targetMap = isStatic ? type.statics : type.members;
+          final existing = targetMap[member];
+          if (existing != null && existing.getter) {
+            targetMap[member] = DartMember(
+              name: existing.name,
+              type: existing.type,
+              parameters: existing.parameters,
+              optional: existing.optional,
+              typeParameters: existing.typeParameters,
+              namedParameters: existing.namedParameters,
+              optionalNames: existing.optionalNames,
+              getter: true,
+              writable: true,
+              setterType: setterType,
+              documentation: existing.documentation ?? doc,
+              file: existing.file,
+              line: existing.line,
+              column: existing.column,
+              offset: existing.offset,
+            );
+          } else {
+            targetMap[member] = _noted(
+              member,
+              setterType,
+              at,
+              doc,
+              getter: true,
+              writable: true,
+              setterType: setterType,
+            );
+          }
           _skipMember();
         }
         if (i == before) i++;
@@ -1380,7 +1462,17 @@ class _Parser {
         }
       } else {
         final shown = _simplify(leading, scope);
-        final dart = _noted(member, shown, at, doc, getter: true);
+        final isWritable =
+            !modifiers.contains('final') && !modifiers.contains('const');
+        final dart = _noted(
+          member,
+          shown,
+          at,
+          doc,
+          getter: true,
+          writable: isWritable,
+          setterType: isWritable ? shown : null,
+        );
         if (isStatic) {
           type.statics[member] = dart;
         } else {

@@ -1,0 +1,237 @@
+use package:quds_ledger/src/money
+use package:quds_ledger/src/models
+
+# Stateful personal finance and budget engine powered by exact rational arithmetic.
+class LedgerEngine:
+  var displayCurrency: Currency = Currency.usd
+  entries: List<LedgerEntry> = []
+  budgets: List<BudgetLimit> = []
+  var _nextId: int = 1
+
+  # Validates and appends a new transaction, returning Ok(entry) or Error(reason).
+  addEntry(
+    title: String,
+    amountText: String,
+    kind: EntryKind,
+    category: Category,
+    currency: Currency,
+    note: String = "",
+    dateIso: String = "2026-11-24",
+  ) -> Result<LedgerEntry, String>:
+    cleanTitle = title.trim()
+    guard cleanTitle.isNotEmpty else:
+      return Error("Please enter a title for the transaction.")
+    guard let parsed = parseMoney(amountText, currency: currency) else:
+      return Error("Enter a valid numeric amount (e.g. 45.50).")
+    centsVal = parsed.cents()
+    guard centsVal > 0 else:
+      return Error("Amount must be greater than zero.")
+    entry = LedgerEntry(
+      id: "tx-{_nextId}",
+      title: cleanTitle,
+      note: note.trim(),
+      cents: centsVal,
+      currency: currency,
+      kind: kind,
+      category: category,
+      dateIso: dateIso,
+    )
+    _nextId += 1
+    entries.insert(0, entry)
+    return Ok(entry)
+
+  # Removes the transaction matching [id] and returns it if found.
+  removeEntry(id: String) -> LedgerEntry?:
+    for entry in entries:
+      if entry.id == id:
+        entries.removeAt($.index)
+        return entry
+    return null
+
+  # Reinserts a previously removed transaction (used for Undo).
+  restoreEntry(entry: LedgerEntry) -> void:
+    entries.insert(0, entry)
+
+  # Sets or updates the monthly budget limit for [category].
+  setBudget(
+    category: Category,
+    amountText: String,
+    currency: Currency,
+  ) -> Result<BudgetLimit, String>:
+    guard let parsed = parseMoney(amountText, currency: currency) else:
+      return Error("Enter a valid numeric budget limit.")
+    centsVal = parsed.cents()
+    guard centsVal > 0 else:
+      return Error("Budget limit must be greater than zero.")
+    updated = BudgetLimit(category: category, limitCents: centsVal, currency: currency)
+    for existing in budgets:
+      if existing.category == category:
+        budgets[$.index] = updated
+        return Ok(updated)
+    budgets.add(updated)
+    return Ok(updated)
+
+  # Converts an entry's amount to the current [displayCurrency] in exact Fraction math.
+  entryMoney(entry: LedgerEntry) -> Money:
+    return moneyFromCents(entry.cents, currency: entry.currency).convertTo(displayCurrency)
+
+  # Exact sum of all income transactions in [displayCurrency].
+  totalIncome() -> Money:
+    var sum = zeroMoney(currency: displayCurrency)
+    for entry in entries:
+      if entry.kind == EntryKind.income:
+        sum = sum + entryMoney(entry)
+    return sum
+
+  # Exact sum of all expense transactions in [displayCurrency].
+  totalExpense() -> Money:
+    var sum = zeroMoney(currency: displayCurrency)
+    for entry in entries:
+      if entry.kind == EntryKind.expense:
+        sum = sum + entryMoney(entry)
+    return sum
+
+  # Exact net balance (income minus expenses) in [displayCurrency].
+  balance() -> Money = totalIncome() - totalExpense()
+
+  # Savings ratio between 0.0 and 1.0 based on exact totals.
+  savingsRate() -> double:
+    inc = totalIncome().toDouble()
+    if inc <= 0.0:
+      return 0.0
+    net = balance().toDouble()
+    ratio = net / inc
+    if ratio < 0.0:
+      return 0.0
+    if ratio > 1.0:
+      return 1.0
+    return ratio
+
+  # Finds the configured budget limit for [category] in [displayCurrency], if any.
+  budgetFor(category: Category) -> Money?:
+    for item in budgets:
+      if item.category == category:
+        return moneyFromCents(item.limitCents, currency: item.currency).convertTo(displayCurrency)
+    return null
+
+  # Computes budget health status comparing [spent] against [limit].
+  evaluateStatus(spent: Money, limit: Money) -> BudgetStatus:
+    spentCents = spent.cents()
+    limitCents = limit.cents()
+    if limitCents <= 0:
+      return Exceeded(ratio: 1.0, overCents: spentCents)
+    ratio = spent.toDouble() / limit.toDouble()
+    if spentCents > limitCents:
+      return Exceeded(ratio: ratio, overCents: spentCents - limitCents)
+    remaining = limitCents - spentCents
+    if ratio >= 0.8:
+      return Warning(ratio: ratio, remainingCents: remaining)
+    return Healthy(ratio: ratio, remainingCents: remaining)
+
+  # Per-category expense breakdown sorted from highest spend to lowest.
+  categoryBreakdown() -> List<CategorySummary>:
+    totalExp = totalExpense().toDouble()
+    summaries: List<CategorySummary> = []
+    for cat in expenseCategories():
+      var catSum = zeroMoney(currency: displayCurrency)
+      for entry in entries:
+        if entry.kind == EntryKind.expense and entry.category == cat:
+          catSum = catSum + entryMoney(entry)
+      limit = budgetFor(cat)
+      if catSum.cents() == 0 and limit == null:
+        continue
+      share = (catSum.toDouble() / totalExp) if totalExp > 0.0 else 0.0
+      var status: BudgetStatus? = null
+      if let lim = limit:
+        status = evaluateStatus(catSum, lim)
+      summaries.add(CategorySummary(
+        category: cat,
+        spent: catSum,
+        share: share,
+        limit: limit,
+        status: status,
+      ))
+    # Sort descending by spent cents.
+    summaries.sort((a: CategorySummary, b: CategorySummary) -> b.spent.cents().compareTo(a.spent.cents()))
+    return summaries
+
+  # Categories currently in Warning or Exceeded budget state.
+  budgetAlerts() -> List<CategorySummary>:
+    alerts: List<CategorySummary> = []
+    for item in categoryBreakdown():
+      st = item.status
+      if st is Warning | Exceeded:
+        alerts.add(item)
+    return alerts
+
+  # Filters transactions by optional text query, kind, and category.
+  filteredEntries(
+    query: String = "",
+    kindFilter: EntryKind? = null,
+    categoryFilter: Category? = null,
+  ) -> List<LedgerEntry>:
+    needle = query.trim().toLowerCase()
+    out: List<LedgerEntry> = []
+    for entry in entries:
+      if kindFilter != null and entry.kind != kindFilter:
+        continue
+      if categoryFilter != null and entry.category != categoryFilter:
+        continue
+      if needle.isNotEmpty:
+        inTitle = entry.title.toLowerCase().contains(needle)
+        inNote = entry.note.toLowerCase().contains(needle)
+        inCat = categoryLabel(entry.category).toLowerCase().contains(needle)
+        if not inTitle and not inNote and not inCat:
+          continue
+      out.add(entry)
+    return out
+
+  # Serializes the full ledger state into JSON via @Json.
+  exportJson() -> String:
+    snapshot = LedgerSnapshot(
+      displayCurrency: displayCurrency,
+      entries: List.of(entries),
+      budgets: List.of(budgets),
+    )
+    return snapshot.toJsonString()
+
+  # Restores ledger state from a JSON snapshot, returning the count of imported entries.
+  importJson(raw: String) -> Result<int, String>:
+    parsed = LedgerSnapshot.tryFromJsonString(raw)
+    var outcome: Result<int, String> = Error("Invalid ledger JSON.")
+    match parsed:
+      Ok(value: snapshot):
+        displayCurrency = snapshot.displayCurrency
+        entries.clear()
+        for item in snapshot.entries:
+          entries.add(item)
+        budgets.clear()
+        for b in snapshot.budgets:
+          budgets.add(b)
+        _nextId = entries.length + 1
+        outcome = Ok(entries.length)
+      Error(error: message):
+        outcome = Error("Invalid ledger JSON: {message}")
+    return outcome
+
+# Builds a realistic pre-populated multi-currency ledger for demos and tests.
+seedDemoLedger() -> LedgerEngine:
+  engine = LedgerEngine()
+  engine.setBudget(Category.housing, "1400.00", Currency.usd)
+  engine.setBudget(Category.food, "500.00", Currency.usd)
+  engine.setBudget(Category.transport, "220.00", Currency.usd)
+  engine.setBudget(Category.utilities, "180.00", Currency.usd)
+  engine.setBudget(Category.entertainment, "200.00", Currency.usd)
+  engine.setBudget(Category.education, "250.00", Currency.usd)
+
+  engine.addEntry("Monthly Salary", "4850.00", EntryKind.income, Category.salary, Currency.usd, note: "Core engineering payroll", dateIso: "2026-11-01")
+  engine.addEntry("Quds Consulting Sprint", "680.00", EntryKind.income, Category.freelance, Currency.eur, note: "Client architecture review", dateIso: "2026-11-06")
+  engine.addEntry("Apartment Rent", "1250.00", EntryKind.expense, Category.housing, Currency.usd, note: "November lease", dateIso: "2026-11-02")
+  engine.addEntry("Fresh Market & Groceries", "285.40", EntryKind.expense, Category.food, Currency.usd, note: "Weekly organic basket", dateIso: "2026-11-08")
+  engine.addEntry("Specialty Coffee & Lunch", "145.60", EntryKind.expense, Category.food, Currency.usd, note: "Team lunches", dateIso: "2026-11-14")
+  engine.addEntry("Metro & Ride Share", "112.50", EntryKind.expense, Category.transport, Currency.usd, note: "Monthly pass + airport", dateIso: "2026-11-10")
+  engine.addEntry("Fiber Internet & Power", "164.00", EntryKind.expense, Category.utilities, Currency.usd, note: "Home studio utilities", dateIso: "2026-11-12")
+  engine.addEntry("Design Books & Course", "139.00", EntryKind.expense, Category.education, Currency.usd, note: "Compilers & UI craft", dateIso: "2026-11-16")
+  engine.addEntry("Concert & Cinema Night", "225.00", EntryKind.expense, Category.entertainment, Currency.usd, note: "Weekend tickets", dateIso: "2026-11-19")
+  engine.addEntry("Emergency Reserve Transfer", "450.00", EntryKind.expense, Category.savings, Currency.usd, note: "High-yield vault", dateIso: "2026-11-21")
+  return engine

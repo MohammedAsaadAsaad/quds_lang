@@ -1,0 +1,394 @@
+use package:flutter/material.dart
+use package:flutter/services.dart
+use package:quds_ledger
+use package:budget_ledger/src/theme
+
+# Opens a polished animated dialog to add a new Income or Expense transaction.
+showAddEntryDialog(
+  context: BuildContext,
+  engine: LedgerEngine,
+  onSaved: () -> void,
+) -> void:
+  showDialog<void>(
+    context: context,
+    builder: (dialogContext: BuildContext) -> AddEntryDialog(
+      engine: engine,
+      onSaved: onSaved,
+    ),
+  )
+
+class AddEntryDialog extends StatefulWidget:
+  engine: LedgerEngine required
+  onSaved: () -> void required
+
+  createState() -> State<AddEntryDialog> = AddEntryDialogState()
+
+class AddEntryDialogState extends State<AddEntryDialog>:
+  titleController: TextEditingController = TextEditingController()
+  amountController: TextEditingController = TextEditingController()
+  noteController: TextEditingController = TextEditingController()
+  var kind: EntryKind = EntryKind.expense
+  var category: Category = Category.food
+  var currency: Currency = Currency.usd
+  var errorMessage: String? = null
+
+  initState() -> void:
+    super.initState()
+    currency = widget.engine.displayCurrency
+
+  dispose() -> void:
+    titleController.dispose()
+    amountController.dispose()
+    noteController.dispose()
+    super.dispose()
+
+  _selectKind(next: EntryKind) -> void:
+    update = () -> :
+      kind = next
+      category = Category.salary if next == EntryKind.income else Category.food
+      errorMessage = null
+    setState(update)
+
+  _selectCurrency(next: Currency?) -> void:
+    if let picked = next:
+      update = () -> :
+        currency = picked
+      setState(update)
+
+  _selectCategory(cat: Category, selected: bool) -> void:
+    if selected:
+      update = () -> :
+        category = cat
+      setState(update)
+
+  _submit() -> void:
+    outcome = widget.engine.addEntry(
+      titleController.text,
+      amountController.text,
+      kind,
+      category,
+      currency,
+      note: noteController.text,
+    )
+    match outcome:
+      Ok(value: _):
+        widget.onSaved()
+        Navigator.of(context).pop()
+      Error(error: msg):
+        update = () -> :
+          errorMessage = msg
+        setState(update)
+
+  build(context: BuildContext) -> Widget:
+    cats = incomeCategories() if kind == EntryKind.income else expenseCategories()
+    currencyItems = [
+      DropdownMenuItem<Currency>(
+        value: c,
+        child: Text(currencyCode(c), style: TextStyle(fontWeight: FontWeight.w700)),
+      ) for c in allCurrencies()
+    ]
+    catChips: List<Widget> = [
+      ChoiceChip(
+        label: Text(categoryLabel(c)),
+        avatar: Icon(categoryIcon(c), size: 16.0, color: categoryColor(c)),
+        selected: category == c,
+        onSelected: (sel: bool) -> _selectCategory(c, sel),
+      ) for c in cats
+    ]
+    errorWidget: List<Widget> = []
+    if let msg = errorMessage:
+      errorWidget.add(
+        Padding(
+          padding: EdgeInsets.only(top: 12.0),
+          child: Text(
+            msg,
+            style: TextStyle(color: brandCoral(), fontSize: 13.0, fontWeight: FontWeight.w600),
+          ),
+        ),
+      )
+
+    return Dialog(
+      backgroundColor: surfaceColor(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(26.0),
+        side: BorderSide(color: borderColor(context)),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 480.0),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "New Transaction",
+                    style: TextStyle(
+                      fontSize: 20.0,
+                      fontWeight: FontWeight.w800,
+                      color: inkColor(context),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () -> Navigator.of(context).pop(),
+                    icon: Icon(Icons.close_rounded, color: mutedColor(context)),
+                  ),
+                ],
+              ),
+              SizedBox(height: 14.0),
+              Row(
+                children: [
+                  Expanded(
+                    child: _kindButton(context, "Expense", EntryKind.expense, brandCoral()),
+                  ),
+                  SizedBox(width: 10.0),
+                  Expanded(
+                    child: _kindButton(context, "Income", EntryKind.income, brandEmerald()),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16.0),
+              TextField(
+                controller: titleController,
+                decoration: InputDecoration(
+                  labelText: "Title",
+                  hintText: "e.g. Organic Groceries",
+                  filled: true,
+                  fillColor: elevatedColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)),
+                ),
+              ),
+              SizedBox(height: 12.0),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: amountController,
+                      keyboardType: TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: "Amount",
+                        hintText: "0.00",
+                        filled: true,
+                        fillColor: elevatedColor(context),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 10.0),
+                  DropdownButton<Currency>(
+                    value: currency,
+                    dropdownColor: surfaceColor(context),
+                    items: currencyItems,
+                    onChanged: _selectCurrency,
+                  ),
+                ],
+              ),
+              SizedBox(height: 14.0),
+              Text(
+                "Category",
+                style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: mutedColor(context)),
+              ),
+              SizedBox(height: 8.0),
+              Wrap(spacing: 8.0, runSpacing: 8.0, children: catChips),
+              SizedBox(height: 12.0),
+              TextField(
+                controller: noteController,
+                decoration: InputDecoration(
+                  labelText: "Note (optional)",
+                  filled: true,
+                  fillColor: elevatedColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)),
+                ),
+              ),
+              ...errorWidget,
+              SizedBox(height: 20.0),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _submit,
+                  icon: Icon(Icons.check_rounded),
+                  label: Text("Save Transaction"),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: brandDeepEmerald(),
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(vertical: 14.0),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    )
+
+  _kindButton(context: BuildContext, text: String, target: EntryKind, color: Color) -> Widget:
+    active = kind == target
+    bg = color.withValues(alpha: 0.18) if active else elevatedColor(context)
+    br = color if active else borderColor(context)
+    fg = color if active else mutedColor(context)
+    return AnimatedContainer(
+      duration: motionDuration(context, 180),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14.0),
+        border: Border.all(color: br),
+      ),
+      child: InkWell(
+        onTap: () -> _selectKind(target),
+        borderRadius: BorderRadius.circular(14.0),
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 12.0),
+          child: Center(
+            child: Text(
+              text,
+              style: TextStyle(fontWeight: FontWeight.w700, color: fg),
+            ),
+          ),
+        ),
+      ),
+    )
+
+# Dialog to update a category's monthly budget limit.
+showBudgetLimitDialog(
+  context: BuildContext,
+  engine: LedgerEngine,
+  category: Category,
+  onSaved: () -> void,
+) -> void:
+  existing = engine.budgetFor(category)
+  controller = TextEditingController(text: existing?.decimalString() ?? "300.00")
+  onUpdate = (ctx: BuildContext) -> :
+    res = engine.setBudget(category, controller.text, engine.displayCurrency)
+    match res:
+      Ok(value: _):
+        onSaved()
+        Navigator.of(ctx).pop()
+      Error(error: msg):
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)))
+
+  showDialog<void>(
+    context: context,
+    builder: (ctx: BuildContext) -> AlertDialog(
+      backgroundColor: surfaceColor(context),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22.0)),
+      title: Text("Monthly Limit · {categoryLabel(category)}"),
+      content: TextField(
+        controller: controller,
+        keyboardType: TextInputType.numberWithOptions(decimal: true),
+        decoration: InputDecoration(
+          labelText: "Limit in {currencyCode(engine.displayCurrency)}",
+          filled: true,
+          fillColor: elevatedColor(context),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () -> Navigator.of(ctx).pop(),
+          child: Text("Cancel"),
+        ),
+        FilledButton(
+          onPressed: () -> onUpdate(ctx),
+          child: Text("Update"),
+        ),
+      ],
+    ),
+  )
+
+# Dialog for live @Json snapshot export & import via quds_ledger.
+showJsonSyncDialog(
+  context: BuildContext,
+  engine: LedgerEngine,
+  onImported: () -> void,
+) -> void:
+  controller = TextEditingController(text: engine.exportJson())
+  onCopy = () -> :
+    Clipboard.setData(ClipboardData(text: controller.text))
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Copied ledger JSON to clipboard.")),
+    )
+  onImport = (ctx: BuildContext) -> :
+    res = engine.importJson(controller.text)
+    match res:
+      Ok(value: count):
+        onImported()
+        Navigator.of(ctx).pop()
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Restored {count} transactions from JSON.")),
+        )
+      Error(error: msg):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        )
+
+  showDialog<void>(
+    context: context,
+    builder: (ctx: BuildContext) -> Dialog(
+      backgroundColor: surfaceColor(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24.0),
+        side: BorderSide(color: borderColor(context)),
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: 560.0),
+        child: Padding(
+          padding: EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "JSON Ledger Snapshot",
+                    style: TextStyle(fontSize: 18.0, fontWeight: FontWeight.w800, color: inkColor(context)),
+                  ),
+                  IconButton(
+                    onPressed: () -> Navigator.of(ctx).pop(),
+                    icon: Icon(Icons.close_rounded, color: mutedColor(context)),
+                  ),
+                ],
+              ),
+              Text(
+                "Serialized directly by Quds @Json models from package:quds_ledger.",
+                style: TextStyle(fontSize: 13.0, color: mutedColor(context)),
+              ),
+              SizedBox(height: 14.0),
+              TextField(
+                controller: controller,
+                maxLines: 9,
+                style: TextStyle(fontFamily: "monospace", fontSize: 12.0),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: elevatedColor(context),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)),
+                ),
+              ),
+              SizedBox(height: 16.0),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onCopy,
+                    icon: Icon(Icons.copy_rounded, size: 18.0),
+                    label: Text("Copy"),
+                  ),
+                  SizedBox(width: 10.0),
+                  FilledButton.icon(
+                    onPressed: () -> onImport(ctx),
+                    icon: Icon(Icons.download_done_rounded, size: 18.0),
+                    label: Text("Import & Restore"),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  )

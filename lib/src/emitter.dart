@@ -451,8 +451,23 @@ class DartEmitter {
                     ? ' hide ${_providerCombinator(node.hide, node).join(', ')}'
                     : '';
         if (sectionNames != null && combinator.isEmpty) continue;
+        final isQuds = !node.uri.startsWith('dart:') &&
+            !node.uri.endsWith('.dart') &&
+            !target.endsWith('.dart');
+        String hideSynthetic(String current) {
+          if (!isQuds || current.startsWith(' show ')) return current;
+          const internal = ['Optional', 'missing', r'$qudsKnownGuards'];
+          if (current.startsWith(' hide ')) {
+            return '$current, ${internal.join(', ')}';
+          }
+          return ' hide ${internal.join(', ')}';
+        }
+
         if (node.export) {
-          _imports.add("export '$uri'$combinator;");
+          final exported = hideSynthetic(combinator);
+          final hid = exported != combinator;
+          _imports.add(
+              "${hid ? '// ignore: undefined_hidden_name\n' : ''}export '$uri'$exported;");
           continue;
         }
         final prefix = node.prefix == null
@@ -467,10 +482,17 @@ class DartEmitter {
                 node.hide.isNotEmpty)) {
           _imports.add("import 'dart:core';");
         }
+        final effectiveCombinator =
+            node.prefix == null ? hideSynthetic(combinator) : combinator;
+        final hidSynthetic = effectiveCombinator != combinator;
         final providerShow = node.show.isNotEmpty &&
             _providerCombinator(node.show, node).length > node.show.length;
+        final ignores = <String>[
+          if (providerShow) 'unused_shown_name',
+          if (hidSynthetic) 'undefined_hidden_name',
+        ];
         _imports.add(
-            "${providerShow ? '// ignore: unused_shown_name\n' : ''}import '$uri'$prefix$combinator;");
+            "${ignores.isEmpty ? '' : '// ignore: ${ignores.join(', ')}\n'}import '$uri'$prefix$effectiveCombinator;");
       } else if (node is PartDirective) {
         final uri = model.resolvedParts[node] ??
             (node.uri.endsWith('.quds')

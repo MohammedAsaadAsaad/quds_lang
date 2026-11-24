@@ -582,4 +582,220 @@ dependencies:
       contains('greet(who: String)'),
     );
   });
+
+  test(
+      'barrel re-exports, diamond sealed types, imported SDK defaults, List.sort comparator, and nullable List<Base>? work together',
+      () async {
+    final sandbox = Directory.systemTemp.createTempSync('quds-ext-ledger-reg-');
+    addTearDown(() => sandbox.deleteSync(recursive: true));
+
+    final pkg = Directory('${sandbox.path}/kit')..createSync();
+    Directory('${pkg.path}/lib/src').createSync(recursive: true);
+    File('${pkg.path}/pubspec.yaml').writeAsStringSync(
+        'name: kit\nenvironment:\n  sdk: ">=3.13.0 <4.0.0"\n');
+    File('${pkg.path}/lib/src/math_money.quds').writeAsStringSync('''
+use quds:math::number show Fraction, fraction
+
+class Coin:
+  amount: Fraction required
+
+makeCoin(cents: int, scale: int = 100) -> Coin:
+  return Coin(amount: fraction(cents, scale))
+''');
+    File('${pkg.path}/lib/src/status.quds').writeAsStringSync('''
+use package:kit/src/math_money
+
+sealed type Health:
+  Good(note: String)
+  Warn(note: String)
+
+class Item:
+  val: int required
+  status: Health required
+''');
+    File('${pkg.path}/lib/src/ops.quds').writeAsStringSync('''
+use package:kit/src/math_money
+use package:kit/src/status
+
+sortDesc(items: List<Item>) -> List<int>:
+  items.sort((a: Item, b: Item) -> b.val.compareTo(a.val))
+  return [it.val for it in items]
+
+coinLabel(cents: int) -> String:
+  c = makeCoin(cents, scale: 100)
+  return "{c.amount.numerator}/{c.amount.denominator}"
+''');
+    File('${pkg.path}/lib/kit.quds').writeAsStringSync('''
+export package:kit/src/math_money
+export package:kit/src/status
+export package:kit/src/ops
+''');
+
+    final app = Directory('${sandbox.path}/app')..createSync();
+    Directory('${app.path}/bin').createSync(recursive: true);
+    File('${app.path}/pubspec.yaml').writeAsStringSync('''
+name: app
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+dependencies:
+  kit:
+    path: ../kit
+''');
+    final pubCache = Directory('${sandbox.path}/pub_cache')..createSync();
+    await _pubGet(app.path, pubCache: pubCache.path);
+    File('${app.path}/bin/main.quds').writeAsStringSync('''
+use package:kit
+
+class Base:
+  id: int required
+
+class Sub extends Base:
+  tag: String required
+
+acceptOptional(items: List<Base>? = null) -> int:
+  return items?.length ?? 0
+
+main():
+  c = makeCoin(50, scale: 100)
+  items = [Item(val: 1, status: Good(note: "ok")), Item(val: 5, status: Warn(note: "hi"))]
+  ordered = sortDesc(items)
+  count = acceptOptional(items: [Base(id: 1), Sub(id: 2, tag: "s")])
+  print "{c.amount.numerator}/{c.amount.denominator}|{coinLabel(25)}|{ordered}|{count}"
+''');
+
+    final run =
+        await _runQuds(['run', 'bin/main.quds'], workingDirectory: app.path);
+    expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
+    expect(run.stdout, '1/2|1/4|[5, 1]|2\n');
+  }, timeout: const Timeout.factor(4));
+
+  test(
+      'external Dart setters, void generic top bounds, callable fields, and cross-package package: backend URIs',
+      () async {
+    final sandbox =
+        Directory.systemTemp.createTempSync('quds-ext-interop-reg-');
+    addTearDown(() => sandbox.deleteSync(recursive: true));
+    final pubCache = Directory('${sandbox.path}/pub_cache')..createSync();
+
+    final dartLib = Directory('${sandbox.path}/native_box')..createSync();
+    Directory('${dartLib.path}/lib').createSync(recursive: true);
+    File('${dartLib.path}/pubspec.yaml').writeAsStringSync(
+        'name: native_box\nenvironment:\n  sdk: ">=3.13.0 <4.0.0"\n');
+    File('${dartLib.path}/lib/native_box.dart').writeAsStringSync('''
+class Box {
+  int _value = 0;
+  int get value => _value;
+  set value(int v) => _value = v;
+  String label = 'init';
+  int get readOnly => _value;
+}
+
+T runTyped<T>(T Function() body) => body();
+''');
+
+    final qudsPkg = Directory('${sandbox.path}/models_pkg')..createSync();
+    Directory('${qudsPkg.path}/lib/src').createSync(recursive: true);
+    File('${qudsPkg.path}/pubspec.yaml').writeAsStringSync(
+        'name: models_pkg\nenvironment:\n  sdk: ">=3.13.0 <4.0.0"\n');
+    File('${qudsPkg.path}/lib/src/tag.quds').writeAsStringSync('''
+sealed type Tag:
+  OkTag(label: String)
+  WarnTag(label: String)
+''');
+    File('${qudsPkg.path}/lib/models_pkg.quds').writeAsStringSync('''
+export package:models_pkg/src/tag
+''');
+
+    final app = Directory('${sandbox.path}/app')..createSync();
+    Directory('${app.path}/lib/src').createSync(recursive: true);
+    Directory('${app.path}/bin').createSync(recursive: true);
+    File('${app.path}/pubspec.yaml').writeAsStringSync('''
+name: app
+environment:
+  sdk: ">=3.13.0 <4.0.0"
+dependencies:
+  native_box:
+    path: ../native_box
+  models_pkg:
+    path: ../models_pkg
+''');
+    await _pubGet(qudsPkg.path, pubCache: pubCache.path);
+    await _pubGet(app.path, pubCache: pubCache.path);
+
+    File('${app.path}/lib/src/consumer.quds').writeAsStringSync('''
+use package:native_box/native_box.dart
+use package:models_pkg
+
+class Runner:
+  onDone: () -> void required
+
+  fire() -> void:
+    onDone()
+
+describeTag(tag: Tag) -> String:
+  return match tag:
+    OkTag(label: text): "ok:{text}"
+    WarnTag(label: text): "warn:{text}"
+
+exercise() -> String:
+  box = Box()
+  box.value = 42
+  box.label = "ready"
+  var called = 0
+  inc = () -> :
+    called = called + 1
+  runner = Runner(onDone: inc)
+  runner.onDone()
+  runner.fire()
+  bump = () -> :
+    called = called + 10
+  runTyped<void>(bump)
+  return "{box.value}|{box.label}|{called}|{describeTag(OkTag(label: 'go'))}"
+''');
+
+    // Build both packages with --package and verify package: backend URI (no broken ../..).
+    final buildModels = await _runQuds(['build', '--package', qudsPkg.path],
+        workingDirectory: sandbox.path);
+    expect(buildModels.exitCode, 0,
+        reason: '${buildModels.stdout}\n${buildModels.stderr}');
+    final buildApp = await _runQuds(['build', '--package', app.path],
+        workingDirectory: sandbox.path);
+    expect(buildApp.exitCode, 0,
+        reason: '${buildApp.stdout}\n${buildApp.stderr}');
+
+    final generated =
+        File('${app.path}/lib/src/consumer.dart').readAsStringSync();
+    expect(generated, isNot(contains('../models_pkg/')));
+
+    // Verify read-only Dart getter assignment is rejected.
+    final badFile = File('${app.path}/bin/bad.quds');
+    const badSource = '''
+use package:native_box/native_box.dart
+
+main():
+  b = Box()
+  b.readOnly = 1
+''';
+    badFile.writeAsStringSync(badSource);
+    expect(
+      () => compile(badSource, file: badFile.path),
+      throwsA(predicate((e) => '$e'.contains('read-only'))),
+    );
+
+    // Execute generated Dart directly via `dart run` to verify end-to-end runtime.
+    File('${app.path}/bin/run.dart').writeAsStringSync('''
+import 'package:app/src/consumer.dart';
+
+void main() {
+  print(exercise());
+}
+''');
+    final dartRun = await Process.run(
+      Platform.resolvedExecutable,
+      ['run', 'bin/run.dart'],
+      workingDirectory: app.path,
+    );
+    expect(dartRun.exitCode, 0, reason: '${dartRun.stdout}\n${dartRun.stderr}');
+    expect(dartRun.stdout, '42|ready|12|ok:go\n');
+  }, timeout: const Timeout.factor(4));
 }

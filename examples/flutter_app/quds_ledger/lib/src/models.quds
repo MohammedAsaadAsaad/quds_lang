@@ -1,0 +1,111 @@
+use package:quds_ledger/src/money
+
+# Whether a ledger entry adds to or subtracts from the balance.
+@Json
+enum EntryKind:
+  income
+  expense
+
+# Built-in budget and income categories.
+@Json
+enum Category:
+  housing
+  food
+  transport
+  utilities
+  health
+  education
+  entertainment
+  salary
+  freelance
+  savings
+
+# Display label for [category].
+categoryLabel(category: Category) -> String:
+  return match category:
+    housing: "Housing"
+    food: "Food & Dining"
+    transport: "Transport"
+    utilities: "Utilities"
+    health: "Health"
+    education: "Education"
+    entertainment: "Leisure"
+    salary: "Salary"
+    freelance: "Freelance"
+    savings: "Savings"
+
+# True when [category] is typically used for income entries.
+categoryIsIncome(category: Category) -> bool:
+  return category == Category.salary or category == Category.freelance
+
+# Expense categories in display order.
+expenseCategories() -> List<Category>:
+  return [
+    Category.housing,
+    Category.food,
+    Category.transport,
+    Category.utilities,
+    Category.health,
+    Category.education,
+    Category.entertainment,
+    Category.savings,
+  ]
+
+# Income categories in display order.
+incomeCategories() -> List<Category>:
+  return [Category.salary, Category.freelance, Category.savings]
+
+# All categories in display order.
+allCategories() -> List<Category>:
+  return [
+    Category.housing,
+    Category.food,
+    Category.transport,
+    Category.utilities,
+    Category.health,
+    Category.education,
+    Category.entertainment,
+    Category.salary,
+    Category.freelance,
+    Category.savings,
+  ]
+
+# A single immutable ledger transaction serialized with compile-time @Json.
+@Json
+value class LedgerEntry:
+  id: String required
+  title: String required
+  note: String = ""
+  cents: int required
+  currency: Currency required
+  kind: EntryKind required
+  category: Category required
+  dateIso: String required
+
+# A monthly spending limit for a single expense category.
+@Json
+value class BudgetLimit:
+  category: Category required
+  limitCents: int required
+  currency: Currency = Currency.usd
+
+# Serializable full ledger snapshot for backup and transfer.
+@Json
+value class LedgerSnapshot:
+  displayCurrency: Currency required
+  entries: List<LedgerEntry> required
+  budgets: List<BudgetLimit> required
+
+# Budget health state for a category spending limit.
+sealed type BudgetStatus:
+  Healthy(ratio: double, remainingCents: int)
+  Warning(ratio: double, remainingCents: int)
+  Exceeded(ratio: double, overCents: int)
+
+# Aggregated category spending summary in the active display currency.
+value class CategorySummary:
+  category: Category required
+  spent: Money required
+  share: double required
+  limit: Money? = null
+  status: BudgetStatus? = null

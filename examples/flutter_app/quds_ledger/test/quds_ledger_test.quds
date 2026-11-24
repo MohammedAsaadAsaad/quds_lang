@@ -1,0 +1,76 @@
+use package:quds_ledger
+
+test "exact rational money avoids floating-point drift":
+  a = parseMoney("0.10", currency: Currency.usd)
+  b = parseMoney("0.20", currency: Currency.usd)
+  expect(a != null, isTrue)
+  expect(b != null, isTrue)
+  sum = a! + b!
+  expect(sum.decimalString(), equals("0.30"))
+  expect(sum.cents(), equals(30))
+  expect(sum.formatted(), equals("\$0.30"))
+
+test "implicit and explicit Money conversions and safe to? parsing":
+  whole: Money = 250
+  expect(whole.formatted(), equals("\$250.00"))
+  parsed = "1250.75" to Money
+  expect(parsed.formatted(), equals("\$1,250.75"))
+  asDouble = parsed to double
+  expect(asDouble, equals(1250.75))
+  invalid = "not-money" to? Money
+  expect(invalid, equals(null))
+
+test "exact rational multi-currency conversion round-trips cleanly":
+  usd = moneyFromCents(10000, currency: Currency.usd)
+  sar = usd.convertTo(Currency.sar)
+  expect(sar.decimalString(), equals("375.00"))
+  backToUsd = sar.convertTo(Currency.usd)
+  expect(backToUsd.decimalString(), equals("100.00"))
+
+test "LedgerEngine validates inputs, computes budgets, and round-trips JSON":
+  engine = seedDemoLedger()
+  expect(engine.entries.length, equals(10))
+  expect(engine.balance().cents() > 0, isTrue)
+
+  badTitle = engine.addEntry("   ", "25.00", EntryKind.expense, Category.food, Currency.usd)
+  badTitleRejected = match badTitle:
+    Ok(value: _): false
+    Error(error: _): true
+  expect(badTitleRejected, isTrue)
+
+  badAmount = engine.addEntry("Lunch", "abc", EntryKind.expense, Category.food, Currency.usd)
+  badAmountRejected = match badAmount:
+    Ok(value: _): false
+    Error(error: _): true
+  expect(badAmountRejected, isTrue)
+
+  zeroAmount = engine.addEntry("Free", "0", EntryKind.expense, Category.food, Currency.usd)
+  zeroRejected = match zeroAmount:
+    Ok(value: _): false
+    Error(error: _): true
+  expect(zeroRejected, isTrue)
+
+  added = engine.addEntry("Books", "42.50", EntryKind.expense, Category.education, Currency.usd)
+  addedOk = match added:
+    Ok(value: e): e.cents == 4250
+    Error(error: _): false
+  expect(addedOk, isTrue)
+
+  alerts = engine.budgetAlerts()
+  expect(alerts.isNotEmpty, isTrue)
+
+  jsonText = engine.exportJson()
+  restored = LedgerEngine()
+  imported = restored.importJson(jsonText)
+  importedOk = match imported:
+    Ok(value: count): count == engine.entries.length
+    Error(error: _): false
+  expect(importedOk, isTrue)
+  expect(restored.entries.length, equals(engine.entries.length))
+  expect(restored.balance().cents(), equals(engine.balance().cents()))
+
+  badJson = restored.importJson(r"{not valid json")
+  badJsonRejected = match badJson:
+    Ok(value: _): false
+    Error(error: _): true
+  expect(badJsonRejected, isTrue)

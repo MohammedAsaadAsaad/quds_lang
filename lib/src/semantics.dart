@@ -12732,7 +12732,14 @@ class Analyzer {
     if (fallbackAsync) model.asyncTimeoutFallbacks.add(node);
     final fbType = _checkBodyOrExpr(node.fallbackExpr, node.fallbackStmts);
     if (bodyType == 'void' && fbType == 'void') return 'void';
-    return joinTypes(bodyType, fbType, node);
+    final joined = joinTypes(bodyType, fbType, node);
+    if (node.bodyExpr != null) {
+      _noteUnionWrap(node.bodyExpr!, bodyType, joined, null);
+    }
+    if (node.fallbackExpr != null) {
+      _noteUnionWrap(node.fallbackExpr!, fbType, joined, null);
+    }
+    return joined;
   }
 
   String captureExpression(CaptureExpression node) {
@@ -13323,13 +13330,17 @@ class Analyzer {
     }
     final thenType = expression(node.thenValue);
     final elseType = expression(node.elseValue);
-    return joinTypes(thenType, elseType, node);
+    final joined = joinTypes(thenType, elseType, node);
+    _noteUnionWrap(node.thenValue, thenType, joined, null);
+    _noteUnionWrap(node.elseValue, elseType, joined, null);
+    return joined;
   }
 
   String matchExpression(MatchExpression node) {
     final matched = expression(node.value);
     if (node.arms.isEmpty) fail('match needs at least one arm', node);
     String? type;
+    final armTypes = <String>[];
     for (final arm in node.arms) {
       final saved = _scope;
       _scope = _Scope(saved);
@@ -13338,8 +13349,12 @@ class Analyzer {
         fail('when guard must be bool', arm.guard!);
       }
       final armType = expression(arm.result);
+      armTypes.add(armType);
       _scope = saved;
       type = type == null ? armType : joinTypes(type, armType, arm.result);
+    }
+    for (var i = 0; i < node.arms.length; i++) {
+      _noteUnionWrap(node.arms[i].result, armTypes[i], type!, null);
     }
     checkExhaustive(node, matched, node.arms.map((arm) => arm.pattern),
         node.arms.map((arm) => arm.guard),
@@ -13355,7 +13370,12 @@ class Analyzer {
   }
 
   String tryExpression(TryExpression node) {
-    return joinTypes(expression(node.operand), expression(node.fallback), node);
+    final operandType = expression(node.operand);
+    final fallbackType = expression(node.fallback);
+    final joined = joinTypes(operandType, fallbackType, node);
+    _noteUnionWrap(node.operand, operandType, joined, null);
+    _noteUnionWrap(node.fallback, fallbackType, joined, null);
+    return joined;
   }
 
   String joinTypes(String left, String right, Node node) {

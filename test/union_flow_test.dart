@@ -59,4 +59,46 @@ void main() {
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
     expect(run.stdout, expected);
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('if, match, and try expressions box branches into expected union types',
+      () async {
+    final sandbox = Directory.systemTemp.createTempSync('quds-union-expr-');
+    addTearDown(() => sandbox.deleteSync(recursive: true));
+    final entry = File('${sandbox.path}/app.quds')..writeAsStringSync('''
+describe(v: String | int) -> String:
+  if v is String:
+    return "s:{v}"
+  return "i:{v}"
+
+failNow() -> String:
+  throw StateError("boom")
+
+main():
+  a = 5
+  b: String | int = if a > 3: "sd" else: 4
+  c: String | int = if a < 3: "sd" else: 4
+  d: String | int = match a:
+    5: "five"
+    _: 0
+  e: String | int = try failNow() else 99
+  o: Object = if a > 3: "ok" else: 1
+  print "{describe(b)}|{describe(c)}|{describe(d)}|{describe(e)}|{o}"
+''');
+
+    final qudsBin = '${Directory.current.path}/bin/quds.dart';
+    final analyze = await Process.run(
+      Platform.resolvedExecutable,
+      [qudsBin, 'analyze', '--fatal-infos', entry.path],
+      workingDirectory: sandbox.path,
+    );
+    expect(analyze.exitCode, 0, reason: '${analyze.stdout}\n${analyze.stderr}');
+
+    final run = await Process.run(
+      Platform.resolvedExecutable,
+      [qudsBin, 'run', entry.path],
+      workingDirectory: sandbox.path,
+    );
+    expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
+    expect(run.stdout, 's:sd|i:4|s:five|i:99|ok\n');
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

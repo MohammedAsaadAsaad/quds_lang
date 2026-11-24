@@ -51,6 +51,9 @@ class FlutterLiveSession {
     _fullRestart = false;
     _busy = true;
     try {
+      log(restart
+          ? 'Quds: recompiling before hot restart...'
+          : 'Quds: source changed, recompiling...');
       final before = snapshot();
       if (!build()) {
         log('Quds: compilation failed; running app kept. Save a correction to retry.');
@@ -105,19 +108,44 @@ class FlutterLiveSession {
     switch (message['event']) {
       case 'app.start':
         _appId = params['appId'] as String?;
+        final device = params['deviceId'];
+        final mode = params['mode'];
+        final details = [
+          if (device != null && '$device'.isNotEmpty) 'on $device',
+          if (mode != null && '$mode'.isNotEmpty) '($mode)',
+        ].join(' ');
+        log(details.isEmpty
+            ? 'Flutter: starting app...'
+            : 'Flutter: starting app $details...');
       case 'app.started':
         _ready = true;
+        log('Flutter: app running.');
         _drain();
       case 'app.log':
         final text = params['log'];
-        if (text != null) log('$text');
+        if (text != null && '$text'.isNotEmpty) log('$text');
       case 'daemon.logMessage':
-        log('${params['message'] ?? ''}');
+        final text = params['message'];
+        if (text != null && '$text'.isNotEmpty) log('$text');
       case 'app.progress':
         final text = params['message'];
-        if (text != null) log('$text');
+        final finished = params['finished'] == true;
+        if (text != null && '$text'.isNotEmpty) {
+          log(finished ? 'Flutter: $text done.' : 'Flutter: $text');
+        }
+      case 'app.webLaunchUrl':
+        final url = params['url'];
+        if (url != null && '$url'.isNotEmpty) {
+          log('Flutter: web app available at $url');
+        }
+      case 'app.debugPort':
+        final uri = params['wsUri'];
+        if (uri != null && '$uri'.isNotEmpty) {
+          log('Flutter: VM service available at $uri');
+        }
       case 'app.stop':
         _ready = false;
+        log('Flutter: app stopped.');
     }
   }
 

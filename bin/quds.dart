@@ -1240,7 +1240,9 @@ bool _isUnderDirectory(String filePath, String directoryPath) {
   final file = _canonicalPathCli(filePath);
   final dir = _canonicalPathCli(directoryPath);
   final prefix = dir.endsWith('/') ? dir : '$dir/';
-  return file.startsWith(prefix);
+  return Platform.isWindows
+      ? file.toLowerCase().startsWith(prefix.toLowerCase())
+      : file.startsWith(prefix);
 }
 
 String _canonicalPathCli(String path) {
@@ -2677,11 +2679,14 @@ class _FlutterPreparation {
 }
 
 _FlutterPreparation _prepareFlutter(File input,
-    {bool guardMain = true, String targetPlatform = 'flutter'}) {
+    {bool guardMain = true,
+    String targetPlatform = 'flutter',
+    void Function(String)? onProgress}) {
   final root = _packageRoot(input.absolute.parent);
+  final origin = input.absolute.path;
   final target = _flutterGenerated(input, root);
   final relative = _relativePosix(root, target);
-  final tracked = <String>{input.absolute.path};
+  final tracked = <String>{origin};
   final compiledCache = <String, (String, Compilation)>{};
   late String Function() currentSources;
   var buildFailure = 65;
@@ -2690,6 +2695,14 @@ _FlutterPreparation _prepareFlutter(File input,
   void report(Object error) {
     lastError = '$error';
     stderr.writeln(error);
+  }
+
+  String displaySource(File file) {
+    final full = file.absolute.path;
+    if (_isUnderDirectory(full, root.path)) return _relativePosix(root, file);
+    final info = packageFileInfo(full, packageConfigFrom: origin);
+    if (info != null) return 'package:${info.name}/${info.relativeInsideLib}';
+    return full;
   }
 
   bool build() {
@@ -2711,9 +2724,15 @@ _FlutterPreparation _prepareFlutter(File input,
             cached.$1 == _stamp({...cached.$2.dependencies, path}.toList())) {
           compiled = cached.$2;
         } else {
+          onProgress?.call('Quds: compiling ${displaySource(file)}...');
           final before = currentSources();
-          compiled = compile(file.readAsStringSync(),
-              file: path, targetPlatform: targetPlatform, flutter: true);
+          compiled = compile(
+            file.readAsStringSync(),
+            file: path,
+            targetPlatform: targetPlatform,
+            flutter: true,
+            packageConfigFrom: origin,
+          );
           tracked
               .addAll(compiled.dependencies.where((p) => p.endsWith('.quds')));
           if (before == currentSources()) {
@@ -2730,7 +2749,7 @@ _FlutterPreparation _prepareFlutter(File input,
       prepare(input);
       for (final (file, _) in plan) {
         final output =
-            _flutterGenerated(file, _packageRoot(file.absolute.parent));
+            _outputFileForRoot(file, root, flutter: true, configOrigin: origin);
         if (output.existsSync() &&
             !output.readAsStringSync().startsWith(_generatedHeader)) {
           report('Refusing to overwrite non-generated file: ${output.path}');
@@ -2738,12 +2757,22 @@ _FlutterPreparation _prepareFlutter(File input,
           return false;
         }
       }
+      onProgress?.call(
+          'Quds: emitting ${plan.length} generated Dart file(s) -> lib/quds_gen/...');
+      final artifactRoot = Directory(_join(root.path, 'lib/quds_gen'));
       for (final (file, compiled) in plan) {
-        if (!_emitGenerated(file, compiled,
-            announce: false,
-            destination:
-                _flutterGenerated(file, _packageRoot(file.absolute.parent)),
-            artifactRoot: Directory('${root.path}/lib/quds_gen'))) {
+        final output =
+            _outputFileForRoot(file, root, flutter: true, configOrigin: origin);
+        if (!_emitGenerated(
+          file,
+          compiled,
+          announce: false,
+          destination: output,
+          artifactRoot: artifactRoot,
+          projectRoot: root,
+          configOrigin: origin,
+          flutter: true,
+        )) {
           buildFailure = exitCode == 0 ? 65 : exitCode;
           return false;
         }
@@ -2824,8 +2853,15 @@ Future<void> _runFlutter(File input, List<String> arguments,
     exitCode = 1;
     return;
   }
-  final prepared = _prepareFlutter(input,
-      targetPlatform: _flutterPlatform(arguments, buildTarget: buildTarget));
+  final actionLabel = buildTarget == null
+      ? 'Flutter run${arguments.isEmpty ? '' : ' (${arguments.join(' ')})'}'
+      : 'Flutter build $buildTarget${arguments.isEmpty ? '' : ' (${arguments.join(' ')})'}';
+  stdout.writeln('Quds: preparing $actionLabel...');
+  final prepared = _prepareFlutter(
+    input,
+    targetPlatform: _flutterPlatform(arguments, buildTarget: buildTarget),
+    onProgress: stdout.writeln,
+  );
   final root = prepared.root;
   final relative = prepared.relative;
   final build = prepared.build;
@@ -2836,15 +2872,15 @@ Future<void> _runFlutter(File input, List<String> arguments,
     return;
   }
   stdout.writeln('Built $relative');
+  final launchArgs = [
+    if (buildTarget == null) 'run' else ...['build', buildTarget],
+    '-t',
+    relative,
+    ...arguments,
+  ];
+  stdout.writeln('Quds: launching flutter ${launchArgs.join(' ')}...');
   if (!live || buildTarget != null) {
-    final process = await Process.start(
-        flutter,
-        [
-          if (buildTarget == null) 'run' else ...['build', buildTarget],
-          '-t',
-          relative,
-          ...arguments
-        ],
+    final process = await Process.start(flutter, launchArgs,
         workingDirectory: root.path,
         environment: desktopLaunchEnvironment(Platform.environment),
         includeParentEnvironment: false,
@@ -2986,20 +3022,23 @@ String _relativeGeneratedUri(Directory from, File to) {
   var shared = 0;
   while (shared < left.length &&
       shared < right.length &&
-      left[shared] == right[shared]) shared++;
+      (Platform.isWindows
+          ? left[shared].toLowerCase() == right[shared].toLowerCase()
+          : left[shared] == right[shared])) shared++;
   return [...List.filled(left.length - shared, '..'), ...right.skip(shared)]
       .map((s) => s == '..' ? s : Uri.encodeComponent(s))
       .join('/');
 }
 
 String _relativePosix(Directory root, File file) {
-  final prefix = root.path.endsWith(Platform.pathSeparator)
-      ? root.path
-      : '${root.path}${Platform.pathSeparator}';
-  final path = file.absolute.path;
-  final relative =
-      path.startsWith(prefix) ? path.substring(prefix.length) : path;
-  return relative.replaceAll(Platform.pathSeparator, '/');
+  final rootCanon = _canonicalPathCli(root.path);
+  final fileCanon = _canonicalPathCli(file.absolute.path);
+  final prefix = rootCanon.endsWith('/') ? rootCanon : '$rootCanon/';
+  final matches = Platform.isWindows
+      ? fileCanon.toLowerCase().startsWith(prefix.toLowerCase())
+      : fileCanon.startsWith(prefix);
+  if (matches) return fileCanon.substring(prefix.length);
+  return fileCanon;
 }
 
 String _join(String root, String relative) {

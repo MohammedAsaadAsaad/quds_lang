@@ -224,4 +224,95 @@ void main() {
       expect(app.file('boot').existsSync(), false);
     }
   });
+
+  test(
+      'quds run -d prints live step progress and isolates external Quds packages under lib/quds_gen/_packages',
+      () async {
+    final sandbox = Directory.systemTemp.createTempSync('quds-fl-ext-');
+    addTearDown(() => sandbox.deleteSync(recursive: true));
+
+    final extPkg = Directory('${sandbox.path}/ext_kit')..createSync();
+    Directory('${extPkg.path}/lib/src').createSync(recursive: true);
+    File('${extPkg.path}/pubspec.yaml')
+        .writeAsStringSync('name: ext_kit\nversion: 0.1.0\n');
+    File('${extPkg.path}/lib/src/core.quds')
+        .writeAsStringSync('greeting() -> String = "hi from ext"\n');
+    File('${extPkg.path}/lib/ext_kit.quds')
+        .writeAsStringSync('export package:ext_kit/src/core\n');
+
+    final appDir = Directory('${sandbox.path}/app')..createSync();
+    Directory('${appDir.path}/lib').createSync(recursive: true);
+    Directory('${appDir.path}/.dart_tool').createSync(recursive: true);
+    File('${appDir.path}/pubspec.yaml').writeAsStringSync(
+        'name: ext_app\ndependencies:\n  flutter:\n    sdk: flutter\n  ext_kit:\n    path: ../ext_kit\n');
+    File('${appDir.path}/.dart_tool/package_config.json')
+        .writeAsStringSync(jsonEncode({
+      'configVersion': 2,
+      'packages': [
+        {
+          'name': 'ext_app',
+          'rootUri': appDir.uri.toString(),
+          'packageUri': 'lib/',
+        },
+        {
+          'name': 'ext_kit',
+          'rootUri': extPkg.uri.toString(),
+          'packageUri': 'lib/',
+        },
+      ],
+    }));
+    File('${appDir.path}/lib/main.quds').writeAsStringSync(
+        'use package:ext_kit\nmain():\n  print greeting()\n');
+
+    final bin = Directory('${sandbox.path}/bin')..createSync();
+    final fake = File('${sandbox.path}/fake_flutter.dart')
+      ..writeAsStringSync(r'''
+import 'dart:io';
+void main(List<String> args) {
+  File('launched_args').writeAsStringSync(args.join(' '));
+  exit(0);
+}
+''');
+    final flutterShim = File('${bin.path}/flutter')
+      ..writeAsStringSync(
+          '#!/bin/sh\nexec "${Platform.resolvedExecutable}" "${fake.path}" "\$@"\n');
+    await Process.run('chmod', ['+x', flutterShim.path]);
+
+    final run = await Process.run(
+      Platform.resolvedExecutable,
+      [
+        File('bin/quds.dart').absolute.path,
+        'run',
+        '--no-hot',
+        '-d',
+        'windows',
+      ],
+      workingDirectory: appDir.path,
+      environment: {'PATH': '${bin.path}:${Platform.environment['PATH']}'},
+    );
+    expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
+    expect(run.stdout, contains('Quds: preparing Flutter run'));
+    expect(run.stdout, contains('Quds: compiling lib/main.quds...'));
+    expect(run.stdout,
+        contains('Quds: compiling package:ext_kit/ext_kit.quds...'));
+    expect(run.stdout, contains('Quds: emitting 3 generated Dart file(s)'));
+    expect(run.stdout, contains('Built lib/quds_gen/main.dart'));
+    expect(run.stdout,
+        contains('Quds: launching flutter run -t lib/quds_gen/main.dart'));
+    expect(
+      File('${appDir.path}/lib/quds_gen/_packages/ext_kit/ext_kit.dart')
+          .existsSync(),
+      isTrue,
+    );
+    expect(
+      File('${appDir.path}/lib/quds_gen/_packages/ext_kit/src/core.dart')
+          .existsSync(),
+      isTrue,
+    );
+    expect(
+      Directory('${extPkg.path}/lib/quds_gen').existsSync(),
+      isFalse,
+      reason: 'External Quds packages must never be mutated by Flutter runs',
+    );
+  });
 }

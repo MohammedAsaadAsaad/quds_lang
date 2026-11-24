@@ -335,7 +335,8 @@ String? externalInternalPackageOwner(String from, String targetPath) {
   if (segments.length < 3 || segments[0] != 'lib') return null;
   if (segments[1] != 'src' && segments[1] != 'internal') return null;
   final fromRoot = packageRoot(from);
-  if (fromRoot != null && _canonicalPath(fromRoot.directory) == targetDir) {
+  if (fromRoot != null &&
+      _sameCanonPath(_canonicalPath(fromRoot.directory), targetDir)) {
     return null;
   }
   final name = targetRoot.name;
@@ -355,8 +356,10 @@ bool samePackage(String from, String targetPath) {
   final fromRoot = packageRoot(from);
   if (targetRoot == null && fromRoot == null) return true;
   if (targetRoot == null || fromRoot == null) return false;
-  return _canonicalPath(fromRoot.directory) ==
-      _canonicalPath(targetRoot.directory);
+  return _sameCanonPath(
+    _canonicalPath(fromRoot.directory),
+    _canonicalPath(targetRoot.directory),
+  );
 }
 
 /// Package name and relative path inside `lib/` for a file belonging to a
@@ -426,9 +429,16 @@ String _canonicalPath(String path) {
       .replaceAll('\\', '/');
 }
 
+bool _sameCanonPath(String left, String right) => Platform.isWindows
+    ? left.toLowerCase() == right.toLowerCase()
+    : left == right;
+
 String? _relativeUnder(String rootDir, String filePath) {
   final prefix = rootDir.endsWith('/') ? rootDir : '$rootDir/';
-  if (!filePath.startsWith(prefix)) return null;
+  final matches = Platform.isWindows
+      ? filePath.toLowerCase().startsWith(prefix.toLowerCase())
+      : filePath.startsWith(prefix);
+  if (!matches) return null;
   return filePath.substring(prefix.length);
 }
 

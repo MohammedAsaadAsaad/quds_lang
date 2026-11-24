@@ -177,6 +177,17 @@ List<Map<String, Object>> _qudsLocals(
       if (child is DoExpression && blocks.add(child)) {
         visitStatements(child.body, endLine(child.span));
       }
+      if (child is RetryExpression && child.bodyStmts != null) {
+        visitStatements(child.bodyStmts, endLine(child.span));
+      }
+      if (child is TimeoutExpression) {
+        if (child.bodyStmts != null) {
+          visitStatements(child.bodyStmts, endLine(child.span));
+        }
+        if (child.fallbackStmts != null) {
+          visitStatements(child.fallbackStmts, endLine(child.span));
+        }
+      }
       if (child is LoopExpression && valueLoops.add(child)) {
         visitStatement(child.loop, endLine(child.span));
         visitExpression(child.fallback, end);

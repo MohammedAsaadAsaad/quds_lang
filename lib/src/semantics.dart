@@ -520,6 +520,8 @@ class SemanticModel {
   final skipped = <Statement>{};
   final parts = <PartDirective>[];
   final asyncDefers = <DeferStatement>{};
+  final asyncRetries = <RetryExpression>{};
+  final asyncTimeoutFallbacks = <TimeoutExpression>{};
   final annotations = <String>{};
   final annotationShapes = <String, AnnotationDeclaration>{};
   final reflectable = <ClassDeclaration>{};
@@ -5008,7 +5010,9 @@ class Analyzer {
             node.expression is! DoExpression &&
             node.expression is! TryExpression &&
             node.expression is! MatchExpression &&
-            node.expression is! IfExpression) {
+            node.expression is! IfExpression &&
+            node.expression is! RetryExpression &&
+            node.expression is! TimeoutExpression) {
           fail('Only calls may be used as expression statements', node);
         }
       case ResultStatement():
@@ -7473,8 +7477,13 @@ class Analyzer {
   bool _containsAwait(Expression node) => switch (node) {
         AwaitExpression() ||
         AwaitAllExpression() ||
-        AwaitIsolateExpression() =>
+        AwaitIsolateExpression() ||
+        TimeoutExpression() =>
           true,
+        RetryExpression(:final delay, :final bodyExpr, :final bodyStmts) =>
+          delay != null ||
+              (bodyExpr != null && _containsAwait(bodyExpr)) ||
+              (bodyStmts != null && _statementsContainAwait(bodyStmts)),
         UnaryExpression() => _containsAwait(node.operand),
         BinaryExpression() =>
           _containsAwait(node.left) || _containsAwait(node.right),
@@ -8876,6 +8885,8 @@ class Analyzer {
       AwaitExpression() => awaitExpression(node),
       PropagateExpression() => propagate(node),
       DoExpression() => doExpression(node),
+      RetryExpression() => retryExpression(node),
+      TimeoutExpression() => timeoutExpression(node),
       CaptureExpression() => captureExpression(node),
       ConversionExpression() => conversion(node),
       WithExpression() => withExpression(node),
@@ -12357,6 +12368,90 @@ class Analyzer {
     _doType = saved;
     if (type == null) error('E109', 'do must finish with result', node);
     return type;
+  }
+
+  bool _statementsContainAwait(List<Statement> stmts) {
+    var found = false;
+    for (final s in stmts) {
+      walkAst(s, (n) {
+        if (n is AwaitExpression ||
+            n is AwaitAllExpression ||
+            n is AwaitIsolateExpression ||
+            n is TimeoutExpression ||
+            n is LockStatement ||
+            (n is UsingStatement && n.async) ||
+            (n is RetryExpression && n.delay != null)) {
+          found = true;
+        }
+      });
+      if (found) return true;
+    }
+    return false;
+  }
+
+  String _checkBodyOrExpr(Expression? expr, List<Statement>? stmts) {
+    if (expr != null) return expression(expr);
+    final saved = _doType;
+    _doType = null;
+    _doDepth++;
+    statements(stmts!, nested: true);
+    _doDepth--;
+    final produced = _doType ?? 'void';
+    _doType = saved;
+    return produced;
+  }
+
+  String retryExpression(RetryExpression node) {
+    final attemptsType = expression(node.attempts);
+    if (!compatible(attemptsType, 'int')) {
+      fail('retry attempts must be int', node.attempts);
+    }
+    if (node.delay != null) {
+      final delayType = expression(node.delay!);
+      if (!compatible(delayType, 'Duration')) {
+        fail('retry delay must be Duration', node.delay!);
+      }
+    }
+    final isAsync = node.delay != null ||
+        _containsAwait(node.attempts) ||
+        (node.bodyExpr != null && _containsAwait(node.bodyExpr!)) ||
+        (node.bodyStmts != null && _statementsContainAwait(node.bodyStmts!));
+    if (isAsync) {
+      model.asyncRetries.add(node);
+      if (_lambdaDepth > 0) {
+        _lambdaAwait = true;
+      } else if (_function?.isAsync != true) {
+        error(
+            'E803',
+            'async retry (with delay or await) is only valid in an async function',
+            node);
+      }
+    }
+    return _checkBodyOrExpr(node.bodyExpr, node.bodyStmts);
+  }
+
+  String timeoutExpression(TimeoutExpression node) {
+    if (_lambdaDepth > 0) {
+      _lambdaAwait = true;
+    } else if (_function?.isAsync != true) {
+      error('E803', 'timeout is only valid in an async function', node);
+    }
+    final durType = expression(node.duration);
+    if (!compatible(durType, 'Duration')) {
+      fail('timeout duration must be Duration', node.duration);
+    }
+    final bodyType = _checkBodyOrExpr(node.bodyExpr, node.bodyStmts);
+    if (node.fallbackExpr == null && node.fallbackStmts == null) {
+      return bodyType;
+    }
+    final fallbackAsync =
+        (node.fallbackExpr != null && _containsAwait(node.fallbackExpr!)) ||
+            (node.fallbackStmts != null &&
+                _statementsContainAwait(node.fallbackStmts!));
+    if (fallbackAsync) model.asyncTimeoutFallbacks.add(node);
+    final fbType = _checkBodyOrExpr(node.fallbackExpr, node.fallbackStmts);
+    if (bodyType == 'void' && fbType == 'void') return 'void';
+    return joinTypes(bodyType, fbType, node);
   }
 
   String captureExpression(CaptureExpression node) {

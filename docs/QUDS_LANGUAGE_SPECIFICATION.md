@@ -217,7 +217,7 @@ Column:
 
 ### QUDS-010 — Async functions and streams
 
-**Approved decision.** Support `async`, `async*`, Future, Stream, `await` and interoperable Dart asynchronous behavior.
+**Approved decision.** Support `async`, `async*`, Future, Stream, `await` and interoperable Dart asynchronous behavior. `retry <attempts>[, delay: <Duration>]: <expr|block>` retries failing operations up to `attempts` times (sync or async; requires `async` context when `delay:` or `await` is used, `E803`; validates `int` attempts and `Duration` delay, `E300`; throws `ArgumentError` if `attempts < 1`; rethrows the final error on exhaustion). `timeout <Duration>: <expr|block> [else: <expr|block>]` bounds an async operation (`E803` outside `async`; `E300` for non-`Duration`), evaluating the duration before starting the body and either throwing `TimeoutException` or returning the `else:` fallback on expiry. Both `retry` and `timeout` are contextual and remain valid identifiers when not followed by `<operand> ...:`.
 
 **Quds syntax illustration** (may be a fragment):
 

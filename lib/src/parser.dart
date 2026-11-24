@@ -547,6 +547,8 @@ class Parser {
           value is AwaitIsolateExpression ||
           value is LoopExpression ||
           value is WhereExpression && value.block ||
+          value is RetryExpression && value.block ||
+          value is TimeoutExpression && value.block ||
           (value is IfExpression && !at(TokenKind.newline))) {
         return returned;
       }
@@ -694,6 +696,8 @@ class Parser {
         value is AwaitIsolateExpression ||
         value is LoopExpression ||
         value is WhereExpression && value.block ||
+        value is RetryExpression && value.block ||
+        value is TimeoutExpression && value.block ||
         value is MapExpression ||
         value is SetExpression ||
         value is Lambda && value.body != null) {
@@ -2090,7 +2094,8 @@ class Parser {
                   token.lexeme == 'for' ||
                   token.lexeme == 'while' ||
                   token.lexeme == 'repeat' ||
-                  token.lexeme == 'loop')) {
+                  token.lexeme == 'loop' ||
+                  token.lexeme == 'timeout')) {
             elseOwners++;
           } else if (kind == TokenKind.identifier && token.lexeme == 'else') {
             if (elseOwners > 0) {
@@ -3381,6 +3386,12 @@ class Parser {
     if (token.lexeme == 'do') {
       return DoExpression(block(), extent(token.span));
     }
+    if (token.lexeme == 'retry' && _colonAheadOnLine()) {
+      return _retryExpression(token.span);
+    }
+    if (token.lexeme == 'timeout' && _colonAheadOnLine()) {
+      return _timeoutExpression(token.span);
+    }
     if (token.lexeme == 'capture' && at(TokenKind.leftParen)) {
       take();
       final names = <String>[];
@@ -3538,6 +3549,109 @@ class Parser {
       return ListExpression(values, extent(token.span));
     }
     fail('Expected expression', token.span);
+  }
+
+  bool _colonAheadOnLine() {
+    const nonOperandWords = {
+      'and',
+      'or',
+      'in',
+      'is',
+      'as',
+      'to',
+      'else',
+      'where',
+      'then',
+      'catch',
+      'finally',
+      'on',
+      'not',
+    };
+    final okStart = current.kind == TokenKind.number ||
+        current.kind == TokenKind.duration ||
+        current.kind == TokenKind.string ||
+        (current.kind == TokenKind.identifier &&
+            !nonOperandWords.contains(current.lexeme));
+    if (!okStart) return false;
+    var depth = 0;
+    for (var j = index; j < tokens.length; j++) {
+      final kind = tokens[j].kind;
+      if (kind == TokenKind.leftParen || kind == TokenKind.leftBracket) {
+        depth++;
+      } else if (kind == TokenKind.rightParen ||
+          kind == TokenKind.rightBracket) {
+        depth--;
+        if (depth < 0) return false;
+      } else if (depth == 0) {
+        if (kind == TokenKind.colon) return true;
+        if (kind == TokenKind.newline || kind == TokenKind.eof) return false;
+      }
+    }
+    return false;
+  }
+
+  ({Expression? expr, List<Statement>? stmts, bool isBlock})
+      _exprOrBlockBody() {
+    expect(TokenKind.colon, ':');
+    if (at(TokenKind.newline) || at(TokenKind.dedent) || at(TokenKind.eof)) {
+      final body = block(colonTaken: true);
+      if (body.length == 1 && body.single is ExpressionStatement) {
+        return (
+          expr: (body.single as ExpressionStatement).expression,
+          stmts: null,
+          isBlock: true,
+        );
+      }
+      return (expr: null, stmts: body, isBlock: true);
+    }
+    return (expr: expression(bare: true), stmts: null, isBlock: false);
+  }
+
+  RetryExpression _retryExpression(SourceSpan span) {
+    final attempts = expression();
+    Expression? delay;
+    if (match(TokenKind.comma)) {
+      if (word('delay') && peek().kind == TokenKind.colon) {
+        take();
+        take();
+        delay = expression();
+      } else {
+        fail('Expected delay: <Duration> after comma in retry');
+      }
+    }
+    final parsed = _exprOrBlockBody();
+    return RetryExpression(
+      attempts,
+      parsed.expr,
+      parsed.stmts,
+      extent(span),
+      delay: delay,
+      block: parsed.isBlock,
+    );
+  }
+
+  TimeoutExpression _timeoutExpression(SourceSpan span) {
+    final duration = expression();
+    final parsed = _exprOrBlockBody();
+    Expression? fallbackExpr;
+    List<Statement>? fallbackStmts;
+    var isBlock = parsed.isBlock;
+    if (word('else')) {
+      take();
+      final fb = _exprOrBlockBody();
+      fallbackExpr = fb.expr;
+      fallbackStmts = fb.stmts;
+      isBlock = fb.isBlock;
+    }
+    return TimeoutExpression(
+      duration,
+      parsed.expr,
+      parsed.stmts,
+      extent(span),
+      fallbackExpr: fallbackExpr,
+      fallbackStmts: fallbackStmts,
+      block: isBlock,
+    );
   }
 
   DurationLiteral _parseDurationLiteral(Token token) {

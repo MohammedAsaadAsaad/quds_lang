@@ -1,0 +1,167 @@
+use dart:async show TimeoutException
+
+class _Counters:
+  static var syncCalls: int = 0
+  static var asyncCalls: int = 0
+  static var voidCalls: int = 0
+  static var earlyReturnCalls: int = 0
+  static var attemptsEval: int = 0
+  static var delayEval: int = 0
+
+flakySync(succeedOn: int) -> String:
+  _Counters.syncCalls += 1
+  if _Counters.syncCalls < succeedOn:
+    throw StateError("fail-{_Counters.syncCalls}")
+  return "ok-{_Counters.syncCalls}"
+
+flakyAsync(succeedOn: int) async -> String:
+  _Counters.asyncCalls += 1
+  await Future.delayed(1ms)
+  if _Counters.asyncCalls < succeedOn:
+    throw StateError("async-fail-{_Counters.asyncCalls}")
+  return "async-ok-{_Counters.asyncCalls}"
+
+flakyVoid(succeedOn: int) async -> void:
+  _Counters.voidCalls += 1
+  await Future.delayed(1ms)
+  if _Counters.voidCalls < succeedOn:
+    throw StateError("void-fail")
+
+earlyReturnInRetry() -> String:
+  retry 3:
+    _Counters.earlyReturnCalls += 1
+    return "early"
+  return "unreachable"
+
+evalAttempts() -> int:
+  _Counters.attemptsEval += 1
+  return 2
+
+evalDelay() -> Duration:
+  _Counters.delayEval += 1
+  return 1ms
+
+slowValue(wait: Duration, val: String) async -> String:
+  await Future.delayed(wait)
+  return val
+
+slowVoid(wait: Duration) async -> void:
+  await Future.delayed(wait)
+
+evalTimeoutDuration(trace: List<String>) -> Duration:
+  trace.add("duration")
+  return 200ms
+
+recordBody(trace: List<String>) async -> String:
+  trace.add("body")
+  await Future.delayed(1ms)
+  return "done"
+
+test "sync retry succeeds, rethrows on exhaustion, validates attempts, and supports blocks":
+  _Counters.syncCalls = 0
+  first = retry 3: flakySync(1)
+  expect(first, equals("ok-1"))
+  expect(_Counters.syncCalls, equals(1))
+
+  _Counters.syncCalls = 0
+  third = retry 3: flakySync(3)
+  expect(third, equals("ok-3"))
+  expect(_Counters.syncCalls, equals(3))
+
+  _Counters.syncCalls = 0
+  var caught = ""
+  try:
+    retry 2: flakySync(5)
+  catch e:
+    caught = "{e}"
+  expect(_Counters.syncCalls, equals(2))
+  expect(caught.contains("fail-2"), isTrue)
+
+  var badAttempts = false
+  try:
+    n = 0
+    retry n: flakySync(1)
+  catch e: ArgumentError:
+    badAttempts = true
+  expect(badAttempts, isTrue)
+
+  var blockTry = 0
+  blockVal = retry 3:
+    blockTry += 1
+    if blockTry < 2:
+      throw StateError("block-fail")
+    result blockTry * 10
+  expect(blockVal, equals(20))
+
+  _Counters.earlyReturnCalls = 0
+  expect(earlyReturnInRetry(), equals("early"))
+  expect(_Counters.earlyReturnCalls, equals(1))
+
+test "async retry with delay, void statement form, and single operand evaluation" async:
+  _Counters.asyncCalls = 0
+  val = retry 3, delay: 5ms: await flakyAsync(2)
+  expect(val, equals("async-ok-2"))
+  expect(_Counters.asyncCalls, equals(2))
+
+  _Counters.voidCalls = 0
+  retry 3, delay: 2ms:
+    await flakyVoid(2)
+  expect(_Counters.voidCalls, equals(2))
+
+  _Counters.asyncCalls = 0
+  _Counters.attemptsEval = 0
+  _Counters.delayEval = 0
+  val2 = retry evalAttempts(), delay: evalDelay(): await flakyAsync(2)
+  expect(val2, equals("async-ok-2"))
+  expect(_Counters.attemptsEval, equals(1))
+  expect(_Counters.delayEval, equals(1))
+
+test "timeout succeeds before deadline, throws TimeoutException, and supports else fallback" async:
+  fast = timeout 200ms: await slowValue(5ms, "fast")
+  expect(fast, equals("fast"))
+
+  var timedOut = false
+  try:
+    timeout 15ms: await slowValue(150ms, "late")
+  catch e: TimeoutException:
+    timedOut = true
+  expect(timedOut, isTrue)
+
+  fbInline = timeout 15ms: await slowValue(150ms, "late") else: "fallback"
+  expect(fbInline, equals("fallback"))
+
+  noFb = timeout 200ms: await slowValue(5ms, "primary") else: "fallback"
+  expect(noFb, equals("primary"))
+
+  nullableFb: String? = timeout 15ms:
+    await slowValue(150ms, "late")
+  else:
+    null
+  expect(nullableFb, equals(null))
+
+  asyncFb = timeout 15ms:
+    await slowValue(150ms, "late")
+  else:
+    await slowValue(2ms, "async-fallback")
+  expect(asyncFb, equals("async-fallback"))
+
+  var voidFallbackRan = false
+  timeout 15ms:
+    await slowVoid(150ms)
+  else:
+    voidFallbackRan = true
+  expect(voidFallbackRan, isTrue)
+
+  trace: List<String> = []
+  ordered = timeout evalTimeoutDuration(trace): await recordBody(trace)
+  expect(ordered, equals("done"))
+  expect(trace, equals(["duration", "body"]))
+
+test "retry and timeout remain usable as contextual identifiers":
+  retry = 3
+  timeout = 5s
+  var ok = false
+  if retry == 3 and timeout > 1s:
+    ok = true
+  expect(ok, isTrue)
+  expect(retry + 1, equals(4))

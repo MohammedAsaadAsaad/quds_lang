@@ -1,3 +1,16 @@
+# `retry` and `timeout` expressions / statements (Batch D) — 2026-11-23
+
+Base: `8f5d7a3`.
+
+| Check | Observed result |
+| --- | --- |
+| Grammar & AST | Added `RetryExpression` and `TimeoutExpression` AST nodes (`lib/src/ast.dart`, `lib/src/walk.dart`, `lib/src/sourcemap.dart`, `test/constants_test.dart`) and contextual parsing in `lib/src/parser.dart` for `retry <attempts>[, delay: <Duration>]: <expr\|block>` and `timeout <Duration>: <expr\|block> [else: <expr\|block>]` (including `timeout` as an `else`-owner in `guardDestructureAhead`) |
+| Static semantics & Dart codegen | Validated `int` attempts and `Duration` delay/duration (`E300`), `async` context for `timeout` and async `retry` (`E803`), left-to-right operand evaluation, early `return` / `?` propagation rethrow in `retry`, and explicitly typed local `Future<T>` helper in `_timeout` (`lib/src/semantics.dart`, `lib/src/emitter.dart`) so nullable/joined fallbacks (`String?` with `else: null`) preserve runtime `Future<T>` covariance |
+| Primary Quds suite & driver | `/opt/flutter/bin/dart test test/retry_and_timeout_test.dart`: **3 passed, 0 failed** (26s; `quds test test/retry_and_timeout.quds`, `E300`/`E803` negative checks, strict `quds analyze --fatal-infos`, VM + `quds compile js` + `node` parity) |
+| Regression & audit | `/opt/flutter/bin/dart test test/constants_test.dart test/ergonomics_batch_a_test.dart test/lazy_and_lock_test.dart test/interface_delegation_test.dart` + `dart format` + `/opt/flutter/bin/dart analyze` + `python3 tool/audit_language.py --check` + `python3 tool/sync_keyword_docs.py --check` + `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # Interface delegation `implements Interface by field` (Batch C) — 2026-11-23
 
 Base: `aa11cf3`.

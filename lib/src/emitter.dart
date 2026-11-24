@@ -2216,6 +2216,17 @@ class DartEmitter {
         CallExpression() =>
           node.arguments.any((a) => _expressionPropagates(a.value)),
         AwaitExpression() => _expressionPropagates(node.operand),
+        RetryExpression() => _expressionPropagates(node.attempts) ||
+            (node.delay != null && _expressionPropagates(node.delay!)) ||
+            (node.bodyExpr != null && _expressionPropagates(node.bodyExpr!)) ||
+            (node.bodyStmts != null && _containsPropagate(node.bodyStmts!)),
+        TimeoutExpression() => _expressionPropagates(node.duration) ||
+            (node.bodyExpr != null && _expressionPropagates(node.bodyExpr!)) ||
+            (node.bodyStmts != null && _containsPropagate(node.bodyStmts!)) ||
+            (node.fallbackExpr != null &&
+                _expressionPropagates(node.fallbackExpr!)) ||
+            (node.fallbackStmts != null &&
+                _containsPropagate(node.fallbackStmts!)),
         _ => false,
       };
 
@@ -4141,6 +4152,8 @@ class DartEmitter {
           AwaitIsolateExpression() => _awaitIsolate(node),
           SymbolExpression() => _symbol(node.text),
           NameofExpression() => "'${_quote(node.text)}'",
+          RetryExpression() => _retry(node),
+          TimeoutExpression() => _timeout(node),
         });
   }
 
@@ -6059,6 +6072,18 @@ class DartEmitter {
     if (node is DoExpression) return _containsFunctionReturn(node.body);
     if (node is LoopExpression) return _loopReturns(node.loop);
     if (node is WhereExpression) return _exprReturns(node.value);
+    if (node is RetryExpression) {
+      return (node.bodyExpr != null && _exprReturns(node.bodyExpr!)) ||
+          (node.bodyStmts != null && _containsFunctionReturn(node.bodyStmts!));
+    }
+    if (node is TimeoutExpression) {
+      return (node.bodyExpr != null && _exprReturns(node.bodyExpr!)) ||
+          (node.bodyStmts != null &&
+              _containsFunctionReturn(node.bodyStmts!)) ||
+          (node.fallbackExpr != null && _exprReturns(node.fallbackExpr!)) ||
+          (node.fallbackStmts != null &&
+              _containsFunctionReturn(node.fallbackStmts!));
+    }
     return false;
   }
 
@@ -6324,6 +6349,120 @@ class DartEmitter {
     });
     _inDo = saved;
     return '(() {\n$body})()';
+  }
+
+  String _retryTimeoutBody(
+    Expression? bodyExpr,
+    List<Statement>? bodyStmts, {
+    required bool isVoid,
+    required bool trailingReturn,
+  }) {
+    final saved = _inDo;
+    _inDo = true;
+    final body = _captureBlock(() {
+      if (bodyExpr != null) {
+        if (isVoid) {
+          line('${expression(bodyExpr)};');
+          if (trailingReturn) line('return;');
+        } else {
+          line('return ${expression(bodyExpr)};');
+        }
+      } else {
+        for (final stmt in bodyStmts!) {
+          statement(stmt);
+        }
+        if (isVoid && trailingReturn) {
+          line('return;');
+        }
+      }
+    });
+    _inDo = saved;
+    return body;
+  }
+
+  String _retry(RetryExpression node) {
+    final isAsync = model.asyncRetries.contains(node);
+    final resultType = model.types[node] ?? 'dynamic';
+    final isVoid = resultType == 'void';
+    final attemptsVar = '_qra${_temps++}';
+    final indexVar = '_qri${_temps++}';
+    final delayVar = node.delay == null ? null : '_qrd${_temps++}';
+    final attemptsExpr = expression(node.attempts);
+    final delayExpr = node.delay == null ? null : expression(node.delay!);
+    final body = _retryTimeoutBody(
+      node.bodyExpr,
+      node.bodyStmts,
+      isVoid: isVoid,
+      trailingReturn: true,
+    );
+    final rethrowsReturn = _exprReturns(node);
+    final rethrowsPropagate =
+        (node.bodyExpr != null && _expressionPropagates(node.bodyExpr!)) ||
+            (node.bodyStmts != null && _containsPropagate(node.bodyStmts!));
+    final buf = StringBuffer();
+    buf.writeln('final $attemptsVar = $attemptsExpr;');
+    if (delayVar != null) {
+      buf.writeln('final $delayVar = $delayExpr;');
+    }
+    buf.writeln(
+        "if ($attemptsVar < 1) throw ArgumentError('retry attempts must be at least 1');");
+    buf.writeln('for (var $indexVar = 0; ; $indexVar++) {');
+    buf.writeln('try {');
+    buf.write(body);
+    buf.write('}');
+    if (rethrowsReturn) {
+      buf.write(' on _QudsReturn { rethrow; }');
+    }
+    if (rethrowsPropagate) {
+      buf.write(' on _QudsPropagate { rethrow; }');
+    }
+    buf.writeln(' catch (_) {');
+    buf.writeln('if ($indexVar + 1 >= $attemptsVar) rethrow;');
+    if (delayVar != null) {
+      buf.writeln('await Future<void>.delayed($delayVar);');
+    }
+    buf.writeln('}');
+    buf.writeln('}');
+    if (isAsync) {
+      final dartType = _dartType(resultType);
+      return '(await Future<$dartType>.sync(() async {\n$buf}))';
+    }
+    return '(() {\n$buf})()';
+  }
+
+  String _timeout(TimeoutExpression node) {
+    final resultType = model.types[node] ?? 'dynamic';
+    final isVoid = resultType == 'void';
+    final dartType = _dartType(resultType);
+    final durationExpr = expression(node.duration);
+    final body = _retryTimeoutBody(
+      node.bodyExpr,
+      node.bodyStmts,
+      isVoid: isVoid,
+      trailingReturn: false,
+    );
+    final hasFallback = node.fallbackExpr != null || node.fallbackStmts != null;
+    var onTimeoutArg = '';
+    if (hasFallback) {
+      final fallbackAsync = model.asyncTimeoutFallbacks.contains(node);
+      final fallbackBody = _retryTimeoutBody(
+        node.fallbackExpr,
+        node.fallbackStmts,
+        isVoid: isVoid,
+        trailingReturn: false,
+      );
+      final asyncMod = fallbackAsync ? ' async' : '';
+      onTimeoutArg = ', onTimeout: ()$asyncMod {\n$fallbackBody}';
+    }
+    final durVar = '_qtd${_temps++}';
+    final bodyFn = '_qtb${_temps++}';
+    final call = '$bodyFn().timeout($durVar$onTimeoutArg)';
+    final tail = isVoid ? 'await $call;' : 'return await $call;';
+    return '(await (() async {\n'
+        'final $durVar = $durationExpr;\n'
+        'Future<$dartType> $bodyFn() async {\n$body}\n'
+        '$tail\n'
+        '})())';
   }
 
   String _capture(CaptureExpression node) {

@@ -869,6 +869,40 @@ class DurationLiteral extends Expression {
   final String raw;
 }
 
+class RetryExpression extends Expression {
+  const RetryExpression(
+    this.attempts,
+    this.bodyExpr,
+    this.bodyStmts,
+    super.span, {
+    this.delay,
+    this.block = false,
+  });
+  final Expression attempts;
+  final Expression? delay;
+  final Expression? bodyExpr;
+  final List<Statement>? bodyStmts;
+  final bool block;
+}
+
+class TimeoutExpression extends Expression {
+  const TimeoutExpression(
+    this.duration,
+    this.bodyExpr,
+    this.bodyStmts,
+    super.span, {
+    this.fallbackExpr,
+    this.fallbackStmts,
+    this.block = false,
+  });
+  final Expression duration;
+  final Expression? bodyExpr;
+  final List<Statement>? bodyStmts;
+  final Expression? fallbackExpr;
+  final List<Statement>? fallbackStmts;
+  final bool block;
+}
+
 class NullAwareElement extends Expression {
   const NullAwareElement(this.value, super.span);
   final Expression value;

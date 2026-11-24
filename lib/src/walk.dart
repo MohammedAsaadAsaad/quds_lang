@@ -340,6 +340,28 @@ void walkAst(Node node, void Function(Node node) visit,
         _nodes(elseBody, visit);
       case DurationLiteral():
         break;
+      case RetryExpression(
+          :final attempts,
+          :final delay,
+          :final bodyExpr,
+          :final bodyStmts
+        ):
+        walkAst(attempts, visit);
+        if (delay != null) walkAst(delay, visit);
+        if (bodyExpr != null) walkAst(bodyExpr, visit);
+        if (bodyStmts != null) _nodes(bodyStmts, visit);
+      case TimeoutExpression(
+          :final duration,
+          :final bodyExpr,
+          :final bodyStmts,
+          :final fallbackExpr,
+          :final fallbackStmts
+        ):
+        walkAst(duration, visit);
+        if (bodyExpr != null) walkAst(bodyExpr, visit);
+        if (bodyStmts != null) _nodes(bodyStmts, visit);
+        if (fallbackExpr != null) walkAst(fallbackExpr, visit);
+        if (fallbackStmts != null) _nodes(fallbackStmts, visit);
       case CollectionIf(
           :final condition,
           :final thenElements,

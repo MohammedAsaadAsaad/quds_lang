@@ -406,6 +406,7 @@ class ClassDeclaration extends Statement {
       {this.superclass,
       this.mixins = const [],
       this.interfaces = const [],
+      this.interfaceDelegates = const {},
       this.onType,
       this.modifiers = const [],
       this.requirements = const [],
@@ -425,6 +426,10 @@ class ClassDeclaration extends Statement {
   final String? superclass;
   final List<String> mixins;
   final List<String> interfaces;
+
+  /// Maps an implemented interface type to the field name delegating it
+  /// (`implements UserStore by inner`).
+  final Map<String, String> interfaceDelegates;
   final String? onType;
   final List<String> modifiers;
   final List<Expression> requirements;

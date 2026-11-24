@@ -604,7 +604,7 @@ extend String:
 
 ### QUDS-035 — Interfaces, abstract types, mixins
 
-**Approved decision.** Support interfaces, abstract classes, and mixins with sound implementation checking. In an `interface`, `name: Type` is an abstract getter. A writable abstract member is declared with `property` (QUDS-015). It is not also a stored field. An implementing class supplies a field, getter, or property of a compatible type.
+**Approved decision.** Support interfaces, abstract classes, and mixins with sound implementation checking. In an `interface`, `name: Type` is an abstract getter. A writable abstract member is declared with `property` (QUDS-015). It is not also a stored field. An implementing class supplies a field, getter, or property of a compatible type. A class may delegate an implemented interface to one of its instance fields with `implements Interface by field` (including generic and multiple interfaces, and transitive super-interfaces); any member not explicitly overridden by the class is synthesized as a forwarding member to that field, while missing or type-incompatible delegate fields are rejected statically (`E700` / `E300`).
 
 **Quds syntax illustration** (may be a fragment):
 

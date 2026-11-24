@@ -1,0 +1,110 @@
+interface Named:
+  title: String
+
+interface UserStore extends Named:
+  property prefix: String:
+    get = ""
+    set(value):
+      return
+  findById(id: int) -> String? = null
+  save(id: int, name: String) -> void:
+    return
+  count() -> int = 0
+
+class MemoryStore implements UserStore:
+  title: String = "mem"
+  var prefix: String = ""
+  private data: Map<int, String>
+
+  findById(id: int) -> String? = data[id]
+
+  save(id: int, name: String) -> void:
+    data[id] = "{prefix}{name}"
+
+  count() -> int = data.length
+
+class CachedStore implements UserStore by inner:
+  private inner: UserStore
+  private cache: Map<int, String>
+
+  findById(id: int) -> String?:
+    if let hit = cache[id]:
+      return hit
+    return inner.findById(id)
+
+interface Reader:
+  read() -> String = ""
+
+interface Writer:
+  write(text: String) -> void:
+    return
+
+class Buffer implements Reader, Writer:
+  var content: String = ""
+  read() -> String = content
+  write(text: String) -> void:
+    content = text
+
+class ReadWriteProxy implements Reader by reader, Writer by writer:
+  private reader: Reader
+  private writer: Writer
+
+interface Box<T>:
+  getValue() -> T:
+    throw "abstract"
+  describe(tag: String = "box") -> String = tag
+
+class SimpleBox<T> implements Box<T>:
+  value: T
+  getValue() -> T = value
+  describe(tag: String = "box") -> String = "{tag}:{value}"
+
+class IntBoxWrapper implements Box<int> by inner:
+  private inner: Box<int>
+
+interface AsyncFetcher:
+  fetch(id: int) async -> String:
+    return ""
+
+class RealFetcher implements AsyncFetcher:
+  fetch(id: int) async -> String:
+    return "item-{id}"
+
+class DelegatingFetcher implements AsyncFetcher by inner:
+  private inner: AsyncFetcher
+
+test "implements Interface by field delegates methods, getters, properties, super-interfaces, and allows overrides":
+  seed: Map<int, String> = map:
+    1: "Alice"
+  cached: Map<int, String> = map:
+    99: "CachedAdmin"
+  raw = MemoryStore(data: seed)
+  store: UserStore = CachedStore(inner: raw, cache: cached)
+
+  # Transitive super-interface getter
+  expect(store.title, equals("mem"))
+
+  # Overridden method checks cache first, then falls back to inner
+  expect(store.findById(99), equals("CachedAdmin"))
+  expect(store.findById(1), equals("Alice"))
+
+  # Delegated mutable property + void method + count
+  store.prefix = "Dr. "
+  expect(store.prefix, equals("Dr. "))
+  store.save(2, "Bob")
+  expect(store.findById(2), equals("Dr. Bob"))
+  expect(store.count(), equals(2))
+
+test "multiple interfaces, generic interfaces, and async methods delegate cleanly" async:
+  buf = Buffer()
+  proxy = ReadWriteProxy(reader: buf, writer: buf)
+  proxy.write("hello")
+  expect(proxy.read(), equals("hello"))
+
+  wrapped: Box<int> = IntBoxWrapper(inner: SimpleBox<int>(value: 42))
+  expect(wrapped.getValue(), equals(42))
+  expect(wrapped.describe(), equals("box:42"))
+  expect(wrapped.describe(tag: "num"), equals("num:42"))
+
+  fetcher: AsyncFetcher = DelegatingFetcher(inner: RealFetcher())
+  expect(await fetcher.fetch(7), equals("item-7"))

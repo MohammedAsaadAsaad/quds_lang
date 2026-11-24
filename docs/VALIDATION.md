@@ -1,3 +1,16 @@
+# Interface delegation `implements Interface by field` (Batch C) — 2026-11-23
+
+Base: `aa11cf3`.
+
+| Check | Observed result |
+| --- | --- |
+| Grammar & AST | Added `interfaceDelegates` map to `ClassDeclaration` and parsed `implements Interface by field` (single, multiple, and generic interfaces) in `lib/src/parser.dart` |
+| Static validation & synthesis | Added `_expandInterfaceDelegations` in `lib/src/semantics.dart` validating delegate field existence (`E700`) and type compatibility (`E300`), and synthesizing forwarding methods (sync, async, void, defaults, named, variadic), getters, and mutable properties across transitive super-interfaces while preserving explicit class/superclass/mixin overrides |
+| Primary Quds suite & driver | `/opt/flutter/bin/dart test test/interface_delegation_test.dart`: **3 passed, 0 failed** (25s; `quds test test/interface_delegation.quds`, `E700`/`E300` negative checks, strict `quds analyze --fatal-infos`, VM + `quds compile js` + `node` parity) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # `lazy` bindings/fields and `lock` + `Mutex` (Batch B) — 2026-11-23
 
 Base: `0ec9e64`.

@@ -1417,10 +1417,16 @@ class Parser {
         mixins.add(typeName());
       } while (match(TokenKind.comma));
     }
+    final interfaceDelegates = <String, String>{};
     if (word('implements')) {
       take();
       do {
-        interfaces.add(typeName());
+        final iface = typeName();
+        interfaces.add(iface);
+        if (word('by')) {
+          take();
+          interfaceDelegates[iface] = name().lexeme;
+        }
       } while (match(TokenKind.comma));
     }
     expect(TokenKind.colon, ':');
@@ -1586,6 +1592,7 @@ class Parser {
         superclass: superclass,
         mixins: mixins,
         interfaces: interfaces,
+        interfaceDelegates: interfaceDelegates,
         modifiers: modifiers,
         constructors: constructors,
         properties: properties,

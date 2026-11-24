@@ -1139,6 +1139,7 @@ class Analyzer {
       }
     }
     _validateConversionDefinitions();
+    _expandInterfaceDelegations(topLevel);
     _assignAllMethodOverloadNames();
     for (final statement in functions) {
       analyzeFunction(statement);
@@ -1550,6 +1551,233 @@ class Analyzer {
     _typeNames
       ..clear()
       ..addAll(savedTypes);
+  }
+
+  void _expandInterfaceDelegations(List<Statement> topLevel) {
+    for (final statement in topLevel) {
+      if (statement is! ClassDeclaration) continue;
+      if (statement.interfaceDelegates.isEmpty) continue;
+      final savedTypes = {..._typeNames};
+      final savedBounds = {..._typeBounds};
+      _typeNames.addAll(statement.typeParameters.map((p) => p.name));
+      for (final p in statement.typeParameters) {
+        _typeBounds.remove(p.name);
+        if (p.bound != null) _typeBounds[p.name] = p.bound!;
+      }
+      try {
+        for (final entry in statement.interfaceDelegates.entries) {
+          _expandOneDelegation(statement, entry.key, entry.value);
+        }
+      } finally {
+        _typeNames
+          ..clear()
+          ..addAll(savedTypes);
+        _typeBounds
+          ..clear()
+          ..addAll(savedBounds);
+      }
+    }
+  }
+
+  void _expandOneDelegation(
+      ClassDeclaration cls, String ifaceType, String fieldName) {
+    final delegateField = _fieldsOf(cls)
+        .where((f) => f.name == fieldName && !f.isStatic)
+        .firstOrNull;
+    if (delegateField == null) {
+      error('E700', 'Delegate field $fieldName is not defined on ${cls.name}',
+          cls);
+    }
+    validateType(ifaceType, cls, allowVoid: false);
+    final ifaceHead = _genericHead(ifaceType);
+    final ifaceDecl = _typeSymbol(ifaceHead)?.classDeclaration;
+    if (ifaceDecl == null || ifaceDecl.kind != 'interface') {
+      error('E700', 'implements expects an interface', cls);
+    }
+    final fieldType =
+        model.declarations[delegateField]?.type ?? delegateField.type;
+    if (!compatible(fieldType, ifaceType)) {
+      error(
+          'E300',
+          'Delegate field $fieldName of type $fieldType does not implement $ifaceType',
+          delegateField);
+    }
+
+    bool hasConcreteFieldOrProp(ClassDeclaration cur, String name,
+        [Set<ClassDeclaration>? seen]) {
+      final visitedCls = seen ?? <ClassDeclaration>{};
+      if (!visitedCls.add(cur)) return false;
+      if (cur.fields.any((x) => !x.isStatic && x.name == name) ||
+          cur.properties.any((x) => x.name == name)) {
+        return true;
+      }
+      for (final m in cur.mixins) {
+        final d = _typeSymbol(_genericHead(m))?.classDeclaration;
+        if (d != null && hasConcreteFieldOrProp(d, name, visitedCls)) {
+          return true;
+        }
+      }
+      if (cur.superclass != null) {
+        final d = _typeSymbol(_genericHead(cur.superclass!))?.classDeclaration;
+        if (d != null &&
+            d.kind != 'interface' &&
+            hasConcreteFieldOrProp(d, name, visitedCls)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    bool hasConcreteMethod(ClassDeclaration cur, String name,
+        [Set<ClassDeclaration>? seen]) {
+      final visitedCls = seen ?? <ClassDeclaration>{};
+      if (!visitedCls.add(cur)) return false;
+      if (cur.methods.any((x) => !x.isStatic && x.name == name)) return true;
+      for (final m in cur.mixins) {
+        final d = _typeSymbol(_genericHead(m))?.classDeclaration;
+        if (d != null && hasConcreteMethod(d, name, visitedCls)) return true;
+      }
+      if (cur.superclass != null) {
+        final d = _typeSymbol(_genericHead(cur.superclass!))?.classDeclaration;
+        if (d != null &&
+            d.kind != 'interface' &&
+            hasConcreteMethod(d, name, visitedCls)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final visited = <String>{};
+    void delegateFace(ClassDeclaration face, Map<String, String> subst) {
+      if (!visited.add(face.name)) return;
+      String sub(String raw) => _substitute(_classMemberType(raw, face), subst);
+
+      // 1. Abstract getters (`name: Type` in interface)
+      for (final f in face.fields) {
+        if (hasConcreteFieldOrProp(cls, f.name)) continue;
+        final propType = sub(f.type);
+        cls.properties.add(PropertyDeclaration(
+          f.name,
+          propType,
+          MemberAccess(
+              Identifier(fieldName, cls.span), f.name, false, cls.span),
+          null,
+          null,
+          null,
+          cls.span,
+        ));
+      }
+
+      // 2. Properties (`property name: Type: get / set`)
+      for (final p in face.properties) {
+        if (hasConcreteFieldOrProp(cls, p.name)) continue;
+        final propType = sub(p.type);
+        final hasGetter = p.getter != null || p.getterBody != null;
+        final hasSetter = p.setterBody != null;
+        cls.properties.add(PropertyDeclaration(
+          p.name,
+          propType,
+          hasGetter
+              ? MemberAccess(
+                  Identifier(fieldName, cls.span), p.name, false, cls.span)
+              : null,
+          null,
+          hasSetter ? 'value' : null,
+          hasSetter
+              ? [
+                  MemberAssignment(
+                    Identifier(fieldName, cls.span),
+                    p.name,
+                    '=',
+                    Identifier('value', cls.span),
+                    cls.span,
+                  )
+                ]
+              : null,
+          cls.span,
+        ));
+      }
+
+      // 3. Methods
+      for (final m in face.methods) {
+        if (m.isStatic) continue;
+        if (hasConcreteMethod(cls, m.name)) continue;
+        final retRaw = m.returnType ?? 'void';
+        final retType = sub(retRaw);
+        final params = <Parameter>[
+          for (final p in m.parameters)
+            Parameter(
+              p.name,
+              sub(p.type),
+              p.mutable,
+              cls.span,
+              defaultValue: p.defaultValue,
+              variadic: p.variadic,
+              kind: p.kind,
+            ),
+        ];
+        final callArgs = <Argument>[
+          for (final p in params)
+            if (p.kind == ParameterKind.requiredNamed ||
+                p.kind == ParameterKind.optionalNamed)
+              Argument(p.name, Identifier(p.name, cls.span), cls.span)
+            else if (p.variadic)
+              Argument(
+                  null,
+                  SpreadElement(Identifier(p.name, cls.span), false, cls.span),
+                  cls.span)
+            else
+              Argument(null, Identifier(p.name, cls.span), cls.span),
+        ];
+        final Expression callExpr = CallExpression(
+          MemberAccess(
+              Identifier(fieldName, cls.span), m.name, false, cls.span),
+          callArgs,
+          cls.span,
+        );
+        final Expression forwarded =
+            m.isAsync ? AwaitExpression(callExpr, cls.span) : callExpr;
+        final isVoid = retType == 'void' ||
+            (m.isAsync && (retType == 'void' || retType == 'Future<void>'));
+        final synthesized = FunctionDeclaration(
+          m.name,
+          params,
+          m.returnType == null ? null : retType,
+          isVoid ? [ExpressionStatement(forwarded, cls.span)] : null,
+          isVoid ? null : forwarded,
+          cls.span,
+          isAsync: m.isAsync,
+          generator: m.generator,
+          isOperator: m.isOperator,
+          readonlyMethod: m.readonlyMethod,
+          typeParameters: m.typeParameters,
+        );
+        cls.methods.add(synthesized);
+        final declaredReturn = synthesized.isAsync
+            ? (retType.startsWith('Future<') ? retType : 'Future<$retType>')
+            : retType;
+        model.declarations[synthesized] = Symbol(
+          synthesized.name,
+          synthesized.name,
+          declaredReturn,
+          function: synthesized,
+          library: library,
+        ).withFunction(synthesized);
+      }
+
+      // 4. Transitive super-interface delegation (`interface Sub extends Base:`)
+      if (face.superclass != null) {
+        final superType = sub(face.superclass!);
+        final superDecl =
+            _typeSymbol(_genericHead(superType))?.classDeclaration;
+        if (superDecl != null && superDecl.kind == 'interface') {
+          delegateFace(superDecl, _genericSubstitution(superType, superDecl));
+        }
+      }
+    }
+
+    delegateFace(ifaceDecl, _genericSubstitution(ifaceType, ifaceDecl));
   }
 
   void checkShape(ClassDeclaration type) {

@@ -17963,6 +17963,191 @@ drainChannel<T>(channel: Channel<T>) async -> List<T>:
   return out
 ''';
 
+const jsonSdkSource = r'''# Type-safe JSON parsing, encoding, and typed field/path extraction for Quds.
+
+use dart:convert show jsonDecode, jsonEncode, JsonEncoder
+
+# Error returned by JSON parsing, encoding, or typed field extraction.
+# Example:
+#   err = JsonError(message: "Missing field", path: "user.name")
+value class JsonError:
+  message: String required
+  path: String = ""
+
+  toString() -> String:
+    if path.isEmpty:
+      return "JsonError: {message}"
+    return "JsonError({path}): {message}"
+
+# Converts a decoded dynamic/raw map into a typed [Map<String, Object?>].
+jsonAsObject(value: Object?, [path: String = ""]) -> Result<Map<String, Object?>, JsonError>:
+  guard value is Map<Object?, Object?> else:
+    return Error(JsonError(message: "Expected JSON object", path: path))
+  out: Map<String, Object?> = map:
+  for entry in value.entries:
+    key = entry.key
+    guard key is String else:
+      return Error(JsonError(message: "JSON object key must be String", path: path))
+    out[key] = entry.value
+  return Ok(out)
+
+# Converts a decoded dynamic/raw list into a typed [List<Object?>].
+jsonAsList(value: Object?, [path: String = ""]) -> Result<List<Object?>, JsonError>:
+  guard value is List<Object?> else:
+    return Error(JsonError(message: "Expected JSON array", path: path))
+  out: List<Object?> = []
+  for item in value:
+    out.add(item)
+  return Ok(out)
+
+# Parses any JSON text into an [Object?] wrapped in [Result].
+# Example:
+#   parsed = parseJson("[1, 2, 3]")
+parseJson(source: String) -> Result<Object?, JsonError>:
+  try:
+    return Ok(jsonDecode(source))
+  catch e:
+    return Error(JsonError(message: "{e}"))
+
+# Parses JSON text and verifies the root value is a JSON object.
+# Example:
+#   obj = parseJsonObject("{\"name\":\"Quds\"}")
+parseJsonObject(source: String) -> Result<Map<String, Object?>, JsonError>:
+  decoded = parseJson(source)?
+  return jsonAsObject(decoded)
+
+# Parses JSON text and verifies the root value is a JSON array.
+# Example:
+#   arr = parseJsonList("[1, 2, 3]")
+parseJsonList(source: String) -> Result<List<Object?>, JsonError>:
+  decoded = parseJson(source)?
+  return jsonAsList(decoded)
+
+# Encodes [value] to a JSON string. Set [pretty] to true for indented output.
+# Example:
+#   text = encodeJson({"ok": true}, pretty: true)
+encodeJson(value: Object?, pretty: bool = false, indent: String = "  ") -> String:
+  if pretty:
+    encoder = JsonEncoder.withIndent(indent)
+    return encoder.convert(value)
+  return jsonEncode(value)
+
+# Encodes [value] to JSON, returning [Error] instead of throwing on unsupported objects.
+tryEncodeJson(value: Object?, pretty: bool = false, indent: String = "  ") -> Result<String, JsonError>:
+  try:
+    return Ok(encodeJson(value, pretty: pretty, indent: indent))
+  catch e:
+    return Error(JsonError(message: "{e}"))
+
+# Walks a dot-separated [path] (including integer list indices like `"items.0.id"`)
+# through decoded JSON maps and lists, returning null if any segment is missing.
+jsonPath(root: Object?, path: String) -> Object?:
+  if path.isEmpty:
+    return root
+  var current: Object? = root
+  for segment in path.split("."):
+    if current == null:
+      return null
+    if (current is Map<Object?, Object?>):
+      if not current.containsKey(segment):
+        return null
+      current = current[segment]
+    else if (current is List<Object?>):
+      items = current
+      guard let idx = segment to? int else:
+        return null
+      if idx < 0 or idx >= items.length:
+        return null
+      current = items[idx]
+    else:
+      return null
+  return current
+
+# Reads a required [String] field from [data].
+jsonRequireString(data: Map<String, Object?>, key: String) -> Result<String, JsonError>:
+  if not data.containsKey(key):
+    return Error(JsonError(message: "Missing required field", path: key))
+  raw = data[key]
+  if raw is String:
+    return Ok(raw)
+  return Error(JsonError(message: "Expected String", path: key))
+
+# Reads an optional [String?] field from [data].
+jsonOptionalString(data: Map<String, Object?>, key: String) -> Result<String?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  raw = data[key]
+  if raw is String:
+    return Ok(raw)
+  return Error(JsonError(message: "Expected String or null", path: key))
+
+# Reads a required [int] field from [data].
+jsonRequireInt(data: Map<String, Object?>, key: String) -> Result<int, JsonError>:
+  if not data.containsKey(key):
+    return Error(JsonError(message: "Missing required field", path: key))
+  raw = data[key]
+  if raw is int:
+    return Ok(raw)
+  return Error(JsonError(message: "Expected int", path: key))
+
+# Reads an optional [int?] field from [data].
+jsonOptionalInt(data: Map<String, Object?>, key: String) -> Result<int?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  raw = data[key]
+  if raw is int:
+    return Ok(raw)
+  return Error(JsonError(message: "Expected int or null", path: key))
+
+# Reads a required [double] field from [data] (accepts both JSON ints and doubles).
+jsonRequireDouble(data: Map<String, Object?>, key: String) -> Result<double, JsonError>:
+  if not data.containsKey(key):
+    return Error(JsonError(message: "Missing required field", path: key))
+  raw = data[key]
+  if raw is num:
+    return Ok(raw.toDouble())
+  return Error(JsonError(message: "Expected number", path: key))
+
+# Reads an optional [double?] field from [data].
+jsonOptionalDouble(data: Map<String, Object?>, key: String) -> Result<double?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  raw = data[key]
+  if raw is num:
+    return Ok(raw.toDouble())
+  return Error(JsonError(message: "Expected number or null", path: key))
+
+# Reads a required [bool] field from [data].
+jsonRequireBool(data: Map<String, Object?>, key: String) -> Result<bool, JsonError>:
+  if not data.containsKey(key):
+    return Error(JsonError(message: "Missing required field", path: key))
+  raw = data[key]
+  if raw is bool:
+    return Ok(raw)
+  return Error(JsonError(message: "Expected bool", path: key))
+
+# Reads an optional [bool?] field from [data].
+jsonOptionalBool(data: Map<String, Object?>, key: String) -> Result<bool?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  raw = data[key]
+  if raw is bool:
+    return Ok(raw)
+  return Error(JsonError(message: "Expected bool or null", path: key))
+
+# Reads a required nested JSON object field from [data].
+jsonRequireObject(data: Map<String, Object?>, key: String) -> Result<Map<String, Object?>, JsonError>:
+  if not data.containsKey(key):
+    return Error(JsonError(message: "Missing required field", path: key))
+  return jsonAsObject(data[key], key)
+
+# Reads a required nested JSON array field from [data].
+jsonRequireList(data: Map<String, Object?>, key: String) -> Result<List<Object?>, JsonError>:
+  if not data.containsKey(key):
+    return Error(JsonError(message: "Missing required field", path: key))
+  return jsonAsList(data[key], key)
+''';
+
 const embeddedSdk = <String, String>{
   'core': coreSdkSource,
   'ext': extSdkSource,
@@ -17970,6 +18155,7 @@ const embeddedSdk = <String, String>{
   'text': textSdkSource,
   'collection': collectionSdkSource,
   'async': asyncSdkSource,
+  'json': jsonSdkSource,
 };
 
 List<String>? _sdkLibraryNames;

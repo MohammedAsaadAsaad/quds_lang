@@ -10,6 +10,33 @@ class ConversionError implements Exception {
   String toString() => 'ConversionError: $message';
 }
 
+/// Shared Result<T, E> identity across generated Quds libraries.
+sealed class Result<T, E> {
+  const Result();
+}
+
+class Ok<T, E> extends Result<T, E> {
+  final T value;
+  const Ok(this.value);
+  @override
+  bool operator ==(Object other) => other is Ok && other.value == value;
+  @override
+  int get hashCode => Object.hash(Ok, value);
+  @override
+  String toString() => 'Ok($value)';
+}
+
+class Error<T, E> extends Result<T, E> {
+  final E error;
+  const Error(this.error);
+  @override
+  bool operator ==(Object other) => other is Error && other.error == error;
+  @override
+  int get hashCode => Object.hash(Error, error);
+  @override
+  String toString() => 'Error($error)';
+}
+
 T? safeConvert<S, T>(S value, T Function(S) conversion) {
   try {
     return conversion(value);

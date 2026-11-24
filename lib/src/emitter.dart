@@ -146,6 +146,7 @@ class DartEmitter {
       _knownGuardsName +=
           '_${sha256Hex(utf8.encode(program.span.file)).substring(0, 12)}';
       _requireReadonlyRuntime();
+      _imports.add("import 'quds_readonly.dart' show Result, Ok, Error;");
     }
     final topLevel = _topLevel(program.statements).toList();
     _directives(program.statements);
@@ -657,15 +658,9 @@ class DartEmitter {
           'const missing = Optional<Never>.missing();');
     }
     if (_useResult) {
-      helpers.writeln('sealed class Result<T, E> { const Result(); }\n'
-          'class Ok<T, E> extends Result<T, E> {\n'
-          '  final T value;\n'
-          '  const Ok(this.value);\n'
-          '}\n'
-          'class Error<T, E> extends Result<T, E> {\n'
-          '  final E error;\n'
-          '  const Error(this.error);\n'
-          '}');
+      if (!_isPart) {
+        _imports.add("import 'quds_readonly.dart' show Result, Ok, Error;");
+      }
       if (_usePropagate) {
         helpers.writeln('class _QudsPropagate implements Exception {\n'
             '  final Result<Object?, Object?> result;\n'
@@ -1570,7 +1565,7 @@ class DartEmitter {
         _depth--;
         if (propagate) {
           line('} on _QudsPropagate catch (propagation) {');
-          line('  return propagation.result as ${_dartType(symbol.type)};');
+          line('  return ${_propagateReturn(symbol.type)};');
         }
         if (doReturn) {
           _useReturn = true;
@@ -1589,6 +1584,22 @@ class DartEmitter {
     _returnView = savedReturn;
     _openGenerics = savedGenerics;
     _guardEnvironment = savedGuardEnvironment;
+  }
+
+  String _propagateReturn(String returnType) {
+    var inner = _resolveType(returnType);
+    if (inner.startsWith('Future<') && inner.endsWith('>')) {
+      inner = inner.substring(7, inner.length - 1);
+    }
+    if (inner.startsWith('Result<') && inner.endsWith('>')) {
+      final parts = splitTypeList(inner.substring(7, inner.length - 1));
+      if (parts.length == 2) {
+        final okType = _dartType(parts[0]);
+        final errType = _dartType(parts[1]);
+        return 'Error<$okType, $errType>((propagation.result as Error).error as $errType)';
+      }
+    }
+    return 'propagation.result as ${_dartType(returnType)}';
   }
 
   List<String> _readonlyParameters(FunctionDeclaration node) {

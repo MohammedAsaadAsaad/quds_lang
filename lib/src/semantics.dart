@@ -6043,8 +6043,16 @@ class Analyzer {
     }
     if ((fromHead == toHead ||
             toHead == 'Iterable' && const {'List', 'Set'}.contains(fromHead)) &&
-        const {'List', 'Set', 'Iterable', 'Map', 'Future', 'Stream'}
-            .contains(fromHead) &&
+        const {
+          'List',
+          'Set',
+          'Iterable',
+          'Map',
+          'Future',
+          'Stream',
+          'Result',
+          'Optional',
+        }.contains(fromHead) &&
         from.endsWith('>') &&
         to.endsWith('>')) {
       final source =

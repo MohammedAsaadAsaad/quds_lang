@@ -1,0 +1,108 @@
+use quds:json
+
+class _NotEncodable:
+  x: int = 1
+
+_decodeUserSummary(raw: String) -> Result<String, JsonError>:
+  obj = parseJsonObject(raw)?
+  name = jsonRequireString(obj, "name")?
+  age = jsonRequireInt(obj, "age")?
+  score = jsonRequireDouble(obj, "score")?
+  active = jsonRequireBool(obj, "active")?
+  nick = jsonOptionalString(obj, "nick")?
+  meta = jsonRequireObject(obj, "meta")?
+  tags = jsonRequireList(obj, "tags")?
+  city = jsonRequireString(meta, "city")?
+  labelNick = nick ?? "none"
+  return Ok("{name}:{age}:{score}:{active}:{labelNick}:{city}:{tags.length}")
+
+test "parseJson, parseJsonObject, parseJsonList, encodeJson, and tryEncodeJson work cleanly":
+  parsed = parseJson("42")
+  expect(parsed, equals(Ok(42)))
+
+  bad = parseJson(r"{broken")
+  expect(bad is Error, isTrue)
+
+  objRes = parseJsonObject(r'{"a":1,"b":"two"}')
+  match objRes:
+    Ok(obj):
+      expect(obj["a"], equals(1))
+      expect(obj["b"], equals("two"))
+    Error(err):
+      expect(err.toString(), equals("unexpected"))
+
+  notObj = parseJsonObject("[1,2]")
+  expect(notObj is Error, isTrue)
+
+  listRes = parseJsonList("[10, 20, 30]")
+  match listRes:
+    Ok(items):
+      expect(items.length, equals(3))
+      expect(items[1], equals(20))
+    Error(err):
+      expect(err.toString(), equals("unexpected"))
+
+  notList = parseJsonList(r'{"x":1}')
+  expect(notList is Error, isTrue)
+
+  sample: Map<String, Object?> = map:
+    "ok": true
+    "n": 7
+  compact = encodeJson(sample)
+  expect(compact, equals(r'{"ok":true,"n":7}'))
+
+  single: Map<String, Object?> = map:
+    "ok": true
+  pretty = encodeJson(single, pretty: true)
+  expect(pretty.contains("\n  \"ok\": true\n"), isTrue)
+
+  badEncode = tryEncodeJson(_NotEncodable())
+  expect(badEncode is Error, isTrue)
+
+test "jsonPath and typed jsonRequire*/jsonOptional* readers propagate JsonError with path":
+  payload = r'{"name":"Quds","age":3,"score":9.5,"active":true,"meta":{"city":"AlQuds"},"tags":["lang","sdk"]}'
+  summary = _decodeUserSummary(payload)
+  expect(summary, equals(Ok("Quds:3:9.5:true:none:AlQuds:2")))
+
+  intScorePayload = r'{"name":"Quds","age":3,"score":10,"active":false,"nick":"q","meta":{"city":"AlQuds"},"tags":[]}'
+  summary2 = _decodeUserSummary(intScorePayload)
+  expect(summary2, equals(Ok("Quds:3:10.0:false:q:AlQuds:0")))
+
+  missingRes = _decodeUserSummary(r'{"name":"Quds"}')
+  match missingRes:
+    Ok(_):
+      expect(false, isTrue)
+    Error(err):
+      expect(err.path, equals("age"))
+      expect(err.toString().contains("age"), isTrue)
+
+  wrongType = _decodeUserSummary(r'{"name":"Quds","age":"not-int","score":1,"active":true,"meta":{"city":"A"},"tags":[]}')
+  match wrongType:
+    Ok(_):
+      expect(false, isTrue)
+    Error(err):
+      expect(err.path, equals("age"))
+
+  optObj: Map<String, Object?> = map:
+    "n": 5
+    "d": 2.5
+    "b": true
+    "nil": null
+  expect(jsonOptionalInt(optObj, "n"), equals(Ok(5)))
+  expect(jsonOptionalInt(optObj, "nil"), equals(Ok(null)))
+  expect(jsonOptionalInt(optObj, "absent"), equals(Ok(null)))
+  expect(jsonOptionalDouble(optObj, "d"), equals(Ok(2.5)))
+  expect(jsonOptionalDouble(optObj, "absent"), equals(Ok(null)))
+  expect(jsonOptionalBool(optObj, "b"), equals(Ok(true)))
+  expect(jsonOptionalBool(optObj, "absent"), equals(Ok(null)))
+  expect(jsonOptionalString(optObj, "n") is Error, isTrue)
+
+  rootRes = parseJson(r'{"user":{"name":"A","roles":["admin","dev"]}}')
+  match rootRes:
+    Ok(root):
+      expect(jsonPath(root, "user.name"), equals("A"))
+      expect(jsonPath(root, "user.roles.1"), equals("dev"))
+      expect(jsonPath(root, "user.roles.9"), equals(null))
+      expect(jsonPath(root, "user.missing.x"), equals(null))
+    Error(_):
+      expect(false, isTrue)

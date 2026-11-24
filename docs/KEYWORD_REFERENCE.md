@@ -87,6 +87,17 @@ else:
   wait()
 ```
 
+## `guard`
+
+Requires a condition (or non-null `guard let name = expr`) to hold, or exits early through its mandatory `else:` branch. Promotes non-null and `is`/`is!` types for subsequent statements.
+
+```quds
+greet(name: String?) -> String:
+  guard let value = name else:
+    return "guest"
+  return value
+```
+
 ## `for`
 
 Iterates an iterable with fresh bindings per iteration. Also supports initializer/while/step loops and collection comprehensions.
@@ -534,6 +545,14 @@ class Base:
   protected count: int = 0
 ```
 
+## `internal`
+
+Restricts a top-level declaration or class member to its owning package (`E209` outside the package).
+
+```quds
+internal helper() -> int = 1
+```
+
 ## `readonly`
 
 Restricts mutation through a reference or method. It does not freeze the object or other aliases. Nested writes and mutating calls are rejected.
@@ -700,6 +719,33 @@ load() async:
   print value
 ```
 
+## `retry`
+
+Contextual keyword that retries a failing expression or block up to a given number of attempts, with an optional `delay:` duration between failures.
+
+```quds
+fetchSafe() async -> String:
+  return retry 3, delay: 50ms: await fetch()
+```
+
+## `delay`
+
+Optional named duration clause in `retry <attempts>, delay: <Duration>:` specifying how long to wait between failed attempts.
+
+```quds
+fetchSafe() async -> String:
+  return retry 3, delay: 50ms: await fetch()
+```
+
+## `timeout`
+
+Contextual keyword that bounds an asynchronous expression or block with a `Duration`, throwing `TimeoutException` or evaluating an optional `else:` fallback on expiry.
+
+```quds
+fetchFast() async -> String:
+  return timeout 2s: await fetch() else: "cached"
+```
+
 ## `sync`
 
 With *, marks a synchronous generator returning an Iterable. Ordinary synchronous functions need no sync marker.
@@ -860,6 +906,16 @@ Binds a disposable resource and disposes it on every exit. `using async` awaits 
 ```quds
 using resource = openResource():
   resource.read()
+```
+
+## `lock`
+
+Acquires an asynchronous `Mutex` (or any object with `acquire()` and `release()`) and guarantees release on scope or block exit.
+
+```quds
+update(gate: Mutex) async:
+  lock gate:
+    work()
 ```
 
 ## `with`

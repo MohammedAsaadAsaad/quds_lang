@@ -1,3 +1,14 @@
+# Full repository regression verification & keyword docs sync — 2026-11-23
+
+Base: `0099c71`.
+
+| Check | Observed result |
+| --- | --- |
+| Full repository suite (75 test files) | Ran all 75 `test/*_test.dart` files sequentially (`-j 1`) across 8 groups: initial pass found **911 passed, 2 failed** (`test/keyword_docs_test.dart` missing docs for new keywords `internal`, `guard`, `lock`, `delay`; and pre-existing `test/math_compiler_regression_test.dart` still asserting invariant `Iterable<num>` from before commit `66fdadc`) |
+| Fixes applied | Documented `guard`, `internal`, `lock`, `retry`, `delay`, and `timeout` in `docs/KEYWORD_REFERENCE.md`, regenerated `lib/src/keyword_docs_data.dart` via `python3 tool/sync_keyword_docs.py`, and updated `test/math_compiler_regression_test.dart` to verify read-only covariant `Iterable<num>` alongside rejected `Iterable<String>` and invariant `List<num>` (`E500`) |
+| Post-fix verification | `/opt/flutter/bin/dart test -j 1 test/keyword_docs_test.dart test/math_compiler_regression_test.dart test/editor_test.dart`: **35 passed, 0 failed** (12s) — bringing full 75-file suite status to **913 passed, 0 failed** |
+| Format, analysis & audit | `dart format`, `/opt/flutter/bin/dart analyze` (`No issues found!`), `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
 # `retry` and `timeout` expressions / statements (Batch D) — 2026-11-23
 
 Base: `8f5d7a3`.

@@ -68,15 +68,23 @@ main():
   test('collection interfaces retain the exact element type', () {
     expect(() => compile('''
 accept(values: Iterable<int>) -> int = values.length
+acceptNums(values: Iterable<num>) -> int = values.length
 main():
   items = [1, 2]
   items.addAll([3, 4])
   print accept(items)
+  print acceptNums(items)
 '''), returnsNormally);
     expect(() => compile('''
-accept(values: Iterable<num>) -> int = values.length
+accept(values: Iterable<String>) -> int = values.length
 main():
   print accept([1, 2])
+'''), throwsA(predicate((e) => '$e'.contains('E500'))));
+    expect(() => compile('''
+acceptList(values: List<num>) -> int = values.length
+main():
+  items = [1, 2]
+  print acceptList(items)
 '''), throwsA(predicate((e) => '$e'.contains('E500'))));
   });
 

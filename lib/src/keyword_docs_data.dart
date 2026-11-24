@@ -12,6 +12,8 @@ const keywordDocumentation = <String, String>{
       "### if\n\nSelects a branch. Also supports collection elements, expression branches, and trailing statement conditions. Expression forms require an alternative.\n\n```quds\nif score > 50:\n  print \"Passed\"\nelse:\n  print \"Retry\"\n```",
   "else":
       "### else\n\nSupplies an alternative branch. After a loop it runs only on completion without `break`; after `try`/`catch` it runs only when no catch was entered.\n\n```quds\nif ready:\n  start()\nelse:\n  wait()\n```",
+  "guard":
+      "### guard\n\nRequires a condition (or non-null `guard let name = expr`) to hold, or exits early through its mandatory `else:` branch. Promotes non-null and `is`/`is!` types for subsequent statements.\n\n```quds\ngreet(name: String?) -> String:\n  guard let value = name else:\n    return \"guest\"\n  return value\n```",
   "for":
       "### for\n\nIterates an iterable with fresh bindings per iteration. Also supports initializer/while/step loops and collection comprehensions.\n\n```quds\nfor number in [1, 2, 3]:\n  print number\n```",
   "in":
@@ -107,6 +109,8 @@ const keywordDocumentation = <String, String>{
       "### private\n\nRestricts a declaration to its library and lowers to a Dart underscore name. An explicitly underscored name is already library-private.\n\n```quds\nclass Account:\n  private balance: int = 0\n```",
   "protected":
       "### protected\n\nAllows access from the declaring library and subtypes. Quds checks access; Dart runtime enforcement is not provided.\n\n```quds\nclass Base:\n  protected count: int = 0\n```",
+  "internal":
+      "### internal\n\nRestricts a top-level declaration or class member to its owning package (`E209` outside the package).\n\n```quds\ninternal helper() -> int = 1\n```",
   "readonly":
       "### readonly\n\nRestricts mutation through a reference or method. It does not freeze the object or other aliases. Nested writes and mutating calls are rejected.\n\n```quds\nread(items: readonly List<int>) -> int:\n  return items.length\n```",
   "required":
@@ -143,6 +147,12 @@ const keywordDocumentation = <String, String>{
       "### async\n\nMarks an asynchronous function or async disposal. Combine with * for an asynchronous generator. Await operations require an async context.\n\n```quds\nload() async -> int:\n  return await fetch()\n```",
   "await":
       "### await\n\nWaits for asynchronous work. Also starts `await for`, `await all:` and `await isolate:` forms.\n\n```quds\nload() async:\n  value = await fetch()\n  print value\n```",
+  "retry":
+      "### retry\n\nContextual keyword that retries a failing expression or block up to a given number of attempts, with an optional `delay:` duration between failures.\n\n```quds\nfetchSafe() async -> String:\n  return retry 3, delay: 50ms: await fetch()\n```",
+  "delay":
+      "### delay\n\nOptional named duration clause in `retry <attempts>, delay: <Duration>:` specifying how long to wait between failed attempts.\n\n```quds\nfetchSafe() async -> String:\n  return retry 3, delay: 50ms: await fetch()\n```",
+  "timeout":
+      "### timeout\n\nContextual keyword that bounds an asynchronous expression or block with a `Duration`, throwing `TimeoutException` or evaluating an optional `else:` fallback on expiry.\n\n```quds\nfetchFast() async -> String:\n  return timeout 2s: await fetch() else: \"cached\"\n```",
   "sync":
       "### sync\n\nWith *, marks a synchronous generator returning an Iterable. Ordinary synchronous functions need no sync marker.\n\n```quds\nnumbers() sync* -> int:\n  yield 1\n  yield 2\n```",
   "yield":
@@ -177,6 +187,8 @@ const keywordDocumentation = <String, String>{
       "### defer\n\nSchedules an expression for scope exit, last in first out. Deferred work runs on returns and exceptions too.\n\n```quds\ndefer cleanup()\nwork()\n```",
   "using":
       "### using\n\nBinds a disposable resource and disposes it on every exit. `using async` awaits disposal and requires an async function.\n\n```quds\nusing resource = openResource():\n  resource.read()\n```",
+  "lock":
+      "### lock\n\nAcquires an asynchronous `Mutex` (or any object with `acquire()` and `release()`) and guarantees release on scope or block exit.\n\n```quds\nupdate(gate: Mutex) async:\n  lock gate:\n    work()\n```",
   "with":
       "### with\n\nEvaluates a receiver once, applies a block of member operations, and yields that receiver. In class headers, applies mixins.\n\n```quds\nupdated = with item:\n  name: \"Updated\"\n```",
   "with?":

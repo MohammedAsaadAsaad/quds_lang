@@ -67,12 +67,11 @@ buildLedgerTheme(dark: bool) -> ThemeData:
   mode = Brightness.dark if dark else Brightness.light
   bg = Color(0xFF081412) if dark else Color(0xFFF3F7F5)
   scheme = ColorScheme.fromSeed(seedColor: Color(0xFF147D64), brightness: mode)
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: scheme,
-    brightness: mode,
-    scaffoldBackgroundColor: bg,
-  )
+  return ThemeData:
+    useMaterial3: true
+    colorScheme: scheme
+    brightness: mode
+    scaffoldBackgroundColor: bg
 
 # Smooth staggered fade + upward glide entrance wrapper.
 class Entrance extends StatelessWidget:
@@ -80,20 +79,16 @@ class Entrance extends StatelessWidget:
   order: int = 0
 
   build(context: BuildContext) -> Widget:
-    dur = motionDuration(context, 360 + order * 65)
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: dur,
-      curve: Curves.easeOutCubic,
-      child: child,
-      builder: (ctx: BuildContext, t: double, content: Widget?) -> Opacity(
-        opacity: t,
-        child: Transform.translate(
-          offset: Offset(0.0, (1.0 - t) * 16.0),
-          child: content,
-        ),
-      ),
-    )
+    return TweenAnimationBuilder<double>:
+      tween: Tween<double>(begin: 0.0, end: 1.0)
+      duration: motionDuration(context, 360 + order * 65)
+      curve: Curves.easeOutCubic
+      child: child
+      builder: (ctx: BuildContext, t: double, content: Widget?) -> Opacity:
+        opacity: t
+        child: Transform.translate:
+          offset: Offset(0.0, (1.0 - t) * 16.0)
+          child: content
 
 # Interactive card with subtle hover lift and emerald border highlight for Desktop & Web.
 class HoverCard extends StatefulWidget:
@@ -121,41 +116,36 @@ class HoverCardState extends State<HoverCard>:
     blur = 20.0 if hovered else 12.0
     dy = 8.0 if hovered else 4.0
     inner = Padding(padding: widget.padding, child: widget.child)
-    content = InkWell(
-      onTap: widget.onTap,
-      onHover: _onHover,
-      borderRadius: BorderRadius.circular(22.0),
-      child: inner,
-    ) if widget.onTap != null else MouseRegion(
-      onEnter: (e: Object?) -> _onHover(true),
-      onExit: (e: Object?) -> _onHover(false),
-      child: inner,
-    )
-    return AnimatedScale(
-      scale: scale,
-      duration: motionDuration(context, 160),
-      curve: Curves.easeOut,
-      child: AnimatedContainer(
-        duration: motionDuration(context, 180),
-        decoration: BoxDecoration(
-          color: surfaceColor(context),
-          borderRadius: BorderRadius.circular(22.0),
-          border: Border.all(color: border, width: borderW),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: shadowAlpha),
-              blurRadius: blur,
-              offset: Offset(0.0, dy),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(22.0),
-          child: content,
-        ),
-      ),
-    )
+    content = if widget.onTap != null:
+      InkWell:
+        onTap: widget.onTap
+        onHover: _onHover
+        borderRadius: BorderRadius.circular(22.0)
+        child: inner
+    else:
+      MouseRegion:
+        onEnter: (e: Object?) -> _onHover(true)
+        onExit: (e: Object?) -> _onHover(false)
+        child: inner
+    return AnimatedScale:
+      scale: scale
+      duration: motionDuration(context, 160)
+      curve: Curves.easeOut
+      child: AnimatedContainer:
+        duration: motionDuration(context, 180)
+        decoration: BoxDecoration:
+          color: surfaceColor(context)
+          borderRadius: BorderRadius.circular(22.0)
+          border: Border.all(color: border, width: borderW)
+          boxShadow:
+            BoxShadow:
+              color: Colors.black.withValues(alpha: shadowAlpha)
+              blurRadius: blur
+              offset: Offset(0.0, dy)
+        child: Material:
+          color: Colors.transparent
+          borderRadius: BorderRadius.circular(22.0)
+          child: content
 
 # Smoothly animates displayed monetary amounts when totals or currency change.
 class AnimatedMoneyText extends StatelessWidget:
@@ -165,12 +155,11 @@ class AnimatedMoneyText extends StatelessWidget:
 
   build(context: BuildContext) -> Widget:
     target = cents to double
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: target),
-      duration: motionDuration(context, 520),
-      curve: Curves.easeOutCubic,
+    return TweenAnimationBuilder<double>:
+      tween: Tween<double>(end: target)
+      duration: motionDuration(context, 520)
+      curve: Curves.easeOutCubic
       builder: (ctx: BuildContext, animatedCents: double, child: Widget?) -> Text(
         moneyFromCents(animatedCents.round(), currency: currency).formatted(),
         style: style,
-      ),
-    )
+      )

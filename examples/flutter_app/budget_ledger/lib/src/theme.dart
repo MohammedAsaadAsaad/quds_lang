@@ -71,8 +71,7 @@ class Entrance extends _qNative5543fe7fe3bf.StatelessWidget {
   final _qNative5543fe7fe3bf.Widget child;
   final int order;
   _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q33) {
-    final Duration _q34 = _q13(_q33, (360 + (order * 65)));
-    return ((_qNativebcd7ef243dd4.Tween<double> _qna0, Duration _qna1, _qNative485366da7540.Cubic _qna2, _qNative5543fe7fe3bf.Widget _qna3, _qNative035358ccc81b.Opacity Function(_qNative5543fe7fe3bf.BuildContext, double, _qNative5543fe7fe3bf.Widget?) _qna4) => _qNative0bb5b487fedc.TweenAnimationBuilder<double>(tween: _qna0, duration: _qna1, curve: _qna2, builder: _qna4, child: _qna3))(_qNativebcd7ef243dd4.Tween<double>(begin: 0.0, end: 1.0), _q34, Curves.easeOutCubic, child, ((_qNative5543fe7fe3bf.BuildContext _q35, double _q36, _qNative5543fe7fe3bf.Widget? _q37) => _qNative035358ccc81b.Opacity(opacity: _q36, child: Transform.translate(offset: _qNative3296ff558a1b.Offset(0.0, ((1.0 - _q36) * 16.0)), child: _q37))));
+    return ((_qNativebcd7ef243dd4.Tween<double> _qna0, Duration _qna1, _qNative485366da7540.Cubic _qna2, _qNative5543fe7fe3bf.Widget _qna3, _qNative035358ccc81b.Opacity Function(_qNative5543fe7fe3bf.BuildContext, double, _qNative5543fe7fe3bf.Widget?) _qna4) => _qNative0bb5b487fedc.TweenAnimationBuilder<double>(tween: _qna0, duration: _qna1, curve: _qna2, builder: _qna4, child: _qna3))(_qNativebcd7ef243dd4.Tween<double>(begin: 0.0, end: 1.0), _q13(_q33, (360 + (order * 65))), Curves.easeOutCubic, child, ((_qNative5543fe7fe3bf.BuildContext _q34, double _q35, _qNative5543fe7fe3bf.Widget? _q36) => _qNative035358ccc81b.Opacity(opacity: _q35, child: Transform.translate(offset: _qNative3296ff558a1b.Offset(0.0, ((1.0 - _q35) * 16.0)), child: _q36))));
   }
 }
 class HoverCard extends _qNative5543fe7fe3bf.StatefulWidget {
@@ -86,58 +85,53 @@ class HoverCard extends _qNative5543fe7fe3bf.StatefulWidget {
 class HoverCardState extends _qNative5543fe7fe3bf.State<HoverCard> {
   HoverCardState({this.hovered = false});
   bool hovered;
-  void _onHover(bool _q38) {
-    final void Function() _q39 = (() {
-this.hovered = _q38;
+  void _onHover(bool _q37) {
+    final void Function() _q38 = (() {
+this.hovered = _q37;
 });
-    this.setState(_q39);
+    this.setState(_q38);
   }
-  _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q40) {
-    final bool _q41 = (this.widget.selected || _qBool(hovered));
-    final _qNativec7be968e0aa4.Color _q42;
-    if (_qBool(_q41)) {
-      _q42 = _q12(_q40);
+  _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q39) {
+    final bool _q40 = (this.widget.selected || _qBool(hovered));
+    final _qNativec7be968e0aa4.Color _q41;
+    if (_qBool(_q40)) {
+      _q41 = _q12(_q39);
     } else {
-      _q42 = _q9(_q40);
+      _q41 = _q9(_q39);
+    }
+    final double _q42;
+    if (_qBool(_q40)) {
+      _q42 = 1.2;
+    } else {
+      _q42 = 1.0;
     }
     final double _q43;
-    if (_qBool(_q41)) {
-      _q43 = 1.2;
+    if (_qBool(hovered)) {
+      _q43 = 1.01;
     } else {
       _q43 = 1.0;
     }
     final double _q44;
-    if (_qBool(hovered)) {
-      _q44 = 1.01;
+    if (_q5(_q39)) {
+      _q44 = 0.22;
     } else {
-      _q44 = 1.0;
+      _q44 = 0.05;
     }
     final double _q45;
-    if (_q5(_q40)) {
-      _q45 = 0.22;
+    if (_qBool(hovered)) {
+      _q45 = 20.0;
     } else {
-      _q45 = 0.05;
+      _q45 = 12.0;
     }
     final double _q46;
     if (_qBool(hovered)) {
-      _q46 = 20.0;
+      _q46 = 8.0;
     } else {
-      _q46 = 12.0;
+      _q46 = 4.0;
     }
-    final double _q47;
-    if (_qBool(hovered)) {
-      _q47 = 8.0;
-    } else {
-      _q47 = 4.0;
-    }
-    final _qNative035358ccc81b.Padding _q48 = _qNative035358ccc81b.Padding(padding: this.widget.padding, child: this.widget.child);
-    final _qNative5543fe7fe3bf.Widget _q51;
-    if ((this.widget.onTap != null)) {
-      _q51 = ((void Function()? _qna5, void Function(bool) _qna6, _qNativebec49084b274.BorderRadius _qna7, _qNative035358ccc81b.Padding _qna8) => _qNativeffab4c10f351.InkWell(child: _qna8, onTap: _qna5, onHover: _qna6, borderRadius: _qna7))(this.widget.onTap, this._onHover, BorderRadius.circular(22.0), _q48);
-    } else {
-      _q51 = _qNative035358ccc81b.MouseRegion(onEnter: ((Object? _q49) => this._onHover(true)), onExit: ((Object? _q50) => this._onHover(false)), child: _q48);
-    }
-    return ((double _qna9, Duration _qna10, _qNative485366da7540.Cubic _qna11, _qNativeb01c0cbb1a5e.AnimatedContainer _qna12) => _qNativeb01c0cbb1a5e.AnimatedScale(child: _qna12, scale: _qna9, curve: _qna11, duration: _qna10))(_q44, _q13(_q40, 160), Curves.easeOut, ((Duration _qna13, _qNativeff80a55449f9.BoxDecoration _qna14, _qNativef4d33a90aa71.Material _qna22) => _qNativeb01c0cbb1a5e.AnimatedContainer(decoration: _qna14, child: _qna22, duration: _qna13))(_q13(_q40, 180), ((_qNativec7be968e0aa4.Color _qna15, _qNativebec49084b274.BorderRadius _qna16, _qNative8c01721789c6.Border _qna17, List<_qNativee7219cec0e8c.BoxShadow> _qna18) => _qNativeff80a55449f9.BoxDecoration(color: _qna15, border: _qna17, borderRadius: _qna16, boxShadow: _qna18))(_q7(_q40), BorderRadius.circular(22.0), Border.all(color: _q42, width: _q43), <_qNativee7219cec0e8c.BoxShadow>[((_qNativec7be968e0aa4.Color _qna19, double _qna20, _qNative3296ff558a1b.Offset _qna21) => _qNativee7219cec0e8c.BoxShadow(color: _qna19, offset: _qna21, blurRadius: _qna20))(Colors.black.withValues(alpha: _q45), _q46, _qNative3296ff558a1b.Offset(0.0, _q47))]), _qNativef4d33a90aa71.Material(color: Colors.transparent, borderRadius: BorderRadius.circular(22.0), child: _q51)));
+    final _qNative035358ccc81b.Padding _q47 = _qNative035358ccc81b.Padding(padding: this.widget.padding, child: this.widget.child);
+    final _qNative5543fe7fe3bf.Widget _q50 = (() { if ((this.widget.onTap != null)) { return ((void Function()? _qna5, void Function(bool) _qna6, _qNativebec49084b274.BorderRadius _qna7, _qNative035358ccc81b.Padding _qna8) => _qNativeffab4c10f351.InkWell(child: _qna8, onTap: _qna5, onHover: _qna6, borderRadius: _qna7))(this.widget.onTap, this._onHover, BorderRadius.circular(22.0), _q47); } else { return _qNative035358ccc81b.MouseRegion(onEnter: ((Object? _q48) => this._onHover(true)), onExit: ((Object? _q49) => this._onHover(false)), child: _q47); } })();
+    return ((double _qna9, Duration _qna10, _qNative485366da7540.Cubic _qna11, _qNativeb01c0cbb1a5e.AnimatedContainer _qna12) => _qNativeb01c0cbb1a5e.AnimatedScale(child: _qna12, scale: _qna9, curve: _qna11, duration: _qna10))(_q43, _q13(_q39, 160), Curves.easeOut, ((Duration _qna13, _qNativeff80a55449f9.BoxDecoration _qna14, _qNativef4d33a90aa71.Material _qna22) => _qNativeb01c0cbb1a5e.AnimatedContainer(decoration: _qna14, child: _qna22, duration: _qna13))(_q13(_q39, 180), ((_qNativec7be968e0aa4.Color _qna15, _qNativebec49084b274.BorderRadius _qna16, _qNative8c01721789c6.Border _qna17, List<_qNativee7219cec0e8c.BoxShadow> _qna18) => _qNativeff80a55449f9.BoxDecoration(color: _qna15, border: _qna17, borderRadius: _qna16, boxShadow: _qna18))(_q7(_q39), BorderRadius.circular(22.0), Border.all(color: _q41, width: _q42), <_qNativee7219cec0e8c.BoxShadow>[((_qNativec7be968e0aa4.Color _qna19, double _qna20, _qNative3296ff558a1b.Offset _qna21) => _qNativee7219cec0e8c.BoxShadow(color: _qna19, offset: _qna21, blurRadius: _qna20))(Colors.black.withValues(alpha: _q44), _q45, _qNative3296ff558a1b.Offset(0.0, _q46))]), _qNativef4d33a90aa71.Material(color: Colors.transparent, borderRadius: BorderRadius.circular(22.0), child: _q50)));
   }
 }
 class AnimatedMoneyText extends _qNative5543fe7fe3bf.StatelessWidget {
@@ -145,9 +139,9 @@ class AnimatedMoneyText extends _qNative5543fe7fe3bf.StatelessWidget {
   final int cents;
   final Currency currency;
   final _qNative32610202bed5.TextStyle style;
-  _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q52) {
-    final double _q53 = (_qConvert(cents, "double", false) as double);
-    return _qNative0bb5b487fedc.TweenAnimationBuilder<double>(tween: _qNativebcd7ef243dd4.Tween<double>(end: _q53), duration: _q13(_q52, 520), curve: Curves.easeOutCubic, builder: ((_qNative5543fe7fe3bf.BuildContext _q54, double _q55, _qNative5543fe7fe3bf.Widget? _q56) => _qNative805c89a392fb.Text((() { final _qa0 = _q55.round(); final _qa1 = currency; return moneyFromCents(_qa0, _qa1); })().formatted(), style: style)));
+  _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q51) {
+    final double _q52 = (_qConvert(cents, "double", false) as double);
+    return _qNative0bb5b487fedc.TweenAnimationBuilder<double>(tween: _qNativebcd7ef243dd4.Tween<double>(end: _q52), duration: _q13(_q51, 520), curve: Curves.easeOutCubic, builder: ((_qNative5543fe7fe3bf.BuildContext _q53, double _q54, _qNative5543fe7fe3bf.Widget? _q55) => _qNative805c89a392fb.Text((() { final _qa0 = _q54.round(); final _qa1 = currency; return moneyFromCents(_qa0, _qa1); })().formatted(), style: style)));
   }
 }
 

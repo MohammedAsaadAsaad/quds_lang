@@ -14,6 +14,29 @@ class Parser {
 
   /// Labels whose statements are still being parsed.
   final _openLabels = <String>[];
+
+  /// Calls parsed as indented `Callee:` blocks (already terminated by dedent).
+  final _blockCalls = Set<Expression>.identity();
+
+  bool _endsWithBlock(Expression value) =>
+      _blockCalls.contains(value) ||
+      value is MapExpression ||
+      value is SetExpression ||
+      value is DoExpression ||
+      value is WithExpression ||
+      value is MatchExpression ||
+      value is AwaitAllExpression ||
+      value is AwaitIsolateExpression ||
+      value is LoopExpression ||
+      (value is WhereExpression && value.block) ||
+      (value is RetryExpression && value.block) ||
+      (value is TimeoutExpression && value.block) ||
+      (value is IfExpression && !at(TokenKind.newline)) ||
+      (value is Lambda &&
+          (value.body != null ||
+              (value.expressionBody != null &&
+                  _endsWithBlock(value.expressionBody!))));
+
   int index = 0;
   Token get current => tokens[index];
   Token peek([int n = 1]) => tokens[(index + n).clamp(0, tokens.length - 1)];
@@ -536,20 +559,13 @@ class Parser {
           at(TokenKind.colon) &&
           (value.name == 'map' || value.name == 'set')) {
         value = collectionLiteral(value.name, value.span);
+      } else if (value != null &&
+          at(TokenKind.colon) &&
+          peek().kind == TokenKind.newline) {
+        value = namedBlock(value);
       }
       final returned = ReturnStatement(value, extent(span));
-      if (value is MapExpression ||
-          value is SetExpression ||
-          value is DoExpression ||
-          value is WithExpression ||
-          value is MatchExpression ||
-          value is AwaitAllExpression ||
-          value is AwaitIsolateExpression ||
-          value is LoopExpression ||
-          value is WhereExpression && value.block ||
-          value is RetryExpression && value.block ||
-          value is TimeoutExpression && value.block ||
-          (value is IfExpression && !at(TokenKind.newline))) {
+      if (value != null && _endsWithBlock(value)) {
         return returned;
       }
       return finishLine(returned);
@@ -880,6 +896,14 @@ class Parser {
         after > index &&
         next.span.offset ==
             tokens[after - 1].span.offset + tokens[after - 1].span.length) {
+      return true;
+    }
+    if (next.kind == TokenKind.colon &&
+        after + 1 < tokens.length &&
+        tokens[after + 1].kind == TokenKind.newline) {
+      for (var j = index + 1; j < after - 1; j++) {
+        if (tokens[j].kind == TokenKind.newline) return false;
+      }
       return true;
     }
     return {
@@ -2782,38 +2806,40 @@ class Parser {
             value = namedBlock(expressionValue);
           } else {
             value = expressionValue;
-            endLine();
+            if (!_endsWithBlock(value)) endLine();
           }
         }
         arguments.add(Argument(argument.lexeme, value, argument.span));
       }
       expect(TokenKind.dedent, 'end of named argument block');
-      if (callee is CallExpression) {
-        return CallExpression(callee.callee,
-            [...callee.arguments, ...arguments], extent(callee.span));
-      }
-      return CallExpression(callee, arguments, extent(callee.span));
+      final result = callee is CallExpression
+          ? CallExpression(callee.callee, [...callee.arguments, ...arguments],
+              extent(callee.span))
+          : CallExpression(callee, arguments, extent(callee.span));
+      _blockCalls.add(result);
+      return result;
     }
     final list = collectionRows(callee.span);
     final argument = Argument(null, list, list.span);
-    if (callee is CallExpression) {
-      return CallExpression(
-          callee.callee, [...callee.arguments, argument], extent(callee.span));
-    }
-    return CallExpression(callee, [argument], extent(callee.span));
+    final result = callee is CallExpression
+        ? CallExpression(
+            callee.callee, [...callee.arguments, argument], extent(callee.span))
+        : CallExpression(callee, [argument], extent(callee.span));
+    _blockCalls.add(result);
+    return result;
   }
 
   /// A value written as an indented block after a named argument's colon.
   Expression indentedBlock() {
     endLine();
     expect(TokenKind.indent, 'indented block');
-    if (_namedArgumentRows()) {
+    if (_namedArgumentRows(requireInlineValue: true)) {
       fail('A nested label block needs its callee before the colon');
     }
     return collectionRows(current.span);
   }
 
-  bool _namedArgumentRows() {
+  bool _namedArgumentRows({bool requireInlineValue = false}) {
     var i = index;
     var depth = 1;
     var named = true;
@@ -2846,10 +2872,13 @@ class Parser {
       if (atRow) {
         rows++;
         final next = i + 1 < tokens.length ? tokens[i + 1] : null;
+        final after = i + 2 < tokens.length ? tokens[i + 2] : null;
         final label = token.kind == TokenKind.identifier &&
             !blocked.contains(token.lexeme) &&
             next != null &&
-            next.kind == TokenKind.colon;
+            next.kind == TokenKind.colon &&
+            (!requireInlineValue ||
+                (after != null && after.kind != TokenKind.newline));
         if (!label) named = false;
         atRow = false;
       }
@@ -2977,11 +3006,21 @@ class Parser {
   /// A colon followed by one expression, either on this line or indented.
   Expression suiteExpression() {
     expect(TokenKind.colon, ':');
-    if (!at(TokenKind.newline)) return expression(bare: true);
+    if (!at(TokenKind.newline)) {
+      final inline = expression(bare: true);
+      if (at(TokenKind.colon) && peek().kind == TokenKind.newline) {
+        return namedBlock(inline);
+      }
+      return inline;
+    }
     endLine();
     expect(TokenKind.indent, 'indented block');
-    final value = expression(bare: true);
-    endLine();
+    var value = expression(bare: true);
+    if (at(TokenKind.colon) && peek().kind == TokenKind.newline) {
+      value = namedBlock(value);
+    } else if (!_endsWithBlock(value)) {
+      endLine();
+    }
     expect(TokenKind.dedent, 'end of block');
     return value;
   }
@@ -3033,7 +3072,11 @@ class Parser {
     if (at(TokenKind.colon)) {
       return Lambda(parameters, null, block(), extent(span));
     }
-    return Lambda(parameters, expression(bare: true), null, extent(span));
+    var body = expression(bare: true);
+    if (at(TokenKind.colon) && peek().kind == TokenKind.newline) {
+      body = namedBlock(body);
+    }
+    return Lambda(parameters, body, null, extent(span));
   }
 
   Expression pipeline(Expression left, Expression right) {

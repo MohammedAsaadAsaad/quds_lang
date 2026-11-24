@@ -67,4 +67,62 @@ void main() {
     expect(value.left.span.column, 17);
     expect(value.left.span.offset, 24);
   });
+
+  test(
+      'paren-free block calls work in return, generics, list blocks, lambdas, if-expressions, and narrow collection-if',
+      () {
+    const source = '''
+class Box<T>:
+  value: T required
+
+class Node:
+  tag: String required
+  children: List<Node> = []
+
+make(opt: String?, wide: bool, builder: (int) -> Box<int>) -> Node:
+  chosen = if wide:
+    Node:
+      tag: "wide"
+  else:
+    Node:
+      tag: "narrow"
+  b = builder(7)
+  return Node:
+    tag: "{chosen.tag}:{b.value}"
+    children:
+      Node:
+        tag: "a"
+      Node:
+        tag: "b"
+      if opt != null:
+        Node:
+          tag: opt.toUpperCase()
+
+buildIt(opt: String?) -> Node:
+  return make:
+    opt: opt
+    wide: true
+    builder: (n: int) -> Box<int>:
+      value: n + 1
+''';
+    final compiled = compile(source);
+    expect(compiled.dart, contains('Node('));
+    expect(compiled.dart, contains('toUpperCase()'));
+
+    // Missing-callee inline named arguments inside an indented block are still rejected.
+    expect(
+      () => parse('''
+main():
+  x = Node:
+    children:
+      tag: "missing callee"
+'''),
+      throwsA(
+        predicate(
+          (e) => '$e'.contains(
+              'A nested label block needs its callee before the colon'),
+        ),
+      ),
+    );
+  });
 }

@@ -54,59 +54,42 @@ class AnimatedDonutChart extends StatelessWidget:
   build(context: BuildContext) -> Widget:
     pct = (savingsRate * 100.0).round()
     track = elevatedColor(context)
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0.0, end: 1.0),
-      duration: motionDuration(context, 780),
-      curve: Curves.easeOutQuart,
-      builder: (ctx: BuildContext, t: double, child: Widget?) -> SizedBox(
-        width: 196.0,
-        height: 196.0,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            CustomPaint(
-              size: Size(196.0, 196.0),
-              painter: DonutRingPainter(
-                summaries: summaries,
-                progress: t,
-                trackColor: track,
-              ),
-            ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  "{pct}%",
-                  style: TextStyle(
-                    fontSize: 30.0,
-                    fontWeight: FontWeight.w800,
-                    color: inkColor(context),
-                    letterSpacing: -1.0,
-                  ),
-                ),
-                Text(
-                  "Savings Rate",
-                  style: TextStyle(
-                    fontSize: 12.0,
-                    fontWeight: FontWeight.w500,
-                    color: mutedColor(context),
-                  ),
-                ),
-                SizedBox(height: 4.0),
-                Text(
-                  totalExpense.formatted(),
-                  style: TextStyle(
-                    fontSize: 12.0,
-                    fontWeight: FontWeight.w700,
-                    color: brandGold(),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    )
+    return TweenAnimationBuilder<double>:
+      tween: Tween<double>(begin: 0.0, end: 1.0)
+      duration: motionDuration(context, 780)
+      curve: Curves.easeOutQuart
+      builder: (ctx: BuildContext, t: double, child: Widget?) -> SizedBox:
+        width: 196.0
+        height: 196.0
+        child: Stack:
+          alignment: Alignment.center
+          children:
+            CustomPaint:
+              size: Size(196.0, 196.0)
+              painter: DonutRingPainter:
+                summaries: summaries
+                progress: t
+                trackColor: track
+            Column:
+              mainAxisSize: MainAxisSize.min
+              children:
+                Text("{pct}%"):
+                  style: TextStyle:
+                    fontSize: 30.0
+                    fontWeight: FontWeight.w800
+                    color: inkColor(context)
+                    letterSpacing: -1.0
+                Text("Savings Rate"):
+                  style: TextStyle:
+                    fontSize: 12.0
+                    fontWeight: FontWeight.w500
+                    color: mutedColor(context)
+                SizedBox(height: 4.0)
+                Text(totalExpense.formatted()):
+                  style: TextStyle:
+                    fontSize: 12.0
+                    fontWeight: FontWeight.w700
+                    color: brandGold()
 
 # Animated budget progress card evaluating sealed BudgetStatus (Healthy / Warning / Exceeded).
 class BudgetProgressCard extends StatelessWidget:
@@ -146,113 +129,77 @@ class BudgetProgressCard extends StatelessWidget:
     pctText = "{(ratio * 100.0).round()}%"
     limitText = summary.limit?.formatted() ?? "Tap to set"
 
-    return HoverCard(
-      onTap: onEdit,
-      padding: EdgeInsets.all(18.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 40.0,
-                height: 40.0,
-                decoration: BoxDecoration(
-                  color: catColor.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(12.0),
-                ),
-                child: Icon(categoryIcon(summary.category), color: catColor, size: 20.0),
-              ),
-              SizedBox(width: 12.0),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      categoryLabel(summary.category),
-                      style: TextStyle(
-                        fontSize: 15.0,
-                        fontWeight: FontWeight.w700,
-                        color: inkColor(context),
-                      ),
-                    ),
-                    SizedBox(height: 2.0),
-                    Text(
-                      statusLabel,
-                      style: TextStyle(
-                        fontSize: 12.0,
-                        fontWeight: FontWeight.w600,
-                        color: statusColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(20.0),
-                ),
-                child: Text(
-                  pctText,
-                  style: TextStyle(
-                    fontSize: 12.0,
-                    fontWeight: FontWeight.w700,
-                    color: statusColor,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 14.0),
-          TweenAnimationBuilder<double>(
-            tween: Tween<double>(end: clamped),
-            duration: motionDuration(context, 560),
-            curve: Curves.easeOutCubic,
-            builder: (ctx: BuildContext, widthFactor: double, child: Widget?) -> ClipRRect(
-              borderRadius: BorderRadius.circular(8.0),
-              child: Container(
-                height: 8.0,
-                color: elevatedColor(context),
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  widthFactor: widthFactor,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: statusColor,
-                      borderRadius: BorderRadius.circular(8.0),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: 10.0),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Flexible(
-                child: Text(
-                  "Spent {summary.spent.formatted()}",
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12.0, color: mutedColor(context)),
-                ),
-              ),
-              SizedBox(width: 8.0),
-              Flexible(
-                child: Text(
-                  "Limit {limitText}",
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.0,
-                    fontWeight: FontWeight.w600,
-                    color: inkColor(context),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    )
+    return HoverCard:
+      onTap: onEdit
+      padding: EdgeInsets.all(18.0)
+      child: Column:
+        crossAxisAlignment: CrossAxisAlignment.start
+        children:
+          Row:
+            children:
+              Container:
+                width: 40.0
+                height: 40.0
+                decoration: BoxDecoration:
+                  color: catColor.withValues(alpha: 0.16)
+                  borderRadius: BorderRadius.circular(12.0)
+                child: Icon(categoryIcon(summary.category), color: catColor, size: 20.0)
+              SizedBox(width: 12.0)
+              Expanded:
+                child: Column:
+                  crossAxisAlignment: CrossAxisAlignment.start
+                  children:
+                    Text(categoryLabel(summary.category)):
+                      style: TextStyle:
+                        fontSize: 15.0
+                        fontWeight: FontWeight.w700
+                        color: inkColor(context)
+                    SizedBox(height: 2.0)
+                    Text(statusLabel):
+                      style: TextStyle:
+                        fontSize: 12.0
+                        fontWeight: FontWeight.w600
+                        color: statusColor
+              Container:
+                padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0)
+                decoration: BoxDecoration:
+                  color: statusColor.withValues(alpha: 0.14)
+                  borderRadius: BorderRadius.circular(20.0)
+                child: Text(pctText):
+                  style: TextStyle:
+                    fontSize: 12.0
+                    fontWeight: FontWeight.w700
+                    color: statusColor
+          SizedBox(height: 14.0)
+          TweenAnimationBuilder<double>:
+            tween: Tween<double>(end: clamped)
+            duration: motionDuration(context, 560)
+            curve: Curves.easeOutCubic
+            builder: (ctx: BuildContext, widthFactor: double, child: Widget?) -> ClipRRect:
+              borderRadius: BorderRadius.circular(8.0)
+              child: Container:
+                height: 8.0
+                color: elevatedColor(context)
+                alignment: Alignment.centerLeft
+                child: FractionallySizedBox:
+                  widthFactor: widthFactor
+                  child: Container:
+                    decoration: BoxDecoration:
+                      color: statusColor
+                      borderRadius: BorderRadius.circular(8.0)
+          SizedBox(height: 10.0)
+          Row:
+            mainAxisAlignment: MainAxisAlignment.spaceBetween
+            children:
+              Flexible:
+                child: Text("Spent {summary.spent.formatted()}"):
+                  overflow: TextOverflow.ellipsis
+                  style: TextStyle(fontSize: 12.0, color: mutedColor(context))
+              SizedBox(width: 8.0)
+              Flexible:
+                child: Text("Limit {limitText}"):
+                  overflow: TextOverflow.ellipsis
+                  style: TextStyle:
+                    fontSize: 12.0
+                    fontWeight: FontWeight.w600
+                    color: inkColor(context)

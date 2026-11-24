@@ -13199,9 +13199,15 @@ class Analyzer {
       fail('collection if condition must be bool', node.condition);
     }
     if (node.thenElements.isEmpty) fail('collection if needs an element', node);
-    final type = groupElementType(node.thenElements);
+    final type = _withPromoted(
+      _promotions(node.condition, whenTrue: true),
+      () => groupElementType(node.thenElements),
+    );
     if (node.elseElements.isNotEmpty) {
-      final other = groupElementType(node.elseElements);
+      final other = _withPromoted(
+        _promotions(node.condition, whenTrue: false),
+        () => groupElementType(node.elseElements),
+      );
       if (other != type) {
         fail('List elements must have a common supported static type', node);
       }
@@ -13501,8 +13507,14 @@ class Analyzer {
     if (expression(node.condition) != 'bool') {
       fail('if condition must be bool', node.condition);
     }
-    final thenType = expression(node.thenValue);
-    final elseType = expression(node.elseValue);
+    final thenType = _withPromoted(
+      _promotions(node.condition, whenTrue: true),
+      () => expression(node.thenValue),
+    );
+    final elseType = _withPromoted(
+      _promotions(node.condition, whenTrue: false),
+      () => expression(node.elseValue),
+    );
     final joined = joinTypes(thenType, elseType, node);
     _noteUnionWrap(node.thenValue, thenType, joined, null);
     _noteUnionWrap(node.elseValue, elseType, joined, null);

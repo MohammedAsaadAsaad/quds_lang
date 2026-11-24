@@ -20,17 +20,15 @@ class QudsLedgerAppState extends State<QudsLedgerApp>:
 
   build(context: BuildContext) -> Widget:
     mode = ThemeMode.dark if darkMode else ThemeMode.light
-    return MaterialApp(
-      title: "Quds Ledger",
-      debugShowCheckedModeBanner: false,
-      theme: buildLedgerTheme(false),
-      darkTheme: buildLedgerTheme(true),
-      themeMode: mode,
-      home: LedgerShell(
-        darkMode: darkMode,
-        onToggleTheme: _toggleTheme,
-      ),
-    )
+    return MaterialApp:
+      title: "Quds Ledger"
+      debugShowCheckedModeBanner: false
+      theme: buildLedgerTheme(false)
+      darkTheme: buildLedgerTheme(true)
+      themeMode: mode
+      home: LedgerShell:
+        darkMode: darkMode
+        onToggleTheme: _toggleTheme
 
 class LedgerShell extends StatefulWidget:
   darkMode: bool required
@@ -88,202 +86,153 @@ class LedgerShellState extends State<LedgerShell>:
     undo = () -> :
       engine.restoreEntry(entry)
       _refresh()
+    snack = SnackBar:
+      content: Text("Deleted \"{entry.title}\"")
+      action: SnackBarAction(label: "Undo", onPressed: undo)
     ScaffoldMessenger.of(context).clearSnackBars()
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Deleted \"{entry.title}\""),
-        action: SnackBarAction(
-          label: "Undo",
-          onPressed: undo,
-        ),
-      ),
-    )
+    ScaffoldMessenger.of(context).showSnackBar(snack)
 
   build(context: BuildContext) -> Widget:
     wide = MediaQuery.of(context).size.width >= 880.0
-    bodyContent = AnimatedSwitcher(
-      duration: motionDuration(context, 280),
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      child: KeyedSubtree(
-        key: ValueKey<int>(tabIndex),
-        child: _activeTab(context, wide),
-      ),
-    )
+    bodyContent = AnimatedSwitcher:
+      duration: motionDuration(context, 280)
+      switchInCurve: Curves.easeOutCubic
+      switchOutCurve: Curves.easeInCubic
+      child: KeyedSubtree:
+        key: ValueKey<int>(tabIndex)
+        child: _activeTab(context, wide)
 
     if wide:
-      return Scaffold(
-        body: Row(
-          children: [
-            _desktopRail(context),
-            VerticalDivider(width: 1.0, thickness: 1.0, color: borderColor(context)),
-            Expanded(child: bodyContent),
-          ],
-        ),
-      )
+      return Scaffold:
+        body: Row:
+          children:
+            _desktopRail(context)
+            VerticalDivider(width: 1.0, thickness: 1.0, color: borderColor(context))
+            Expanded(child: bodyContent)
 
     themeIcon = Icons.light_mode_rounded if widget.darkMode else Icons.dark_mode_rounded
     themeTint = brandGold() if widget.darkMode else brandDeepEmerald()
 
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: bgColor(context),
-        surfaceTintColor: Colors.transparent,
-        title: Row(
-          children: [
-            _appIconBadge(34.0),
-            SizedBox(width: 10.0),
-            Flexible(
-              child: Text(
-                "Quds Ledger",
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.4,
-                  color: inkColor(context),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          _currencyDropdown(context),
-          IconButton(
-            tooltip: "Toggle theme",
-            onPressed: widget.onToggleTheme,
-            icon: Icon(themeIcon, color: themeTint),
-          ),
-          SizedBox(width: 6.0),
-        ],
-      ),
-      body: bodyContent,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () -> showAddEntryDialog(context, engine, _refresh),
-        backgroundColor: brandDeepEmerald(),
-        foregroundColor: Colors.white,
-        icon: Icon(Icons.add_rounded),
-        label: Text("Add Entry", style: TextStyle(fontWeight: FontWeight.w700)),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tabIndex,
-        backgroundColor: surfaceColor(context),
-        indicatorColor: accentColor(context).withValues(alpha: 0.18),
-        onDestinationSelected: _setTab,
-        destinations: [
-          NavigationDestination(icon: Icon(Icons.dashboard_rounded), label: "Overview"),
-          NavigationDestination(icon: Icon(Icons.receipt_long_rounded), label: "Ledger"),
-          NavigationDestination(icon: Icon(Icons.pie_chart_rounded), label: "Budgets"),
-        ],
-      ),
-    )
+    return Scaffold:
+      appBar: AppBar:
+        backgroundColor: bgColor(context)
+        surfaceTintColor: Colors.transparent
+        title: Row:
+          children:
+            _appIconBadge(34.0)
+            SizedBox(width: 10.0)
+            Flexible:
+              child: Text("Quds Ledger"):
+                overflow: TextOverflow.ellipsis
+                style: TextStyle:
+                  fontWeight: FontWeight.w800
+                  letterSpacing: -0.4
+                  color: inkColor(context)
+        actions:
+          _currencyDropdown(context)
+          IconButton:
+            tooltip: "Toggle theme"
+            onPressed: widget.onToggleTheme
+            icon: Icon(themeIcon, color: themeTint)
+          SizedBox(width: 6.0)
+      body: bodyContent
+      floatingActionButton: FloatingActionButton.extended:
+        onPressed: () -> showAddEntryDialog(context, engine, _refresh)
+        backgroundColor: brandDeepEmerald()
+        foregroundColor: Colors.white
+        icon: Icon(Icons.add_rounded)
+        label: Text("Add Entry", style: TextStyle(fontWeight: FontWeight.w700))
+      bottomNavigationBar: NavigationBar:
+        selectedIndex: tabIndex
+        backgroundColor: surfaceColor(context)
+        indicatorColor: accentColor(context).withValues(alpha: 0.18)
+        onDestinationSelected: _setTab
+        destinations:
+          NavigationDestination(icon: Icon(Icons.dashboard_rounded), label: "Overview")
+          NavigationDestination(icon: Icon(Icons.receipt_long_rounded), label: "Ledger")
+          NavigationDestination(icon: Icon(Icons.pie_chart_rounded), label: "Budgets")
 
   _appIconBadge(size: double) -> Widget:
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.24),
-      child: Image.asset(
-        "assets/icon/quds_ledger_icon.png",
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-      ),
-    )
+    return ClipRRect:
+      borderRadius: BorderRadius.circular(size * 0.24)
+      child: Image.asset("assets/icon/quds_ledger_icon.png"):
+        width: size
+        height: size
+        fit: BoxFit.cover
 
   _desktopRail(context: BuildContext) -> Widget:
-    currencyChips: List<Widget> = [
-      ChoiceChip(
-        label: Text(currencyCode(c), style: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w700)),
-        selected: engine.displayCurrency == c,
-        onSelected: (sel: bool) -> _onCurrencyChip(c, sel),
-      ) for c in allCurrencies()
-    ]
     modeLabel = "Dark Mode" if widget.darkMode else "Light Mode"
     themeIcon = Icons.light_mode_rounded if widget.darkMode else Icons.dark_mode_rounded
     themeTint = brandGold() if widget.darkMode else brandDeepEmerald()
 
-    return Container(
-      width: 248.0,
-      color: surfaceColor(context),
-      padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _appIconBadge(44.0),
-              SizedBox(width: 12.0),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Quds Ledger",
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 17.0,
-                        fontWeight: FontWeight.w800,
-                        color: inkColor(context),
-                      ),
-                    ),
-                    Text(
-                      "Exact Rational Finance",
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 11.0, color: mutedColor(context)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 28.0),
-          _railItem(context, 0, Icons.dashboard_rounded, "Overview"),
-          SizedBox(height: 6.0),
-          _railItem(context, 1, Icons.receipt_long_rounded, "Transactions"),
-          SizedBox(height: 6.0),
-          _railItem(context, 2, Icons.pie_chart_rounded, "Budgets & JSON"),
-          SizedBox(height: 22.0),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () -> showAddEntryDialog(context, engine, _refresh),
-              icon: Icon(Icons.add_rounded),
-              label: Text("New Entry", style: TextStyle(fontWeight: FontWeight.w700)),
-              style: FilledButton.styleFrom(
-                backgroundColor: brandDeepEmerald(),
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(vertical: 14.0),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0)),
-              ),
-            ),
-          ),
-          Spacer(),
-          Divider(color: borderColor(context)),
-          SizedBox(height: 10.0),
-          Text(
-            "Display Currency",
-            style: TextStyle(fontSize: 11.0, fontWeight: FontWeight.w600, color: mutedColor(context)),
-          ),
-          SizedBox(height: 8.0),
-          Wrap(spacing: 6.0, runSpacing: 6.0, children: currencyChips),
-          SizedBox(height: 14.0),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  modeLabel,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: inkColor(context)),
-                ),
-              ),
-              IconButton(
-                onPressed: widget.onToggleTheme,
-                icon: Icon(themeIcon, color: themeTint),
-              ),
-            ],
-          ),
-        ],
-      ),
-    )
+    return Container:
+      width: 248.0
+      color: surfaceColor(context)
+      padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0)
+      child: Column:
+        crossAxisAlignment: CrossAxisAlignment.start
+        children:
+          Row:
+            children:
+              _appIconBadge(44.0)
+              SizedBox(width: 12.0)
+              Expanded:
+                child: Column:
+                  crossAxisAlignment: CrossAxisAlignment.start
+                  children:
+                    Text("Quds Ledger"):
+                      overflow: TextOverflow.ellipsis
+                      style: TextStyle:
+                        fontSize: 17.0
+                        fontWeight: FontWeight.w800
+                        color: inkColor(context)
+                    Text("Exact Rational Finance"):
+                      overflow: TextOverflow.ellipsis
+                      style: TextStyle(fontSize: 11.0, color: mutedColor(context))
+          SizedBox(height: 28.0)
+          _railItem(context, 0, Icons.dashboard_rounded, "Overview")
+          SizedBox(height: 6.0)
+          _railItem(context, 1, Icons.receipt_long_rounded, "Transactions")
+          SizedBox(height: 6.0)
+          _railItem(context, 2, Icons.pie_chart_rounded, "Budgets & JSON")
+          SizedBox(height: 22.0)
+          SizedBox:
+            width: double.infinity
+            child: FilledButton.icon:
+              onPressed: () -> showAddEntryDialog(context, engine, _refresh)
+              icon: Icon(Icons.add_rounded)
+              label: Text("New Entry", style: TextStyle(fontWeight: FontWeight.w700))
+              style: FilledButton.styleFrom:
+                backgroundColor: brandDeepEmerald()
+                foregroundColor: Colors.white
+                padding: EdgeInsets.symmetric(vertical: 14.0)
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0))
+          Spacer()
+          Divider(color: borderColor(context))
+          SizedBox(height: 10.0)
+          Text("Display Currency"):
+            style: TextStyle(fontSize: 11.0, fontWeight: FontWeight.w600, color: mutedColor(context))
+          SizedBox(height: 8.0)
+          Wrap:
+            spacing: 6.0
+            runSpacing: 6.0
+            children:
+              for c in allCurrencies():
+                ChoiceChip:
+                  label: Text(currencyCode(c), style: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w700))
+                  selected: engine.displayCurrency == c
+                  onSelected: (sel: bool) -> _onCurrencyChip(c, sel)
+          SizedBox(height: 14.0)
+          Row:
+            mainAxisAlignment: MainAxisAlignment.spaceBetween
+            children:
+              Expanded:
+                child: Text(modeLabel):
+                  overflow: TextOverflow.ellipsis
+                  style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: inkColor(context))
+              IconButton:
+                onPressed: widget.onToggleTheme
+                icon: Icon(themeIcon, color: themeTint)
 
   _onCurrencyChip(c: Currency, selected: bool) -> void:
     if selected:
@@ -296,60 +245,43 @@ class LedgerShellState extends State<LedgerShell>:
     iconTint = accent if active else mutedColor(context)
     textWeight = FontWeight.w700 if active else FontWeight.w500
     textTint = inkColor(context) if active else mutedColor(context)
-    return AnimatedContainer(
-      duration: motionDuration(context, 180),
-      decoration: BoxDecoration(
-        color: tileBg,
-        borderRadius: BorderRadius.circular(14.0),
-      ),
-      child: InkWell(
-        onTap: () -> _setTab(index),
-        borderRadius: BorderRadius.circular(14.0),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0),
-          child: Row(
-            children: [
-              Icon(icon, size: 20.0, color: iconTint),
-              SizedBox(width: 12.0),
-              Expanded(
-                child: Text(
-                  itemLabel,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 14.0, fontWeight: textWeight, color: textTint),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    )
+    return AnimatedContainer:
+      duration: motionDuration(context, 180)
+      decoration: BoxDecoration:
+        color: tileBg
+        borderRadius: BorderRadius.circular(14.0)
+      child: InkWell:
+        onTap: () -> _setTab(index)
+        borderRadius: BorderRadius.circular(14.0)
+        child: Padding:
+          padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 12.0)
+          child: Row:
+            children:
+              Icon(icon, size: 20.0, color: iconTint)
+              SizedBox(width: 12.0)
+              Expanded:
+                child: Text(itemLabel):
+                  overflow: TextOverflow.ellipsis
+                  style: TextStyle(fontSize: 14.0, fontWeight: textWeight, color: textTint)
 
   _currencyDropdown(context: BuildContext) -> Widget:
-    dropdownItems = [
-      DropdownMenuItem<Currency>(
-        value: c,
-        child: Text(
-          currencyCode(c),
-          style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w700, color: inkColor(context)),
-        ),
-      ) for c in allCurrencies()
-    ]
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 10.0),
-      decoration: BoxDecoration(
-        color: elevatedColor(context),
-        borderRadius: BorderRadius.circular(12.0),
-        border: Border.all(color: borderColor(context)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<Currency>(
-          value: engine.displayCurrency,
-          dropdownColor: surfaceColor(context),
-          items: dropdownItems,
-          onChanged: _onPickCurrency,
-        ),
-      ),
-    )
+    return Container:
+      padding: EdgeInsets.symmetric(horizontal: 10.0)
+      decoration: BoxDecoration:
+        color: elevatedColor(context)
+        borderRadius: BorderRadius.circular(12.0)
+        border: Border.all(color: borderColor(context))
+      child: DropdownButtonHideUnderline:
+        child: DropdownButton<Currency>:
+          value: engine.displayCurrency
+          dropdownColor: surfaceColor(context)
+          onChanged: _onPickCurrency
+          items:
+            for c in allCurrencies():
+              DropdownMenuItem<Currency>:
+                value: c
+                child: Text(currencyCode(c)):
+                  style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w700, color: inkColor(context))
 
   _activeTab(context: BuildContext, wide: bool) -> Widget:
     if tabIndex == 0:
@@ -367,309 +299,207 @@ class LedgerShellState extends State<LedgerShell>:
     recent = engine.entries.take(5).toList()
     balanceSize = 40.0 if wide else 34.0
 
-    hero = Entrance(
-      order: 0,
-      child: Container(
-        padding: EdgeInsets.all(26.0),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF0B2A23), Color(0xFF144B3D), Color(0xFF0C231E)],
-          ),
-          borderRadius: BorderRadius.circular(28.0),
-          border: Border.all(color: brandEmerald().withValues(alpha: 0.35)),
-          boxShadow: [
-            BoxShadow(
-              color: Color(0xFF0E8F6E).withValues(alpha: 0.25),
-              blurRadius: 28.0,
-              offset: Offset(0.0, 12.0),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: double.infinity,
-              child: Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8.0,
-                runSpacing: 8.0,
-                children: [
-                  Text(
-                    "NET BALANCE",
-                    style: TextStyle(
-                      fontSize: 12.0,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.4,
-                      color: Color(0xFF9ED4C4),
-                    ),
-                  ),
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
-                    decoration: BoxDecoration(
-                      color: brandGold().withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(20.0),
-                      border: Border.all(color: brandGold().withValues(alpha: 0.4)),
-                    ),
-                    child: Text(
-                      "Fraction Exact · {currencyCode(engine.displayCurrency)}",
-                      style: TextStyle(
-                        fontSize: 11.0,
-                        fontWeight: FontWeight.w700,
-                        color: brandGold(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: 12.0),
-            AnimatedMoneyText(
-              cents: balance.cents(),
-              currency: engine.displayCurrency,
-              style: TextStyle(
-                fontSize: balanceSize,
-                fontWeight: FontWeight.w900,
-                color: Colors.white,
-                letterSpacing: -1.4,
-              ),
-            ),
-            SizedBox(height: 22.0),
-            Row(
-              children: [
-                Expanded(
-                  child: _heroKpi("Income", income.cents(), Icons.south_west_rounded, brandEmerald()),
-                ),
-                SizedBox(width: 14.0),
-                Expanded(
-                  child: _heroKpi("Expenses", expense.cents(), Icons.north_east_rounded, brandCoral()),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    )
+    hero = Entrance:
+      order: 0
+      child: Container:
+        padding: EdgeInsets.all(26.0)
+        decoration: BoxDecoration:
+          gradient: LinearGradient:
+            begin: Alignment.topLeft
+            end: Alignment.bottomRight
+            colors: [Color(0xFF0B2A23), Color(0xFF144B3D), Color(0xFF0C231E)]
+          borderRadius: BorderRadius.circular(28.0)
+          border: Border.all(color: brandEmerald().withValues(alpha: 0.35))
+          boxShadow:
+            BoxShadow:
+              color: Color(0xFF0E8F6E).withValues(alpha: 0.25)
+              blurRadius: 28.0
+              offset: Offset(0.0, 12.0)
+        child: Column:
+          crossAxisAlignment: CrossAxisAlignment.start
+          children:
+            SizedBox:
+              width: double.infinity
+              child: Wrap:
+                alignment: WrapAlignment.spaceBetween
+                crossAxisAlignment: WrapCrossAlignment.center
+                spacing: 8.0
+                runSpacing: 8.0
+                children:
+                  Text("NET BALANCE"):
+                    style: TextStyle:
+                      fontSize: 12.0
+                      fontWeight: FontWeight.w700
+                      letterSpacing: 1.4
+                      color: Color(0xFF9ED4C4)
+                  Container:
+                    padding: EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0)
+                    decoration: BoxDecoration:
+                      color: brandGold().withValues(alpha: 0.16)
+                      borderRadius: BorderRadius.circular(20.0)
+                      border: Border.all(color: brandGold().withValues(alpha: 0.4))
+                    child: Text("Fraction Exact · {currencyCode(engine.displayCurrency)}"):
+                      style: TextStyle(fontSize: 11.0, fontWeight: FontWeight.w700, color: brandGold())
+            SizedBox(height: 12.0)
+            AnimatedMoneyText:
+              cents: balance.cents()
+              currency: engine.displayCurrency
+              style: TextStyle:
+                fontSize: balanceSize
+                fontWeight: FontWeight.w900
+                color: Colors.white
+                letterSpacing: -1.4
+            SizedBox(height: 22.0)
+            Row:
+              children:
+                Expanded(child: _heroKpi("Income", income.cents(), Icons.south_west_rounded, brandEmerald()))
+                SizedBox(width: 14.0)
+                Expanded(child: _heroKpi("Expenses", expense.cents(), Icons.north_east_rounded, brandCoral()))
 
-    alertWidgets: List<Widget> = []
-    if alerts.isNotEmpty:
-      alertWidgets.add(
-        Entrance(
-          order: 1,
-          child: Container(
-            margin: EdgeInsets.only(top: 16.0),
-            padding: EdgeInsets.symmetric(horizontal: 18.0, vertical: 14.0),
-            decoration: BoxDecoration(
-              color: brandAmber().withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(18.0),
-              border: Border.all(color: brandAmber().withValues(alpha: 0.45)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.warning_amber_rounded, color: brandAmber(), size: 22.0),
-                SizedBox(width: 12.0),
-                Expanded(
-                  child: Text(
-                    "{alerts.length} budget alert(s) active — tap Budgets to review limits.",
-                    style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: inkColor(context)),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () -> _setTab(2),
-                  child: Text("Review", style: TextStyle(fontWeight: FontWeight.w700, color: brandAmber())),
-                ),
-              ],
-            ),
-          ),
-        ),
-      )
+    chartCard = Entrance:
+      order: 2
+      child: HoverCard:
+        child: Column:
+          crossAxisAlignment: CrossAxisAlignment.start
+          children:
+            Row:
+              mainAxisAlignment: MainAxisAlignment.spaceBetween
+              children:
+                Expanded:
+                  child: Text("Spending Breakdown"):
+                    overflow: TextOverflow.ellipsis
+                    style: TextStyle(fontSize: 17.0, fontWeight: FontWeight.w800, color: inkColor(context))
+                SizedBox(width: 8.0)
+                Text("{breakdown.length} categories"):
+                  style: TextStyle(fontSize: 12.0, color: mutedColor(context))
+            SizedBox(height: 18.0)
+            Wrap:
+              spacing: 24.0
+              runSpacing: 18.0
+              crossAxisAlignment: WrapCrossAlignment.center
+              children:
+                AnimatedDonutChart:
+                  summaries: breakdown
+                  savingsRate: engine.savingsRate()
+                  totalExpense: expense
+                ConstrainedBox:
+                  constraints: BoxConstraints(minWidth: 210.0, maxWidth: 320.0)
+                  child: Column:
+                    children:
+                      for item in breakdown.take(6):
+                        Padding:
+                          padding: EdgeInsets.symmetric(vertical: 5.0)
+                          child: Row:
+                            children:
+                              Container:
+                                width: 10.0
+                                height: 10.0
+                                decoration: BoxDecoration(color: categoryColor(item.category), shape: BoxShape.circle)
+                              SizedBox(width: 10.0)
+                              Expanded:
+                                child: Text(categoryLabel(item.category)):
+                                  style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: inkColor(context))
+                              Text("{(item.share * 100.0).round()}%"):
+                                style: TextStyle(fontSize: 12.0, color: mutedColor(context))
+                              SizedBox(width: 10.0)
+                              Text(item.spent.formatted()):
+                                style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w700, color: inkColor(context))
 
-    legendRows: List<Widget> = []
-    for item in breakdown.take(6):
-      legendRows.add(
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: 5.0),
-          child: Row(
-            children: [
-              Container(
-                width: 10.0,
-                height: 10.0,
-                decoration: BoxDecoration(
-                  color: categoryColor(item.category),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              SizedBox(width: 10.0),
-              Expanded(
-                child: Text(
-                  categoryLabel(item.category),
-                  style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: inkColor(context)),
-                ),
-              ),
-              Text(
-                "{(item.share * 100.0).round()}%",
-                style: TextStyle(fontSize: 12.0, color: mutedColor(context)),
-              ),
-              SizedBox(width: 10.0),
-              Text(
-                item.spent.formatted(),
-                style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w700, color: inkColor(context)),
-              ),
-            ],
-          ),
-        ),
-      )
+    recentCard = Entrance:
+      order: 3
+      child: HoverCard:
+        child: Column:
+          crossAxisAlignment: CrossAxisAlignment.start
+          children:
+            Row:
+              mainAxisAlignment: MainAxisAlignment.spaceBetween
+              children:
+                Expanded:
+                  child: Text("Recent Activity"):
+                    overflow: TextOverflow.ellipsis
+                    style: TextStyle(fontSize: 17.0, fontWeight: FontWeight.w800, color: inkColor(context))
+                SizedBox(width: 8.0)
+                TextButton:
+                  onPressed: () -> _setTab(1)
+                  child: Text("See all ({engine.entries.length})")
+            SizedBox(height: 8.0)
+            for entry in recent:
+              _transactionTile(context, entry, compact: true)
 
-    chartCard = Entrance(
-      order: 2,
-      child: HoverCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    "Spending Breakdown",
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 17.0, fontWeight: FontWeight.w800, color: inkColor(context)),
-                  ),
-                ),
-                SizedBox(width: 8.0),
-                Text(
-                  "{breakdown.length} categories",
-                  style: TextStyle(fontSize: 12.0, color: mutedColor(context)),
-                ),
-              ],
-            ),
-            SizedBox(height: 18.0),
-            Wrap(
-              spacing: 24.0,
-              runSpacing: 18.0,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                AnimatedDonutChart(
-                  summaries: breakdown,
-                  savingsRate: engine.savingsRate(),
-                  totalExpense: expense,
-                ),
-                ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: 210.0, maxWidth: 320.0),
-                  child: Column(children: legendRows),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    )
+    lowerSection = if wide:
+      Row:
+        crossAxisAlignment: CrossAxisAlignment.start
+        children:
+          Expanded(flex: 6, child: chartCard)
+          SizedBox(width: 18.0)
+          Expanded(flex: 5, child: recentCard)
+    else:
+      Column:
+        crossAxisAlignment: CrossAxisAlignment.stretch
+        children:
+          chartCard
+          SizedBox(height: 18.0)
+          recentCard
 
-    recentTiles = [_transactionTile(context, entry, compact: true) for entry in recent]
-    recentCard = Entrance(
-      order: 3,
-      child: HoverCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    "Recent Activity",
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 17.0, fontWeight: FontWeight.w800, color: inkColor(context)),
-                  ),
-                ),
-                SizedBox(width: 8.0),
-                TextButton(
-                  onPressed: () -> _setTab(1),
-                  child: Text("See all ({engine.entries.length})"),
-                ),
-              ],
-            ),
-            SizedBox(height: 8.0),
-            ...recentTiles,
-          ],
-        ),
-      ),
-    )
-
-    lowerSection = Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(flex: 6, child: chartCard),
-        SizedBox(width: 18.0),
-        Expanded(flex: 5, child: recentCard),
-      ],
-    ) if wide else Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        chartCard,
-        SizedBox(height: 18.0),
-        recentCard,
-      ],
-    )
-
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 1120.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              hero,
-              ...alertWidgets,
-              SizedBox(height: 18.0),
-              lowerSection,
-            ],
-          ),
-        ),
-      ),
-    )
+    return SingleChildScrollView:
+      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0)
+      child: Center:
+        child: ConstrainedBox:
+          constraints: BoxConstraints(maxWidth: 1120.0)
+          child: Column:
+            crossAxisAlignment: CrossAxisAlignment.stretch
+            children:
+              hero
+              if alerts.isNotEmpty:
+                Entrance:
+                  order: 1
+                  child: Container:
+                    margin: EdgeInsets.only(top: 16.0)
+                    padding: EdgeInsets.symmetric(horizontal: 18.0, vertical: 14.0)
+                    decoration: BoxDecoration:
+                      color: brandAmber().withValues(alpha: 0.12)
+                      borderRadius: BorderRadius.circular(18.0)
+                      border: Border.all(color: brandAmber().withValues(alpha: 0.45))
+                    child: Row:
+                      children:
+                        Icon(Icons.warning_amber_rounded, color: brandAmber(), size: 22.0)
+                        SizedBox(width: 12.0)
+                        Expanded:
+                          child: Text("{alerts.length} budget alert(s) active — tap Budgets to review limits."):
+                            style: TextStyle(fontSize: 13.0, fontWeight: FontWeight.w600, color: inkColor(context))
+                        TextButton:
+                          onPressed: () -> _setTab(2)
+                          child: Text("Review", style: TextStyle(fontWeight: FontWeight.w700, color: brandAmber()))
+              SizedBox(height: 18.0)
+              lowerSection
 
   _heroKpi(kpiLabel: String, cents: int, icon: IconData, color: Color) -> Widget:
-    return Container(
-      padding: EdgeInsets.all(14.0),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(18.0),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 36.0,
-            height: 36.0,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(11.0),
-            ),
-            child: Icon(icon, color: color, size: 18.0),
-          ),
-          SizedBox(width: 10.0),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(kpiLabel, style: TextStyle(fontSize: 12.0, color: Color(0xFF9ED4C4))),
-                SizedBox(height: 2.0),
-                AnimatedMoneyText(
-                  cents: cents,
-                  currency: engine.displayCurrency,
-                  style: TextStyle(fontSize: 16.0, fontWeight: FontWeight.w800, color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    )
+    return Container:
+      padding: EdgeInsets.all(14.0)
+      decoration: BoxDecoration:
+        color: Colors.white.withValues(alpha: 0.07)
+        borderRadius: BorderRadius.circular(18.0)
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1))
+      child: Row:
+        children:
+          Container:
+            width: 36.0
+            height: 36.0
+            decoration: BoxDecoration:
+              color: color.withValues(alpha: 0.18)
+              borderRadius: BorderRadius.circular(11.0)
+            child: Icon(icon, color: color, size: 18.0)
+          SizedBox(width: 10.0)
+          Expanded:
+            child: Column:
+              crossAxisAlignment: CrossAxisAlignment.start
+              children:
+                Text(kpiLabel, style: TextStyle(fontSize: 12.0, color: Color(0xFF9ED4C4)))
+                SizedBox(height: 2.0)
+                AnimatedMoneyText:
+                  cents: cents
+                  currency: engine.displayCurrency
+                  style: TextStyle(fontSize: 16.0, fontWeight: FontWeight.w800, color: Colors.white)
 
   _transactionsTab(context: BuildContext, wide: bool) -> Widget:
     items = engine.filteredEntries(
@@ -677,90 +507,69 @@ class LedgerShellState extends State<LedgerShell>:
       kindFilter: kindFilter,
       categoryFilter: categoryFilter,
     )
-    filterChips: List<Widget> = [
-      ChoiceChip(
-        label: Text("All"),
-        selected: kindFilter == null,
-        onSelected: (sel: bool) -> _setKindFilter(null, sel),
-      ),
-      ChoiceChip(
-        label: Text("Income"),
-        selected: kindFilter == EntryKind.income,
-        onSelected: (sel: bool) -> _setKindFilter(EntryKind.income, sel),
-      ),
-      ChoiceChip(
-        label: Text("Expenses"),
-        selected: kindFilter == EntryKind.expense,
-        onSelected: (sel: bool) -> _setKindFilter(EntryKind.expense, sel),
-      ),
-    ]
-    if let cf = categoryFilter:
-      filterChips.add(
-        InputChip(
-          label: Text(categoryLabel(cf)),
-          onDeleted: _clearCategoryFilter,
-        ),
-      )
+    activeCat = categoryFilter
 
-    listTiles: List<Widget> = []
-    for entry in items:
-      listTiles.add(
-        Entrance(
-          order: $.index % 6,
-          child: _transactionTile(context, entry, compact: false),
-        ),
-      )
+    listCard = if items.isEmpty:
+      HoverCard:
+        child: Center:
+          child: Padding:
+            padding: EdgeInsets.symmetric(vertical: 28.0)
+            child: Text("No transactions match your current filter."):
+              style: TextStyle(color: mutedColor(context), fontSize: 15.0)
+    else:
+      HoverCard:
+        padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0)
+        child: Column:
+          children:
+            for entry in items:
+              Entrance:
+                order: $.index % 6
+                child: _transactionTile(context, entry, compact: false)
 
-    listCard = HoverCard(
-      child: Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 28.0),
-          child: Text(
-            "No transactions match your current filter.",
-            style: TextStyle(color: mutedColor(context), fontSize: 15.0),
-          ),
-        ),
-      ),
-    ) if items.isEmpty else HoverCard(
-      padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-      child: Column(children: listTiles),
-    )
-
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 960.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Transactions",
-                style: TextStyle(fontSize: 26.0, fontWeight: FontWeight.w900, color: inkColor(context)),
-              ),
-              SizedBox(height: 14.0),
-              TextField(
-                onChanged: _onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: "Search title, note, or category...",
-                  prefixIcon: Icon(Icons.search_rounded),
-                  filled: true,
-                  fillColor: surfaceColor(context),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16.0),
-                    borderSide: BorderSide(color: borderColor(context)),
-                  ),
-                ),
-              ),
-              SizedBox(height: 12.0),
-              Wrap(spacing: 8.0, runSpacing: 8.0, children: filterChips),
-              SizedBox(height: 16.0),
-              listCard,
-            ],
-          ),
-        ),
-      ),
-    )
+    return SingleChildScrollView:
+      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0)
+      child: Center:
+        child: ConstrainedBox:
+          constraints: BoxConstraints(maxWidth: 960.0)
+          child: Column:
+            crossAxisAlignment: CrossAxisAlignment.start
+            children:
+              Text("Transactions"):
+                style: TextStyle(fontSize: 26.0, fontWeight: FontWeight.w900, color: inkColor(context))
+              SizedBox(height: 14.0)
+              TextField:
+                onChanged: _onSearchChanged
+                decoration: InputDecoration:
+                  hintText: "Search title, note, or category..."
+                  prefixIcon: Icon(Icons.search_rounded)
+                  filled: true
+                  fillColor: surfaceColor(context)
+                  border: OutlineInputBorder:
+                    borderRadius: BorderRadius.circular(16.0)
+                    borderSide: BorderSide(color: borderColor(context))
+              SizedBox(height: 12.0)
+              Wrap:
+                spacing: 8.0
+                runSpacing: 8.0
+                children:
+                  ChoiceChip:
+                    label: Text("All")
+                    selected: kindFilter == null
+                    onSelected: (sel: bool) -> _setKindFilter(null, sel)
+                  ChoiceChip:
+                    label: Text("Income")
+                    selected: kindFilter == EntryKind.income
+                    onSelected: (sel: bool) -> _setKindFilter(EntryKind.income, sel)
+                  ChoiceChip:
+                    label: Text("Expenses")
+                    selected: kindFilter == EntryKind.expense
+                    onSelected: (sel: bool) -> _setKindFilter(EntryKind.expense, sel)
+                  if activeCat != null:
+                    InputChip:
+                      label: Text(categoryLabel(activeCat))
+                      onDeleted: _clearCategoryFilter
+              SizedBox(height: 16.0)
+              listCard
 
   _transactionTile(context: BuildContext, entry: LedgerEntry, compact: bool) -> Widget:
     converted = engine.entryMoney(entry)
@@ -771,196 +580,124 @@ class LedgerShellState extends State<LedgerShell>:
     catColor = categoryColor(entry.category)
     showOriginal = entry.currency != engine.displayCurrency
 
-    noteWidgets: List<Widget> = []
-    if not compact and entry.note.isNotEmpty:
-      noteWidgets.add(
-        Padding(
-          padding: EdgeInsets.only(top: 2.0),
-          child: Text(
-            entry.note,
-            style: TextStyle(fontSize: 12.0, color: mutedColor(context)),
-          ),
-        ),
-      )
-
-    originalWidgets: List<Widget> = []
-    if showOriginal:
-      originalWidgets.add(
-        Text(
-          original.formatted(),
-          style: TextStyle(fontSize: 11.0, color: mutedColor(context)),
-        ),
-      )
-
-    deleteWidgets: List<Widget> = []
-    if not compact:
-      deleteWidgets.add(
-        IconButton(
-          tooltip: "Delete",
-          onPressed: () -> _deleteWithUndo(entry),
-          icon: Icon(Icons.delete_outline_rounded, size: 19.0, color: mutedColor(context)),
-        ),
-      )
-
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Container(
-            width: 42.0,
-            height: 42.0,
-            decoration: BoxDecoration(
-              color: catColor.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(13.0),
-            ),
-            child: Icon(categoryIcon(entry.category), color: catColor, size: 20.0),
-          ),
-          SizedBox(width: 12.0),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.title,
-                  style: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w700, color: inkColor(context)),
-                ),
-                SizedBox(height: 2.0),
-                Text(
-                  "{categoryLabel(entry.category)} · {entry.dateIso}",
-                  style: TextStyle(fontSize: 12.0, color: mutedColor(context)),
-                ),
-                ...noteWidgets,
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                "{sign}{converted.formatted()}",
-                style: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w800, color: amountColor),
-              ),
-              ...originalWidgets,
-            ],
-          ),
-          ...deleteWidgets,
-        ],
-      ),
-    )
+    return Padding:
+      padding: EdgeInsets.symmetric(vertical: 8.0)
+      child: Row:
+        children:
+          Container:
+            width: 42.0
+            height: 42.0
+            decoration: BoxDecoration:
+              color: catColor.withValues(alpha: 0.16)
+              borderRadius: BorderRadius.circular(13.0)
+            child: Icon(categoryIcon(entry.category), color: catColor, size: 20.0)
+          SizedBox(width: 12.0)
+          Expanded:
+            child: Column:
+              crossAxisAlignment: CrossAxisAlignment.start
+              children:
+                Text(entry.title):
+                  style: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w700, color: inkColor(context))
+                SizedBox(height: 2.0)
+                Text("{categoryLabel(entry.category)} · {entry.dateIso}"):
+                  style: TextStyle(fontSize: 12.0, color: mutedColor(context))
+                if not compact and entry.note.isNotEmpty:
+                  Padding:
+                    padding: EdgeInsets.only(top: 2.0)
+                    child: Text(entry.note, style: TextStyle(fontSize: 12.0, color: mutedColor(context)))
+          Column:
+            crossAxisAlignment: CrossAxisAlignment.end
+            children:
+              Text("{sign}{converted.formatted()}"):
+                style: TextStyle(fontSize: 14.0, fontWeight: FontWeight.w800, color: amountColor)
+              if showOriginal:
+                Text(original.formatted(), style: TextStyle(fontSize: 11.0, color: mutedColor(context)))
+          if not compact:
+            IconButton:
+              tooltip: "Delete"
+              onPressed: () -> _deleteWithUndo(entry)
+              icon: Icon(Icons.delete_outline_rounded, size: 19.0, color: mutedColor(context))
 
   _budgetsTab(context: BuildContext, wide: bool) -> Widget:
     breakdown = engine.categoryBreakdown()
     cardWidth = 330.0 if wide else double.infinity
-    budgetCards: List<Widget> = []
-    for item in breakdown:
-      budgetCards.add(
-        SizedBox(
-          width: cardWidth,
-          child: Entrance(
-            order: $.index % 6,
-            child: BudgetProgressCard(
-              summary: item,
-              currency: engine.displayCurrency,
-              onEdit: () -> showBudgetLimitDialog(context, engine, item.category, _refresh),
-            ),
-          ),
-        ),
-      )
 
-    rateCards: List<Widget> = []
-    for c in allCurrencies():
-      rateBorder = accentColor(context) if c == engine.displayCurrency else borderColor(context)
-      convertedSample = moneyFromCents(10000, currency: Currency.usd).convertTo(c).formatted()
-      rateCards.add(
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0),
-          decoration: BoxDecoration(
-            color: elevatedColor(context),
-            borderRadius: BorderRadius.circular(14.0),
-            border: Border.all(color: rateBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "{currencyCode(c)} · {currencyName(c)}",
-                style: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w700, color: inkColor(context)),
-              ),
-              SizedBox(height: 2.0),
-              Text(
-                "100 USD = {convertedSample}",
-                style: TextStyle(fontSize: 12.0, color: brandGold(), fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
-        ),
-      )
+    return SingleChildScrollView:
+      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0)
+      child: Center:
+        child: ConstrainedBox:
+          constraints: BoxConstraints(maxWidth: 1060.0)
+          child: Column:
+            crossAxisAlignment: CrossAxisAlignment.start
+            children:
+              Row:
+                mainAxisAlignment: MainAxisAlignment.spaceBetween
+                children:
+                  Expanded:
+                    child: Column:
+                      crossAxisAlignment: CrossAxisAlignment.start
+                      children:
+                        Text("Budgets & JSON Sync"):
+                          style: TextStyle(fontSize: 26.0, fontWeight: FontWeight.w900, color: inkColor(context))
+                        SizedBox(height: 4.0)
+                        Text("Tap any category card to edit its monthly limit."):
+                          style: TextStyle(fontSize: 13.0, color: mutedColor(context))
+                  FilledButton.icon:
+                    onPressed: () -> showJsonSyncDialog(context, engine, _refresh)
+                    icon: Icon(Icons.data_object_rounded, size: 18.0)
+                    label: Text("JSON Backup")
+                    style: FilledButton.styleFrom:
+                      backgroundColor: brandDeepEmerald()
+                      foregroundColor: Colors.white
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0))
+              SizedBox(height: 18.0)
+              Wrap:
+                spacing: 16.0
+                runSpacing: 16.0
+                children:
+                  for item in breakdown:
+                    SizedBox:
+                      width: cardWidth
+                      child: Entrance:
+                        order: $.index % 6
+                        child: BudgetProgressCard:
+                          summary: item
+                          currency: engine.displayCurrency
+                          onEdit: () -> showBudgetLimitDialog(context, engine, item.category, _refresh)
+              SizedBox(height: 24.0)
+              Entrance:
+                order: 3
+                child: HoverCard:
+                  child: Column:
+                    crossAxisAlignment: CrossAxisAlignment.start
+                    children:
+                      Text("Exact Rational Exchange Rates (quds_ledger)"):
+                        style: TextStyle(fontSize: 16.0, fontWeight: FontWeight.w800, color: inkColor(context))
+                      SizedBox(height: 6.0)
+                      Text("All conversions run on Fraction arithmetic from quds:math inside the external quds_ledger package."):
+                        style: TextStyle(fontSize: 13.0, color: mutedColor(context))
+                      SizedBox(height: 14.0)
+                      Wrap:
+                        spacing: 12.0
+                        runSpacing: 10.0
+                        children:
+                          for c in allCurrencies():
+                            _rateCard(context, c)
 
-    return SingleChildScrollView(
-      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 1060.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Budgets & JSON Sync",
-                          style: TextStyle(fontSize: 26.0, fontWeight: FontWeight.w900, color: inkColor(context)),
-                        ),
-                        SizedBox(height: 4.0),
-                        Text(
-                          "Tap any category card to edit its monthly limit.",
-                          style: TextStyle(fontSize: 13.0, color: mutedColor(context)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  FilledButton.icon(
-                    onPressed: () -> showJsonSyncDialog(context, engine, _refresh),
-                    icon: Icon(Icons.data_object_rounded, size: 18.0),
-                    label: Text("JSON Backup"),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: brandDeepEmerald(),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0)),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 18.0),
-              Wrap(spacing: 16.0, runSpacing: 16.0, children: budgetCards),
-              SizedBox(height: 24.0),
-              Entrance(
-                order: 3,
-                child: HoverCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Exact Rational Exchange Rates (quds_ledger)",
-                        style: TextStyle(fontSize: 16.0, fontWeight: FontWeight.w800, color: inkColor(context)),
-                      ),
-                      SizedBox(height: 6.0),
-                      Text(
-                        "All conversions run on Fraction arithmetic from quds:math inside the external quds_ledger package.",
-                        style: TextStyle(fontSize: 13.0, color: mutedColor(context)),
-                      ),
-                      SizedBox(height: 14.0),
-                      Wrap(spacing: 12.0, runSpacing: 10.0, children: rateCards),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    )
+  _rateCard(context: BuildContext, c: Currency) -> Widget:
+    rateBorder = accentColor(context) if c == engine.displayCurrency else borderColor(context)
+    convertedSample = moneyFromCents(10000, currency: Currency.usd).convertTo(c).formatted()
+    return Container:
+      padding: EdgeInsets.symmetric(horizontal: 14.0, vertical: 10.0)
+      decoration: BoxDecoration:
+        color: elevatedColor(context)
+        borderRadius: BorderRadius.circular(14.0)
+        border: Border.all(color: rateBorder)
+      child: Column:
+        crossAxisAlignment: CrossAxisAlignment.start
+        children:
+          Text("{currencyCode(c)} · {currencyName(c)}"):
+            style: TextStyle(fontSize: 12.0, fontWeight: FontWeight.w700, color: inkColor(context))
+          SizedBox(height: 2.0)
+          Text("100 USD = {convertedSample}"):
+            style: TextStyle(fontSize: 12.0, color: brandGold(), fontWeight: FontWeight.w600)

@@ -22,8 +22,6 @@ class Ok<T, E> extends Result<T, E> {
   bool operator ==(Object other) => other is Ok && other.value == value;
   @override
   int get hashCode => Object.hash(Ok, value);
-  @override
-  String toString() => 'Ok($value)';
 }
 
 class Error<T, E> extends Result<T, E> {
@@ -33,8 +31,6 @@ class Error<T, E> extends Result<T, E> {
   bool operator ==(Object other) => other is Error && other.error == error;
   @override
   int get hashCode => Object.hash(Error, error);
-  @override
-  String toString() => 'Error($error)';
 }
 
 T? safeConvert<S, T>(S value, T Function(S) conversion) {

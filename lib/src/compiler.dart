@@ -60,8 +60,9 @@ Compilation relocateReadonlyRuntime(Compilation result, String relativeUri) {
     throw ArgumentError.value(
         relativeUri, 'relativeUri', 'Expected a relative generated-file URI');
   }
-  String relocate(String source) =>
-      source.replaceAll("import 'quds_readonly.dart'", "import '$relativeUri'");
+  String relocate(String source) => source
+      .replaceAll("import 'quds_readonly.dart'", "import '$relativeUri'")
+      .replaceAll("export 'quds_readonly.dart'", "export '$relativeUri'");
   return Compilation(result.program, result.semantics, relocate(result.dart),
       sourceMap: result.sourceMap,
       dependencies: result.dependencies,

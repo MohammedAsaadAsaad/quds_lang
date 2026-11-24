@@ -146,7 +146,6 @@ class DartEmitter {
       _knownGuardsName +=
           '_${sha256Hex(utf8.encode(program.span.file)).substring(0, 12)}';
       _requireReadonlyRuntime();
-      _imports.add("import 'quds_readonly.dart' show Result, Ok, Error;");
     }
     final topLevel = _topLevel(program.statements).toList();
     _directives(program.statements);
@@ -660,6 +659,7 @@ class DartEmitter {
     if (_useResult) {
       if (!_isPart) {
         _imports.add("import 'quds_readonly.dart' show Result, Ok, Error;");
+        _imports.add("export 'quds_readonly.dart' show Result, Ok, Error;");
       }
       if (_usePropagate) {
         helpers.writeln('class _QudsPropagate implements Exception {\n'

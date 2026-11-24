@@ -3277,6 +3277,10 @@ parse() -> Result<int, String> = Ok(4)
     expect(result.dart, contains('final greet ='));
     expect(result.dart, isNot(contains('quds_lang')));
     File('${directory.path}/app.dart').writeAsStringSync(result.dart);
+    for (final bundle in result.bundles) {
+      File('${directory.path}/${bundle.fileName}')
+          .writeAsStringSync(bundle.source);
+    }
     File('${directory.path}/main.dart').writeAsStringSync('''
 import 'app.dart';
 void main() {

@@ -933,6 +933,181 @@ main():
     fail('debug adapter returned no stack frames after retries: $lastError');
   }, timeout: const Timeout(Duration(minutes: 3)));
 
+  test('quds debug evaluates loop context values under \$. in for and retry',
+      () async {
+    final directory = Directory.systemTemp.createTempSync('quds-debug-ctx-');
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final source = File('${directory.path}/app.quds')
+      ..writeAsStringSync('''main():
+  for item in [10, 20]:
+    tag = "\$.index={\$.index}:\$.item={\$.item}"
+    print tag
+  try:
+    retry 3:
+      m = \$.iteration
+      throw "fail-{m}"
+  catch e:
+    print e
+''');
+    Object? lastError;
+    for (var session = 0; session < 3; session++) {
+      final process = await Process.start(Platform.resolvedExecutable, [
+        'run',
+        'bin/quds.dart',
+        'debug',
+      ]);
+      final client = _DebugClient(process);
+      client.start();
+      try {
+        final init = await client.request('initialize', {
+          'adapterID': 'quds',
+          'pathFormat': 'path',
+        });
+        expect(init['success'], isTrue,
+            reason: '${init['message']}\n${client.stderr}');
+        await client.event('initialized').timeout(const Duration(seconds: 20));
+        final breakpoints = await client.request('setBreakpoints', {
+          'source': {'path': source.path, 'name': 'app.quds'},
+          'breakpoints': [
+            {'line': 4},
+            {'line': 8},
+          ],
+        });
+        final reported =
+            ((breakpoints['body'] as Map)['breakpoints'] as List).cast<Map>();
+        expect(reported.map((b) => b['line']).toList(), [4, 8],
+            reason: '$reported\n${client.stderr}');
+        expect((await client.request('configurationDone'))['success'], isTrue);
+        final launched = await client.request('launch', {
+          'program': source.path,
+          'cwd': directory.path,
+        });
+        expect(launched['success'], isTrue,
+            reason: '${launched['message']}\n${client.stderr}');
+
+        Future<Map> nextFrame(int expectedLine) async {
+          final event = await _stopForBreakpoint(client);
+          final thread = (event['body'] as Map)['threadId'];
+          List frames = const [];
+          for (var attempt = 0; attempt < 30; attempt++) {
+            final stack =
+                await client.request('stackTrace', {'threadId': thread});
+            final body = stack['body'];
+            if (body is Map && body['stackFrames'] is List) {
+              frames = body['stackFrames'] as List;
+              if (frames.isNotEmpty) break;
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+          }
+          expect(frames, isNotEmpty, reason: '${client.stderr}');
+          final frame = frames.cast<Map>().firstWhere(
+              (item) => '${item['source']?['path']}'.endsWith('app.quds'),
+              orElse: () => frames.first as Map);
+          expect(frame['line'], expectedLine);
+          return {'frame': frame, 'thread': thread};
+        }
+
+        // Stop 1: for-in first iteration (line 4)
+        final stop1 = await nextFrame(4);
+        final frame1 = stop1['frame'] as Map;
+        final scopes1 =
+            await client.request('scopes', {'frameId': frame1['id']});
+        final locals1 = ((scopes1['body'] as Map)['scopes'] as List)
+            .cast<Map>()
+            .firstWhere((s) => s['name'] == 'Locals');
+        final vars1 = await client.request(
+            'variables', {'variablesReference': locals1['variablesReference']});
+        final shown1 =
+            ((vars1['body'] as Map)['variables'] as List).cast<Map>();
+        expect(shown1.any((v) => v['name'] == r'$.index' && v['value'] == '0'),
+            isTrue,
+            reason: '$shown1');
+        expect(
+            shown1.any((v) => v['name'] == r'$.iteration' && v['value'] == '1'),
+            isTrue,
+            reason: '$shown1');
+        expect(
+            shown1
+                .any((v) => v['name'] == r'$.isFirst' && v['value'] == 'true'),
+            isTrue,
+            reason: '$shown1');
+
+        for (final entry in {
+          r'$.index': '0',
+          r'$.iteration': '1',
+          r'$.isFirst': 'true',
+          r'$.item': '10',
+        }.entries) {
+          final ev = await client.request('evaluate', {
+            'expression': entry.key,
+            'frameId': frame1['id'],
+            'context': 'hover',
+          });
+          expect(ev['success'], isTrue, reason: '${entry.key}: $ev');
+          expect('${(ev['body'] as Map)['result']}', entry.value);
+        }
+        final evSummary1 = await client.request('evaluate', {
+          'expression': r'$',
+          'frameId': frame1['id'],
+          'context': 'hover',
+        });
+        expect(evSummary1['success'], isTrue, reason: '$evSummary1');
+        final sumRef = (evSummary1['body'] as Map)['variablesReference'] as int;
+        expect(sumRef, greaterThan(0));
+
+        // Continue past for-in iteration 2 to retry attempt 1 (line 8)
+        await client.request('continue', {'threadId': stop1['thread']});
+        final stop2 = await nextFrame(4);
+        await client.request('continue', {'threadId': stop2['thread']});
+        final stop3 = await nextFrame(8);
+        final frame3 = stop3['frame'] as Map;
+        for (final entry in {
+          r'$.index': '0',
+          r'$.iteration': '1',
+          r'$.isFirst': 'true',
+        }.entries) {
+          final ev = await client.request('evaluate', {
+            'expression': entry.key,
+            'frameId': frame3['id'],
+            'context': 'hover',
+          });
+          expect(ev['success'], isTrue, reason: 'retry1 ${entry.key}: $ev');
+          expect('${(ev['body'] as Map)['result']}', entry.value);
+        }
+
+        // Continue to retry attempt 2 (line 8)
+        await client.request('continue', {'threadId': stop3['thread']});
+        final stop4 = await nextFrame(8);
+        final frame4 = stop4['frame'] as Map;
+        for (final entry in {
+          r'$.index': '1',
+          r'$.iteration': '2',
+          r'$.isFirst': 'false',
+        }.entries) {
+          final ev = await client.request('evaluate', {
+            'expression': entry.key,
+            'frameId': frame4['id'],
+            'context': 'hover',
+          });
+          expect(ev['success'], isTrue, reason: 'retry2 ${entry.key}: $ev');
+          expect('${(ev['body'] as Map)['result']}', entry.value);
+        }
+
+        await client.request('disconnect');
+        await process.stdin.close();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (session == 2) rethrow;
+      } finally {
+        process.kill();
+        await process.exitCode
+            .timeout(const Duration(seconds: 5), onTimeout: () => -1);
+      }
+    }
+    fail('debug adapter loop context test failed: $lastError');
+  }, timeout: const Timeout(Duration(minutes: 3)));
+
   test('quds debug expands nested Quds القيم', () async {
     final directory = Directory.systemTemp.createTempSync('quds-debug-');
     addTearDown(() => directory.deleteSync(recursive: true));

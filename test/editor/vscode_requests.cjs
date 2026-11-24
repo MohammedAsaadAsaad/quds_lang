@@ -41,6 +41,14 @@ vm.runInNewContext(fs.readFileSync(filename,'utf8')+'\nmodule.exports.Client=Qud
  assert.equal(client.semanticRefresh.count,0);
  client.showDiagnostics({uri:'file:///test.quds',version:2,diagnostics:[]});
  assert.equal(client.semanticRefresh.count,1);
+ const evalAt=(s,c)=>{const r=box.module.exports.evaluatableExpressionAt(s,c);return r?{...r}:r;};
+ assert.deepEqual(evalAt('  m = $.iteration',6),{start:6,end:7,expression:'$'});
+ assert.deepEqual(evalAt('  m = $.iteration',7),{start:6,end:17,expression:'$.iteration'});
+ assert.deepEqual(evalAt('  m = $.iteration',10),{start:6,end:17,expression:'$.iteration'});
+ assert.deepEqual(evalAt('  x = $.index + $.isFirst',8),{start:6,end:13,expression:'$.index'});
+ assert.deepEqual(evalAt('  x = $.index + $.isFirst',20),{start:16,end:25,expression:'$.isFirst'});
+ assert.deepEqual(evalAt('  print $.item',11),{start:8,end:14,expression:'$.item'});
+ assert.equal(evalAt('  m = $.iteration',2),undefined);
  client.dispose();
  console.log('VSCODE REQUESTS OK');
 })().catch(e=>{console.error(e);process.exitCode=1;});

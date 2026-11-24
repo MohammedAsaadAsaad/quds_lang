@@ -145,7 +145,7 @@ Readonly erasure constraints and unsupported signatures must remain rejected unt
 - [lib/src/semantics.dart:10901](../lib/src/semantics.dart#L10901): `'E910', 'A later optional Dart positional argument requires earlier values explicitly', node); layout.add((named.contains(name) ? name : null, order[i]));`
 - [lib/src/semantics.dart:11726](../lib/src/semantics.dart#L11726): `'E910', 'Imported union partial application needs additional boundary conformance', node); }`
 - [lib/src/semantics.dart:11740](../lib/src/semantics.dart#L11740): `'E910', 'This imported union signature needs additional boundary conformance', node); }`
-- [lib/src/emitter.dart:1717](../lib/src/emitter.dart#L1717): `'E910', 'No sound runtime readonly boundary for $type', _span ?? const SourceSpan(1, 1, 1)); }`
+- [lib/src/emitter.dart:1736](../lib/src/emitter.dart#L1736): `'E910', 'No sound runtime readonly boundary for $type', _span ?? const SourceSpan(1, 1, 1)); }`
 
 ## Exit gate
 

@@ -350,10 +350,21 @@ class DebugTranslator {
     if (names == null || names.isEmpty) return;
     final variables = _map(message['body'])['variables'];
     if (variables is! List) return;
-    for (final variable in variables) {
+    final bound = _files[file];
+    final line = _refLine[reference];
+    final activeLoopIndex = (bound != null && line != null)
+        ? _dartInScope(bound.locals, r'$.index', line)
+        : null;
+    final existingNames = <String>{
+      for (final v in variables)
+        if (v is Map && v['name'] is String) v['name'] as String,
+    };
+    final additions = <(int, List<Map<String, Object>>)>[];
+    for (var i = 0; i < variables.length; i++) {
+      final variable = variables[i];
       if (variable is! Map) continue;
-      final name = variable['name'];
-      final source = name is String ? names[name] : null;
+      final rawName = variable['name'];
+      final source = rawName is String ? names[rawName] : null;
       if (source != null) variable['name'] = source;
       final child = (variable['variablesReference'] as num?)?.toInt();
       if (child != null && child != 0 && file != null) {
@@ -361,13 +372,44 @@ class DebugTranslator {
         if (_refLine[reference] != null) _refLine[child] = _refLine[reference]!;
       }
       final evaluateName = variable['evaluateName'];
-      final bound = _files[file];
-      final line = _refLine[reference];
       if (evaluateName is String && bound != null && line != null) {
         // Values are user data; only expressions used by Watch are translated.
         variable['evaluateName'] =
             _debugSourceExpression(evaluateName, bound.names);
       }
+      final isLoopIndex = rawName is String &&
+          (rawName == activeLoopIndex ||
+              (activeLoopIndex == null && source == r'$.index'));
+      if (isLoopIndex) {
+        variable['name'] = r'$.index';
+        variable['evaluateName'] = r'$.index';
+        final idx = int.tryParse('${variable['value']}');
+        if (idx != null) {
+          final extra = <Map<String, Object>>[];
+          if (!existingNames.contains(r'$.iteration')) {
+            extra.add(<String, Object>{
+              'name': r'$.iteration',
+              'value': '${idx + 1}',
+              'type': 'int',
+              'variablesReference': 0,
+              'evaluateName': r'$.iteration',
+            });
+          }
+          if (!existingNames.contains(r'$.isFirst')) {
+            extra.add(<String, Object>{
+              'name': r'$.isFirst',
+              'value': '${idx == 0}',
+              'type': 'bool',
+              'variablesReference': 0,
+              'evaluateName': r'$.isFirst',
+            });
+          }
+          if (extra.isNotEmpty) additions.add((i + 1, extra));
+        }
+      }
+    }
+    for (final entry in additions.reversed) {
+      variables.insertAll(entry.$1, entry.$2);
     }
   }
 
@@ -612,6 +654,32 @@ String _debugExpression(String expression, List<QudsLocal> locals, int line) {
       index = cursor;
       continue;
     }
+    if (unit == 36) {
+      if (index + 1 < expression.length &&
+          expression.codeUnitAt(index + 1) == 46) {
+        var cursor = index + 2;
+        final propStart = cursor;
+        while (cursor < expression.length &&
+            _identPart(expression.codeUnitAt(cursor))) {
+          cursor++;
+        }
+        final prop = expression.substring(propStart, cursor);
+        final replacement = _loopContextEval(locals, prop, line);
+        if (replacement != null) {
+          out.write(replacement);
+          index = cursor;
+          continue;
+        }
+      } else if (index + 1 >= expression.length ||
+          !_identPart(expression.codeUnitAt(index + 1))) {
+        final summary = _loopContextSummary(locals, line);
+        if (summary != null) {
+          out.write(summary);
+          index++;
+          continue;
+        }
+      }
+    }
     if (_identStart(unit)) {
       final start = index;
       index++;
@@ -629,6 +697,38 @@ String _debugExpression(String expression, List<QudsLocal> locals, int line) {
   return out.toString();
 }
 
+String? _loopContextEval(List<QudsLocal> locals, String property, int line) {
+  switch (property) {
+    case 'index':
+      return _dartInScope(locals, r'$.index', line);
+    case 'iteration':
+      final idx = _dartInScope(locals, r'$.index', line);
+      return idx == null ? null : '($idx + 1)';
+    case 'isFirst':
+      final idx = _dartInScope(locals, r'$.index', line);
+      return idx == null ? null : '($idx == 0)';
+    case 'item':
+      return _loopItemInScope(locals, line);
+    default:
+      return null;
+  }
+}
+
+String? _loopContextSummary(List<QudsLocal> locals, int line) {
+  final idx = _dartInScope(locals, r'$.index', line);
+  final item = _loopItemInScope(locals, line);
+  if (idx == null && item == null) return null;
+  final entries = <String>[
+    if (idx != null) ...[
+      "'index': $idx",
+      "'iteration': ($idx + 1)",
+      "'isFirst': ($idx == 0)",
+    ],
+    if (item != null) "'item': $item",
+  ];
+  return '{${entries.join(', ')}}';
+}
+
 bool _identStart(int unit) =>
     unit == 95 ||
     (unit >= 65 && unit <= 90) ||
@@ -641,7 +741,7 @@ bool _identPart(int unit) =>
     (unit >= 48 && unit <= 57) ||
     unit > 127 && Lexer.identifierPart.hasMatch(String.fromCharCode(unit));
 
-String? _dartInScope(List<QudsLocal> locals, String name, int line) {
+QudsLocal? _localInScope(List<QudsLocal> locals, String name, int line) {
   QudsLocal? best;
   for (final local in locals) {
     if (local.name != name || line < local.line || line > local.end) continue;
@@ -651,7 +751,18 @@ String? _dartInScope(List<QudsLocal> locals, String name, int line) {
       best = local;
     }
   }
-  return best?.dartName;
+  return best;
+}
+
+String? _dartInScope(List<QudsLocal> locals, String name, int line) =>
+    _localInScope(locals, name, line)?.dartName;
+
+String? _loopItemInScope(List<QudsLocal> locals, int line) {
+  final item = _localInScope(locals, r'$.item', line);
+  if (item == null) return null;
+  final idx = _localInScope(locals, r'$.index', line);
+  if (idx != null && idx.line > item.line) return null;
+  return item.dartName;
 }
 
 class _PlannedBreakpoint {

@@ -155,6 +155,24 @@ function activate(context) {
         return client.hover(document, position, token);
       },
     }),
+    ...(typeof vscode.languages.registerEvaluatableExpressionProvider === 'function'
+      ? [
+          vscode.languages.registerEvaluatableExpressionProvider(languageId, {
+            provideEvaluatableExpression(document, position) {
+              const lineText = document.lineAt(position.line).text;
+              const hit = evaluatableExpressionAt(lineText, position.character);
+              if (!hit) return undefined;
+              const range = new vscode.Range(
+                position.line,
+                hit.start,
+                position.line,
+                hit.end,
+              );
+              return new vscode.EvaluatableExpression(range, hit.expression);
+            },
+          }),
+        ]
+      : []),
     vscode.languages.registerDefinitionProvider(languageId, {
       provideDefinition(document, position, token) {
         return client.definition(document, position, token);
@@ -1480,4 +1498,20 @@ class QudsClient {
   }
 }
 
-module.exports = { activate, deactivate };
+function evaluatableExpressionAt(lineText, character) {
+  const pattern = /\$(?:\.(?:index|iteration|isFirst|item))?/g;
+  let match;
+  while ((match = pattern.exec(lineText)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (character >= start && character < end) {
+      if (match[0].length > 1 && character === start) {
+        return { start, end: start + 1, expression: '$' };
+      }
+      return { start, end, expression: match[0] };
+    }
+  }
+  return undefined;
+}
+
+module.exports = { activate, deactivate, evaluatableExpressionAt };

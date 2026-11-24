@@ -97,6 +97,10 @@ Map<String, String> _qudsNames(SemanticModel model) {
   for (final symbol in model.loopIndexes.values) {
     take(symbol);
   }
+  for (final symbol in model.loopContextIndexes.values) {
+    if (symbol.dartName.isEmpty) continue;
+    names.putIfAbsent(symbol.dartName, () => r'$.index');
+  }
   return names;
 }
 
@@ -137,6 +141,16 @@ List<Map<String, Object>> _qudsLocals(
     });
   }
 
+  void addContext(Symbol? symbol, String contextName, int startLine, int end) {
+    if (symbol == null || symbol.dartName.isEmpty) return;
+    locals.add({
+      'dart': symbol.dartName,
+      'name': contextName,
+      'line': startLine,
+      'end': end < startLine ? startLine : end,
+    });
+  }
+
   late void Function(Statement node, int end) visitStatement;
 
   void visitStatements(List<Statement>? body, int end) {
@@ -157,6 +171,8 @@ List<Map<String, Object>> _qudsLocals(
     final lambdas = <Lambda>{};
     final blocks = <DoExpression>{};
     final loops = <CollectionFor>{};
+    final mapComps = <MapComprehension>{};
+    final retries = <RetryExpression>{};
     final valueLoops = <LoopExpression>{};
     final wheres = <WhereExpression>{};
     walkAst(node, (child) {
@@ -164,6 +180,20 @@ List<Map<String, Object>> _qudsLocals(
         final loopEnd = endLine(child.span);
         add(model.declarations[child], child.span, loopEnd);
         add(model.loopIndexes[child], child.span, loopEnd);
+        addContext(model.loopContextIndexes[child], r'$.index', child.span.line,
+            loopEnd);
+        addContext(
+            model.declarations[child], r'$.item', child.span.line, loopEnd);
+      }
+      if (child is MapComprehension &&
+          child.name != null &&
+          mapComps.add(child)) {
+        final loopEnd = endLine(child.span);
+        add(model.declarations[child], child.span, loopEnd);
+        addContext(model.loopContextIndexes[child], r'$.index', child.span.line,
+            loopEnd);
+        addContext(
+            model.declarations[child], r'$.item', child.span.line, loopEnd);
       }
       if (child is Lambda && lambdas.add(child)) {
         final lambdaEnd = endLine(child.span);
@@ -177,8 +207,14 @@ List<Map<String, Object>> _qudsLocals(
       if (child is DoExpression && blocks.add(child)) {
         visitStatements(child.body, endLine(child.span));
       }
-      if (child is RetryExpression && child.bodyStmts != null) {
-        visitStatements(child.bodyStmts, endLine(child.span));
+      if (child is RetryExpression && retries.add(child)) {
+        final retryEnd = endLine(child.span);
+        addContext(model.loopContextIndexes[child], r'$.index', child.span.line,
+            retryEnd);
+        add(model.retryWhenSymbols[child], child.span, retryEnd);
+        if (child.bodyStmts != null) {
+          visitStatements(child.bodyStmts, retryEnd);
+        }
       }
       if (child is TimeoutExpression) {
         if (child.bodyStmts != null) {
@@ -241,10 +277,15 @@ List<Map<String, Object>> _qudsLocals(
           :final elseBody
         ):
         final loopEnd = endLine(node.span);
+        final bodyEnd = _bodyEnd(body, node.span, endLine);
         visitExpression(iterable, end);
         visitExpression(step, end);
         add(model.declarations[node], node.span, loopEnd);
         add(model.loopIndexes[node], node.span, loopEnd);
+        addContext(model.loopContextIndexes[node], r'$.index', node.span.line,
+            bodyEnd);
+        addContext(
+            model.declarations[node], r'$.item', node.span.line, bodyEnd);
         visitStatements(body, loopEnd);
         visitStatements(elseBody, loopEnd);
       case WhileStatement(
@@ -254,9 +295,12 @@ List<Map<String, Object>> _qudsLocals(
           :final elseBody
         ):
         final loopEnd = endLine(node.span);
+        final bodyEnd = _bodyEnd(body, node.span, endLine);
         visitExpression(condition, end);
         if (pattern != null) patterns(pattern, loopEnd);
         add(model.declarations[node], node.span, loopEnd);
+        addContext(model.loopContextIndexes[node], r'$.index', node.span.line,
+            bodyEnd);
         visitStatements(body, loopEnd);
         visitStatements(elseBody, loopEnd);
       case GuardedStatement(
@@ -284,7 +328,12 @@ List<Map<String, Object>> _qudsLocals(
           :final elseBody
         ):
         final loopEnd = endLine(node.span);
+        final contextEnd = condition != null
+            ? endLine(condition.span)
+            : _bodyEnd(body, node.span, endLine);
         visitExpression(count, end);
+        addContext(model.loopContextIndexes[node], r'$.index', node.span.line,
+            contextEnd);
         visitStatements(body, loopEnd);
         visitExpression(condition, end);
         visitStatements(elseBody, loopEnd);
@@ -295,9 +344,12 @@ List<Map<String, Object>> _qudsLocals(
           :final body
         ):
         final loopEnd = endLine(node.span);
+        final bodyEnd = _bodyEnd(body, node.span, endLine);
         visitStatement(init, loopEnd);
         visitExpression(condition, loopEnd);
         visitExpression(step, loopEnd);
+        addContext(model.loopContextIndexes[node], r'$.index', node.span.line,
+            bodyEnd);
         visitStatements(body, loopEnd);
         visitStatements(node.elseBody, loopEnd);
       case IfLetStatement(:final value, :final thenBody, :final elseBody):

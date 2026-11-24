@@ -111,13 +111,32 @@ class DartEmitter {
   Map<String, String> _interfaceTypeBindings = const {};
   var _skipBindings = <Binding>{};
   Map<String, String> _names = const {};
+  List<(int, SourceSpan)>? _redirectMappings;
+  var _redirectLine = 0;
+  final _exprMappings = <(int, SourceSpan)>[];
   void line(String text) {
     if (_redirect != null) {
+      if (_span != null && text.trim() != '{') {
+        _redirectMappings?.add((_redirectLine, _span!));
+      }
+      if (_exprMappings.isNotEmpty) {
+        for (final entry in _exprMappings) {
+          _redirectMappings?.add((_redirectLine + entry.$1, entry.$2));
+        }
+        _exprMappings.clear();
+      }
       _redirect!.writeln('${'  ' * _depth}$text');
+      _redirectLine += '\n'.allMatches(text).length + 1;
       return;
     }
     if (_span != null && text.trim() != '{') {
       mappings.add((_nextOutputLine, _span!));
+    }
+    if (_exprMappings.isNotEmpty) {
+      for (final entry in _exprMappings) {
+        mappings.add((_nextOutputLine + entry.$1, entry.$2));
+      }
+      _exprMappings.clear();
     }
     _out.writeln('${'  ' * _depth}$text');
     _nextOutputLine += '\n'.allMatches(text).length + 1;
@@ -6640,7 +6659,7 @@ class DartEmitter {
   String _loopValue(LoopExpression node) {
     final saved = _inDo;
     _inDo = true;
-    final body = _captureBlock(() {
+    final (body, bodyMappings) = _captureBlockWithMappings(() {
       statement(node.loop);
       if (node.fallback != null) {
         line('return ${expression(node.fallback!)};');
@@ -6649,6 +6668,7 @@ class DartEmitter {
       }
     });
     _inDo = saved;
+    _recordNestedMappings(1, bodyMappings);
     return '(() {\n$body})()';
   }
 
@@ -6662,28 +6682,48 @@ class DartEmitter {
     return '(() {\n$body})()';
   }
 
-  String _captureBlock(void Function() emit) {
+  (String, List<(int, SourceSpan)>) _captureBlockWithMappings(
+      void Function() emit) {
     final saved = _redirect;
+    final savedMappings = _redirectMappings;
+    final savedLine = _redirectLine;
+    final savedSpan = _span;
     final buffer = StringBuffer();
+    final captured = <(int, SourceSpan)>[];
     _redirect = buffer;
+    _redirectMappings = captured;
+    _redirectLine = 0;
     emit();
     _redirect = saved;
-    return buffer.toString();
+    _redirectMappings = savedMappings;
+    _redirectLine = savedLine;
+    _span = savedSpan;
+    return (buffer.toString(), captured);
   }
+
+  void _recordNestedMappings(int lineOffset, List<(int, SourceSpan)> nested) {
+    for (final entry in nested) {
+      _exprMappings.add((lineOffset + entry.$1, entry.$2));
+    }
+  }
+
+  String _captureBlock(void Function() emit) =>
+      _captureBlockWithMappings(emit).$1;
 
   String _do(DoExpression node) {
     final saved = _inDo;
     _inDo = true;
-    final body = _captureBlock(() {
+    final (body, bodyMappings) = _captureBlockWithMappings(() {
       for (final statement in node.body) {
         this.statement(statement);
       }
     });
     _inDo = saved;
+    _recordNestedMappings(1, bodyMappings);
     return '(() {\n$body})()';
   }
 
-  String _retryTimeoutBody(
+  (String, List<(int, SourceSpan)>) _retryTimeoutBodyWithMappings(
     Expression? bodyExpr,
     List<Statement>? bodyStmts, {
     required bool isVoid,
@@ -6691,26 +6731,46 @@ class DartEmitter {
   }) {
     final saved = _inDo;
     _inDo = true;
-    final body = _captureBlock(() {
+    final result = _captureBlockWithMappings(() {
       if (bodyExpr != null) {
+        final savedSpan = _span;
+        _span = bodyExpr.span;
         if (isVoid) {
           line('${expression(bodyExpr)};');
+          _span = null;
           if (trailingReturn) line('return;');
         } else {
           line('return ${expression(bodyExpr)};');
         }
+        _span = savedSpan;
       } else {
         for (final stmt in bodyStmts!) {
           statement(stmt);
         }
         if (isVoid && trailingReturn) {
+          final savedSpan = _span;
+          _span = null;
           line('return;');
+          _span = savedSpan;
         }
       }
     });
     _inDo = saved;
-    return body;
+    return result;
   }
+
+  String _retryTimeoutBody(
+    Expression? bodyExpr,
+    List<Statement>? bodyStmts, {
+    required bool isVoid,
+    required bool trailingReturn,
+  }) =>
+      _retryTimeoutBodyWithMappings(
+        bodyExpr,
+        bodyStmts,
+        isVoid: isVoid,
+        trailingReturn: trailingReturn,
+      ).$1;
 
   String _retry(RetryExpression node) {
     final isAsync = model.asyncRetries.contains(node);
@@ -6739,7 +6799,7 @@ class DartEmitter {
     }
     final whenFnVar = whenIsFunc ? '_qrw${_temps++}' : null;
     final whenFnExpr = whenIsFunc ? expression(node.whenCondition!) : null;
-    final body = _retryTimeoutBody(
+    final (body, bodyMappings) = _retryTimeoutBodyWithMappings(
       node.bodyExpr,
       node.bodyStmts,
       isVoid: isVoid,
@@ -6770,6 +6830,8 @@ class DartEmitter {
       buf.writeln('final ${contextIndex.dartName} = $indexVar;');
     }
     buf.writeln('try {');
+    final bodyOffset = 1 + '\n'.allMatches(buf.toString()).length;
+    _recordNestedMappings(bodyOffset, bodyMappings);
     buf.write(body);
     buf.write('}');
     if (rethrowsReturn) {

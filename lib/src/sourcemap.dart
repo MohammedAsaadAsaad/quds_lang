@@ -315,6 +315,9 @@ List<Map<String, Object>> _qudsLocals(
       case WhenStatement(:final condition, :final body):
         visitExpression(condition, end);
         visitStatements(body, endLine(node.span));
+      case LockStatement(:final mutex, :final body):
+        visitExpression(mutex, end);
+        visitStatements(body, endLine(node.span));
       case TestDeclaration(:final body):
         visitStatements(body, endLine(node.span));
       case MatchStatement(:final value, :final arms):

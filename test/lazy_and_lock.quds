@@ -1,0 +1,99 @@
+use quds:core
+
+class _Counters:
+  static var compute: int = 0
+  static var statics: int = 0
+
+_expensive(tag: String) -> String:
+  _Counters.compute += 1
+  return "{tag}#{_Counters.compute}"
+
+_initStatic() -> String:
+  _Counters.statics += 1
+  return "static#{_Counters.statics}"
+
+class Report:
+  title: String
+  items: List<int>
+  lazy summary = _expensive("{title}:{items.length}")
+  lazy total: int = items.sum()
+  static lazy sharedTag = _initStatic()
+
+class CustomLock:
+  var acquires: int = 0
+  var releases: int = 0
+
+  acquire() async -> void:
+    acquires += 1
+
+  release() -> void:
+    releases += 1
+
+_scopedLockedWork(m: Mutex, events: List<String>, name: String) async -> String:
+  lock m
+  events.add("{name}:start")
+  await Future.delayed(5ms)
+  events.add("{name}:end")
+  return name
+
+_contextualLazyAndLock() -> int:
+  lazy = 10
+  lock = 20
+  return lazy + lock
+
+test "lazy evaluates once on first read for locals, instance fields, and static fields":
+  _Counters.compute = 0
+  _Counters.statics = 0
+
+  lazy unused = _expensive("never")
+  expect(_Counters.compute, equals(0))
+
+  lazy localVal = _expensive("local")
+  expect(_Counters.compute, equals(0))
+  expect(localVal, equals("local#1"))
+  expect(localVal, equals("local#1"))
+  expect(_Counters.compute, equals(1))
+
+  r = Report(title: "Q1", items: [10, 20, 30])
+  expect(_Counters.compute, equals(1))
+  expect(r.summary, equals("Q1:3#2"))
+  expect(r.summary, equals("Q1:3#2"))
+  expect(r.total, equals(60))
+  expect(_Counters.compute, equals(2))
+
+  expect(_Counters.statics, equals(0))
+  expect(Report.sharedTag, equals("static#1"))
+  expect(Report.sharedTag, equals("static#1"))
+  expect(_Counters.statics, equals(1))
+
+  expect(_contextualLazyAndLock(), equals(30))
+
+test "lock mutex serializes concurrent async tasks in FIFO order and releases on throw" async:
+  m = Mutex()
+  trace: List<String> = []
+
+  f1 = _scopedLockedWork(m, trace, "A")
+  f2 = _scopedLockedWork(m, trace, "B")
+  f3 = _scopedLockedWork(m, trace, "C")
+  r1 = await f1
+  r2 = await f2
+  r3 = await f3
+  expect([r1, r2, r3], equals(["A", "B", "C"]))
+  expect(trace, equals(["A:start", "A:end", "B:start", "B:end", "C:start", "C:end"]))
+  expect(m.isLocked(), isFalse)
+
+  var caught = false
+  try:
+    lock m:
+      expect(m.isLocked(), isTrue)
+      throw "boom"
+  catch e:
+    caught = true
+  expect(caught, isTrue)
+  expect(m.isLocked(), isFalse)
+
+  custom = CustomLock()
+  lock custom:
+    await Future.delayed(1ms)
+  expect(custom.acquires, equals(1))
+  expect(custom.releases, equals(1))

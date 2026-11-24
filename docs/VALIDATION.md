@@ -1,3 +1,17 @@
+# `lazy` bindings/fields and `lock` + `Mutex` (Batch B) — 2026-11-23
+
+Base: `0ec9e64`.
+
+| Check | Observed result |
+| --- | --- |
+| `Mutex` in `quds:core` | Added FIFO async `Mutex` (`acquire()`, `release()`, `isLocked()`) to `lib/sdk/core.quds` and synced `lib/src/sdk.dart` via `python3 tool/sync_sdk.py core` |
+| `lock mutex:` & scoped `lock mutex` | Added `LockStatement` (contextual `lock`, block & scoped desugaring in `_wrapScopedUsing`), async context check (`E803`), static `acquire()`/`release()` check (`_supportsLock`), `returns()`/`_mentionsBreak()`/`_statementExits()` support, and single-evaluation `try`/`finally` lowering |
+| `lazy` bindings & fields | Added contextual `lazy name [= expr]` / `lazy name: T = expr` for local bindings (requiring initializer, immutable `late final`), instance class fields, and `static lazy` fields with on-demand type inference (`_analyzedLazy`) |
+| Primary Quds suite & driver | `/opt/flutter/bin/dart test test/lazy_and_lock_test.dart`: **3 passed, 0 failed** (27s; `quds test test/lazy_and_lock.quds` FIFO serialization + exception release + lazy once-eval, negative `E100`/`E202`/`E803`/`E300` checks, strict `quds analyze --fatal-infos`, VM + `quds compile js` + `node` parity) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # `guard cond else:`, `:name` shorthand named arguments, and `Duration` literals (Batch A) — 2026-11-23
 
 Base: `dd9fc08`.

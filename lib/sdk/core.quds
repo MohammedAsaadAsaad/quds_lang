@@ -1,3 +1,5 @@
+use dart:async show Completer
+
 # A list under another name.
 # Example:
 #   numbers: Array<int> = [1, 2, 3]
@@ -209,6 +211,38 @@ interface AsyncDisposable:
   # Asynchronously releases resources held by this object.
   dispose() async -> void:
     return
+
+# An asynchronous mutual-exclusion lock that serializes async critical sections
+# in FIFO order. Use with `lock mutex:` or scoped `lock mutex` inside async code.
+# Example:
+#   m = Mutex()
+#   lock m:
+#     await work()
+class Mutex:
+  private var locked: bool = false
+  private var waiters: List<Completer<bool>>? = null
+  # Whether this mutex is currently held.
+  isLocked() -> bool = locked
+  # Acquires the lock, suspending until previous holders release it.
+  acquire() async -> void:
+    if not locked:
+      locked = true
+      return
+    waiter = Completer<bool>()
+    local = waiters
+    if local == null:
+      waiters = [waiter]
+    else:
+      local.add(waiter)
+    await waiter.future
+  # Releases the lock and wakes the next queued waiter if present.
+  release() -> void:
+    local = waiters
+    if local != null and local.isNotEmpty:
+      next = local.removeAt(0)
+      next.complete(true)
+    else:
+      locked = false
 
 
 :: typed

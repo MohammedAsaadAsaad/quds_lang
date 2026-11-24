@@ -475,6 +475,13 @@ class UsingStatement extends Statement {
   final bool scoped;
 }
 
+class LockStatement extends Statement {
+  const LockStatement(this.mutex, this.body, super.span, {this.scoped = false});
+  final Expression mutex;
+  final List<Statement> body;
+  final bool scoped;
+}
+
 class IndexAssignment extends Statement {
   const IndexAssignment(this.target, this.operator, this.value, super.span);
   final IndexExpression target;

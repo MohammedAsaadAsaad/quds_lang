@@ -2215,7 +2215,7 @@ main():
   print ages["Ada"]
 ```
 
-`Array` is `List`, `Dict` is `Map`, and `HashSet` is `Set`. `Stack<T>` is a last-in list: `push`, `pop`, `top`, `size`, `empty`, and `toList`. `Queue<T>` is a first-in list: `add`, `take`, `next`, `size`, `empty`, and `toList`. `Bag<T>` counts values: `add` records one more occurrence, `count` reads it, and `total` adds the counts. `pop`, `top`, `take`, and `next` on an empty collection throw.
+`Array` is `List`, `Dict` is `Map`, and `HashSet` is `Set`. `Stack<T>` is a last-in list: `push`, `pop`, `top`, `size`, `empty`, and `toList`. `Queue<T>` is a first-in list: `add`, `take`, `next`, `size`, `empty`, and `toList`. `Bag<T>` counts values: `add` records one more occurrence, `count` reads it, and `total` adds the counts. `pop`, `top`, `take`, and `next` on an empty collection throw. `Disposable` and `AsyncDisposable` define resource cleanup contracts for `using` / `using async`. `Mutex` provides a FIFO asynchronous mutual-exclusion lock (`acquire()`, `release()`, `isLocked()`) for `lock mutex:` and scoped `lock mutex`.
 
 Two unprefixed imports that bring in the same name from different declarations are `E204`. The same declaration imported twice is one binding.
 
@@ -2227,7 +2227,7 @@ A `when` condition is a constant boolean. The names available in it are `platfor
 
 A statement that starts with an identifier, or with a contextual keyword whose keyword production does not match, is a binding, an assignment, or an expression statement. The choice is fixed by the tokens, in this order:
 
-1. `shadow`, `var`, `const`, `late`, or `late var`, followed by a name, is a binding.
+1. `shadow`, `var`, `const`, `late`, `late var`, or contextual `lazy` (requiring `= expression`, evaluated once on first read for locals, instance class fields, and `static lazy` fields), followed by a name, is a binding.
 2. A name, optional `: type`, then `=`, is a binding when no binding of that name is visible. It is an assignment when a mutable binding is visible. It is `E202` when an immutable binding is visible.
 3. In statement or member position, a name followed by a parameter list and then `->`, `:`, `=`, `async`, or `sync` is a function declaration. A parameter list is a parenthesized group whose every item is a parameter. In expression position those parentheses are a call.
 4. `test` or `group`, followed by a string literal and `:`, is a test declaration. `test` or `group`, followed by a string, `async`, and `:`, is an async test declaration.

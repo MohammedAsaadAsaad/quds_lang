@@ -472,6 +472,13 @@ class Parser {
       return WhenStatement(condition, block(topLevel: topLevel), extent(span));
     }
     if (word('using')) return usingStatement(span);
+    if (word('lock') &&
+        !assignments.contains(peek().kind) &&
+        peek().kind != TokenKind.leftParen &&
+        peek().kind != TokenKind.colon &&
+        peek().kind != TokenKind.dot) {
+      return lockStatement(span);
+    }
     if (word('guard') &&
         !assignments.contains(peek().kind) &&
         peek().kind != TokenKind.leftParen &&
@@ -546,12 +553,19 @@ class Parser {
       return finishLine(returned);
     }
     var mode = BindingMode.inferred;
+    var requireInitializer = false;
     if (word('state')) {
       take();
       mode = BindingMode.state;
     } else if (word('computed')) {
       take();
       mode = BindingMode.computed;
+    } else if (word('lazy') &&
+        peek().kind == TokenKind.identifier &&
+        (peek(2).kind == TokenKind.equals || peek(2).kind == TokenKind.colon)) {
+      take();
+      mode = BindingMode.lateFinal;
+      requireInitializer = true;
     }
     if (word('late')) {
       take();
@@ -582,6 +596,9 @@ class Parser {
                     peek(2).kind == TokenKind.leftParen));
     if (bindingAhead || mode != BindingMode.inferred) {
       final bindings = _bindingLine(span, mode);
+      if (requireInitializer && bindings.any((b) => b.open)) {
+        fail('lazy binding requires an initializer (= expression)', span);
+      }
       _pending.addAll(bindings.skip(1));
       if (_suffixIf && word('if')) {
         if (bindings.length != 1) {
@@ -1521,6 +1538,22 @@ class Parser {
       }
       if (isStatic) fail('static applies to a field, function, or const');
       if (readonlyMethod) fail('readonly applies to a method');
+      if (word('lazy') &&
+          peek().kind == TokenKind.identifier &&
+          (peek(2).kind == TokenKind.equals ||
+              peek(2).kind == TokenKind.colon)) {
+        take();
+        final fieldName = name();
+        final fieldType = match(TokenKind.colon) ? typeName() : '<infer>';
+        expect(TokenKind.equals, '=');
+        final value = expression(bare: true);
+        endLine();
+        fields.add(FieldDeclaration(
+            fieldName.lexeme, fieldType, false, false, null, fieldName.span,
+            visibility: memberVisibility,
+            lazyBody: [ResultStatement(value, value.span)]));
+        continue;
+      }
       final mutable = word('var');
       if (mutable) take();
       final fieldName = name();
@@ -2320,6 +2353,22 @@ class Parser {
   }
 
   FieldDeclaration staticField({String visibility = ''}) {
+    final isLazy = word('lazy') &&
+        peek().kind == TokenKind.identifier &&
+        (peek(2).kind == TokenKind.equals || peek(2).kind == TokenKind.colon);
+    if (isLazy) {
+      take();
+      final fieldName = name();
+      final type = match(TokenKind.colon) ? typeName() : '<infer>';
+      expect(TokenKind.equals, '=');
+      final value = expression(bare: true);
+      endLine();
+      return FieldDeclaration(
+          fieldName.lexeme, type, false, false, null, fieldName.span,
+          visibility: visibility,
+          isStatic: true,
+          lazyBody: [ResultStatement(value, value.span)]);
+    }
     final mutable = word('var');
     if (mutable) take();
     final fieldName = name();
@@ -2636,6 +2685,16 @@ class Parser {
     return topLevel ? body : _wrapScopedUsing(body);
   }
 
+  LockStatement lockStatement(SourceSpan span) {
+    take();
+    final mutex = expression();
+    if (at(TokenKind.colon)) {
+      return LockStatement(mutex, suite(), extent(span));
+    }
+    endLine();
+    return LockStatement(mutex, const [], extent(span), scoped: true);
+  }
+
   List<Statement> _wrapScopedUsing(List<Statement> statements) {
     var result = statements;
     for (var i = result.length - 1; i >= 0; i--) {
@@ -2658,6 +2717,25 @@ class Parser {
           tail,
           span,
           async: stmt.async,
+          scoped: true,
+        );
+        result = [...result.sublist(0, i), wrapped];
+      } else if (stmt is LockStatement && stmt.scoped && stmt.body.isEmpty) {
+        final tail = result.sublist(i + 1);
+        final span = tail.isEmpty
+            ? stmt.span
+            : SourceSpan(
+                stmt.span.line,
+                stmt.span.column,
+                (tail.last.span.offset + tail.last.span.length) -
+                    stmt.span.offset,
+                file: stmt.span.file,
+                offset: stmt.span.offset,
+              );
+        final wrapped = LockStatement(
+          stmt.mutex,
+          tail,
+          span,
           scoped: true,
         );
         result = [...result.sublist(0, i), wrapped];

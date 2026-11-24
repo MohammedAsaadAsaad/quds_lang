@@ -912,6 +912,7 @@ class Analyzer {
   String? _methodLibrary;
   final _promoted = <String, String>{};
   final _consumed = <Symbol, SourceSpan>{};
+  final _analyzedLazy = <FieldDeclaration>{};
   final _fieldSymbols = <Symbol>{};
   var _readonlyMethod = false;
   var _ffi = false;
@@ -1851,6 +1852,7 @@ class Analyzer {
   }
 
   void analyzeLazy(ClassDeclaration type, FieldDeclaration field) {
+    if (!_analyzedLazy.add(field)) return;
     if (type.kind == 'interface') fail('by lazy needs a class', field);
     final saved = _scope;
     final savedThis = _thisType;
@@ -4111,6 +4113,9 @@ class Analyzer {
       if (statement is UsingStatement && returns(statement.body)) {
         return true;
       }
+      if (statement is LockStatement && returns(statement.body)) {
+        return true;
+      }
       if (statement is WhenStatement &&
           !model.skipped.contains(statement) &&
           returns(statement.body)) {
@@ -4157,6 +4162,8 @@ class Analyzer {
         case BreakStatement():
           return true;
         case UsingStatement():
+          if (_mentionsBreak(statement.body)) return true;
+        case LockStatement():
           if (_mentionsBreak(statement.body)) return true;
         case WhenStatement():
           if (!model.skipped.contains(statement) &&
@@ -4256,6 +4263,7 @@ class Analyzer {
         ContinueStatement() =>
           true,
         UsingStatement() => _alwaysExits(node.body),
+        LockStatement() => _alwaysExits(node.body),
         WhenStatement() =>
           !model.skipped.contains(node) && _alwaysExits(node.body),
         IfStatement() => node.elseBody.isNotEmpty &&
@@ -5054,6 +5062,18 @@ class Analyzer {
         model.declarations[node] = resource;
         statements(node.body);
         _scope = savedUsing;
+      case LockStatement():
+        if (_lambdaDepth > 0) {
+          _lambdaAwait = true;
+        } else if (_function?.isAsync != true) {
+          error('E803', 'lock is only valid in an async function', node);
+        }
+        final lockType = expression(node.mutex);
+        if (!_supportsLock(lockType)) {
+          fail(
+              'lock requires a value with acquire() and release()', node.mutex);
+        }
+        statements(node.body, nested: true);
       case IndexAssignment():
         _assignIndex(node);
       case MemberAssignment():
@@ -7260,8 +7280,12 @@ class Analyzer {
       String instantiate(String raw) =>
           _substitute(_classMemberType(raw, declaration), substitution);
       for (final field in declaration.fields) {
-        if (field.name == name)
+        if (field.name == name) {
+          if (field.lazyBody != null && !_analyzedLazy.contains(field)) {
+            analyzeLazy(declaration, field);
+          }
           return instantiate(model.declarations[field]?.type ?? field.type);
+        }
       }
       for (final property in declaration.properties) {
         if (property.name == name) return instantiate(property.type);
@@ -7435,6 +7459,35 @@ class Analyzer {
       }
     }
     return null;
+  }
+
+  bool _supportsLock(String rawType, {Set<String>? visited}) {
+    var type = rawType.trim();
+    if (type.startsWith('readonly ')) return false;
+    if (type.endsWith('?')) return false;
+    type = unwrap(type);
+    final seen = visited ?? <String>{};
+    if (type.endsWith('?') || !seen.add(type)) return false;
+    final head = _genericHead(type);
+    if (_typeBounds.containsKey(head)) {
+      return _supportsLock(_typeBounds[head]!, visited: seen);
+    }
+    final symbol = _typeSymbol(head);
+    final declaration = symbol?.classDeclaration;
+    if (declaration != null) {
+      return _findQudsZeroArgMethod(
+                  declaration, 'acquire', <ClassDeclaration>{}) !=
+              null &&
+          _findQudsZeroArgMethod(
+                  declaration, 'release', <ClassDeclaration>{}) !=
+              null;
+    }
+    final shape = symbol?.nativeClass ?? model.dartShapes[head];
+    if (shape != null) {
+      return _findDartZeroArgMember(shape, 'acquire', <String>{}) != null &&
+          _findDartZeroArgMember(shape, 'release', <String>{}) != null;
+    }
+    return false;
   }
 
   FunctionDeclaration? _findQudsCleanup(ClassDeclaration type) {

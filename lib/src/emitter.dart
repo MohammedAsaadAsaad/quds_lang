@@ -2189,6 +2189,8 @@ class DartEmitter {
         DeferStatement() => _expressionPropagates(node.expression),
         WhenStatement() => _containsPropagate(node.body),
         UsingStatement() => _containsPropagate(node.body),
+        LockStatement() =>
+          _expressionPropagates(node.mutex) || _containsPropagate(node.body),
         IndexAssignment() => _expressionPropagates(node.target) ||
             _expressionPropagates(node.value),
         MemberAssignment() => _expressionPropagates(node.value),
@@ -3602,6 +3604,19 @@ class DartEmitter {
         line(awaitCleanup
             ? '} finally { await ${resource.dartName}.$method(); }'
             : '} finally { ${resource.dartName}.$method(); }');
+        _depth--;
+        line('}');
+      case LockStatement():
+        final mutex = '_qm${_temps++}';
+        line('{');
+        _depth++;
+        line('final $mutex = ${expression(node.mutex)};');
+        line('await $mutex.acquire();');
+        line('try {');
+        _depth++;
+        statements(node.body);
+        _depth--;
+        line('} finally { $mutex.release(); }');
         _depth--;
         line('}');
       case IndexAssignment():
@@ -6004,6 +6019,7 @@ class DartEmitter {
           node.thenBody.any(_doReturns) || node.elseBody.any(_doReturns),
         WhenStatement() => node.body.any(_doReturns),
         UsingStatement() => node.body.any(_doReturns),
+        LockStatement() => node.body.any(_doReturns),
         RepeatStatement() =>
           node.body.any(_doReturns) || node.elseBody.any(_doReturns),
         CForStatement() =>

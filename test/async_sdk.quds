@@ -1,0 +1,148 @@
+use quds:async
+
+class _ConcurrencyTracker:
+  var active: int = 0
+  var peak: int = 0
+
+_boundedTask(sem: Semaphore, tracker: _ConcurrencyTracker, events: List<String>, id: String) async -> String:
+  lock sem
+  tracker.active += 1
+  if tracker.active > tracker.peak:
+    tracker.peak = tracker.active
+  events.add("enter:{id}")
+  await sleep(10ms)
+  events.add("exit:{id}")
+  tracker.active -= 1
+  return id
+
+_produceBounded(ch: Channel<int>, trace: List<String>) async -> void:
+  await ch.send(1)
+  trace.add("sent:1")
+  await ch.send(2)
+  trace.add("sent:2")
+  await ch.send(3)
+  trace.add("sent:3")
+  ch.close()
+
+test "Semaphore bounds concurrency in FIFO order, works with lock, and validates permits" async:
+  sem = Semaphore(permits: 2)
+  expect(sem.available(), equals(2))
+  expect(sem.waiting(), equals(0))
+
+  expect(sem.tryAcquire(), isTrue)
+  expect(sem.available(), equals(1))
+  expect(sem.tryAcquire(), isTrue)
+  expect(sem.available(), equals(0))
+  expect(sem.tryAcquire(), isFalse)
+  sem.release()
+  sem.release()
+  expect(sem.available(), equals(2))
+
+  var overReleased = false
+  try:
+    sem.release()
+  catch e: StateError:
+    overReleased = true
+  expect(overReleased, isTrue)
+
+  var badPermits = false
+  try:
+    bad = Semaphore(permits: 0)
+    bad.available()
+  catch e: ArgumentError:
+    badPermits = true
+  expect(badPermits, isTrue)
+
+  tracker = _ConcurrencyTracker()
+  events: List<String> = []
+  f1 = _boundedTask(sem, tracker, events, "A")
+  f2 = _boundedTask(sem, tracker, events, "B")
+  f3 = _boundedTask(sem, tracker, events, "C")
+  f4 = _boundedTask(sem, tracker, events, "D")
+  r1 = await f1
+  r2 = await f2
+  r3 = await f3
+  r4 = await f4
+  expect([r1, r2, r3, r4], equals(["A", "B", "C", "D"]))
+  expect(tracker.peak, equals(2))
+  expect(tracker.active, equals(0))
+  expect(sem.available(), equals(2))
+
+test "Channel supports unbounded, bounded backpressure, drainChannel, and using close" async:
+  ch = Channel<String>()
+  expect(ch.isClosed(), isFalse)
+  expect(ch.length(), equals(0))
+  expect(ch.tryReceive(), equals(null))
+  expect(ch.trySend("a"), isTrue)
+  await ch.send("b")
+  expect(ch.length(), equals(2))
+  expect(await ch.receive(), equals("a"))
+  expect(ch.tryReceive(), equals("b"))
+  ch.close()
+  expect(ch.isClosed(), isTrue)
+  expect(ch.trySend("c"), isFalse)
+  expect(await ch.receiveOrNull(), equals(null))
+
+  var closedRecv = false
+  try:
+    await ch.receive()
+  catch e: StateError:
+    closedRecv = true
+  expect(closedRecv, isTrue)
+
+  bounded = Channel<int>(capacity: 1)
+  trace: List<String> = []
+  producer = _produceBounded(bounded, trace)
+  await sleep(5ms)
+  # Only 1st item fits in buffer; 2nd sender is suspended until we read.
+  expect(bounded.length(), equals(1))
+  items = await drainChannel<int>(bounded)
+  await producer
+  expect(items, equals([1, 2, 3]))
+  expect(trace, equals(["sent:1", "sent:2", "sent:3"]))
+
+  scoped = Channel<int>()
+  using c = scoped:
+    await c.send(99)
+    expect(await c.receive(), equals(99))
+  expect(scoped.isClosed(), isTrue)
+
+test "CancellationSource and CancellationToken notify callbacks, waiters, cancelAfter, and using" async:
+  src = CancellationSource()
+  tok = src.token()
+  expect(src.isCancelled(), isFalse)
+  expect(tok.isCancelled(), isFalse)
+  expect(tok.reason(), equals(null))
+  tok.throwIfCancelled()
+
+  fired: List<String> = []
+  tok.onCancel(() -> fired.add("cb1"))
+  tok.onCancel(() -> fired.add("cb2"))
+  waiting = tok.whenCancelled()
+
+  src.cancel("user-stop")
+  src.cancel("ignored-second")
+  expect(src.isCancelled(), isTrue)
+  expect(tok.isCancelled(), isTrue)
+  expect(tok.reason(), equals("user-stop"))
+  expect(await waiting, equals("user-stop"))
+  expect(fired, equals(["cb1", "cb2"]))
+
+  tok.onCancel(() -> fired.add("late"))
+  expect(fired, equals(["cb1", "cb2", "late"]))
+
+  var caughtReason = ""
+  try:
+    tok.throwIfCancelled()
+  catch e: CancelledException:
+    caughtReason = e.reason
+  expect(caughtReason, equals("user-stop"))
+
+  timed = CancellationSource()
+  timed.cancelAfter(10ms, reason: "deadline")
+  expect(await timed.token().whenCancelled(), equals("deadline"))
+
+  scopedSrc = CancellationSource()
+  using cts = scopedSrc:
+    expect(cts.isCancelled(), isFalse)
+  expect(scopedSrc.isCancelled(), isTrue)

@@ -1,0 +1,350 @@
+# Structured concurrency primitives for Quds: Semaphore, Channel, and Cancellation.
+
+use dart:async show Completer
+
+# Thrown when a cooperative async operation observes cancellation.
+# Example:
+#   token.throwIfCancelled()
+class CancelledException:
+  reason: String = "Operation cancelled"
+  toString() -> String = "CancelledException: {reason}"
+
+# Read-only handle passed to async operations so they can observe cancellation.
+# Create one via [CancellationSource].
+# Example:
+#   source = CancellationSource()
+#   token = source.token()
+#   source.cancel("done")
+#   print token.isCancelled()
+class CancellationToken:
+  private var cancelled: bool = false
+  private var cancelReason: String? = null
+  private var callbacks: List<() -> void>? = null
+  private var waiters: List<Completer<String>>? = null
+
+  # True after the owning [CancellationSource] has been cancelled.
+  isCancelled() -> bool = cancelled
+
+  # The cancellation reason if cancelled, otherwise null.
+  reason() -> String? = cancelReason
+
+  # Throws [CancelledException] if this token has been cancelled.
+  throwIfCancelled() -> void:
+    if cancelled:
+      msg = cancelReason ?? "Operation cancelled"
+      throw CancelledException(reason: msg)
+
+  # Registers [callback] to run when cancelled (or immediately if already cancelled).
+  onCancel(callback: () -> void) -> void:
+    if cancelled:
+      callback()
+      return
+    local = callbacks
+    if local == null:
+      callbacks = [callback]
+    else:
+      local.add(callback)
+
+  # Suspends until cancelled and returns the cancellation reason.
+  whenCancelled() async -> String:
+    if cancelled:
+      return cancelReason ?? "Operation cancelled"
+    waiter = Completer<String>()
+    local = waiters
+    if local == null:
+      waiters = [waiter]
+    else:
+      local.add(waiter)
+    return await waiter.future
+
+  # Internal hook invoked by [CancellationSource.cancel].
+  _trigger(msg: String) -> void:
+    if cancelled:
+      return
+    cancelled = true
+    cancelReason = msg
+    cbs = callbacks
+    callbacks = null
+    if cbs != null:
+      for cb in cbs:
+        cb()
+    ws = waiters
+    waiters = null
+    if ws != null:
+      for w in ws:
+        if not w.isCompleted:
+          w.complete(msg)
+
+# Controls a [CancellationToken] and can cancel cooperative async tasks.
+# Implements [dispose] so `using cts = CancellationSource()` cancels on scope exit.
+# Example:
+#   source = CancellationSource()
+#   token = source.token()
+#   source.cancel("timeout")
+class CancellationSource:
+  private inner: CancellationToken = CancellationToken()
+
+  # The read-only [CancellationToken] controlled by this source.
+  token() -> CancellationToken = inner
+
+  # True once [cancel] has been called.
+  isCancelled() -> bool = inner.isCancelled()
+
+  # Cancels the token with [reason]. Repeated calls are ignored.
+  cancel([reason: String = "Operation cancelled"]) -> void:
+    inner._trigger(reason)
+
+  # Schedules automatic cancellation after [delay].
+  cancelAfter(delay: Duration, reason: String = "Operation timed out") -> void:
+    _scheduleCancel(delay, reason)
+
+  private _scheduleCancel(delay: Duration, reason: String) async -> void:
+    await Future.delayed(delay)
+    inner._trigger(reason)
+
+  # Cancels this source when exited via `using`.
+  dispose() -> void:
+    inner._trigger("Disposed")
+
+# FIFO counting semaphore that bounds concurrent access to [permits] tasks.
+# Compatible with `lock sem:` and scoped `lock sem` because it provides
+# [acquire] and [release].
+# Example:
+#   sem = Semaphore(permits: 2)
+#   lock sem:
+#     await work()
+class Semaphore:
+  permits: int required
+  private var initialized: bool = false
+  private var freePermits: int = 0
+  private var waiters: List<Completer<bool>>? = null
+
+  private _ensureInit() -> void:
+    if not initialized:
+      if permits < 1:
+        throw ArgumentError("Semaphore permits must be at least 1")
+      freePermits = permits
+      initialized = true
+
+  # Number of permits currently available without suspending.
+  available() -> int:
+    _ensureInit()
+    return freePermits
+
+  # Number of tasks currently waiting for a permit.
+  waiting() -> int:
+    guard let local = waiters else:
+      return 0
+    return local.length
+
+  # Attempts to take a permit immediately without suspending.
+  tryAcquire() -> bool:
+    _ensureInit()
+    if freePermits > 0:
+      freePermits -= 1
+      return true
+    return false
+
+  # Acquires a permit, suspending in FIFO order when none are free.
+  acquire() async -> void:
+    _ensureInit()
+    if freePermits > 0:
+      freePermits -= 1
+      return
+    waiter = Completer<bool>()
+    local = waiters
+    if local == null:
+      waiters = [waiter]
+    else:
+      local.add(waiter)
+    await waiter.future
+
+  # Releases a permit and wakes the next queued waiter if present.
+  release() -> void:
+    _ensureInit()
+    local = waiters
+    if local != null and local.isNotEmpty:
+      next = local.removeAt(0)
+      next.complete(true)
+      return
+    if freePermits >= permits:
+      throw StateError("Semaphore released more times than acquired")
+    freePermits += 1
+
+class _ChannelSender<T>:
+  value: T required
+  done: Completer<bool> required
+
+class _ChannelDelivery<T>:
+  hasValue: bool required
+  value: T? = null
+
+# Typed asynchronous FIFO channel for producer/consumer communication.
+# [capacity] == 0 creates an unbounded channel; [capacity] > 0 applies sender
+# backpressure when the buffer is full. Implements [dispose] to close on `using` exit.
+# Example:
+#   ch = Channel<int>(capacity: 2)
+#   await ch.send(1)
+#   print await ch.receive()
+class Channel<T>:
+  capacity: int = 0
+  private var closed: bool = false
+  private var buffer: List<T>? = null
+  private var receivers: List<Completer<_ChannelDelivery<T>>>? = null
+  private var senders: List<_ChannelSender<T>>? = null
+
+  # True after [close] has been called.
+  isClosed() -> bool = closed
+
+  # Number of items currently buffered in this channel.
+  length() -> int:
+    guard let local = buffer else:
+      return 0
+    return local.length
+
+  private _checkCapacity() -> void:
+    if capacity < 0:
+      throw ArgumentError("Channel capacity cannot be negative")
+
+  private _enqueueBuffer(value: T) -> void:
+    local = buffer
+    if local == null:
+      buffer = [value]
+    else:
+      local.add(value)
+
+  # Attempts to send [value] without suspending. Returns false if closed or full.
+  trySend(value: T) -> bool:
+    _checkCapacity()
+    if closed:
+      return false
+    rx = receivers
+    if rx != null and rx.isNotEmpty:
+      waiter = rx.removeAt(0)
+      waiter.complete(_ChannelDelivery<T>(hasValue: true, value: value))
+      return true
+    if capacity == 0 or length() < capacity:
+      _enqueueBuffer(value)
+      return true
+    return false
+
+  # Sends [value], suspending when a bounded channel is full.
+  # Throws [StateError] if the channel is closed.
+  send(value: T) async -> void:
+    _checkCapacity()
+    if closed:
+      throw StateError("Cannot send to a closed Channel")
+    rx = receivers
+    if rx != null and rx.isNotEmpty:
+      waiter = rx.removeAt(0)
+      waiter.complete(_ChannelDelivery<T>(hasValue: true, value: value))
+      return
+    if capacity == 0 or length() < capacity:
+      _enqueueBuffer(value)
+      return
+    done = Completer<bool>()
+    entry = _ChannelSender<T>(value: value, done: done)
+    tx = senders
+    if tx == null:
+      senders = [entry]
+    else:
+      tx.add(entry)
+    await done.future
+
+  private _takeBuffered() -> T:
+    buf = buffer!
+    item = buf.removeAt(0)
+    tx = senders
+    if tx != null and tx.isNotEmpty:
+      nextSender = tx.removeAt(0)
+      buf.add(nextSender.value)
+      if not nextSender.done.isCompleted:
+        nextSender.done.complete(true)
+    return item
+
+  # Attempts to take a buffered item immediately, or returns null.
+  tryReceive() -> T?:
+    buf = buffer
+    if buf != null and buf.isNotEmpty:
+      return _takeBuffered()
+    return null
+
+  # Receives the next item, suspending until one arrives.
+  # Throws [StateError] if the channel is closed and empty.
+  receive() async -> T:
+    buf = buffer
+    if buf != null and buf.isNotEmpty:
+      return _takeBuffered()
+    if closed:
+      throw StateError("Channel is closed")
+    waiter = Completer<_ChannelDelivery<T>>()
+    rx = receivers
+    if rx == null:
+      receivers = [waiter]
+    else:
+      rx.add(waiter)
+    delivery = await waiter.future
+    if not delivery.hasValue:
+      throw StateError("Channel is closed")
+    return delivery.value as T
+
+  # Receives the next item, or returns null once the channel is closed and empty.
+  receiveOrNull() async -> T?:
+    buf = buffer
+    if buf != null and buf.isNotEmpty:
+      return _takeBuffered()
+    if closed:
+      return null
+    waiter = Completer<_ChannelDelivery<T>>()
+    rx = receivers
+    if rx == null:
+      receivers = [waiter]
+    else:
+      rx.add(waiter)
+    delivery = await waiter.future
+    if not delivery.hasValue:
+      return null
+    return delivery.value
+
+  # Closes the channel. Buffered items can still be received; waiting receivers
+  # are notified and waiting senders fail with [StateError].
+  close() -> void:
+    if closed:
+      return
+    closed = true
+    rx = receivers
+    receivers = null
+    if rx != null:
+      for waiter in rx:
+        if not waiter.isCompleted:
+          waiter.complete(_ChannelDelivery<T>(hasValue: false))
+    tx = senders
+    senders = null
+    if tx != null:
+      for entry in tx:
+        if not entry.done.isCompleted:
+          entry.done.completeError(StateError("Channel closed while sending"))
+
+  # Closes this channel when exited via `using`.
+  dispose() -> void:
+    close()
+
+# Suspends the current async function for [duration].
+# Example:
+#   await sleep(25ms)
+sleep(duration: Duration) async -> void:
+  await Future.delayed(duration)
+
+# Receives all remaining values from [channel] until it closes.
+# Example:
+#   items = await drainChannel<int>(ch)
+drainChannel<T>(channel: Channel<T>) async -> List<T>:
+  out: List<T> = []
+  var done = false
+  while not done:
+    next = await channel.receiveOrNull()
+    if next == null and channel.isClosed():
+      done = true
+    else if next != null:
+      out.add(next)
+  return out

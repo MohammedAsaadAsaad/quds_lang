@@ -15,12 +15,39 @@ import 'sdk.dart';
 import 'semantics.dart';
 import 'walk.dart';
 
+String? _innermostOpenRepeatIndent(String source) {
+  final open = <String>[];
+  final repeatHeader =
+      RegExp(r'^([ \t]*)(?:[^#\n]*=\s*)?repeat\s*:\s*(?:#.*)?$');
+  final whileLine = RegExp(r'^([ \t]*)while\b');
+  for (final line in source.split('\n')) {
+    if (line.trim().isEmpty || line.trimLeft().startsWith('#')) continue;
+    final indentLen = line.length - line.trimLeft().length;
+    while (open.isNotEmpty && indentLen < open.last.length) {
+      open.removeLast();
+    }
+    if (open.isNotEmpty && indentLen == open.last.length) {
+      final whileMatch = whileLine.firstMatch(line);
+      if (whileMatch != null) {
+        open.removeLast();
+        continue;
+      }
+      open.removeLast();
+    }
+    final match = repeatHeader.firstMatch(line);
+    if (match != null) {
+      open.add(match.group(1)!);
+    }
+  }
+  return open.isEmpty ? null : open.last;
+}
+
 Node? _loopCompletionOwner(String source, String prefix, int offset) {
-  for (var candidate in [source, prefix]) {
-    for (var attempt = 0; attempt < 3; attempt++) {
+  for (var candidate in [source, prefix, '$prefix: 0']) {
+    for (var attempt = 0; attempt < 16; attempt++) {
       try {
-        final program =
-            Parser(Lexer().tokenize(candidate)).parse(partial: true);
+        final parser = Parser(Lexer().tokenize(candidate));
+        final program = parser.parse(partial: true);
         Node? owner;
         walkAst(program, (node) {
           if (!_loopContextContains(node, offset)) return;
@@ -28,17 +55,39 @@ Node? _loopCompletionOwner(String source, String prefix, int offset) {
             owner = node;
         });
         if (owner != null) return owner;
+        if (parser.errors.any((e) => e.message == 'Expected while')) {
+          final indent = _innermostOpenRepeatIndent(candidate);
+          if (indent != null) {
+            candidate += '\n${indent}while true\n';
+            continue;
+          }
+        }
         break;
       } on CompilerException catch (error) {
-        if (error.code != 'E004') break;
-        final start = _stringIndexForByte(candidate, error.span.offset);
-        if (start >= candidate.length) break;
-        final quote = candidate[start];
-        if (quote != '"' && quote != "'") break;
-        final delimiter =
-            candidate.startsWith(quote * 3, start) ? quote * 3 : quote;
-        candidate +=
-            '${error.message.contains('interpolation') ? '}' : ''}$delimiter\n';
+        if (error.code == 'E004') {
+          final start = _stringIndexForByte(candidate, error.span.offset);
+          if (start >= candidate.length) break;
+          final quote = candidate[start];
+          if (quote != '"' && quote != "'") break;
+          final delimiter =
+              candidate.startsWith(quote * 3, start) ? quote * 3 : quote;
+          candidate +=
+              '${error.message.contains('interpolation') ? '}' : ''}$delimiter';
+          continue;
+        }
+        if (error.code == 'E100' && error.message == 'Unclosed bracket') {
+          final start = _stringIndexForByte(candidate, error.span.offset);
+          if (start >= candidate.length) break;
+          final closer = switch (candidate[start]) {
+            '(' => ')',
+            '[' => ']',
+            _ => null,
+          };
+          if (closer == null) break;
+          candidate += closer;
+          continue;
+        }
+        break;
       }
     }
   }

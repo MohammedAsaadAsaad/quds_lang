@@ -1156,11 +1156,10 @@ class Parser {
         take();
         step = expression();
       }
-      return ForStatement(item, iterable, block(), extent(span),
-          awaiting: awaiting,
-          index: index,
-          step: step,
-          elseBody: asValue ? const [] : _statementElse());
+      final body = block();
+      final elseBody = asValue ? const <Statement>[] : _statementElse();
+      return ForStatement(item, iterable, body, extent(span),
+          awaiting: awaiting, index: index, step: step, elseBody: elseBody);
     }
     if (awaiting) fail('await for expects one name');
     final initSpan = current.span;
@@ -1184,8 +1183,10 @@ class Parser {
       take();
       step = stepExpression();
     }
-    return CForStatement(init, condition, step, block(), extent(span),
-        elseBody: asValue ? const [] : _statementElse());
+    final body = block();
+    final elseBody = asValue ? const <Statement>[] : _statementElse();
+    return CForStatement(init, condition, step, body, extent(span),
+        elseBody: elseBody);
   }
 
   Expression stepExpression() {
@@ -1207,12 +1208,14 @@ class Parser {
       take();
       final condition = expression();
       endLine();
-      return RepeatStatement(body, condition, extent(span),
-          elseBody: asValue ? const [] : _statementElse());
+      final elseBody = asValue ? const <Statement>[] : _statementElse();
+      return RepeatStatement(body, condition, extent(span), elseBody: elseBody);
     }
     final count = expression();
-    return RepeatStatement(suite(), null, extent(span),
-        count: count, elseBody: asValue ? const [] : _statementElse());
+    final body = suite();
+    final elseBody = asValue ? const <Statement>[] : _statementElse();
+    return RepeatStatement(body, null, extent(span),
+        count: count, elseBody: elseBody);
   }
 
   /// `:: graph`, `:: graph::weighted`, or a bare `::` back to the library root.
@@ -1899,19 +1902,23 @@ class Parser {
       final bound = name();
       expect(TokenKind.equals, '=');
       final value = expression();
-      return WhileStatement(value, block(), extent(span),
-          letName: bound.lexeme,
-          elseBody: asValue ? const [] : _statementElse());
+      final body = block();
+      final elseBody = asValue ? const <Statement>[] : _statementElse();
+      return WhileStatement(value, body, extent(span),
+          letName: bound.lexeme, elseBody: elseBody);
     }
     final condition = expression(typeTest: false);
     if (word('is')) {
       take();
       final pattern = patternLiteral();
-      return WhileStatement(condition, block(), extent(span),
-          pattern: pattern, elseBody: asValue ? const [] : _statementElse());
+      final body = block();
+      final elseBody = asValue ? const <Statement>[] : _statementElse();
+      return WhileStatement(condition, body, extent(span),
+          pattern: pattern, elseBody: elseBody);
     }
-    return WhileStatement(condition, block(), extent(span),
-        elseBody: asValue ? const [] : _statementElse());
+    final body = block();
+    final elseBody = asValue ? const <Statement>[] : _statementElse();
+    return WhileStatement(condition, body, extent(span), elseBody: elseBody);
   }
 
   /// `else:` after a loop statement. `else if` stays an if-statement form.

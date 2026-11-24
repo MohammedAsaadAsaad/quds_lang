@@ -80,11 +80,106 @@ void main() {
       'main():\n  retry 5, when e is StateError and \$.|:\n    print 0\n',
       {'index', 'iteration', 'isFirst'}
     ),
+    ('main():\n  retry 5, when \$.|', {'index', 'iteration', 'isFirst'}),
+    (
+      'main():\n  retry 5, when (e) -> e is StateError and \$.|',
+      {'index', 'iteration', 'isFirst'}
+    ),
     (
       'main():\n  for item in [1]:\n    retry \$.|:\n      print 0\n',
       {'index', 'iteration', 'item', 'isFirst'}
     ),
     ('main():\n  retry \$.|:\n    print 0\n', {}),
+    (
+      'main():\n  for idx, item in [1, 2]:\n    print \$.|\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main() async:\n  await for item in stream():\n    print \$.|\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  for var i = 0 while i < 3 step i += 1:\n    print \$.|\n',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  while let v = opt:\n    print \$.|\n',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  while v is int:\n    print \$.|\n',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    ('main():\n  repeat:\n    print \$.|', {'index', 'iteration', 'isFirst'}),
+    (
+      'main():\n  repeat:\n    repeat:\n      print \$.|',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  x = for item in [1, 2]:\n    break \$.|\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  x = while true:\n    break \$.|\n',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  x = repeat 3:\n    break \$.|\n',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  x = repeat:\n    break \$.|',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  values = [item for item in [1, 2] if \$.|',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  unique = set:\n    for item in [1, 2]:\n      \$.|\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  unique = set:\n    \$.| for item in [1, 2]\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  mapped = map:\n    for entry in [5, 7]:\n      entry: \$.|\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  mapped = map:\n    for entry in [5, 7]:\n      \$.|: entry\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  mapped = map:\n    for entry in [5, 7]:\n      \$.|',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  repeat 10: stdout.write((\' \' * (10 - \$.|',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  for item in [1, 2]:\n    print(\$.|',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  for item in [1, 2]:\n    xs = [\$.|',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    (
+      'main():\n  while cond:\n    print("row {\$.|',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  for item in [1, 2]:\n    print(\$.|)\n  broken(\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    ('main():\n  repeat 0:\n    print 0\n  else:\n    print \$.|\n', {}),
+    (
+      'main():\n  for item in [1]:\n    repeat 0:\n      print 0\n    else:\n      print \$.|\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
   ]) {
     test('context completion is syntax-only: ${sample.$1}', () {
       final cursor = sample.$1.indexOf('|');

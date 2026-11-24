@@ -343,11 +343,15 @@ void walkAst(Node node, void Function(Node node) visit,
       case RetryExpression(
           :final attempts,
           :final delay,
+          :final backoff,
+          :final whenCondition,
           :final bodyExpr,
           :final bodyStmts
         ):
         walkAst(attempts, visit);
         if (delay != null) walkAst(delay, visit);
+        if (backoff != null) walkAst(backoff, visit);
+        if (whenCondition != null) walkAst(whenCondition, visit);
         if (bodyExpr != null) walkAst(bodyExpr, visit);
         if (bodyStmts != null) _nodes(bodyStmts, visit);
       case TimeoutExpression(

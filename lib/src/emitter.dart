@@ -2218,6 +2218,9 @@ class DartEmitter {
         AwaitExpression() => _expressionPropagates(node.operand),
         RetryExpression() => _expressionPropagates(node.attempts) ||
             (node.delay != null && _expressionPropagates(node.delay!)) ||
+            (node.backoff != null && _expressionPropagates(node.backoff!)) ||
+            (node.whenCondition != null &&
+                _expressionPropagates(node.whenCondition!)) ||
             (node.bodyExpr != null && _expressionPropagates(node.bodyExpr!)) ||
             (node.bodyStmts != null && _containsPropagate(node.bodyStmts!)),
         TimeoutExpression() => _expressionPropagates(node.duration) ||
@@ -6387,8 +6390,16 @@ class DartEmitter {
     final attemptsVar = '_qra${_temps++}';
     final indexVar = '_qri${_temps++}';
     final delayVar = node.delay == null ? null : '_qrd${_temps++}';
+    final backoffVar = node.backoff == null ? null : '_qrb${_temps++}';
     final attemptsExpr = expression(node.attempts);
     final delayExpr = node.delay == null ? null : expression(node.delay!);
+    final backoffExpr = node.backoff == null ? null : expression(node.backoff!);
+    final whenSym = model.retryWhenSymbols[node];
+    final whenIsFunc = node.whenCondition != null &&
+        whenSym == null &&
+        (model.types[node.whenCondition!]?.contains('->') ?? false);
+    final whenFnVar = whenIsFunc ? '_qrw${_temps++}' : null;
+    final whenFnExpr = whenIsFunc ? expression(node.whenCondition!) : null;
     final body = _retryTimeoutBody(
       node.bodyExpr,
       node.bodyStmts,
@@ -6402,7 +6413,16 @@ class DartEmitter {
     final buf = StringBuffer();
     buf.writeln('final $attemptsVar = $attemptsExpr;');
     if (delayVar != null) {
-      buf.writeln('final $delayVar = $delayExpr;');
+      final keyword = backoffVar != null ? 'var' : 'final';
+      buf.writeln('$keyword $delayVar = $delayExpr;');
+    }
+    if (backoffVar != null) {
+      buf.writeln('final $backoffVar = $backoffExpr;');
+      buf.writeln(
+          "if ($backoffVar <= 0 || !$backoffVar.isFinite) throw ArgumentError('retry backoff must be positive finite');");
+    }
+    if (whenFnVar != null) {
+      buf.writeln('final $whenFnVar = $whenFnExpr;');
     }
     buf.writeln(
         "if ($attemptsVar < 1) throw ArgumentError('retry attempts must be at least 1');");
@@ -6416,10 +6436,24 @@ class DartEmitter {
     if (rethrowsPropagate) {
       buf.write(' on _QudsPropagate { rethrow; }');
     }
-    buf.writeln(' catch (_) {');
+    final catchVar = whenSym != null
+        ? whenSym.dartName
+        : (whenFnVar != null ? '_qre${_temps++}' : '_');
+    buf.writeln(' catch ($catchVar) {');
+    if (node.whenCondition != null) {
+      if (whenFnVar != null) {
+        buf.writeln('if (!($whenFnVar($catchVar))) rethrow;');
+      } else {
+        buf.writeln('if (!(${expression(node.whenCondition!)})) rethrow;');
+      }
+    }
     buf.writeln('if ($indexVar + 1 >= $attemptsVar) rethrow;');
     if (delayVar != null) {
       buf.writeln('await Future<void>.delayed($delayVar);');
+      if (backoffVar != null) {
+        buf.writeln(
+            '$delayVar = Duration(microseconds: ($delayVar.inMicroseconds * $backoffVar).round());');
+      }
     }
     buf.writeln('}');
     buf.writeln('}');

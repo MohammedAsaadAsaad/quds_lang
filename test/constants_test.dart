@@ -714,9 +714,17 @@ List<BinaryExpression> operators(Expression node, String op) {
         }
       case Literal() || DurationLiteral() || Identifier():
         break;
-      case RetryExpression(:final attempts, :final delay, :final bodyExpr):
+      case RetryExpression(
+          :final attempts,
+          :final delay,
+          :final backoff,
+          :final whenCondition,
+          :final bodyExpr
+        ):
         walk(attempts);
         if (delay != null) walk(delay);
+        if (backoff != null) walk(backoff);
+        if (whenCondition != null) walk(whenCondition);
         if (bodyExpr != null) walk(bodyExpr);
       case TimeoutExpression(
           :final duration,

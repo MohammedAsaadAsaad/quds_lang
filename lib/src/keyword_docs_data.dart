@@ -151,6 +151,8 @@ const keywordDocumentation = <String, String>{
       "### retry\n\nContextual keyword that retries a failing expression or block up to a given number of attempts, with an optional `delay:` duration between failures.\n\n```quds\nfetchSafe() async -> String:\n  return retry 3, delay: 50ms: await fetch()\n```",
   "delay":
       "### delay\n\nOptional named duration clause in `retry <attempts>, delay: <Duration>:` specifying how long to wait between failed attempts.\n\n```quds\nfetchSafe() async -> String:\n  return retry 3, delay: 50ms: await fetch()\n```",
+  "backoff":
+      "### backoff\n\nOptional exponential multiplier clause in `retry <attempts>, delay: <Duration>, backoff: <num>:` scaling the delay after each failed attempt.\n\n```quds\nfetchSafe() async -> String:\n  return retry 4, delay: 50ms, backoff: 2.0: await fetch()\n```",
   "timeout":
       "### timeout\n\nContextual keyword that bounds an asynchronous expression or block with a `Duration`, throwing `TimeoutException` or evaluating an optional `else:` fallback on expiry.\n\n```quds\nfetchFast() async -> String:\n  return timeout 2s: await fetch() else: \"cached\"\n```",
   "sync":

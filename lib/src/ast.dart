@@ -876,10 +876,16 @@ class RetryExpression extends Expression {
     this.bodyStmts,
     super.span, {
     this.delay,
+    this.backoff,
+    this.whenErrorName,
+    this.whenCondition,
     this.block = false,
   });
   final Expression attempts;
   final Expression? delay;
+  final Expression? backoff;
+  final String? whenErrorName;
+  final Expression? whenCondition;
   final Expression? bodyExpr;
   final List<Statement>? bodyStmts;
   final bool block;

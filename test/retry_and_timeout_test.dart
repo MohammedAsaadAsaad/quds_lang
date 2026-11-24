@@ -16,6 +16,7 @@ void main() {
     expect(result.stdout, contains('ok async retry with delay'));
     expect(result.stdout, contains('ok timeout succeeds before deadline'));
     expect(result.stdout, contains('ok retry and timeout remain usable'));
+    expect(result.stdout, contains('ok retry backoff scales delay'));
   }, timeout: const Timeout.factor(4));
 
   test('retry and timeout static errors reject invalid types and sync misuse',
@@ -42,6 +43,30 @@ main():
   retry 3, delay: 10ms: print("hi")
 ''', file: 'bad_retry_sync_delay.quds'),
       throwsA(isA<CompilerException>().having((e) => e.code, 'code', 'E803')),
+    );
+
+    expect(
+      () => compile('''
+main():
+  retry 3, backoff: 2.0: print("hi")
+''', file: 'bad_retry_backoff_no_delay.quds'),
+      throwsA(isA<CompilerException>().having((e) => e.code, 'code', 'E300')),
+    );
+
+    expect(
+      () => compile('''
+main() async:
+  retry 3, delay: 5ms, backoff: "fast": print("hi")
+''', file: 'bad_retry_backoff_type.quds'),
+      throwsA(isA<CompilerException>().having((e) => e.code, 'code', 'E300')),
+    );
+
+    expect(
+      () => compile('''
+main():
+  retry 3, when 123: print("hi")
+''', file: 'bad_retry_when_type.quds'),
+      throwsA(isA<CompilerException>().having((e) => e.code, 'code', 'E300')),
     );
 
     expect(

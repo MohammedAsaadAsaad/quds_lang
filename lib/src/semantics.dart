@@ -522,6 +522,7 @@ class SemanticModel {
   final asyncDefers = <DeferStatement>{};
   final asyncRetries = <RetryExpression>{};
   final asyncTimeoutFallbacks = <TimeoutExpression>{};
+  final retryWhenSymbols = <RetryExpression, Symbol>{};
   final annotations = <String>{};
   final annotationShapes = <String, AnnotationDeclaration>{};
   final reflectable = <ClassDeclaration>{};
@@ -7480,8 +7481,18 @@ class Analyzer {
         AwaitIsolateExpression() ||
         TimeoutExpression() =>
           true,
-        RetryExpression(:final delay, :final bodyExpr, :final bodyStmts) =>
+        RetryExpression(
+          :final attempts,
+          :final delay,
+          :final backoff,
+          :final whenCondition,
+          :final bodyExpr,
+          :final bodyStmts
+        ) =>
           delay != null ||
+              _containsAwait(attempts) ||
+              (backoff != null && _containsAwait(backoff)) ||
+              (whenCondition != null && _containsAwait(whenCondition)) ||
               (bodyExpr != null && _containsAwait(bodyExpr)) ||
               (bodyStmts != null && _statementsContainAwait(bodyStmts)),
         UnaryExpression() => _containsAwait(node.operand),
@@ -12412,8 +12423,52 @@ class Analyzer {
         fail('retry delay must be Duration', node.delay!);
       }
     }
+    if (node.backoff != null) {
+      if (node.delay == null) {
+        fail('retry backoff requires delay:', node.backoff!);
+      }
+      final backoffType = expression(node.backoff!);
+      if (!compatible(backoffType, 'num')) {
+        fail('retry backoff must be num', node.backoff!);
+      }
+    }
+    if (node.whenCondition != null) {
+      if (node.whenErrorName != null) {
+        final savedScope = _scope;
+        _scope = _Scope(savedScope);
+        final errSym = create(node.whenErrorName!, 'Object');
+        _scope.symbols[node.whenErrorName!] = errSym;
+        model.retryWhenSymbols[node] = errSym;
+        try {
+          final condType = expression(node.whenCondition!);
+          if (!compatible(condType, 'bool')) {
+            fail('retry when condition must be bool', node.whenCondition!);
+          }
+        } finally {
+          _scope = savedScope;
+        }
+      } else {
+        final savedExpected = _expected;
+        if (node.whenCondition is Lambda) {
+          _expected = '(Object) -> bool';
+        }
+        final String condType;
+        try {
+          condType = expression(node.whenCondition!);
+        } finally {
+          _expected = savedExpected;
+        }
+        if (!compatible(condType, 'bool') &&
+            !compatible(condType, '(Object) -> bool')) {
+          fail('retry when must be bool or (Object) -> bool',
+              node.whenCondition!);
+        }
+      }
+    }
     final isAsync = node.delay != null ||
         _containsAwait(node.attempts) ||
+        (node.backoff != null && _containsAwait(node.backoff!)) ||
+        (node.whenCondition != null && _containsAwait(node.whenCondition!)) ||
         (node.bodyExpr != null && _containsAwait(node.bodyExpr!)) ||
         (node.bodyStmts != null && _statementsContainAwait(node.bodyStmts!));
     if (isAsync) {

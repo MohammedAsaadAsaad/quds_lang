@@ -160,8 +160,70 @@ test "timeout succeeds before deadline, throws TimeoutException, and supports el
 test "retry and timeout remain usable as contextual identifiers":
   retry = 3
   timeout = 5s
+  backoff = 2.0
   var ok = false
-  if retry == 3 and timeout > 1s:
+  if retry == 3 and timeout > 1s and backoff == 2.0:
     ok = true
   expect(ok, isTrue)
   expect(retry + 1, equals(4))
+
+test "retry backoff scales delay and when filters retryable errors" async:
+  var calls = 0
+  val = retry 4, delay: 5ms, backoff: 2.0:
+    calls += 1
+    await Future.delayed(1ms)
+    if calls < 3:
+      throw StateError("temp-{calls}")
+    result "ok-{calls}"
+  expect(val, equals("ok-3"))
+  expect(calls, equals(3))
+
+  var badBackoff = false
+  try:
+    b = 0.0
+    retry 2, delay: 1ms, backoff: b: await slowValue(1ms, "x")
+  catch e: ArgumentError:
+    badBackoff = true
+  expect(badBackoff, isTrue)
+
+  var formatCalls = 0
+  var caughtFormat = false
+  try:
+    retry 4, when e is StateError:
+      formatCalls += 1
+      throw FormatException("stop-now")
+  catch e: FormatException:
+    caughtFormat = true
+  expect(caughtFormat, isTrue)
+  expect(formatCalls, equals(1))
+
+  var narrowedCalls = 0
+  var caughtFatal = false
+  try:
+    retry 4, when e is StateError and e.message.contains("temp"):
+      narrowedCalls += 1
+      if narrowedCalls == 1:
+        throw StateError("temp-1")
+      throw StateError("fatal-2")
+  catch e: StateError:
+    caughtFatal = e.message == "fatal-2"
+  expect(caughtFatal, isTrue)
+  expect(narrowedCalls, equals(2))
+
+  var notArgCalls = 0
+  res = retry 3, when e is! ArgumentError:
+    notArgCalls += 1
+    if notArgCalls < 2:
+      throw StateError("retry-me")
+    result "done-{notArgCalls}"
+  expect(res, equals("done-2"))
+  expect(notArgCalls, equals(2))
+
+  var lamCalls = 0
+  lamRes = retry 3, delay: 2ms, backoff: 1.5, when (err) -> err is StateError:
+    lamCalls += 1
+    if lamCalls < 2:
+      throw StateError("lam-retry")
+    result "lam-{lamCalls}"
+  expect(lamRes, equals("lam-2"))
+  expect(lamCalls, equals(2))

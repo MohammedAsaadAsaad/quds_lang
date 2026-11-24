@@ -737,6 +737,15 @@ fetchSafe() async -> String:
   return retry 3, delay: 50ms: await fetch()
 ```
 
+## `backoff`
+
+Optional exponential multiplier clause in `retry <attempts>, delay: <Duration>, backoff: <num>:` scaling the delay after each failed attempt.
+
+```quds
+fetchSafe() async -> String:
+  return retry 4, delay: 50ms, backoff: 2.0: await fetch()
+```
+
 ## `timeout`
 
 Contextual keyword that bounds an asynchronous expression or block with a `Duration`, throwing `TimeoutException` or evaluating an optional `else:` fallback on expiry.

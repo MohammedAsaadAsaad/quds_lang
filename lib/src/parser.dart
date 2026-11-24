@@ -3610,13 +3610,31 @@ class Parser {
   RetryExpression _retryExpression(SourceSpan span) {
     final attempts = expression();
     Expression? delay;
-    if (match(TokenKind.comma)) {
+    Expression? backoff;
+    String? whenErrorName;
+    Expression? whenCondition;
+    while (match(TokenKind.comma)) {
       if (word('delay') && peek().kind == TokenKind.colon) {
+        if (delay != null) fail('Duplicate delay: clause in retry');
         take();
         take();
         delay = expression();
+      } else if (word('backoff') && peek().kind == TokenKind.colon) {
+        if (backoff != null) fail('Duplicate backoff: clause in retry');
+        take();
+        take();
+        backoff = expression();
+      } else if (word('when')) {
+        if (whenCondition != null) fail('Duplicate when clause in retry');
+        take();
+        if (at(TokenKind.identifier) &&
+            peek().kind == TokenKind.identifier &&
+            peek().lexeme == 'is') {
+          whenErrorName = current.lexeme;
+        }
+        whenCondition = expression();
       } else {
-        fail('Expected delay: <Duration> after comma in retry');
+        fail('Expected delay:, backoff:, or when clause in retry');
       }
     }
     final parsed = _exprOrBlockBody();
@@ -3626,6 +3644,9 @@ class Parser {
       parsed.stmts,
       extent(span),
       delay: delay,
+      backoff: backoff,
+      whenErrorName: whenErrorName,
+      whenCondition: whenCondition,
       block: parsed.isBlock,
     );
   }

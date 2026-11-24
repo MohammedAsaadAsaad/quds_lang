@@ -227,3 +227,72 @@ test "retry backoff scales delay and when filters retryable errors" async:
     result "lam-{lamCalls}"
   expect(lamRes, equals("lam-2"))
   expect(lamCalls, equals(2))
+
+test "retry supports $.index, $.iteration, and $.isFirst in bodies, when, closures, and nesting" async:
+  entries: List<String> = []
+  captured: List<() -> int> = []
+  val = retry 4:
+    entries.add("{$.index}:{$.iteration}:{$.isFirst}")
+    captured.add(() -> $.iteration)
+    if $.iteration < 3:
+      throw StateError("attempt-{$.iteration}")
+    result "ok-{$.iteration}"
+  expect(val, equals("ok-3"))
+  expect(entries, equals(["0:1:true", "1:2:false", "2:3:false"]))
+  expect([fn() for fn in captured], equals([1, 2, 3]))
+
+  inlineVal = retry 3: $.iteration
+  expect(inlineVal, equals(1))
+
+  asyncLog: List<int> = []
+  asyncVal = retry 3, delay: 1ms:
+    asyncLog.add($.iteration)
+    await Future.delayed(1ms)
+    if $.isFirst:
+      throw StateError("first-failed")
+    result "async-{$.iteration}"
+  expect(asyncVal, equals("async-2"))
+  expect(asyncLog, equals([1, 2]))
+
+  whenNamed: List<int> = []
+  var caughtNamed = false
+  try:
+    retry 5, when e is StateError and $.iteration < 2:
+      whenNamed.add($.iteration)
+      throw StateError("stop-at-2")
+  catch e: StateError:
+    caughtNamed = true
+  expect(caughtNamed, isTrue)
+  expect(whenNamed, equals([1, 2]))
+
+  whenBool: List<int> = []
+  var caughtBool = false
+  try:
+    retry 5, when $.index < 1:
+      whenBool.add($.iteration)
+      throw StateError("stop-bool")
+  catch e: StateError:
+    caughtBool = true
+  expect(caughtBool, isTrue)
+  expect(whenBool, equals([1, 2]))
+
+  whenLam: List<int> = []
+  var caughtLam = false
+  try:
+    retry 5, when (err) -> err is StateError and $.iteration < 3:
+      whenLam.add($.iteration)
+      throw StateError("stop-lam")
+  catch e: StateError:
+    caughtLam = true
+  expect(caughtLam, isTrue)
+  expect(whenLam, equals([1, 2, 3]))
+
+  outerTrace: List<String> = []
+  repeat 2:
+    outer = $.iteration
+    # Header reads enclosing repeat's $.iteration (1 then 2); body reads retry's $.iteration.
+    retry $.iteration:
+      outerTrace.add("o{outer}-r{$.iteration}")
+      if $.iteration < outer:
+        throw StateError("need-more")
+  expect(outerTrace, equals(["o1-r1", "o2-r1", "o2-r2"]))

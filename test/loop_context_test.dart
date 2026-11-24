@@ -74,6 +74,17 @@ void main() {
     ('main():\n  print \$.|\n', {}),
     ('main():\n  for item in [1]:\n    print "\$.|"\n', {}),
     ('main():\n  for item in [1]:\n    print \$.iter|\n', {'iteration'}),
+    ('main():\n  retry 5:\n    \$.|', {'index', 'iteration', 'isFirst'}),
+    ('main():\n  retry 5: \$.|', {'index', 'iteration', 'isFirst'}),
+    (
+      'main():\n  retry 5, when e is StateError and \$.|:\n    print 0\n',
+      {'index', 'iteration', 'isFirst'}
+    ),
+    (
+      'main():\n  for item in [1]:\n    retry \$.|:\n      print 0\n',
+      {'index', 'iteration', 'item', 'isFirst'}
+    ),
+    ('main():\n  retry \$.|:\n    print 0\n', {}),
   ]) {
     test('context completion is syntax-only: ${sample.$1}', () {
       final cursor = sample.$1.indexOf('|');
@@ -129,6 +140,13 @@ void main() {
     expect(hover, contains('Zero-based'));
     expect(hover, contains('int'));
     expect(hover, contains('```quds'));
+
+    const retrySource = 'main():\n  retry 5:\n    print \$.iteration\n';
+    final retryResult = compile(retrySource);
+    final retryHover = hoverAt(retryResult, retrySource, 3, 15);
+    expect(retryHover, contains('One-based'));
+    expect(retryHover, contains('int'));
+    expect(retryHover, contains('```quds'));
   });
   test('v15 invalidates a checksum-valid v14 generated pair consumer',
       () async {

@@ -4,16 +4,18 @@ User-approved addition, 2026-11-20. This extends specification 1.2 without
 replacing the existing loop syntax. The implementation uses existing AST member access with a reserved `$` receiver;
 final validation results are recorded at the top of `VALIDATION.md`.
 
-Inside a loop body, `$.index` is the zero-based entry index, `$.iteration` is the
+Inside a loop or `retry` body, `$.index` is the zero-based entry index, `$.iteration` is the
 one-based entry number, and `$.isFirst` is true on the first entry. `$.item` is
 the same typed value as the for-in binding (including await-for and collection
-for). While/C-style for/repeat have no implicit item. Context properties cannot
+for). While/C-style for/repeat/retry have no implicit item. Context properties cannot
 be assigned. `$` is reserved for this contextual receiver, not a normal binding.
 
-The nearest enclosing body supplies the context. A new loop's header is evaluated
-in its outer context: `repeat $.index:` reads the enclosing loop index. Conditions,
+The nearest enclosing body supplies the context. A new loop's or `retry`'s header is evaluated
+in its outer context: `repeat $.index:` and `retry $.iteration:` read the enclosing loop context
+(`attempts`, `delay:`, and `backoff:` evaluate once before retrying). Conditions,
 initializers and C-style steps also use the enclosing context. A trailing repeat
-condition uses the completed entry of that repeat, allowing `while $.iteration < 3`.
+condition uses the completed entry of that repeat, allowing `while $.iteration < 3`,
+and a `retry` `when` condition uses the current attempt context, allowing `when e is StateError and $.iteration < 3`.
 A loop's else block uses its enclosing context. A callback declared inside a body
 captures that iteration's index and item. An unrelated called function does not
 inherit the caller's context.

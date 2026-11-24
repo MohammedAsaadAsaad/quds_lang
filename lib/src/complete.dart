@@ -61,6 +61,11 @@ bool _loopContextContains(Node node, int offset) {
         node is RepeatStatement &&
             node.condition != null &&
             contains(node.condition!);
+  if (node is RetryExpression) {
+    return (node.bodyExpr != null && contains(node.bodyExpr!)) ||
+        (node.bodyStmts != null && node.bodyStmts!.any(contains)) ||
+        (node.whenCondition != null && contains(node.whenCondition!));
+  }
   if (node is CollectionFor) {
     return node.body.any(contains) ||
         node.filter != null && contains(node.filter!);

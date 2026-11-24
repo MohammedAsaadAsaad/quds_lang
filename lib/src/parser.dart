@@ -3570,6 +3570,7 @@ class Parser {
     final okStart = current.kind == TokenKind.number ||
         current.kind == TokenKind.duration ||
         current.kind == TokenKind.string ||
+        current.kind == TokenKind.dollar ||
         (current.kind == TokenKind.identifier &&
             !nonOperandWords.contains(current.lexeme));
     if (!okStart) return false;

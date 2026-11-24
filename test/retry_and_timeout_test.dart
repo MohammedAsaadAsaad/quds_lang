@@ -17,6 +17,10 @@ void main() {
     expect(result.stdout, contains('ok timeout succeeds before deadline'));
     expect(result.stdout, contains('ok retry and timeout remain usable'));
     expect(result.stdout, contains('ok retry backoff scales delay'));
+    expect(
+        result.stdout,
+        contains(
+            'ok retry supports \$.index, \$.iteration, and \$.isFirst in bodies'));
   }, timeout: const Timeout.factor(4));
 
   test('retry and timeout static errors reject invalid types and sync misuse',
@@ -72,6 +76,33 @@ main():
     expect(
       () => compile('''
 main():
+  retry 3:
+    print \$.item
+''', file: 'bad_retry_item.quds'),
+      throwsA(isA<CompilerException>().having((e) => e.code, 'code', 'E300')),
+    );
+
+    expect(
+      () => compile('''
+main():
+  retry \$.iteration:
+    print 1
+''', file: 'bad_retry_header_context.quds'),
+      throwsA(isA<CompilerException>().having((e) => e.code, 'code', 'E300')),
+    );
+
+    expect(
+      () => compile('''
+main():
+  retry 3:
+    \$.iteration = 2
+''', file: 'bad_retry_assign_context.quds'),
+      throwsA(isA<CompilerException>()),
+    );
+
+    expect(
+      () => compile('''
+main():
   timeout 10ms: print("hi")
 ''', file: 'bad_timeout_sync.quds'),
       throwsA(isA<CompilerException>().having((e) => e.code, 'code', 'E803')),
@@ -108,7 +139,11 @@ slow() async -> String:
 main() async:
   a = retry 3, delay: 2ms: await step()
   b = timeout 15ms: await slow() else: "timed-out"
-  print "{a}|{b}"
+  c = retry 4, when (e) -> e is StateError and \$.iteration < 3:
+    if \$.isFirst:
+      throw StateError("retry-1")
+    result "iter-{\$.iteration}"
+  print "{a}|{b}|{c}"
 ''');
 
     final analyze = await Process.run(
@@ -124,7 +159,7 @@ main() async:
       workingDirectory: sandbox.path,
     );
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-    expect(run.stdout, 'ready-2|timed-out\n');
+    expect(run.stdout, 'ready-2|timed-out|iter-2\n');
 
     final jsOut = '${sandbox.path}/app.js';
     final jsBuild = await Process.run(
@@ -142,6 +177,6 @@ main() async:
       ],
     );
     expect(nodeRun.exitCode, 0, reason: '${nodeRun.stdout}\n${nodeRun.stderr}');
-    expect(nodeRun.stdout, 'ready-2|timed-out\n');
+    expect(nodeRun.stdout, 'ready-2|timed-out|iter-2\n');
   }, timeout: const Timeout.factor(4));
 }

@@ -6727,6 +6727,16 @@ class DartEmitter {
     final whenIsFunc = node.whenCondition != null &&
         whenSym == null &&
         (model.types[node.whenCondition!]?.contains('->') ?? false);
+    final contextIndex = model.loopContextIndexes[node];
+    var whenUsesContext = false;
+    if (contextIndex != null && node.whenCondition != null) {
+      walkAst(node.whenCondition!, (child) {
+        if (child is MemberAccess &&
+            model.loopContextMembers[child]?.$1 == contextIndex) {
+          whenUsesContext = true;
+        }
+      });
+    }
     final whenFnVar = whenIsFunc ? '_qrw${_temps++}' : null;
     final whenFnExpr = whenIsFunc ? expression(node.whenCondition!) : null;
     final body = _retryTimeoutBody(
@@ -6750,12 +6760,15 @@ class DartEmitter {
       buf.writeln(
           "if ($backoffVar <= 0 || !$backoffVar.isFinite) throw ArgumentError('retry backoff must be positive finite');");
     }
-    if (whenFnVar != null) {
+    if (whenFnVar != null && !whenUsesContext) {
       buf.writeln('final $whenFnVar = $whenFnExpr;');
     }
     buf.writeln(
         "if ($attemptsVar < 1) throw ArgumentError('retry attempts must be at least 1');");
     buf.writeln('for (var $indexVar = 0; ; $indexVar++) {');
+    if (contextIndex != null) {
+      buf.writeln('final ${contextIndex.dartName} = $indexVar;');
+    }
     buf.writeln('try {');
     buf.write(body);
     buf.write('}');
@@ -6771,6 +6784,9 @@ class DartEmitter {
     buf.writeln(' catch ($catchVar) {');
     if (node.whenCondition != null) {
       if (whenFnVar != null) {
+        if (whenUsesContext) {
+          buf.writeln('final $whenFnVar = $whenFnExpr;');
+        }
         buf.writeln('if (!($whenFnVar($catchVar))) rethrow;');
       } else {
         buf.writeln('if (!(${expression(node.whenCondition!)})) rethrow;');

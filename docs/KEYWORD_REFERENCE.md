@@ -721,7 +721,7 @@ load() async:
 
 ## `retry`
 
-Contextual keyword that retries a failing expression or block up to a given number of attempts, with an optional `delay:` duration between failures.
+Contextual keyword that retries a failing expression or block up to a given number of attempts, with optional `delay:`, `backoff:`, and `when` clauses. Inside its body and `when` condition, `$.index`, `$.iteration`, and `$.isFirst` expose the current attempt.
 
 ```quds
 fetchSafe() async -> String:

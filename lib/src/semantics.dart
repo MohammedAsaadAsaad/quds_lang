@@ -12659,37 +12659,39 @@ class Analyzer {
       }
     }
     if (node.whenCondition != null) {
-      if (node.whenErrorName != null) {
-        final savedScope = _scope;
-        _scope = _Scope(savedScope);
-        final errSym = create(node.whenErrorName!, 'Object');
-        _scope.symbols[node.whenErrorName!] = errSym;
-        model.retryWhenSymbols[node] = errSym;
-        try {
-          final condType = expression(node.whenCondition!);
-          if (!compatible(condType, 'bool')) {
-            fail('retry when condition must be bool', node.whenCondition!);
+      _withIteration(node, null, () {
+        if (node.whenErrorName != null) {
+          final savedScope = _scope;
+          _scope = _Scope(savedScope);
+          final errSym = create(node.whenErrorName!, 'Object');
+          _scope.symbols[node.whenErrorName!] = errSym;
+          model.retryWhenSymbols[node] = errSym;
+          try {
+            final condType = expression(node.whenCondition!);
+            if (!compatible(condType, 'bool')) {
+              fail('retry when condition must be bool', node.whenCondition!);
+            }
+          } finally {
+            _scope = savedScope;
           }
-        } finally {
-          _scope = savedScope;
+        } else {
+          final savedExpected = _expected;
+          if (node.whenCondition is Lambda) {
+            _expected = '(Object) -> bool';
+          }
+          final String condType;
+          try {
+            condType = expression(node.whenCondition!);
+          } finally {
+            _expected = savedExpected;
+          }
+          if (!compatible(condType, 'bool') &&
+              !compatible(condType, '(Object) -> bool')) {
+            fail('retry when must be bool or (Object) -> bool',
+                node.whenCondition!);
+          }
         }
-      } else {
-        final savedExpected = _expected;
-        if (node.whenCondition is Lambda) {
-          _expected = '(Object) -> bool';
-        }
-        final String condType;
-        try {
-          condType = expression(node.whenCondition!);
-        } finally {
-          _expected = savedExpected;
-        }
-        if (!compatible(condType, 'bool') &&
-            !compatible(condType, '(Object) -> bool')) {
-          fail('retry when must be bool or (Object) -> bool',
-              node.whenCondition!);
-        }
-      }
+      });
     }
     final isAsync = node.delay != null ||
         _containsAwait(node.attempts) ||
@@ -12708,7 +12710,8 @@ class Analyzer {
             node);
       }
     }
-    return _checkBodyOrExpr(node.bodyExpr, node.bodyStmts);
+    return _withIteration(
+        node, null, () => _checkBodyOrExpr(node.bodyExpr, node.bodyStmts));
   }
 
   String timeoutExpression(TimeoutExpression node) {

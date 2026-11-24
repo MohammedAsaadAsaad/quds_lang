@@ -148,7 +148,7 @@ const keywordDocumentation = <String, String>{
   "await":
       "### await\n\nWaits for asynchronous work. Also starts `await for`, `await all:` and `await isolate:` forms.\n\n```quds\nload() async:\n  value = await fetch()\n  print value\n```",
   "retry":
-      "### retry\n\nContextual keyword that retries a failing expression or block up to a given number of attempts, with an optional `delay:` duration between failures.\n\n```quds\nfetchSafe() async -> String:\n  return retry 3, delay: 50ms: await fetch()\n```",
+      "### retry\n\nContextual keyword that retries a failing expression or block up to a given number of attempts, with optional `delay:`, `backoff:`, and `when` clauses. Inside its body and `when` condition, `\$.index`, `\$.iteration`, and `\$.isFirst` expose the current attempt.\n\n```quds\nfetchSafe() async -> String:\n  return retry 3, delay: 50ms: await fetch()\n```",
   "delay":
       "### delay\n\nOptional named duration clause in `retry <attempts>, delay: <Duration>:` specifying how long to wait between failed attempts.\n\n```quds\nfetchSafe() async -> String:\n  return retry 3, delay: 50ms: await fetch()\n```",
   "backoff":

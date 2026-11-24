@@ -658,7 +658,8 @@ class DartEmitter {
     }
     if (_useResult) {
       if (!_isPart) {
-        _imports.add("import 'quds_readonly.dart' show Result, Ok, Error;");
+        _imports.add(
+            "// ignore: unnecessary_import\nimport 'quds_readonly.dart' show Result, Ok, Error;");
         _imports.add("export 'quds_readonly.dart' show Result, Ok, Error;");
       }
       if (_usePropagate) {

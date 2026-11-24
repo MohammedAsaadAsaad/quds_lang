@@ -1,3 +1,16 @@
+# `retry` (`backoff:`/`when`), `quds:async`, `quds:json`, `@Json`, and full 78-file verification — 2026-11-24
+
+Commits: `80611ce` (retry `backoff:` & `when`), `c1b2ff3` (`quds:async`), `48bb27d` (`quds:json` + cross-library `Result<T, E>` & `?` propagation fixes), `825b0a1` (`@Json` / `@JsonKey`), `736ee6a` (`Result` export/toString/part fixes), plus `unnecessary_import` guard on generated `Result` import.
+
+| Check | Observed result |
+| --- | --- |
+| `retry` upgrade (`backoff:` & `when`) | `test/retry_and_timeout_test.dart` + `test/keyword_docs_test.dart`: **14 passed, 0 failed** |
+| `quds:async` SDK | `test/async_sdk_test.dart` (`Semaphore`, `Channel<T>`, `CancellationSource`/`CancellationToken`/`CancelledException`, `sleep`, `drainChannel`, VM + JS parity): **3 passed, 0 failed** |
+| `quds:json` SDK & `Result` compiler fixes | `test/json_sdk_test.dart` (`JsonError`, `parseJson*`, `encodeJson`, `jsonPath`, `jsonRequire*`/`jsonOptional*`, shared `Result<T, E>` in `quds_readonly.dart`, `?` `Error<T, E>` re-wrapping, VM + JS parity): **3 passed, 0 failed** |
+| Compile-time `@Json` / `@JsonKey` | `test/json_annotation_test.dart` (`enum`, `value class`, `class`, `sealed type`, custom discriminator, `@JsonKey(name:, ignore:)`, `readonly`, cross-library imports, VM + JS parity): **3 passed, 0 failed** |
+| Full repository suite (78 test files) | Ran all 78 `test/*_test.dart` files sequentially (`-j 1`) across 9 groups + post-fix re-runs: **922 passed, 0 failed (100%)** |
+| Format, analysis & audit | `dart format`, `/opt/flutter/bin/dart analyze` (`No issues found!`), `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
 # Full repository regression verification & keyword docs sync — 2026-11-23
 
 Base: `0099c71`.

@@ -12899,11 +12899,13 @@ class Analyzer {
         ? node.type.substring(0, node.type.length - 1)
         : node.type;
     validateType(target, node, allowVoid: false);
-    if (source != target && !_convertible(source, target)) {
+    if (source != target) {
       final plan = _customConversion(raw, node.type, node, implicitOnly: false);
-      if (plan == null)
+      if (plan != null) {
+        model.explicitConversions[node] = plan;
+      } else if (!_convertible(source, target)) {
         error('E300', 'Cannot convert $source to $target', node);
-      model.explicitConversions[node] = plan;
+      }
     }
     final result = node.safe ? nullableType(node.type) : node.type;
     return source == target ? _readonlyView(raw, result) : result;

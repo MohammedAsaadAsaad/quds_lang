@@ -76,9 +76,6 @@ main():
     'one endpoint must belong to owner': '''class Box:
   explicit cast(value: int) -> String = "wrong owner"
 ''',
-    'built in conversion cannot be replaced': '''augment int:
-  explicit cast(value: int) -> String = "override"
-''',
     'identity cannot be replaced': '''class Box:
   explicit cast(value: Box) -> Box = value
 ''',
@@ -236,4 +233,51 @@ main():
     expect(js.exitCode, 0, reason: '${js.stdout}\n${js.stderr}');
     expect(js.stdout, vm.stdout);
   }, timeout: const Timeout(Duration(minutes: 3)));
+
+  test(
+      'custom primitive-to-primitive implicit and explicit casts execute on VM and JS',
+      () async {
+    const source = '''
+augment String:
+  implicit cast(source: int) -> String:
+    return "n:{source}"
+
+augment int:
+  explicit cast(source: String) -> int:
+    if source == "seven":
+      return 7
+    throw ConversionError("not seven")
+
+takeText(text: String) -> String = text
+
+main():
+  var a: String = ""
+  a = 7
+  b: String = 42
+  c = takeText(9)
+  d = 5 to String
+  e = "seven" to int
+  f = "nope" to? int
+  print "{a}|{b}|{c}|{d}|{e}|{f}"
+''';
+    final result = compile(source);
+    final dir = Directory.systemTemp.createTempSync('quds-prim-casts-');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/program.dart')
+      ..writeAsStringSync(result.dart);
+    writeSdkBundles(dir.path, result);
+    final analyzer = await Process.run(
+        Platform.resolvedExecutable, ['analyze', '--fatal-infos', file.path]);
+    expect(analyzer.exitCode, 0,
+        reason: '${analyzer.stdout}\n${analyzer.stderr}');
+    final vm = await Process.run(Platform.resolvedExecutable, [file.path]);
+    expect(vm.exitCode, 0, reason: '${vm.stdout}\n${vm.stderr}');
+    expect(vm.stdout, 'n:7|n:42|n:9|n:5|7|null\n');
+    final build = await Process.run(Platform.resolvedExecutable,
+        ['compile', 'js', file.path, '-o', '${dir.path}/program.js']);
+    expect(build.exitCode, 0, reason: '${build.stdout}\n${build.stderr}');
+    final js = await Process.run('node', ['${dir.path}/program.js']);
+    expect(js.exitCode, 0, reason: '${js.stdout}\n${js.stderr}');
+    expect(js.stdout, vm.stdout);
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

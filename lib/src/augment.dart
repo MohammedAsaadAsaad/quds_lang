@@ -217,10 +217,6 @@ List<Statement> _extractConversions(Statement node) {
         head))
       throw CompilerException('E300',
           'One conversion endpoint must be its declaring type', method.span);
-    const primitives = {'int', 'double', 'num', 'String', 'bool'};
-    if (primitives.contains(endpoints[0]) && primitives.contains(endpoints[1]))
-      throw CompilerException('E300',
-          'Built-in primitive conversions cannot be redefined', method.span);
     if (endpoints[0] == endpoints[1])
       throw CompilerException(
           'E300', 'An identity conversion cannot be redefined', method.span);

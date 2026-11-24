@@ -94,7 +94,7 @@ const keywordDocumentation = <String, String>{
   "explicit":
       "### explicit\n\nMarks a conversion that requires `to` or `to?`, rather than automatic assignment adaptation. The conversion body has a source parameter and no instance `this`.\n\n```quds\nclass Box:\n  value: int required\n  explicit cast(source: Box) -> int:\n    return source.value\n```",
   "cast":
-      "### cast\n\nIntroduces a custom conversion after `implicit` or `explicit`, inside a class or augment. Built-in primitive-to-primitive conversions (`int`, `double`, `num`, `bool`, `String`) cannot be redefined. It is not a standalone cast expression; use `as`, `to` or `to?` at a call site.\n\n```quds\nclass Meter:\n  value: int required\n  implicit cast(source: int) -> Meter:\n    return Meter(value: source)\n```",
+      "### cast\n\nIntroduces a custom conversion after `implicit` or `explicit`, inside a class or augment (including between built-in primitive types such as `int` and `String`). It is not a standalone cast expression; use `as`, `to` or `to?` at a call site.\n\n```quds\naugment String:\n  implicit cast(source: int) -> String:\n    return source.toString()\n```",
   "this":
       "### this\n\nRefers to the current instance; `this.field` also declares initializing parameters. Conversion declarations do not have an instance receiver.\n\n```quds\nclass Counter:\n  count: int = 0\n  read() -> int = this.count\n```",
   "super":

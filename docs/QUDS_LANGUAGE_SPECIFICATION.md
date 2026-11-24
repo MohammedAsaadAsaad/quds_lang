@@ -2855,12 +2855,14 @@ instance methods, and have no `this`. In this implementation, qualify static
 member access inside a converter as `Type.member`. Require exactly one typed, non-variadic
 parameter without a default, an explicit return annotation and a synchronous
 body. One endpoint must name the containing type. Generic parameters retain
-their bounds. Built-in primitive conversions and identity conversions cannot
-be redefined. Duplicate source/target declarations in one library are errors.
+their bounds. Custom conversions between built-in primitive types (`int`,
+`double`, `num`, `bool`, `String`) are permitted via `augment`; identity
+conversions (`T -> T`) cannot be redefined. Duplicate source/target declarations
+in one library are errors.
 
 An implicit declaration can also be invoked explicitly. `to Target` invokes
-an applicable custom conversion when no built-in conversion applies;
-`to? Target` returns null on the shared `ConversionError` only. Other exceptions
+an applicable custom conversion in scope before falling back to a built-in
+conversion; `to? Target` returns null on the shared `ConversionError` only. Other exceptions
 propagate. `ConversionError(message)` is a core compiler-provided exception,
 with a String `message` and one positional String constructor argument.
 `as` and `is` remain runtime type operations and never invoke converters.

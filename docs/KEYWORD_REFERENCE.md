@@ -469,12 +469,13 @@ class Box:
 
 ## `cast`
 
-Introduces a custom conversion after `implicit` or `explicit`, inside a class or augment. It is not a standalone cast expression; use `as`, `to` or `to?` at a call site.
+Introduces a custom conversion after `implicit` or `explicit`, inside a class or augment. Built-in primitive-to-primitive conversions (`int`, `double`, `num`, `bool`, `String`) cannot be redefined. It is not a standalone cast expression; use `as`, `to` or `to?` at a call site.
 
 ```quds
-augment int:
-  explicit cast(source: int) -> String:
-    return source.toString()
+class Meter:
+  value: int required
+  implicit cast(source: int) -> Meter:
+    return Meter(value: source)
 ```
 
 ## `this`

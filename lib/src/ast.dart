@@ -341,7 +341,8 @@ class FieldDeclaration extends Node {
       this.isStatic = false,
       this.isConst = false,
       this.isEvent = false,
-      this.lazyBody});
+      this.lazyBody,
+      this.annotations = const []});
   final String name;
   final String type;
   final bool mutable;
@@ -358,6 +359,7 @@ class FieldDeclaration extends Node {
 
   /// `event name: Type`. Outsiders subscribe with `add`. The class uses `raise`.
   final bool isEvent;
+  final List<Metadata> annotations;
 }
 
 class PropertyDeclaration extends Node {

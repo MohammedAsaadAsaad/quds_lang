@@ -988,7 +988,7 @@ value class User:
 
 ### QUDS-061 — Annotation shorthand
 
-**Approved decision.** `annotation Name:` declares a concise constant annotation definition.
+**Approved decision.** `annotation Name:` declares a concise constant annotation definition. Built-in `@Json` (with optional `discriminator: String = "type"` for `sealed type`) generates compile-time JSON serialization (`toJson`, `toJsonString`, `fromJson`, `tryFromJson`, `fromJsonString`, `tryFromJsonString`) for concrete non-generic classes, value classes, enums, and sealed types, supporting primitives, `DateTime`, `Duration`, `List<T>`, `Set<T>`, `Map<String, T>`, nested `@Json` types, defaults, nullables, and field-level `@JsonKey(name: ..., ignore: ...)` without external code generators.
 
 **Quds syntax illustration** (may be a fragment):
 

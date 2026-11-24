@@ -2011,6 +2011,12 @@ class DartEmitter {
     for (final method in node.methods.where((m) => !m.isStatic)) {
       if (hasAnnotation(node.annotations, 'macro') && method.name == 'define')
         continue;
+      if (model.jsonSynthesizedMethods.contains(method)) {
+        final symbol = model.declarations[method]!;
+        line(
+            '${_dartType(symbol.type)} ${method.name}() => $source.${method.name}();');
+        continue;
+      }
       if (method.readonlyMethod ||
           method.name == 'toString' ||
           method.isOperator && method.name == '==') {
@@ -2269,7 +2275,16 @@ class DartEmitter {
     _markProtected(node.visibility);
     if (node.kind == 'enum') {
       final values = node.cases.map((item) => item.name).join(', ');
-      line('enum ${node.name} { $values }');
+      if (!model.jsonClasses.contains(node)) {
+        line('enum ${node.name} { $values }');
+        return;
+      }
+      line('enum ${node.name} {');
+      _depth++;
+      line('$values;');
+      _emitJsonEnumMethods(node);
+      _depth--;
+      line('}');
       return;
     }
     if (node.kind == 'extensionType') {
@@ -2337,8 +2352,14 @@ class DartEmitter {
         'implements ${node.interfaces.join(', ')}',
     ].join(' ');
     if (node.kind == 'sealedType') {
+      final isJson = model.jsonClasses.contains(node);
       line('$header ${node.name} {');
       line('  const ${node.name}();');
+      if (isJson) {
+        _depth++;
+        _emitJsonSealedParentMethods(node);
+        _depth--;
+      }
       line('}');
       for (final item in node.cases) {
         final parameters = item.fields
@@ -2350,7 +2371,12 @@ class DartEmitter {
         line('class ${item.name} extends ${node.name} {');
         line('  $constructor');
         for (final field in item.fields) {
-          line('  final ${field.type} ${field.name};');
+          line('  final ${_dartType(field.type)} ${field.name};');
+        }
+        if (isJson) {
+          _depth++;
+          _emitJsonSealedCaseMethod(node, item);
+          _depth--;
         }
         line('}');
       }
@@ -2474,6 +2500,9 @@ class DartEmitter {
       if (hasAnnotation(node.annotations, 'macro') && method.name == 'define') {
         continue;
       }
+      if (model.jsonSynthesizedMethods.contains(method)) {
+        continue;
+      }
       emitFunction(method);
     }
     _emitInterfaceForwarders(node);
@@ -2482,6 +2511,9 @@ class DartEmitter {
         .where((field) =>
             !field.isStatic && !field.isEvent && field.lazyBody == null)
         .toList();
+    if (model.jsonClasses.contains(node)) {
+      _emitJsonClassMethods(node, valueFields);
+    }
     if ((node.kind == 'value' || node.modifiers.contains('value')) &&
         valueFields.isNotEmpty) {
       _emitCopyWith(node, valueFields);
@@ -2530,6 +2562,291 @@ class DartEmitter {
     if (nodes.isEmpty) return;
     final names = nodes.map((node) => 'qudsReflect${node.name}').join(', ');
     line('const qudsReflectable = <Object?>[$names];');
+  }
+
+  bool _hasSynthesizedJson(ClassDeclaration node, String name) => node.methods
+      .any((m) => m.name == name && model.jsonSynthesizedMethods.contains(m));
+
+  void _requireJsonConvert() {
+    if (!_isPart) _imports.add("import 'dart:convert' as _qjson;");
+  }
+
+  bool _isJsonEnumType(String bare) {
+    if (model.enumNames.contains(bare)) return true;
+    if (model.classes[bare]?.kind == 'enum') return true;
+    final direct = model.moduleSymbols[bare]?.classDeclaration;
+    if (direct?.kind == 'enum') return true;
+    final dot = bare.indexOf('.');
+    if (dot > 0) {
+      final prefix = bare.substring(0, dot);
+      final name = bare.substring(dot + 1);
+      final imported =
+          model.moduleSymbols[prefix]?.namespace?[name]?.classDeclaration;
+      if (imported?.kind == 'enum') return true;
+    }
+    return false;
+  }
+
+  void _emitJsonEnumMethods(ClassDeclaration node) {
+    if (_hasSynthesizedJson(node, 'toJson')) {
+      line('String toJson() => name;');
+    }
+    if (_hasSynthesizedJson(node, 'fromJson')) {
+      line('static ${node.name} fromJson(Object? value) {');
+      line('  if (value is String) {');
+      line('    for (final item in values) {');
+      line('      if (item.name == value) return item;');
+      line('    }');
+      line('  }');
+      line(
+          "  throw FormatException('Invalid ${node.name} JSON value: \$value');");
+      line('}');
+    }
+    if (_hasSynthesizedJson(node, 'tryFromJson')) {
+      _useResult = true;
+      line('static Result<${node.name}, String> tryFromJson(Object? value) {');
+      line('  try {');
+      line('    return Ok<${node.name}, String>(fromJson(value));');
+      line('  } catch (e) {');
+      line('    return Error<${node.name}, String>(e.toString());');
+      line('  }');
+      line('}');
+    }
+  }
+
+  void _emitJsonStringHelpers(ClassDeclaration node) {
+    if (_hasSynthesizedJson(node, 'toJsonString')) {
+      _requireJsonConvert();
+      line('String toJsonString() => _qjson.jsonEncode(toJson());');
+    }
+    if (_hasSynthesizedJson(node, 'tryFromJson')) {
+      _useResult = true;
+      line(
+          'static Result<${node.name}, String> tryFromJson(Map<String, Object?> data) {');
+      line('  try {');
+      line('    return Ok<${node.name}, String>(fromJson(data));');
+      line('  } catch (e) {');
+      line('    return Error<${node.name}, String>(e.toString());');
+      line('  }');
+      line('}');
+    }
+    if (_hasSynthesizedJson(node, 'fromJsonString')) {
+      _requireJsonConvert();
+      line('static ${node.name} fromJsonString(String source) {');
+      line('  final decoded = _qjson.jsonDecode(source);');
+      line('  if (decoded is! Map) {');
+      line(
+          "    throw FormatException('Expected JSON object for ${node.name}');");
+      line('  }');
+      line(
+          '  return fromJson(<String, Object?>{for (final e in decoded.entries) e.key.toString(): e.value});');
+      line('}');
+    }
+    if (_hasSynthesizedJson(node, 'tryFromJsonString')) {
+      _useResult = true;
+      line(
+          'static Result<${node.name}, String> tryFromJsonString(String source) {');
+      line('  try {');
+      line('    return Ok<${node.name}, String>(fromJsonString(source));');
+      line('  } catch (e) {');
+      line('    return Error<${node.name}, String>(e.toString());');
+      line('  }');
+      line('}');
+    }
+  }
+
+  void _emitJsonSealedParentMethods(ClassDeclaration node) {
+    final disc = _quote(jsonDiscriminator(node));
+    if (_hasSynthesizedJson(node, 'toJson')) {
+      line('Map<String, Object?> toJson();');
+    }
+    if (_hasSynthesizedJson(node, 'fromJson')) {
+      line('static ${node.name} fromJson(Map<String, Object?> data) {');
+      line("  final kind = data['$disc'];");
+      line('  switch (kind) {');
+      for (final item in node.cases) {
+        line("    case '${_quote(item.name)}':");
+        final args = <String>[];
+        for (final field in item.fields) {
+          final key = _quote(field.name);
+          final decoded = _jsonDecodeExpr(
+            field.type,
+            "data['$key']",
+            '${item.name}.${field.name}',
+          );
+          if (!isNullableType(_resolveType(field.type))) {
+            line(
+                "      if (!data.containsKey('$key')) throw FormatException('Missing required field \"$key\" for ${item.name}');");
+          }
+          args.add('${field.name}: $decoded');
+        }
+        line('      return ${item.name}(${args.join(', ')});');
+      }
+      line('    default:');
+      line(
+          "      throw FormatException('Unknown ${node.name} JSON type: \$kind');");
+      line('  }');
+      line('}');
+    }
+    _emitJsonStringHelpers(node);
+  }
+
+  void _emitJsonSealedCaseMethod(ClassDeclaration node, ClassCase item) {
+    final disc = _quote(jsonDiscriminator(node));
+    final entries = <String>[
+      "'$disc': '${_quote(item.name)}'",
+      for (final field in item.fields)
+        "'${_quote(field.name)}': ${_jsonEncodeExpr(field.type, field.name)}",
+    ];
+    line('@override');
+    line(
+        'Map<String, Object?> toJson() => <String, Object?>{${entries.join(', ')}};');
+  }
+
+  void _emitJsonClassMethods(
+      ClassDeclaration node, List<FieldDeclaration> fields) {
+    if (_hasSynthesizedJson(node, 'toJson')) {
+      final entries = <String>[];
+      for (final field in fields) {
+        if (jsonFieldIgnored(field)) continue;
+        final key = _quote(jsonFieldKey(field));
+        final encoded = _jsonEncodeExpr(field.type, _fieldDart(field));
+        entries.add("'$key': $encoded");
+      }
+      line(
+          'Map<String, Object?> toJson() => <String, Object?>{${entries.join(', ')}};');
+    }
+    if (_hasSynthesizedJson(node, 'fromJson')) {
+      line('static ${node.name} fromJson(Map<String, Object?> data) {');
+      final args = <String>[];
+      for (final field in fields) {
+        if (jsonFieldIgnored(field)) {
+          if (field.initializer == null &&
+              isNullableType(_resolveType(field.type))) {
+            args.add('${field.name}: null');
+          }
+          continue;
+        }
+        final key = _quote(jsonFieldKey(field));
+        final resolved = _resolveType(field.type);
+        final nullable = isNullableType(resolved);
+        final hasDefault = field.initializer != null;
+        final decoded = _jsonDecodeExpr(
+          field.type,
+          "data['$key']",
+          '${node.name}.$key',
+        );
+        if (hasDefault) {
+          final fallback = expression(field.initializer!);
+          args.add(
+              "${field.name}: data.containsKey('$key') ? $decoded : $fallback");
+        } else if (nullable) {
+          args.add("${field.name}: data.containsKey('$key') ? $decoded : null");
+        } else {
+          line(
+              "  if (!data.containsKey('$key')) throw FormatException('Missing required field \"$key\" for ${node.name}');");
+          args.add('${field.name}: $decoded');
+        }
+      }
+      line('  return ${node.name}(${args.join(', ')});');
+      line('}');
+    }
+    _emitJsonStringHelpers(node);
+  }
+
+  String _jsonEncodeExpr(String rawType, String expr) {
+    final resolved = stripReadonlyType(_resolveType(rawType));
+    final nullable = isNullableType(resolved);
+    final bare = nonNullableType(resolved);
+    const passthrough = {
+      'String',
+      'int',
+      'double',
+      'num',
+      'bool',
+      'Object',
+      'dynamic'
+    };
+    if (passthrough.contains(bare)) return expr;
+    if (nullable) {
+      final v = '_qjv${_temps++}';
+      return '(() { final $v = $expr; return $v == null ? null : ${_jsonEncodeNonNull(bare, v)}; })()';
+    }
+    return _jsonEncodeNonNull(bare, expr);
+  }
+
+  String _jsonEncodeNonNull(String bare, String expr) {
+    if (bare == 'DateTime') return '($expr).toIso8601String()';
+    if (bare == 'Duration') return '($expr).inMicroseconds';
+    if ((bare.startsWith('List<') || bare.startsWith('Set<')) &&
+        bare.endsWith('>')) {
+      final inner = bare.substring(bare.indexOf('<') + 1, bare.length - 1);
+      final itemVar = '_qje${_temps++}';
+      return '<Object?>[for (final $itemVar in $expr) ${_jsonEncodeExpr(inner, itemVar)}]';
+    }
+    if (bare.startsWith('Map<') && bare.endsWith('>')) {
+      final parts = splitTypeList(bare.substring(4, bare.length - 1));
+      final entryVar = '_qjm${_temps++}';
+      return '<String, Object?>{for (final $entryVar in ($expr).entries) $entryVar.key: ${_jsonEncodeExpr(parts[1], '$entryVar.value')}}';
+    }
+    return '($expr).toJson()';
+  }
+
+  String _jsonDecodeExpr(String rawType, String expr, String fieldPath) {
+    final resolved = stripReadonlyType(_resolveType(rawType));
+    final nullable = isNullableType(resolved);
+    final bare = nonNullableType(resolved);
+    final v = '_qjv${_temps++}';
+    if (nullable) {
+      return '(() { final $v = $expr; if ($v == null) return null; return ${_jsonDecodeNonNull(bare, v, fieldPath)}; })()';
+    }
+    return '(() { final $v = $expr; return ${_jsonDecodeNonNull(bare, v, fieldPath)}; })()';
+  }
+
+  String _jsonDecodeNonNull(String bare, String v, String fieldPath) {
+    final p = _quote(fieldPath);
+    switch (bare) {
+      case 'String':
+        return "$v is String ? $v : throw FormatException('Field \"$p\" expects String')";
+      case 'int':
+        return "$v is int ? $v : throw FormatException('Field \"$p\" expects int')";
+      case 'double':
+        return "$v is num ? $v.toDouble() : throw FormatException('Field \"$p\" expects double')";
+      case 'num':
+        return "$v is num ? $v : throw FormatException('Field \"$p\" expects num')";
+      case 'bool':
+        return "$v is bool ? $v : throw FormatException('Field \"$p\" expects bool')";
+      case 'DateTime':
+        return "$v is String ? DateTime.parse($v) : throw FormatException('Field \"$p\" expects ISO-8601 DateTime string')";
+      case 'Duration':
+        return "$v is int ? Duration(microseconds: $v) : throw FormatException('Field \"$p\" expects Duration microseconds int')";
+      case 'dynamic':
+        return v;
+      case 'Object':
+        return "$v != null ? $v : throw FormatException('Field \"$p\" cannot be null')";
+    }
+    if ((bare.startsWith('List<') || bare.startsWith('Set<')) &&
+        bare.endsWith('>')) {
+      final isSet = bare.startsWith('Set<');
+      final inner = bare.substring(bare.indexOf('<') + 1, bare.length - 1);
+      final dartInner = _dartType(inner);
+      final itemVar = '_qji${_temps++}';
+      final open = isSet ? '<$dartInner>{' : '<$dartInner>[';
+      final close = isSet ? '}' : ']';
+      return "$v is List ? ${open}for (final $itemVar in $v) ${_jsonDecodeExpr(inner, itemVar, '$fieldPath[]')}$close : throw FormatException('Field \"$p\" expects List')";
+    }
+    if (bare.startsWith('Map<') && bare.endsWith('>')) {
+      final parts = splitTypeList(bare.substring(4, bare.length - 1));
+      final dartVal = _dartType(parts[1]);
+      final entryVar = '_qje${_temps++}';
+      return "$v is Map ? <String, $dartVal>{for (final $entryVar in $v.entries) $entryVar.key.toString(): ${_jsonDecodeExpr(parts[1], '$entryVar.value', '$fieldPath.*')}} : throw FormatException('Field \"$p\" expects Map')";
+    }
+    final dartType = _dartType(bare);
+    if (_isJsonEnumType(bare)) {
+      return '$dartType.fromJson($v)';
+    }
+    final entryVar = '_qjo${_temps++}';
+    return "$v is Map ? $dartType.fromJson(<String, Object?>{for (final $entryVar in $v.entries) $entryVar.key.toString(): $entryVar.value}) : throw FormatException('Field \"$p\" expects JSON object for $dartType')";
   }
 
   String _typeParameters(List<TypeParameter> parameters,

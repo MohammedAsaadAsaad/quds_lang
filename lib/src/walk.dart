@@ -117,9 +117,14 @@ void walkAst(Node node, void Function(Node node) visit,
         walkAst(statement, visit);
       case ImportDeclaration(:final condition):
         _optional(condition, visit);
-      case FieldDeclaration(:final initializer, :final lazyBody):
+      case FieldDeclaration(
+          :final initializer,
+          :final lazyBody,
+          :final annotations
+        ):
         _optional(initializer, visit);
         _nodes(lazyBody, visit);
+        _nodes(annotations, visit);
       case PropertyDeclaration(
           :final getter,
           :final getterBody,

@@ -526,6 +526,8 @@ class SemanticModel {
   final annotations = <String>{};
   final annotationShapes = <String, AnnotationDeclaration>{};
   final reflectable = <ClassDeclaration>{};
+  final jsonClasses = <ClassDeclaration>{};
+  final jsonSynthesizedMethods = <FunctionDeclaration>{};
 
   /// Classes keyed by the declaration, so a prefixed name still finds its library.
   final libraryOf = <ClassDeclaration, String>{};
@@ -1117,6 +1119,9 @@ class Analyzer {
       switch (statement) {
         case ClassDeclaration():
           _checkMetadata(statement.annotations);
+          for (final field in statement.fields) {
+            _checkMetadata(field.annotations);
+          }
           for (final method in statement.methods) {
             _checkMetadata(method.annotations);
           }
@@ -1143,6 +1148,7 @@ class Analyzer {
     }
     _validateConversionDefinitions();
     _expandInterfaceDelegations(topLevel);
+    _checkJsonClasses(topLevel);
     _assignAllMethodOverloadNames();
     for (final statement in functions) {
       analyzeFunction(statement);
@@ -1155,6 +1161,7 @@ class Analyzer {
         checkShape(statement);
         checkRequirements(statement);
         for (final method in statement.methods) {
+          if (model.jsonSynthesizedMethods.contains(method)) continue;
           analyzeMethod(statement, method);
         }
         for (final constructor in statement.constructors) {
@@ -1459,6 +1466,9 @@ class Analyzer {
     if (hasAnnotation(statement.annotations, 'Reflectable')) {
       model.reflectable.add(statement);
     }
+    if (hasAnnotation(statement.annotations, 'Json')) {
+      _registerJsonClass(statement);
+    }
     for (final field in statement.fields.where((item) => item.isStatic)) {
       if (field.lazyBody != null) continue;
       analyzeStaticField(field);
@@ -1554,6 +1564,166 @@ class Analyzer {
     _typeNames
       ..clear()
       ..addAll(savedTypes);
+  }
+
+  void _registerJsonClass(ClassDeclaration statement) {
+    const allowedKinds = {'class', 'value', 'enum', 'sealedType'};
+    if (!allowedKinds.contains(statement.kind) ||
+        statement.typeParameters.isNotEmpty ||
+        statement.modifiers.contains('abstract')) {
+      fail(
+          '@Json is only supported on concrete non-generic classes, value classes, enums, and sealed types',
+          statement);
+    }
+    model.jsonClasses.add(statement);
+    final span = statement.span;
+    void addSynth(
+      String name,
+      List<Parameter> params,
+      String returnType, {
+      bool isStatic = false,
+      bool readonlyMethod = false,
+    }) {
+      if (statement.methods.any((m) => m.name == name)) return;
+      final fn = FunctionDeclaration(
+        name,
+        params,
+        returnType,
+        const [],
+        null,
+        span,
+        isStatic: isStatic,
+        readonlyMethod: readonlyMethod,
+      );
+      statement.methods.add(fn);
+      model.jsonSynthesizedMethods.add(fn);
+    }
+
+    if (statement.kind == 'enum') {
+      addSynth('toJson', const [], 'String', readonlyMethod: true);
+      addSynth(
+        'fromJson',
+        [Parameter('value', 'Object?', false, span)],
+        statement.name,
+        isStatic: true,
+      );
+      addSynth(
+        'tryFromJson',
+        [Parameter('value', 'Object?', false, span)],
+        'Result<${statement.name}, String>',
+        isStatic: true,
+      );
+      return;
+    }
+
+    addSynth('toJson', const [], 'Map<String, Object?>', readonlyMethod: true);
+    addSynth('toJsonString', const [], 'String', readonlyMethod: true);
+    addSynth(
+      'fromJson',
+      [Parameter('data', 'Map<String, Object?>', false, span)],
+      statement.name,
+      isStatic: true,
+    );
+    addSynth(
+      'tryFromJson',
+      [Parameter('data', 'Map<String, Object?>', false, span)],
+      'Result<${statement.name}, String>',
+      isStatic: true,
+    );
+    addSynth(
+      'fromJsonString',
+      [Parameter('source', 'String', false, span)],
+      statement.name,
+      isStatic: true,
+    );
+    addSynth(
+      'tryFromJsonString',
+      [Parameter('source', 'String', false, span)],
+      'Result<${statement.name}, String>',
+      isStatic: true,
+    );
+  }
+
+  void _checkJsonClasses(List<Statement> topLevel) {
+    for (final statement in topLevel) {
+      if (statement is! ClassDeclaration) continue;
+      if (!model.jsonClasses.contains(statement)) continue;
+      if (statement.kind == 'enum') continue;
+      if (statement.kind == 'sealedType') {
+        final disc = jsonDiscriminator(statement);
+        for (final item in statement.cases) {
+          for (final field in item.fields) {
+            if (field.name == disc) {
+              fail(
+                  '@Json sealed case field "${field.name}" collides with discriminator "$disc"',
+                  field);
+            }
+            _validateJsonFieldType(field.type, field);
+          }
+        }
+        continue;
+      }
+      final seenKeys = <String>{};
+      for (final field in statement.fields) {
+        if (field.isStatic || field.isEvent || field.lazyBody != null) continue;
+        if (jsonFieldIgnored(field)) {
+          if (field.initializer == null && !isNullableType(field.type)) {
+            fail(
+                '@JsonKey(ignore: true) requires a default value or nullable type',
+                field);
+          }
+          continue;
+        }
+        final key = jsonFieldKey(field);
+        if (!seenKeys.add(key)) {
+          fail('Duplicate @Json key "$key" in ${statement.name}', field);
+        }
+        _validateJsonFieldType(field.type, field);
+      }
+    }
+  }
+
+  void _validateJsonFieldType(String rawType, Node node) {
+    final resolved = _resolveType(rawType);
+    final bare = nonNullableType(stripReadonlyType(resolved));
+    const primitives = {
+      'String',
+      'int',
+      'double',
+      'num',
+      'bool',
+      'Object',
+      'dynamic',
+      'DateTime',
+      'Duration',
+    };
+    if (primitives.contains(bare)) return;
+    if ((bare.startsWith('List<') || bare.startsWith('Set<')) &&
+        bare.endsWith('>')) {
+      final inner = bare.substring(bare.indexOf('<') + 1, bare.length - 1);
+      _validateJsonFieldType(inner, node);
+      return;
+    }
+    if (bare.startsWith('Map<') && bare.endsWith('>')) {
+      final parts = splitTypeList(bare.substring(4, bare.length - 1));
+      if (parts.length == 2) {
+        if (_resolveType(parts[0]) != 'String') {
+          fail(
+              '@Json only supports Map with String keys, found $rawType', node);
+        }
+        _validateJsonFieldType(parts[1], node);
+        return;
+      }
+    }
+    final decl = _typeSymbol(bare)?.classDeclaration;
+    if (decl != null &&
+        (model.jsonClasses.contains(decl) ||
+            hasAnnotation(decl.annotations, 'Json'))) {
+      return;
+    }
+    fail(
+        'Type $rawType is not supported by @Json; annotate nested models with @Json or mark field @JsonKey(ignore: true)',
+        node);
   }
 
   void _expandInterfaceDelegations(List<Statement> topLevel) {
@@ -6423,6 +6593,54 @@ class Analyzer {
           note.name == 'consumes') {
         if (note.arguments.isNotEmpty) {
           fail('${note.name} takes no arguments', note);
+        }
+        continue;
+      }
+      if (note.name == 'Json') {
+        final seen = <String>{};
+        for (final arg in note.arguments) {
+          final label = arg.name;
+          if (label == null) {
+            fail('Positional arguments are not allowed on @Json', arg);
+          }
+          if (!seen.add(label)) fail('Duplicate argument: $label', arg);
+          if (label != 'discriminator') {
+            fail('Unknown argument on @Json: $label', arg);
+          }
+          final type = expression(arg.value);
+          if (type != 'String' ||
+              arg.value is! Literal ||
+              (arg.value as Literal).value is! String) {
+            fail('@Json discriminator must be a String literal', arg);
+          }
+        }
+        continue;
+      }
+      if (note.name == 'JsonKey') {
+        final seen = <String>{};
+        for (final arg in note.arguments) {
+          final label = arg.name;
+          if (label == null) {
+            fail('Positional arguments are not allowed on @JsonKey', arg);
+          }
+          if (!seen.add(label)) fail('Duplicate argument: $label', arg);
+          if (label == 'name') {
+            final type = expression(arg.value);
+            if (type != 'String' ||
+                arg.value is! Literal ||
+                (arg.value as Literal).value is! String) {
+              fail('@JsonKey name must be a String literal', arg);
+            }
+          } else if (label == 'ignore') {
+            final type = expression(arg.value);
+            if (type != 'bool' ||
+                arg.value is! Literal ||
+                (arg.value as Literal).value is! bool) {
+              fail('@JsonKey ignore must be a bool literal', arg);
+            }
+          } else {
+            fail('Unknown argument on @JsonKey: $label', arg);
+          }
         }
         continue;
       }
@@ -13258,4 +13476,46 @@ class _CheckedArguments {
   final types = <Expression, String>{};
   final variadics = <Argument>{};
   final conversions = <Expression, ConversionPlan>{};
+}
+
+String jsonFieldKey(FieldDeclaration field) {
+  for (final note in field.annotations) {
+    if (note.name != 'JsonKey') continue;
+    for (final arg in note.arguments) {
+      if (arg.name == 'name' &&
+          arg.value is Literal &&
+          (arg.value as Literal).value is String) {
+        return (arg.value as Literal).value as String;
+      }
+    }
+  }
+  return field.name;
+}
+
+bool jsonFieldIgnored(FieldDeclaration field) {
+  for (final note in field.annotations) {
+    if (note.name != 'JsonKey') continue;
+    for (final arg in note.arguments) {
+      if (arg.name == 'ignore' &&
+          arg.value is Literal &&
+          (arg.value as Literal).value is bool) {
+        return (arg.value as Literal).value as bool;
+      }
+    }
+  }
+  return false;
+}
+
+String jsonDiscriminator(ClassDeclaration cls) {
+  for (final note in cls.annotations) {
+    if (note.name != 'Json') continue;
+    for (final arg in note.arguments) {
+      if (arg.name == 'discriminator' &&
+          arg.value is Literal &&
+          (arg.value as Literal).value is String) {
+        return (arg.value as Literal).value as String;
+      }
+    }
+  }
+  return 'type';
 }

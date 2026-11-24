@@ -1588,7 +1588,7 @@ class Parser {
       endLine();
       fields.add(FieldDeclaration(fieldName.lexeme, fieldType, mutable,
           requiredField || initializer == null, initializer, fieldName.span,
-          visibility: memberVisibility));
+          visibility: memberVisibility, annotations: memberNotes));
     }
     expect(TokenKind.dedent, 'end of block');
     return ClassDeclaration(
@@ -2578,8 +2578,8 @@ class Parser {
     }
     expect(TokenKind.dedent, 'end of enum');
     if (cases.isEmpty) fail('An enum needs a value', span);
-    return ClassDeclaration(typeNameToken.lexeme, 'enum', const [], const [],
-        cases, notes, extent(span),
+    return ClassDeclaration(typeNameToken.lexeme, 'enum', const [],
+        <FunctionDeclaration>[], cases, notes, extent(span),
         visibility: visibility);
   }
 

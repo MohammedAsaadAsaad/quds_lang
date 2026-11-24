@@ -1,0 +1,134 @@
+@Json
+enum Role:
+  admin
+  member
+
+@Json
+value class Address:
+  city: String required
+  zip: String = "00000"
+
+@Json
+sealed type Action:
+  Click(x: int, y: int)
+  TextInput(value: String)
+  Reset()
+
+@Json(discriminator: "kind")
+sealed type Notice:
+  Ping(seq: int)
+
+@Json
+value class User:
+  @JsonKey(name: "full_name")
+  fullName: String required
+  age: int required
+  score: double = 0.0
+  role: Role = Role.member
+  address: Address required
+  tags: List<String> = []
+  scoresByDay: Map<String, int>? = null
+  bio: String? = null
+  createdAt: DateTime required
+  timeout: Duration = 500ms
+  lastAction: Action? = null
+  @JsonKey(ignore: true)
+  localCache: String = "fresh"
+
+_readOnlyJson(u: readonly User) -> String = u.toJsonString()
+
+test "@Json on enum encodes and decodes with fromJson and tryFromJson":
+  expect(Role.admin.toJson(), equals("admin"))
+  expect(Role.fromJson("member"), equals(Role.member))
+  expect(Role.tryFromJson("admin"), equals(Ok(Role.admin)))
+  expect(Role.tryFromJson("ghost") is Error, isTrue)
+  expect(Role.tryFromJson(123) is Error, isTrue)
+
+test "@Json on value class roundtrips nested models, collections, DateTime, Duration, @JsonKey, and defaults":
+  whenCreated = DateTime.utc(2026, 11, 23, 12, 30, 0)
+  dayScores: Map<String, int> = map:
+    "mon": 10
+    "tue": 20
+  user = User(
+    fullName: "Mohammed",
+    age: 30,
+    score: 9.5,
+    role: Role.admin,
+    address: Address(city: "AlQuds", zip: "91000"),
+    tags: ["quds", "dart"],
+    scoresByDay: dayScores,
+    bio: "builder",
+    createdAt: whenCreated,
+    timeout: 250ms,
+    lastAction: Click(x: 4, y: 8),
+    localCache: "dirty",
+  )
+
+  rawMap = user.toJson()
+  expect(rawMap["full_name"], equals("Mohammed"))
+  expect(rawMap.containsKey("fullName"), isFalse)
+  expect(rawMap.containsKey("localCache"), isFalse)
+  expect(rawMap["role"], equals("admin"))
+  expect(rawMap["timeout"], equals(250000))
+
+  jsonStr = user.toJsonString()
+  expect(_readOnlyJson(user), equals(jsonStr))
+
+  restored = User.fromJsonString(jsonStr)
+  expect(restored.fullName, equals("Mohammed"))
+  expect(restored.age, equals(30))
+  expect(restored.score, equals(9.5))
+  expect(restored.role, equals(Role.admin))
+  expect(restored.address, equals(Address(city: "AlQuds", zip: "91000")))
+  expect(restored.tags, equals(["quds", "dart"]))
+  expect(restored.scoresByDay!["mon"], equals(10))
+  expect(restored.bio, equals("builder"))
+  expect(restored.createdAt, equals(whenCreated))
+  expect(restored.timeout, equals(250ms))
+  expect(restored.localCache, equals("fresh"))
+
+  # Defaults and nullable fields work when omitted in incoming JSON
+  minimal = User.fromJsonString(r'{"full_name":"Ada","age":36,"address":{"city":"London"},"createdAt":"2026-01-01T00:00:00.000Z"}')
+  expect(minimal.fullName, equals("Ada"))
+  expect(minimal.score, equals(0.0))
+  expect(minimal.role, equals(Role.member))
+  expect(minimal.address.zip, equals("00000"))
+  expect(minimal.tags.isEmpty, isTrue)
+  expect(minimal.bio, equals(null))
+  expect(minimal.timeout, equals(500ms))
+  expect(minimal.lastAction, equals(null))
+
+  # Missing required field or wrong type returns Error via tryFromJsonString
+  expect(User.tryFromJsonString(r'{"age":30}') is Error, isTrue)
+  expect(User.tryFromJsonString(r'{"full_name":"Ada","age":"bad","address":{"city":"X"},"createdAt":"2026-01-01T00:00:00.000Z"}') is Error, isTrue)
+  expect(User.tryFromJsonString(r'{broken') is Error, isTrue)
+
+test "@Json on sealed type roundtrips cases with default and custom discriminator":
+  c: Action = Click(x: 3, y: 7)
+  cJson = c.toJson()
+  expect(cJson["type"], equals("Click"))
+  expect(cJson["x"], equals(3))
+
+  decoded = Action.fromJsonString(c.toJsonString())
+  match decoded:
+    Click(x: dx, y: dy):
+      expect(dx, equals(3))
+      expect(dy, equals(7))
+    TextInput(value: _):
+      expect(false, isTrue)
+    Reset():
+      expect(false, isTrue)
+
+  r: Action = Reset()
+  rDecoded = Action.fromJsonString(r.toJsonString())
+  expect(rDecoded is Reset, isTrue)
+
+  expect(Action.tryFromJsonString(r'{"type":"Unknown"}') is Error, isTrue)
+
+  p: Notice = Ping(seq: 42)
+  pMap = p.toJson()
+  expect(pMap["kind"], equals("Ping"))
+  pBack = Notice.fromJson(pMap)
+  match pBack:
+    Ping(seq: s):
+      expect(s, equals(42))

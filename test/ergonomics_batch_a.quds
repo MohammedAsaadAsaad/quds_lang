@@ -1,0 +1,82 @@
+const defaultTimeout = 30s
+const halfMinute = 0.5m
+const negOffset = -250ms
+
+value class Profile:
+  name: String
+  age: int
+  nickname: String?
+
+_greet(user: Profile?, minAge: int) -> String:
+  guard user != null else: return "no-user"
+  guard user.age >= minAge else:
+    return "too-young:{user.name}"
+  guard let nick = user.nickname else:
+    return "hello:{user.name}"
+  return "hi:{nick}"
+
+_textLength(raw: Object) -> int:
+  guard raw is String else: return -1
+  return raw.length
+
+_sumPositiveUntilHundred(items: List<int>) -> int:
+  var total = 0
+  for item in items:
+    guard item > 0 else: continue
+    guard item < 100 else: break
+    total += item
+  return total
+
+_contextualGuardVar() -> bool:
+  guard = true
+  return guard
+
+_makeSummary(prefix: String, name: String, age: int, delay: Duration = 250ms) -> String:
+  return "{prefix}:{name}:{age}:{delay.inMilliseconds}"
+
+test "guard cond else: and guard let promote types, exit early, and keep guard contextual":
+  alice = Profile(name: "Alice", age: 25, nickname: "Ali")
+  bob = Profile(name: "Bob", age: 20, nickname: null)
+  kid = Profile(name: "Kid", age: 12, nickname: "K")
+  expect(_greet(null, 18), equals("no-user"))
+  expect(_greet(kid, 18), equals("too-young:Kid"))
+  expect(_greet(bob, 18), equals("hello:Bob"))
+  expect(_greet(alice, 18), equals("hi:Ali"))
+  expect(_textLength("quds"), equals(4))
+  expect(_textLength(42), equals(-1))
+  expect(_sumPositiveUntilHundred([-2, 5, 0, 10, 100, 50]), equals(15))
+  expect(_contextualGuardVar(), isTrue)
+
+test ":name shorthand named arguments work in constructors, calls, and copyWith":
+  name = "Nadia"
+  var age = 29
+  nickname: String? = "Nad"
+  p = Profile(:name, :age, :nickname)
+  expect(p.name, equals("Nadia"))
+  expect(p.age, equals(29))
+  expect(p.nickname, equals("Nad"))
+
+  age = 30
+  updated = p.copyWith(:age)
+  expect(updated.age, equals(30))
+  expect(updated.name, equals("Nadia"))
+
+  delay = 1.5s
+  expect(_makeSummary("ok", :name, :age, :delay), equals("ok:Nadia:30:1500"))
+  expect(_makeSummary("def", :name, :age), equals("def:Nadia:30:250"))
+
+test "Duration literals support us, ms, s, m, h, d, fractions, const, arithmetic, and async delay" async:
+  expect(500us.inMicroseconds, equals(500))
+  expect(250ms.inMilliseconds, equals(250))
+  expect(1_500ms.inMilliseconds, equals(1500))
+  expect(3s.inSeconds, equals(3))
+  expect(1.5s.inMilliseconds, equals(1500))
+  expect(5m.inMinutes, equals(5))
+  expect(2h.inHours, equals(2))
+  expect(1d.inDays, equals(1))
+  expect(0ms, equals(Duration.zero))
+  expect(defaultTimeout, equals(halfMinute))
+  expect(negOffset.inMilliseconds, equals(-250))
+  expect(250ms + 750ms, equals(1s))
+  expect(1.5s > 900ms, isTrue)
+  await Future.delayed(1ms)

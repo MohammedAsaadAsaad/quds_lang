@@ -5,6 +5,7 @@ enum TokenKind {
   identifier,
   dollar,
   number,
+  duration,
   string,
   colon,
   comma,
@@ -339,6 +340,28 @@ class _Scanner {
             while (!end && (RegExp(r'[0-9]').hasMatch(ch) || ch == '_')) {
               advance();
             }
+          }
+        }
+        if (!end) {
+          final two = i + 1 < source.length ? source.substring(i, i + 2) : '';
+          String? suffix;
+          if (two == 'ms' || two == 'us') {
+            final after = i + 2 < source.length ? source[i + 2] : '';
+            if (after.isEmpty || !identifierPart.hasMatch(after)) {
+              suffix = two;
+            }
+          } else if (ch == 's' || ch == 'm' || ch == 'h' || ch == 'd') {
+            final after = i + 1 < source.length ? source[i + 1] : '';
+            if (after.isEmpty || !identifierPart.hasMatch(after)) {
+              suffix = ch;
+            }
+          }
+          if (suffix != null) {
+            for (var n = 0; n < suffix.length; n++) {
+              advance();
+            }
+            emit(TokenKind.duration, start, sl, sc);
+            continue;
           }
         }
         emit(TokenKind.number, start, sl, sc);

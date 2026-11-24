@@ -332,6 +332,11 @@ void walkAst(Node node, void Function(Node node) visit,
         walkAst(pattern, visit);
         walkAst(value, visit);
         if (elseBody != null) _nodes(elseBody, visit);
+      case GuardStatement(:final condition, :final elseBody):
+        walkAst(condition, visit);
+        _nodes(elseBody, visit);
+      case DurationLiteral():
+        break;
       case CollectionIf(
           :final condition,
           :final thenElements,

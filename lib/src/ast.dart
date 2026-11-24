@@ -845,6 +845,18 @@ class DestructureStatement extends Statement {
   final List<Statement>? elseBody;
 }
 
+class GuardStatement extends Statement {
+  const GuardStatement(this.condition, this.elseBody, super.span);
+  final Expression condition;
+  final List<Statement> elseBody;
+}
+
+class DurationLiteral extends Expression {
+  const DurationLiteral(this.microseconds, this.raw, super.span);
+  final int microseconds;
+  final String raw;
+}
+
 class NullAwareElement extends Expression {
   const NullAwareElement(this.value, super.span);
   final Expression value;

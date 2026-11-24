@@ -1,3 +1,17 @@
+# `guard cond else:`, `:name` shorthand named arguments, and `Duration` literals (Batch A) — 2026-11-23
+
+Base: `dd9fc08`.
+
+| Check | Observed result |
+| --- | --- |
+| `guard cond else:` & `guard let` | Added `GuardStatement` with contextual `guard`, `E316` scope-exit enforcement, non-null and `is`/`is!` type promotion (`_promotions` + `_exitPromotion`), and clean negated Dart `if` lowering |
+| `:name` shorthand arguments | Supported `:name` desugaring to `name: name` in calls, constructors, `copyWith`, and annotations, preserving tight `:name` spacing in `formatQuds` |
+| `Duration` literals | Lexed and parsed `us`/`ms`/`s`/`m`/`h`/`d` suffixes (including decimals like `1.5s`, underscores `1_500ms`, and `const` negative durations `-250ms` via `ConstDuration` and `formatDartDuration`) |
+| Primary Quds suite & driver | `/opt/flutter/bin/dart test test/ergonomics_batch_a_test.dart`: **4 passed, 0 failed** (28s; `quds test test/ergonomics_batch_a.quds`, `E316`/`E300` negative checks, formatter check, strict `quds analyze --fatal-infos`, VM + `quds compile js` + `node` parity) |
+| Format, analysis & sync | `dart format` clean, `/opt/flutter/bin/dart analyze`: no issues found; `python3 tool/audit_language.py --check`, `python3 tool/sync_keyword_docs.py --check`, `git diff --check`: passed |
+
+Targeted regression suite was run rather than the full repository suite.
+
 # `rustc`-style rich CLI diagnostics & `quds fix` (Batch 5) — 2026-11-23
 
 Base: `aa0d6d0`.

@@ -344,6 +344,9 @@ List<Map<String, Object>> _qudsLocals(
         patterns(pattern, end);
         visitExpression(value, end);
         if (elseBody != null) visitStatements(elseBody, endLine(node.span));
+      case GuardStatement(:final condition, :final elseBody):
+        visitExpression(condition, end);
+        visitStatements(elseBody, endLine(node.span));
       case LabelStatement():
         visitStatement(node.statement, end);
       case ClassDeclaration(

@@ -712,7 +712,7 @@ List<BinaryExpression> operators(Expression node, String op) {
         for (final part in parts) {
           walk(part);
         }
-      case Literal() || Identifier():
+      case Literal() || DurationLiteral() || Identifier():
         break;
       case ShownExpression(:final value):
         walk(value);

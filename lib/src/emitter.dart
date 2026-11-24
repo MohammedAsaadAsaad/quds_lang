@@ -2197,6 +2197,8 @@ class DartEmitter {
           node.arms.any((arm) => _containsPropagate(arm.body)),
         DestructureStatement() => _expressionPropagates(node.value) ||
             (node.elseBody != null && _containsPropagate(node.elseBody!)),
+        GuardStatement() => _expressionPropagates(node.condition) ||
+            _containsPropagate(node.elseBody),
         _ => false,
       };
 
@@ -3526,6 +3528,12 @@ class DartEmitter {
         final temp = '_qt${_temps++}';
         line('final $temp = ${expression(node.value)};');
         _destructure(node.pattern, temp, 1);
+      case GuardStatement():
+        line('if (${_negatedCondition(node.condition)}) {');
+        _depth++;
+        statements(node.elseBody);
+        _depth--;
+        line('}');
       case IfLetStatement():
         final bound = model.declarations[node]!;
         final temp = '_qn${_temps++}';
@@ -4057,6 +4065,7 @@ class DartEmitter {
           Literal() => node.value is String
               ? quote(node.value as String)
               : '${node.value}',
+          DurationLiteral() => formatDartDuration(node.microseconds),
           Identifier() => _identifier(node),
           // Dart has no prefix +. Quds unary + is numeric identity.
           UnaryExpression() => switch (node.operator) {
@@ -4065,6 +4074,8 @@ class DartEmitter {
               '+' => expression(node.operand, constantContext: constantContext),
               '!' =>
                 '(${expression(node.operand, constantContext: constantContext)}!)',
+              '-' when node.operand is DurationLiteral => formatDartDuration(
+                  -(node.operand as DurationLiteral).microseconds),
               _ =>
                 '(${node.operator}${expression(node.operand, constantContext: constantContext)})',
             },
@@ -6001,11 +6012,32 @@ class DartEmitter {
         MatchStatement() => node.arms.any((arm) => arm.body.any(_doReturns)),
         DestructureStatement() =>
           node.elseBody != null && node.elseBody!.any(_doReturns),
+        GuardStatement() => node.elseBody.any(_doReturns),
         ExpressionStatement() => _exprReturns(node.expression),
         Binding() => _exprReturns(node.value),
         ReturnStatement() => node.value != null && _exprReturns(node.value!),
         _ => false,
       };
+
+  String _negatedCondition(Expression cond) {
+    if (cond is UnaryExpression && cond.operator == 'not') {
+      return expression(cond.operand);
+    }
+    if (cond is BinaryExpression &&
+        (cond.operator == '!=' || cond.operator == '==') &&
+        ((cond.right is Literal && (cond.right as Literal).value == null) ||
+            (cond.left is Literal && (cond.left as Literal).value == null))) {
+      final op = cond.operator == '!=' ? '==' : '!=';
+      return '${expression(cond.left)} $op ${expression(cond.right)}';
+    }
+    if (cond is TypeTestExpression &&
+        (cond.operator == 'is' || cond.operator == 'is!') &&
+        !(model.types[cond.operand]?.contains(' | ') ?? false)) {
+      final op = cond.operator == 'is!' ? 'is' : 'is!';
+      return '${expression(cond.operand)} $op ${_dartType(cond.type)}';
+    }
+    return '!(${expression(cond)})';
+  }
 
   bool _exprReturns(Expression node) {
     if (node is DoExpression) return _containsFunctionReturn(node.body);

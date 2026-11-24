@@ -486,6 +486,7 @@ bool _isValueEnding(Token token, Set<Token> genericAngles) {
       return !_nonValueKeywords.contains(token.lexeme);
     case TokenKind.dollar:
     case TokenKind.number:
+    case TokenKind.duration:
     case TokenKind.string:
     case TokenKind.rightParen:
     case TokenKind.rightBracket:
@@ -592,11 +593,21 @@ bool _needsSpace({
 
   // Colon `:` rules.
   if (curr.kind == TokenKind.colon) {
+    // Shorthand named argument after comma: `User(:name, :age)`
+    if (prev.kind == TokenKind.comma) return true;
     return false;
   }
   if (prev.kind == TokenKind.colon) {
     // Inside `[...]`, `:` is a slice separator (`a[0:3]`, `a[:3]`, `a[1:]`).
     if (brackets.isNotEmpty && brackets.last == TokenKind.leftBracket) {
+      return false;
+    }
+    // Shorthand named argument `:name` inside `(...)` (`User(:name, :age)`).
+    if (brackets.isNotEmpty &&
+        brackets.last == TokenKind.leftParen &&
+        (prevPrev == null ||
+            prevPrev.kind == TokenKind.leftParen ||
+            prevPrev.kind == TokenKind.comma)) {
       return false;
     }
     return true;

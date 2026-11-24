@@ -29,6 +29,7 @@ sealed class ConstValue {
           'const <$elementType>{${elements.map((e) => e.dartSource).join(', ')}}',
         ConstObject(:final type, :final fields) =>
           'const $type(${fields.map((e) => e.dartSource).join(', ')})',
+        ConstDuration(:final microseconds) => formatDartDuration(microseconds),
       };
 
   @override
@@ -50,6 +51,7 @@ sealed class ConstValue {
             _sameList(a.elements, b.elements),
         (ConstObject a, ConstObject b) =>
           a.type == b.type && _sameList(a.fields, b.fields),
+        (ConstDuration a, ConstDuration b) => a.microseconds == b.microseconds,
         _ => false,
       };
 
@@ -74,10 +76,36 @@ sealed class ConstValue {
           Object.hash(7, elementType, Object.hashAll(elements)),
         ConstObject(:final type, :final fields) =>
           Object.hash(8, type, Object.hashAll(fields)),
+        ConstDuration(:final microseconds) => Object.hash(9, microseconds),
       };
 
   @override
   String toString() => dartSource;
+}
+
+String formatDartDuration(int microseconds) {
+  if (microseconds == 0) return 'Duration.zero';
+  const usPerMs = 1000;
+  const usPerSec = 1000000;
+  const usPerMin = 60 * usPerSec;
+  const usPerHour = 60 * usPerMin;
+  const usPerDay = 24 * usPerHour;
+  if (microseconds % usPerDay == 0) {
+    return 'const Duration(days: ${microseconds ~/ usPerDay})';
+  }
+  if (microseconds % usPerHour == 0) {
+    return 'const Duration(hours: ${microseconds ~/ usPerHour})';
+  }
+  if (microseconds % usPerMin == 0) {
+    return 'const Duration(minutes: ${microseconds ~/ usPerMin})';
+  }
+  if (microseconds % usPerSec == 0) {
+    return 'const Duration(seconds: ${microseconds ~/ usPerSec})';
+  }
+  if (microseconds % usPerMs == 0) {
+    return 'const Duration(milliseconds: ${microseconds ~/ usPerMs})';
+  }
+  return 'const Duration(microseconds: $microseconds)';
 }
 
 class ConstBool extends ConstValue {
@@ -126,6 +154,11 @@ class ConstObject extends ConstValue {
   ConstObject(this.type, this.fields);
   final String type;
   final List<ConstValue> fields;
+}
+
+class ConstDuration extends ConstValue {
+  ConstDuration(this.microseconds);
+  final int microseconds;
 }
 
 /// A const constructor invocation recorded while checking the call.
@@ -202,6 +235,7 @@ class ConstantEvaluator {
     }
     final value = switch (node) {
       Literal() => _literal(node),
+      DurationLiteral(:final microseconds) => ConstDuration(microseconds),
       Identifier() => _identifier(node),
       UnaryExpression() => _unary(node),
       BinaryExpression() => _binary(node),
@@ -219,7 +253,7 @@ class ConstantEvaluator {
   /// still be rejected when it is not a constant expression.
   void ensureConstant(Expression node) {
     switch (node) {
-      case Literal():
+      case Literal() || DurationLiteral():
         return;
       case Identifier():
         if (_bound != null && _bound!.containsKey(node.name)) return;
@@ -306,6 +340,7 @@ class ConstantEvaluator {
         return switch (value) {
           ConstInt(:final value) => ConstInt(-value),
           ConstDouble(:final value) => ConstDouble(-value),
+          ConstDuration(:final microseconds) => ConstDuration(-microseconds),
           _ => throw StateError('Unary - on ${value.runtimeType}'),
         };
       case '~':
@@ -613,6 +648,8 @@ void checkConstShape(String type, ConstValue value) {
       if (value is! ConstString) _badConstShape(type, value);
     case 'Null':
       if (value is! ConstNull) _badConstShape(type, value);
+    case 'Duration':
+      if (value is! ConstDuration) _badConstShape(type, value);
     default:
       if (value is ConstList &&
           type.startsWith('List<') &&

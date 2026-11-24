@@ -290,6 +290,13 @@ class Parser {
           do {
             String? label;
             final argumentSpan = current.span;
+            if (at(TokenKind.colon) && peek().kind == TokenKind.identifier) {
+              take();
+              final ident = name();
+              arguments.add(Argument(ident.lexeme,
+                  Identifier(ident.lexeme, ident.span), extent(argumentSpan)));
+              continue;
+            }
             if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
               label = name().lexeme;
               take();
@@ -465,6 +472,13 @@ class Parser {
       return WhenStatement(condition, block(topLevel: topLevel), extent(span));
     }
     if (word('using')) return usingStatement(span);
+    if (word('guard') &&
+        !assignments.contains(peek().kind) &&
+        peek().kind != TokenKind.leftParen &&
+        peek().kind != TokenKind.colon &&
+        peek().kind != TokenKind.dot) {
+      return guardStatement(span);
+    }
     if (word('defer') && !assignments.contains(peek().kind)) {
       take();
       final value = expression(bare: true);
@@ -2075,6 +2089,32 @@ class Parser {
         elseBody: elseBody);
   }
 
+  Statement guardStatement(SourceSpan span) {
+    take();
+    if (word('let') &&
+        peek().kind == TokenKind.identifier &&
+        peek(2).kind == TokenKind.equals) {
+      take();
+      final bound = name();
+      expect(TokenKind.equals, '=');
+      final value = expression(bare: true);
+      if (!word('else')) fail('guard requires else:');
+      take();
+      final elseBody = suite();
+      return DestructureStatement(
+          NullCheckPattern(
+              BindingPattern(bound.lexeme, bound.span), bound.span),
+          value,
+          extent(span),
+          elseBody: elseBody);
+    }
+    final condition = expression(bare: true);
+    if (!word('else')) fail('guard requires else:');
+    take();
+    final elseBody = suite();
+    return GuardStatement(condition, elseBody, extent(span));
+  }
+
   MatchStatement matchStatement(SourceSpan span) {
     take();
     final value = expression();
@@ -3161,6 +3201,7 @@ class Parser {
   bool startsExpression() =>
       at(TokenKind.dollar) ||
       at(TokenKind.number) ||
+      at(TokenKind.duration) ||
       at(TokenKind.string) ||
       at(TokenKind.leftBracket) ||
       at(TokenKind.leftParen) ||
@@ -3171,6 +3212,9 @@ class Parser {
   Expression prefix() {
     final token = take();
     if (token.kind == TokenKind.dollar) return Identifier(r'$', token.span);
+    if (token.kind == TokenKind.duration) {
+      return _parseDurationLiteral(token);
+    }
     if (token.kind == TokenKind.number) {
       final lexeme = token.lexeme.replaceAll('_', '');
       final Object? value;
@@ -3411,6 +3455,46 @@ class Parser {
     fail('Expected expression', token.span);
   }
 
+  DurationLiteral _parseDurationLiteral(Token token) {
+    final raw = token.lexeme;
+    String unit;
+    String numPart;
+    if (raw.endsWith('ms') || raw.endsWith('us')) {
+      unit = raw.substring(raw.length - 2);
+      numPart = raw.substring(0, raw.length - 2).replaceAll('_', '');
+    } else {
+      unit = raw.substring(raw.length - 1);
+      numPart = raw.substring(0, raw.length - 1).replaceAll('_', '');
+    }
+    final factor = switch (unit) {
+      'us' => 1,
+      'ms' => 1000,
+      's' => 1000000,
+      'm' => 60 * 1000000,
+      'h' => 3600 * 1000000,
+      'd' => 86400 * 1000000,
+      _ => throw CompilerException(
+          'E006', 'Unknown duration unit: $unit', token.span),
+    };
+    final int microseconds;
+    if (numPart.contains('.') ||
+        numPart.contains('e') ||
+        numPart.contains('E')) {
+      final value = double.tryParse(numPart);
+      if (value == null || !value.isFinite) {
+        throw CompilerException('E006', 'Invalid duration literal', token.span);
+      }
+      microseconds = (value * factor).round();
+    } else {
+      final value = int.tryParse(numPart);
+      if (value == null) {
+        throw CompilerException('E006', 'Invalid duration literal', token.span);
+      }
+      microseconds = value * factor;
+    }
+    return DurationLiteral(microseconds, raw, token.span);
+  }
+
   CallExpression call(Expression callee) {
     take();
     final arguments = <Argument>[];
@@ -3418,7 +3502,12 @@ class Parser {
       do {
         String? label;
         final span = current.span;
-        if (at(TokenKind.spread) || at(TokenKind.spreadQuestion)) {
+        if (at(TokenKind.colon) && peek().kind == TokenKind.identifier) {
+          take();
+          final ident = name();
+          arguments.add(Argument(ident.lexeme,
+              Identifier(ident.lexeme, ident.span), extent(span)));
+        } else if (at(TokenKind.spread) || at(TokenKind.spreadQuestion)) {
           final token = take();
           final operand = expression();
           arguments.add(Argument(

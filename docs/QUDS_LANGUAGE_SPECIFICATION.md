@@ -2308,6 +2308,10 @@ matchStatement= ( "match" | "switch" ) , expression , matchArms
 
 An `if` statement may omit `else`. Its branches are suites. A suite that is a single statement may share the `if`, `else if`, or `else` line. An `if` in expression position is not this statement.
 
+`guard condition else: suite` (and `guard let name = expr else: suite`) checks a precondition and requires the `else:` suite to exit the enclosing scope (`return`, `throw`, `rethrow`, `break`, or `continue`; otherwise `E316`). After a `guard`, any non-null or `is` type checks in `condition` are promoted for all remaining statements in the enclosing block. `guard` is contextual so variables named `guard` remain valid.
+
+Named arguments in calls, constructors, `copyWith`, and annotations support shorthand `:name`, which desugars to `name: name`. Numeric literals immediately followed by a duration suffix (`us`, `ms`, `s`, `m`, `h`, `d`, including fractional values like `1.5s` and separators like `1_500ms`) evaluate to compile-time constant `Duration` values.
+
 A single-line statement may end with `if` and a condition. The condition runs first. When it is false, a `let` value is null, or an `is` pattern does not match, the statement does not run. `return text if text.isNotEmpty` and `continue if name in seen` are that form. A `let` or `is` name is visible only to that statement, and it is immutable. `while let name = expr` binds the same way and stops when the value is null. `while expr is pattern` uses the pattern grammar and binds in the body only. The expression runs once per test.
 
 The same line may end with `else` and one expression. That expression fills the statement's value: the returned value, the assigned value, or the single argument of a call. The side that is not chosen does not run. The two expressions share a type. A `let` or `is` name is not visible in the `else` expression. `return text if text.isNotEmpty else "empty"` returns one string or the other. `caption = line if let line = read() else "فارغ"` assigns one of those values.

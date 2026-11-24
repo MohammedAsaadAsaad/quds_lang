@@ -4168,6 +4168,10 @@ class Analyzer {
               _mentionsBreak(statement.elseBody!)) {
             return true;
           }
+        case GuardStatement():
+          if (_mentionsBreak(statement.elseBody)) {
+            return true;
+          }
         case IfStatement():
           if (_mentionsBreak(statement.thenBody) ||
               _mentionsBreak(statement.elseBody)) {
@@ -4209,8 +4213,13 @@ class Analyzer {
   }
 
   /// After `if name is Arm: return`, a two-arm union leaves the other arm.
+  /// After `guard cond else: return`, the condition holds for the rest of the block.
   /// The fact belongs to this statement list, so a nested block cannot leak it.
   Map<String, String>? _exitPromotion(Statement node) {
+    if (node is GuardStatement && _alwaysExits(node.elseBody)) {
+      final promoted = _promotions(node.condition, whenTrue: true);
+      return promoted.isEmpty ? null : promoted;
+    }
     if (node is! IfCaseStatement || !_alwaysExits(node.body)) return null;
     final scrutinee = node.scrutinee;
     final pattern = node.pattern;
@@ -4719,6 +4728,20 @@ class Analyzer {
             ..addAll(beforeElse);
           bindPattern(node.pattern, type, declare: true);
         }
+      case GuardStatement():
+        _requireBool(node.condition, 'guard condition must be bool');
+        final beforeGuard = Map<Symbol, SourceSpan>.from(_consumed);
+        _withPromotions(_promotions(node.condition, whenTrue: false),
+            () => statements(node.elseBody, nested: true));
+        if (!_alwaysExits(node.elseBody)) {
+          error(
+              'E316',
+              'guard else branch must exit the enclosing scope (return, throw, break, or continue)',
+              node);
+        }
+        _consumed
+          ..clear()
+          ..addAll(beforeGuard);
       case ReturnStatement():
         if (_function == null && _returnType != '<infer>') {
           fail('return is only valid inside a function', node);
@@ -8217,6 +8240,16 @@ class Analyzer {
       if (unequal != whenTrue) return const {};
       return {name: unwrap(current)};
     }
+    if (node is TypeTestExpression &&
+        (node.operator == 'is' || node.operator == 'is!') &&
+        node.operand is Identifier) {
+      final isPositive = node.operator == 'is';
+      if (isPositive != whenTrue) return const {};
+      final name = (node.operand as Identifier).name;
+      final symbol = _scope.lookup(name);
+      if (symbol == null || symbol.field) return const {};
+      return {name: _resolveType(node.type)};
+    }
     return const {};
   }
 
@@ -8541,6 +8574,7 @@ class Analyzer {
           null => 'Null',
           _ => throw StateError('Unknown literal'),
         },
+      DurationLiteral() => 'Duration',
       Identifier() => identifier(node),
       UnaryExpression() => unary(node),
       BinaryExpression() => binary(node),

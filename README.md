@@ -1,6 +1,8 @@
 # Quds
 
-Quds is a general-purpose, statically typed, indentation-based language that compiles to Dart. The language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md). Compiler coverage and remaining certification work are tracked in the [language readiness inventory](docs/LANGUAGE_READINESS.md) and [working plan](docs/LANGUAGE_READINESS_AR.md); not all 115 decisions are certified.
+> **Status: Public Alpha (`0.1.0-alpha.1`)** — The Quds compiler, standard library, CLI, LSP server, debugger, and Flutter integration are usable today for early adopters and real cross-platform apps, while certification of all 115 specification rules is still in progress.
+
+Quds is a general-purpose, statically typed, indentation-based language that compiles to readable Dart. The language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md). Compiler coverage and remaining certification work are tracked in the [language readiness inventory](docs/LANGUAGE_READINESS.md) and [working plan](docs/LANGUAGE_READINESS_AR.md); not all 115 decisions are certified.
 
 ## Example
 
@@ -29,10 +31,16 @@ Total: 60
 
 ## Install
 
-Install [Dart](https://dart.dev/get-dart) 3.3 or newer, below 4. Then activate Quds from Git and install it:
+Install [Dart](https://dart.dev/get-dart) 3.3 or newer (below 4). Then activate Quds from `pub.dev` (once published) or directly from Git, and install editor tooling:
 
 ```sh
+# From pub.dev:
+dart pub global activate quds_lang
+
+# Or latest from GitHub:
 dart pub global activate --source git https://github.com/MohammedAsaadAsaad/quds_lang.git
+
+# Install editor extensions (VS Code, Cursor, JetBrains, Claude Code):
 quds install
 ```
 
@@ -50,10 +58,10 @@ Flutter platforms in place while preserving Quds sources and existing user files
 `quds run -d linux` selects `lib/main.quds` automatically; `--debug`, `--profile`
 and `--release` are supported. See [project commands](docs/PROJECT_CLI.md).
 
-[Quds Academy](examples/flutter_app/quds_academy/README.md) is an Arabic/English
-learning application written in Quds, with animated Flutter screens and direct
-`sqlite_plus` integration. Its README records the run commands and the remaining
-Flutter engine validation requirement.
+### Featured Flutter & Package Examples
+
+- **[Quds Ledger](examples/flutter_app/budget_ledger/README.md)** + **[`quds_ledger`](examples/flutter_app/quds_ledger/README.md)**: A cross-platform personal finance & multi-currency Flutter app written in paren-free Quds block syntax, importing a standalone pure-Quds external package (`package:quds_ledger`) powered by exact `Fraction` arithmetic, `@Json`, `sealed type`, and `Result`.
+- **[Quds Academy](examples/flutter_app/quds_academy/README.md)**: An Arabic/English learning application written in Quds, with animated Flutter screens and direct `sqlite_plus` integration.
 
 ## Run
 
@@ -164,3 +172,7 @@ bridges and complete parameter-form metadata remain separate work.
 An initial [interface-default bridge slice](docs/QUDS_INTERFACE_DEFAULTS.md)
 keeps contract defaults and repeated-reference equality across implementation
 dispatch. Generic declaring interfaces and broader type signatures remain limited.
+
+## License
+
+Quds is released under the [MIT License](LICENSE).

@@ -1,0 +1,13 @@
+# Exclude large examples, benchmarks, CI, docs, and test fixtures from the pub.dev archive.
+# Keep bin/, lib/, editors/ (used by `quds install`), and example/ (for pub.dev).
+.github/
+AGENTS.md
+bench/
+build/
+docs/
+examples/
+install.sh
+test/
+tool/
+*.vsix
+*.apk

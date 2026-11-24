@@ -1,0 +1,5 @@
+square(n: int) -> int = n * n
+
+main():
+  name = "Quds"
+  print "Hello {name}: {square(6)}"

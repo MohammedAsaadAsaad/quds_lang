@@ -12,6 +12,9 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed .
       - run: dart analyze
       - run: python3 tool/audit_language.py --check
+      - run: python3 tool/sync_keyword_docs.py --check
+      - name: Verify pub.dev package layout
+        run: dart pub publish --dry-run
       - name: Quds math tests
         run: |
           set -euo pipefail
@@ -99,7 +102,9 @@ jobs:
           python-version: '3.x'
       - run: dart pub get --enforce-lockfile
       - run: python tool/audit_language.py --check
-      - run: dart test test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/quds_function_values_test.dart test/quds_method_values_test.dart test/target_platform_test.dart test/union_exchange_test.dart test/union_boundaries_test.dart test/union_flow_test.dart test/loop_context_test.dart test/console_repeat_test.dart test/toolchain_update_test.dart test/toolchain_activation_test.dart --reporter expanded
+      - run: python tool/sync_keyword_docs.py --check
+      - run: dart run bin/quds.dart test examples/flutter_app/quds_ledger/test/quds_ledger_test.quds
+      - run: dart test -j 1 test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/quds_function_values_test.dart test/quds_method_values_test.dart test/target_platform_test.dart test/union_exchange_test.dart test/union_boundaries_test.dart test/union_flow_test.dart test/loop_context_test.dart test/console_repeat_test.dart test/external_packages_test.dart test/toolchain_update_test.dart test/toolchain_activation_test.dart --reporter expanded
   flutter-engine:
     runs-on: ubuntu-latest
     defaults:
@@ -116,3 +121,19 @@ jobs:
       - run: dart run tool/build.dart
       - run: flutter test
       - run: dart run ../../../bin/quds.dart build web --no-web-resources-cdn
+  flutter-ledger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Run external Quds package tests (quds_ledger)
+        run: dart run bin/quds.dart test examples/flutter_app/quds_ledger/test/quds_ledger_test.quds
+      - name: Test and build budget_ledger Flutter app for Web
+        working-directory: examples/flutter_app/budget_ledger
+        run: |
+          flutter pub get
+          flutter test
+          dart run ../../../bin/quds.dart build web --no-web-resources-cdn

@@ -1,7 +1,17 @@
 name: quds_lang
-description: Early-stage Quds language compiler and tooling.
-version: 0.0.1-dev.0
-publish_to: none
+description: >-
+  Quds language compiler, standard library, CLI, LSP server, and debugger
+  compiling indentation-based Quds (.quds) code to readable Dart and Flutter.
+version: 0.1.0-alpha.1
+homepage: https://github.com/MohammedAsaadAsaad/quds_lang
+repository: https://github.com/MohammedAsaadAsaad/quds_lang
+issue_tracker: https://github.com/MohammedAsaadAsaad/quds_lang/issues
+topics:
+  - language
+  - compiler
+  - dart
+  - flutter
+  - cli
 environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:

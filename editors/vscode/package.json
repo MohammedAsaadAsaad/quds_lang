@@ -1,9 +1,20 @@
 {
   "name": "quds",
   "displayName": "Quds",
-  "description": "Highlight, format, and diagnose Quds (.quds) files.",
-  "version": "0.0.1",
+  "description": "Syntax highlighting, formatting, LSP intelligence, and live debugging for Quds (.quds) files.",
+  "version": "0.1.0",
   "publisher": "quds-lang",
+  "license": "MIT",
+  "icon": "icons/quds.png",
+  "homepage": "https://github.com/MohammedAsaadAsaad/quds_lang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MohammedAsaadAsaad/quds_lang.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MohammedAsaadAsaad/quds_lang/issues"
+  },
+  "keywords": ["quds", "dart", "flutter", "language", "lsp", "debugger"],
   "engines": {
     "vscode": "^1.85.0"
   },

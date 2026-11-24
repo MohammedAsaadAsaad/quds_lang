@@ -3,4 +3,5 @@
 .pub-cache/
 coverage/
 examples/*.dart
+!examples/catalog.dart
 toolchains/

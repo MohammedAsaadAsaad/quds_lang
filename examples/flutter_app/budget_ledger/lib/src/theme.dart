@@ -3,19 +3,28 @@
 
 import 'package:flutter/material.dart';
 // ignore: undefined_hidden_name
-import 'package:quds_ledger/quds_ledger.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:quds_ledger/quds_ledger.dart'
+    hide Optional, missing, $qudsKnownGuards;
 import 'package:flutter/src/widgets/framework.dart' as _qNative5543fe7fe3bf;
-import 'package:flutter/src/widgets/tween_animation_builder.dart' as _qNative0bb5b487fedc;
+import 'package:flutter/src/widgets/tween_animation_builder.dart'
+    as _qNative0bb5b487fedc;
 import 'package:flutter/src/animation/tween.dart' as _qNativebcd7ef243dd4;
 import 'package:flutter/src/animation/curves.dart' as _qNative485366da7540;
 import 'package:flutter/src/widgets/basic.dart' as _qNative035358ccc81b;
+
 import 'dart:ui' as _qNative3296ff558a1b;
+
 import 'package:flutter/src/painting/edge_insets.dart' as _qNative018897804c8a;
+
 import 'dart:ui' as _qNativec7be968e0aa4;
+
 import 'package:flutter/src/material/ink_well.dart' as _qNativeffab4c10f351;
-import 'package:flutter/src/painting/border_radius.dart' as _qNativebec49084b274;
-import 'package:flutter/src/widgets/implicit_animations.dart' as _qNativeb01c0cbb1a5e;
-import 'package:flutter/src/painting/box_decoration.dart' as _qNativeff80a55449f9;
+import 'package:flutter/src/painting/border_radius.dart'
+    as _qNativebec49084b274;
+import 'package:flutter/src/widgets/implicit_animations.dart'
+    as _qNativeb01c0cbb1a5e;
+import 'package:flutter/src/painting/box_decoration.dart'
+    as _qNativeff80a55449f9;
 import 'package:flutter/src/painting/box_border.dart' as _qNative8c01721789c6;
 import 'package:flutter/src/painting/box_shadow.dart' as _qNativee7219cec0e8c;
 import 'package:flutter/src/material/material.dart' as _qNativef4d33a90aa71;
@@ -23,20 +32,26 @@ import 'package:flutter/src/painting/text_style.dart' as _qNative32610202bed5;
 import 'package:flutter/src/widgets/text.dart' as _qNative805c89a392fb;
 import 'package:flutter/src/widgets/icon_data.dart' as _qNative5a1072dde908;
 import 'package:flutter/src/material/theme_data.dart' as _qNativea2c51253aea7;
+
 import 'dart:ui' as _qNative07356ee83646;
+
 import 'package:flutter/src/material/color_scheme.dart' as _qNatived08f19839a54;
+
 import '_quds_sdk/quds_readonly.dart' as $qudsReadonly;
+
 class Optional<T> {
   final bool isPresent;
   final T? value;
   const Optional.missing() : isPresent = false, value = null;
   const Optional.present(this.value) : isPresent = true;
 }
+
 const missing = Optional<Never>.missing();
 Object? _qConvert(Object? value, String target, bool safe) {
   try {
     switch (target) {
-      case 'String': return value.toString();
+      case 'String':
+        return value.toString();
       case 'bool':
         if (value is bool) return value;
         if (value == 'true') return true;
@@ -44,7 +59,10 @@ Object? _qConvert(Object? value, String target, bool safe) {
         break;
       case 'int':
         if (value is int) return value;
-        if (value is double && value.isFinite && value == value.truncateToDouble()) return value.toInt();
+        if (value is double &&
+            value.isFinite &&
+            value == value.truncateToDouble())
+          return value.toInt();
         if (value is String) return int.parse(value);
         break;
       case 'double':
@@ -64,6 +82,7 @@ Object? _qConvert(Object? value, String target, bool safe) {
     throw $qudsReadonly.ConversionError('$value to $target');
   }
 }
+
 bool _qBool(bool value) => value;
 
 class Entrance extends _qNative5543fe7fe3bf.StatelessWidget {
@@ -71,26 +90,69 @@ class Entrance extends _qNative5543fe7fe3bf.StatelessWidget {
   final _qNative5543fe7fe3bf.Widget child;
   final int order;
   _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q33) {
-    return ((_qNativebcd7ef243dd4.Tween<double> _qna0, Duration _qna1, _qNative485366da7540.Cubic _qna2, _qNative5543fe7fe3bf.Widget _qna3, _qNative035358ccc81b.Opacity Function(_qNative5543fe7fe3bf.BuildContext, double, _qNative5543fe7fe3bf.Widget?) _qna4) => _qNative0bb5b487fedc.TweenAnimationBuilder<double>(tween: _qna0, duration: _qna1, curve: _qna2, builder: _qna4, child: _qna3))(_qNativebcd7ef243dd4.Tween<double>(begin: 0.0, end: 1.0), _q13(_q33, (360 + (order * 65))), Curves.easeOutCubic, child, ((_qNative5543fe7fe3bf.BuildContext _q34, double _q35, _qNative5543fe7fe3bf.Widget? _q36) => _qNative035358ccc81b.Opacity(opacity: _q35, child: Transform.translate(offset: _qNative3296ff558a1b.Offset(0.0, ((1.0 - _q35) * 16.0)), child: _q36))));
+    return ((
+      _qNativebcd7ef243dd4.Tween<double> _qna0,
+      Duration _qna1,
+      _qNative485366da7540.Cubic _qna2,
+      _qNative5543fe7fe3bf.Widget _qna3,
+      _qNative035358ccc81b.Opacity Function(
+        _qNative5543fe7fe3bf.BuildContext,
+        double,
+        _qNative5543fe7fe3bf.Widget?,
+      )
+      _qna4,
+    ) => _qNative0bb5b487fedc.TweenAnimationBuilder<double>(
+      tween: _qna0,
+      duration: _qna1,
+      curve: _qna2,
+      builder: _qna4,
+      child: _qna3,
+    ))(
+      _qNativebcd7ef243dd4.Tween<double>(begin: 0.0, end: 1.0),
+      _q13(_q33, (360 + (order * 65))),
+      Curves.easeOutCubic,
+      child,
+      ((
+        _qNative5543fe7fe3bf.BuildContext _q34,
+        double _q35,
+        _qNative5543fe7fe3bf.Widget? _q36,
+      ) => _qNative035358ccc81b.Opacity(
+        opacity: _q35,
+        child: Transform.translate(
+          offset: _qNative3296ff558a1b.Offset(0.0, ((1.0 - _q35) * 16.0)),
+          child: _q36,
+        ),
+      )),
+    );
   }
 }
+
 class HoverCard extends _qNative5543fe7fe3bf.StatefulWidget {
-  HoverCard({required this.child, this.onTap = null, Object? padding = missing, this.selected = false}) : padding = identical(padding, missing) ? EdgeInsets.all(20.0) : padding as _qNative018897804c8a.EdgeInsetsGeometry;
+  HoverCard({
+    required this.child,
+    this.onTap = null,
+    Object? padding = missing,
+    this.selected = false,
+  }) : padding = identical(padding, missing)
+           ? EdgeInsets.all(20.0)
+           : padding as _qNative018897804c8a.EdgeInsetsGeometry;
   final _qNative5543fe7fe3bf.Widget child;
   final void Function()? onTap;
   final _qNative018897804c8a.EdgeInsetsGeometry padding;
   final bool selected;
   _qNative5543fe7fe3bf.State<HoverCard> createState() => HoverCardState();
 }
+
 class HoverCardState extends _qNative5543fe7fe3bf.State<HoverCard> {
   HoverCardState({this.hovered = false});
   bool hovered;
   void _onHover(bool _q37) {
     final void Function() _q38 = (() {
-this.hovered = _q37;
-});
+      this.hovered = _q37;
+    });
     this.setState(_q38);
   }
+
   _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q39) {
     final bool _q40 = (this.widget.selected || _qBool(hovered));
     final _qNativec7be968e0aa4.Color _q41;
@@ -129,23 +191,126 @@ this.hovered = _q37;
     } else {
       _q46 = 4.0;
     }
-    final _qNative035358ccc81b.Padding _q47 = _qNative035358ccc81b.Padding(padding: this.widget.padding, child: this.widget.child);
-    final _qNative5543fe7fe3bf.Widget _q50 = (() { if ((this.widget.onTap != null)) { return ((void Function()? _qna5, void Function(bool) _qna6, _qNativebec49084b274.BorderRadius _qna7, _qNative035358ccc81b.Padding _qna8) => _qNativeffab4c10f351.InkWell(child: _qna8, onTap: _qna5, onHover: _qna6, borderRadius: _qna7))(this.widget.onTap, this._onHover, BorderRadius.circular(22.0), _q47); } else { return _qNative035358ccc81b.MouseRegion(onEnter: ((Object? _q48) => this._onHover(true)), onExit: ((Object? _q49) => this._onHover(false)), child: _q47); } })();
-    return ((double _qna9, Duration _qna10, _qNative485366da7540.Cubic _qna11, _qNativeb01c0cbb1a5e.AnimatedContainer _qna12) => _qNativeb01c0cbb1a5e.AnimatedScale(child: _qna12, scale: _qna9, curve: _qna11, duration: _qna10))(_q43, _q13(_q39, 160), Curves.easeOut, ((Duration _qna13, _qNativeff80a55449f9.BoxDecoration _qna14, _qNativef4d33a90aa71.Material _qna22) => _qNativeb01c0cbb1a5e.AnimatedContainer(decoration: _qna14, child: _qna22, duration: _qna13))(_q13(_q39, 180), ((_qNativec7be968e0aa4.Color _qna15, _qNativebec49084b274.BorderRadius _qna16, _qNative8c01721789c6.Border _qna17, List<_qNativee7219cec0e8c.BoxShadow> _qna18) => _qNativeff80a55449f9.BoxDecoration(color: _qna15, border: _qna17, borderRadius: _qna16, boxShadow: _qna18))(_q7(_q39), BorderRadius.circular(22.0), Border.all(color: _q41, width: _q42), <_qNativee7219cec0e8c.BoxShadow>[((_qNativec7be968e0aa4.Color _qna19, double _qna20, _qNative3296ff558a1b.Offset _qna21) => _qNativee7219cec0e8c.BoxShadow(color: _qna19, offset: _qna21, blurRadius: _qna20))(Colors.black.withValues(alpha: _q44), _q45, _qNative3296ff558a1b.Offset(0.0, _q46))]), _qNativef4d33a90aa71.Material(color: Colors.transparent, borderRadius: BorderRadius.circular(22.0), child: _q50)));
+    final _qNative035358ccc81b.Padding _q47 = _qNative035358ccc81b.Padding(
+      padding: this.widget.padding,
+      child: this.widget.child,
+    );
+    final _qNative5543fe7fe3bf.Widget _q50 = (() {
+      if ((this.widget.onTap != null)) {
+        return ((
+          void Function()? _qna5,
+          void Function(bool) _qna6,
+          _qNativebec49084b274.BorderRadius _qna7,
+          _qNative035358ccc81b.Padding _qna8,
+        ) => _qNativeffab4c10f351.InkWell(
+          child: _qna8,
+          onTap: _qna5,
+          onHover: _qna6,
+          borderRadius: _qna7,
+        ))(this.widget.onTap, this._onHover, BorderRadius.circular(22.0), _q47);
+      } else {
+        return _qNative035358ccc81b.MouseRegion(
+          onEnter: ((Object? _q48) => this._onHover(true)),
+          onExit: ((Object? _q49) => this._onHover(false)),
+          child: _q47,
+        );
+      }
+    })();
+    return ((
+      double _qna9,
+      Duration _qna10,
+      _qNative485366da7540.Cubic _qna11,
+      _qNativeb01c0cbb1a5e.AnimatedContainer _qna12,
+    ) => _qNativeb01c0cbb1a5e.AnimatedScale(
+      child: _qna12,
+      scale: _qna9,
+      curve: _qna11,
+      duration: _qna10,
+    ))(
+      _q43,
+      _q13(_q39, 160),
+      Curves.easeOut,
+      ((
+        Duration _qna13,
+        _qNativeff80a55449f9.BoxDecoration _qna14,
+        _qNativef4d33a90aa71.Material _qna22,
+      ) => _qNativeb01c0cbb1a5e.AnimatedContainer(
+        decoration: _qna14,
+        child: _qna22,
+        duration: _qna13,
+      ))(
+        _q13(_q39, 180),
+        ((
+          _qNativec7be968e0aa4.Color _qna15,
+          _qNativebec49084b274.BorderRadius _qna16,
+          _qNative8c01721789c6.Border _qna17,
+          List<_qNativee7219cec0e8c.BoxShadow> _qna18,
+        ) => _qNativeff80a55449f9.BoxDecoration(
+          color: _qna15,
+          border: _qna17,
+          borderRadius: _qna16,
+          boxShadow: _qna18,
+        ))(
+          _q7(_q39),
+          BorderRadius.circular(22.0),
+          Border.all(color: _q41, width: _q42),
+          <_qNativee7219cec0e8c.BoxShadow>[
+            ((
+              _qNativec7be968e0aa4.Color _qna19,
+              double _qna20,
+              _qNative3296ff558a1b.Offset _qna21,
+            ) => _qNativee7219cec0e8c.BoxShadow(
+              color: _qna19,
+              offset: _qna21,
+              blurRadius: _qna20,
+            ))(
+              Colors.black.withValues(alpha: _q44),
+              _q45,
+              _qNative3296ff558a1b.Offset(0.0, _q46),
+            ),
+          ],
+        ),
+        _qNativef4d33a90aa71.Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(22.0),
+          child: _q50,
+        ),
+      ),
+    );
   }
 }
+
 class AnimatedMoneyText extends _qNative5543fe7fe3bf.StatelessWidget {
-  AnimatedMoneyText({required this.cents, required this.currency, required this.style});
+  AnimatedMoneyText({
+    required this.cents,
+    required this.currency,
+    required this.style,
+  });
   final int cents;
   final Currency currency;
   final _qNative32610202bed5.TextStyle style;
   _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q51) {
     final double _q52 = (_qConvert(cents, "double", false) as double);
-    return _qNative0bb5b487fedc.TweenAnimationBuilder<double>(tween: _qNativebcd7ef243dd4.Tween<double>(end: _q52), duration: _q13(_q51, 520), curve: Curves.easeOutCubic, builder: ((_qNative5543fe7fe3bf.BuildContext _q53, double _q54, _qNative5543fe7fe3bf.Widget? _q55) => _qNative805c89a392fb.Text((() { final _qa0 = _q54.round(); final _qa1 = currency; return moneyFromCents(_qa0, _qa1); })().formatted(), style: style)));
+    return _qNative0bb5b487fedc.TweenAnimationBuilder<double>(
+      tween: _qNativebcd7ef243dd4.Tween<double>(end: _q52),
+      duration: _q13(_q51, 520),
+      curve: Curves.easeOutCubic,
+      builder:
+          ((
+            _qNative5543fe7fe3bf.BuildContext _q53,
+            double _q54,
+            _qNative5543fe7fe3bf.Widget? _q55,
+          ) => _qNative805c89a392fb.Text(
+            (() {
+              final _qa0 = _q54.round();
+              final _qa1 = currency;
+              return moneyFromCents(_qa0, _qa1);
+            })().formatted(),
+            style: style,
+          )),
+    );
   }
 }
-
-
 
 _qNativec7be968e0aa4.Color _q0() => _qNativec7be968e0aa4.Color(4280210596);
 
@@ -157,7 +322,8 @@ _qNativec7be968e0aa4.Color _q3() => _qNativec7be968e0aa4.Color(4294077034);
 
 _qNativec7be968e0aa4.Color _q4() => _qNativec7be968e0aa4.Color(4294288931);
 
-bool _q5(_qNative5543fe7fe3bf.BuildContext _q17) => (Theme.of(_q17).brightness == Brightness.dark);
+bool _q5(_qNative5543fe7fe3bf.BuildContext _q17) =>
+    (Theme.of(_q17).brightness == Brightness.dark);
 
 _qNativec7be968e0aa4.Color _q6(_qNative5543fe7fe3bf.BuildContext _q18) {
   if (_q5(_q18)) {
@@ -224,11 +390,57 @@ Duration _q13(_qNative5543fe7fe3bf.BuildContext _q25, int _q26) {
 }
 
 _qNativec7be968e0aa4.Color _q14(Category _q27) {
-  return (() { switch (_q27) { case Category.housing: return _qNativec7be968e0aa4.Color(4280210596); case Category.food: return _qNativec7be968e0aa4.Color(4293510250); case Category.transport: return _qNativec7be968e0aa4.Color(4283222512); case Category.utilities: return _qNativec7be968e0aa4.Color(4289170426); case Category.health: return _qNativec7be968e0aa4.Color(4294210230); case Category.education: return _qNativec7be968e0aa4.Color(4284524026); case Category.entertainment: return _qNativec7be968e0aa4.Color(4294077034); case Category.salary: return _qNativec7be968e0aa4.Color(4281652121); case Category.freelance: return _qNativec7be968e0aa4.Color(4294688548); case Category.savings: return _qNativec7be968e0aa4.Color(4281193663); } })();
+  return (() {
+    switch (_q27) {
+      case Category.housing:
+        return _qNativec7be968e0aa4.Color(4280210596);
+      case Category.food:
+        return _qNativec7be968e0aa4.Color(4293510250);
+      case Category.transport:
+        return _qNativec7be968e0aa4.Color(4283222512);
+      case Category.utilities:
+        return _qNativec7be968e0aa4.Color(4289170426);
+      case Category.health:
+        return _qNativec7be968e0aa4.Color(4294210230);
+      case Category.education:
+        return _qNativec7be968e0aa4.Color(4284524026);
+      case Category.entertainment:
+        return _qNativec7be968e0aa4.Color(4294077034);
+      case Category.salary:
+        return _qNativec7be968e0aa4.Color(4281652121);
+      case Category.freelance:
+        return _qNativec7be968e0aa4.Color(4294688548);
+      case Category.savings:
+        return _qNativec7be968e0aa4.Color(4281193663);
+    }
+  })();
 }
 
 _qNative5a1072dde908.IconData _q15(Category _q28) {
-  return (() { switch (_q28) { case Category.housing: return Icons.home_work_rounded; case Category.food: return Icons.restaurant_rounded; case Category.transport: return Icons.directions_transit_rounded; case Category.utilities: return Icons.bolt_rounded; case Category.health: return Icons.favorite_rounded; case Category.education: return Icons.school_rounded; case Category.entertainment: return Icons.movie_filter_rounded; case Category.salary: return Icons.account_balance_wallet_rounded; case Category.freelance: return Icons.auto_awesome_rounded; case Category.savings: return Icons.savings_rounded; } })();
+  return (() {
+    switch (_q28) {
+      case Category.housing:
+        return Icons.home_work_rounded;
+      case Category.food:
+        return Icons.restaurant_rounded;
+      case Category.transport:
+        return Icons.directions_transit_rounded;
+      case Category.utilities:
+        return Icons.bolt_rounded;
+      case Category.health:
+        return Icons.favorite_rounded;
+      case Category.education:
+        return Icons.school_rounded;
+      case Category.entertainment:
+        return Icons.movie_filter_rounded;
+      case Category.salary:
+        return Icons.account_balance_wallet_rounded;
+      case Category.freelance:
+        return Icons.auto_awesome_rounded;
+      case Category.savings:
+        return Icons.savings_rounded;
+    }
+  })();
 }
 
 _qNativea2c51253aea7.ThemeData _q16(bool _q29) {
@@ -244,12 +456,17 @@ _qNativea2c51253aea7.ThemeData _q16(bool _q29) {
   } else {
     _q31 = _qNativec7be968e0aa4.Color(4294178805);
   }
-  final _qNatived08f19839a54.ColorScheme _q32 = ColorScheme.fromSeed(seedColor: _qNativec7be968e0aa4.Color(4279532900), brightness: _q30);
-  return _qNativea2c51253aea7.ThemeData(useMaterial3: true, colorScheme: _q32, brightness: _q30, scaffoldBackgroundColor: _q31);
+  final _qNatived08f19839a54.ColorScheme _q32 = ColorScheme.fromSeed(
+    seedColor: _qNativec7be968e0aa4.Color(4279532900),
+    brightness: _q30,
+  );
+  return _qNativea2c51253aea7.ThemeData(
+    useMaterial3: true,
+    colorScheme: _q32,
+    brightness: _q30,
+    scaffoldBackgroundColor: _q31,
+  );
 }
-
-
-
 
 final brandEmerald = _q0;
 final brandDeepEmerald = _q1;

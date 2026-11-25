@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:quds_lang/src/protocol.dart' as protocol;
+import 'package:quds/src/protocol.dart' as protocol;
 
 void send(dynamic session, String uri, int version, String text) =>
     session.handle({

@@ -67,7 +67,7 @@
           "type": "array",
           "items": { "type": "string" },
           "default": [],
-          "markdownDescription": "Command that starts the language server. An empty list uses `dart run bin/quds.dart lsp` when the workspace is the `quds_lang` package, and `quds lsp` otherwise."
+          "markdownDescription": "Command that starts the language server. An empty list uses `dart run bin/quds.dart lsp` when the workspace is the `quds` package, and `quds lsp` otherwise."
         },
         "quds.format.onSave": {
           "type": "boolean",

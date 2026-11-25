@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/sdk.dart';
+import 'package:quds/quds.dart';
+import 'package:quds/src/sdk.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -1396,7 +1396,7 @@ ab
     final dart = compile(source).dart;
     expect(dart, contains('_qReadonlyList<int>'));
     expect(dart, contains('Percentage._(50)'));
-    expect(dart, isNot(contains("import 'package:quds_lang")));
+    expect(dart, isNot(contains("import 'package:quds")));
   });
 
   test('small numbers match between the VM and JavaScript', () async {
@@ -3194,7 +3194,7 @@ total(values: List<int>) -> int = values.length
 
   test('generated Dart runs without the Quds package', () async {
     final dart = compile('main():\n  print 7\n').dart;
-    expect(dart.contains('package:quds_lang'), isFalse);
+    expect(dart.contains('package:quds'), isFalse);
     final directory = Directory.systemTemp.createTempSync('quds-consumer-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final output = File('${directory.path}/app.dart')..writeAsStringSync(dart);

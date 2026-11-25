@@ -7,32 +7,51 @@ import '_quds_sdk/quds_readonly.dart' as $qudsReadonly;
 // ignore: unnecessary_import
 import '_quds_sdk/quds_readonly.dart' show Result, Ok, Error;
 export '_quds_sdk/quds_readonly.dart' show Result, Ok, Error;
+
 Iterable<int> _qRange(int start, int end, bool inclusive, [int? step]) sync* {
   final stride = step ?? (start > end ? -1 : 1);
   if (stride == 0) throw RangeError.range(0, 1, null, "step");
   final forward = stride > 0;
   if (forward ? start > end : start < end) return;
-  for (var value = start; forward ? (inclusive ? value <= end : value < end) : (inclusive ? value >= end : value > end); value += stride) {
+  for (
+    var value = start;
+    forward
+        ? (inclusive ? value <= end : value < end)
+        : (inclusive ? value >= end : value > end);
+    value += stride
+  ) {
     yield value;
   }
 }
+
 String _qAt(String text, int index) {
   final i = index < 0 ? text.length + index : index;
   return text.substring(i, i + 1);
 }
-class _$QudsDefaultOmitted { const _$QudsDefaultOmitted(); }
+
+class _$QudsDefaultOmitted {
+  const _$QudsDefaultOmitted();
+}
+
 const _$qudsDefaultOmitted = _$QudsDefaultOmitted();
+
 class Optional<T> {
   final bool isPresent;
   final T? value;
   const Optional.missing() : isPresent = false, value = null;
   const Optional.present(this.value) : isPresent = true;
 }
+
 const missing = Optional<Never>.missing();
 bool _qBool(bool value) => value;
 
 enum Currency {
-  usd, eur, gbp, jod, sar;
+  usd,
+  eur,
+  gbp,
+  jod,
+  sar;
+
   String toJson() => name;
   static Currency fromJson(Object? value) {
     if (value is String) {
@@ -42,6 +61,7 @@ enum Currency {
     }
     throw FormatException('Invalid Currency JSON value: $value');
   }
+
   static Result<Currency, String> tryFromJson(Object? value) {
     try {
       return Ok<Currency, String>(fromJson(value));
@@ -50,8 +70,12 @@ enum Currency {
     }
   }
 }
+
 class Money {
-  Money({required this.amount, Object? currency = missing}) : currency = identical(currency, missing) ? Currency.usd : currency as Currency;
+  Money({required this.amount, Object? currency = missing})
+    : currency = identical(currency, missing)
+          ? Currency.usd
+          : currency as Currency;
   final Fraction amount;
   final Currency currency;
   Money convertTo(Currency _q48) {
@@ -60,19 +84,39 @@ class Money {
     }
     final Fraction _q49 = (amount * _q4(currency));
     final Fraction _q50 = (_q49 / _q4(_q48));
-    return (() { final _qa0 = _q50; final _qa1 = _q48; return Money(amount: _qa0, currency: _qa1); })();
+    return (() {
+      final _qa0 = _q50;
+      final _qa1 = _q48;
+      return Money(amount: _qa0, currency: _qa1);
+    })();
   }
+
   Money operator +(Money _q51) {
     final Money _q52 = _q51.convertTo(currency);
-    return (() { final _qa0 = (amount + _q52.amount); final _qa1 = currency; return Money(amount: _qa0, currency: _qa1); })();
+    return (() {
+      final _qa0 = (amount + _q52.amount);
+      final _qa1 = currency;
+      return Money(amount: _qa0, currency: _qa1);
+    })();
   }
+
   Money operator -(Money _q53) {
     final Money _q54 = _q53.convertTo(currency);
-    return (() { final _qa0 = (amount - _q54.amount); final _qa1 = currency; return Money(amount: _qa0, currency: _qa1); })();
+    return (() {
+      final _qa0 = (amount - _q54.amount);
+      final _qa1 = currency;
+      return Money(amount: _qa0, currency: _qa1);
+    })();
   }
+
   Money operator *(int _q55) {
-    return (() { final _qa0 = (amount * fraction(_q55, 1)); final _qa1 = currency; return Money(amount: _qa0, currency: _qa1); })();
+    return (() {
+      final _qa0 = (amount * fraction(_q55, 1));
+      final _qa1 = currency;
+      return Money(amount: _qa0, currency: _qa1);
+    })();
   }
+
   int cents() {
     final Fraction _q56 = (amount * fraction(100, 1));
     final int _q57 = _q56.numerator;
@@ -82,6 +126,7 @@ class Money {
     }
     return (-((((-_q57) * 2) + _q58) ~/ (_q58 * 2)));
   }
+
   double toDouble() => (amount.numerator / amount.denominator);
   String decimalString() {
     final int _q59 = this.cents();
@@ -108,6 +153,7 @@ class Money {
     }
     return [_q65, _q62, ".", _q64].join();
   }
+
   String formatted() {
     final int _q66 = this.cents();
     final bool _q67 = (_q66 < 0);
@@ -135,28 +181,63 @@ class Money {
     }
     return [_q74, _q73, _q72, ".", _q71].join();
   }
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
-    if (runtimeType != Money) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
-    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
-    final result = $qudsReadonly.cachedView<Money>(this, () => $QudsReadonlyMoney(this, normalized));
+
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) {
+    if (runtimeType != Money)
+      throw UnsupportedError(
+        'Foreign subtype needs generated readonly metadata',
+      );
+    final normalized = $qudsReadonly.guardsOf([
+      ...$qudsKnownGuards.values,
+      ...$qudsReadonly.guardsFor(this).values,
+      ...guards.values,
+    ]);
+    final result = $qudsReadonly.cachedView<Money>(
+      this,
+      () => $QudsReadonlyMoney(this, normalized),
+    );
     (result as $QudsReadonlyMoney)._$qudsGuardsMoney.addAll(normalized);
     return result;
   }
+
   bool $qudsIsLazySlot(Object slot) => false;
 }
+
 base class $QudsReadonlyMoney with $qudsReadonly.ReadonlyView implements Money {
-  $QudsReadonlyMoney(Money source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceMoney = source, _$qudsGuardsMoney = Map.of(guards);
+  $QudsReadonlyMoney(
+    Money source,
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) : _$qudsSourceMoney = source,
+      _$qudsGuardsMoney = Map.of(guards);
   final Money _$qudsSourceMoney;
   final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsMoney;
   @override
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) => this;
   @override
-  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceMoney, candidate);
+  bool $qudsReadonlyMatches(Object? candidate) =>
+      $qudsReadonly.sameSourceEquals(_$qudsSourceMoney, candidate);
   bool $qudsIsLazySlot(Object slot) => _$qudsSourceMoney.$qudsIsLazySlot(slot);
   @override
-  Fraction get amount => $qudsReadonly.protectResult(_$qudsSourceMoney, _$qudsSourceMoney.amount, (_qvalue) => $qudsReadonly.ModelGuard<Fraction>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ..._$qudsGuardsMoney.values, ])).protect(_qvalue));
+  Fraction get amount => $qudsReadonly.protectResult(
+    _$qudsSourceMoney,
+    _$qudsSourceMoney.amount,
+    (_qvalue) => $qudsReadonly.ModelGuard<Fraction>(
+      $qudsReadonly.guardsOf([
+        ...$qudsKnownGuards.values,
+        ..._$qudsGuardsMoney.values,
+      ]),
+    ).protect(_qvalue),
+  );
   @override
-  Currency get currency => $qudsReadonly.protectResult(_$qudsSourceMoney, _$qudsSourceMoney.currency, (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue));
+  Currency get currency => $qudsReadonly.protectResult(
+    _$qudsSourceMoney,
+    _$qudsSourceMoney.currency,
+    (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue),
+  );
   Money convertTo(Currency _q48) => throw UnsupportedError('readonly method');
   Money operator +(Money _q51) => throw UnsupportedError('readonly method');
   Money operator -(Money _q53) => throw UnsupportedError('readonly method');
@@ -170,31 +251,90 @@ base class $QudsReadonlyMoney with $qudsReadonly.ReadonlyView implements Money {
   int get hashCode => _$qudsSourceMoney.hashCode;
 }
 
-
-
 String _q0(Currency _q14) {
-  return (() { switch (_q14) { case Currency.usd: return "USD"; case Currency.eur: return "EUR"; case Currency.gbp: return "GBP"; case Currency.jod: return "JOD"; case Currency.sar: return "SAR"; } })();
+  return (() {
+    switch (_q14) {
+      case Currency.usd:
+        return "USD";
+      case Currency.eur:
+        return "EUR";
+      case Currency.gbp:
+        return "GBP";
+      case Currency.jod:
+        return "JOD";
+      case Currency.sar:
+        return "SAR";
+    }
+  })();
 }
 
 String _q1(Currency _q15) {
-  return (() { switch (_q15) { case Currency.usd: return "\$"; case Currency.eur: return "€"; case Currency.gbp: return "£"; case Currency.jod: return "JOD "; case Currency.sar: return "SAR "; } })();
+  return (() {
+    switch (_q15) {
+      case Currency.usd:
+        return "\$";
+      case Currency.eur:
+        return "€";
+      case Currency.gbp:
+        return "£";
+      case Currency.jod:
+        return "JOD ";
+      case Currency.sar:
+        return "SAR ";
+    }
+  })();
 }
 
 String _q2(Currency _q16) {
-  return (() { switch (_q16) { case Currency.usd: return "US Dollar"; case Currency.eur: return "Euro"; case Currency.gbp: return "British Pound"; case Currency.jod: return "Jordanian Dinar"; case Currency.sar: return "Saudi Riyal"; } })();
+  return (() {
+    switch (_q16) {
+      case Currency.usd:
+        return "US Dollar";
+      case Currency.eur:
+        return "Euro";
+      case Currency.gbp:
+        return "British Pound";
+      case Currency.jod:
+        return "Jordanian Dinar";
+      case Currency.sar:
+        return "Saudi Riyal";
+    }
+  })();
 }
 
 List<Currency> _q3() {
-  return <Currency>[Currency.usd, Currency.eur, Currency.gbp, Currency.jod, Currency.sar];
+  return <Currency>[
+    Currency.usd,
+    Currency.eur,
+    Currency.gbp,
+    Currency.jod,
+    Currency.sar,
+  ];
 }
 
 Fraction _q4(Currency _q17) {
-  return (() { switch (_q17) { case Currency.usd: return fraction(1, 1); case Currency.eur: return fraction(109, 100); case Currency.gbp: return fraction(127, 100); case Currency.jod: return fraction(141, 100); case Currency.sar: return fraction(4, 15); } })();
+  return (() {
+    switch (_q17) {
+      case Currency.usd:
+        return fraction(1, 1);
+      case Currency.eur:
+        return fraction(109, 100);
+      case Currency.gbp:
+        return fraction(127, 100);
+      case Currency.jod:
+        return fraction(141, 100);
+      case Currency.sar:
+        return fraction(4, 15);
+    }
+  })();
 }
 
-
 Money _q5(int _q18) {
-  return (() { final _qa0 = fraction(_q18, 1); final _qa1 = Currency.usd; return Money(amount: _qa0, currency: _qa1); })();
+  return (() {
+    final _qa0 = fraction(_q18, 1);
+    final _qa1 = Currency.usd;
+    return Money(amount: _qa0, currency: _qa1);
+  })();
 }
 
 double _q6(Money _q19) {
@@ -205,33 +345,83 @@ Money _q7(String _q20) {
   final _qt0 = _q11(_q20);
   if (_qt0 != null) {
     final Fraction _q21 = _qt0;
-    return (() { final _qa0 = _q21; final _qa1 = Currency.usd; return Money(amount: _qa0, currency: _qa1); })();
+    return (() {
+      final _qa0 = _q21;
+      final _qa1 = Currency.usd;
+      return Money(amount: _qa0, currency: _qa1);
+    })();
   } else {
-    throw $qudsReadonly.ConversionError(["Invalid money amount: ", _q20].join());
+    throw $qudsReadonly.ConversionError(
+      ["Invalid money amount: ", _q20].join(),
+    );
   }
 }
 
 Money _q8(int _q22, Currency _q23) {
-  return (() { final _qa0 = fraction(_q22, 100); final _qa1 = _q23; return Money(amount: _qa0, currency: _qa1); })();
+  return (() {
+    final _qa0 = fraction(_q22, 100);
+    final _qa1 = _q23;
+    return Money(amount: _qa0, currency: _qa1);
+  })();
 }
-Money $QudsDefault9cc8fb941c887e6b161c(int _q22, {Object? currency = _$qudsDefaultOmitted}) { final Currency _qdefault1 = identical(currency, _$qudsDefaultOmitted) ? Currency.usd : currency as Currency; return _q8(_q22, _qdefault1); }
+
+Money $QudsDefault9cc8fb941c887e6b161c(
+  int _q22, {
+  Object? currency = _$qudsDefaultOmitted,
+}) {
+  final Currency _qdefault1 = identical(currency, _$qudsDefaultOmitted)
+      ? Currency.usd
+      : currency as Currency;
+  return _q8(_q22, _qdefault1);
+}
 
 Money _q9(Currency _q24) {
-  return (() { final _qa0 = fraction(0, 1); final _qa1 = _q24; return Money(amount: _qa0, currency: _qa1); })();
+  return (() {
+    final _qa0 = fraction(0, 1);
+    final _qa1 = _q24;
+    return Money(amount: _qa0, currency: _qa1);
+  })();
 }
-Money $QudsDefault7aa52b880331a659122a({Object? currency = _$qudsDefaultOmitted}) { final Currency _qdefault2 = identical(currency, _$qudsDefaultOmitted) ? Currency.usd : currency as Currency; return _q9(_qdefault2); }
+
+Money $QudsDefault7aa52b880331a659122a({
+  Object? currency = _$qudsDefaultOmitted,
+}) {
+  final Currency _qdefault2 = identical(currency, _$qudsDefaultOmitted)
+      ? Currency.usd
+      : currency as Currency;
+  return _q9(_qdefault2);
+}
 
 Money? _q10(String _q25, Currency _q26) {
-  final String _q27 = _q25.trim().replaceAll(",", "").replaceAll("\$", "").replaceAll("€", "").replaceAll("£", "").trim();
+  final String _q27 = _q25
+      .trim()
+      .replaceAll(",", "")
+      .replaceAll("\$", "")
+      .replaceAll("€", "")
+      .replaceAll("£", "")
+      .trim();
   final _qt3 = $qudsReadonly.safeConvert(_q27, _q7);
   if (_qt3 != null) {
     final Money _q28 = _qt3;
-    return (() { final _qa0 = _q28.amount; final _qa1 = _q26; return Money(amount: _qa0, currency: _qa1); })();
+    return (() {
+      final _qa0 = _q28.amount;
+      final _qa1 = _q26;
+      return Money(amount: _qa0, currency: _qa1);
+    })();
   } else {
     return null;
   }
 }
-Money? $QudsDefault4fa7a9ddaccfa7c006d3(String _q25, {Object? currency = _$qudsDefaultOmitted}) { final Currency _qdefault4 = identical(currency, _$qudsDefaultOmitted) ? Currency.usd : currency as Currency; return _q10(_q25, _qdefault4); }
+
+Money? $QudsDefault4fa7a9ddaccfa7c006d3(
+  String _q25, {
+  Object? currency = _$qudsDefaultOmitted,
+}) {
+  final Currency _qdefault4 = identical(currency, _$qudsDefaultOmitted)
+      ? Currency.usd
+      : currency as Currency;
+  return _q10(_q25, _qdefault4);
+}
 
 Fraction? _q11(String _q29) {
   final String _q30 = _q29.trim();
@@ -255,10 +445,18 @@ Fraction? _q11(String _q29) {
   if ((_q33.length > 2)) {
     return null;
   }
-  final String _q34 = (() { final _qo5 = _q33; final _qi6 = 0; return _qo5[_qi6 < 0 ? _qo5.length + _qi6 : _qi6]; })();
+  final String _q34 = (() {
+    final _qo5 = _q33;
+    final _qi6 = 0;
+    return _qo5[_qi6 < 0 ? _qo5.length + _qi6 : _qi6];
+  })();
   final String _q35;
   if ((_q33.length == 2)) {
-    _q35 = (() { final _qo7 = _q33; final _qi8 = 1; return _qo7[_qi8 < 0 ? _qo7.length + _qi8 : _qi8]; })();
+    _q35 = (() {
+      final _qo7 = _q33;
+      final _qi8 = 1;
+      return _qo7[_qi8 < 0 ? _qo7.length + _qi8 : _qi8];
+    })();
   } else {
     _q35 = "";
   }
@@ -323,6 +521,7 @@ String _q13(int _q43) {
   }
   return _q45;
 }
+
 final currencyCode = _q0;
 final currencySymbol = _q1;
 final currencyName = _q2;
@@ -334,4 +533,8 @@ final $QudsCastee21b825b5a4 = _q7;
 final moneyFromCents = _q8;
 final zeroMoney = _q9;
 final parseMoney = _q10;
-final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ListGuard<Currency>($qudsReadonly.AutoGuard<Currency>()), $qudsReadonly.ListGuard<String>($qudsReadonly.AutoGuard<String>())]);
+final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards =
+    $qudsReadonly.guardsOf([
+      $qudsReadonly.ListGuard<Currency>($qudsReadonly.AutoGuard<Currency>()),
+      $qudsReadonly.ListGuard<String>($qudsReadonly.AutoGuard<String>()),
+    ]);

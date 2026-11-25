@@ -1,19 +1,19 @@
-import 'package:quds_lang/src/toolchain_update.dart';
+import 'package:quds/src/toolchain_update.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:yaml_edit/yaml_edit.dart';
 
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/flutter_project.dart';
-import 'package:quds_lang/src/flutter_live.dart';
-import 'package:quds_lang/src/flutter_debug_live.dart';
-import 'package:quds_lang/src/libraries.dart'
+import 'package:quds/quds.dart';
+import 'package:quds/src/flutter_project.dart';
+import 'package:quds/src/flutter_live.dart';
+import 'package:quds/src/flutter_debug_live.dart';
+import 'package:quds/src/libraries.dart'
     show libraryTarget, resolveLibraryPath, packageUsesFlutter, packageFileInfo;
-import 'package:quds_lang/src/walk.dart';
-import 'package:quds_lang/src/sdk.dart';
-import 'package:quds_lang/src/toolchain.dart';
+import 'package:quds/src/walk.dart';
+import 'package:quds/src/sdk.dart';
+import 'package:quds/src/toolchain.dart';
 
 Future<void> main(List<String> arguments) async {
   if (arguments.isEmpty) {
@@ -546,7 +546,7 @@ Future<void> _install(List<String> arguments) async {
   }
   final root = await _compilerRoot();
   if (root == null) {
-    stderr.writeln('The quds_lang package root was not found.');
+    stderr.writeln('The quds package root was not found.');
     exitCode = 1;
     return;
   }
@@ -599,8 +599,8 @@ const _extensionFiles = [
 ];
 
 Future<Directory?> _compilerRoot() async {
-  final uri = await Isolate.resolvePackageUri(
-      Uri.parse('package:quds_lang/quds_lang.dart'));
+  final uri =
+      await Isolate.resolvePackageUri(Uri.parse('package:quds/quds.dart'));
   if (uri == null) return null;
   return File.fromUri(uri).parent.parent;
 }
@@ -3775,13 +3775,13 @@ Future<void> _docPreviewService() async {
   Uri? library;
   try {
     library = await Isolate.resolvePackageUri(
-        Uri.parse('package:quds_lang/src/dart_doc_worker.dart'));
+        Uri.parse('package:quds/src/dart_doc_worker.dart'));
   } catch (_) {}
   if (library == null && config != null) {
     final file = File(config);
     final data = jsonDecode(file.readAsStringSync()) as Map;
     for (final entry in data['packages'] as List) {
-      if (entry['name'] == 'quds_lang') {
+      if (entry['name'] == 'quds' || entry['name'] == 'quds_lang') {
         var root = file.uri.resolve(entry['rootUri'] as String);
         if (!root.path.endsWith('/'))
           root = root.replace(path: '${root.path}/');

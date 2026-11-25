@@ -1,7 +1,7 @@
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 import 'package:test/test.dart';
-import 'package:quds_lang/src/dart_api.dart';
+import 'package:quds/src/dart_api.dart';
 
 void main() {
   test('typed top getters survive setters without hiding a function named get',

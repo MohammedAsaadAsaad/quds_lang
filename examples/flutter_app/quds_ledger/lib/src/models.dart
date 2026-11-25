@@ -2,22 +2,29 @@
 // ignore_for_file: type=lint
 
 // ignore: undefined_hidden_name
-import 'package:quds_ledger/src/money.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:quds_ledger/src/money.dart'
+    hide Optional, missing, $qudsKnownGuards;
+
 import 'dart:convert' as _qjson;
+
 import '_quds_sdk/quds_readonly.dart' as $qudsReadonly;
 // ignore: unnecessary_import
 import '_quds_sdk/quds_readonly.dart' show Result, Ok, Error;
 export '_quds_sdk/quds_readonly.dart' show Result, Ok, Error;
+
 class Optional<T> {
   final bool isPresent;
   final T? value;
   const Optional.missing() : isPresent = false, value = null;
   const Optional.present(this.value) : isPresent = true;
 }
+
 const missing = Optional<Never>.missing();
 
 enum EntryKind {
-  income, expense;
+  income,
+  expense;
+
   String toJson() => name;
   static EntryKind fromJson(Object? value) {
     if (value is String) {
@@ -27,6 +34,7 @@ enum EntryKind {
     }
     throw FormatException('Invalid EntryKind JSON value: $value');
   }
+
   static Result<EntryKind, String> tryFromJson(Object? value) {
     try {
       return Ok<EntryKind, String>(fromJson(value));
@@ -35,8 +43,19 @@ enum EntryKind {
     }
   }
 }
+
 enum Category {
-  housing, food, transport, utilities, health, education, entertainment, salary, freelance, savings;
+  housing,
+  food,
+  transport,
+  utilities,
+  health,
+  education,
+  entertainment,
+  salary,
+  freelance,
+  savings;
+
   String toJson() => name;
   static Category fromJson(Object? value) {
     if (value is String) {
@@ -46,6 +65,7 @@ enum Category {
     }
     throw FormatException('Invalid Category JSON value: $value');
   }
+
   static Result<Category, String> tryFromJson(Object? value) {
     try {
       return Ok<Category, String>(fromJson(value));
@@ -54,8 +74,18 @@ enum Category {
     }
   }
 }
+
 class LedgerEntry {
-  LedgerEntry({required this.id, required this.title, this.note = "", required this.cents, required this.currency, required this.kind, required this.category, required this.dateIso});
+  LedgerEntry({
+    required this.id,
+    required this.title,
+    this.note = "",
+    required this.cents,
+    required this.currency,
+    required this.kind,
+    required this.category,
+    required this.dateIso,
+  });
   final String id;
   final String title;
   final String note;
@@ -64,17 +94,87 @@ class LedgerEntry {
   final EntryKind kind;
   final Category category;
   final String dateIso;
-  Map<String, Object?> toJson() => <String, Object?>{'id': id, 'title': title, 'note': note, 'cents': cents, 'currency': (currency).toJson(), 'kind': (kind).toJson(), 'category': (category).toJson(), 'dateIso': dateIso};
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'title': title,
+    'note': note,
+    'cents': cents,
+    'currency': (currency).toJson(),
+    'kind': (kind).toJson(),
+    'category': (category).toJson(),
+    'dateIso': dateIso,
+  };
   static LedgerEntry fromJson(Map<String, Object?> data) {
-    if (!data.containsKey('id')) throw FormatException('Missing required field "id" for LedgerEntry');
-    if (!data.containsKey('title')) throw FormatException('Missing required field "title" for LedgerEntry');
-    if (!data.containsKey('cents')) throw FormatException('Missing required field "cents" for LedgerEntry');
-    if (!data.containsKey('currency')) throw FormatException('Missing required field "currency" for LedgerEntry');
-    if (!data.containsKey('kind')) throw FormatException('Missing required field "kind" for LedgerEntry');
-    if (!data.containsKey('category')) throw FormatException('Missing required field "category" for LedgerEntry');
-    if (!data.containsKey('dateIso')) throw FormatException('Missing required field "dateIso" for LedgerEntry');
-    return LedgerEntry(id: (() { final _qjv0 = data['id']; return _qjv0 is String ? _qjv0 : throw FormatException('Field "LedgerEntry.id" expects String'); })(), title: (() { final _qjv1 = data['title']; return _qjv1 is String ? _qjv1 : throw FormatException('Field "LedgerEntry.title" expects String'); })(), note: data.containsKey('note') ? (() { final _qjv2 = data['note']; return _qjv2 is String ? _qjv2 : throw FormatException('Field "LedgerEntry.note" expects String'); })() : "", cents: (() { final _qjv3 = data['cents']; return _qjv3 is int ? _qjv3 : throw FormatException('Field "LedgerEntry.cents" expects int'); })(), currency: (() { final _qjv4 = data['currency']; return Currency.fromJson(_qjv4); })(), kind: (() { final _qjv5 = data['kind']; return EntryKind.fromJson(_qjv5); })(), category: (() { final _qjv6 = data['category']; return Category.fromJson(_qjv6); })(), dateIso: (() { final _qjv7 = data['dateIso']; return _qjv7 is String ? _qjv7 : throw FormatException('Field "LedgerEntry.dateIso" expects String'); })());
+    if (!data.containsKey('id'))
+      throw FormatException('Missing required field "id" for LedgerEntry');
+    if (!data.containsKey('title'))
+      throw FormatException('Missing required field "title" for LedgerEntry');
+    if (!data.containsKey('cents'))
+      throw FormatException('Missing required field "cents" for LedgerEntry');
+    if (!data.containsKey('currency'))
+      throw FormatException(
+        'Missing required field "currency" for LedgerEntry',
+      );
+    if (!data.containsKey('kind'))
+      throw FormatException('Missing required field "kind" for LedgerEntry');
+    if (!data.containsKey('category'))
+      throw FormatException(
+        'Missing required field "category" for LedgerEntry',
+      );
+    if (!data.containsKey('dateIso'))
+      throw FormatException('Missing required field "dateIso" for LedgerEntry');
+    return LedgerEntry(
+      id: (() {
+        final _qjv0 = data['id'];
+        return _qjv0 is String
+            ? _qjv0
+            : throw FormatException('Field "LedgerEntry.id" expects String');
+      })(),
+      title: (() {
+        final _qjv1 = data['title'];
+        return _qjv1 is String
+            ? _qjv1
+            : throw FormatException('Field "LedgerEntry.title" expects String');
+      })(),
+      note: data.containsKey('note')
+          ? (() {
+              final _qjv2 = data['note'];
+              return _qjv2 is String
+                  ? _qjv2
+                  : throw FormatException(
+                      'Field "LedgerEntry.note" expects String',
+                    );
+            })()
+          : "",
+      cents: (() {
+        final _qjv3 = data['cents'];
+        return _qjv3 is int
+            ? _qjv3
+            : throw FormatException('Field "LedgerEntry.cents" expects int');
+      })(),
+      currency: (() {
+        final _qjv4 = data['currency'];
+        return Currency.fromJson(_qjv4);
+      })(),
+      kind: (() {
+        final _qjv5 = data['kind'];
+        return EntryKind.fromJson(_qjv5);
+      })(),
+      category: (() {
+        final _qjv6 = data['category'];
+        return Category.fromJson(_qjv6);
+      })(),
+      dateIso: (() {
+        final _qjv7 = data['dateIso'];
+        return _qjv7 is String
+            ? _qjv7
+            : throw FormatException(
+                'Field "LedgerEntry.dateIso" expects String',
+              );
+      })(),
+    );
   }
+
   String toJsonString() => _qjson.jsonEncode(toJson());
   static Result<LedgerEntry, String> tryFromJson(Map<String, Object?> data) {
     try {
@@ -83,13 +183,17 @@ class LedgerEntry {
       return Error<LedgerEntry, String>(e.toString());
     }
   }
+
   static LedgerEntry fromJsonString(String source) {
     final decoded = _qjson.jsonDecode(source);
     if (decoded is! Map) {
       throw FormatException('Expected JSON object for LedgerEntry');
     }
-    return fromJson(<String, Object?>{for (final e in decoded.entries) e.key.toString(): e.value});
+    return fromJson(<String, Object?>{
+      for (final e in decoded.entries) e.key.toString(): e.value,
+    });
   }
+
   static Result<LedgerEntry, String> tryFromJsonString(String source) {
     try {
       return Ok<LedgerEntry, String>(fromJsonString(source));
@@ -97,68 +201,260 @@ class LedgerEntry {
       return Error<LedgerEntry, String>(e.toString());
     }
   }
-  LedgerEntry._qudsCopy({required this.id, required this.title, required this.note, required this.cents, required this.currency, required this.kind, required this.category, required this.dateIso});
-  LedgerEntry copyWith({Object? id = missing, Object? title = missing, Object? note = missing, Object? cents = missing, Object? currency = missing, Object? kind = missing, Object? category = missing, Object? dateIso = missing}) {
-    return LedgerEntry._qudsCopy(id: identical(id, missing) ? this.id : id as String, title: identical(title, missing) ? this.title : title as String, note: identical(note, missing) ? this.note : note as String, cents: identical(cents, missing) ? this.cents : cents as int, currency: identical(currency, missing) ? this.currency : currency as Currency, kind: identical(kind, missing) ? this.kind : kind as EntryKind, category: identical(category, missing) ? this.category : category as Category, dateIso: identical(dateIso, missing) ? this.dateIso : dateIso as String);
+
+  LedgerEntry._qudsCopy({
+    required this.id,
+    required this.title,
+    required this.note,
+    required this.cents,
+    required this.currency,
+    required this.kind,
+    required this.category,
+    required this.dateIso,
+  });
+  LedgerEntry copyWith({
+    Object? id = missing,
+    Object? title = missing,
+    Object? note = missing,
+    Object? cents = missing,
+    Object? currency = missing,
+    Object? kind = missing,
+    Object? category = missing,
+    Object? dateIso = missing,
+  }) {
+    return LedgerEntry._qudsCopy(
+      id: identical(id, missing) ? this.id : id as String,
+      title: identical(title, missing) ? this.title : title as String,
+      note: identical(note, missing) ? this.note : note as String,
+      cents: identical(cents, missing) ? this.cents : cents as int,
+      currency: identical(currency, missing)
+          ? this.currency
+          : currency as Currency,
+      kind: identical(kind, missing) ? this.kind : kind as EntryKind,
+      category: identical(category, missing)
+          ? this.category
+          : category as Category,
+      dateIso: identical(dateIso, missing) ? this.dateIso : dateIso as String,
+    );
   }
+
   @override
-  bool operator ==(Object other) => other is LedgerEntry && $qudsReadonly.valueEquals(this, other, <Object?>[id, title, note, cents, currency, kind, category, dateIso], <Object?>[other.id, other.title, other.note, other.cents, other.currency, other.kind, other.category, other.dateIso]);
+  bool operator ==(Object other) =>
+      other is LedgerEntry &&
+      $qudsReadonly.valueEquals(
+        this,
+        other,
+        <Object?>[id, title, note, cents, currency, kind, category, dateIso],
+        <Object?>[
+          other.id,
+          other.title,
+          other.note,
+          other.cents,
+          other.currency,
+          other.kind,
+          other.category,
+          other.dateIso,
+        ],
+      );
   @override
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[id, title, note, cents, currency, kind, category, dateIso]);
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
-    if (runtimeType != LedgerEntry) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
-    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
-    final result = $qudsReadonly.cachedView<LedgerEntry>(this, () => $QudsReadonlyLedgerEntry(this, normalized));
-    (result as $QudsReadonlyLedgerEntry)._$qudsGuardsLedgerEntry.addAll(normalized);
+  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[
+    id,
+    title,
+    note,
+    cents,
+    currency,
+    kind,
+    category,
+    dateIso,
+  ]);
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) {
+    if (runtimeType != LedgerEntry)
+      throw UnsupportedError(
+        'Foreign subtype needs generated readonly metadata',
+      );
+    final normalized = $qudsReadonly.guardsOf([
+      ...$qudsKnownGuards.values,
+      ...$qudsReadonly.guardsFor(this).values,
+      ...guards.values,
+    ]);
+    final result = $qudsReadonly.cachedView<LedgerEntry>(
+      this,
+      () => $QudsReadonlyLedgerEntry(this, normalized),
+    );
+    (result as $QudsReadonlyLedgerEntry)._$qudsGuardsLedgerEntry.addAll(
+      normalized,
+    );
     return result;
   }
+
   bool $qudsIsLazySlot(Object slot) => false;
 }
-base class $QudsReadonlyLedgerEntry with $qudsReadonly.ReadonlyView implements LedgerEntry {
-  $QudsReadonlyLedgerEntry(LedgerEntry source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceLedgerEntry = source, _$qudsGuardsLedgerEntry = Map.of(guards);
+
+base class $QudsReadonlyLedgerEntry
+    with $qudsReadonly.ReadonlyView
+    implements LedgerEntry {
+  $QudsReadonlyLedgerEntry(
+    LedgerEntry source,
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) : _$qudsSourceLedgerEntry = source,
+      _$qudsGuardsLedgerEntry = Map.of(guards);
   final LedgerEntry _$qudsSourceLedgerEntry;
   final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsLedgerEntry;
   @override
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) => this;
   @override
-  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceLedgerEntry, candidate);
-  bool $qudsIsLazySlot(Object slot) => _$qudsSourceLedgerEntry.$qudsIsLazySlot(slot);
+  bool $qudsReadonlyMatches(Object? candidate) =>
+      $qudsReadonly.sameSourceEquals(_$qudsSourceLedgerEntry, candidate);
+  bool $qudsIsLazySlot(Object slot) =>
+      _$qudsSourceLedgerEntry.$qudsIsLazySlot(slot);
   @override
-  String get id => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.id, (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue));
+  String get id => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.id,
+    (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue),
+  );
   @override
-  String get title => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.title, (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue));
+  String get title => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.title,
+    (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue),
+  );
   @override
-  String get note => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.note, (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue));
+  String get note => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.note,
+    (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue),
+  );
   @override
-  int get cents => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.cents, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
+  int get cents => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.cents,
+    (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue),
+  );
   @override
-  Currency get currency => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.currency, (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue));
+  Currency get currency => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.currency,
+    (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue),
+  );
   @override
-  EntryKind get kind => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.kind, (_qvalue) => $qudsReadonly.AutoGuard<EntryKind>().protect(_qvalue));
+  EntryKind get kind => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.kind,
+    (_qvalue) => $qudsReadonly.AutoGuard<EntryKind>().protect(_qvalue),
+  );
   @override
-  Category get category => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.category, (_qvalue) => $qudsReadonly.AutoGuard<Category>().protect(_qvalue));
+  Category get category => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.category,
+    (_qvalue) => $qudsReadonly.AutoGuard<Category>().protect(_qvalue),
+  );
   @override
-  String get dateIso => $qudsReadonly.protectResult(_$qudsSourceLedgerEntry, _$qudsSourceLedgerEntry.dateIso, (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue));
+  String get dateIso => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEntry,
+    _$qudsSourceLedgerEntry.dateIso,
+    (_qvalue) => $qudsReadonly.AutoGuard<String>().protect(_qvalue),
+  );
   Map<String, Object?> toJson() => _$qudsSourceLedgerEntry.toJson();
   String toJsonString() => _$qudsSourceLedgerEntry.toJsonString();
-  LedgerEntry copyWith({Object? id = missing, Object? title = missing, Object? note = missing, Object? cents = missing, Object? currency = missing, Object? kind = missing, Object? category = missing, Object? dateIso = missing}) {
-    return $qudsReadonly.ModelGuard<LedgerEntry>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ..._$qudsGuardsLedgerEntry.values, ])).protect(LedgerEntry._qudsCopy(id: identical(id, missing) ? this.id : id as String, title: identical(title, missing) ? this.title : title as String, note: identical(note, missing) ? this.note : note as String, cents: identical(cents, missing) ? this.cents : cents as int, currency: identical(currency, missing) ? this.currency : currency as Currency, kind: identical(kind, missing) ? this.kind : kind as EntryKind, category: identical(category, missing) ? this.category : category as Category, dateIso: identical(dateIso, missing) ? this.dateIso : dateIso as String));
+  LedgerEntry copyWith({
+    Object? id = missing,
+    Object? title = missing,
+    Object? note = missing,
+    Object? cents = missing,
+    Object? currency = missing,
+    Object? kind = missing,
+    Object? category = missing,
+    Object? dateIso = missing,
+  }) {
+    return $qudsReadonly.ModelGuard<LedgerEntry>(
+      $qudsReadonly.guardsOf([
+        ...$qudsKnownGuards.values,
+        ..._$qudsGuardsLedgerEntry.values,
+      ]),
+    ).protect(
+      LedgerEntry._qudsCopy(
+        id: identical(id, missing) ? this.id : id as String,
+        title: identical(title, missing) ? this.title : title as String,
+        note: identical(note, missing) ? this.note : note as String,
+        cents: identical(cents, missing) ? this.cents : cents as int,
+        currency: identical(currency, missing)
+            ? this.currency
+            : currency as Currency,
+        kind: identical(kind, missing) ? this.kind : kind as EntryKind,
+        category: identical(category, missing)
+            ? this.category
+            : category as Category,
+        dateIso: identical(dateIso, missing) ? this.dateIso : dateIso as String,
+      ),
+    );
   }
+
   String toString() => _$qudsSourceLedgerEntry.toString();
   bool operator ==(Object other) => _$qudsSourceLedgerEntry == other;
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[id, title, note, cents, currency, kind, category, dateIso]);
+  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[
+    id,
+    title,
+    note,
+    cents,
+    currency,
+    kind,
+    category,
+    dateIso,
+  ]);
 }
+
 class BudgetLimit {
-  BudgetLimit({required this.category, required this.limitCents, Object? currency = missing}) : currency = identical(currency, missing) ? Currency.usd : currency as Currency;
+  BudgetLimit({
+    required this.category,
+    required this.limitCents,
+    Object? currency = missing,
+  }) : currency = identical(currency, missing)
+           ? Currency.usd
+           : currency as Currency;
   final Category category;
   final int limitCents;
   final Currency currency;
-  Map<String, Object?> toJson() => <String, Object?>{'category': (category).toJson(), 'limitCents': limitCents, 'currency': (currency).toJson()};
+  Map<String, Object?> toJson() => <String, Object?>{
+    'category': (category).toJson(),
+    'limitCents': limitCents,
+    'currency': (currency).toJson(),
+  };
   static BudgetLimit fromJson(Map<String, Object?> data) {
-    if (!data.containsKey('category')) throw FormatException('Missing required field "category" for BudgetLimit');
-    if (!data.containsKey('limitCents')) throw FormatException('Missing required field "limitCents" for BudgetLimit');
-    return BudgetLimit(category: (() { final _qjv8 = data['category']; return Category.fromJson(_qjv8); })(), limitCents: (() { final _qjv9 = data['limitCents']; return _qjv9 is int ? _qjv9 : throw FormatException('Field "BudgetLimit.limitCents" expects int'); })(), currency: data.containsKey('currency') ? (() { final _qjv10 = data['currency']; return Currency.fromJson(_qjv10); })() : Currency.usd);
+    if (!data.containsKey('category'))
+      throw FormatException(
+        'Missing required field "category" for BudgetLimit',
+      );
+    if (!data.containsKey('limitCents'))
+      throw FormatException(
+        'Missing required field "limitCents" for BudgetLimit',
+      );
+    return BudgetLimit(
+      category: (() {
+        final _qjv8 = data['category'];
+        return Category.fromJson(_qjv8);
+      })(),
+      limitCents: (() {
+        final _qjv9 = data['limitCents'];
+        return _qjv9 is int
+            ? _qjv9
+            : throw FormatException(
+                'Field "BudgetLimit.limitCents" expects int',
+              );
+      })(),
+      currency: data.containsKey('currency')
+          ? (() {
+              final _qjv10 = data['currency'];
+              return Currency.fromJson(_qjv10);
+            })()
+          : Currency.usd,
+    );
   }
+
   String toJsonString() => _qjson.jsonEncode(toJson());
   static Result<BudgetLimit, String> tryFromJson(Map<String, Object?> data) {
     try {
@@ -167,13 +463,17 @@ class BudgetLimit {
       return Error<BudgetLimit, String>(e.toString());
     }
   }
+
   static BudgetLimit fromJsonString(String source) {
     final decoded = _qjson.jsonDecode(source);
     if (decoded is! Map) {
       throw FormatException('Expected JSON object for BudgetLimit');
     }
-    return fromJson(<String, Object?>{for (final e in decoded.entries) e.key.toString(): e.value});
+    return fromJson(<String, Object?>{
+      for (final e in decoded.entries) e.key.toString(): e.value,
+    });
   }
+
   static Result<BudgetLimit, String> tryFromJsonString(String source) {
     try {
       return Ok<BudgetLimit, String>(fromJsonString(source));
@@ -181,59 +481,214 @@ class BudgetLimit {
       return Error<BudgetLimit, String>(e.toString());
     }
   }
-  BudgetLimit._qudsCopy({required this.category, required this.limitCents, required this.currency});
-  BudgetLimit copyWith({Object? category = missing, Object? limitCents = missing, Object? currency = missing}) {
-    return BudgetLimit._qudsCopy(category: identical(category, missing) ? this.category : category as Category, limitCents: identical(limitCents, missing) ? this.limitCents : limitCents as int, currency: identical(currency, missing) ? this.currency : currency as Currency);
+
+  BudgetLimit._qudsCopy({
+    required this.category,
+    required this.limitCents,
+    required this.currency,
+  });
+  BudgetLimit copyWith({
+    Object? category = missing,
+    Object? limitCents = missing,
+    Object? currency = missing,
+  }) {
+    return BudgetLimit._qudsCopy(
+      category: identical(category, missing)
+          ? this.category
+          : category as Category,
+      limitCents: identical(limitCents, missing)
+          ? this.limitCents
+          : limitCents as int,
+      currency: identical(currency, missing)
+          ? this.currency
+          : currency as Currency,
+    );
   }
+
   @override
-  bool operator ==(Object other) => other is BudgetLimit && $qudsReadonly.valueEquals(this, other, <Object?>[category, limitCents, currency], <Object?>[other.category, other.limitCents, other.currency]);
+  bool operator ==(Object other) =>
+      other is BudgetLimit &&
+      $qudsReadonly.valueEquals(
+        this,
+        other,
+        <Object?>[category, limitCents, currency],
+        <Object?>[other.category, other.limitCents, other.currency],
+      );
   @override
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[category, limitCents, currency]);
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
-    if (runtimeType != BudgetLimit) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
-    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
-    final result = $qudsReadonly.cachedView<BudgetLimit>(this, () => $QudsReadonlyBudgetLimit(this, normalized));
-    (result as $QudsReadonlyBudgetLimit)._$qudsGuardsBudgetLimit.addAll(normalized);
+  int get hashCode =>
+      $qudsReadonly.valueHash(this, <Object?>[category, limitCents, currency]);
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) {
+    if (runtimeType != BudgetLimit)
+      throw UnsupportedError(
+        'Foreign subtype needs generated readonly metadata',
+      );
+    final normalized = $qudsReadonly.guardsOf([
+      ...$qudsKnownGuards.values,
+      ...$qudsReadonly.guardsFor(this).values,
+      ...guards.values,
+    ]);
+    final result = $qudsReadonly.cachedView<BudgetLimit>(
+      this,
+      () => $QudsReadonlyBudgetLimit(this, normalized),
+    );
+    (result as $QudsReadonlyBudgetLimit)._$qudsGuardsBudgetLimit.addAll(
+      normalized,
+    );
     return result;
   }
+
   bool $qudsIsLazySlot(Object slot) => false;
 }
-base class $QudsReadonlyBudgetLimit with $qudsReadonly.ReadonlyView implements BudgetLimit {
-  $QudsReadonlyBudgetLimit(BudgetLimit source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceBudgetLimit = source, _$qudsGuardsBudgetLimit = Map.of(guards);
+
+base class $QudsReadonlyBudgetLimit
+    with $qudsReadonly.ReadonlyView
+    implements BudgetLimit {
+  $QudsReadonlyBudgetLimit(
+    BudgetLimit source,
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) : _$qudsSourceBudgetLimit = source,
+      _$qudsGuardsBudgetLimit = Map.of(guards);
   final BudgetLimit _$qudsSourceBudgetLimit;
   final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsBudgetLimit;
   @override
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) => this;
   @override
-  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceBudgetLimit, candidate);
-  bool $qudsIsLazySlot(Object slot) => _$qudsSourceBudgetLimit.$qudsIsLazySlot(slot);
+  bool $qudsReadonlyMatches(Object? candidate) =>
+      $qudsReadonly.sameSourceEquals(_$qudsSourceBudgetLimit, candidate);
+  bool $qudsIsLazySlot(Object slot) =>
+      _$qudsSourceBudgetLimit.$qudsIsLazySlot(slot);
   @override
-  Category get category => $qudsReadonly.protectResult(_$qudsSourceBudgetLimit, _$qudsSourceBudgetLimit.category, (_qvalue) => $qudsReadonly.AutoGuard<Category>().protect(_qvalue));
+  Category get category => $qudsReadonly.protectResult(
+    _$qudsSourceBudgetLimit,
+    _$qudsSourceBudgetLimit.category,
+    (_qvalue) => $qudsReadonly.AutoGuard<Category>().protect(_qvalue),
+  );
   @override
-  int get limitCents => $qudsReadonly.protectResult(_$qudsSourceBudgetLimit, _$qudsSourceBudgetLimit.limitCents, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
+  int get limitCents => $qudsReadonly.protectResult(
+    _$qudsSourceBudgetLimit,
+    _$qudsSourceBudgetLimit.limitCents,
+    (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue),
+  );
   @override
-  Currency get currency => $qudsReadonly.protectResult(_$qudsSourceBudgetLimit, _$qudsSourceBudgetLimit.currency, (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue));
+  Currency get currency => $qudsReadonly.protectResult(
+    _$qudsSourceBudgetLimit,
+    _$qudsSourceBudgetLimit.currency,
+    (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue),
+  );
   Map<String, Object?> toJson() => _$qudsSourceBudgetLimit.toJson();
   String toJsonString() => _$qudsSourceBudgetLimit.toJsonString();
-  BudgetLimit copyWith({Object? category = missing, Object? limitCents = missing, Object? currency = missing}) {
-    return $qudsReadonly.ModelGuard<BudgetLimit>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ..._$qudsGuardsBudgetLimit.values, ])).protect(BudgetLimit._qudsCopy(category: identical(category, missing) ? this.category : category as Category, limitCents: identical(limitCents, missing) ? this.limitCents : limitCents as int, currency: identical(currency, missing) ? this.currency : currency as Currency));
+  BudgetLimit copyWith({
+    Object? category = missing,
+    Object? limitCents = missing,
+    Object? currency = missing,
+  }) {
+    return $qudsReadonly.ModelGuard<BudgetLimit>(
+      $qudsReadonly.guardsOf([
+        ...$qudsKnownGuards.values,
+        ..._$qudsGuardsBudgetLimit.values,
+      ]),
+    ).protect(
+      BudgetLimit._qudsCopy(
+        category: identical(category, missing)
+            ? this.category
+            : category as Category,
+        limitCents: identical(limitCents, missing)
+            ? this.limitCents
+            : limitCents as int,
+        currency: identical(currency, missing)
+            ? this.currency
+            : currency as Currency,
+      ),
+    );
   }
+
   String toString() => _$qudsSourceBudgetLimit.toString();
   bool operator ==(Object other) => _$qudsSourceBudgetLimit == other;
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[category, limitCents, currency]);
+  int get hashCode =>
+      $qudsReadonly.valueHash(this, <Object?>[category, limitCents, currency]);
 }
+
 class LedgerSnapshot {
-  LedgerSnapshot({required this.displayCurrency, required this.entries, required this.budgets});
+  LedgerSnapshot({
+    required this.displayCurrency,
+    required this.entries,
+    required this.budgets,
+  });
   final Currency displayCurrency;
   final List<LedgerEntry> entries;
   final List<BudgetLimit> budgets;
-  Map<String, Object?> toJson() => <String, Object?>{'displayCurrency': (displayCurrency).toJson(), 'entries': <Object?>[for (final _qje11 in entries) (_qje11).toJson()], 'budgets': <Object?>[for (final _qje12 in budgets) (_qje12).toJson()]};
+  Map<String, Object?> toJson() => <String, Object?>{
+    'displayCurrency': (displayCurrency).toJson(),
+    'entries': <Object?>[for (final _qje11 in entries) (_qje11).toJson()],
+    'budgets': <Object?>[for (final _qje12 in budgets) (_qje12).toJson()],
+  };
   static LedgerSnapshot fromJson(Map<String, Object?> data) {
-    if (!data.containsKey('displayCurrency')) throw FormatException('Missing required field "displayCurrency" for LedgerSnapshot');
-    if (!data.containsKey('entries')) throw FormatException('Missing required field "entries" for LedgerSnapshot');
-    if (!data.containsKey('budgets')) throw FormatException('Missing required field "budgets" for LedgerSnapshot');
-    return LedgerSnapshot(displayCurrency: (() { final _qjv13 = data['displayCurrency']; return Currency.fromJson(_qjv13); })(), entries: (() { final _qjv14 = data['entries']; return _qjv14 is List ? <LedgerEntry>[for (final _qji15 in _qjv14) (() { final _qjv16 = _qji15; return _qjv16 is Map ? LedgerEntry.fromJson(<String, Object?>{for (final _qjo17 in _qjv16.entries) _qjo17.key.toString(): _qjo17.value}) : throw FormatException('Field "LedgerSnapshot.entries[]" expects JSON object for LedgerEntry'); })()] : throw FormatException('Field "LedgerSnapshot.entries" expects List'); })(), budgets: (() { final _qjv18 = data['budgets']; return _qjv18 is List ? <BudgetLimit>[for (final _qji19 in _qjv18) (() { final _qjv20 = _qji19; return _qjv20 is Map ? BudgetLimit.fromJson(<String, Object?>{for (final _qjo21 in _qjv20.entries) _qjo21.key.toString(): _qjo21.value}) : throw FormatException('Field "LedgerSnapshot.budgets[]" expects JSON object for BudgetLimit'); })()] : throw FormatException('Field "LedgerSnapshot.budgets" expects List'); })());
+    if (!data.containsKey('displayCurrency'))
+      throw FormatException(
+        'Missing required field "displayCurrency" for LedgerSnapshot',
+      );
+    if (!data.containsKey('entries'))
+      throw FormatException(
+        'Missing required field "entries" for LedgerSnapshot',
+      );
+    if (!data.containsKey('budgets'))
+      throw FormatException(
+        'Missing required field "budgets" for LedgerSnapshot',
+      );
+    return LedgerSnapshot(
+      displayCurrency: (() {
+        final _qjv13 = data['displayCurrency'];
+        return Currency.fromJson(_qjv13);
+      })(),
+      entries: (() {
+        final _qjv14 = data['entries'];
+        return _qjv14 is List
+            ? <LedgerEntry>[
+                for (final _qji15 in _qjv14)
+                  (() {
+                    final _qjv16 = _qji15;
+                    return _qjv16 is Map
+                        ? LedgerEntry.fromJson(<String, Object?>{
+                            for (final _qjo17 in _qjv16.entries)
+                              _qjo17.key.toString(): _qjo17.value,
+                          })
+                        : throw FormatException(
+                            'Field "LedgerSnapshot.entries[]" expects JSON object for LedgerEntry',
+                          );
+                  })(),
+              ]
+            : throw FormatException(
+                'Field "LedgerSnapshot.entries" expects List',
+              );
+      })(),
+      budgets: (() {
+        final _qjv18 = data['budgets'];
+        return _qjv18 is List
+            ? <BudgetLimit>[
+                for (final _qji19 in _qjv18)
+                  (() {
+                    final _qjv20 = _qji19;
+                    return _qjv20 is Map
+                        ? BudgetLimit.fromJson(<String, Object?>{
+                            for (final _qjo21 in _qjv20.entries)
+                              _qjo21.key.toString(): _qjo21.value,
+                          })
+                        : throw FormatException(
+                            'Field "LedgerSnapshot.budgets[]" expects JSON object for BudgetLimit',
+                          );
+                  })(),
+              ]
+            : throw FormatException(
+                'Field "LedgerSnapshot.budgets" expects List',
+              );
+      })(),
+    );
   }
+
   String toJsonString() => _qjson.jsonEncode(toJson());
   static Result<LedgerSnapshot, String> tryFromJson(Map<String, Object?> data) {
     try {
@@ -242,13 +697,17 @@ class LedgerSnapshot {
       return Error<LedgerSnapshot, String>(e.toString());
     }
   }
+
   static LedgerSnapshot fromJsonString(String source) {
     final decoded = _qjson.jsonDecode(source);
     if (decoded is! Map) {
       throw FormatException('Expected JSON object for LedgerSnapshot');
     }
-    return fromJson(<String, Object?>{for (final e in decoded.entries) e.key.toString(): e.value});
+    return fromJson(<String, Object?>{
+      for (final e in decoded.entries) e.key.toString(): e.value,
+    });
   }
+
   static Result<LedgerSnapshot, String> tryFromJsonString(String source) {
     try {
       return Ok<LedgerSnapshot, String>(fromJsonString(source));
@@ -256,121 +715,386 @@ class LedgerSnapshot {
       return Error<LedgerSnapshot, String>(e.toString());
     }
   }
-  LedgerSnapshot._qudsCopy({required this.displayCurrency, required this.entries, required this.budgets});
-  LedgerSnapshot copyWith({Object? displayCurrency = missing, Object? entries = missing, Object? budgets = missing}) {
-    return LedgerSnapshot._qudsCopy(displayCurrency: identical(displayCurrency, missing) ? this.displayCurrency : displayCurrency as Currency, entries: identical(entries, missing) ? this.entries : entries as List<LedgerEntry>, budgets: identical(budgets, missing) ? this.budgets : budgets as List<BudgetLimit>);
+
+  LedgerSnapshot._qudsCopy({
+    required this.displayCurrency,
+    required this.entries,
+    required this.budgets,
+  });
+  LedgerSnapshot copyWith({
+    Object? displayCurrency = missing,
+    Object? entries = missing,
+    Object? budgets = missing,
+  }) {
+    return LedgerSnapshot._qudsCopy(
+      displayCurrency: identical(displayCurrency, missing)
+          ? this.displayCurrency
+          : displayCurrency as Currency,
+      entries: identical(entries, missing)
+          ? this.entries
+          : entries as List<LedgerEntry>,
+      budgets: identical(budgets, missing)
+          ? this.budgets
+          : budgets as List<BudgetLimit>,
+    );
   }
+
   @override
-  bool operator ==(Object other) => other is LedgerSnapshot && $qudsReadonly.valueEquals(this, other, <Object?>[displayCurrency, entries, budgets], <Object?>[other.displayCurrency, other.entries, other.budgets]);
+  bool operator ==(Object other) =>
+      other is LedgerSnapshot &&
+      $qudsReadonly.valueEquals(
+        this,
+        other,
+        <Object?>[displayCurrency, entries, budgets],
+        <Object?>[other.displayCurrency, other.entries, other.budgets],
+      );
   @override
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[displayCurrency, entries, budgets]);
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
-    if (runtimeType != LedgerSnapshot) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
-    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
-    final result = $qudsReadonly.cachedView<LedgerSnapshot>(this, () => $QudsReadonlyLedgerSnapshot(this, normalized));
-    (result as $QudsReadonlyLedgerSnapshot)._$qudsGuardsLedgerSnapshot.addAll(normalized);
+  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[
+    displayCurrency,
+    entries,
+    budgets,
+  ]);
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) {
+    if (runtimeType != LedgerSnapshot)
+      throw UnsupportedError(
+        'Foreign subtype needs generated readonly metadata',
+      );
+    final normalized = $qudsReadonly.guardsOf([
+      ...$qudsKnownGuards.values,
+      ...$qudsReadonly.guardsFor(this).values,
+      ...guards.values,
+    ]);
+    final result = $qudsReadonly.cachedView<LedgerSnapshot>(
+      this,
+      () => $QudsReadonlyLedgerSnapshot(this, normalized),
+    );
+    (result as $QudsReadonlyLedgerSnapshot)._$qudsGuardsLedgerSnapshot.addAll(
+      normalized,
+    );
     return result;
   }
+
   bool $qudsIsLazySlot(Object slot) => false;
 }
-base class $QudsReadonlyLedgerSnapshot with $qudsReadonly.ReadonlyView implements LedgerSnapshot {
-  $QudsReadonlyLedgerSnapshot(LedgerSnapshot source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceLedgerSnapshot = source, _$qudsGuardsLedgerSnapshot = Map.of(guards);
+
+base class $QudsReadonlyLedgerSnapshot
+    with $qudsReadonly.ReadonlyView
+    implements LedgerSnapshot {
+  $QudsReadonlyLedgerSnapshot(
+    LedgerSnapshot source,
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) : _$qudsSourceLedgerSnapshot = source,
+      _$qudsGuardsLedgerSnapshot = Map.of(guards);
   final LedgerSnapshot _$qudsSourceLedgerSnapshot;
-  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsLedgerSnapshot;
+  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>>
+  _$qudsGuardsLedgerSnapshot;
   @override
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) => this;
   @override
-  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceLedgerSnapshot, candidate);
-  bool $qudsIsLazySlot(Object slot) => _$qudsSourceLedgerSnapshot.$qudsIsLazySlot(slot);
+  bool $qudsReadonlyMatches(Object? candidate) =>
+      $qudsReadonly.sameSourceEquals(_$qudsSourceLedgerSnapshot, candidate);
+  bool $qudsIsLazySlot(Object slot) =>
+      _$qudsSourceLedgerSnapshot.$qudsIsLazySlot(slot);
   @override
-  Currency get displayCurrency => $qudsReadonly.protectResult(_$qudsSourceLedgerSnapshot, _$qudsSourceLedgerSnapshot.displayCurrency, (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue));
+  Currency get displayCurrency => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerSnapshot,
+    _$qudsSourceLedgerSnapshot.displayCurrency,
+    (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue),
+  );
   @override
-  List<LedgerEntry> get entries => $qudsReadonly.protectResult(_$qudsSourceLedgerSnapshot, _$qudsSourceLedgerSnapshot.entries, (_qvalue) => $qudsReadonly.ListGuard<LedgerEntry>($qudsReadonly.ModelGuard<LedgerEntry>($qudsReadonly.guardsOf([..._$qudsGuardsLedgerSnapshot.values, ]))).protect(_qvalue));
+  List<LedgerEntry> get entries => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerSnapshot,
+    _$qudsSourceLedgerSnapshot.entries,
+    (_qvalue) => $qudsReadonly.ListGuard<LedgerEntry>(
+      $qudsReadonly.ModelGuard<LedgerEntry>(
+        $qudsReadonly.guardsOf([..._$qudsGuardsLedgerSnapshot.values]),
+      ),
+    ).protect(_qvalue),
+  );
   @override
-  List<BudgetLimit> get budgets => $qudsReadonly.protectResult(_$qudsSourceLedgerSnapshot, _$qudsSourceLedgerSnapshot.budgets, (_qvalue) => $qudsReadonly.ListGuard<BudgetLimit>($qudsReadonly.ModelGuard<BudgetLimit>($qudsReadonly.guardsOf([..._$qudsGuardsLedgerSnapshot.values, ]))).protect(_qvalue));
+  List<BudgetLimit> get budgets => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerSnapshot,
+    _$qudsSourceLedgerSnapshot.budgets,
+    (_qvalue) => $qudsReadonly.ListGuard<BudgetLimit>(
+      $qudsReadonly.ModelGuard<BudgetLimit>(
+        $qudsReadonly.guardsOf([..._$qudsGuardsLedgerSnapshot.values]),
+      ),
+    ).protect(_qvalue),
+  );
   Map<String, Object?> toJson() => _$qudsSourceLedgerSnapshot.toJson();
   String toJsonString() => _$qudsSourceLedgerSnapshot.toJsonString();
-  LedgerSnapshot copyWith({Object? displayCurrency = missing, Object? entries = missing, Object? budgets = missing}) {
-    return $qudsReadonly.ModelGuard<LedgerSnapshot>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ..._$qudsGuardsLedgerSnapshot.values, ])).protect(LedgerSnapshot._qudsCopy(displayCurrency: identical(displayCurrency, missing) ? this.displayCurrency : displayCurrency as Currency, entries: identical(entries, missing) ? this.entries : entries as List<LedgerEntry>, budgets: identical(budgets, missing) ? this.budgets : budgets as List<BudgetLimit>));
+  LedgerSnapshot copyWith({
+    Object? displayCurrency = missing,
+    Object? entries = missing,
+    Object? budgets = missing,
+  }) {
+    return $qudsReadonly.ModelGuard<LedgerSnapshot>(
+      $qudsReadonly.guardsOf([
+        ...$qudsKnownGuards.values,
+        ..._$qudsGuardsLedgerSnapshot.values,
+      ]),
+    ).protect(
+      LedgerSnapshot._qudsCopy(
+        displayCurrency: identical(displayCurrency, missing)
+            ? this.displayCurrency
+            : displayCurrency as Currency,
+        entries: identical(entries, missing)
+            ? this.entries
+            : entries as List<LedgerEntry>,
+        budgets: identical(budgets, missing)
+            ? this.budgets
+            : budgets as List<BudgetLimit>,
+      ),
+    );
   }
+
   String toString() => _$qudsSourceLedgerSnapshot.toString();
   bool operator ==(Object other) => _$qudsSourceLedgerSnapshot == other;
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[displayCurrency, entries, budgets]);
+  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[
+    displayCurrency,
+    entries,
+    budgets,
+  ]);
 }
+
 sealed class BudgetStatus {
   const BudgetStatus();
 }
+
 class Healthy extends BudgetStatus {
   const Healthy({required this.ratio, required this.remainingCents});
   final double ratio;
   final int remainingCents;
 }
+
 class Warning extends BudgetStatus {
   const Warning({required this.ratio, required this.remainingCents});
   final double ratio;
   final int remainingCents;
 }
+
 class Exceeded extends BudgetStatus {
   const Exceeded({required this.ratio, required this.overCents});
   final double ratio;
   final int overCents;
 }
+
 class CategorySummary {
-  CategorySummary({required this.category, required this.spent, required this.share, this.limit = null, this.status = null});
+  CategorySummary({
+    required this.category,
+    required this.spent,
+    required this.share,
+    this.limit = null,
+    this.status = null,
+  });
   final Category category;
   final Money spent;
   final double share;
   final Money? limit;
   final BudgetStatus? status;
-  CategorySummary._qudsCopy({required this.category, required this.spent, required this.share, required this.limit, required this.status});
-  CategorySummary copyWith({Object? category = missing, Object? spent = missing, Object? share = missing, Object? limit = missing, Object? status = missing}) {
-    return CategorySummary._qudsCopy(category: identical(category, missing) ? this.category : category as Category, spent: identical(spent, missing) ? this.spent : spent as Money, share: identical(share, missing) ? this.share : share as double, limit: identical(limit, missing) ? this.limit : limit as Money?, status: identical(status, missing) ? this.status : status as BudgetStatus?);
+  CategorySummary._qudsCopy({
+    required this.category,
+    required this.spent,
+    required this.share,
+    required this.limit,
+    required this.status,
+  });
+  CategorySummary copyWith({
+    Object? category = missing,
+    Object? spent = missing,
+    Object? share = missing,
+    Object? limit = missing,
+    Object? status = missing,
+  }) {
+    return CategorySummary._qudsCopy(
+      category: identical(category, missing)
+          ? this.category
+          : category as Category,
+      spent: identical(spent, missing) ? this.spent : spent as Money,
+      share: identical(share, missing) ? this.share : share as double,
+      limit: identical(limit, missing) ? this.limit : limit as Money?,
+      status: identical(status, missing)
+          ? this.status
+          : status as BudgetStatus?,
+    );
   }
+
   @override
-  bool operator ==(Object other) => other is CategorySummary && $qudsReadonly.valueEquals(this, other, <Object?>[category, spent, share, limit, status], <Object?>[other.category, other.spent, other.share, other.limit, other.status]);
+  bool operator ==(Object other) =>
+      other is CategorySummary &&
+      $qudsReadonly.valueEquals(
+        this,
+        other,
+        <Object?>[category, spent, share, limit, status],
+        <Object?>[
+          other.category,
+          other.spent,
+          other.share,
+          other.limit,
+          other.status,
+        ],
+      );
   @override
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[category, spent, share, limit, status]);
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
-    if (runtimeType != CategorySummary) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
-    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
-    final result = $qudsReadonly.cachedView<CategorySummary>(this, () => $QudsReadonlyCategorySummary(this, normalized));
-    (result as $QudsReadonlyCategorySummary)._$qudsGuardsCategorySummary.addAll(normalized);
+  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[
+    category,
+    spent,
+    share,
+    limit,
+    status,
+  ]);
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) {
+    if (runtimeType != CategorySummary)
+      throw UnsupportedError(
+        'Foreign subtype needs generated readonly metadata',
+      );
+    final normalized = $qudsReadonly.guardsOf([
+      ...$qudsKnownGuards.values,
+      ...$qudsReadonly.guardsFor(this).values,
+      ...guards.values,
+    ]);
+    final result = $qudsReadonly.cachedView<CategorySummary>(
+      this,
+      () => $QudsReadonlyCategorySummary(this, normalized),
+    );
+    (result as $QudsReadonlyCategorySummary)._$qudsGuardsCategorySummary.addAll(
+      normalized,
+    );
     return result;
   }
+
   bool $qudsIsLazySlot(Object slot) => false;
 }
-base class $QudsReadonlyCategorySummary with $qudsReadonly.ReadonlyView implements CategorySummary {
-  $QudsReadonlyCategorySummary(CategorySummary source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceCategorySummary = source, _$qudsGuardsCategorySummary = Map.of(guards);
+
+base class $QudsReadonlyCategorySummary
+    with $qudsReadonly.ReadonlyView
+    implements CategorySummary {
+  $QudsReadonlyCategorySummary(
+    CategorySummary source,
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) : _$qudsSourceCategorySummary = source,
+      _$qudsGuardsCategorySummary = Map.of(guards);
   final CategorySummary _$qudsSourceCategorySummary;
-  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsCategorySummary;
+  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>>
+  _$qudsGuardsCategorySummary;
   @override
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) => this;
   @override
-  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceCategorySummary, candidate);
-  bool $qudsIsLazySlot(Object slot) => _$qudsSourceCategorySummary.$qudsIsLazySlot(slot);
+  bool $qudsReadonlyMatches(Object? candidate) =>
+      $qudsReadonly.sameSourceEquals(_$qudsSourceCategorySummary, candidate);
+  bool $qudsIsLazySlot(Object slot) =>
+      _$qudsSourceCategorySummary.$qudsIsLazySlot(slot);
   @override
-  Category get category => $qudsReadonly.protectResult(_$qudsSourceCategorySummary, _$qudsSourceCategorySummary.category, (_qvalue) => $qudsReadonly.AutoGuard<Category>().protect(_qvalue));
+  Category get category => $qudsReadonly.protectResult(
+    _$qudsSourceCategorySummary,
+    _$qudsSourceCategorySummary.category,
+    (_qvalue) => $qudsReadonly.AutoGuard<Category>().protect(_qvalue),
+  );
   @override
-  Money get spent => $qudsReadonly.protectResult(_$qudsSourceCategorySummary, _$qudsSourceCategorySummary.spent, (_qvalue) => $qudsReadonly.ModelGuard<Money>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ..._$qudsGuardsCategorySummary.values, ])).protect(_qvalue));
+  Money get spent => $qudsReadonly.protectResult(
+    _$qudsSourceCategorySummary,
+    _$qudsSourceCategorySummary.spent,
+    (_qvalue) => $qudsReadonly.ModelGuard<Money>(
+      $qudsReadonly.guardsOf([
+        ...$qudsKnownGuards.values,
+        ..._$qudsGuardsCategorySummary.values,
+      ]),
+    ).protect(_qvalue),
+  );
   @override
-  double get share => $qudsReadonly.protectResult(_$qudsSourceCategorySummary, _$qudsSourceCategorySummary.share, (_qvalue) => $qudsReadonly.AutoGuard<double>().protect(_qvalue));
+  double get share => $qudsReadonly.protectResult(
+    _$qudsSourceCategorySummary,
+    _$qudsSourceCategorySummary.share,
+    (_qvalue) => $qudsReadonly.AutoGuard<double>().protect(_qvalue),
+  );
   @override
-  Money? get limit => $qudsReadonly.protectResult(_$qudsSourceCategorySummary, _$qudsSourceCategorySummary.limit, (_qvalue) => $qudsReadonly.NullableGuard<Money>($qudsReadonly.ModelGuard<Money>($qudsReadonly.guardsOf([..._$qudsGuardsCategorySummary.values, ]))).protect(_qvalue));
+  Money? get limit => $qudsReadonly.protectResult(
+    _$qudsSourceCategorySummary,
+    _$qudsSourceCategorySummary.limit,
+    (_qvalue) => $qudsReadonly.NullableGuard<Money>(
+      $qudsReadonly.ModelGuard<Money>(
+        $qudsReadonly.guardsOf([..._$qudsGuardsCategorySummary.values]),
+      ),
+    ).protect(_qvalue),
+  );
   @override
-  BudgetStatus? get status => $qudsReadonly.protectResult(_$qudsSourceCategorySummary, _$qudsSourceCategorySummary.status, (_qvalue) => $qudsReadonly.NullableGuard<BudgetStatus>($qudsReadonly.AutoGuard<BudgetStatus>()).protect(_qvalue));
-  CategorySummary copyWith({Object? category = missing, Object? spent = missing, Object? share = missing, Object? limit = missing, Object? status = missing}) {
-    return $qudsReadonly.ModelGuard<CategorySummary>($qudsReadonly.guardsOf([...$qudsKnownGuards.values, ..._$qudsGuardsCategorySummary.values, ])).protect(CategorySummary._qudsCopy(category: identical(category, missing) ? this.category : category as Category, spent: identical(spent, missing) ? this.spent : spent as Money, share: identical(share, missing) ? this.share : share as double, limit: identical(limit, missing) ? this.limit : limit as Money?, status: identical(status, missing) ? this.status : status as BudgetStatus?));
+  BudgetStatus? get status => $qudsReadonly.protectResult(
+    _$qudsSourceCategorySummary,
+    _$qudsSourceCategorySummary.status,
+    (_qvalue) => $qudsReadonly.NullableGuard<BudgetStatus>(
+      $qudsReadonly.AutoGuard<BudgetStatus>(),
+    ).protect(_qvalue),
+  );
+  CategorySummary copyWith({
+    Object? category = missing,
+    Object? spent = missing,
+    Object? share = missing,
+    Object? limit = missing,
+    Object? status = missing,
+  }) {
+    return $qudsReadonly.ModelGuard<CategorySummary>(
+      $qudsReadonly.guardsOf([
+        ...$qudsKnownGuards.values,
+        ..._$qudsGuardsCategorySummary.values,
+      ]),
+    ).protect(
+      CategorySummary._qudsCopy(
+        category: identical(category, missing)
+            ? this.category
+            : category as Category,
+        spent: identical(spent, missing) ? this.spent : spent as Money,
+        share: identical(share, missing) ? this.share : share as double,
+        limit: identical(limit, missing) ? this.limit : limit as Money?,
+        status: identical(status, missing)
+            ? this.status
+            : status as BudgetStatus?,
+      ),
+    );
   }
+
   String toString() => _$qudsSourceCategorySummary.toString();
   bool operator ==(Object other) => _$qudsSourceCategorySummary == other;
-  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[category, spent, share, limit, status]);
+  int get hashCode => $qudsReadonly.valueHash(this, <Object?>[
+    category,
+    spent,
+    share,
+    limit,
+    status,
+  ]);
 }
 
-
-
-
 String _q0(Category _q5) {
-  return (() { switch (_q5) { case Category.housing: return "Housing"; case Category.food: return "Food & Dining"; case Category.transport: return "Transport"; case Category.utilities: return "Utilities"; case Category.health: return "Health"; case Category.education: return "Education"; case Category.entertainment: return "Leisure"; case Category.salary: return "Salary"; case Category.freelance: return "Freelance"; case Category.savings: return "Savings"; } })();
+  return (() {
+    switch (_q5) {
+      case Category.housing:
+        return "Housing";
+      case Category.food:
+        return "Food & Dining";
+      case Category.transport:
+        return "Transport";
+      case Category.utilities:
+        return "Utilities";
+      case Category.health:
+        return "Health";
+      case Category.education:
+        return "Education";
+      case Category.entertainment:
+        return "Leisure";
+      case Category.salary:
+        return "Salary";
+      case Category.freelance:
+        return "Freelance";
+      case Category.savings:
+        return "Savings";
+    }
+  })();
 }
 
 bool _q1(Category _q6) {
@@ -378,7 +1102,16 @@ bool _q1(Category _q6) {
 }
 
 List<Category> _q2() {
-  return <Category>[Category.housing, Category.food, Category.transport, Category.utilities, Category.health, Category.education, Category.entertainment, Category.savings];
+  return <Category>[
+    Category.housing,
+    Category.food,
+    Category.transport,
+    Category.utilities,
+    Category.health,
+    Category.education,
+    Category.entertainment,
+    Category.savings,
+  ];
 }
 
 List<Category> _q3() {
@@ -386,16 +1119,26 @@ List<Category> _q3() {
 }
 
 List<Category> _q4() {
-  return <Category>[Category.housing, Category.food, Category.transport, Category.utilities, Category.health, Category.education, Category.entertainment, Category.salary, Category.freelance, Category.savings];
+  return <Category>[
+    Category.housing,
+    Category.food,
+    Category.transport,
+    Category.utilities,
+    Category.health,
+    Category.education,
+    Category.entertainment,
+    Category.salary,
+    Category.freelance,
+    Category.savings,
+  ];
 }
-
-
-
-
 
 final categoryLabel = _q0;
 final categoryIsIncome = _q1;
 final expenseCategories = _q2;
 final incomeCategories = _q3;
 final allCategories = _q4;
-final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ListGuard<Category>($qudsReadonly.AutoGuard<Category>())]);
+final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards =
+    $qudsReadonly.guardsOf([
+      $qudsReadonly.ListGuard<Category>($qudsReadonly.AutoGuard<Category>()),
+    ]);

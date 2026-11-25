@@ -1,10 +1,225 @@
 # Quds
 
-> **Status: Public Alpha (`0.1.0-alpha.1`)** — The Quds compiler, standard library, CLI, LSP server, debugger, and Flutter integration are usable today for early adopters and real cross-platform apps, while certification of all 115 specification rules is still in progress.
+> **Status: Public Alpha (`0.1.0-alpha.1`)** — Statically typed, indentation-based general-purpose language that compiles to clean, readable Dart — with full Dart & Flutter interop, zero `build_runner` boilerplate, and an integrated CLI, LSP server, and debugger.
 
-Quds is a general-purpose, statically typed, indentation-based language that compiles to readable Dart. The language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md). Compiler coverage and remaining certification work are tracked in the [language readiness inventory](docs/LANGUAGE_READINESS.md) and [working plan](docs/LANGUAGE_READINESS_AR.md); not all 115 decisions are certified.
+Quds keeps Dart's type safety, null safety, AOT/JIT/Web/Flutter ecosystem, and zero runtime overhead — while removing braces, semicolons, closing-parenthesis pyramids, and repetitive model boilerplate. The formal language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md); rule-by-rule certification progress is tracked in [LANGUAGE_READINESS.md](docs/LANGUAGE_READINESS.md) and [LANGUAGE_READINESS_AR.md](docs/LANGUAGE_READINESS_AR.md).
 
-## Example
+---
+
+## Why Quds? Side-by-Side with Dart
+
+### 1. Value Classes, `copyWith`, Equality & JSON — **6 lines vs ~45 lines**
+
+In Dart, an immutable JSON model with structural equality and null-safe `copyWith` either requires ~45 lines of hand-written boilerplate or `freezed` + `json_serializable` + `build_runner`. In Quds, it is built into the language:
+
+**Quds**
+```quds
+@Json
+value class User:
+  id: int required
+  name: String required
+  bio: String? = null
+```
+
+**Equivalent Dart (without codegen packages)**
+```dart
+class User {
+  const User({required this.id, required this.name, this.bio});
+  final int id;
+  final String name;
+  final String? bio;
+
+  static const _sentinel = Object();
+  User copyWith({int? id, String? name, Object? bio = _sentinel}) => User(
+        id: id ?? this.id,
+        name: name ?? this.name,
+        bio: identical(bio, _sentinel) ? this.bio : bio as String?,
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'bio': bio};
+  factory User.fromJson(Map<String, dynamic> json) => User(
+        id: json['id'] as int,
+        name: json['name'] as String,
+        bio: json['bio'] as String?,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is User && other.id == id && other.name == name && other.bio == bio;
+
+  @override
+  int get hashCode => Object.hash(id, name, bio);
+}
+```
+
+In Quds, `user.copyWith(bio: null)` explicitly clears `bio`, while `user.copyWith(name: "Noor")` keeps the existing `bio` — backed by `Optional<T>` and `missing` (`QUDS-083`).
+
+---
+
+### 2. Flutter Widget Trees Without Closing-Paren Pyramids (`QUDS-081`)
+
+Every widget, constructor, or function accepts unified indentation blocks, and `children:` accepts direct `for`/`if` rows with built-in loop context (`$.index`, `$.iteration`, `$.isFirst`).
+
+**Quds**
+```quds
+buildTransactions(context: BuildContext, items: List<String>) -> Widget:
+  return Card:
+    margin: EdgeInsets.all(16.0)
+    child: Column:
+      crossAxisAlignment: CrossAxisAlignment.start
+      children:
+        if items.isEmpty:
+          Padding:
+            padding: EdgeInsets.all(20.0)
+            child: Text("No entries yet.")
+        else:
+          for title in items:
+            ListTile:
+              leading: CircleAvatar(child: Text("{$.iteration}"))
+              title: Text(title)
+```
+
+**Equivalent Dart**
+```dart
+Widget buildTransactions(BuildContext context, List<String> items) {
+  return Card(
+    margin: const EdgeInsets.all(16.0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(20.0),
+            child: Text('No entries yet.'),
+          )
+        else
+          for (var i = 0; i < items.length; i++)
+            ListTile(
+              leading: CircleAvatar(child: Text('${i + 1}')),
+              title: Text(items[i]),
+            ),
+      ],
+    ),
+  );
+}
+```
+
+No `), ), ], ), );` ladders, no manual loop counter `var i = 0; i < items.length; i++`, and no semicolons.
+
+---
+
+### 3. Sealed Types, Safe Conversions (`to?`) & `Result` Propagation (`?`)
+
+**Quds**
+```quds
+sealed type BudgetStatus:
+  Healthy(remaining: double)
+  Warning(remaining: double)
+  Exceeded(overBy: double)
+
+parsePositive(raw: String) -> Result<double, String>:
+  amount = raw.trim() to? double
+  guard amount != null and amount > 0.0 else:
+    return Error("Enter a positive number")
+  return Ok(amount)
+
+statusLabel(status: BudgetStatus) -> String:
+  return match status:
+    Healthy(remaining: r): "On track ({r} left)"
+    Warning(remaining: r): "Near limit ({r} left)"
+    Exceeded(overBy: o): "Over budget by {o}"
+```
+
+**Equivalent Dart**
+```dart
+sealed class BudgetStatus {
+  const BudgetStatus();
+}
+final class Healthy extends BudgetStatus {
+  const Healthy({required this.remaining});
+  final double remaining;
+}
+final class Warning extends BudgetStatus {
+  const Warning({required this.remaining});
+  final double remaining;
+}
+final class Exceeded extends BudgetStatus {
+  const Exceeded({required this.overBy});
+  final double overBy;
+}
+
+String statusLabel(BudgetStatus status) => switch (status) {
+      Healthy(:final remaining) => 'On track ($remaining left)',
+      Warning(:final remaining) => 'Near limit ($remaining left)',
+      Exceeded(:final overBy) => 'Over budget by $overBy',
+    };
+```
+
+---
+
+### 4. Exact Rational Math, `retry` & Loop Context Out of the Box
+
+```quds
+use quds:math::number show Fraction, fraction
+
+main():
+  # Exact rational arithmetic — no floating-point drift (0.1 + 0.2 == 0.3)
+  total = fraction(1, 10) + fraction(2, 10)
+  print "{total.numerator}/{total.denominator}"   # 3/10
+
+  # Built-in loop context: $.index (0-based), $.iteration (1-based), $.isFirst
+  for city in ["Al-Quds", "Amman", "Cairo"]:
+    prefix = "*" if $.isFirst else "-"
+    print "{prefix} #{$.iteration}: {city}"
+
+  # Built-in retry with $.iteration
+  var tries = 0
+  answer = retry 3:
+    tries = $.iteration
+    if tries < 2:
+      throw "temporary network glitch"
+    result "connected on attempt {tries}"
+  print answer
+```
+
+### Summary: Where Quds Cuts Boilerplate
+
+| Pattern | Dart | Quds |
+| --- | --- | --- |
+| Immutable `@Json` model + `==` + `hashCode` + `copyWith` | ~40–50 lines (or `build_runner`) | **4–6 lines** (`@Json` + `value class`) |
+| `sealed` ADT hierarchy (3 variants) | ~20–25 lines of classes + constructors | **4 lines** (`sealed type`) |
+| Nested Flutter widget trees | Deep `), ], ), );` pyramids | **Zero** closing-paren ladders (`Widget:` + `children:`) |
+| Indexed `for-in` loops | Manual index / `.asMap().entries` | Built-in `$.index`, `$.iteration`, `$.isFirst` |
+| Safe string/number parsing | `int.tryParse` / `double.tryParse` | Unified `expr to? Type` (and custom `cast`) |
+| Immutable-by-default bindings | `final` on every local | `name = value` immutable; `var` only when mutable |
+
+---
+
+## Install
+
+Install [Dart](https://dart.dev/get-dart) 3.3 or newer (below 4), then activate `quds` and install editor support:
+
+```sh
+# From pub.dev:
+dart pub global activate quds
+
+# Or directly from GitHub:
+dart pub global activate --source git https://github.com/MohammedAsaadAsaad/quds_lang.git
+
+# Install editor extensions (VS Code, Cursor, JetBrains, Claude Code):
+quds install
+```
+
+The first command puts `quds` on your `PATH` (`~/.pub-cache/bin` on Linux/macOS, `%LOCALAPPDATA%\Pub\Cache\bin` on Windows). Open a new terminal if your shell does not see `quds` yet.
+
+- `quds doctor` checks Dart, Flutter, the `quds` CLI, and editor integrations.
+- `quds help` lists every command.
+
+---
+
+## Quick Start
+
+### Console / CLI Program
 
 ```quds
 square(n: int) -> int = n * n
@@ -15,163 +230,59 @@ main():
   print square(6)
 ```
 
-`name = "Quds"` is a fixed binding. `square` is one line and returns its result. Running it prints:
-
-```text
-Hello Quds
-36
-```
-
-[`examples/sum.quds`](examples/sum.quds) is a slightly longer program. It prints:
-
-```text
-Total: 60
-12
-```
-
-## Install
-
-Install [Dart](https://dart.dev/get-dart) 3.3 or newer (below 4). Then activate Quds from `pub.dev` (once published) or directly from Git, and install editor tooling:
-
 ```sh
-# From pub.dev:
-dart pub global activate quds_lang
-
-# Or latest from GitHub:
-dart pub global activate --source git https://github.com/MohammedAsaadAsaad/quds_lang.git
-
-# Install editor extensions (VS Code, Cursor, JetBrains, Claude Code):
-quds install
+quds run example/hello.quds
+quds build example/hello.quds
+quds test examples/flutter_app/quds_ledger/test/quds_ledger_test.quds
 ```
 
-The first command puts `quds` on your `PATH` through the pub cache bin directory: `~/.pub-cache/bin` on Linux and macOS, and `%LOCALAPPDATA%\Pub\Cache\bin` on Windows. Open a new terminal if the shell does not see `quds` yet.
+`quds build` writes clean, standalone Dart under `.dart_tool/quds/out/` (with source maps) without touching hand-written `.dart` files. Use `quds build --package` to generate publishable `lib/*.dart` files for dual Quds + Dart packages.
 
-`quds install` prepares the editors on this machine. VS Code, Cursor, and other editors from that family receive the extension. Android Studio and other JetBrains IDEs receive highlighting for `.quds` files. Claude Code receives a Quds skill and the language server when Claude Code is installed. If a directory is protected, the command asks for administrator permission. Quit an open JetBrains IDE before this step. Reload the editors afterward and open a `.quds` file.
-
-`quds doctor` reports Dart, Flutter, the `quds` command, and those editors. `quds help` lists every command.
-
-A Flutter app also needs Flutter installed.
-
-Inside a project, `quds pub get` (and all other native pub subcommands) selects
-Dart or Flutter automatically. `quds create . --platforms=linux,web,android` adds
-Flutter platforms in place while preserving Quds sources and existing user files.
-`quds run -d linux` selects `lib/main.quds` automatically; `--debug`, `--profile`
-and `--release` are supported. See [project commands](docs/PROJECT_CLI.md).
-
-### Featured Flutter & Package Examples
-
-- **[Quds Ledger](examples/flutter_app/budget_ledger/README.md)** + **[`quds_ledger`](examples/flutter_app/quds_ledger/README.md)**: A cross-platform personal finance & multi-currency Flutter app written in paren-free Quds block syntax, importing a standalone pure-Quds external package (`package:quds_ledger`) powered by exact `Fraction` arithmetic, `@Json`, `sealed type`, and `Result`.
-- **[Quds Academy](examples/flutter_app/quds_academy/README.md)**: An Arabic/English learning application written in Quds, with animated Flutter screens and direct `sqlite_plus` integration.
-
-## Run
-
-```sh
-quds run examples/sum.quds
-```
-
-`quds build examples/sum.quds` writes Dart under `.dart_tool/quds/out/`, following the source path. A `.quds` file does not gain a sibling `.dart` file. Build overwrites a file only when that file carries the Quds generated header, and it leaves the output untouched when compilation fails.
-
-A Flutter app whose program is Quds:
+### Flutter App
 
 ```sh
 quds create flutter hello
-quds run hello/lib/main.quds
+cd hello
+quds run -d chrome    # or -d windows / -d linux / -d android
 ```
 
-`lib/main.quds` is the program. The platform folders stay as Flutter created them. `quds run` compiles the file to `lib/quds_gen/` and launches it with `flutter run`. Saved Quds files trigger compilation and hot reload automatically in Run and Flutter F5 debug sessions. In the running terminal, `r` reloads, `R` hot restarts, and `q` quits. Select a device with `quds run lib/main.quds -- -d chrome`. See [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md) for behavior, validation and debug-adapter scope.
+- `quds run -d <device>` compiles `lib/main.quds` and its dependencies (including external pure-Quds packages under `lib/quds_gen/_packages/`), prints live step-by-step progress, and launches Flutter with automatic Hot Reload on save (`r` reload, `R` hot restart, `q` quit).
+- `quds build apk --release`, `quds build web`, `quds build windows`, and `quds build linux` compile Quds sources before invoking Flutter. See [project commands](docs/PROJECT_CLI.md) and [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md).
 
-In VS Code, **Quds: Show Generated Dart** opens the source and the generated file together.
+---
 
-## Editor
+## Featured Examples
 
-The [`editors/vscode`](editors/vscode) extension highlights `.quds` files, formats the open buffer, and shows compiler diagnostics. Hover shows a name's type. Keywords show an English purpose, constraints, and Quds example in hover and completion details; see the [keyword reference](docs/KEYWORD_REFERENCE.md). F12 and Ctrl+click open its declaration. Above `main`, Run, Debug, and Profile start the program, stop on a `.quds` line, and benchmark it.
+- **[Quds Ledger](examples/flutter_app/budget_ledger/README.md)** + **[`quds_ledger`](examples/flutter_app/quds_ledger/README.md)**: A cross-platform personal finance & multi-currency Flutter app written in paren-free Quds block syntax, importing a standalone pure-Quds external package (`package:quds_ledger`) powered by exact `Fraction` arithmetic, `@Json`, `sealed type`, `Result`, and custom `Money` casts.
+- **[Quds Academy](examples/flutter_app/quds_academy/README.md)**: A bilingual Arabic/English interactive learning app written in Quds with animated Flutter screens and `sqlite_plus`.
+- **[Calculator](examples/flutter_app/calculator)** & **[`examples/sum.quds`](examples/sum.quds)**: Focused Flutter and CLI starters.
 
-Inside this repository the editor starts `dart run bin/quds.dart lsp`. Elsewhere it starts `quds lsp`. `quds.serverCommand` replaces that command.
+---
 
-## Development
+## Editor & Debugging
+
+The [`editors/vscode`](editors/vscode) extension provides:
+- Syntax highlighting, format-on-save (`quds format`), and live compiler diagnostics.
+- Hover types, keyword reference with Quds examples ([KEYWORD_REFERENCE.md](docs/KEYWORD_REFERENCE.md)), Dart-to-Quds tooltip previews ([DART_TOOLTIP_PREVIEWS.md](docs/DART_TOOLTIP_PREVIEWS.md)), completion (including `$.` loop context), Go to Definition (`F12`), and Rename.
+- Integrated debugging (`F5`): `.quds` breakpoints, Flutter Hot Reload/Restart, **Quds: Show Generated Dart**, and live evaluation of `$` / `$.index` / `$.iteration` / `$.item` in Hover, Watch, and Debug Console.
+
+---
+
+## Development & Documentation
 
 ```sh
 dart pub get --enforce-lockfile
 dart format .
 dart analyze
-dart test --reporter expanded
+dart test -j 1 --reporter expanded
 ```
 
-Tests cover parsing, compilation, execution of the generated Dart, and the CLI. CI uses Dart 3.13.7 and the committed lockfile.
-
-In the managed build environment:
-
-```sh
-bash tool/setup_environment.sh
-export PATH="/workspace/toolchains/dart/bin:/workspace/.pub-cache/bin:$PATH"
-export PUB_CACHE=/workspace/.pub-cache
-```
-
-See [what the compiler implements](docs/MVP_0.md), [validation results](docs/VALIDATION.md), [environment setup](docs/ENVIRONMENT.md), [approved decisions](docs/LANGUAGE_DECISIONS.md), and [what the design closed](docs/OPEN_QUESTIONS.md).
-
-The SDK math precision contract and numerical regression checks are documented in
-[math accuracy](docs/MATH_ACCURACY.md) and [the API inventory](docs/MATH_COVERAGE.md).
-The [math expansion roadmap (Arabic)](docs/MATH_EXPANSION_ROADMAP_AR.md) maps missing
-domains; its first addition is [unweighted graph algorithms](docs/MATH_GRAPH.md).
-
-Math behavior is tested primarily through `quds test` on `.quds` suites; see
-[the testing policy and commands](docs/MATH_ACCURACY.md#primary-quds-tests).
-
-The next compiler-foundation packages and agent handoff are recorded in
-[the detailed Arabic execution plan](docs/LANGUAGE_NEXT_STAGE_HANDOFF_AR.md).
-The first package's supported behavior is documented in
-[function types and nullability](docs/FUNCTION_NULLABILITY.md).
-
-Generic application checks and the remaining L3.2 scope are documented in
-[generic constraints](docs/GENERIC_CONSTRAINTS.md).
-
-The next bounded generic package is described in
-[collection inference and instantiated interfaces](docs/COLLECTION_INFERENCE_INTERFACES.md).
-
-[Generic class inheritance and multi-file Quds testing](docs/GENERIC_INHERITANCE.md)
-documents the L3.2c subset and its remaining constructor/interop limits.
-
-
-Native Dart/Flutter hover examples can be previewed as Quds without changing
-upstream documentation. An optional background worker converts supported snippets
-and preserves unsupported Dart examples. See [tooltip previews](docs/DART_TOOLTIP_PREVIEWS.md).
-
-## Readiness and native builds
-
-`quds build apk --release`, `quds build web` and `quds build linux` compile
-`lib/main.quds` and its dependencies before invoking Flutter. Native toolchains
-remain necessary. [Project commands](docs/PROJECT_CLI.md) cover all platforms.
-VS Code offers **Quds: Hot Reload** and **Quds: Hot Restart** during Quds debug
-sessions; see [live updates](docs/FLUTTER_LIVE_UPDATES.md) for validation limits.
-
-Imported Dart functions and methods with required positional parameters can be
-stored and passed as typed function values, including bound methods and zero-arg
-functions. Optional/named signatures and explicit native generic specialization such as
-`math.max<int>` are supported. Generic values can also specialize from a concrete expected function signature.
-Unconstrained generic values and polymorphic callback signatures remain limited.
-The [readiness handoff](docs/LANGUAGE_READINESS_AR.md) separates implemented
-slices, pending conformance and real-platform release gates.
-
-Quds functions also support explicit/contextual generic values and local overload
-selection from an expected signature; ambiguous values report E311. See
-[Quds function values](docs/QUDS_FUNCTION_VALUES.md) for examples and limits.
-
-Required-positional Quds class method values support class/method substitution,
-static and inherited instance methods, nullable access and checked readonly
-results. See [method values](docs/QUDS_METHOD_VALUES.md) for examples and limits.
-
-Supported top-level Quds imports keep computed defaults inside their defining
-library for references and calls with omitted arguments. See
-[provider-owned defaults](docs/QUDS_PROVIDER_DEFAULTS.md) for the ABI contract,
-filter/re-export behavior and remaining limits.
-
-Public ordinary-class methods in imported Quds providers also publish stable
-default bridges, preserving receiver identity and readonly checks. Interface
-bridges and complete parameter-form metadata remain separate work.
-
-An initial [interface-default bridge slice](docs/QUDS_INTERFACE_DEFAULTS.md)
-keeps contract defaults and repeated-reference equality across implementation
-dispatch. Generic declaring interfaces and broader type signatures remain limited.
+Key references:
+- [Language Specification 1.2](docs/QUDS_LANGUAGE_SPECIFICATION.md) & [Approved Decisions](docs/LANGUAGE_DECISIONS.md)
+- [Language Readiness Inventory](docs/LANGUAGE_READINESS.md), [Arabic Working Plan](docs/LANGUAGE_READINESS_AR.md), & [Open Limits](docs/OPEN_QUESTIONS.md)
+- [Math Accuracy & API Coverage](docs/MATH_ACCURACY.md) / [MATH_COVERAGE.md](docs/MATH_COVERAGE.md)
+- [Function Types & Nullability](docs/FUNCTION_NULLABILITY.md), [Generic Constraints](docs/GENERIC_CONSTRAINTS.md), [Provider Defaults](docs/QUDS_PROVIDER_DEFAULTS.md)
+- [Validation Results](docs/VALIDATION.md) & [Environment Setup](docs/ENVIRONMENT.md)
 
 ## License
 

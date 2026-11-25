@@ -2,53 +2,128 @@
 // ignore_for_file: type=lint
 
 // ignore: undefined_hidden_name
-import 'package:quds_ledger/src/money.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:quds_ledger/src/money.dart'
+    hide Optional, missing, $qudsKnownGuards;
 // ignore: undefined_hidden_name
-import 'package:quds_ledger/src/models.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:quds_ledger/src/models.dart'
+    hide Optional, missing, $qudsKnownGuards;
+
 import 'money.dart' as _qImportedType0;
 import 'models.dart' as _qImportedType2;
 import '_quds_sdk/quds_readonly.dart' as $qudsReadonly;
 // ignore: unnecessary_import
 import '_quds_sdk/quds_readonly.dart' show Result, Ok, Error;
 export '_quds_sdk/quds_readonly.dart' show Result, Ok, Error;
-class _$QudsDefaultOmitted { const _$QudsDefaultOmitted(); }
+
+class _$QudsDefaultOmitted {
+  const _$QudsDefaultOmitted();
+}
+
 const _$qudsDefaultOmitted = _$QudsDefaultOmitted();
+
 class Optional<T> {
   final bool isPresent;
   final T? value;
   const Optional.missing() : isPresent = false, value = null;
   const Optional.present(this.value) : isPresent = true;
 }
+
 const missing = Optional<Never>.missing();
 bool _qBool(bool value) => value;
 
 class LedgerEngine {
-  LedgerEngine({Object? displayCurrency = missing, Object? entries = missing, Object? budgets = missing, this._nextId = 1}) : displayCurrency = identical(displayCurrency, missing) ? Currency.usd : displayCurrency as Currency, entries = identical(entries, missing) ? <LedgerEntry>[] : entries as List<LedgerEntry>, budgets = identical(budgets, missing) ? <BudgetLimit>[] : budgets as List<BudgetLimit>;
+  LedgerEngine({
+    Object? displayCurrency = missing,
+    Object? entries = missing,
+    Object? budgets = missing,
+    this._nextId = 1,
+  }) : displayCurrency = identical(displayCurrency, missing)
+           ? Currency.usd
+           : displayCurrency as Currency,
+       entries = identical(entries, missing)
+           ? <LedgerEntry>[]
+           : entries as List<LedgerEntry>,
+       budgets = identical(budgets, missing)
+           ? <BudgetLimit>[]
+           : budgets as List<BudgetLimit>;
   Currency displayCurrency;
   final List<LedgerEntry> entries;
   final List<BudgetLimit> budgets;
   int _nextId;
-  Result<LedgerEntry, String> addEntry(String _q2, String _q3, EntryKind _q4, Category _q5, Currency _q6, String _q7, String _q8) {
+  Result<LedgerEntry, String> addEntry(
+    String _q2,
+    String _q3,
+    EntryKind _q4,
+    Category _q5,
+    Currency _q6,
+    String _q7,
+    String _q8,
+  ) {
     final String _q9 = _q2.trim();
     if (!(_q9.isNotEmpty)) {
-      return Error<LedgerEntry, String>("Please enter a title for the transaction.");
+      return Error<LedgerEntry, String>(
+        "Please enter a title for the transaction.",
+      );
     }
-    final _qt0 = (() { final _qa0 = _q3; final _qa1 = _q6; return parseMoney(_qa0, _qa1); })();
+    final _qt0 = (() {
+      final _qa0 = _q3;
+      final _qa1 = _q6;
+      return parseMoney(_qa0, _qa1);
+    })();
     if (_qt0 != null) {
       final _qImportedType0.Money _q14 = _qt0;
       final int _q15 = _q14.cents();
       if (!((_q15 > 0))) {
         return Error<LedgerEntry, String>("Amount must be greater than zero.");
       }
-      final LedgerEntry _q16 = (() { final _qa0 = ["tx-", _nextId].join(); final _qa1 = _q9; final _qa2 = _q7.trim(); final _qa3 = _q15; final _qa4 = _q6; final _qa5 = _q4; final _qa6 = _q5; final _qa7 = _q8; return LedgerEntry(id: _qa0, title: _qa1, note: _qa2, cents: _qa3, currency: _qa4, kind: _qa5, category: _qa6, dateIso: _qa7); })();
+      final LedgerEntry _q16 = (() {
+        final _qa0 = ["tx-", _nextId].join();
+        final _qa1 = _q9;
+        final _qa2 = _q7.trim();
+        final _qa3 = _q15;
+        final _qa4 = _q6;
+        final _qa5 = _q4;
+        final _qa6 = _q5;
+        final _qa7 = _q8;
+        return LedgerEntry(
+          id: _qa0,
+          title: _qa1,
+          note: _qa2,
+          cents: _qa3,
+          currency: _qa4,
+          kind: _qa5,
+          category: _qa6,
+          dateIso: _qa7,
+        );
+      })();
       this._nextId += 1;
       entries.insert(0, _q16);
       return Ok<LedgerEntry, String>(_q16);
     } else {
-      return Error<LedgerEntry, String>("Enter a valid numeric amount (e.g. 45.50).");
+      return Error<LedgerEntry, String>(
+        "Enter a valid numeric amount (e.g. 45.50).",
+      );
     }
   }
-  Result<LedgerEntry, String> $QudsMethodDefault3b7ac52d719f2a619f3a(String _q2, String _q3, EntryKind _q4, Category _q5, Currency _q6, {Object? note = _$qudsDefaultOmitted, Object? dateIso = _$qudsDefaultOmitted}) { final String _qdefault1 = identical(note, _$qudsDefaultOmitted) ? "" : note as String; final String _qdefault2 = identical(dateIso, _$qudsDefaultOmitted) ? "2026-11-24" : dateIso as String; return addEntry(_q2, _q3, _q4, _q5, _q6, _qdefault1, _qdefault2); }
+
+  Result<LedgerEntry, String> $QudsMethodDefault3b7ac52d719f2a619f3a(
+    String _q2,
+    String _q3,
+    EntryKind _q4,
+    Category _q5,
+    Currency _q6, {
+    Object? note = _$qudsDefaultOmitted,
+    Object? dateIso = _$qudsDefaultOmitted,
+  }) {
+    final String _qdefault1 = identical(note, _$qudsDefaultOmitted)
+        ? ""
+        : note as String;
+    final String _qdefault2 = identical(dateIso, _$qudsDefaultOmitted)
+        ? "2026-11-24"
+        : dateIso as String;
+    return addEntry(_q2, _q3, _q4, _q5, _q6, _qdefault1, _qdefault2);
+  }
+
   LedgerEntry? removeEntry(String _q17) {
     {
       var $qContextCounter_q19 = -1;
@@ -63,18 +138,35 @@ class LedgerEngine {
     }
     return null;
   }
+
   void restoreEntry(LedgerEntry _q20) {
     entries.insert(0, _q20);
   }
-  Result<BudgetLimit, String> setBudget(Category _q21, String _q22, Currency _q23) {
-    final _qt3 = (() { final _qa0 = _q22; final _qa1 = _q23; return parseMoney(_qa0, _qa1); })();
+
+  Result<BudgetLimit, String> setBudget(
+    Category _q21,
+    String _q22,
+    Currency _q23,
+  ) {
+    final _qt3 = (() {
+      final _qa0 = _q22;
+      final _qa1 = _q23;
+      return parseMoney(_qa0, _qa1);
+    })();
     if (_qt3 != null) {
       final _qImportedType0.Money _q24 = _qt3;
       final int _q25 = _q24.cents();
       if (!((_q25 > 0))) {
-        return Error<BudgetLimit, String>("Budget limit must be greater than zero.");
+        return Error<BudgetLimit, String>(
+          "Budget limit must be greater than zero.",
+        );
       }
-      final BudgetLimit _q26 = (() { final _qa0 = _q21; final _qa1 = _q25; final _qa2 = _q23; return BudgetLimit(category: _qa0, limitCents: _qa1, currency: _qa2); })();
+      final BudgetLimit _q26 = (() {
+        final _qa0 = _q21;
+        final _qa1 = _q25;
+        final _qa2 = _q23;
+        return BudgetLimit(category: _qa0, limitCents: _qa1, currency: _qa2);
+      })();
       {
         var $qContextCounter_q28 = -1;
         for (final BudgetLimit _q27 in budgets) {
@@ -97,11 +189,20 @@ class LedgerEngine {
       return Error<BudgetLimit, String>("Enter a valid numeric budget limit.");
     }
   }
+
   Money entryMoney(LedgerEntry _q29) {
-    return (() { final _qa0 = _q29.cents; final _qa1 = _q29.currency; return moneyFromCents(_qa0, _qa1); })().convertTo(displayCurrency);
+    return (() {
+      final _qa0 = _q29.cents;
+      final _qa1 = _q29.currency;
+      return moneyFromCents(_qa0, _qa1);
+    })().convertTo(displayCurrency);
   }
+
   Money totalIncome() {
-    _qImportedType0.Money _q33 = (() { final _qa0 = displayCurrency; return zeroMoney(_qa0); })();
+    _qImportedType0.Money _q33 = (() {
+      final _qa0 = displayCurrency;
+      return zeroMoney(_qa0);
+    })();
     for (final LedgerEntry _q34 in entries) {
       if ((_q34.kind == EntryKind.income)) {
         _q33 = (_q33 + this.entryMoney(_q34));
@@ -109,8 +210,12 @@ class LedgerEngine {
     }
     return _q33;
   }
+
   Money totalExpense() {
-    _qImportedType0.Money _q35 = (() { final _qa0 = displayCurrency; return zeroMoney(_qa0); })();
+    _qImportedType0.Money _q35 = (() {
+      final _qa0 = displayCurrency;
+      return zeroMoney(_qa0);
+    })();
     for (final LedgerEntry _q36 in entries) {
       if ((_q36.kind == EntryKind.expense)) {
         _q35 = (_q35 + this.entryMoney(_q36));
@@ -118,6 +223,7 @@ class LedgerEngine {
     }
     return _q35;
   }
+
   Money balance() => (this.totalIncome() - this.totalExpense());
   double savingsRate() {
     final double _q37 = this.totalIncome().toDouble();
@@ -134,35 +240,61 @@ class LedgerEngine {
     }
     return _q39;
   }
+
   Money? budgetFor(Category _q40) {
     for (final BudgetLimit _q41 in budgets) {
       if ((_q41.category == _q40)) {
-        return (() { final _qa0 = _q41.limitCents; final _qa1 = _q41.currency; return moneyFromCents(_qa0, _qa1); })().convertTo(displayCurrency);
+        return (() {
+          final _qa0 = _q41.limitCents;
+          final _qa1 = _q41.currency;
+          return moneyFromCents(_qa0, _qa1);
+        })().convertTo(displayCurrency);
       }
     }
     return null;
   }
+
   BudgetStatus evaluateStatus(Money _q42, Money _q43) {
     final int _q44 = _q42.cents();
     final int _q45 = _q43.cents();
     if ((_q45 <= 0)) {
-      return (() { final _qa0 = 1.0; final _qa1 = _q44; return Exceeded(ratio: _qa0, overCents: _qa1); })();
+      return (() {
+        final _qa0 = 1.0;
+        final _qa1 = _q44;
+        return Exceeded(ratio: _qa0, overCents: _qa1);
+      })();
     }
     final double _q46 = (_q42.toDouble() / _q43.toDouble());
     if ((_q44 > _q45)) {
-      return (() { final _qa0 = _q46; final _qa1 = (_q44 - _q45); return Exceeded(ratio: _qa0, overCents: _qa1); })();
+      return (() {
+        final _qa0 = _q46;
+        final _qa1 = (_q44 - _q45);
+        return Exceeded(ratio: _qa0, overCents: _qa1);
+      })();
     }
     final int _q47 = (_q45 - _q44);
     if ((_q46 >= 0.8)) {
-      return (() { final _qa0 = _q46; final _qa1 = _q47; return Warning(ratio: _qa0, remainingCents: _qa1); })();
+      return (() {
+        final _qa0 = _q46;
+        final _qa1 = _q47;
+        return Warning(ratio: _qa0, remainingCents: _qa1);
+      })();
     }
-    return (() { final _qa0 = _q46; final _qa1 = _q47; return Healthy(ratio: _qa0, remainingCents: _qa1); })();
+    return (() {
+      final _qa0 = _q46;
+      final _qa1 = _q47;
+      return Healthy(ratio: _qa0, remainingCents: _qa1);
+    })();
   }
+
   List<CategorySummary> categoryBreakdown() {
     final double _q48 = this.totalExpense().toDouble();
     final List<CategorySummary> _q49 = <CategorySummary>[];
     for (final _qImportedType2.Category _q50 in expenseCategories()) {
-      _qImportedType0.Money _q51 = (() { final _qa0 = displayCurrency; return zeroMoney(_qa0); })();
+      _qImportedType0.Money _q51 = (() {
+        final _qa0 = displayCurrency;
+        return zeroMoney(_qa0);
+      })();
       for (final LedgerEntry _q52 in entries) {
         if (((_q52.kind == EntryKind.expense) && (_q52.category == _q50))) {
           _q51 = (_q51 + this.entryMoney(_q52));
@@ -184,22 +316,48 @@ class LedgerEngine {
         final Money _q56 = _qn7;
         _q55 = this.evaluateStatus(_q51, _q56);
       }
-      _q49.add((() { final _qa0 = _q50; final _qa1 = _q51; final _qa2 = _q54; final _qa3 = _q53; final _qa4 = _q55; return CategorySummary(category: _qa0, spent: _qa1, share: _qa2, limit: _qa3, status: _qa4); })());
+      _q49.add(
+        (() {
+          final _qa0 = _q50;
+          final _qa1 = _q51;
+          final _qa2 = _q54;
+          final _qa3 = _q53;
+          final _qa4 = _q55;
+          return CategorySummary(
+            category: _qa0,
+            spent: _qa1,
+            share: _qa2,
+            limit: _qa3,
+            status: _qa4,
+          );
+        })(),
+      );
     }
-    _q49.sort(((CategorySummary _q57, CategorySummary _q58) => _q58.spent.cents().compareTo(_q57.spent.cents())));
+    _q49.sort(
+      ((CategorySummary _q57, CategorySummary _q58) =>
+          _q58.spent.cents().compareTo(_q57.spent.cents())),
+    );
     return _q49;
   }
+
   List<CategorySummary> budgetAlerts() {
     final List<CategorySummary> _q59 = <CategorySummary>[];
     for (final CategorySummary _q60 in this.categoryBreakdown()) {
       final _qImportedType2.BudgetStatus? _q61 = _q60.status;
-      if (_q61 case (Warning(ratio: _, remainingCents: _) || Exceeded(ratio: _, overCents: _))) {
+      if (_q61
+          case (Warning(ratio: _, remainingCents: _) ||
+              Exceeded(ratio: _, overCents: _))) {
         _q59.add(_q60);
       }
     }
     return _q59;
   }
-  List<LedgerEntry> filteredEntries(String _q62, EntryKind? _q63, Category? _q64) {
+
+  List<LedgerEntry> filteredEntries(
+    String _q62,
+    EntryKind? _q63,
+    Category? _q64,
+  ) {
     final String _q65 = _q62.trim().toLowerCase();
     final List<LedgerEntry> _q66 = <LedgerEntry>[];
     for (final LedgerEntry _q67 in entries) {
@@ -212,7 +370,9 @@ class LedgerEngine {
       if (_q65.isNotEmpty) {
         final bool _q68 = _q67.title.toLowerCase().contains(_q65);
         final bool _q69 = _q67.note.toLowerCase().contains(_q65);
-        final bool _q70 = categoryLabel(_q67.category).toLowerCase().contains(_q65);
+        final bool _q70 = categoryLabel(_q67.category)
+            .toLowerCase()
+            .contains(_q65);
         if ((((!_qBool(_q68)) && (!_qBool(_q69))) && (!_qBool(_q70)))) {
           continue;
         }
@@ -221,13 +381,42 @@ class LedgerEngine {
     }
     return _q66;
   }
-  List<LedgerEntry> $QudsMethodDefaultf773d2e3e4081086d120({Object? query = _$qudsDefaultOmitted, Object? kindFilter = _$qudsDefaultOmitted, Object? categoryFilter = _$qudsDefaultOmitted}) { final String _qdefault8 = identical(query, _$qudsDefaultOmitted) ? "" : query as String; final EntryKind? _qdefault9 = identical(kindFilter, _$qudsDefaultOmitted) ? null : kindFilter as EntryKind?; final Category? _qdefault10 = identical(categoryFilter, _$qudsDefaultOmitted) ? null : categoryFilter as Category?; return filteredEntries(_qdefault8, _qdefault9, _qdefault10); }
+
+  List<LedgerEntry> $QudsMethodDefaultf773d2e3e4081086d120({
+    Object? query = _$qudsDefaultOmitted,
+    Object? kindFilter = _$qudsDefaultOmitted,
+    Object? categoryFilter = _$qudsDefaultOmitted,
+  }) {
+    final String _qdefault8 = identical(query, _$qudsDefaultOmitted)
+        ? ""
+        : query as String;
+    final EntryKind? _qdefault9 = identical(kindFilter, _$qudsDefaultOmitted)
+        ? null
+        : kindFilter as EntryKind?;
+    final Category? _qdefault10 =
+        identical(categoryFilter, _$qudsDefaultOmitted)
+        ? null
+        : categoryFilter as Category?;
+    return filteredEntries(_qdefault8, _qdefault9, _qdefault10);
+  }
+
   String exportJson() {
-    final LedgerSnapshot _q71 = (() { final _qa0 = displayCurrency; final _qa1 = List<LedgerEntry>.of(entries); final _qa2 = List<BudgetLimit>.of(budgets); return LedgerSnapshot(displayCurrency: _qa0, entries: _qa1, budgets: _qa2); })();
+    final LedgerSnapshot _q71 = (() {
+      final _qa0 = displayCurrency;
+      final _qa1 = List<LedgerEntry>.of(entries);
+      final _qa2 = List<BudgetLimit>.of(budgets);
+      return LedgerSnapshot(
+        displayCurrency: _qa0,
+        entries: _qa1,
+        budgets: _qa2,
+      );
+    })();
     return _q71.toJsonString();
   }
+
   Result<int, String> importJson(String _q72) {
-    final Result<_qImportedType2.LedgerSnapshot, String> _q73 = LedgerSnapshot.tryFromJsonString(_q72);
+    final Result<_qImportedType2.LedgerSnapshot, String> _q73 =
+        LedgerSnapshot.tryFromJsonString(_q72);
     Result<int, String> _q74 = Error<int, String>("Invalid ledger JSON.");
     switch (_q73) {
       case Ok(value: final _q75):
@@ -247,59 +436,166 @@ class LedgerEngine {
     }
     return _q74;
   }
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) {
-    if (runtimeType != LedgerEngine) throw UnsupportedError('Foreign subtype needs generated readonly metadata');
-    final normalized = $qudsReadonly.guardsOf([...$qudsKnownGuards.values, ...$qudsReadonly.guardsFor(this).values, ...guards.values]);
-    final result = $qudsReadonly.cachedView<LedgerEngine>(this, () => $QudsReadonlyLedgerEngine(this, normalized));
-    (result as $QudsReadonlyLedgerEngine)._$qudsGuardsLedgerEngine.addAll(normalized);
+
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) {
+    if (runtimeType != LedgerEngine)
+      throw UnsupportedError(
+        'Foreign subtype needs generated readonly metadata',
+      );
+    final normalized = $qudsReadonly.guardsOf([
+      ...$qudsKnownGuards.values,
+      ...$qudsReadonly.guardsFor(this).values,
+      ...guards.values,
+    ]);
+    final result = $qudsReadonly.cachedView<LedgerEngine>(
+      this,
+      () => $QudsReadonlyLedgerEngine(this, normalized),
+    );
+    (result as $QudsReadonlyLedgerEngine)._$qudsGuardsLedgerEngine.addAll(
+      normalized,
+    );
     return result;
   }
+
   bool $qudsIsLazySlot(Object slot) => false;
 }
-base class $QudsReadonlyLedgerEngine with $qudsReadonly.ReadonlyView implements LedgerEngine {
-  $QudsReadonlyLedgerEngine(LedgerEngine source, Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) : _$qudsSourceLedgerEngine = source, _$qudsGuardsLedgerEngine = Map.of(guards);
+
+base class $QudsReadonlyLedgerEngine
+    with $qudsReadonly.ReadonlyView
+    implements LedgerEngine {
+  $QudsReadonlyLedgerEngine(
+    LedgerEngine source,
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) : _$qudsSourceLedgerEngine = source,
+      _$qudsGuardsLedgerEngine = Map.of(guards);
   final LedgerEngine _$qudsSourceLedgerEngine;
-  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> _$qudsGuardsLedgerEngine;
+  final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>>
+  _$qudsGuardsLedgerEngine;
   @override
-  Object $qudsReadonlyView(Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards) => this;
+  Object $qudsReadonlyView(
+    Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> guards,
+  ) => this;
   @override
-  bool $qudsReadonlyMatches(Object? candidate) => $qudsReadonly.sameSourceEquals(_$qudsSourceLedgerEngine, candidate);
-  bool $qudsIsLazySlot(Object slot) => _$qudsSourceLedgerEngine.$qudsIsLazySlot(slot);
+  bool $qudsReadonlyMatches(Object? candidate) =>
+      $qudsReadonly.sameSourceEquals(_$qudsSourceLedgerEngine, candidate);
+  bool $qudsIsLazySlot(Object slot) =>
+      _$qudsSourceLedgerEngine.$qudsIsLazySlot(slot);
   @override
-  Currency get displayCurrency => $qudsReadonly.protectResult(_$qudsSourceLedgerEngine, _$qudsSourceLedgerEngine.displayCurrency, (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue));
-  set displayCurrency(Currency value) => throw UnsupportedError('readonly field');
+  Currency get displayCurrency => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEngine,
+    _$qudsSourceLedgerEngine.displayCurrency,
+    (_qvalue) => $qudsReadonly.AutoGuard<Currency>().protect(_qvalue),
+  );
+  set displayCurrency(Currency value) =>
+      throw UnsupportedError('readonly field');
   @override
-  List<LedgerEntry> get entries => $qudsReadonly.protectResult(_$qudsSourceLedgerEngine, _$qudsSourceLedgerEngine.entries, (_qvalue) => $qudsReadonly.ListGuard<LedgerEntry>($qudsReadonly.ModelGuard<LedgerEntry>($qudsReadonly.guardsOf([..._$qudsGuardsLedgerEngine.values, ]))).protect(_qvalue));
+  List<LedgerEntry> get entries => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEngine,
+    _$qudsSourceLedgerEngine.entries,
+    (_qvalue) => $qudsReadonly.ListGuard<LedgerEntry>(
+      $qudsReadonly.ModelGuard<LedgerEntry>(
+        $qudsReadonly.guardsOf([..._$qudsGuardsLedgerEngine.values]),
+      ),
+    ).protect(_qvalue),
+  );
   @override
-  List<BudgetLimit> get budgets => $qudsReadonly.protectResult(_$qudsSourceLedgerEngine, _$qudsSourceLedgerEngine.budgets, (_qvalue) => $qudsReadonly.ListGuard<BudgetLimit>($qudsReadonly.ModelGuard<BudgetLimit>($qudsReadonly.guardsOf([..._$qudsGuardsLedgerEngine.values, ]))).protect(_qvalue));
+  List<BudgetLimit> get budgets => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEngine,
+    _$qudsSourceLedgerEngine.budgets,
+    (_qvalue) => $qudsReadonly.ListGuard<BudgetLimit>(
+      $qudsReadonly.ModelGuard<BudgetLimit>(
+        $qudsReadonly.guardsOf([..._$qudsGuardsLedgerEngine.values]),
+      ),
+    ).protect(_qvalue),
+  );
   @override
-  int get _nextId => $qudsReadonly.protectResult(_$qudsSourceLedgerEngine, _$qudsSourceLedgerEngine._nextId, (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue));
+  int get _nextId => $qudsReadonly.protectResult(
+    _$qudsSourceLedgerEngine,
+    _$qudsSourceLedgerEngine._nextId,
+    (_qvalue) => $qudsReadonly.AutoGuard<int>().protect(_qvalue),
+  );
   set _nextId(int value) => throw UnsupportedError('readonly field');
-  Result<LedgerEntry, String> addEntry(String _q2, String _q3, EntryKind _q4, Category _q5, Currency _q6, String _q7, String _q8) => throw UnsupportedError('readonly method');
-  Result<LedgerEntry, String> $QudsMethodDefault3b7ac52d719f2a619f3a(String _q2, String _q3, EntryKind _q4, Category _q5, Currency _q6, {Object? note = _$qudsDefaultOmitted, Object? dateIso = _$qudsDefaultOmitted}) { final String _qdefault11 = identical(note, _$qudsDefaultOmitted) ? "" : note as String; final String _qdefault12 = identical(dateIso, _$qudsDefaultOmitted) ? "2026-11-24" : dateIso as String; return addEntry(_q2, _q3, _q4, _q5, _q6, _qdefault11, _qdefault12); }
-  LedgerEntry? removeEntry(String _q17) => throw UnsupportedError('readonly method');
-  void restoreEntry(LedgerEntry _q20) => throw UnsupportedError('readonly method');
-  Result<BudgetLimit, String> setBudget(Category _q21, String _q22, Currency _q23) => throw UnsupportedError('readonly method');
-  Money entryMoney(LedgerEntry _q29) => throw UnsupportedError('readonly method');
+  Result<LedgerEntry, String> addEntry(
+    String _q2,
+    String _q3,
+    EntryKind _q4,
+    Category _q5,
+    Currency _q6,
+    String _q7,
+    String _q8,
+  ) => throw UnsupportedError('readonly method');
+  Result<LedgerEntry, String> $QudsMethodDefault3b7ac52d719f2a619f3a(
+    String _q2,
+    String _q3,
+    EntryKind _q4,
+    Category _q5,
+    Currency _q6, {
+    Object? note = _$qudsDefaultOmitted,
+    Object? dateIso = _$qudsDefaultOmitted,
+  }) {
+    final String _qdefault11 = identical(note, _$qudsDefaultOmitted)
+        ? ""
+        : note as String;
+    final String _qdefault12 = identical(dateIso, _$qudsDefaultOmitted)
+        ? "2026-11-24"
+        : dateIso as String;
+    return addEntry(_q2, _q3, _q4, _q5, _q6, _qdefault11, _qdefault12);
+  }
+
+  LedgerEntry? removeEntry(String _q17) =>
+      throw UnsupportedError('readonly method');
+  void restoreEntry(LedgerEntry _q20) =>
+      throw UnsupportedError('readonly method');
+  Result<BudgetLimit, String> setBudget(
+    Category _q21,
+    String _q22,
+    Currency _q23,
+  ) => throw UnsupportedError('readonly method');
+  Money entryMoney(LedgerEntry _q29) =>
+      throw UnsupportedError('readonly method');
   Money totalIncome() => throw UnsupportedError('readonly method');
   Money totalExpense() => throw UnsupportedError('readonly method');
   Money balance() => throw UnsupportedError('readonly method');
   double savingsRate() => throw UnsupportedError('readonly method');
   Money? budgetFor(Category _q40) => throw UnsupportedError('readonly method');
-  BudgetStatus evaluateStatus(Money _q42, Money _q43) => throw UnsupportedError('readonly method');
-  List<CategorySummary> categoryBreakdown() => throw UnsupportedError('readonly method');
-  List<CategorySummary> budgetAlerts() => throw UnsupportedError('readonly method');
-  List<LedgerEntry> filteredEntries(String _q62, EntryKind? _q63, Category? _q64) => throw UnsupportedError('readonly method');
-  List<LedgerEntry> $QudsMethodDefaultf773d2e3e4081086d120({Object? query = _$qudsDefaultOmitted, Object? kindFilter = _$qudsDefaultOmitted, Object? categoryFilter = _$qudsDefaultOmitted}) { final String _qdefault13 = identical(query, _$qudsDefaultOmitted) ? "" : query as String; final EntryKind? _qdefault14 = identical(kindFilter, _$qudsDefaultOmitted) ? null : kindFilter as EntryKind?; final Category? _qdefault15 = identical(categoryFilter, _$qudsDefaultOmitted) ? null : categoryFilter as Category?; return filteredEntries(_qdefault13, _qdefault14, _qdefault15); }
+  BudgetStatus evaluateStatus(Money _q42, Money _q43) =>
+      throw UnsupportedError('readonly method');
+  List<CategorySummary> categoryBreakdown() =>
+      throw UnsupportedError('readonly method');
+  List<CategorySummary> budgetAlerts() =>
+      throw UnsupportedError('readonly method');
+  List<LedgerEntry> filteredEntries(
+    String _q62,
+    EntryKind? _q63,
+    Category? _q64,
+  ) => throw UnsupportedError('readonly method');
+  List<LedgerEntry> $QudsMethodDefaultf773d2e3e4081086d120({
+    Object? query = _$qudsDefaultOmitted,
+    Object? kindFilter = _$qudsDefaultOmitted,
+    Object? categoryFilter = _$qudsDefaultOmitted,
+  }) {
+    final String _qdefault13 = identical(query, _$qudsDefaultOmitted)
+        ? ""
+        : query as String;
+    final EntryKind? _qdefault14 = identical(kindFilter, _$qudsDefaultOmitted)
+        ? null
+        : kindFilter as EntryKind?;
+    final Category? _qdefault15 =
+        identical(categoryFilter, _$qudsDefaultOmitted)
+        ? null
+        : categoryFilter as Category?;
+    return filteredEntries(_qdefault13, _qdefault14, _qdefault15);
+  }
+
   String exportJson() => throw UnsupportedError('readonly method');
-  Result<int, String> importJson(String _q72) => throw UnsupportedError('readonly method');
+  Result<int, String> importJson(String _q72) =>
+      throw UnsupportedError('readonly method');
   String toString() => _$qudsSourceLedgerEngine.toString();
   bool operator ==(Object other) => _$qudsSourceLedgerEngine == other;
   int get hashCode => _$qudsSourceLedgerEngine.hashCode;
 }
-
-
-
 
 LedgerEngine _q0() {
   final LedgerEngine _q1 = LedgerEngine();
@@ -309,17 +605,142 @@ LedgerEngine _q0() {
   _q1.setBudget(Category.utilities, "180.00", Currency.usd);
   _q1.setBudget(Category.entertainment, "200.00", Currency.usd);
   _q1.setBudget(Category.education, "250.00", Currency.usd);
-  (() { final _qr16 = _q1; final _qa0 = "Monthly Salary"; final _qa1 = "4850.00"; final _qa2 = EntryKind.income; final _qa3 = Category.salary; final _qa4 = Currency.usd; final _qa5 = "Core engineering payroll"; final _qa6 = "2026-11-01"; return _qr16.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr17 = _q1; final _qa0 = "Quds Consulting Sprint"; final _qa1 = "680.00"; final _qa2 = EntryKind.income; final _qa3 = Category.freelance; final _qa4 = Currency.eur; final _qa5 = "Client architecture review"; final _qa6 = "2026-11-06"; return _qr17.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr18 = _q1; final _qa0 = "Apartment Rent"; final _qa1 = "1250.00"; final _qa2 = EntryKind.expense; final _qa3 = Category.housing; final _qa4 = Currency.usd; final _qa5 = "November lease"; final _qa6 = "2026-11-02"; return _qr18.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr19 = _q1; final _qa0 = "Fresh Market & Groceries"; final _qa1 = "285.40"; final _qa2 = EntryKind.expense; final _qa3 = Category.food; final _qa4 = Currency.usd; final _qa5 = "Weekly organic basket"; final _qa6 = "2026-11-08"; return _qr19.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr20 = _q1; final _qa0 = "Specialty Coffee & Lunch"; final _qa1 = "145.60"; final _qa2 = EntryKind.expense; final _qa3 = Category.food; final _qa4 = Currency.usd; final _qa5 = "Team lunches"; final _qa6 = "2026-11-14"; return _qr20.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr21 = _q1; final _qa0 = "Metro & Ride Share"; final _qa1 = "112.50"; final _qa2 = EntryKind.expense; final _qa3 = Category.transport; final _qa4 = Currency.usd; final _qa5 = "Monthly pass + airport"; final _qa6 = "2026-11-10"; return _qr21.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr22 = _q1; final _qa0 = "Fiber Internet & Power"; final _qa1 = "164.00"; final _qa2 = EntryKind.expense; final _qa3 = Category.utilities; final _qa4 = Currency.usd; final _qa5 = "Home studio utilities"; final _qa6 = "2026-11-12"; return _qr22.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr23 = _q1; final _qa0 = "Design Books & Course"; final _qa1 = "139.00"; final _qa2 = EntryKind.expense; final _qa3 = Category.education; final _qa4 = Currency.usd; final _qa5 = "Compilers & UI craft"; final _qa6 = "2026-11-16"; return _qr23.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr24 = _q1; final _qa0 = "Concert & Cinema Night"; final _qa1 = "225.00"; final _qa2 = EntryKind.expense; final _qa3 = Category.entertainment; final _qa4 = Currency.usd; final _qa5 = "Weekend tickets"; final _qa6 = "2026-11-19"; return _qr24.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
-  (() { final _qr25 = _q1; final _qa0 = "Emergency Reserve Transfer"; final _qa1 = "450.00"; final _qa2 = EntryKind.expense; final _qa3 = Category.savings; final _qa4 = Currency.usd; final _qa5 = "High-yield vault"; final _qa6 = "2026-11-21"; return _qr25.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6); })();
+  (() {
+    final _qr16 = _q1;
+    final _qa0 = "Monthly Salary";
+    final _qa1 = "4850.00";
+    final _qa2 = EntryKind.income;
+    final _qa3 = Category.salary;
+    final _qa4 = Currency.usd;
+    final _qa5 = "Core engineering payroll";
+    final _qa6 = "2026-11-01";
+    return _qr16.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr17 = _q1;
+    final _qa0 = "Quds Consulting Sprint";
+    final _qa1 = "680.00";
+    final _qa2 = EntryKind.income;
+    final _qa3 = Category.freelance;
+    final _qa4 = Currency.eur;
+    final _qa5 = "Client architecture review";
+    final _qa6 = "2026-11-06";
+    return _qr17.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr18 = _q1;
+    final _qa0 = "Apartment Rent";
+    final _qa1 = "1250.00";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.housing;
+    final _qa4 = Currency.usd;
+    final _qa5 = "November lease";
+    final _qa6 = "2026-11-02";
+    return _qr18.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr19 = _q1;
+    final _qa0 = "Fresh Market & Groceries";
+    final _qa1 = "285.40";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.food;
+    final _qa4 = Currency.usd;
+    final _qa5 = "Weekly organic basket";
+    final _qa6 = "2026-11-08";
+    return _qr19.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr20 = _q1;
+    final _qa0 = "Specialty Coffee & Lunch";
+    final _qa1 = "145.60";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.food;
+    final _qa4 = Currency.usd;
+    final _qa5 = "Team lunches";
+    final _qa6 = "2026-11-14";
+    return _qr20.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr21 = _q1;
+    final _qa0 = "Metro & Ride Share";
+    final _qa1 = "112.50";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.transport;
+    final _qa4 = Currency.usd;
+    final _qa5 = "Monthly pass + airport";
+    final _qa6 = "2026-11-10";
+    return _qr21.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr22 = _q1;
+    final _qa0 = "Fiber Internet & Power";
+    final _qa1 = "164.00";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.utilities;
+    final _qa4 = Currency.usd;
+    final _qa5 = "Home studio utilities";
+    final _qa6 = "2026-11-12";
+    return _qr22.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr23 = _q1;
+    final _qa0 = "Design Books & Course";
+    final _qa1 = "139.00";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.education;
+    final _qa4 = Currency.usd;
+    final _qa5 = "Compilers & UI craft";
+    final _qa6 = "2026-11-16";
+    return _qr23.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr24 = _q1;
+    final _qa0 = "Concert & Cinema Night";
+    final _qa1 = "225.00";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.entertainment;
+    final _qa4 = Currency.usd;
+    final _qa5 = "Weekend tickets";
+    final _qa6 = "2026-11-19";
+    return _qr24.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
+  (() {
+    final _qr25 = _q1;
+    final _qa0 = "Emergency Reserve Transfer";
+    final _qa1 = "450.00";
+    final _qa2 = EntryKind.expense;
+    final _qa3 = Category.savings;
+    final _qa4 = Currency.usd;
+    final _qa5 = "High-yield vault";
+    final _qa6 = "2026-11-21";
+    return _qr25.addEntry(_qa0, _qa1, _qa2, _qa3, _qa4, _qa5, _qa6);
+  })();
   return _q1;
 }
+
 final seedDemoLedger = _q0;
-final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards = $qudsReadonly.guardsOf([$qudsReadonly.ListGuard<_qImportedType2.BudgetLimit>($qudsReadonly.ModelGuard<_qImportedType2.BudgetLimit>($qudsReadonly.guardsOf([]))), $qudsReadonly.ListGuard<_qImportedType2.Category>($qudsReadonly.AutoGuard<_qImportedType2.Category>()), $qudsReadonly.ListGuard<_qImportedType2.LedgerEntry>($qudsReadonly.ModelGuard<_qImportedType2.LedgerEntry>($qudsReadonly.guardsOf([]))), $qudsReadonly.ListGuard<BudgetLimit>($qudsReadonly.ModelGuard<BudgetLimit>($qudsReadonly.guardsOf([]))), $qudsReadonly.ListGuard<CategorySummary>($qudsReadonly.ModelGuard<CategorySummary>($qudsReadonly.guardsOf([]))), $qudsReadonly.ListGuard<LedgerEntry>($qudsReadonly.ModelGuard<LedgerEntry>($qudsReadonly.guardsOf([])))]);
+final Map<Type, $qudsReadonly.ReadonlyGuard<dynamic>> $qudsKnownGuards =
+    $qudsReadonly.guardsOf([
+      $qudsReadonly.ListGuard<_qImportedType2.BudgetLimit>(
+        $qudsReadonly.ModelGuard<_qImportedType2.BudgetLimit>(
+          $qudsReadonly.guardsOf([]),
+        ),
+      ),
+      $qudsReadonly.ListGuard<_qImportedType2.Category>(
+        $qudsReadonly.AutoGuard<_qImportedType2.Category>(),
+      ),
+      $qudsReadonly.ListGuard<_qImportedType2.LedgerEntry>(
+        $qudsReadonly.ModelGuard<_qImportedType2.LedgerEntry>(
+          $qudsReadonly.guardsOf([]),
+        ),
+      ),
+      $qudsReadonly.ListGuard<BudgetLimit>(
+        $qudsReadonly.ModelGuard<BudgetLimit>($qudsReadonly.guardsOf([])),
+      ),
+      $qudsReadonly.ListGuard<CategorySummary>(
+        $qudsReadonly.ModelGuard<CategorySummary>($qudsReadonly.guardsOf([])),
+      ),
+      $qudsReadonly.ListGuard<LedgerEntry>(
+        $qudsReadonly.ModelGuard<LedgerEntry>($qudsReadonly.guardsOf([])),
+      ),
+    ]);

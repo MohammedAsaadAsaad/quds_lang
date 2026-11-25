@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 
 const workload =
     'use quds:math\nmain():\n  values = [1.0, 2.0, 3.0]\n  print mean(values)\n';

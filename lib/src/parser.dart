@@ -18,6 +18,15 @@ class Parser {
   /// Calls parsed as indented `Callee:` blocks (already terminated by dedent).
   final _blockCalls = Set<Expression>.identity();
 
+  /// Whether an expression-body lambda parsed here may end in an indented `Callee:` block.
+  var _allowLambdaNamedBlock = false;
+
+  bool _canBeNamedBlockCallee(Expression value) =>
+      value is Identifier ||
+      value is MemberAccess ||
+      value is TypeApplication ||
+      value is CallExpression;
+
   bool _endsWithBlock(Expression value) =>
       _blockCalls.contains(value) ||
       value is MapExpression ||
@@ -3067,13 +3076,18 @@ class Parser {
                 : null);
   }
 
-  Expression finishLambda(List<Parameter> parameters, SourceSpan span) {
+  Expression finishLambda(List<Parameter> parameters, SourceSpan span,
+      {bool? allowNamedBlock}) {
     expect(TokenKind.arrow, '->');
     if (at(TokenKind.colon)) {
       return Lambda(parameters, null, block(), extent(span));
     }
-    var body = expression(bare: true);
-    if (at(TokenKind.colon) && peek().kind == TokenKind.newline) {
+    final allowBlock = allowNamedBlock ?? _allowLambdaNamedBlock;
+    var body = expression(bare: allowBlock);
+    if (allowBlock &&
+        _canBeNamedBlockCallee(body) &&
+        at(TokenKind.colon) &&
+        peek().kind == TokenKind.newline) {
       body = namedBlock(body);
     }
     return Lambda(parameters, body, null, extent(span));
@@ -3125,7 +3139,14 @@ class Parser {
       bool bare = false,
       bool typeTest = true,
       bool range = true}) {
-    var left = prefix();
+    final savedAllowBlock = _allowLambdaNamedBlock;
+    _allowLambdaNamedBlock = bare;
+    Expression left;
+    try {
+      left = prefix();
+    } finally {
+      _allowLambdaNamedBlock = savedAllowBlock;
+    }
     while (true) {
       if ((left is Identifier || left is MemberAccess) &&
           _typeArgumentsAhead()) {
@@ -3165,7 +3186,7 @@ class Parser {
       }
       if (at(TokenKind.arrow) && left is Identifier) {
         final parameter = Parameter(left.name, '<infer>', false, left.span);
-        left = finishLambda([parameter], left.span);
+        left = finishLambda([parameter], left.span, allowNamedBlock: bare);
         continue;
       }
       if ((word('to') || at(TokenKind.toQuestion)) && 4 >= minimum) {

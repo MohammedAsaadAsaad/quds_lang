@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 
 Future<void> main() async {
   final directory = Directory.systemTemp.createTempSync('quds-web-heap-');

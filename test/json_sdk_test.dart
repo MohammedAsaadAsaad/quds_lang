@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:quds_lang/src/sdk.dart';
+import 'package:quds/src/sdk.dart';
 import 'package:test/test.dart';
 
 String get _qudsBin => '${Directory.current.path}/bin/quds.dart';

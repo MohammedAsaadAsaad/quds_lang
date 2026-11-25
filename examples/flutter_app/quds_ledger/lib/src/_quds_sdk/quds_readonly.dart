@@ -45,6 +45,7 @@ mixin ReadonlyView {
   bool get $qudsReadonly => true;
   bool $qudsReadonlyMatches(Object? candidate);
 }
+
 final _qReadonlyViews = Expando<Map<Type, Object>>();
 final _qReadonlySources = Expando<Object>();
 Object? _qReadonlyUnwrap(Object? value) {
@@ -52,7 +53,8 @@ Object? _qReadonlyUnwrap(Object? value) {
       value is num ||
       value is bool ||
       value is String ||
-      value is Record) return value;
+      value is Record)
+    return value;
   return _qReadonlySources[value] ?? value;
 }
 
@@ -71,7 +73,9 @@ T cachedView<T extends Object>(Object source, T Function() create) {
     return source as T;
   try {
     if ((source as dynamic).$qudsReadonly == true) return source as T;
-  } on NoSuchMethodError {/* An ordinary mutable source. */}
+  } on NoSuchMethodError {
+    /* An ordinary mutable source. */
+  }
   final types = _qReadonlyViews[source] ??= <Type, Object>{};
   final found = types[T];
   if (found != null) return found as T;
@@ -100,9 +104,13 @@ class _QudsReadonlyList<E> extends ListBase<E> with ReadonlyView {
 }
 
 Map<K, V> _qReadonlyMap<K, V>(
-        Map<K, V> source, K Function(K) readKey, V Function(V) readValue) =>
-    cachedView<Map<K, V>>(
-        source, () => _QudsReadonlyMap<K, V>(source, readKey, readValue));
+  Map<K, V> source,
+  K Function(K) readKey,
+  V Function(V) readValue,
+) => cachedView<Map<K, V>>(
+  source,
+  () => _QudsReadonlyMap<K, V>(source, readKey, readValue),
+);
 
 class _QudsReadonlyMap<K, V> extends MapBase<K, V> with ReadonlyView {
   _QudsReadonlyMap(this._source, this._readKey, this._readValue);
@@ -170,7 +178,8 @@ sealed class ReadonlyGuard<T> {
 
 final _objectGuards = Expando<Map<Type, ReadonlyGuard<dynamic>>>();
 Map<Type, ReadonlyGuard<dynamic>> guardsOf(
-    Iterable<ReadonlyGuard<dynamic>> descriptors) {
+  Iterable<ReadonlyGuard<dynamic>> descriptors,
+) {
   final result = <Type, ReadonlyGuard<dynamic>>{};
   for (final descriptor in descriptors) {
     descriptor.install(result);
@@ -180,10 +189,12 @@ Map<Type, ReadonlyGuard<dynamic>> guardsOf(
 
 Map<Type, ReadonlyGuard<dynamic>> guardsFor(Object source) =>
     source is num || source is bool || source is String
-        ? const {}
-        : _objectGuards[source] ?? const {};
+    ? const {}
+    : _objectGuards[source] ?? const {};
 T registerGuards<T extends Object>(
-    T source, Iterable<ReadonlyGuard<dynamic>> descriptors) {
+  T source,
+  Iterable<ReadonlyGuard<dynamic>> descriptors,
+) {
   final guards = _objectGuards[source] ??= {};
   for (final descriptor in descriptors) {
     descriptor.install(guards);
@@ -210,7 +221,8 @@ final class AutoGuard<T> extends ReadonlyGuard<T> {
         value is DateTime ||
         value is Duration ||
         value is Uri ||
-        value is RegExp) return value;
+        value is RegExp)
+      return value;
     if (value is ByteBuffer)
       return value.asUint8List().asUnmodifiableView().buffer as T;
     if (value is TypedData) return (value as dynamic).asUnmodifiableView() as T;
@@ -218,10 +230,13 @@ final class AutoGuard<T> extends ReadonlyGuard<T> {
       return value;
     try {
       if ((value as dynamic).$qudsReadonly == true) return value;
-      final protected = (value as dynamic)
-          .$qudsReadonlyView(const <Type, ReadonlyGuard<dynamic>>{});
+      final protected = (value as dynamic).$qudsReadonlyView(
+        const <Type, ReadonlyGuard<dynamic>>{},
+      );
       if (protected is T && protected is ReadonlyView) return protected;
-    } on NoSuchMethodError {/* Not a generated Quds class. */}
+    } on NoSuchMethodError {
+      /* Not a generated Quds class. */
+    }
     throw UnsupportedError('No sound readonly guard metadata for $T');
   }
 }
@@ -291,7 +306,7 @@ final class IterableGuard<E> extends ReadonlyGuard<Iterable<E>> {
 
 final class ModelGuard<T> extends ReadonlyGuard<T> {
   ModelGuard(Map<Type, ReadonlyGuard<dynamic>> guards)
-      : guards = Map.unmodifiable(guards);
+    : guards = Map.unmodifiable(guards);
   final Map<Type, ReadonlyGuard<dynamic>> guards;
   @override
   T protect(T value) {
@@ -301,7 +316,9 @@ final class ModelGuard<T> extends ReadonlyGuard<T> {
       final merged = {...guardsFor(source), ...guards};
       final result = (value as dynamic).$qudsReadonlyView(merged);
       if (result is T && result is ReadonlyView) return result;
-    } on NoSuchMethodError {/* Unknown/foreign runtime implementation. */}
+    } on NoSuchMethodError {
+      /* Unknown/foreign runtime implementation. */
+    }
     throw UnsupportedError('No generated readonly class implementation for $T');
   }
 
@@ -325,12 +342,16 @@ bool readonlyEquals(Object? left, Object? right) {
   try {
     if ((left as dynamic).$qudsReadonly == true)
       return (left as dynamic).$qudsReadonlyMatches(right) == true;
-  } on NoSuchMethodError {/* An ordinary source object. */}
+  } on NoSuchMethodError {
+    /* An ordinary source object. */
+  }
   if (right != null && right is! num && right is! bool && right is! String) {
     try {
       if ((right as dynamic).$qudsReadonly == true)
         return (right as dynamic).$qudsReadonlyMatches(left) == true;
-    } on NoSuchMethodError {/* An ordinary source object. */}
+    } on NoSuchMethodError {
+      /* An ordinary source object. */
+    }
   }
   return left == right;
 }
@@ -348,7 +369,9 @@ void recordLazyOrigin(Object owner, Object? protected, Object? original) {
   try {
     if ((owner as dynamic).$qudsIsLazySlot(context.slot) == true)
       context.origins[protected] = original;
-  } on NoSuchMethodError {/* Not the declaring Quds owner. */}
+  } on NoSuchMethodError {
+    /* Not the declaring Quds owner. */
+  }
 }
 
 T protectResult<T>(Object owner, T value, T Function(T) protect) {
@@ -375,9 +398,11 @@ final class LazySlot<T> {
       _activeLazyComputation = context;
       try {
         final result = compute();
-        _value = (context.origins.containsKey(result)
-            ? context.origins[result]
-            : result) as T;
+        _value =
+            (context.origins.containsKey(result)
+                    ? context.origins[result]
+                    : result)
+                as T;
         _ready = true;
       } finally {
         _activeLazyComputation = previous;
@@ -488,14 +513,20 @@ class _ValueEquality {
 }
 
 _ValueEquality? _valueEquality;
-bool valueEquals(Object left, Object right, List<Object?> leftFields,
-    List<Object?> rightFields) {
+bool valueEquals(
+  Object left,
+  Object right,
+  List<Object?> leftFields,
+  List<Object?> rightFields,
+) {
   final top = _valueEquality == null;
   final context = _valueEquality ??= _ValueEquality();
   final originalLeft = _qReadonlyUnwrap(left) as Object;
   final originalRight = _qReadonlyUnwrap(right) as Object;
-  final pairs =
-      context.active.putIfAbsent(originalLeft, () => Set<Object>.identity());
+  final pairs = context.active.putIfAbsent(
+    originalLeft,
+    () => Set<Object>.identity(),
+  );
   if (!pairs.add(originalRight)) return true;
   try {
     return context.compare(leftFields, rightFields);
@@ -530,7 +561,8 @@ class _ValueHash {
         final map = value as Map;
         for (final entry in map.entries) {
           final key = _qReadonlyUnwrap(entry.key);
-          sum = (sum + Object.hash(key?.hashCode ?? 0, hash(entry.value))) &
+          sum =
+              (sum + Object.hash(key?.hashCode ?? 0, hash(entry.value))) &
               0x1fffffff;
         }
         return Object.hash(map.length, sum);

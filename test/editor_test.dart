@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 import 'package:test/test.dart';
 
 Map response(LspSession session, String uri, int line, int character) =>

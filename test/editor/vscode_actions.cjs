@@ -11,12 +11,13 @@ try {
   fs.mkdirSync(path.join(compiler,'bin'), {recursive:true});
   fs.mkdirSync(path.join(compiler,'lib'), {recursive:true});
   fs.mkdirSync(path.join(app,'.dart_tool'), {recursive:true});
-  fs.writeFileSync(path.join(compiler,'pubspec.yaml'), 'name: quds_lang\n');
+  fs.writeFileSync(path.join(compiler,'pubspec.yaml'), 'name: quds\n');
+  fs.mkdirSync(path.join(compiler,'bin'), {recursive:true});
   fs.writeFileSync(path.join(compiler,'bin/quds.dart'), '// compiler\n');
   fs.writeFileSync(path.join(compiler,'lib/parser.dart'), '// parser\n');
   fs.writeFileSync(path.join(app,'pubspec.yaml'), 'name: academy\n');
   const config = path.join(app,'.dart_tool/package_config.json');
-  const save = (rootUri) => fs.writeFileSync(config,JSON.stringify({configVersion:2,packages:[{name:'quds_lang', rootUri, packageUri:'lib/'}]}));
+  const save = (rootUri) => fs.writeFileSync(config,JSON.stringify({configVersion:2,packages:[{name:'quds', rootUri, packageUri:'lib/'}]}));
   save(pathToFileURL(compiler+path.sep).href);
   const sent = [];
   const terminals = [];

@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/dart_api.dart';
+import 'package:quds/quds.dart';
+import 'package:quds/src/dart_api.dart';
 import 'package:test/test.dart';
 
 void main() {

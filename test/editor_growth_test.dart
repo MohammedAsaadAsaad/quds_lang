@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/source_index.dart';
+import 'package:quds/quds.dart';
+import 'package:quds/src/source_index.dart';
 import 'package:test/test.dart';
 
 Map request(

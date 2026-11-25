@@ -1,4 +1,4 @@
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 
 void main() {
   const source = '''

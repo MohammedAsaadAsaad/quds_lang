@@ -580,7 +580,7 @@ function packageRoot(start) {
     const pubspec = path.join(dir, 'pubspec.yaml');
     if (fs.existsSync(bin) && fs.existsSync(pubspec)) {
       const text = fs.readFileSync(pubspec, 'utf8');
-      if (/^name:\s*quds_lang\s*$/m.test(text)) return dir;
+      if (/^name:\s*(?:quds|quds_lang)\s*$/m.test(text)) return dir;
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
@@ -594,12 +594,12 @@ function packageRoot(start) {
     if (fs.existsSync(config)) {
       try {
         const entry = JSON.parse(fs.readFileSync(config, 'utf8')).packages
-          .find((item) => item.name === 'quds_lang');
+          .find((item) => item.name === 'quds' || item.name === 'quds_lang');
         if (entry) {
           const root = fileURLToPath(new URL(entry.rootUri, pathToFileURL(config)));
           const spec = path.join(root, 'pubspec.yaml');
           if (fs.existsSync(path.join(root, 'bin', 'quds.dart')) &&
-              fs.existsSync(spec) && /^name:\s*quds_lang\s*$/m.test(fs.readFileSync(spec, 'utf8'))) return root;
+              fs.existsSync(spec) && /^name:\s*(?:quds|quds_lang)\s*$/m.test(fs.readFileSync(spec, 'utf8'))) return root;
         }
       } catch (_) { /* Unresolved pub config falls back to the installed CLI. */ }
     }

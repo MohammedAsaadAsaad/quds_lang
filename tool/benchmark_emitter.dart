@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 
 // Diagnostic emitter-only benchmark; no timing assertion belongs in CI.
 void main() {

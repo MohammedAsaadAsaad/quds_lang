@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/complete.dart';
-import 'package:quds_lang/src/navigate.dart';
+import 'package:quds/quds.dart';
+import 'package:quds/src/complete.dart';
+import 'package:quds/src/navigate.dart';
 import 'package:test/test.dart';
 
 void main() {

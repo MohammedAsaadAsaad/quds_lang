@@ -1,4 +1,4 @@
-name: quds_lang
+name: quds
 description: >-
   Quds language compiler, standard library, CLI, LSP server, and debugger
   compiling indentation-based Quds (.quds) code to readable Dart and Flutter.

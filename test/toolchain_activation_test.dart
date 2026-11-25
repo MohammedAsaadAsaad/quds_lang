@@ -17,7 +17,7 @@ void main() {
           .writeAsStringSync("void main() { print('fixture active'); }\n");
       final runner = File('${root.path}/runner.dart')..writeAsStringSync('''
 import 'dart:io';
-import 'package:quds_lang/src/toolchain.dart';
+import 'package:quds/src/toolchain.dart';
 void main(List<String> args) { exitCode = activateCommand(Directory(args.single)) ? 0 : 1; }
 ''');
       final environment = {

@@ -3,81 +3,104 @@
 
 import 'package:flutter/material.dart';
 // ignore: undefined_hidden_name
-import 'package:quds_ledger/quds_ledger.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:quds_ledger/quds_ledger.dart'
+    hide Optional, missing, $qudsKnownGuards;
 // ignore: undefined_hidden_name
-import 'package:budget_ledger/src/theme.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:budget_ledger/src/theme.dart'
+    hide Optional, missing, $qudsKnownGuards;
 // ignore: undefined_hidden_name
-import 'package:budget_ledger/src/charts.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:budget_ledger/src/charts.dart'
+    hide Optional, missing, $qudsKnownGuards;
 // ignore: undefined_hidden_name
-import 'package:budget_ledger/src/dialogs.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:budget_ledger/src/dialogs.dart'
+    hide Optional, missing, $qudsKnownGuards;
 import 'package:flutter/src/widgets/framework.dart' as _qNative5543fe7fe3bf;
 import 'package:flutter/src/material/app.dart' as _qNative7c8176b1c118;
 import 'package:flutter/src/material/theme_data.dart' as _qNativea2c51253aea7;
 import 'package:quds_ledger/src/models.dart' as _qImportedType2;
 import 'package:flutter/src/material/snack_bar.dart' as _qNative11a3520ab1c7;
 import 'package:flutter/src/widgets/text.dart' as _qNative805c89a392fb;
-import 'package:flutter/src/widgets/animated_switcher.dart' as _qNativecbd78bd29da9;
+import 'package:flutter/src/widgets/animated_switcher.dart'
+    as _qNativecbd78bd29da9;
 import 'package:flutter/src/animation/curves.dart' as _qNative485366da7540;
 import 'package:flutter/src/widgets/basic.dart' as _qNative035358ccc81b;
 import 'package:flutter/src/foundation/key.dart' as _qNative96d8c4c2dd99;
 import 'package:flutter/src/material/scaffold.dart' as _qNativea206f8930be6;
 import 'package:flutter/src/material/divider.dart' as _qNative9c2f736db086;
 import 'package:flutter/src/widgets/icon_data.dart' as _qNative5a1072dde908;
+
 import 'dart:ui' as _qNativec7be968e0aa4;
+
 import 'package:flutter/src/material/app_bar.dart' as _qNative32b8f68f8db8;
 import 'package:flutter/src/painting/text_painter.dart' as _qNative7916bb07ae97;
 import 'package:flutter/src/painting/text_style.dart' as _qNative32610202bed5;
+
 import 'dart:ui' as _qNativeadfc8a908bd1;
+
 import 'package:flutter/src/material/icon_button.dart' as _qNative11f27a8d8cdd;
 import 'package:flutter/src/widgets/icon.dart' as _qNativefcdbcceafdbc;
-import 'package:flutter/src/material/navigation_bar.dart' as _qNative092786e8ac2e;
+import 'package:flutter/src/material/navigation_bar.dart'
+    as _qNative092786e8ac2e;
 import 'package:flutter/src/widgets/container.dart' as _qNative0a4eb85d9882;
 import 'package:flutter/src/painting/edge_insets.dart' as _qNative018897804c8a;
 import 'package:flutter/src/material/button_style.dart' as _qNativef2c2daa96670;
-import 'package:flutter/src/painting/rounded_rectangle_border.dart' as _qNative1da5806f8a96;
+import 'package:flutter/src/painting/rounded_rectangle_border.dart'
+    as _qNative1da5806f8a96;
 import 'package:flutter/src/widgets/spacer.dart' as _qNativec7aa81aa82cb;
 import 'package:quds_ledger/src/money.dart' as _qImportedType0;
 import 'package:flutter/src/material/choice_chip.dart' as _qNativecfc71f7fe95f;
-import 'package:flutter/src/widgets/implicit_animations.dart' as _qNativeb01c0cbb1a5e;
-import 'package:flutter/src/painting/box_decoration.dart' as _qNativeff80a55449f9;
+import 'package:flutter/src/widgets/implicit_animations.dart'
+    as _qNativeb01c0cbb1a5e;
+import 'package:flutter/src/painting/box_decoration.dart'
+    as _qNativeff80a55449f9;
 import 'package:flutter/src/material/ink_well.dart' as _qNativeffab4c10f351;
-import 'package:flutter/src/painting/border_radius.dart' as _qNativebec49084b274;
+import 'package:flutter/src/painting/border_radius.dart'
+    as _qNativebec49084b274;
 import 'package:flutter/src/painting/box_border.dart' as _qNative8c01721789c6;
 import 'package:flutter/src/material/dropdown.dart' as _qNativec71e59c741e6;
 import 'package:flutter/src/painting/gradient.dart' as _qNative27c382947dfe;
 import 'package:flutter/src/painting/box_shadow.dart' as _qNativee7219cec0e8c;
+
 import 'dart:ui' as _qNative3296ff558a1b;
+
 import 'package:flutter/src/rendering/wrap.dart' as _qNativea339e959ac28;
 import 'package:flutter/src/rendering/box.dart' as _qNatived29d78d3fb1a;
 import 'package:flutter/src/material/text_button.dart' as _qNative2fee93da4f6c;
-import 'package:flutter/src/widgets/single_child_scroll_view.dart' as _qNativebdc4be6164b7;
+import 'package:flutter/src/widgets/single_child_scroll_view.dart'
+    as _qNativebdc4be6164b7;
 import 'package:flutter/src/material/text_field.dart' as _qNativeedb7b9671341;
-import 'package:flutter/src/material/input_decorator.dart' as _qNative0b50793ed460;
+import 'package:flutter/src/material/input_decorator.dart'
+    as _qNative0b50793ed460;
 import 'package:flutter/src/material/input_border.dart' as _qNative6cfa0fa0a4b9;
 import 'package:flutter/src/painting/borders.dart' as _qNative4703d6fddf02;
 import 'package:flutter/src/material/input_chip.dart' as _qNative5dce12a19639;
+
 class Optional<T> {
   final bool isPresent;
   final T? value;
   const Optional.missing() : isPresent = false, value = null;
   const Optional.present(this.value) : isPresent = true;
 }
+
 const missing = Optional<Never>.missing();
 bool _qBool(bool value) => value;
 
 class QudsLedgerApp extends _qNative5543fe7fe3bf.StatefulWidget {
   QudsLedgerApp();
-  _qNative5543fe7fe3bf.State<QudsLedgerApp> createState() => QudsLedgerAppState();
+  _qNative5543fe7fe3bf.State<QudsLedgerApp> createState() =>
+      QudsLedgerAppState();
 }
+
 class QudsLedgerAppState extends _qNative5543fe7fe3bf.State<QudsLedgerApp> {
   QudsLedgerAppState({this.darkMode = true});
   bool darkMode;
   void _toggleTheme() {
     final void Function() _q0 = (() {
-this.darkMode = (!darkMode);
-});
+      this.darkMode = (!darkMode);
+    });
     this.setState(_q0);
   }
+
   _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q1) {
     final _qNative7c8176b1c118.ThemeMode _q2;
     if (_qBool(darkMode)) {
@@ -85,17 +108,52 @@ this.darkMode = (!darkMode);
     } else {
       _q2 = ThemeMode.light;
     }
-    return ((String _qna0, bool _qna1, _qNativea2c51253aea7.ThemeData _qna2, _qNativea2c51253aea7.ThemeData _qna3, _qNative7c8176b1c118.ThemeMode _qna4, LedgerShell _qna5) => _qNative7c8176b1c118.MaterialApp(home: _qna5, title: _qna0, theme: _qna2, darkTheme: _qna3, themeMode: _qna4, debugShowCheckedModeBanner: _qna1))("Quds Ledger", false, buildLedgerTheme(false), buildLedgerTheme(true), _q2, (() { final _qa0 = darkMode; final _qa1 = this._toggleTheme; return LedgerShell(darkMode: _qa0, onToggleTheme: _qa1); })());
+    return ((
+      String _qna0,
+      bool _qna1,
+      _qNativea2c51253aea7.ThemeData _qna2,
+      _qNativea2c51253aea7.ThemeData _qna3,
+      _qNative7c8176b1c118.ThemeMode _qna4,
+      LedgerShell _qna5,
+    ) => _qNative7c8176b1c118.MaterialApp(
+      home: _qna5,
+      title: _qna0,
+      theme: _qna2,
+      darkTheme: _qna3,
+      themeMode: _qna4,
+      debugShowCheckedModeBanner: _qna1,
+    ))(
+      "Quds Ledger",
+      false,
+      buildLedgerTheme(false),
+      buildLedgerTheme(true),
+      _q2,
+      (() {
+        final _qa0 = darkMode;
+        final _qa1 = this._toggleTheme;
+        return LedgerShell(darkMode: _qa0, onToggleTheme: _qa1);
+      })(),
+    );
   }
 }
+
 class LedgerShell extends _qNative5543fe7fe3bf.StatefulWidget {
   LedgerShell({required this.darkMode, required this.onToggleTheme});
   final bool darkMode;
   final void Function() onToggleTheme;
   _qNative5543fe7fe3bf.State<LedgerShell> createState() => LedgerShellState();
 }
+
 class LedgerShellState extends _qNative5543fe7fe3bf.State<LedgerShell> {
-  LedgerShellState({Object? engine = missing, this.tabIndex = 0, this.searchQuery = "", this.kindFilter = null, this.categoryFilter = null}) : engine = identical(engine, missing) ? seedDemoLedger() : engine as LedgerEngine;
+  LedgerShellState({
+    Object? engine = missing,
+    this.tabIndex = 0,
+    this.searchQuery = "",
+    this.kindFilter = null,
+    this.categoryFilter = null,
+  }) : engine = identical(engine, missing)
+           ? seedDemoLedger()
+           : engine as LedgerEngine;
   final LedgerEngine engine;
   int tabIndex;
   String searchQuery;
@@ -103,22 +161,25 @@ class LedgerShellState extends _qNative5543fe7fe3bf.State<LedgerShell> {
   Category? categoryFilter;
   void _refresh() {
     final void Function() _q3 = (() {
-this.tabIndex = tabIndex;
-});
+      this.tabIndex = tabIndex;
+    });
     this.setState(_q3);
   }
+
   void _setTab(int _q4) {
     final void Function() _q5 = (() {
-this.tabIndex = _q4;
-});
+      this.tabIndex = _q4;
+    });
     this.setState(_q5);
   }
+
   void _setCurrency(Currency _q6) {
     final void Function() _q7 = (() {
-engine.displayCurrency = _q6;
-});
+      engine.displayCurrency = _q6;
+    });
     this.setState(_q7);
   }
+
   void _onPickCurrency(Currency? _q8) {
     final _qn6 = _q8;
     if (_qn6 != null) {
@@ -126,26 +187,30 @@ engine.displayCurrency = _q6;
       this._setCurrency(_q9);
     }
   }
+
   void _onSearchChanged(String _q10) {
     final void Function() _q11 = (() {
-this.searchQuery = _q10;
-});
+      this.searchQuery = _q10;
+    });
     this.setState(_q11);
   }
+
   void _setKindFilter(EntryKind? _q12, bool _q13) {
     if (_qBool(_q13)) {
       final void Function() _q14 = (() {
-this.kindFilter = _q12;
-});
+        this.kindFilter = _q12;
+      });
       this.setState(_q14);
     }
   }
+
   void _clearCategoryFilter() {
     final void Function() _q15 = (() {
-this.categoryFilter = null;
-});
+      this.categoryFilter = null;
+    });
     this.setState(_q15);
   }
+
   void _deleteWithUndo(LedgerEntry _q16) {
     final _qImportedType2.LedgerEntry? _q17 = engine.removeEntry(_q16.id);
     if ((_q17 == null)) {
@@ -153,18 +218,58 @@ this.categoryFilter = null;
     }
     this._refresh();
     final void Function() _q18 = (() {
-engine.restoreEntry(_q16);
-this._refresh();
-});
-    final _qNative11a3520ab1c7.SnackBar _q19 = _qNative11a3520ab1c7.SnackBar(content: _qNative805c89a392fb.Text(["Deleted \"", _q16.title, "\""].join()), action: _qNative11a3520ab1c7.SnackBarAction(label: "Undo", onPressed: _q18));
+      engine.restoreEntry(_q16);
+      this._refresh();
+    });
+    final _qNative11a3520ab1c7.SnackBar _q19 = _qNative11a3520ab1c7.SnackBar(
+      content: _qNative805c89a392fb.Text(
+        ["Deleted \"", _q16.title, "\""].join(),
+      ),
+      action: _qNative11a3520ab1c7.SnackBarAction(
+        label: "Undo",
+        onPressed: _q18,
+      ),
+    );
     ScaffoldMessenger.of(this.context).clearSnackBars();
     ScaffoldMessenger.of(this.context).showSnackBar(_q19);
   }
+
   _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q20) {
     final bool _q21 = (MediaQuery.of(_q20).size.width >= 880.0);
-    final _qNativecbd78bd29da9.AnimatedSwitcher _q22 = ((Duration _qna7, _qNative485366da7540.Cubic _qna8, _qNative485366da7540.Cubic _qna9, _qNative035358ccc81b.KeyedSubtree _qna10) => _qNativecbd78bd29da9.AnimatedSwitcher(child: _qna10, duration: _qna7, switchInCurve: _qna8, switchOutCurve: _qna9))(motionDuration(_q20, 280), Curves.easeOutCubic, Curves.easeInCubic, _qNative035358ccc81b.KeyedSubtree(key: _qNative96d8c4c2dd99.ValueKey<int>(tabIndex), child: this._activeTab(_q20, _q21)));
+    final _qNativecbd78bd29da9.AnimatedSwitcher _q22 =
+        ((
+          Duration _qna7,
+          _qNative485366da7540.Cubic _qna8,
+          _qNative485366da7540.Cubic _qna9,
+          _qNative035358ccc81b.KeyedSubtree _qna10,
+        ) => _qNativecbd78bd29da9.AnimatedSwitcher(
+          child: _qna10,
+          duration: _qna7,
+          switchInCurve: _qna8,
+          switchOutCurve: _qna9,
+        ))(
+          motionDuration(_q20, 280),
+          Curves.easeOutCubic,
+          Curves.easeInCubic,
+          _qNative035358ccc81b.KeyedSubtree(
+            key: _qNative96d8c4c2dd99.ValueKey<int>(tabIndex),
+            child: this._activeTab(_q20, _q21),
+          ),
+        );
     if (_qBool(_q21)) {
-      return _qNativea206f8930be6.Scaffold(body: _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[this._desktopRail(_q20), _qNative9c2f736db086.VerticalDivider(width: 1.0, thickness: 1.0, color: borderColor(_q20)), _qNative035358ccc81b.Expanded(child: _q22)]));
+      return _qNativea206f8930be6.Scaffold(
+        body: _qNative035358ccc81b.Row(
+          children: <_qNative5543fe7fe3bf.Widget>[
+            this._desktopRail(_q20),
+            _qNative9c2f736db086.VerticalDivider(
+              width: 1.0,
+              thickness: 1.0,
+              color: borderColor(_q20),
+            ),
+            _qNative035358ccc81b.Expanded(child: _q22),
+          ],
+        ),
+      );
     }
     final _qNative5a1072dde908.IconData _q23;
     if (this.widget.darkMode) {
@@ -178,12 +283,146 @@ this._refresh();
     } else {
       _q24 = brandDeepEmerald();
     }
-    return _qNativea206f8930be6.Scaffold(appBar: ((_qNativec7be968e0aa4.Color _qna11, _qNativec7be968e0aa4.Color _qna12, _qNative035358ccc81b.Row _qna13, List<_qNative5543fe7fe3bf.Widget> _qna20) => _qNative32b8f68f8db8.AppBar(title: _qna13, actions: _qna20, surfaceTintColor: _qna12, backgroundColor: _qna11))(bgColor(_q20), Colors.transparent, _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[this._appIconBadge(34.0), _qNative035358ccc81b.SizedBox(width: 10.0), _qNative035358ccc81b.Flexible(child: ((String _qna14, _qNative7916bb07ae97.TextOverflow _qna15, _qNative32610202bed5.TextStyle _qna16) => _qNative805c89a392fb.Text(_qna14, style: _qna16, overflow: _qna15))("Quds Ledger", TextOverflow.ellipsis, ((_qNativeadfc8a908bd1.FontWeight _qna17, double _qna18, _qNativec7be968e0aa4.Color _qna19) => _qNative32610202bed5.TextStyle(color: _qna19, fontWeight: _qna17, letterSpacing: _qna18))(FontWeight.w800, (-0.4), inkColor(_q20))))]), <_qNative5543fe7fe3bf.Widget>[this._currencyDropdown(_q20), ((String _qna21, void Function() _qna22, _qNativefcdbcceafdbc.Icon _qna23) => _qNative11f27a8d8cdd.IconButton(onPressed: _qna22, tooltip: _qna21, icon: _qna23))("Toggle theme", this.widget.onToggleTheme, _qNativefcdbcceafdbc.Icon(_q23, color: _q24)), _qNative035358ccc81b.SizedBox(width: 6.0)]), body: _q22, floatingActionButton: ((void Function() _qna24, _qNativec7be968e0aa4.Color _qna25, _qNativec7be968e0aa4.Color _qna26, _qNativefcdbcceafdbc.Icon _qna27, _qNative805c89a392fb.Text _qna28) => FloatingActionButton.extended(foregroundColor: _qna26, backgroundColor: _qna25, onPressed: _qna24, icon: _qna27, label: _qna28))((() => showAddEntryDialog(_q20, engine, this._refresh)), brandDeepEmerald(), Colors.white, _qNativefcdbcceafdbc.Icon(Icons.add_rounded), _qNative805c89a392fb.Text("Add Entry", style: _qNative32610202bed5.TextStyle(fontWeight: FontWeight.w700))), bottomNavigationBar: ((int _qna29, _qNativec7be968e0aa4.Color _qna30, _qNativec7be968e0aa4.Color _qna31, void Function(int) _qna32, List<_qNative5543fe7fe3bf.Widget> _qna33) => _qNative092786e8ac2e.NavigationBar(selectedIndex: _qna29, destinations: _qna33, onDestinationSelected: _qna32, backgroundColor: _qna30, indicatorColor: _qna31))(tabIndex, surfaceColor(_q20), accentColor(_q20).withValues(alpha: 0.18), this._setTab, <_qNative5543fe7fe3bf.Widget>[_qNative092786e8ac2e.NavigationDestination(icon: _qNativefcdbcceafdbc.Icon(Icons.dashboard_rounded), label: "Overview"), _qNative092786e8ac2e.NavigationDestination(icon: _qNativefcdbcceafdbc.Icon(Icons.receipt_long_rounded), label: "Ledger"), _qNative092786e8ac2e.NavigationDestination(icon: _qNativefcdbcceafdbc.Icon(Icons.pie_chart_rounded), label: "Budgets")]));
+    return _qNativea206f8930be6.Scaffold(
+      appBar:
+          ((
+            _qNativec7be968e0aa4.Color _qna11,
+            _qNativec7be968e0aa4.Color _qna12,
+            _qNative035358ccc81b.Row _qna13,
+            List<_qNative5543fe7fe3bf.Widget> _qna20,
+          ) => _qNative32b8f68f8db8.AppBar(
+            title: _qna13,
+            actions: _qna20,
+            surfaceTintColor: _qna12,
+            backgroundColor: _qna11,
+          ))(
+            bgColor(_q20),
+            Colors.transparent,
+            _qNative035358ccc81b.Row(
+              children: <_qNative5543fe7fe3bf.Widget>[
+                this._appIconBadge(34.0),
+                _qNative035358ccc81b.SizedBox(width: 10.0),
+                _qNative035358ccc81b.Flexible(
+                  child:
+                      ((
+                        String _qna14,
+                        _qNative7916bb07ae97.TextOverflow _qna15,
+                        _qNative32610202bed5.TextStyle _qna16,
+                      ) => _qNative805c89a392fb.Text(
+                        _qna14,
+                        style: _qna16,
+                        overflow: _qna15,
+                      ))(
+                        "Quds Ledger",
+                        TextOverflow.ellipsis,
+                        ((
+                          _qNativeadfc8a908bd1.FontWeight _qna17,
+                          double _qna18,
+                          _qNativec7be968e0aa4.Color _qna19,
+                        ) => _qNative32610202bed5.TextStyle(
+                          color: _qna19,
+                          fontWeight: _qna17,
+                          letterSpacing: _qna18,
+                        ))(FontWeight.w800, (-0.4), inkColor(_q20)),
+                      ),
+                ),
+              ],
+            ),
+            <_qNative5543fe7fe3bf.Widget>[
+              this._currencyDropdown(_q20),
+              ((
+                String _qna21,
+                void Function() _qna22,
+                _qNativefcdbcceafdbc.Icon _qna23,
+              ) => _qNative11f27a8d8cdd.IconButton(
+                onPressed: _qna22,
+                tooltip: _qna21,
+                icon: _qna23,
+              ))(
+                "Toggle theme",
+                this.widget.onToggleTheme,
+                _qNativefcdbcceafdbc.Icon(_q23, color: _q24),
+              ),
+              _qNative035358ccc81b.SizedBox(width: 6.0),
+            ],
+          ),
+      body: _q22,
+      floatingActionButton:
+          ((
+            void Function() _qna24,
+            _qNativec7be968e0aa4.Color _qna25,
+            _qNativec7be968e0aa4.Color _qna26,
+            _qNativefcdbcceafdbc.Icon _qna27,
+            _qNative805c89a392fb.Text _qna28,
+          ) => FloatingActionButton.extended(
+            foregroundColor: _qna26,
+            backgroundColor: _qna25,
+            onPressed: _qna24,
+            icon: _qna27,
+            label: _qna28,
+          ))(
+            (() => showAddEntryDialog(_q20, engine, this._refresh)),
+            brandDeepEmerald(),
+            Colors.white,
+            _qNativefcdbcceafdbc.Icon(Icons.add_rounded),
+            _qNative805c89a392fb.Text(
+              "Add Entry",
+              style: _qNative32610202bed5.TextStyle(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+      bottomNavigationBar:
+          ((
+            int _qna29,
+            _qNativec7be968e0aa4.Color _qna30,
+            _qNativec7be968e0aa4.Color _qna31,
+            void Function(int) _qna32,
+            List<_qNative5543fe7fe3bf.Widget> _qna33,
+          ) => _qNative092786e8ac2e.NavigationBar(
+            selectedIndex: _qna29,
+            destinations: _qna33,
+            onDestinationSelected: _qna32,
+            backgroundColor: _qna30,
+            indicatorColor: _qna31,
+          ))(
+            tabIndex,
+            surfaceColor(_q20),
+            accentColor(_q20).withValues(alpha: 0.18),
+            this._setTab,
+            <_qNative5543fe7fe3bf.Widget>[
+              _qNative092786e8ac2e.NavigationDestination(
+                icon: _qNativefcdbcceafdbc.Icon(Icons.dashboard_rounded),
+                label: "Overview",
+              ),
+              _qNative092786e8ac2e.NavigationDestination(
+                icon: _qNativefcdbcceafdbc.Icon(Icons.receipt_long_rounded),
+                label: "Ledger",
+              ),
+              _qNative092786e8ac2e.NavigationDestination(
+                icon: _qNativefcdbcceafdbc.Icon(Icons.pie_chart_rounded),
+                label: "Budgets",
+              ),
+            ],
+          ),
+    );
   }
+
   _qNative5543fe7fe3bf.Widget _appIconBadge(double _q25) {
-    return _qNative035358ccc81b.ClipRRect(borderRadius: BorderRadius.circular((_q25 * 0.24)), child: Image.asset("assets/icon/quds_ledger_icon.png", width: _q25, height: _q25, fit: BoxFit.cover));
+    return _qNative035358ccc81b.ClipRRect(
+      borderRadius: BorderRadius.circular((_q25 * 0.24)),
+      child: Image.asset(
+        "assets/icon/quds_ledger_icon.png",
+        width: _q25,
+        height: _q25,
+        fit: BoxFit.cover,
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _desktopRail(_qNative5543fe7fe3bf.BuildContext _q26) {
+
+  _qNative5543fe7fe3bf.Widget _desktopRail(
+    _qNative5543fe7fe3bf.BuildContext _q26,
+  ) {
     final String _q27;
     if (this.widget.darkMode) {
       _q27 = "Dark Mode";
@@ -202,14 +441,222 @@ this._refresh();
     } else {
       _q29 = brandDeepEmerald();
     }
-    return ((double _qna34, _qNativec7be968e0aa4.Color _qna35, _qNative018897804c8a.EdgeInsets _qna36, _qNative035358ccc81b.Column _qna39) => _qNative0a4eb85d9882.Container(padding: _qna36, color: _qna35, width: _qna34, child: _qna39))(248.0, surfaceColor(_q26), ((double _qna37, double _qna38) => EdgeInsets.symmetric(vertical: _qna38, horizontal: _qna37))(16.0, 24.0), _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[this._appIconBadge(44.0), _qNative035358ccc81b.SizedBox(width: 12.0), _qNative035358ccc81b.Expanded(child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[((String _qna40, _qNative7916bb07ae97.TextOverflow _qna41, _qNative32610202bed5.TextStyle _qna42) => _qNative805c89a392fb.Text(_qna40, style: _qna42, overflow: _qna41))("Quds Ledger", TextOverflow.ellipsis, ((double _qna43, _qNativeadfc8a908bd1.FontWeight _qna44, _qNativec7be968e0aa4.Color _qna45) => _qNative32610202bed5.TextStyle(color: _qna45, fontSize: _qna43, fontWeight: _qna44))(17.0, FontWeight.w800, inkColor(_q26))), ((String _qna46, _qNative7916bb07ae97.TextOverflow _qna47, _qNative32610202bed5.TextStyle _qna48) => _qNative805c89a392fb.Text(_qna46, style: _qna48, overflow: _qna47))("Exact Rational Finance", TextOverflow.ellipsis, ((double _qna49, _qNativec7be968e0aa4.Color _qna50) => _qNative32610202bed5.TextStyle(color: _qna50, fontSize: _qna49))(11.0, mutedColor(_q26)))]))]), _qNative035358ccc81b.SizedBox(height: 28.0), this._railItem(_q26, 0, Icons.dashboard_rounded, "Overview"), _qNative035358ccc81b.SizedBox(height: 6.0), this._railItem(_q26, 1, Icons.receipt_long_rounded, "Transactions"), _qNative035358ccc81b.SizedBox(height: 6.0), this._railItem(_q26, 2, Icons.pie_chart_rounded, "Budgets & JSON"), _qNative035358ccc81b.SizedBox(height: 22.0), _qNative035358ccc81b.SizedBox(width: double.infinity, child: ((void Function() _qna51, _qNativefcdbcceafdbc.Icon _qna52, _qNative805c89a392fb.Text _qna53, _qNativef2c2daa96670.ButtonStyle _qna54) => FilledButton.icon(onPressed: _qna51, style: _qna54, icon: _qna52, label: _qna53))((() => showAddEntryDialog(_q26, engine, this._refresh)), _qNativefcdbcceafdbc.Icon(Icons.add_rounded), _qNative805c89a392fb.Text("New Entry", style: _qNative32610202bed5.TextStyle(fontWeight: FontWeight.w700)), ((_qNativec7be968e0aa4.Color _qna55, _qNativec7be968e0aa4.Color _qna56, _qNative018897804c8a.EdgeInsets _qna57, _qNative1da5806f8a96.RoundedRectangleBorder _qna58) => FilledButton.styleFrom(foregroundColor: _qna56, backgroundColor: _qna55, padding: _qna57, shape: _qna58))(brandDeepEmerald(), Colors.white, EdgeInsets.symmetric(vertical: 14.0), _qNative1da5806f8a96.RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0))))), _qNativec7aa81aa82cb.Spacer(), _qNative9c2f736db086.Divider(color: borderColor(_q26)), _qNative035358ccc81b.SizedBox(height: 10.0), _qNative805c89a392fb.Text("Display Currency", style: ((double _qna59, _qNativeadfc8a908bd1.FontWeight _qna60, _qNativec7be968e0aa4.Color _qna61) => _qNative32610202bed5.TextStyle(color: _qna61, fontSize: _qna59, fontWeight: _qna60))(11.0, FontWeight.w600, mutedColor(_q26))), _qNative035358ccc81b.SizedBox(height: 8.0), _qNative035358ccc81b.Wrap(spacing: 6.0, runSpacing: 6.0, children: <_qNative5543fe7fe3bf.Widget>[for (final _qImportedType0.Currency _q30 in allCurrencies()) ...<_qNative5543fe7fe3bf.Widget>[((_qNative805c89a392fb.Text _qna62, bool _qna63, void Function(bool) _qna64) => _qNativecfc71f7fe95f.ChoiceChip(label: _qna62, onSelected: _qna64, selected: _qna63))(_qNative805c89a392fb.Text(currencyCode(_q30), style: _qNative32610202bed5.TextStyle(fontSize: 12.0, fontWeight: FontWeight.w700)), (engine.displayCurrency == _q30), ((bool _q31) => this._onCurrencyChip(_q30, _q31)))]]), _qNative035358ccc81b.SizedBox(height: 14.0), _qNative035358ccc81b.Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(child: ((String _qna65, _qNative7916bb07ae97.TextOverflow _qna66, _qNative32610202bed5.TextStyle _qna67) => _qNative805c89a392fb.Text(_qna65, style: _qna67, overflow: _qna66))(_q27, TextOverflow.ellipsis, ((double _qna68, _qNativeadfc8a908bd1.FontWeight _qna69, _qNativec7be968e0aa4.Color _qna70) => _qNative32610202bed5.TextStyle(color: _qna70, fontSize: _qna68, fontWeight: _qna69))(13.0, FontWeight.w600, inkColor(_q26)))), _qNative11f27a8d8cdd.IconButton(onPressed: this.widget.onToggleTheme, icon: _qNativefcdbcceafdbc.Icon(_q28, color: _q29))])]));
+    return ((
+      double _qna34,
+      _qNativec7be968e0aa4.Color _qna35,
+      _qNative018897804c8a.EdgeInsets _qna36,
+      _qNative035358ccc81b.Column _qna39,
+    ) => _qNative0a4eb85d9882.Container(
+      padding: _qna36,
+      color: _qna35,
+      width: _qna34,
+      child: _qna39,
+    ))(
+      248.0,
+      surfaceColor(_q26),
+      ((double _qna37, double _qna38) => EdgeInsets.symmetric(
+        vertical: _qna38,
+        horizontal: _qna37,
+      ))(16.0, 24.0),
+      _qNative035358ccc81b.Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <_qNative5543fe7fe3bf.Widget>[
+          _qNative035358ccc81b.Row(
+            children: <_qNative5543fe7fe3bf.Widget>[
+              this._appIconBadge(44.0),
+              _qNative035358ccc81b.SizedBox(width: 12.0),
+              _qNative035358ccc81b.Expanded(
+                child: _qNative035358ccc81b.Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <_qNative5543fe7fe3bf.Widget>[
+                    ((
+                      String _qna40,
+                      _qNative7916bb07ae97.TextOverflow _qna41,
+                      _qNative32610202bed5.TextStyle _qna42,
+                    ) => _qNative805c89a392fb.Text(
+                      _qna40,
+                      style: _qna42,
+                      overflow: _qna41,
+                    ))(
+                      "Quds Ledger",
+                      TextOverflow.ellipsis,
+                      ((
+                        double _qna43,
+                        _qNativeadfc8a908bd1.FontWeight _qna44,
+                        _qNativec7be968e0aa4.Color _qna45,
+                      ) => _qNative32610202bed5.TextStyle(
+                        color: _qna45,
+                        fontSize: _qna43,
+                        fontWeight: _qna44,
+                      ))(17.0, FontWeight.w800, inkColor(_q26)),
+                    ),
+                    ((
+                      String _qna46,
+                      _qNative7916bb07ae97.TextOverflow _qna47,
+                      _qNative32610202bed5.TextStyle _qna48,
+                    ) => _qNative805c89a392fb.Text(
+                      _qna46,
+                      style: _qna48,
+                      overflow: _qna47,
+                    ))(
+                      "Exact Rational Finance",
+                      TextOverflow.ellipsis,
+                      ((double _qna49, _qNativec7be968e0aa4.Color _qna50) =>
+                          _qNative32610202bed5.TextStyle(
+                            color: _qna50,
+                            fontSize: _qna49,
+                          ))(11.0, mutedColor(_q26)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          _qNative035358ccc81b.SizedBox(height: 28.0),
+          this._railItem(_q26, 0, Icons.dashboard_rounded, "Overview"),
+          _qNative035358ccc81b.SizedBox(height: 6.0),
+          this._railItem(_q26, 1, Icons.receipt_long_rounded, "Transactions"),
+          _qNative035358ccc81b.SizedBox(height: 6.0),
+          this._railItem(_q26, 2, Icons.pie_chart_rounded, "Budgets & JSON"),
+          _qNative035358ccc81b.SizedBox(height: 22.0),
+          _qNative035358ccc81b.SizedBox(
+            width: double.infinity,
+            child:
+                ((
+                  void Function() _qna51,
+                  _qNativefcdbcceafdbc.Icon _qna52,
+                  _qNative805c89a392fb.Text _qna53,
+                  _qNativef2c2daa96670.ButtonStyle _qna54,
+                ) => FilledButton.icon(
+                  onPressed: _qna51,
+                  style: _qna54,
+                  icon: _qna52,
+                  label: _qna53,
+                ))(
+                  (() => showAddEntryDialog(_q26, engine, this._refresh)),
+                  _qNativefcdbcceafdbc.Icon(Icons.add_rounded),
+                  _qNative805c89a392fb.Text(
+                    "New Entry",
+                    style: _qNative32610202bed5.TextStyle(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  ((
+                    _qNativec7be968e0aa4.Color _qna55,
+                    _qNativec7be968e0aa4.Color _qna56,
+                    _qNative018897804c8a.EdgeInsets _qna57,
+                    _qNative1da5806f8a96.RoundedRectangleBorder _qna58,
+                  ) => FilledButton.styleFrom(
+                    foregroundColor: _qna56,
+                    backgroundColor: _qna55,
+                    padding: _qna57,
+                    shape: _qna58,
+                  ))(
+                    brandDeepEmerald(),
+                    Colors.white,
+                    EdgeInsets.symmetric(vertical: 14.0),
+                    _qNative1da5806f8a96.RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14.0),
+                    ),
+                  ),
+                ),
+          ),
+          _qNativec7aa81aa82cb.Spacer(),
+          _qNative9c2f736db086.Divider(color: borderColor(_q26)),
+          _qNative035358ccc81b.SizedBox(height: 10.0),
+          _qNative805c89a392fb.Text(
+            "Display Currency",
+            style:
+                ((
+                  double _qna59,
+                  _qNativeadfc8a908bd1.FontWeight _qna60,
+                  _qNativec7be968e0aa4.Color _qna61,
+                ) => _qNative32610202bed5.TextStyle(
+                  color: _qna61,
+                  fontSize: _qna59,
+                  fontWeight: _qna60,
+                ))(11.0, FontWeight.w600, mutedColor(_q26)),
+          ),
+          _qNative035358ccc81b.SizedBox(height: 8.0),
+          _qNative035358ccc81b.Wrap(
+            spacing: 6.0,
+            runSpacing: 6.0,
+            children: <_qNative5543fe7fe3bf.Widget>[
+              for (final _qImportedType0.Currency _q30
+                  in allCurrencies()) ...<_qNative5543fe7fe3bf.Widget>[
+                ((
+                  _qNative805c89a392fb.Text _qna62,
+                  bool _qna63,
+                  void Function(bool) _qna64,
+                ) => _qNativecfc71f7fe95f.ChoiceChip(
+                  label: _qna62,
+                  onSelected: _qna64,
+                  selected: _qna63,
+                ))(
+                  _qNative805c89a392fb.Text(
+                    currencyCode(_q30),
+                    style: _qNative32610202bed5.TextStyle(
+                      fontSize: 12.0,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  (engine.displayCurrency == _q30),
+                  ((bool _q31) => this._onCurrencyChip(_q30, _q31)),
+                ),
+              ],
+            ],
+          ),
+          _qNative035358ccc81b.SizedBox(height: 14.0),
+          _qNative035358ccc81b.Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <_qNative5543fe7fe3bf.Widget>[
+              _qNative035358ccc81b.Expanded(
+                child:
+                    ((
+                      String _qna65,
+                      _qNative7916bb07ae97.TextOverflow _qna66,
+                      _qNative32610202bed5.TextStyle _qna67,
+                    ) => _qNative805c89a392fb.Text(
+                      _qna65,
+                      style: _qna67,
+                      overflow: _qna66,
+                    ))(
+                      _q27,
+                      TextOverflow.ellipsis,
+                      ((
+                        double _qna68,
+                        _qNativeadfc8a908bd1.FontWeight _qna69,
+                        _qNativec7be968e0aa4.Color _qna70,
+                      ) => _qNative32610202bed5.TextStyle(
+                        color: _qna70,
+                        fontSize: _qna68,
+                        fontWeight: _qna69,
+                      ))(13.0, FontWeight.w600, inkColor(_q26)),
+                    ),
+              ),
+              _qNative11f27a8d8cdd.IconButton(
+                onPressed: this.widget.onToggleTheme,
+                icon: _qNativefcdbcceafdbc.Icon(_q28, color: _q29),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
+
   void _onCurrencyChip(Currency _q32, bool _q33) {
     if (_qBool(_q33)) {
       this._setCurrency(_q32);
     }
   }
-  _qNative5543fe7fe3bf.Widget _railItem(_qNative5543fe7fe3bf.BuildContext _q34, int _q35, _qNative5a1072dde908.IconData _q36, String _q37) {
+
+  _qNative5543fe7fe3bf.Widget _railItem(
+    _qNative5543fe7fe3bf.BuildContext _q34,
+    int _q35,
+    _qNative5a1072dde908.IconData _q36,
+    String _q37,
+  ) {
     final bool _q38 = (tabIndex == _q35);
     final _qNativec7be968e0aa4.Color _q39 = accentColor(_q34);
     final _qNativec7be968e0aa4.Color _q40;
@@ -236,12 +683,138 @@ this._refresh();
     } else {
       _q43 = mutedColor(_q34);
     }
-    return ((Duration _qna71, _qNativeff80a55449f9.BoxDecoration _qna72, _qNativeffab4c10f351.InkWell _qna73) => _qNativeb01c0cbb1a5e.AnimatedContainer(decoration: _qna72, child: _qna73, duration: _qna71))(motionDuration(_q34, 180), _qNativeff80a55449f9.BoxDecoration(color: _q40, borderRadius: BorderRadius.circular(14.0)), ((void Function() _qna74, _qNativebec49084b274.BorderRadius _qna75, _qNative035358ccc81b.Padding _qna76) => _qNativeffab4c10f351.InkWell(child: _qna76, onTap: _qna74, borderRadius: _qna75))((() => this._setTab(_q35)), BorderRadius.circular(14.0), _qNative035358ccc81b.Padding(padding: ((double _qna77, double _qna78) => EdgeInsets.symmetric(vertical: _qna78, horizontal: _qna77))(14.0, 12.0), child: _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[_qNativefcdbcceafdbc.Icon(_q36, size: 20.0, color: _q41), _qNative035358ccc81b.SizedBox(width: 12.0), _qNative035358ccc81b.Expanded(child: ((String _qna79, _qNative7916bb07ae97.TextOverflow _qna80, _qNative32610202bed5.TextStyle _qna81) => _qNative805c89a392fb.Text(_qna79, style: _qna81, overflow: _qna80))(_q37, TextOverflow.ellipsis, ((double _qna82, _qNativeadfc8a908bd1.FontWeight _qna83, _qNativec7be968e0aa4.Color _qna84) => _qNative32610202bed5.TextStyle(color: _qna84, fontSize: _qna82, fontWeight: _qna83))(14.0, _q42, _q43)))]))));
+    return ((
+      Duration _qna71,
+      _qNativeff80a55449f9.BoxDecoration _qna72,
+      _qNativeffab4c10f351.InkWell _qna73,
+    ) => _qNativeb01c0cbb1a5e.AnimatedContainer(
+      decoration: _qna72,
+      child: _qna73,
+      duration: _qna71,
+    ))(
+      motionDuration(_q34, 180),
+      _qNativeff80a55449f9.BoxDecoration(
+        color: _q40,
+        borderRadius: BorderRadius.circular(14.0),
+      ),
+      ((
+        void Function() _qna74,
+        _qNativebec49084b274.BorderRadius _qna75,
+        _qNative035358ccc81b.Padding _qna76,
+      ) => _qNativeffab4c10f351.InkWell(
+        child: _qna76,
+        onTap: _qna74,
+        borderRadius: _qna75,
+      ))(
+        (() => this._setTab(_q35)),
+        BorderRadius.circular(14.0),
+        _qNative035358ccc81b.Padding(
+          padding: ((double _qna77, double _qna78) => EdgeInsets.symmetric(
+            vertical: _qna78,
+            horizontal: _qna77,
+          ))(14.0, 12.0),
+          child: _qNative035358ccc81b.Row(
+            children: <_qNative5543fe7fe3bf.Widget>[
+              _qNativefcdbcceafdbc.Icon(_q36, size: 20.0, color: _q41),
+              _qNative035358ccc81b.SizedBox(width: 12.0),
+              _qNative035358ccc81b.Expanded(
+                child:
+                    ((
+                      String _qna79,
+                      _qNative7916bb07ae97.TextOverflow _qna80,
+                      _qNative32610202bed5.TextStyle _qna81,
+                    ) => _qNative805c89a392fb.Text(
+                      _qna79,
+                      style: _qna81,
+                      overflow: _qna80,
+                    ))(
+                      _q37,
+                      TextOverflow.ellipsis,
+                      ((
+                        double _qna82,
+                        _qNativeadfc8a908bd1.FontWeight _qna83,
+                        _qNativec7be968e0aa4.Color _qna84,
+                      ) => _qNative32610202bed5.TextStyle(
+                        color: _qna84,
+                        fontSize: _qna82,
+                        fontWeight: _qna83,
+                      ))(14.0, _q42, _q43),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _currencyDropdown(_qNative5543fe7fe3bf.BuildContext _q44) {
-    return _qNative0a4eb85d9882.Container(padding: EdgeInsets.symmetric(horizontal: 10.0), decoration: ((_qNativec7be968e0aa4.Color _qna85, _qNativebec49084b274.BorderRadius _qna86, _qNative8c01721789c6.Border _qna87) => _qNativeff80a55449f9.BoxDecoration(color: _qna85, border: _qna87, borderRadius: _qna86))(elevatedColor(_q44), BorderRadius.circular(12.0), Border.all(color: borderColor(_q44))), child: _qNativec71e59c741e6.DropdownButtonHideUnderline(child: ((_qImportedType0.Currency _qna88, _qNativec7be968e0aa4.Color _qna89, void Function(Currency?) _qna90, List<_qNativec71e59c741e6.DropdownMenuItem<Currency>> _qna91) => _qNativec71e59c741e6.DropdownButton<Currency>(items: _qna91, value: _qna88, onChanged: _qna90, dropdownColor: _qna89))(engine.displayCurrency, surfaceColor(_q44), this._onPickCurrency, <_qNativec71e59c741e6.DropdownMenuItem<Currency>>[for (final _qImportedType0.Currency _q45 in allCurrencies()) ...<_qNativec71e59c741e6.DropdownMenuItem<Currency>>[_qNativec71e59c741e6.DropdownMenuItem<Currency>(value: _q45, child: _qNative805c89a392fb.Text(currencyCode(_q45), style: ((double _qna92, _qNativeadfc8a908bd1.FontWeight _qna93, _qNativec7be968e0aa4.Color _qna94) => _qNative32610202bed5.TextStyle(color: _qna94, fontSize: _qna92, fontWeight: _qna93))(13.0, FontWeight.w700, inkColor(_q44))))]])));
+
+  _qNative5543fe7fe3bf.Widget _currencyDropdown(
+    _qNative5543fe7fe3bf.BuildContext _q44,
+  ) {
+    return _qNative0a4eb85d9882.Container(
+      padding: EdgeInsets.symmetric(horizontal: 10.0),
+      decoration:
+          ((
+            _qNativec7be968e0aa4.Color _qna85,
+            _qNativebec49084b274.BorderRadius _qna86,
+            _qNative8c01721789c6.Border _qna87,
+          ) => _qNativeff80a55449f9.BoxDecoration(
+            color: _qna85,
+            border: _qna87,
+            borderRadius: _qna86,
+          ))(
+            elevatedColor(_q44),
+            BorderRadius.circular(12.0),
+            Border.all(color: borderColor(_q44)),
+          ),
+      child: _qNativec71e59c741e6.DropdownButtonHideUnderline(
+        child:
+            ((
+              _qImportedType0.Currency _qna88,
+              _qNativec7be968e0aa4.Color _qna89,
+              void Function(Currency?) _qna90,
+              List<_qNativec71e59c741e6.DropdownMenuItem<Currency>> _qna91,
+            ) => _qNativec71e59c741e6.DropdownButton<Currency>(
+              items: _qna91,
+              value: _qna88,
+              onChanged: _qna90,
+              dropdownColor: _qna89,
+            ))(
+              engine.displayCurrency,
+              surfaceColor(_q44),
+              this._onPickCurrency,
+              <_qNativec71e59c741e6.DropdownMenuItem<Currency>>[
+                for (final _qImportedType0.Currency _q45
+                    in allCurrencies()) ...<
+                  _qNativec71e59c741e6.DropdownMenuItem<Currency>
+                >[
+                  _qNativec71e59c741e6.DropdownMenuItem<Currency>(
+                    value: _q45,
+                    child: _qNative805c89a392fb.Text(
+                      currencyCode(_q45),
+                      style:
+                          ((
+                            double _qna92,
+                            _qNativeadfc8a908bd1.FontWeight _qna93,
+                            _qNativec7be968e0aa4.Color _qna94,
+                          ) => _qNative32610202bed5.TextStyle(
+                            color: _qna94,
+                            fontSize: _qna92,
+                            fontWeight: _qna93,
+                          ))(13.0, FontWeight.w700, inkColor(_q44)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _activeTab(_qNative5543fe7fe3bf.BuildContext _q46, bool _q47) {
+
+  _qNative5543fe7fe3bf.Widget _activeTab(
+    _qNative5543fe7fe3bf.BuildContext _q46,
+    bool _q47,
+  ) {
     if ((tabIndex == 0)) {
       return this._overviewTab(_q46, _q47);
     }
@@ -250,37 +823,808 @@ this._refresh();
     }
     return this._budgetsTab(_q46, _q47);
   }
-  _qNative5543fe7fe3bf.Widget _overviewTab(_qNative5543fe7fe3bf.BuildContext _q48, bool _q49) {
+
+  _qNative5543fe7fe3bf.Widget _overviewTab(
+    _qNative5543fe7fe3bf.BuildContext _q48,
+    bool _q49,
+  ) {
     final _qImportedType0.Money _q50 = engine.balance();
     final _qImportedType0.Money _q51 = engine.totalIncome();
     final _qImportedType0.Money _q52 = engine.totalExpense();
-    final List<_qImportedType2.CategorySummary> _q53 = engine.categoryBreakdown();
+    final List<_qImportedType2.CategorySummary> _q53 = engine
+        .categoryBreakdown();
     final List<_qImportedType2.CategorySummary> _q54 = engine.budgetAlerts();
-    final List<_qImportedType2.LedgerEntry> _q55 = (engine.entries).take(5).toList().toList();
+    final List<_qImportedType2.LedgerEntry> _q55 = (engine.entries)
+        .take(5)
+        .toList()
+        .toList();
     final double _q56;
     if (_qBool(_q49)) {
       _q56 = 40.0;
     } else {
       _q56 = 34.0;
     }
-    final Entrance _q57 = (() { final _qa0 = 0; final _qa1 = _qNative0a4eb85d9882.Container(padding: EdgeInsets.all(26.0), decoration: ((_qNative27c382947dfe.LinearGradient _qna127, _qNativebec49084b274.BorderRadius _qna128, _qNative8c01721789c6.Border _qna129, List<_qNativee7219cec0e8c.BoxShadow> _qna130) => _qNativeff80a55449f9.BoxDecoration(border: _qna129, borderRadius: _qna128, boxShadow: _qna130, gradient: _qna127))(_qNative27c382947dfe.LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: <_qNativec7be968e0aa4.Color>[_qNativec7be968e0aa4.Color(4278921763), _qNativec7be968e0aa4.Color(4279520061), _qNativec7be968e0aa4.Color(4278985502)]), BorderRadius.circular(28.0), Border.all(color: brandEmerald().withValues(alpha: 0.35)), <_qNativee7219cec0e8c.BoxShadow>[((_qNativec7be968e0aa4.Color _qna131, double _qna132, _qNative3296ff558a1b.Offset _qna133) => _qNativee7219cec0e8c.BoxShadow(color: _qna131, offset: _qna133, blurRadius: _qna132))(_qNativec7be968e0aa4.Color(4279144302).withValues(alpha: 0.25), 28.0, _qNative3296ff558a1b.Offset(0.0, 12.0))]), child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.SizedBox(width: double.infinity, child: ((_qNativea339e959ac28.WrapAlignment _qna134, _qNativea339e959ac28.WrapCrossAlignment _qna135, double _qna136, double _qna137, List<_qNative5543fe7fe3bf.Widget> _qna138) => _qNative035358ccc81b.Wrap(alignment: _qna134, spacing: _qna136, runSpacing: _qna137, crossAxisAlignment: _qna135, children: _qna138))(WrapAlignment.spaceBetween, WrapCrossAlignment.center, 8.0, 8.0, <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text("NET BALANCE", style: ((double _qna139, _qNativeadfc8a908bd1.FontWeight _qna140, double _qna141, _qNativec7be968e0aa4.Color _qna142) => _qNative32610202bed5.TextStyle(color: _qna142, fontSize: _qna139, fontWeight: _qna140, letterSpacing: _qna141))(12.0, FontWeight.w700, 1.4, _qNativec7be968e0aa4.Color(4288599236))), _qNative0a4eb85d9882.Container(padding: ((double _qna143, double _qna144) => EdgeInsets.symmetric(vertical: _qna144, horizontal: _qna143))(10.0, 5.0), decoration: ((_qNativec7be968e0aa4.Color _qna145, _qNativebec49084b274.BorderRadius _qna146, _qNative8c01721789c6.Border _qna147) => _qNativeff80a55449f9.BoxDecoration(color: _qna145, border: _qna147, borderRadius: _qna146))(brandGold().withValues(alpha: 0.16), BorderRadius.circular(20.0), Border.all(color: brandGold().withValues(alpha: 0.4))), child: _qNative805c89a392fb.Text(["Fraction Exact · ", currencyCode(engine.displayCurrency)].join(), style: ((double _qna148, _qNativeadfc8a908bd1.FontWeight _qna149, _qNativec7be968e0aa4.Color _qna150) => _qNative32610202bed5.TextStyle(color: _qna150, fontSize: _qna148, fontWeight: _qna149))(11.0, FontWeight.w700, brandGold())))])), _qNative035358ccc81b.SizedBox(height: 12.0), (() { final _qa0 = _q50.cents(); final _qa1 = engine.displayCurrency; final _qa2 = ((double _qna155, _qNativeadfc8a908bd1.FontWeight _qna156, _qNativec7be968e0aa4.Color _qna157, double _qna158) => _qNative32610202bed5.TextStyle(color: _qna157, fontSize: _qna155, fontWeight: _qna156, letterSpacing: _qna158))(_q56, FontWeight.w900, Colors.white, (-1.4)); return AnimatedMoneyText(cents: _qa0, currency: _qa1, style: _qa2); })(), _qNative035358ccc81b.SizedBox(height: 22.0), _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(child: this._heroKpi("Income", _q51.cents(), Icons.south_west_rounded, brandEmerald())), _qNative035358ccc81b.SizedBox(width: 14.0), _qNative035358ccc81b.Expanded(child: this._heroKpi("Expenses", _q52.cents(), Icons.north_east_rounded, brandCoral()))])])); return Entrance(child: _qa1, order: _qa0); })();
-    final Entrance _q59 = (() { final _qa0 = 2; final _qa1 = HoverCard(child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(child: ((String _qna178, _qNative7916bb07ae97.TextOverflow _qna179, _qNative32610202bed5.TextStyle _qna180) => _qNative805c89a392fb.Text(_qna178, style: _qna180, overflow: _qna179))("Spending Breakdown", TextOverflow.ellipsis, ((double _qna181, _qNativeadfc8a908bd1.FontWeight _qna182, _qNativec7be968e0aa4.Color _qna183) => _qNative32610202bed5.TextStyle(color: _qna183, fontSize: _qna181, fontWeight: _qna182))(17.0, FontWeight.w800, inkColor(_q48)))), _qNative035358ccc81b.SizedBox(width: 8.0), _qNative805c89a392fb.Text([_q53.length, " categories"].join(), style: ((double _qna184, _qNativec7be968e0aa4.Color _qna185) => _qNative32610202bed5.TextStyle(color: _qna185, fontSize: _qna184))(12.0, mutedColor(_q48)))]), _qNative035358ccc81b.SizedBox(height: 18.0), _qNative035358ccc81b.Wrap(spacing: 24.0, runSpacing: 18.0, crossAxisAlignment: WrapCrossAlignment.center, children: <_qNative5543fe7fe3bf.Widget>[(() { final _qa0 = _q53; final _qa1 = engine.savingsRate(); final _qa2 = _q52; return AnimatedDonutChart(summaries: _qa0, savingsRate: _qa1, totalExpense: _qa2); })(), _qNative035358ccc81b.ConstrainedBox(constraints: _qNatived29d78d3fb1a.BoxConstraints(minWidth: 210.0, maxWidth: 320.0), child: _qNative035358ccc81b.Column(children: <_qNative5543fe7fe3bf.Widget>[for (final _qImportedType2.CategorySummary _q58 in (_q53).take(6).toList()) ...<_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Padding(padding: EdgeInsets.symmetric(vertical: 5.0), child: _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[((double _qna186, double _qna187, _qNativeff80a55449f9.BoxDecoration _qna188) => _qNative0a4eb85d9882.Container(decoration: _qna188, width: _qna186, height: _qna187))(10.0, 10.0, _qNativeff80a55449f9.BoxDecoration(color: categoryColor(_q58.category), shape: BoxShape.circle)), _qNative035358ccc81b.SizedBox(width: 10.0), _qNative035358ccc81b.Expanded(child: _qNative805c89a392fb.Text(categoryLabel(_q58.category), style: ((double _qna189, _qNativeadfc8a908bd1.FontWeight _qna190, _qNativec7be968e0aa4.Color _qna191) => _qNative32610202bed5.TextStyle(color: _qna191, fontSize: _qna189, fontWeight: _qna190))(13.0, FontWeight.w600, inkColor(_q48)))), _qNative805c89a392fb.Text([(_q58.share * 100.0).round(), "%"].join(), style: ((double _qna192, _qNativec7be968e0aa4.Color _qna193) => _qNative32610202bed5.TextStyle(color: _qna193, fontSize: _qna192))(12.0, mutedColor(_q48))), _qNative035358ccc81b.SizedBox(width: 10.0), _qNative805c89a392fb.Text(_q58.spent.formatted(), style: ((double _qna194, _qNativeadfc8a908bd1.FontWeight _qna195, _qNativec7be968e0aa4.Color _qna196) => _qNative32610202bed5.TextStyle(color: _qna196, fontSize: _qna194, fontWeight: _qna195))(13.0, FontWeight.w700, inkColor(_q48)))]))]]))])])); return Entrance(child: _qa1, order: _qa0); })();
-    final Entrance _q73 = (() { final _qa0 = 3; final _qa1 = HoverCard(child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(child: ((String _qna203, _qNative7916bb07ae97.TextOverflow _qna204, _qNative32610202bed5.TextStyle _qna205) => _qNative805c89a392fb.Text(_qna203, style: _qna205, overflow: _qna204))("Recent Activity", TextOverflow.ellipsis, ((double _qna206, _qNativeadfc8a908bd1.FontWeight _qna207, _qNativec7be968e0aa4.Color _qna208) => _qNative32610202bed5.TextStyle(color: _qna208, fontSize: _qna206, fontWeight: _qna207))(17.0, FontWeight.w800, inkColor(_q48)))), _qNative035358ccc81b.SizedBox(width: 8.0), _qNative2fee93da4f6c.TextButton(onPressed: (() => this._setTab(1)), child: _qNative805c89a392fb.Text(["See all (", engine.entries.length, ")"].join()))]), _qNative035358ccc81b.SizedBox(height: 8.0), for (final _qImportedType2.LedgerEntry _q60 in _q55) ...<_qNative5543fe7fe3bf.Widget>[(() { final _qa0 = _q48; final _qa1 = _q60; final _qa2 = true; return this._transactionTile(_qa0, _qa1, _qa2); })()]])); return Entrance(child: _qa1, order: _qa0); })();
-    final _qNative035358ccc81b.Flex _q74 = (() { if (_qBool(_q49)) { return _qNative035358ccc81b.Row(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(flex: 6, child: _q59), _qNative035358ccc81b.SizedBox(width: 18.0), _qNative035358ccc81b.Expanded(flex: 5, child: _q73)]); } else { return _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <_qNative5543fe7fe3bf.Widget>[_q59, _qNative035358ccc81b.SizedBox(height: 18.0), _q73]); } })();
-    return _qNativebdc4be6164b7.SingleChildScrollView(padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0), child: _qNative035358ccc81b.Center(child: _qNative035358ccc81b.ConstrainedBox(constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 1120.0), child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: <_qNative5543fe7fe3bf.Widget>[_q57, if (_q54.isNotEmpty) ...<_qNative5543fe7fe3bf.Widget>[(() { final _qa0 = 1; final _qa1 = ((_qNative018897804c8a.EdgeInsets _qna226, _qNative018897804c8a.EdgeInsets _qna227, _qNativeff80a55449f9.BoxDecoration _qna230, _qNative035358ccc81b.Row _qna234) => _qNative0a4eb85d9882.Container(padding: _qna227, decoration: _qna230, margin: _qna226, child: _qna234))(EdgeInsets.only(top: 16.0), ((double _qna228, double _qna229) => EdgeInsets.symmetric(vertical: _qna229, horizontal: _qna228))(18.0, 14.0), ((_qNativec7be968e0aa4.Color _qna231, _qNativebec49084b274.BorderRadius _qna232, _qNative8c01721789c6.Border _qna233) => _qNativeff80a55449f9.BoxDecoration(color: _qna231, border: _qna233, borderRadius: _qna232))(brandAmber().withValues(alpha: 0.12), BorderRadius.circular(18.0), Border.all(color: brandAmber().withValues(alpha: 0.45))), _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[((_qNative5a1072dde908.IconData _qna235, _qNativec7be968e0aa4.Color _qna236, double _qna237) => _qNativefcdbcceafdbc.Icon(_qna235, size: _qna237, color: _qna236))(Icons.warning_amber_rounded, brandAmber(), 22.0), _qNative035358ccc81b.SizedBox(width: 12.0), _qNative035358ccc81b.Expanded(child: _qNative805c89a392fb.Text([_q54.length, " budget alert(s) active — tap Budgets to review limits."].join(), style: ((double _qna238, _qNativeadfc8a908bd1.FontWeight _qna239, _qNativec7be968e0aa4.Color _qna240) => _qNative32610202bed5.TextStyle(color: _qna240, fontSize: _qna238, fontWeight: _qna239))(13.0, FontWeight.w600, inkColor(_q48)))), _qNative2fee93da4f6c.TextButton(onPressed: (() => this._setTab(2)), child: _qNative805c89a392fb.Text("Review", style: ((_qNativeadfc8a908bd1.FontWeight _qna241, _qNativec7be968e0aa4.Color _qna242) => _qNative32610202bed5.TextStyle(color: _qna242, fontWeight: _qna241))(FontWeight.w700, brandAmber())))])); return Entrance(child: _qa1, order: _qa0); })()], _qNative035358ccc81b.SizedBox(height: 18.0), _q74]))));
+    final Entrance _q57 = (() {
+      final _qa0 = 0;
+      final _qa1 = _qNative0a4eb85d9882.Container(
+        padding: EdgeInsets.all(26.0),
+        decoration:
+            ((
+              _qNative27c382947dfe.LinearGradient _qna127,
+              _qNativebec49084b274.BorderRadius _qna128,
+              _qNative8c01721789c6.Border _qna129,
+              List<_qNativee7219cec0e8c.BoxShadow> _qna130,
+            ) => _qNativeff80a55449f9.BoxDecoration(
+              border: _qna129,
+              borderRadius: _qna128,
+              boxShadow: _qna130,
+              gradient: _qna127,
+            ))(
+              _qNative27c382947dfe.LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: <_qNativec7be968e0aa4.Color>[
+                  _qNativec7be968e0aa4.Color(4278921763),
+                  _qNativec7be968e0aa4.Color(4279520061),
+                  _qNativec7be968e0aa4.Color(4278985502),
+                ],
+              ),
+              BorderRadius.circular(28.0),
+              Border.all(color: brandEmerald().withValues(alpha: 0.35)),
+              <_qNativee7219cec0e8c.BoxShadow>[
+                ((
+                  _qNativec7be968e0aa4.Color _qna131,
+                  double _qna132,
+                  _qNative3296ff558a1b.Offset _qna133,
+                ) => _qNativee7219cec0e8c.BoxShadow(
+                  color: _qna131,
+                  offset: _qna133,
+                  blurRadius: _qna132,
+                ))(
+                  _qNativec7be968e0aa4.Color(4279144302)
+                      .withValues(alpha: 0.25),
+                  28.0,
+                  _qNative3296ff558a1b.Offset(0.0, 12.0),
+                ),
+              ],
+            ),
+        child: _qNative035358ccc81b.Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <_qNative5543fe7fe3bf.Widget>[
+            _qNative035358ccc81b.SizedBox(
+              width: double.infinity,
+              child:
+                  ((
+                    _qNativea339e959ac28.WrapAlignment _qna134,
+                    _qNativea339e959ac28.WrapCrossAlignment _qna135,
+                    double _qna136,
+                    double _qna137,
+                    List<_qNative5543fe7fe3bf.Widget> _qna138,
+                  ) => _qNative035358ccc81b.Wrap(
+                    alignment: _qna134,
+                    spacing: _qna136,
+                    runSpacing: _qna137,
+                    crossAxisAlignment: _qna135,
+                    children: _qna138,
+                  ))(
+                    WrapAlignment.spaceBetween,
+                    WrapCrossAlignment.center,
+                    8.0,
+                    8.0,
+                    <_qNative5543fe7fe3bf.Widget>[
+                      _qNative805c89a392fb.Text(
+                        "NET BALANCE",
+                        style:
+                            ((
+                              double _qna139,
+                              _qNativeadfc8a908bd1.FontWeight _qna140,
+                              double _qna141,
+                              _qNativec7be968e0aa4.Color _qna142,
+                            ) => _qNative32610202bed5.TextStyle(
+                              color: _qna142,
+                              fontSize: _qna139,
+                              fontWeight: _qna140,
+                              letterSpacing: _qna141,
+                            ))(
+                              12.0,
+                              FontWeight.w700,
+                              1.4,
+                              _qNativec7be968e0aa4.Color(4288599236),
+                            ),
+                      ),
+                      _qNative0a4eb85d9882.Container(
+                        padding: ((double _qna143, double _qna144) =>
+                            EdgeInsets.symmetric(
+                              vertical: _qna144,
+                              horizontal: _qna143,
+                            ))(10.0, 5.0),
+                        decoration:
+                            ((
+                              _qNativec7be968e0aa4.Color _qna145,
+                              _qNativebec49084b274.BorderRadius _qna146,
+                              _qNative8c01721789c6.Border _qna147,
+                            ) => _qNativeff80a55449f9.BoxDecoration(
+                              color: _qna145,
+                              border: _qna147,
+                              borderRadius: _qna146,
+                            ))(
+                              brandGold().withValues(alpha: 0.16),
+                              BorderRadius.circular(20.0),
+                              Border.all(
+                                color: brandGold().withValues(alpha: 0.4),
+                              ),
+                            ),
+                        child: _qNative805c89a392fb.Text(
+                          [
+                            "Fraction Exact · ",
+                            currencyCode(engine.displayCurrency),
+                          ].join(),
+                          style:
+                              ((
+                                double _qna148,
+                                _qNativeadfc8a908bd1.FontWeight _qna149,
+                                _qNativec7be968e0aa4.Color _qna150,
+                              ) => _qNative32610202bed5.TextStyle(
+                                color: _qna150,
+                                fontSize: _qna148,
+                                fontWeight: _qna149,
+                              ))(11.0, FontWeight.w700, brandGold()),
+                        ),
+                      ),
+                    ],
+                  ),
+            ),
+            _qNative035358ccc81b.SizedBox(height: 12.0),
+            (() {
+              final _qa0 = _q50.cents();
+              final _qa1 = engine.displayCurrency;
+              final _qa2 =
+                  ((
+                    double _qna155,
+                    _qNativeadfc8a908bd1.FontWeight _qna156,
+                    _qNativec7be968e0aa4.Color _qna157,
+                    double _qna158,
+                  ) => _qNative32610202bed5.TextStyle(
+                    color: _qna157,
+                    fontSize: _qna155,
+                    fontWeight: _qna156,
+                    letterSpacing: _qna158,
+                  ))(_q56, FontWeight.w900, Colors.white, (-1.4));
+              return AnimatedMoneyText(
+                cents: _qa0,
+                currency: _qa1,
+                style: _qa2,
+              );
+            })(),
+            _qNative035358ccc81b.SizedBox(height: 22.0),
+            _qNative035358ccc81b.Row(
+              children: <_qNative5543fe7fe3bf.Widget>[
+                _qNative035358ccc81b.Expanded(
+                  child: this._heroKpi(
+                    "Income",
+                    _q51.cents(),
+                    Icons.south_west_rounded,
+                    brandEmerald(),
+                  ),
+                ),
+                _qNative035358ccc81b.SizedBox(width: 14.0),
+                _qNative035358ccc81b.Expanded(
+                  child: this._heroKpi(
+                    "Expenses",
+                    _q52.cents(),
+                    Icons.north_east_rounded,
+                    brandCoral(),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      return Entrance(child: _qa1, order: _qa0);
+    })();
+    final Entrance _q59 = (() {
+      final _qa0 = 2;
+      final _qa1 = HoverCard(
+        child: _qNative035358ccc81b.Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <_qNative5543fe7fe3bf.Widget>[
+            _qNative035358ccc81b.Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <_qNative5543fe7fe3bf.Widget>[
+                _qNative035358ccc81b.Expanded(
+                  child:
+                      ((
+                        String _qna178,
+                        _qNative7916bb07ae97.TextOverflow _qna179,
+                        _qNative32610202bed5.TextStyle _qna180,
+                      ) => _qNative805c89a392fb.Text(
+                        _qna178,
+                        style: _qna180,
+                        overflow: _qna179,
+                      ))(
+                        "Spending Breakdown",
+                        TextOverflow.ellipsis,
+                        ((
+                          double _qna181,
+                          _qNativeadfc8a908bd1.FontWeight _qna182,
+                          _qNativec7be968e0aa4.Color _qna183,
+                        ) => _qNative32610202bed5.TextStyle(
+                          color: _qna183,
+                          fontSize: _qna181,
+                          fontWeight: _qna182,
+                        ))(17.0, FontWeight.w800, inkColor(_q48)),
+                      ),
+                ),
+                _qNative035358ccc81b.SizedBox(width: 8.0),
+                _qNative805c89a392fb.Text(
+                  [_q53.length, " categories"].join(),
+                  style:
+                      ((double _qna184, _qNativec7be968e0aa4.Color _qna185) =>
+                          _qNative32610202bed5.TextStyle(
+                            color: _qna185,
+                            fontSize: _qna184,
+                          ))(12.0, mutedColor(_q48)),
+                ),
+              ],
+            ),
+            _qNative035358ccc81b.SizedBox(height: 18.0),
+            _qNative035358ccc81b.Wrap(
+              spacing: 24.0,
+              runSpacing: 18.0,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: <_qNative5543fe7fe3bf.Widget>[
+                (() {
+                  final _qa0 = _q53;
+                  final _qa1 = engine.savingsRate();
+                  final _qa2 = _q52;
+                  return AnimatedDonutChart(
+                    summaries: _qa0,
+                    savingsRate: _qa1,
+                    totalExpense: _qa2,
+                  );
+                })(),
+                _qNative035358ccc81b.ConstrainedBox(
+                  constraints: _qNatived29d78d3fb1a.BoxConstraints(
+                    minWidth: 210.0,
+                    maxWidth: 320.0,
+                  ),
+                  child: _qNative035358ccc81b.Column(
+                    children: <_qNative5543fe7fe3bf.Widget>[
+                      for (final _qImportedType2.CategorySummary _q58
+                          in (_q53)
+                              .take(6)
+                              .toList()) ...<_qNative5543fe7fe3bf.Widget>[
+                        _qNative035358ccc81b.Padding(
+                          padding: EdgeInsets.symmetric(vertical: 5.0),
+                          child: _qNative035358ccc81b.Row(
+                            children: <_qNative5543fe7fe3bf.Widget>[
+                              ((
+                                double _qna186,
+                                double _qna187,
+                                _qNativeff80a55449f9.BoxDecoration _qna188,
+                              ) => _qNative0a4eb85d9882.Container(
+                                decoration: _qna188,
+                                width: _qna186,
+                                height: _qna187,
+                              ))(
+                                10.0,
+                                10.0,
+                                _qNativeff80a55449f9.BoxDecoration(
+                                  color: categoryColor(_q58.category),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              _qNative035358ccc81b.SizedBox(width: 10.0),
+                              _qNative035358ccc81b.Expanded(
+                                child: _qNative805c89a392fb.Text(
+                                  categoryLabel(_q58.category),
+                                  style:
+                                      ((
+                                        double _qna189,
+                                        _qNativeadfc8a908bd1.FontWeight _qna190,
+                                        _qNativec7be968e0aa4.Color _qna191,
+                                      ) => _qNative32610202bed5.TextStyle(
+                                        color: _qna191,
+                                        fontSize: _qna189,
+                                        fontWeight: _qna190,
+                                      ))(13.0, FontWeight.w600, inkColor(_q48)),
+                                ),
+                              ),
+                              _qNative805c89a392fb.Text(
+                                [(_q58.share * 100.0).round(), "%"].join(),
+                                style:
+                                    ((
+                                      double _qna192,
+                                      _qNativec7be968e0aa4.Color _qna193,
+                                    ) => _qNative32610202bed5.TextStyle(
+                                      color: _qna193,
+                                      fontSize: _qna192,
+                                    ))(12.0, mutedColor(_q48)),
+                              ),
+                              _qNative035358ccc81b.SizedBox(width: 10.0),
+                              _qNative805c89a392fb.Text(
+                                _q58.spent.formatted(),
+                                style:
+                                    ((
+                                      double _qna194,
+                                      _qNativeadfc8a908bd1.FontWeight _qna195,
+                                      _qNativec7be968e0aa4.Color _qna196,
+                                    ) => _qNative32610202bed5.TextStyle(
+                                      color: _qna196,
+                                      fontSize: _qna194,
+                                      fontWeight: _qna195,
+                                    ))(13.0, FontWeight.w700, inkColor(_q48)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+      return Entrance(child: _qa1, order: _qa0);
+    })();
+    final Entrance _q73 = (() {
+      final _qa0 = 3;
+      final _qa1 = HoverCard(
+        child: _qNative035358ccc81b.Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <_qNative5543fe7fe3bf.Widget>[
+            _qNative035358ccc81b.Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <_qNative5543fe7fe3bf.Widget>[
+                _qNative035358ccc81b.Expanded(
+                  child:
+                      ((
+                        String _qna203,
+                        _qNative7916bb07ae97.TextOverflow _qna204,
+                        _qNative32610202bed5.TextStyle _qna205,
+                      ) => _qNative805c89a392fb.Text(
+                        _qna203,
+                        style: _qna205,
+                        overflow: _qna204,
+                      ))(
+                        "Recent Activity",
+                        TextOverflow.ellipsis,
+                        ((
+                          double _qna206,
+                          _qNativeadfc8a908bd1.FontWeight _qna207,
+                          _qNativec7be968e0aa4.Color _qna208,
+                        ) => _qNative32610202bed5.TextStyle(
+                          color: _qna208,
+                          fontSize: _qna206,
+                          fontWeight: _qna207,
+                        ))(17.0, FontWeight.w800, inkColor(_q48)),
+                      ),
+                ),
+                _qNative035358ccc81b.SizedBox(width: 8.0),
+                _qNative2fee93da4f6c.TextButton(
+                  onPressed: (() => this._setTab(1)),
+                  child: _qNative805c89a392fb.Text(
+                    ["See all (", engine.entries.length, ")"].join(),
+                  ),
+                ),
+              ],
+            ),
+            _qNative035358ccc81b.SizedBox(height: 8.0),
+            for (final _qImportedType2.LedgerEntry _q60
+                in _q55) ...<_qNative5543fe7fe3bf.Widget>[
+              (() {
+                final _qa0 = _q48;
+                final _qa1 = _q60;
+                final _qa2 = true;
+                return this._transactionTile(_qa0, _qa1, _qa2);
+              })(),
+            ],
+          ],
+        ),
+      );
+      return Entrance(child: _qa1, order: _qa0);
+    })();
+    final _qNative035358ccc81b.Flex _q74 = (() {
+      if (_qBool(_q49)) {
+        return _qNative035358ccc81b.Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <_qNative5543fe7fe3bf.Widget>[
+            _qNative035358ccc81b.Expanded(flex: 6, child: _q59),
+            _qNative035358ccc81b.SizedBox(width: 18.0),
+            _qNative035358ccc81b.Expanded(flex: 5, child: _q73),
+          ],
+        );
+      } else {
+        return _qNative035358ccc81b.Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <_qNative5543fe7fe3bf.Widget>[
+            _q59,
+            _qNative035358ccc81b.SizedBox(height: 18.0),
+            _q73,
+          ],
+        );
+      }
+    })();
+    return _qNativebdc4be6164b7.SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0),
+      child: _qNative035358ccc81b.Center(
+        child: _qNative035358ccc81b.ConstrainedBox(
+          constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 1120.0),
+          child: _qNative035358ccc81b.Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <_qNative5543fe7fe3bf.Widget>[
+              _q57,
+              if (_q54.isNotEmpty) ...<_qNative5543fe7fe3bf.Widget>[
+                (() {
+                  final _qa0 = 1;
+                  final _qa1 =
+                      ((
+                        _qNative018897804c8a.EdgeInsets _qna226,
+                        _qNative018897804c8a.EdgeInsets _qna227,
+                        _qNativeff80a55449f9.BoxDecoration _qna230,
+                        _qNative035358ccc81b.Row _qna234,
+                      ) => _qNative0a4eb85d9882.Container(
+                        padding: _qna227,
+                        decoration: _qna230,
+                        margin: _qna226,
+                        child: _qna234,
+                      ))(
+                        EdgeInsets.only(top: 16.0),
+                        ((double _qna228, double _qna229) =>
+                            EdgeInsets.symmetric(
+                              vertical: _qna229,
+                              horizontal: _qna228,
+                            ))(18.0, 14.0),
+                        ((
+                          _qNativec7be968e0aa4.Color _qna231,
+                          _qNativebec49084b274.BorderRadius _qna232,
+                          _qNative8c01721789c6.Border _qna233,
+                        ) => _qNativeff80a55449f9.BoxDecoration(
+                          color: _qna231,
+                          border: _qna233,
+                          borderRadius: _qna232,
+                        ))(
+                          brandAmber().withValues(alpha: 0.12),
+                          BorderRadius.circular(18.0),
+                          Border.all(
+                            color: brandAmber().withValues(alpha: 0.45),
+                          ),
+                        ),
+                        _qNative035358ccc81b.Row(
+                          children: <_qNative5543fe7fe3bf.Widget>[
+                            ((
+                              _qNative5a1072dde908.IconData _qna235,
+                              _qNativec7be968e0aa4.Color _qna236,
+                              double _qna237,
+                            ) => _qNativefcdbcceafdbc.Icon(
+                              _qna235,
+                              size: _qna237,
+                              color: _qna236,
+                            ))(Icons.warning_amber_rounded, brandAmber(), 22.0),
+                            _qNative035358ccc81b.SizedBox(width: 12.0),
+                            _qNative035358ccc81b.Expanded(
+                              child: _qNative805c89a392fb.Text(
+                                [
+                                  _q54.length,
+                                  " budget alert(s) active — tap Budgets to review limits.",
+                                ].join(),
+                                style:
+                                    ((
+                                      double _qna238,
+                                      _qNativeadfc8a908bd1.FontWeight _qna239,
+                                      _qNativec7be968e0aa4.Color _qna240,
+                                    ) => _qNative32610202bed5.TextStyle(
+                                      color: _qna240,
+                                      fontSize: _qna238,
+                                      fontWeight: _qna239,
+                                    ))(13.0, FontWeight.w600, inkColor(_q48)),
+                              ),
+                            ),
+                            _qNative2fee93da4f6c.TextButton(
+                              onPressed: (() => this._setTab(2)),
+                              child: _qNative805c89a392fb.Text(
+                                "Review",
+                                style:
+                                    ((
+                                      _qNativeadfc8a908bd1.FontWeight _qna241,
+                                      _qNativec7be968e0aa4.Color _qna242,
+                                    ) => _qNative32610202bed5.TextStyle(
+                                      color: _qna242,
+                                      fontWeight: _qna241,
+                                    ))(FontWeight.w700, brandAmber()),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                  return Entrance(child: _qa1, order: _qa0);
+                })(),
+              ],
+              _qNative035358ccc81b.SizedBox(height: 18.0),
+              _q74,
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _heroKpi(String _q75, int _q76, _qNative5a1072dde908.IconData _q77, _qNativec7be968e0aa4.Color _q78) {
-    return _qNative0a4eb85d9882.Container(padding: EdgeInsets.all(14.0), decoration: ((_qNativec7be968e0aa4.Color _qna243, _qNativebec49084b274.BorderRadius _qna244, _qNative8c01721789c6.Border _qna245) => _qNativeff80a55449f9.BoxDecoration(color: _qna243, border: _qna245, borderRadius: _qna244))(Colors.white.withValues(alpha: 0.07), BorderRadius.circular(18.0), Border.all(color: Colors.white.withValues(alpha: 0.1))), child: _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[((double _qna246, double _qna247, _qNativeff80a55449f9.BoxDecoration _qna248, _qNativefcdbcceafdbc.Icon _qna249) => _qNative0a4eb85d9882.Container(decoration: _qna248, width: _qna246, height: _qna247, child: _qna249))(36.0, 36.0, _qNativeff80a55449f9.BoxDecoration(color: _q78.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(11.0)), ((_qNative5a1072dde908.IconData _qna250, _qNativec7be968e0aa4.Color _qna251, double _qna252) => _qNativefcdbcceafdbc.Icon(_qna250, size: _qna252, color: _qna251))(_q77, _q78, 18.0)), _qNative035358ccc81b.SizedBox(width: 10.0), _qNative035358ccc81b.Expanded(child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text(_q75, style: ((double _qna253, _qNativec7be968e0aa4.Color _qna254) => _qNative32610202bed5.TextStyle(color: _qna254, fontSize: _qna253))(12.0, _qNativec7be968e0aa4.Color(4288599236))), _qNative035358ccc81b.SizedBox(height: 2.0), (() { final _qa0 = _q76; final _qa1 = engine.displayCurrency; final _qa2 = ((double _qna258, _qNativeadfc8a908bd1.FontWeight _qna259, _qNativec7be968e0aa4.Color _qna260) => _qNative32610202bed5.TextStyle(color: _qna260, fontSize: _qna258, fontWeight: _qna259))(16.0, FontWeight.w800, Colors.white); return AnimatedMoneyText(cents: _qa0, currency: _qa1, style: _qa2); })()]))]));
+
+  _qNative5543fe7fe3bf.Widget _heroKpi(
+    String _q75,
+    int _q76,
+    _qNative5a1072dde908.IconData _q77,
+    _qNativec7be968e0aa4.Color _q78,
+  ) {
+    return _qNative0a4eb85d9882.Container(
+      padding: EdgeInsets.all(14.0),
+      decoration:
+          ((
+            _qNativec7be968e0aa4.Color _qna243,
+            _qNativebec49084b274.BorderRadius _qna244,
+            _qNative8c01721789c6.Border _qna245,
+          ) => _qNativeff80a55449f9.BoxDecoration(
+            color: _qna243,
+            border: _qna245,
+            borderRadius: _qna244,
+          ))(
+            Colors.white.withValues(alpha: 0.07),
+            BorderRadius.circular(18.0),
+            Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+      child: _qNative035358ccc81b.Row(
+        children: <_qNative5543fe7fe3bf.Widget>[
+          ((
+            double _qna246,
+            double _qna247,
+            _qNativeff80a55449f9.BoxDecoration _qna248,
+            _qNativefcdbcceafdbc.Icon _qna249,
+          ) => _qNative0a4eb85d9882.Container(
+            decoration: _qna248,
+            width: _qna246,
+            height: _qna247,
+            child: _qna249,
+          ))(
+            36.0,
+            36.0,
+            _qNativeff80a55449f9.BoxDecoration(
+              color: _q78.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(11.0),
+            ),
+            ((
+              _qNative5a1072dde908.IconData _qna250,
+              _qNativec7be968e0aa4.Color _qna251,
+              double _qna252,
+            ) => _qNativefcdbcceafdbc.Icon(
+              _qna250,
+              size: _qna252,
+              color: _qna251,
+            ))(_q77, _q78, 18.0),
+          ),
+          _qNative035358ccc81b.SizedBox(width: 10.0),
+          _qNative035358ccc81b.Expanded(
+            child: _qNative035358ccc81b.Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <_qNative5543fe7fe3bf.Widget>[
+                _qNative805c89a392fb.Text(
+                  _q75,
+                  style:
+                      ((double _qna253, _qNativec7be968e0aa4.Color _qna254) =>
+                          _qNative32610202bed5.TextStyle(
+                            color: _qna254,
+                            fontSize: _qna253,
+                          ))(12.0, _qNativec7be968e0aa4.Color(4288599236)),
+                ),
+                _qNative035358ccc81b.SizedBox(height: 2.0),
+                (() {
+                  final _qa0 = _q76;
+                  final _qa1 = engine.displayCurrency;
+                  final _qa2 =
+                      ((
+                        double _qna258,
+                        _qNativeadfc8a908bd1.FontWeight _qna259,
+                        _qNativec7be968e0aa4.Color _qna260,
+                      ) => _qNative32610202bed5.TextStyle(
+                        color: _qna260,
+                        fontSize: _qna258,
+                        fontWeight: _qna259,
+                      ))(16.0, FontWeight.w800, Colors.white);
+                  return AnimatedMoneyText(
+                    cents: _qa0,
+                    currency: _qa1,
+                    style: _qa2,
+                  );
+                })(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _transactionsTab(_qNative5543fe7fe3bf.BuildContext _q79, bool _q80) {
-    final List<_qImportedType2.LedgerEntry> _q90 = (() { final _qr261 = engine; final _qa0 = searchQuery; final _qa1 = kindFilter; final _qa2 = categoryFilter; return _qr261.filteredEntries(_qa0, _qa1, _qa2); })();
+
+  _qNative5543fe7fe3bf.Widget _transactionsTab(
+    _qNative5543fe7fe3bf.BuildContext _q79,
+    bool _q80,
+  ) {
+    final List<_qImportedType2.LedgerEntry> _q90 = (() {
+      final _qr261 = engine;
+      final _qa0 = searchQuery;
+      final _qa1 = kindFilter;
+      final _qa2 = categoryFilter;
+      return _qr261.filteredEntries(_qa0, _qa1, _qa2);
+    })();
     final Category? _q91 = categoryFilter;
-    final HoverCard _q94 = (() { if (_q90.isEmpty) { return HoverCard(child: _qNative035358ccc81b.Center(child: _qNative035358ccc81b.Padding(padding: EdgeInsets.symmetric(vertical: 28.0), child: _qNative805c89a392fb.Text("No transactions match your current filter.", style: _qNative32610202bed5.TextStyle(color: mutedColor(_q79), fontSize: 15.0))))); } else { return (() { final _qa0 = ((double _qna264, double _qna265) => EdgeInsets.symmetric(vertical: _qna265, horizontal: _qna264))(16.0, 10.0); final _qa1 = _qNative035358ccc81b.Column(children: <_qNative5543fe7fe3bf.Widget>[for (final (_q93, _q92) in (_q90).indexed) ...<_qNative5543fe7fe3bf.Widget>[(() { final _qa0 = (_q93 % 6); final _qa1 = (() { final _qa0 = _q79; final _qa1 = _q92; final _qa2 = false; return this._transactionTile(_qa0, _qa1, _qa2); })(); return Entrance(child: _qa1, order: _qa0); })()]]); return HoverCard(child: _qa1, padding: _qa0); })(); } })();
-    return _qNativebdc4be6164b7.SingleChildScrollView(padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0), child: _qNative035358ccc81b.Center(child: _qNative035358ccc81b.ConstrainedBox(constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 960.0), child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text("Transactions", style: ((double _qna266, _qNativeadfc8a908bd1.FontWeight _qna267, _qNativec7be968e0aa4.Color _qna268) => _qNative32610202bed5.TextStyle(color: _qna268, fontSize: _qna266, fontWeight: _qna267))(26.0, FontWeight.w900, inkColor(_q79))), _qNative035358ccc81b.SizedBox(height: 14.0), ((void Function(String) _qna269, _qNative0b50793ed460.InputDecoration _qna270) => _qNativeedb7b9671341.TextField(decoration: _qna270, onChanged: _qna269))(this._onSearchChanged, _qNative0b50793ed460.InputDecoration(hintText: "Search title, note, or category...", prefixIcon: _qNativefcdbcceafdbc.Icon(Icons.search_rounded), filled: true, fillColor: surfaceColor(_q79), border: ((_qNativebec49084b274.BorderRadius _qna271, _qNative4703d6fddf02.BorderSide _qna272) => _qNative6cfa0fa0a4b9.OutlineInputBorder(borderSide: _qna272, borderRadius: _qna271))(BorderRadius.circular(16.0), _qNative4703d6fddf02.BorderSide(color: borderColor(_q79))))), _qNative035358ccc81b.SizedBox(height: 12.0), _qNative035358ccc81b.Wrap(spacing: 8.0, runSpacing: 8.0, children: <_qNative5543fe7fe3bf.Widget>[((_qNative805c89a392fb.Text _qna273, bool _qna274, void Function(bool) _qna275) => _qNativecfc71f7fe95f.ChoiceChip(label: _qna273, onSelected: _qna275, selected: _qna274))(_qNative805c89a392fb.Text("All"), (kindFilter == null), ((bool _q95) => this._setKindFilter(null, _q95))), ((_qNative805c89a392fb.Text _qna276, bool _qna277, void Function(bool) _qna278) => _qNativecfc71f7fe95f.ChoiceChip(label: _qna276, onSelected: _qna278, selected: _qna277))(_qNative805c89a392fb.Text("Income"), (kindFilter == EntryKind.income), ((bool _q96) => this._setKindFilter(EntryKind.income, _q96))), ((_qNative805c89a392fb.Text _qna279, bool _qna280, void Function(bool) _qna281) => _qNativecfc71f7fe95f.ChoiceChip(label: _qna279, onSelected: _qna281, selected: _qna280))(_qNative805c89a392fb.Text("Expenses"), (kindFilter == EntryKind.expense), ((bool _q97) => this._setKindFilter(EntryKind.expense, _q97))), if ((_q91 != null)) ...<_qNative5543fe7fe3bf.Widget>[_qNative5dce12a19639.InputChip(label: _qNative805c89a392fb.Text(categoryLabel(_q91)), onDeleted: this._clearCategoryFilter)]]), _qNative035358ccc81b.SizedBox(height: 16.0), _q94]))));
+    final HoverCard _q94 = (() {
+      if (_q90.isEmpty) {
+        return HoverCard(
+          child: _qNative035358ccc81b.Center(
+            child: _qNative035358ccc81b.Padding(
+              padding: EdgeInsets.symmetric(vertical: 28.0),
+              child: _qNative805c89a392fb.Text(
+                "No transactions match your current filter.",
+                style: _qNative32610202bed5.TextStyle(
+                  color: mutedColor(_q79),
+                  fontSize: 15.0,
+                ),
+              ),
+            ),
+          ),
+        );
+      } else {
+        return (() {
+          final _qa0 = ((double _qna264, double _qna265) =>
+              EdgeInsets.symmetric(
+                vertical: _qna265,
+                horizontal: _qna264,
+              ))(16.0, 10.0);
+          final _qa1 = _qNative035358ccc81b.Column(
+            children: <_qNative5543fe7fe3bf.Widget>[
+              for (final (_q93, _q92)
+                  in (_q90).indexed) ...<_qNative5543fe7fe3bf.Widget>[
+                (() {
+                  final _qa0 = (_q93 % 6);
+                  final _qa1 = (() {
+                    final _qa0 = _q79;
+                    final _qa1 = _q92;
+                    final _qa2 = false;
+                    return this._transactionTile(_qa0, _qa1, _qa2);
+                  })();
+                  return Entrance(child: _qa1, order: _qa0);
+                })(),
+              ],
+            ],
+          );
+          return HoverCard(child: _qa1, padding: _qa0);
+        })();
+      }
+    })();
+    return _qNativebdc4be6164b7.SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0),
+      child: _qNative035358ccc81b.Center(
+        child: _qNative035358ccc81b.ConstrainedBox(
+          constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 960.0),
+          child: _qNative035358ccc81b.Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <_qNative5543fe7fe3bf.Widget>[
+              _qNative805c89a392fb.Text(
+                "Transactions",
+                style:
+                    ((
+                      double _qna266,
+                      _qNativeadfc8a908bd1.FontWeight _qna267,
+                      _qNativec7be968e0aa4.Color _qna268,
+                    ) => _qNative32610202bed5.TextStyle(
+                      color: _qna268,
+                      fontSize: _qna266,
+                      fontWeight: _qna267,
+                    ))(26.0, FontWeight.w900, inkColor(_q79)),
+              ),
+              _qNative035358ccc81b.SizedBox(height: 14.0),
+              ((
+                void Function(String) _qna269,
+                _qNative0b50793ed460.InputDecoration _qna270,
+              ) => _qNativeedb7b9671341.TextField(
+                decoration: _qna270,
+                onChanged: _qna269,
+              ))(
+                this._onSearchChanged,
+                _qNative0b50793ed460.InputDecoration(
+                  hintText: "Search title, note, or category...",
+                  prefixIcon: _qNativefcdbcceafdbc.Icon(Icons.search_rounded),
+                  filled: true,
+                  fillColor: surfaceColor(_q79),
+                  border:
+                      ((
+                        _qNativebec49084b274.BorderRadius _qna271,
+                        _qNative4703d6fddf02.BorderSide _qna272,
+                      ) => _qNative6cfa0fa0a4b9.OutlineInputBorder(
+                        borderSide: _qna272,
+                        borderRadius: _qna271,
+                      ))(
+                        BorderRadius.circular(16.0),
+                        _qNative4703d6fddf02.BorderSide(
+                          color: borderColor(_q79),
+                        ),
+                      ),
+                ),
+              ),
+              _qNative035358ccc81b.SizedBox(height: 12.0),
+              _qNative035358ccc81b.Wrap(
+                spacing: 8.0,
+                runSpacing: 8.0,
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  ((
+                    _qNative805c89a392fb.Text _qna273,
+                    bool _qna274,
+                    void Function(bool) _qna275,
+                  ) => _qNativecfc71f7fe95f.ChoiceChip(
+                    label: _qna273,
+                    onSelected: _qna275,
+                    selected: _qna274,
+                  ))(
+                    _qNative805c89a392fb.Text("All"),
+                    (kindFilter == null),
+                    ((bool _q95) => this._setKindFilter(null, _q95)),
+                  ),
+                  ((
+                    _qNative805c89a392fb.Text _qna276,
+                    bool _qna277,
+                    void Function(bool) _qna278,
+                  ) => _qNativecfc71f7fe95f.ChoiceChip(
+                    label: _qna276,
+                    onSelected: _qna278,
+                    selected: _qna277,
+                  ))(
+                    _qNative805c89a392fb.Text("Income"),
+                    (kindFilter == EntryKind.income),
+                    ((bool _q96) =>
+                        this._setKindFilter(EntryKind.income, _q96)),
+                  ),
+                  ((
+                    _qNative805c89a392fb.Text _qna279,
+                    bool _qna280,
+                    void Function(bool) _qna281,
+                  ) => _qNativecfc71f7fe95f.ChoiceChip(
+                    label: _qna279,
+                    onSelected: _qna281,
+                    selected: _qna280,
+                  ))(
+                    _qNative805c89a392fb.Text("Expenses"),
+                    (kindFilter == EntryKind.expense),
+                    ((bool _q97) =>
+                        this._setKindFilter(EntryKind.expense, _q97)),
+                  ),
+                  if ((_q91 != null)) ...<_qNative5543fe7fe3bf.Widget>[
+                    _qNative5dce12a19639.InputChip(
+                      label: _qNative805c89a392fb.Text(categoryLabel(_q91)),
+                      onDeleted: this._clearCategoryFilter,
+                    ),
+                  ],
+                ],
+              ),
+              _qNative035358ccc81b.SizedBox(height: 16.0),
+              _q94,
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _transactionTile(_qNative5543fe7fe3bf.BuildContext _q61, LedgerEntry _q62, bool _q63) {
+
+  _qNative5543fe7fe3bf.Widget _transactionTile(
+    _qNative5543fe7fe3bf.BuildContext _q61,
+    LedgerEntry _q62,
+    bool _q63,
+  ) {
     final _qImportedType0.Money _q64 = engine.entryMoney(_q62);
-    final _qImportedType0.Money _q67 = (() { final _qa0 = _q62.cents; final _qa1 = _q62.currency; return moneyFromCents(_qa0, _qa1); })();
+    final _qImportedType0.Money _q67 = (() {
+      final _qa0 = _q62.cents;
+      final _qa1 = _q62.currency;
+      return moneyFromCents(_qa0, _qa1);
+    })();
     final bool _q68 = (_q62.kind == EntryKind.income);
     final String _q69;
     if (_qBool(_q68)) {
@@ -296,39 +1640,385 @@ this._refresh();
     }
     final _qNativec7be968e0aa4.Color _q71 = categoryColor(_q62.category);
     final bool _q72 = (_q62.currency != engine.displayCurrency);
-    return _qNative035358ccc81b.Padding(padding: EdgeInsets.symmetric(vertical: 8.0), child: _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[((double _qna282, double _qna283, _qNativeff80a55449f9.BoxDecoration _qna284, _qNativefcdbcceafdbc.Icon _qna285) => _qNative0a4eb85d9882.Container(decoration: _qna284, width: _qna282, height: _qna283, child: _qna285))(42.0, 42.0, _qNativeff80a55449f9.BoxDecoration(color: _q71.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(13.0)), ((_qNative5a1072dde908.IconData _qna286, _qNativec7be968e0aa4.Color _qna287, double _qna288) => _qNativefcdbcceafdbc.Icon(_qna286, size: _qna288, color: _qna287))(categoryIcon(_q62.category), _q71, 20.0)), _qNative035358ccc81b.SizedBox(width: 12.0), _qNative035358ccc81b.Expanded(child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text(_q62.title, style: ((double _qna289, _qNativeadfc8a908bd1.FontWeight _qna290, _qNativec7be968e0aa4.Color _qna291) => _qNative32610202bed5.TextStyle(color: _qna291, fontSize: _qna289, fontWeight: _qna290))(14.0, FontWeight.w700, inkColor(_q61))), _qNative035358ccc81b.SizedBox(height: 2.0), _qNative805c89a392fb.Text([categoryLabel(_q62.category), " · ", _q62.dateIso].join(), style: ((double _qna292, _qNativec7be968e0aa4.Color _qna293) => _qNative32610202bed5.TextStyle(color: _qna293, fontSize: _qna292))(12.0, mutedColor(_q61))), if (((!_qBool(_q63)) && _q62.note.isNotEmpty)) ...<_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Padding(padding: EdgeInsets.only(top: 2.0), child: _qNative805c89a392fb.Text(_q62.note, style: ((double _qna294, _qNativec7be968e0aa4.Color _qna295) => _qNative32610202bed5.TextStyle(color: _qna295, fontSize: _qna294))(12.0, mutedColor(_q61))))]])), _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.end, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text([_q69, _q64.formatted()].join(), style: ((double _qna296, _qNativeadfc8a908bd1.FontWeight _qna297, _qNativec7be968e0aa4.Color _qna298) => _qNative32610202bed5.TextStyle(color: _qna298, fontSize: _qna296, fontWeight: _qna297))(14.0, FontWeight.w800, _q70)), if (_qBool(_q72)) ...<_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text(_q67.formatted(), style: ((double _qna299, _qNativec7be968e0aa4.Color _qna300) => _qNative32610202bed5.TextStyle(color: _qna300, fontSize: _qna299))(11.0, mutedColor(_q61)))]]), if ((!_qBool(_q63))) ...<_qNative5543fe7fe3bf.Widget>[((String _qna301, void Function() _qna302, _qNativefcdbcceafdbc.Icon _qna303) => _qNative11f27a8d8cdd.IconButton(onPressed: _qna302, tooltip: _qna301, icon: _qna303))("Delete", (() => this._deleteWithUndo(_q62)), _qNativefcdbcceafdbc.Icon(Icons.delete_outline_rounded, size: 19.0, color: mutedColor(_q61)))]]));
+    return _qNative035358ccc81b.Padding(
+      padding: EdgeInsets.symmetric(vertical: 8.0),
+      child: _qNative035358ccc81b.Row(
+        children: <_qNative5543fe7fe3bf.Widget>[
+          ((
+            double _qna282,
+            double _qna283,
+            _qNativeff80a55449f9.BoxDecoration _qna284,
+            _qNativefcdbcceafdbc.Icon _qna285,
+          ) => _qNative0a4eb85d9882.Container(
+            decoration: _qna284,
+            width: _qna282,
+            height: _qna283,
+            child: _qna285,
+          ))(
+            42.0,
+            42.0,
+            _qNativeff80a55449f9.BoxDecoration(
+              color: _q71.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(13.0),
+            ),
+            ((
+              _qNative5a1072dde908.IconData _qna286,
+              _qNativec7be968e0aa4.Color _qna287,
+              double _qna288,
+            ) => _qNativefcdbcceafdbc.Icon(
+              _qna286,
+              size: _qna288,
+              color: _qna287,
+            ))(categoryIcon(_q62.category), _q71, 20.0),
+          ),
+          _qNative035358ccc81b.SizedBox(width: 12.0),
+          _qNative035358ccc81b.Expanded(
+            child: _qNative035358ccc81b.Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <_qNative5543fe7fe3bf.Widget>[
+                _qNative805c89a392fb.Text(
+                  _q62.title,
+                  style:
+                      ((
+                        double _qna289,
+                        _qNativeadfc8a908bd1.FontWeight _qna290,
+                        _qNativec7be968e0aa4.Color _qna291,
+                      ) => _qNative32610202bed5.TextStyle(
+                        color: _qna291,
+                        fontSize: _qna289,
+                        fontWeight: _qna290,
+                      ))(14.0, FontWeight.w700, inkColor(_q61)),
+                ),
+                _qNative035358ccc81b.SizedBox(height: 2.0),
+                _qNative805c89a392fb.Text(
+                  [categoryLabel(_q62.category), " · ", _q62.dateIso].join(),
+                  style:
+                      ((double _qna292, _qNativec7be968e0aa4.Color _qna293) =>
+                          _qNative32610202bed5.TextStyle(
+                            color: _qna293,
+                            fontSize: _qna292,
+                          ))(12.0, mutedColor(_q61)),
+                ),
+                if (((!_qBool(_q63)) &&
+                    _q62.note.isNotEmpty)) ...<_qNative5543fe7fe3bf.Widget>[
+                  _qNative035358ccc81b.Padding(
+                    padding: EdgeInsets.only(top: 2.0),
+                    child: _qNative805c89a392fb.Text(
+                      _q62.note,
+                      style:
+                          ((
+                            double _qna294,
+                            _qNativec7be968e0aa4.Color _qna295,
+                          ) => _qNative32610202bed5.TextStyle(
+                            color: _qna295,
+                            fontSize: _qna294,
+                          ))(12.0, mutedColor(_q61)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          _qNative035358ccc81b.Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <_qNative5543fe7fe3bf.Widget>[
+              _qNative805c89a392fb.Text(
+                [_q69, _q64.formatted()].join(),
+                style:
+                    ((
+                      double _qna296,
+                      _qNativeadfc8a908bd1.FontWeight _qna297,
+                      _qNativec7be968e0aa4.Color _qna298,
+                    ) => _qNative32610202bed5.TextStyle(
+                      color: _qna298,
+                      fontSize: _qna296,
+                      fontWeight: _qna297,
+                    ))(14.0, FontWeight.w800, _q70),
+              ),
+              if (_qBool(_q72)) ...<_qNative5543fe7fe3bf.Widget>[
+                _qNative805c89a392fb.Text(
+                  _q67.formatted(),
+                  style:
+                      ((double _qna299, _qNativec7be968e0aa4.Color _qna300) =>
+                          _qNative32610202bed5.TextStyle(
+                            color: _qna300,
+                            fontSize: _qna299,
+                          ))(11.0, mutedColor(_q61)),
+                ),
+              ],
+            ],
+          ),
+          if ((!_qBool(_q63))) ...<_qNative5543fe7fe3bf.Widget>[
+            ((
+              String _qna301,
+              void Function() _qna302,
+              _qNativefcdbcceafdbc.Icon _qna303,
+            ) => _qNative11f27a8d8cdd.IconButton(
+              onPressed: _qna302,
+              tooltip: _qna301,
+              icon: _qna303,
+            ))(
+              "Delete",
+              (() => this._deleteWithUndo(_q62)),
+              _qNativefcdbcceafdbc.Icon(
+                Icons.delete_outline_rounded,
+                size: 19.0,
+                color: mutedColor(_q61),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _budgetsTab(_qNative5543fe7fe3bf.BuildContext _q98, bool _q99) {
-    final List<_qImportedType2.CategorySummary> _q100 = engine.categoryBreakdown();
+
+  _qNative5543fe7fe3bf.Widget _budgetsTab(
+    _qNative5543fe7fe3bf.BuildContext _q98,
+    bool _q99,
+  ) {
+    final List<_qImportedType2.CategorySummary> _q100 = engine
+        .categoryBreakdown();
     final double _q101;
     if (_qBool(_q99)) {
       _q101 = 330.0;
     } else {
       _q101 = double.infinity;
     }
-    return _qNativebdc4be6164b7.SingleChildScrollView(padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0), child: _qNative035358ccc81b.Center(child: _qNative035358ccc81b.ConstrainedBox(constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 1060.0), child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text("Budgets & JSON Sync", style: ((double _qna304, _qNativeadfc8a908bd1.FontWeight _qna305, _qNativec7be968e0aa4.Color _qna306) => _qNative32610202bed5.TextStyle(color: _qna306, fontSize: _qna304, fontWeight: _qna305))(26.0, FontWeight.w900, inkColor(_q98))), _qNative035358ccc81b.SizedBox(height: 4.0), _qNative805c89a392fb.Text("Tap any category card to edit its monthly limit.", style: ((double _qna307, _qNativec7be968e0aa4.Color _qna308) => _qNative32610202bed5.TextStyle(color: _qna308, fontSize: _qna307))(13.0, mutedColor(_q98)))])), ((void Function() _qna309, _qNativefcdbcceafdbc.Icon _qna310, _qNative805c89a392fb.Text _qna311, _qNativef2c2daa96670.ButtonStyle _qna312) => FilledButton.icon(onPressed: _qna309, style: _qna312, icon: _qna310, label: _qna311))((() => showJsonSyncDialog(_q98, engine, this._refresh)), _qNativefcdbcceafdbc.Icon(Icons.data_object_rounded, size: 18.0), _qNative805c89a392fb.Text("JSON Backup"), ((_qNativec7be968e0aa4.Color _qna313, _qNativec7be968e0aa4.Color _qna314, _qNative1da5806f8a96.RoundedRectangleBorder _qna315) => FilledButton.styleFrom(foregroundColor: _qna314, backgroundColor: _qna313, shape: _qna315))(brandDeepEmerald(), Colors.white, _qNative1da5806f8a96.RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0))))]), _qNative035358ccc81b.SizedBox(height: 18.0), _qNative035358ccc81b.Wrap(spacing: 16.0, runSpacing: 16.0, children: <_qNative5543fe7fe3bf.Widget>[for (final (_q103, _q102) in (_q100).indexed) ...<_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.SizedBox(width: _q101, child: (() { final _qa0 = (_q103 % 6); final _qa1 = (() { final _qa0 = _q102; final _qa1 = engine.displayCurrency; final _qa2 = (() => showBudgetLimitDialog(_q98, engine, _q102.category, this._refresh)); return BudgetProgressCard(summary: _qa0, currency: _qa1, onEdit: _qa2); })(); return Entrance(child: _qa1, order: _qa0); })())]]), _qNative035358ccc81b.SizedBox(height: 24.0), (() { final _qa0 = 3; final _qa1 = HoverCard(child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text("Exact Rational Exchange Rates (quds_ledger)", style: ((double _qna321, _qNativeadfc8a908bd1.FontWeight _qna322, _qNativec7be968e0aa4.Color _qna323) => _qNative32610202bed5.TextStyle(color: _qna323, fontSize: _qna321, fontWeight: _qna322))(16.0, FontWeight.w800, inkColor(_q98))), _qNative035358ccc81b.SizedBox(height: 6.0), _qNative805c89a392fb.Text("All conversions run on Fraction arithmetic from quds:math inside the external quds_ledger package.", style: ((double _qna324, _qNativec7be968e0aa4.Color _qna325) => _qNative32610202bed5.TextStyle(color: _qna325, fontSize: _qna324))(13.0, mutedColor(_q98))), _qNative035358ccc81b.SizedBox(height: 14.0), _qNative035358ccc81b.Wrap(spacing: 12.0, runSpacing: 10.0, children: <_qNative5543fe7fe3bf.Widget>[for (final _qImportedType0.Currency _q104 in allCurrencies()) ...<_qNative5543fe7fe3bf.Widget>[this._rateCard(_q98, _q104)]])])); return Entrance(child: _qa1, order: _qa0); })()]))));
+    return _qNativebdc4be6164b7.SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20.0, 20.0, 20.0, 96.0),
+      child: _qNative035358ccc81b.Center(
+        child: _qNative035358ccc81b.ConstrainedBox(
+          constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 1060.0),
+          child: _qNative035358ccc81b.Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <_qNative5543fe7fe3bf.Widget>[
+              _qNative035358ccc81b.Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  _qNative035358ccc81b.Expanded(
+                    child: _qNative035358ccc81b.Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <_qNative5543fe7fe3bf.Widget>[
+                        _qNative805c89a392fb.Text(
+                          "Budgets & JSON Sync",
+                          style:
+                              ((
+                                double _qna304,
+                                _qNativeadfc8a908bd1.FontWeight _qna305,
+                                _qNativec7be968e0aa4.Color _qna306,
+                              ) => _qNative32610202bed5.TextStyle(
+                                color: _qna306,
+                                fontSize: _qna304,
+                                fontWeight: _qna305,
+                              ))(26.0, FontWeight.w900, inkColor(_q98)),
+                        ),
+                        _qNative035358ccc81b.SizedBox(height: 4.0),
+                        _qNative805c89a392fb.Text(
+                          "Tap any category card to edit its monthly limit.",
+                          style:
+                              ((
+                                double _qna307,
+                                _qNativec7be968e0aa4.Color _qna308,
+                              ) => _qNative32610202bed5.TextStyle(
+                                color: _qna308,
+                                fontSize: _qna307,
+                              ))(13.0, mutedColor(_q98)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ((
+                    void Function() _qna309,
+                    _qNativefcdbcceafdbc.Icon _qna310,
+                    _qNative805c89a392fb.Text _qna311,
+                    _qNativef2c2daa96670.ButtonStyle _qna312,
+                  ) => FilledButton.icon(
+                    onPressed: _qna309,
+                    style: _qna312,
+                    icon: _qna310,
+                    label: _qna311,
+                  ))(
+                    (() => showJsonSyncDialog(_q98, engine, this._refresh)),
+                    _qNativefcdbcceafdbc.Icon(
+                      Icons.data_object_rounded,
+                      size: 18.0,
+                    ),
+                    _qNative805c89a392fb.Text("JSON Backup"),
+                    ((
+                      _qNativec7be968e0aa4.Color _qna313,
+                      _qNativec7be968e0aa4.Color _qna314,
+                      _qNative1da5806f8a96.RoundedRectangleBorder _qna315,
+                    ) => FilledButton.styleFrom(
+                      foregroundColor: _qna314,
+                      backgroundColor: _qna313,
+                      shape: _qna315,
+                    ))(
+                      brandDeepEmerald(),
+                      Colors.white,
+                      _qNative1da5806f8a96.RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14.0),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              _qNative035358ccc81b.SizedBox(height: 18.0),
+              _qNative035358ccc81b.Wrap(
+                spacing: 16.0,
+                runSpacing: 16.0,
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  for (final (_q103, _q102)
+                      in (_q100).indexed) ...<_qNative5543fe7fe3bf.Widget>[
+                    _qNative035358ccc81b.SizedBox(
+                      width: _q101,
+                      child: (() {
+                        final _qa0 = (_q103 % 6);
+                        final _qa1 = (() {
+                          final _qa0 = _q102;
+                          final _qa1 = engine.displayCurrency;
+                          final _qa2 = (() => showBudgetLimitDialog(
+                            _q98,
+                            engine,
+                            _q102.category,
+                            this._refresh,
+                          ));
+                          return BudgetProgressCard(
+                            summary: _qa0,
+                            currency: _qa1,
+                            onEdit: _qa2,
+                          );
+                        })();
+                        return Entrance(child: _qa1, order: _qa0);
+                      })(),
+                    ),
+                  ],
+                ],
+              ),
+              _qNative035358ccc81b.SizedBox(height: 24.0),
+              (() {
+                final _qa0 = 3;
+                final _qa1 = HoverCard(
+                  child: _qNative035358ccc81b.Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <_qNative5543fe7fe3bf.Widget>[
+                      _qNative805c89a392fb.Text(
+                        "Exact Rational Exchange Rates (quds_ledger)",
+                        style:
+                            ((
+                              double _qna321,
+                              _qNativeadfc8a908bd1.FontWeight _qna322,
+                              _qNativec7be968e0aa4.Color _qna323,
+                            ) => _qNative32610202bed5.TextStyle(
+                              color: _qna323,
+                              fontSize: _qna321,
+                              fontWeight: _qna322,
+                            ))(16.0, FontWeight.w800, inkColor(_q98)),
+                      ),
+                      _qNative035358ccc81b.SizedBox(height: 6.0),
+                      _qNative805c89a392fb.Text(
+                        "All conversions run on Fraction arithmetic from quds:math inside the external quds_ledger package.",
+                        style:
+                            ((
+                              double _qna324,
+                              _qNativec7be968e0aa4.Color _qna325,
+                            ) => _qNative32610202bed5.TextStyle(
+                              color: _qna325,
+                              fontSize: _qna324,
+                            ))(13.0, mutedColor(_q98)),
+                      ),
+                      _qNative035358ccc81b.SizedBox(height: 14.0),
+                      _qNative035358ccc81b.Wrap(
+                        spacing: 12.0,
+                        runSpacing: 10.0,
+                        children: <_qNative5543fe7fe3bf.Widget>[
+                          for (final _qImportedType0.Currency _q104
+                              in allCurrencies()) ...<
+                            _qNative5543fe7fe3bf.Widget
+                          >[this._rateCard(_q98, _q104)],
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+                return Entrance(child: _qa1, order: _qa0);
+              })(),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _rateCard(_qNative5543fe7fe3bf.BuildContext _q105, Currency _q106) {
+
+  _qNative5543fe7fe3bf.Widget _rateCard(
+    _qNative5543fe7fe3bf.BuildContext _q105,
+    Currency _q106,
+  ) {
     final _qNativec7be968e0aa4.Color _q107;
     if ((_q106 == engine.displayCurrency)) {
       _q107 = accentColor(_q105);
     } else {
       _q107 = borderColor(_q105);
     }
-    final String _q108 = (() { final _qa0 = 10000; final _qa1 = Currency.usd; return moneyFromCents(_qa0, _qa1); })().convertTo(_q106).formatted();
-    return _qNative0a4eb85d9882.Container(padding: ((double _qna326, double _qna327) => EdgeInsets.symmetric(vertical: _qna327, horizontal: _qna326))(14.0, 10.0), decoration: ((_qNativec7be968e0aa4.Color _qna328, _qNativebec49084b274.BorderRadius _qna329, _qNative8c01721789c6.Border _qna330) => _qNativeff80a55449f9.BoxDecoration(color: _qna328, border: _qna330, borderRadius: _qna329))(elevatedColor(_q105), BorderRadius.circular(14.0), Border.all(color: _q107)), child: _qNative035358ccc81b.Column(crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text([currencyCode(_q106), " · ", currencyName(_q106)].join(), style: ((double _qna331, _qNativeadfc8a908bd1.FontWeight _qna332, _qNativec7be968e0aa4.Color _qna333) => _qNative32610202bed5.TextStyle(color: _qna333, fontSize: _qna331, fontWeight: _qna332))(12.0, FontWeight.w700, inkColor(_q105))), _qNative035358ccc81b.SizedBox(height: 2.0), _qNative805c89a392fb.Text(["100 USD = ", _q108].join(), style: ((double _qna334, _qNativec7be968e0aa4.Color _qna335, _qNativeadfc8a908bd1.FontWeight _qna336) => _qNative32610202bed5.TextStyle(color: _qna335, fontSize: _qna334, fontWeight: _qna336))(12.0, brandGold(), FontWeight.w600))]));
+    final String _q108 = (() {
+      final _qa0 = 10000;
+      final _qa1 = Currency.usd;
+      return moneyFromCents(_qa0, _qa1);
+    })().convertTo(_q106).formatted();
+    return _qNative0a4eb85d9882.Container(
+      padding: ((double _qna326, double _qna327) => EdgeInsets.symmetric(
+        vertical: _qna327,
+        horizontal: _qna326,
+      ))(14.0, 10.0),
+      decoration:
+          ((
+            _qNativec7be968e0aa4.Color _qna328,
+            _qNativebec49084b274.BorderRadius _qna329,
+            _qNative8c01721789c6.Border _qna330,
+          ) => _qNativeff80a55449f9.BoxDecoration(
+            color: _qna328,
+            border: _qna330,
+            borderRadius: _qna329,
+          ))(
+            elevatedColor(_q105),
+            BorderRadius.circular(14.0),
+            Border.all(color: _q107),
+          ),
+      child: _qNative035358ccc81b.Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <_qNative5543fe7fe3bf.Widget>[
+          _qNative805c89a392fb.Text(
+            [currencyCode(_q106), " · ", currencyName(_q106)].join(),
+            style:
+                ((
+                  double _qna331,
+                  _qNativeadfc8a908bd1.FontWeight _qna332,
+                  _qNativec7be968e0aa4.Color _qna333,
+                ) => _qNative32610202bed5.TextStyle(
+                  color: _qna333,
+                  fontSize: _qna331,
+                  fontWeight: _qna332,
+                ))(12.0, FontWeight.w700, inkColor(_q105)),
+          ),
+          _qNative035358ccc81b.SizedBox(height: 2.0),
+          _qNative805c89a392fb.Text(
+            ["100 USD = ", _q108].join(),
+            style:
+                ((
+                  double _qna334,
+                  _qNativec7be968e0aa4.Color _qna335,
+                  _qNativeadfc8a908bd1.FontWeight _qna336,
+                ) => _qNative32610202bed5.TextStyle(
+                  color: _qna335,
+                  fontSize: _qna334,
+                  fontWeight: _qna336,
+                ))(12.0, brandGold(), FontWeight.w600),
+          ),
+        ],
+      ),
+    );
   }
 }
-
-
-
-
-
 
 void main() {
   runApp(QudsLedgerApp());
 }
-
-
-
-

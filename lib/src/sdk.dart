@@ -14473,7 +14473,8 @@ _uSpacingRaw() -> String:
 ''';
 
 /// Source of `quds:collection`. Kept equal to `lib/sdk/collection.quds`.
-const collectionSdkSource = r'''# General-purpose collections and data structures library for Quds.
+const collectionSdkSource =
+    r'''# General-purpose collections and data structures library for Quds.
 #
 # A column-0 :: name opens a section. use quds:collection::query imports that
 # section and any subsection under it. use quds:collection imports every public name.
@@ -17611,7 +17612,8 @@ extend Set<T> SetCollectionExtensions:
   disjointWith(other: Set<T>) -> bool = isDisjoint<T>(this, other)
 ''';
 
-const asyncSdkSource = r'''# Structured concurrency primitives for Quds: Semaphore, Channel, and Cancellation.
+const asyncSdkSource =
+    r'''# Structured concurrency primitives for Quds: Semaphore, Channel, and Cancellation.
 
 use dart:async show Completer
 
@@ -17963,7 +17965,8 @@ drainChannel<T>(channel: Channel<T>) async -> List<T>:
   return out
 ''';
 
-const jsonSdkSource = r'''# Type-safe JSON parsing, encoding, and typed field/path extraction for Quds.
+const jsonSdkSource =
+    r'''# Type-safe JSON parsing, encoding, and typed field/path extraction for Quds.
 
 use dart:convert show jsonDecode, jsonEncode, JsonEncoder
 
@@ -18291,7 +18294,8 @@ List<String> _packageRoots() {
           '''^[ \\t]*name:[ \\t]*["']?([^"'\\s#]+)''',
           multiLine: true,
         ).firstMatch(spec.readAsStringSync());
-        if (match?.group(1) == 'quds_lang') roots.add(directory.path);
+        if (match?.group(1) == 'quds' || match?.group(1) == 'quds_lang')
+          roots.add(directory.path);
       }
       final parent = directory.parent;
       if (parent.path == directory.path) return;

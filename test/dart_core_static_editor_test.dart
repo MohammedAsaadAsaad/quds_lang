@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 import 'package:test/test.dart';
 
 void _open(LspSession session, String uri, String source, {int version = 1}) {

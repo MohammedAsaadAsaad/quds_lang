@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/complete.dart';
-import 'package:quds_lang/src/keyword_docs_data.dart';
+import 'package:quds/quds.dart';
+import 'package:quds/src/complete.dart';
+import 'package:quds/src/keyword_docs_data.dart';
 import 'package:test/test.dart';
 
 Map<String, Object?>? help(String source, String target, {int offset = 0}) {

@@ -5,7 +5,7 @@ Highlights `.quds` files, formats the open buffer, and shows compiler diagnostic
 The extension uses a fresh compiled `quds lsp` executable when available. If
 that executable is stale, it starts the current Dart sources immediately and
 rebuilds the executable in the background. An external project can select its
-compiler through `quds_lang` in `.dart_tool/package_config.json`; otherwise the
+compiler through `quds` in `.dart_tool/package_config.json`; otherwise the
 extension falls back to the installed `quds` command. An explicit
 `quds.serverCommand` setting takes precedence. The active document's compiler
 context is checked before other workspace folders. On Linux and macOS it also

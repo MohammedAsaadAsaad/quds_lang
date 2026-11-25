@@ -1,7 +1,7 @@
 // This file only launches Quds suites; mathematical assertions live in .quds.
 import 'dart:io';
 
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 import 'package:test/test.dart';
 
 void main() {

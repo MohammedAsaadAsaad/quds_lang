@@ -1,4 +1,4 @@
-library quds_lang;
+library quds;
 
 export 'src/ast.dart';
 export 'src/constants.dart'

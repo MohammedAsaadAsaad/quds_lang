@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 import 'package:test/test.dart';
 
 const box = '''class Box:

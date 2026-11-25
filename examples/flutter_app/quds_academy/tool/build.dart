@@ -1,6 +1,6 @@
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/sdk.dart';
+import 'package:quds/quds.dart';
+import 'package:quds/src/sdk.dart';
 
 void main() {
   final root = Directory.current;

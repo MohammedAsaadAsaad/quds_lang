@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:quds_lang/src/toolchain_update.dart';
+import 'package:quds/src/toolchain_update.dart';
 import 'package:test/test.dart';
 
 void main() {

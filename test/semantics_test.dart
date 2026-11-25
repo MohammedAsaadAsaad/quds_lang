@@ -1,4 +1,4 @@
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 import 'package:test/test.dart';
 
 void main() {

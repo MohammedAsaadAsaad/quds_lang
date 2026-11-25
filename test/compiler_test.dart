@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:quds_lang/quds_lang.dart';
-import 'package:quds_lang/src/complete.dart';
-import 'package:quds_lang/src/dart_api.dart';
-import 'package:quds_lang/src/libraries.dart';
-import 'package:quds_lang/src/navigate.dart';
-import 'package:quds_lang/src/flutter_project.dart';
+import 'package:quds/quds.dart';
+import 'package:quds/src/complete.dart';
+import 'package:quds/src/dart_api.dart';
+import 'package:quds/src/libraries.dart';
+import 'package:quds/src/navigate.dart';
+import 'package:quds/src/flutter_project.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -374,7 +374,7 @@ main():
     final script = File('${Directory.systemTemp.path}/quds_schema_env.dart');
     script.writeAsStringSync('''
 import 'dart:io';
-import 'package:quds_lang/quds_lang.dart';
+import 'package:quds/quds.dart';
 
 void main() async {
   final child = await Process.start(
@@ -3421,7 +3421,7 @@ main():
     final source = File('${directory.path}/app.quds')
       ..writeAsStringSync('add(a: int, b: int) -> int = a + b\n');
     final result = compile(source.readAsStringSync(), file: source.path);
-    expect(result.dart, isNot(contains('quds_lang')));
+    expect(result.dart, isNot(contains('package:quds')));
     File('${directory.path}/app.dart').writeAsStringSync(result.dart);
     File('${directory.path}/main.dart').writeAsStringSync('''
 import 'app.dart';
@@ -3450,7 +3450,7 @@ parse() -> Result<int, String> = Ok(4)
     final result = compile(source.readAsStringSync(), file: source.path);
     expect(result.dart, contains('String?'));
     expect(result.dart, contains('final greet ='));
-    expect(result.dart, isNot(contains('quds_lang')));
+    expect(result.dart, isNot(contains('package:quds')));
     File('${directory.path}/app.dart').writeAsStringSync(result.dart);
     for (final bundle in result.bundles) {
       File('${directory.path}/${bundle.fileName}')

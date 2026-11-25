@@ -4,27 +4,35 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 // ignore: undefined_hidden_name
-import 'package:quds_ledger/quds_ledger.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:quds_ledger/quds_ledger.dart'
+    hide Optional, missing, $qudsKnownGuards;
 // ignore: undefined_hidden_name
-import 'package:budget_ledger/src/theme.dart' hide Optional, missing, $qudsKnownGuards;
+import 'package:budget_ledger/src/theme.dart'
+    hide Optional, missing, $qudsKnownGuards;
 import 'package:flutter/src/widgets/framework.dart' as _qNative5543fe7fe3bf;
 import 'package:flutter/src/widgets/editable_text.dart' as _qNative6e75240e338f;
 import 'package:quds_ledger/src/models.dart' as _qImportedType2;
 import 'package:flutter/src/material/dialog.dart' as _qNative71ecad9d58c2;
-import 'package:flutter/src/painting/rounded_rectangle_border.dart' as _qNative1da5806f8a96;
-import 'package:flutter/src/painting/border_radius.dart' as _qNativebec49084b274;
+import 'package:flutter/src/painting/rounded_rectangle_border.dart'
+    as _qNative1da5806f8a96;
+import 'package:flutter/src/painting/border_radius.dart'
+    as _qNativebec49084b274;
 import 'package:flutter/src/painting/borders.dart' as _qNative4703d6fddf02;
 import 'package:flutter/src/widgets/basic.dart' as _qNative035358ccc81b;
 import 'package:flutter/src/rendering/box.dart' as _qNatived29d78d3fb1a;
-import 'package:flutter/src/widgets/single_child_scroll_view.dart' as _qNativebdc4be6164b7;
+import 'package:flutter/src/widgets/single_child_scroll_view.dart'
+    as _qNativebdc4be6164b7;
 import 'package:flutter/src/widgets/text.dart' as _qNative805c89a392fb;
 import 'package:flutter/src/painting/text_style.dart' as _qNative32610202bed5;
+
 import 'dart:ui' as _qNativeadfc8a908bd1;
 import 'dart:ui' as _qNativec7be968e0aa4;
+
 import 'package:flutter/src/material/icon_button.dart' as _qNative11f27a8d8cdd;
 import 'package:flutter/src/widgets/icon.dart' as _qNativefcdbcceafdbc;
 import 'package:flutter/src/material/text_field.dart' as _qNativeedb7b9671341;
-import 'package:flutter/src/material/input_decorator.dart' as _qNative0b50793ed460;
+import 'package:flutter/src/material/input_decorator.dart'
+    as _qNative0b50793ed460;
 import 'package:flutter/src/material/input_border.dart' as _qNative6cfa0fa0a4b9;
 import 'package:flutter/src/services/text_input.dart' as _qNativedcff69476eae;
 import 'package:flutter/src/material/dropdown.dart' as _qNativec71e59c741e6;
@@ -32,20 +40,25 @@ import 'package:quds_ledger/src/money.dart' as _qImportedType0;
 import 'package:flutter/src/material/choice_chip.dart' as _qNativecfc71f7fe95f;
 import 'package:flutter/src/material/button_style.dart' as _qNativef2c2daa96670;
 import 'package:flutter/src/painting/edge_insets.dart' as _qNative018897804c8a;
-import 'package:flutter/src/widgets/implicit_animations.dart' as _qNativeb01c0cbb1a5e;
-import 'package:flutter/src/painting/box_decoration.dart' as _qNativeff80a55449f9;
+import 'package:flutter/src/widgets/implicit_animations.dart'
+    as _qNativeb01c0cbb1a5e;
+import 'package:flutter/src/painting/box_decoration.dart'
+    as _qNativeff80a55449f9;
 import 'package:flutter/src/painting/box_border.dart' as _qNative8c01721789c6;
 import 'package:flutter/src/material/ink_well.dart' as _qNativeffab4c10f351;
 import 'package:flutter/src/material/snack_bar.dart' as _qNative11a3520ab1c7;
 import 'package:flutter/src/material/text_button.dart' as _qNative2fee93da4f6c;
-import 'package:flutter/src/material/filled_button.dart' as _qNative0e3387eec7fe;
+import 'package:flutter/src/material/filled_button.dart'
+    as _qNative0e3387eec7fe;
 import 'package:flutter/src/services/clipboard.dart' as _qNativebc8bea29e715;
+
 class Optional<T> {
   final bool isPresent;
   final T? value;
   const Optional.missing() : isPresent = false, value = null;
   const Optional.present(this.value) : isPresent = true;
 }
+
 const missing = Optional<Never>.missing();
 bool _qBool(bool value) => value;
 
@@ -53,10 +66,35 @@ class AddEntryDialog extends _qNative5543fe7fe3bf.StatefulWidget {
   AddEntryDialog({required this.engine, required this.onSaved});
   final LedgerEngine engine;
   final void Function() onSaved;
-  _qNative5543fe7fe3bf.State<AddEntryDialog> createState() => AddEntryDialogState();
+  _qNative5543fe7fe3bf.State<AddEntryDialog> createState() =>
+      AddEntryDialogState();
 }
+
 class AddEntryDialogState extends _qNative5543fe7fe3bf.State<AddEntryDialog> {
-  AddEntryDialogState({Object? titleController = missing, Object? amountController = missing, Object? noteController = missing, Object? kind = missing, Object? category = missing, Object? currency = missing, this.errorMessage = null}) : titleController = identical(titleController, missing) ? _qNative6e75240e338f.TextEditingController() : titleController as _qNative6e75240e338f.TextEditingController, amountController = identical(amountController, missing) ? _qNative6e75240e338f.TextEditingController() : amountController as _qNative6e75240e338f.TextEditingController, noteController = identical(noteController, missing) ? _qNative6e75240e338f.TextEditingController() : noteController as _qNative6e75240e338f.TextEditingController, kind = identical(kind, missing) ? EntryKind.expense : kind as EntryKind, category = identical(category, missing) ? Category.food : category as Category, currency = identical(currency, missing) ? Currency.usd : currency as Currency;
+  AddEntryDialogState({
+    Object? titleController = missing,
+    Object? amountController = missing,
+    Object? noteController = missing,
+    Object? kind = missing,
+    Object? category = missing,
+    Object? currency = missing,
+    this.errorMessage = null,
+  }) : titleController = identical(titleController, missing)
+           ? _qNative6e75240e338f.TextEditingController()
+           : titleController as _qNative6e75240e338f.TextEditingController,
+       amountController = identical(amountController, missing)
+           ? _qNative6e75240e338f.TextEditingController()
+           : amountController as _qNative6e75240e338f.TextEditingController,
+       noteController = identical(noteController, missing)
+           ? _qNative6e75240e338f.TextEditingController()
+           : noteController as _qNative6e75240e338f.TextEditingController,
+       kind = identical(kind, missing) ? EntryKind.expense : kind as EntryKind,
+       category = identical(category, missing)
+           ? Category.food
+           : category as Category,
+       currency = identical(currency, missing)
+           ? Currency.usd
+           : currency as Currency;
   final _qNative6e75240e338f.TextEditingController titleController;
   final _qNative6e75240e338f.TextEditingController amountController;
   final _qNative6e75240e338f.TextEditingController noteController;
@@ -68,55 +106,77 @@ class AddEntryDialogState extends _qNative5543fe7fe3bf.State<AddEntryDialog> {
     super.initState();
     this.currency = this.widget.engine.displayCurrency;
   }
+
   void dispose() {
     titleController.dispose();
     amountController.dispose();
     noteController.dispose();
     super.dispose();
   }
+
   void _selectKind(EntryKind _q29) {
     final void Function() _q30 = (() {
-this.kind = _q29;
-if ((_q29 == EntryKind.income)) {
-  this.category = Category.salary;
-} else {
-  this.category = Category.food;
-}
-this.errorMessage = null;
-});
+      this.kind = _q29;
+      if ((_q29 == EntryKind.income)) {
+        this.category = Category.salary;
+      } else {
+        this.category = Category.food;
+      }
+      this.errorMessage = null;
+    });
     this.setState(_q30);
   }
+
   void _selectCurrency(Currency? _q31) {
     final _qn0 = _q31;
     if (_qn0 != null) {
       final Currency _q32 = _qn0;
       final void Function() _q33 = (() {
-this.currency = _q32;
-});
+        this.currency = _q32;
+      });
       this.setState(_q33);
     }
   }
+
   void _selectCategory(Category _q34, bool _q35) {
     if (_qBool(_q35)) {
       final void Function() _q36 = (() {
-this.category = _q34;
-});
+        this.category = _q34;
+      });
       this.setState(_q36);
     }
   }
+
   void _submit() {
-    final Result<_qImportedType2.LedgerEntry, String> _q52 = (() { final _qreceiver1 = this.widget.engine; final _qprovided2 = titleController.text; final _qprovided3 = amountController.text; final _qprovided4 = kind; final _qprovided5 = category; final _qprovided6 = currency; final _qprovided7 = noteController.text; return _qreceiver1.$QudsMethodDefault3b7ac52d719f2a619f3a(_qprovided2, _qprovided3, _qprovided4, _qprovided5, _qprovided6, note: _qprovided7); })();
+    final Result<_qImportedType2.LedgerEntry, String> _q52 = (() {
+      final _qreceiver1 = this.widget.engine;
+      final _qprovided2 = titleController.text;
+      final _qprovided3 = amountController.text;
+      final _qprovided4 = kind;
+      final _qprovided5 = category;
+      final _qprovided6 = currency;
+      final _qprovided7 = noteController.text;
+      return _qreceiver1.$QudsMethodDefault3b7ac52d719f2a619f3a(
+        _qprovided2,
+        _qprovided3,
+        _qprovided4,
+        _qprovided5,
+        _qprovided6,
+        note: _qprovided7,
+      );
+    })();
     switch (_q52) {
       case Ok(value: _):
         (this.widget.onSaved)();
         Navigator.of(this.context).pop<Object?>();
       case Error(error: final _q53):
         final void Function() _q54 = (() {
-this.errorMessage = _q53;
-});
+          this.errorMessage = _q53;
+        });
         this.setState(_q54);
     }
   }
+
   _qNative5543fe7fe3bf.Widget build(_qNative5543fe7fe3bf.BuildContext _q55) {
     final List<_qImportedType2.Category> _q56;
     if ((kind == EntryKind.income)) {
@@ -125,9 +185,269 @@ this.errorMessage = _q53;
       _q56 = expenseCategories();
     }
     final String? _q57 = errorMessage;
-    return _qNative71ecad9d58c2.Dialog(backgroundColor: surfaceColor(_q55), shape: ((_qNativebec49084b274.BorderRadius _qna8, _qNative4703d6fddf02.BorderSide _qna9) => _qNative1da5806f8a96.RoundedRectangleBorder(side: _qna9, borderRadius: _qna8))(BorderRadius.circular(26.0), _qNative4703d6fddf02.BorderSide(color: borderColor(_q55))), child: _qNative035358ccc81b.ConstrainedBox(constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 480.0), child: _qNativebdc4be6164b7.SingleChildScrollView(padding: EdgeInsets.all(24.0), child: _qNative035358ccc81b.Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text("New Transaction", style: ((double _qna10, _qNativeadfc8a908bd1.FontWeight _qna11, _qNativec7be968e0aa4.Color _qna12) => _qNative32610202bed5.TextStyle(color: _qna12, fontSize: _qna10, fontWeight: _qna11))(20.0, FontWeight.w800, inkColor(_q55))), _qNative11f27a8d8cdd.IconButton(onPressed: (() => Navigator.of(_q55).pop<Object?>()), icon: _qNativefcdbcceafdbc.Icon(Icons.close_rounded, color: mutedColor(_q55)))]), _qNative035358ccc81b.SizedBox(height: 14.0), _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(child: this._kindButton(_q55, "Expense", EntryKind.expense, brandCoral())), _qNative035358ccc81b.SizedBox(width: 10.0), _qNative035358ccc81b.Expanded(child: this._kindButton(_q55, "Income", EntryKind.income, brandEmerald()))]), _qNative035358ccc81b.SizedBox(height: 16.0), _qNativeedb7b9671341.TextField(controller: titleController, decoration: _qNative0b50793ed460.InputDecoration(labelText: "Title", hintText: "e.g. Organic Groceries", filled: true, fillColor: elevatedColor(_q55), border: _qNative6cfa0fa0a4b9.OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)))), _qNative035358ccc81b.SizedBox(height: 12.0), _qNative035358ccc81b.Row(children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Expanded(child: ((_qNative6e75240e338f.TextEditingController _qna13, _qNativedcff69476eae.TextInputType _qna14, _qNative0b50793ed460.InputDecoration _qna15) => _qNativeedb7b9671341.TextField(controller: _qna13, decoration: _qna15, keyboardType: _qna14))(amountController, TextInputType.numberWithOptions(decimal: true), _qNative0b50793ed460.InputDecoration(labelText: "Amount", hintText: "0.00", filled: true, fillColor: elevatedColor(_q55), border: _qNative6cfa0fa0a4b9.OutlineInputBorder(borderRadius: BorderRadius.circular(14.0))))), _qNative035358ccc81b.SizedBox(width: 10.0), ((Currency _qna16, _qNativec7be968e0aa4.Color _qna17, void Function(Currency?) _qna18, List<_qNativec71e59c741e6.DropdownMenuItem<Currency>> _qna19) => _qNativec71e59c741e6.DropdownButton<Currency>(items: _qna19, value: _qna16, onChanged: _qna18, dropdownColor: _qna17))(currency, surfaceColor(_q55), this._selectCurrency, <_qNativec71e59c741e6.DropdownMenuItem<Currency>>[for (final _qImportedType0.Currency _q58 in allCurrencies()) ...<_qNativec71e59c741e6.DropdownMenuItem<Currency>>[_qNativec71e59c741e6.DropdownMenuItem<Currency>(value: _q58, child: _qNative805c89a392fb.Text(currencyCode(_q58), style: _qNative32610202bed5.TextStyle(fontWeight: FontWeight.w700)))]])]), _qNative035358ccc81b.SizedBox(height: 14.0), _qNative805c89a392fb.Text("Category", style: ((double _qna20, _qNativeadfc8a908bd1.FontWeight _qna21, _qNativec7be968e0aa4.Color _qna22) => _qNative32610202bed5.TextStyle(color: _qna22, fontSize: _qna20, fontWeight: _qna21))(13.0, FontWeight.w600, mutedColor(_q55))), _qNative035358ccc81b.SizedBox(height: 8.0), _qNative035358ccc81b.Wrap(spacing: 8.0, runSpacing: 8.0, children: <_qNative5543fe7fe3bf.Widget>[for (final _qImportedType2.Category _q59 in _q56) ...<_qNative5543fe7fe3bf.Widget>[((_qNative805c89a392fb.Text _qna23, _qNativefcdbcceafdbc.Icon _qna24, bool _qna25, void Function(bool) _qna26) => _qNativecfc71f7fe95f.ChoiceChip(avatar: _qna24, label: _qna23, onSelected: _qna26, selected: _qna25))(_qNative805c89a392fb.Text(categoryLabel(_q59)), _qNativefcdbcceafdbc.Icon(categoryIcon(_q59), size: 16.0, color: categoryColor(_q59)), (category == _q59), ((bool _q60) => this._selectCategory(_q59, _q60)))]]), _qNative035358ccc81b.SizedBox(height: 12.0), _qNativeedb7b9671341.TextField(controller: noteController, decoration: _qNative0b50793ed460.InputDecoration(labelText: "Note (optional)", filled: true, fillColor: elevatedColor(_q55), border: _qNative6cfa0fa0a4b9.OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)))), if ((_q57 != null)) ...<_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Padding(padding: EdgeInsets.only(top: 12.0), child: _qNative805c89a392fb.Text(_q57, style: _qNative32610202bed5.TextStyle(color: brandCoral(), fontSize: 13.0, fontWeight: FontWeight.w600)))], _qNative035358ccc81b.SizedBox(height: 20.0), _qNative035358ccc81b.SizedBox(width: double.infinity, child: ((void Function() _qna27, _qNativefcdbcceafdbc.Icon _qna28, _qNative805c89a392fb.Text _qna29, _qNativef2c2daa96670.ButtonStyle _qna30) => FilledButton.icon(onPressed: _qna27, style: _qna30, icon: _qna28, label: _qna29))(this._submit, _qNativefcdbcceafdbc.Icon(Icons.check_rounded), _qNative805c89a392fb.Text("Save Transaction"), ((_qNativec7be968e0aa4.Color _qna31, _qNativec7be968e0aa4.Color _qna32, _qNative018897804c8a.EdgeInsets _qna33, _qNative1da5806f8a96.RoundedRectangleBorder _qna34) => FilledButton.styleFrom(foregroundColor: _qna32, backgroundColor: _qna31, padding: _qna33, shape: _qna34))(brandDeepEmerald(), Colors.white, EdgeInsets.symmetric(vertical: 14.0), _qNative1da5806f8a96.RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0)))))]))));
+    return _qNative71ecad9d58c2.Dialog(
+      backgroundColor: surfaceColor(_q55),
+      shape:
+          ((
+            _qNativebec49084b274.BorderRadius _qna8,
+            _qNative4703d6fddf02.BorderSide _qna9,
+          ) => _qNative1da5806f8a96.RoundedRectangleBorder(
+            side: _qna9,
+            borderRadius: _qna8,
+          ))(
+            BorderRadius.circular(26.0),
+            _qNative4703d6fddf02.BorderSide(color: borderColor(_q55)),
+          ),
+      child: _qNative035358ccc81b.ConstrainedBox(
+        constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 480.0),
+        child: _qNativebdc4be6164b7.SingleChildScrollView(
+          padding: EdgeInsets.all(24.0),
+          child: _qNative035358ccc81b.Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <_qNative5543fe7fe3bf.Widget>[
+              _qNative035358ccc81b.Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  _qNative805c89a392fb.Text(
+                    "New Transaction",
+                    style:
+                        ((
+                          double _qna10,
+                          _qNativeadfc8a908bd1.FontWeight _qna11,
+                          _qNativec7be968e0aa4.Color _qna12,
+                        ) => _qNative32610202bed5.TextStyle(
+                          color: _qna12,
+                          fontSize: _qna10,
+                          fontWeight: _qna11,
+                        ))(20.0, FontWeight.w800, inkColor(_q55)),
+                  ),
+                  _qNative11f27a8d8cdd.IconButton(
+                    onPressed: (() => Navigator.of(_q55).pop<Object?>()),
+                    icon: _qNativefcdbcceafdbc.Icon(
+                      Icons.close_rounded,
+                      color: mutedColor(_q55),
+                    ),
+                  ),
+                ],
+              ),
+              _qNative035358ccc81b.SizedBox(height: 14.0),
+              _qNative035358ccc81b.Row(
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  _qNative035358ccc81b.Expanded(
+                    child: this._kindButton(
+                      _q55,
+                      "Expense",
+                      EntryKind.expense,
+                      brandCoral(),
+                    ),
+                  ),
+                  _qNative035358ccc81b.SizedBox(width: 10.0),
+                  _qNative035358ccc81b.Expanded(
+                    child: this._kindButton(
+                      _q55,
+                      "Income",
+                      EntryKind.income,
+                      brandEmerald(),
+                    ),
+                  ),
+                ],
+              ),
+              _qNative035358ccc81b.SizedBox(height: 16.0),
+              _qNativeedb7b9671341.TextField(
+                controller: titleController,
+                decoration: _qNative0b50793ed460.InputDecoration(
+                  labelText: "Title",
+                  hintText: "e.g. Organic Groceries",
+                  filled: true,
+                  fillColor: elevatedColor(_q55),
+                  border: _qNative6cfa0fa0a4b9.OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14.0),
+                  ),
+                ),
+              ),
+              _qNative035358ccc81b.SizedBox(height: 12.0),
+              _qNative035358ccc81b.Row(
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  _qNative035358ccc81b.Expanded(
+                    child:
+                        ((
+                          _qNative6e75240e338f.TextEditingController _qna13,
+                          _qNativedcff69476eae.TextInputType _qna14,
+                          _qNative0b50793ed460.InputDecoration _qna15,
+                        ) => _qNativeedb7b9671341.TextField(
+                          controller: _qna13,
+                          decoration: _qna15,
+                          keyboardType: _qna14,
+                        ))(
+                          amountController,
+                          TextInputType.numberWithOptions(decimal: true),
+                          _qNative0b50793ed460.InputDecoration(
+                            labelText: "Amount",
+                            hintText: "0.00",
+                            filled: true,
+                            fillColor: elevatedColor(_q55),
+                            border: _qNative6cfa0fa0a4b9.OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14.0),
+                            ),
+                          ),
+                        ),
+                  ),
+                  _qNative035358ccc81b.SizedBox(width: 10.0),
+                  ((
+                    Currency _qna16,
+                    _qNativec7be968e0aa4.Color _qna17,
+                    void Function(Currency?) _qna18,
+                    List<_qNativec71e59c741e6.DropdownMenuItem<Currency>>
+                    _qna19,
+                  ) => _qNativec71e59c741e6.DropdownButton<Currency>(
+                    items: _qna19,
+                    value: _qna16,
+                    onChanged: _qna18,
+                    dropdownColor: _qna17,
+                  ))(
+                    currency,
+                    surfaceColor(_q55),
+                    this._selectCurrency,
+                    <_qNativec71e59c741e6.DropdownMenuItem<Currency>>[
+                      for (final _qImportedType0.Currency _q58
+                          in allCurrencies()) ...<
+                        _qNativec71e59c741e6.DropdownMenuItem<Currency>
+                      >[
+                        _qNativec71e59c741e6.DropdownMenuItem<Currency>(
+                          value: _q58,
+                          child: _qNative805c89a392fb.Text(
+                            currencyCode(_q58),
+                            style: _qNative32610202bed5.TextStyle(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+              _qNative035358ccc81b.SizedBox(height: 14.0),
+              _qNative805c89a392fb.Text(
+                "Category",
+                style:
+                    ((
+                      double _qna20,
+                      _qNativeadfc8a908bd1.FontWeight _qna21,
+                      _qNativec7be968e0aa4.Color _qna22,
+                    ) => _qNative32610202bed5.TextStyle(
+                      color: _qna22,
+                      fontSize: _qna20,
+                      fontWeight: _qna21,
+                    ))(13.0, FontWeight.w600, mutedColor(_q55)),
+              ),
+              _qNative035358ccc81b.SizedBox(height: 8.0),
+              _qNative035358ccc81b.Wrap(
+                spacing: 8.0,
+                runSpacing: 8.0,
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  for (final _qImportedType2.Category _q59
+                      in _q56) ...<_qNative5543fe7fe3bf.Widget>[
+                    ((
+                      _qNative805c89a392fb.Text _qna23,
+                      _qNativefcdbcceafdbc.Icon _qna24,
+                      bool _qna25,
+                      void Function(bool) _qna26,
+                    ) => _qNativecfc71f7fe95f.ChoiceChip(
+                      avatar: _qna24,
+                      label: _qna23,
+                      onSelected: _qna26,
+                      selected: _qna25,
+                    ))(
+                      _qNative805c89a392fb.Text(categoryLabel(_q59)),
+                      _qNativefcdbcceafdbc.Icon(
+                        categoryIcon(_q59),
+                        size: 16.0,
+                        color: categoryColor(_q59),
+                      ),
+                      (category == _q59),
+                      ((bool _q60) => this._selectCategory(_q59, _q60)),
+                    ),
+                  ],
+                ],
+              ),
+              _qNative035358ccc81b.SizedBox(height: 12.0),
+              _qNativeedb7b9671341.TextField(
+                controller: noteController,
+                decoration: _qNative0b50793ed460.InputDecoration(
+                  labelText: "Note (optional)",
+                  filled: true,
+                  fillColor: elevatedColor(_q55),
+                  border: _qNative6cfa0fa0a4b9.OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14.0),
+                  ),
+                ),
+              ),
+              if ((_q57 != null)) ...<_qNative5543fe7fe3bf.Widget>[
+                _qNative035358ccc81b.Padding(
+                  padding: EdgeInsets.only(top: 12.0),
+                  child: _qNative805c89a392fb.Text(
+                    _q57,
+                    style: _qNative32610202bed5.TextStyle(
+                      color: brandCoral(),
+                      fontSize: 13.0,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+              _qNative035358ccc81b.SizedBox(height: 20.0),
+              _qNative035358ccc81b.SizedBox(
+                width: double.infinity,
+                child:
+                    ((
+                      void Function() _qna27,
+                      _qNativefcdbcceafdbc.Icon _qna28,
+                      _qNative805c89a392fb.Text _qna29,
+                      _qNativef2c2daa96670.ButtonStyle _qna30,
+                    ) => FilledButton.icon(
+                      onPressed: _qna27,
+                      style: _qna30,
+                      icon: _qna28,
+                      label: _qna29,
+                    ))(
+                      this._submit,
+                      _qNativefcdbcceafdbc.Icon(Icons.check_rounded),
+                      _qNative805c89a392fb.Text("Save Transaction"),
+                      ((
+                        _qNativec7be968e0aa4.Color _qna31,
+                        _qNativec7be968e0aa4.Color _qna32,
+                        _qNative018897804c8a.EdgeInsets _qna33,
+                        _qNative1da5806f8a96.RoundedRectangleBorder _qna34,
+                      ) => FilledButton.styleFrom(
+                        foregroundColor: _qna32,
+                        backgroundColor: _qna31,
+                        padding: _qna33,
+                        shape: _qna34,
+                      ))(
+                        brandDeepEmerald(),
+                        Colors.white,
+                        EdgeInsets.symmetric(vertical: 14.0),
+                        _qNative1da5806f8a96.RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14.0),
+                        ),
+                      ),
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
-  _qNative5543fe7fe3bf.Widget _kindButton(_qNative5543fe7fe3bf.BuildContext _q61, String _q62, EntryKind _q63, _qNativec7be968e0aa4.Color _q64) {
+
+  _qNative5543fe7fe3bf.Widget _kindButton(
+    _qNative5543fe7fe3bf.BuildContext _q61,
+    String _q62,
+    EntryKind _q63,
+    _qNativec7be968e0aa4.Color _q64,
+  ) {
     final bool _q65 = (kind == _q63);
     final _qNativec7be968e0aa4.Color _q66;
     if (_qBool(_q65)) {
@@ -147,55 +467,320 @@ this.errorMessage = _q53;
     } else {
       _q68 = mutedColor(_q61);
     }
-    return ((Duration _qna35, _qNativeff80a55449f9.BoxDecoration _qna36, _qNativeffab4c10f351.InkWell _qna40) => _qNativeb01c0cbb1a5e.AnimatedContainer(decoration: _qna36, child: _qna40, duration: _qna35))(motionDuration(_q61, 180), ((_qNativec7be968e0aa4.Color _qna37, _qNativebec49084b274.BorderRadius _qna38, _qNative8c01721789c6.Border _qna39) => _qNativeff80a55449f9.BoxDecoration(color: _qna37, border: _qna39, borderRadius: _qna38))(_q66, BorderRadius.circular(14.0), Border.all(color: _q67)), ((void Function() _qna41, _qNativebec49084b274.BorderRadius _qna42, _qNative035358ccc81b.Padding _qna43) => _qNativeffab4c10f351.InkWell(child: _qna43, onTap: _qna41, borderRadius: _qna42))((() => this._selectKind(_q63)), BorderRadius.circular(14.0), _qNative035358ccc81b.Padding(padding: EdgeInsets.symmetric(vertical: 12.0), child: _qNative035358ccc81b.Center(child: _qNative805c89a392fb.Text(_q62, style: ((_qNativeadfc8a908bd1.FontWeight _qna44, _qNativec7be968e0aa4.Color _qna45) => _qNative32610202bed5.TextStyle(color: _qna45, fontWeight: _qna44))(FontWeight.w700, _q68))))));
+    return ((
+      Duration _qna35,
+      _qNativeff80a55449f9.BoxDecoration _qna36,
+      _qNativeffab4c10f351.InkWell _qna40,
+    ) => _qNativeb01c0cbb1a5e.AnimatedContainer(
+      decoration: _qna36,
+      child: _qna40,
+      duration: _qna35,
+    ))(
+      motionDuration(_q61, 180),
+      ((
+        _qNativec7be968e0aa4.Color _qna37,
+        _qNativebec49084b274.BorderRadius _qna38,
+        _qNative8c01721789c6.Border _qna39,
+      ) => _qNativeff80a55449f9.BoxDecoration(
+        color: _qna37,
+        border: _qna39,
+        borderRadius: _qna38,
+      ))(_q66, BorderRadius.circular(14.0), Border.all(color: _q67)),
+      ((
+        void Function() _qna41,
+        _qNativebec49084b274.BorderRadius _qna42,
+        _qNative035358ccc81b.Padding _qna43,
+      ) => _qNativeffab4c10f351.InkWell(
+        child: _qna43,
+        onTap: _qna41,
+        borderRadius: _qna42,
+      ))(
+        (() => this._selectKind(_q63)),
+        BorderRadius.circular(14.0),
+        _qNative035358ccc81b.Padding(
+          padding: EdgeInsets.symmetric(vertical: 12.0),
+          child: _qNative035358ccc81b.Center(
+            child: _qNative805c89a392fb.Text(
+              _q62,
+              style:
+                  ((
+                    _qNativeadfc8a908bd1.FontWeight _qna44,
+                    _qNativec7be968e0aa4.Color _qna45,
+                  ) => _qNative32610202bed5.TextStyle(
+                    color: _qna45,
+                    fontWeight: _qna44,
+                  ))(FontWeight.w700, _q68),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
-
-
-
-
-void _q0(_qNative5543fe7fe3bf.BuildContext _q3, LedgerEngine _q4, void Function() _q5) {
-  showDialog<void>(context: _q3, builder: ((_qNative5543fe7fe3bf.BuildContext _q6) => (() { final _qa0 = _q4; final _qa1 = _q5; return AddEntryDialog(engine: _qa0, onSaved: _qa1); })()));
+void _q0(
+  _qNative5543fe7fe3bf.BuildContext _q3,
+  LedgerEngine _q4,
+  void Function() _q5,
+) {
+  showDialog<void>(
+    context: _q3,
+    builder: ((_qNative5543fe7fe3bf.BuildContext _q6) => (() {
+      final _qa0 = _q4;
+      final _qa1 = _q5;
+      return AddEntryDialog(engine: _qa0, onSaved: _qa1);
+    })()),
+  );
 }
 
-
-
-void _q1(_qNative5543fe7fe3bf.BuildContext _q7, LedgerEngine _q8, Category _q9, void Function() _q10) {
+void _q1(
+  _qNative5543fe7fe3bf.BuildContext _q7,
+  LedgerEngine _q8,
+  Category _q9,
+  void Function() _q10,
+) {
   final _qImportedType0.Money? _q11 = _q8.budgetFor(_q9);
-  final _qNative6e75240e338f.TextEditingController _q12 = _qNative6e75240e338f.TextEditingController(text: ((switch (_q11) { final $qCallReceiver46? => $qCallReceiver46.decimalString(), _ => null }) ?? "300.00"));
-  final void Function(_qNative5543fe7fe3bf.BuildContext) _q16 = ((_qNative5543fe7fe3bf.BuildContext _q13) {
-final Result<_qImportedType2.BudgetLimit, String> _q14 = _q8.setBudget(_q9, _q12.text, _q8.displayCurrency);
-switch (_q14) {
-  case Ok(value: _):
-    _q10();
-    Navigator.of(_q13).pop<Object?>();
-  case Error(error: final _q15):
-    ScaffoldMessenger.of(_q7).showSnackBar(_qNative11a3520ab1c7.SnackBar(content: _qNative805c89a392fb.Text(_q15)));
-}
-});
-  showDialog<void>(context: _q7, builder: ((_qNative5543fe7fe3bf.BuildContext _q17) => ((_qNativec7be968e0aa4.Color _qna47, _qNative1da5806f8a96.RoundedRectangleBorder _qna48, _qNative805c89a392fb.Text _qna49, _qNativeedb7b9671341.TextField _qna50, List<_qNative5543fe7fe3bf.Widget> _qna54) => _qNative71ecad9d58c2.AlertDialog(title: _qna49, content: _qna50, actions: _qna54, backgroundColor: _qna47, shape: _qna48))(surfaceColor(_q7), _qNative1da5806f8a96.RoundedRectangleBorder(borderRadius: BorderRadius.circular(22.0)), _qNative805c89a392fb.Text(["Monthly Limit · ", categoryLabel(_q9)].join()), ((_qNative6e75240e338f.TextEditingController _qna51, _qNativedcff69476eae.TextInputType _qna52, _qNative0b50793ed460.InputDecoration _qna53) => _qNativeedb7b9671341.TextField(controller: _qna51, decoration: _qna53, keyboardType: _qna52))(_q12, TextInputType.numberWithOptions(decimal: true), _qNative0b50793ed460.InputDecoration(labelText: ["Limit in ", currencyCode(_q8.displayCurrency)].join(), filled: true, fillColor: elevatedColor(_q7), border: _qNative6cfa0fa0a4b9.OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)))), <_qNative5543fe7fe3bf.Widget>[_qNative2fee93da4f6c.TextButton(onPressed: (() => Navigator.of(_q17).pop<Object?>()), child: _qNative805c89a392fb.Text("Cancel")), _qNative0e3387eec7fe.FilledButton(onPressed: (() => _q16(_q17)), child: _qNative805c89a392fb.Text("Update"))])));
+  final _qNative6e75240e338f.TextEditingController _q12 =
+      _qNative6e75240e338f.TextEditingController(
+        text:
+            ((switch (_q11) {
+              final $qCallReceiver46? => $qCallReceiver46.decimalString(),
+              _ => null,
+            }) ??
+            "300.00"),
+      );
+  final void Function(_qNative5543fe7fe3bf.BuildContext) _q16 =
+      ((_qNative5543fe7fe3bf.BuildContext _q13) {
+        final Result<_qImportedType2.BudgetLimit, String> _q14 = _q8.setBudget(
+          _q9,
+          _q12.text,
+          _q8.displayCurrency,
+        );
+        switch (_q14) {
+          case Ok(value: _):
+            _q10();
+            Navigator.of(_q13).pop<Object?>();
+          case Error(error: final _q15):
+            ScaffoldMessenger.of(_q7).showSnackBar(
+              _qNative11a3520ab1c7.SnackBar(
+                content: _qNative805c89a392fb.Text(_q15),
+              ),
+            );
+        }
+      });
+  showDialog<void>(
+    context: _q7,
+    builder: ((_qNative5543fe7fe3bf.BuildContext _q17) =>
+        ((
+          _qNativec7be968e0aa4.Color _qna47,
+          _qNative1da5806f8a96.RoundedRectangleBorder _qna48,
+          _qNative805c89a392fb.Text _qna49,
+          _qNativeedb7b9671341.TextField _qna50,
+          List<_qNative5543fe7fe3bf.Widget> _qna54,
+        ) => _qNative71ecad9d58c2.AlertDialog(
+          title: _qna49,
+          content: _qna50,
+          actions: _qna54,
+          backgroundColor: _qna47,
+          shape: _qna48,
+        ))(
+          surfaceColor(_q7),
+          _qNative1da5806f8a96.RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22.0),
+          ),
+          _qNative805c89a392fb.Text(
+            ["Monthly Limit · ", categoryLabel(_q9)].join(),
+          ),
+          ((
+            _qNative6e75240e338f.TextEditingController _qna51,
+            _qNativedcff69476eae.TextInputType _qna52,
+            _qNative0b50793ed460.InputDecoration _qna53,
+          ) => _qNativeedb7b9671341.TextField(
+            controller: _qna51,
+            decoration: _qna53,
+            keyboardType: _qna52,
+          ))(
+            _q12,
+            TextInputType.numberWithOptions(decimal: true),
+            _qNative0b50793ed460.InputDecoration(
+              labelText: [
+                "Limit in ",
+                currencyCode(_q8.displayCurrency),
+              ].join(),
+              filled: true,
+              fillColor: elevatedColor(_q7),
+              border: _qNative6cfa0fa0a4b9.OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14.0),
+              ),
+            ),
+          ),
+          <_qNative5543fe7fe3bf.Widget>[
+            _qNative2fee93da4f6c.TextButton(
+              onPressed: (() => Navigator.of(_q17).pop<Object?>()),
+              child: _qNative805c89a392fb.Text("Cancel"),
+            ),
+            _qNative0e3387eec7fe.FilledButton(
+              onPressed: (() => _q16(_q17)),
+              child: _qNative805c89a392fb.Text("Update"),
+            ),
+          ],
+        )),
+  );
 }
 
-void _q2(_qNative5543fe7fe3bf.BuildContext _q18, LedgerEngine _q19, void Function() _q20) {
-  final _qNative6e75240e338f.TextEditingController _q21 = _qNative6e75240e338f.TextEditingController(text: _q19.exportJson());
+void _q2(
+  _qNative5543fe7fe3bf.BuildContext _q18,
+  LedgerEngine _q19,
+  void Function() _q20,
+) {
+  final _qNative6e75240e338f.TextEditingController _q21 =
+      _qNative6e75240e338f.TextEditingController(text: _q19.exportJson());
   final void Function() _q22 = (() {
-Clipboard.setData(_qNativebc8bea29e715.ClipboardData(text: _q21.text));
-ScaffoldMessenger.of(_q18).showSnackBar(_qNative11a3520ab1c7.SnackBar(content: _qNative805c89a392fb.Text("Copied ledger JSON to clipboard.")));
-});
-  final void Function(_qNative5543fe7fe3bf.BuildContext) _q27 = ((_qNative5543fe7fe3bf.BuildContext _q23) {
-final Result<int, String> _q24 = _q19.importJson(_q21.text);
-switch (_q24) {
-  case Ok(value: final _q25):
-    _q20();
-    Navigator.of(_q23).pop<Object?>();
-    ScaffoldMessenger.of(_q18).showSnackBar(_qNative11a3520ab1c7.SnackBar(content: _qNative805c89a392fb.Text(["Restored ", _q25, " transactions from JSON."].join())));
-  case Error(error: final _q26):
-    ScaffoldMessenger.of(_q18).showSnackBar(_qNative11a3520ab1c7.SnackBar(content: _qNative805c89a392fb.Text(_q26)));
+    Clipboard.setData(_qNativebc8bea29e715.ClipboardData(text: _q21.text));
+    ScaffoldMessenger.of(_q18).showSnackBar(
+      _qNative11a3520ab1c7.SnackBar(
+        content: _qNative805c89a392fb.Text("Copied ledger JSON to clipboard."),
+      ),
+    );
+  });
+  final void Function(_qNative5543fe7fe3bf.BuildContext) _q27 =
+      ((_qNative5543fe7fe3bf.BuildContext _q23) {
+        final Result<int, String> _q24 = _q19.importJson(_q21.text);
+        switch (_q24) {
+          case Ok(value: final _q25):
+            _q20();
+            Navigator.of(_q23).pop<Object?>();
+            ScaffoldMessenger.of(_q18).showSnackBar(
+              _qNative11a3520ab1c7.SnackBar(
+                content: _qNative805c89a392fb.Text(
+                  ["Restored ", _q25, " transactions from JSON."].join(),
+                ),
+              ),
+            );
+          case Error(error: final _q26):
+            ScaffoldMessenger.of(_q18).showSnackBar(
+              _qNative11a3520ab1c7.SnackBar(
+                content: _qNative805c89a392fb.Text(_q26),
+              ),
+            );
+        }
+      });
+  showDialog<void>(
+    context: _q18,
+    builder: ((_qNative5543fe7fe3bf.BuildContext _q28) =>
+        _qNative71ecad9d58c2.Dialog(
+          backgroundColor: surfaceColor(_q18),
+          shape:
+              ((
+                _qNativebec49084b274.BorderRadius _qna55,
+                _qNative4703d6fddf02.BorderSide _qna56,
+              ) => _qNative1da5806f8a96.RoundedRectangleBorder(
+                side: _qna56,
+                borderRadius: _qna55,
+              ))(
+                BorderRadius.circular(24.0),
+                _qNative4703d6fddf02.BorderSide(color: borderColor(_q18)),
+              ),
+          child: _qNative035358ccc81b.ConstrainedBox(
+            constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 560.0),
+            child: _qNative035358ccc81b.Padding(
+              padding: EdgeInsets.all(24.0),
+              child: _qNative035358ccc81b.Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <_qNative5543fe7fe3bf.Widget>[
+                  _qNative035358ccc81b.Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <_qNative5543fe7fe3bf.Widget>[
+                      _qNative805c89a392fb.Text(
+                        "JSON Ledger Snapshot",
+                        style:
+                            ((
+                              double _qna57,
+                              _qNativeadfc8a908bd1.FontWeight _qna58,
+                              _qNativec7be968e0aa4.Color _qna59,
+                            ) => _qNative32610202bed5.TextStyle(
+                              color: _qna59,
+                              fontSize: _qna57,
+                              fontWeight: _qna58,
+                            ))(18.0, FontWeight.w800, inkColor(_q18)),
+                      ),
+                      _qNative11f27a8d8cdd.IconButton(
+                        onPressed: (() => Navigator.of(_q28).pop<Object?>()),
+                        icon: _qNativefcdbcceafdbc.Icon(
+                          Icons.close_rounded,
+                          color: mutedColor(_q18),
+                        ),
+                      ),
+                    ],
+                  ),
+                  _qNative805c89a392fb.Text(
+                    "Serialized directly by Quds @Json models from package:quds_ledger.",
+                    style:
+                        ((double _qna60, _qNativec7be968e0aa4.Color _qna61) =>
+                            _qNative32610202bed5.TextStyle(
+                              color: _qna61,
+                              fontSize: _qna60,
+                            ))(13.0, mutedColor(_q18)),
+                  ),
+                  _qNative035358ccc81b.SizedBox(height: 14.0),
+                  ((
+                    _qNative6e75240e338f.TextEditingController _qna62,
+                    int _qna63,
+                    _qNative32610202bed5.TextStyle _qna64,
+                    _qNative0b50793ed460.InputDecoration _qna67,
+                  ) => _qNativeedb7b9671341.TextField(
+                    controller: _qna62,
+                    decoration: _qna67,
+                    style: _qna64,
+                    maxLines: _qna63,
+                  ))(
+                    _q21,
+                    9,
+                    ((String _qna65, double _qna66) =>
+                        _qNative32610202bed5.TextStyle(
+                          fontSize: _qna66,
+                          fontFamily: _qna65,
+                        ))("monospace", 12.0),
+                    _qNative0b50793ed460.InputDecoration(
+                      filled: true,
+                      fillColor: elevatedColor(_q18),
+                      border: _qNative6cfa0fa0a4b9.OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14.0),
+                      ),
+                    ),
+                  ),
+                  _qNative035358ccc81b.SizedBox(height: 16.0),
+                  _qNative035358ccc81b.Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: <_qNative5543fe7fe3bf.Widget>[
+                      OutlinedButton.icon(
+                        onPressed: _q22,
+                        icon: _qNativefcdbcceafdbc.Icon(
+                          Icons.copy_rounded,
+                          size: 18.0,
+                        ),
+                        label: _qNative805c89a392fb.Text("Copy"),
+                      ),
+                      _qNative035358ccc81b.SizedBox(width: 10.0),
+                      FilledButton.icon(
+                        onPressed: (() => _q27(_q28)),
+                        icon: _qNativefcdbcceafdbc.Icon(
+                          Icons.download_done_rounded,
+                          size: 18.0,
+                        ),
+                        label: _qNative805c89a392fb.Text("Import & Restore"),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        )),
+  );
 }
-});
-  showDialog<void>(context: _q18, builder: ((_qNative5543fe7fe3bf.BuildContext _q28) => _qNative71ecad9d58c2.Dialog(backgroundColor: surfaceColor(_q18), shape: ((_qNativebec49084b274.BorderRadius _qna55, _qNative4703d6fddf02.BorderSide _qna56) => _qNative1da5806f8a96.RoundedRectangleBorder(side: _qna56, borderRadius: _qna55))(BorderRadius.circular(24.0), _qNative4703d6fddf02.BorderSide(color: borderColor(_q18))), child: _qNative035358ccc81b.ConstrainedBox(constraints: _qNatived29d78d3fb1a.BoxConstraints(maxWidth: 560.0), child: _qNative035358ccc81b.Padding(padding: EdgeInsets.all(24.0), child: _qNative035358ccc81b.Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: <_qNative5543fe7fe3bf.Widget>[_qNative035358ccc81b.Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: <_qNative5543fe7fe3bf.Widget>[_qNative805c89a392fb.Text("JSON Ledger Snapshot", style: ((double _qna57, _qNativeadfc8a908bd1.FontWeight _qna58, _qNativec7be968e0aa4.Color _qna59) => _qNative32610202bed5.TextStyle(color: _qna59, fontSize: _qna57, fontWeight: _qna58))(18.0, FontWeight.w800, inkColor(_q18))), _qNative11f27a8d8cdd.IconButton(onPressed: (() => Navigator.of(_q28).pop<Object?>()), icon: _qNativefcdbcceafdbc.Icon(Icons.close_rounded, color: mutedColor(_q18)))]), _qNative805c89a392fb.Text("Serialized directly by Quds @Json models from package:quds_ledger.", style: ((double _qna60, _qNativec7be968e0aa4.Color _qna61) => _qNative32610202bed5.TextStyle(color: _qna61, fontSize: _qna60))(13.0, mutedColor(_q18))), _qNative035358ccc81b.SizedBox(height: 14.0), ((_qNative6e75240e338f.TextEditingController _qna62, int _qna63, _qNative32610202bed5.TextStyle _qna64, _qNative0b50793ed460.InputDecoration _qna67) => _qNativeedb7b9671341.TextField(controller: _qna62, decoration: _qna67, style: _qna64, maxLines: _qna63))(_q21, 9, ((String _qna65, double _qna66) => _qNative32610202bed5.TextStyle(fontSize: _qna66, fontFamily: _qna65))("monospace", 12.0), _qNative0b50793ed460.InputDecoration(filled: true, fillColor: elevatedColor(_q18), border: _qNative6cfa0fa0a4b9.OutlineInputBorder(borderRadius: BorderRadius.circular(14.0)))), _qNative035358ccc81b.SizedBox(height: 16.0), _qNative035358ccc81b.Row(mainAxisAlignment: MainAxisAlignment.end, children: <_qNative5543fe7fe3bf.Widget>[OutlinedButton.icon(onPressed: _q22, icon: _qNativefcdbcceafdbc.Icon(Icons.copy_rounded, size: 18.0), label: _qNative805c89a392fb.Text("Copy")), _qNative035358ccc81b.SizedBox(width: 10.0), FilledButton.icon(onPressed: (() => _q27(_q28)), icon: _qNativefcdbcceafdbc.Icon(Icons.download_done_rounded, size: 18.0), label: _qNative805c89a392fb.Text("Import & Restore"))])]))))));
-}
+
 final showAddEntryDialog = _q0;
 final showBudgetLimitDialog = _q1;
 final showJsonSyncDialog = _q2;

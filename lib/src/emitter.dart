@@ -778,8 +778,7 @@ class DartEmitter {
     if (_useChecks) {
       prelude
         ..writeln("import 'package:matcher/expect.dart' as _qmatch;")
-        ..writeln(
-            "import 'package:quds_lang/src/check_runtime.dart' as _qrun;");
+        ..writeln("import 'package:quds/src/check_runtime.dart' as _qrun;");
     }
     if (_useState || _useWatch || _useBatch) {
       final batchFields = _useBatch

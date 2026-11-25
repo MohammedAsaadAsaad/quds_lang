@@ -2,11 +2,11 @@
 // ignore_for_file: type=lint
 
 // ignore: undefined_hidden_name
-export 'package:quds_ledger/src/money.dart' hide Optional, missing, $qudsKnownGuards;
+export 'package:quds_ledger/src/money.dart'
+    hide Optional, missing, $qudsKnownGuards;
 // ignore: undefined_hidden_name
-export 'package:quds_ledger/src/models.dart' hide Optional, missing, $qudsKnownGuards;
+export 'package:quds_ledger/src/models.dart'
+    hide Optional, missing, $qudsKnownGuards;
 // ignore: undefined_hidden_name
-export 'package:quds_ledger/src/engine.dart' hide Optional, missing, $qudsKnownGuards;
-
-
-
+export 'package:quds_ledger/src/engine.dart'
+    hide Optional, missing, $qudsKnownGuards;

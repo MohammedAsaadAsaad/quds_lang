@@ -106,7 +106,7 @@ Future<void> main(List<String> arguments) async {
     case 'doc':
       _doc(arguments);
     case 'migrate':
-      _migrate(arguments);
+      await _migrate(arguments);
     case 'benchmark':
       _benchmark(arguments);
     case 'help':
@@ -246,12 +246,12 @@ String? _helpText(String? topic) {
             '    Format Quds source files in place (defaults to the current directory).\n',
     'fix': 'quds fix [--dry-run|-n|--apply] [file.quds|dir ...]\n'
         '    Preview (--dry-run, default) or apply (--apply) safe automated fixes (missing shadow/var/(), unused use imports).\n',
-    'create': 'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
+    'create': 'quds create --f <name>\n'
+        '    Create a Flutter app whose program is lib/main.quds (aliases: -f, --flutter, -t flutter).\n'
+        'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
         '    Add Flutter platform support in the current project, preserving Quds sources.\n'
         'quds create [-t/--template <console|cli|package|flutter>] [--force] [--[no-]pub] <name>\n'
-        '    Create a new Quds project or publishable Quds package.\n'
-        'quds create flutter <name>\n'
-        '    Create a Flutter app whose program is lib/main.quds.\n',
+        '    Create a new Quds project or publishable Quds package.\n',
     'pub':
         'quds pub [arguments]\n    Forward all pub commands (add, remove, get, upgrade, outdated, deps, publish, ...) to Dart, or Flutter in a Flutter project.\n',
     'add':
@@ -271,8 +271,10 @@ String? _helpText(String? topic) {
         '    Check documentation examples.\n'
         'quds doc html <input.quds> <output.html>\n'
         '    Write the documentation as HTML.\n',
-    'migrate': 'quds migrate [quds.yaml]\n'
-        '    Write language: 1.2. A file that names another version is left unchanged.\n',
+    'migrate': 'quds migrate [project-dir] [--check|--dry-run] [--yes|-y] [--keep-dart]\n'
+        '    Inspect a Dart or Flutter project for Quds compatibility, back up lib/ under .quds_backup/, ask confirmation, and migrate lib/**/*.dart to .quds.\n'
+        'quds migrate <quds.yaml>\n'
+        '    Write language: 1.2 to a quds.yaml file. A file pinned to another version is left unchanged.\n',
     'benchmark':
         'quds benchmark <input.quds> [--baseline <microseconds>] [--measure] [--warmup <count>] [--repeat <count>]\n'
             '    Check debug/release output; --measure separates Quds compilation, Dart AOT compilation and AOT process execution including startup.\n',
@@ -2366,7 +2368,7 @@ Future<void> _create(List<String> arguments) async {
   }
   if (arguments.length >= 2 && arguments[1] == 'flutter') {
     if (arguments.length != 3) {
-      stderr.writeln('Usage: quds create flutter <name>');
+      stderr.writeln('Usage: quds create --f <name>');
       exitCode = 64;
       return;
     }
@@ -2379,7 +2381,9 @@ Future<void> _create(List<String> arguments) async {
   String? name;
   for (var i = 1; i < arguments.length; i++) {
     final arg = arguments[i];
-    if (arg == '-t' || arg == '--template') {
+    if (arg == '--f' || arg == '-f' || arg == '--flutter') {
+      template = 'flutter';
+    } else if (arg == '-t' || arg == '--template') {
       if (i + 1 >= arguments.length) {
         stderr.writeln('Missing template name for $arg');
         exitCode = 64;
@@ -2402,16 +2406,16 @@ Future<void> _create(List<String> arguments) async {
       name = arg;
     } else {
       stderr.writeln(
-          'Usage: quds create [-t <console|cli|package|flutter>] [--force] [--[no-]pub] <name>');
+          'Usage: quds create [--f | -t <console|cli|package|flutter>] [--force] [--[no-]pub] <name>');
       exitCode = 64;
       return;
     }
   }
   if (name == null) {
     stderr.writeln('Usage: quds create <name>');
+    stderr.writeln('       quds create --f <name>');
     stderr
         .writeln('       quds create -t <console|cli|package|flutter> <name>');
-    stderr.writeln('       quds create flutter <name>');
     exitCode = 64;
     return;
   }
@@ -3486,8 +3490,47 @@ void _docTest(File input) {
   }
 }
 
-void _migrate(List<String> arguments) {
-  final path = arguments.length == 2 ? arguments[1] : 'quds.yaml';
+Future<void> _migrate(List<String> arguments) async {
+  // Keep explicit `quds migrate <path/to/quds.yaml>` language-version migration.
+  if (arguments.length == 2 &&
+      !arguments[1].startsWith('-') &&
+      (arguments[1].endsWith('.yaml') || arguments[1].endsWith('.yml'))) {
+    _migrateQudsYaml(arguments[1]);
+    return;
+  }
+
+  final workerOverride = Platform.environment['QUDS_MIGRATE_WORKER'];
+  final Uri? worker =
+      workerOverride != null && File(workerOverride).existsSync()
+          ? Uri.file(workerOverride)
+          : await _resolvePackageWorker('src/dart_migrate_worker.dart');
+  if (worker == null) {
+    stderr.writeln('Dart-to-Quds migration worker is unavailable.');
+    exitCode = 1;
+    return;
+  }
+  final config = _packageConfigPath();
+  final child = await Process.start(
+    _dartExecutable(),
+    [
+      if (config != null && !worker.path.endsWith('.dill'))
+        '--packages=$config',
+      worker.toFilePath(),
+      ...arguments.skip(1),
+    ],
+    mode: ProcessStartMode.inheritStdio,
+  );
+  final termination = Platform.isWindows
+      ? null
+      : ProcessSignal.sigterm.watch().listen((_) => child.kill());
+  try {
+    exitCode = await child.exitCode;
+  } finally {
+    await termination?.cancel();
+  }
+}
+
+void _migrateQudsYaml(String path) {
   final file = File(path);
   if (!file.existsSync()) {
     file.writeAsStringSync('language: 1.2\n');
@@ -3768,30 +3811,42 @@ int _headerEnd(List<int> buffer) {
   return -1;
 }
 
-// Kept out of normal CLI imports: the Dart documentation AST parser is loaded
-// only by this optional editor service, never by build/run/pub/create.
-Future<void> _docPreviewService() async {
-  final config = _packageConfigPath();
-  Uri? library;
+Future<Uri?> _resolvePackageWorker(String relativeLibPath) async {
   try {
-    library = await Isolate.resolvePackageUri(
-        Uri.parse('package:quds/src/dart_doc_worker.dart'));
+    final resolved = await Isolate.resolvePackageUri(
+        Uri.parse('package:quds/$relativeLibPath'));
+    if (resolved != null) return resolved;
   } catch (_) {}
-  if (library == null && config != null) {
+  final config = _packageConfigPath();
+  if (config != null) {
     final file = File(config);
     final data = jsonDecode(file.readAsStringSync()) as Map;
     for (final entry in data['packages'] as List) {
       if (entry['name'] == 'quds' || entry['name'] == 'quds_lang') {
         var root = file.uri.resolve(entry['rootUri'] as String);
-        if (!root.path.endsWith('/'))
+        if (!root.path.endsWith('/')) {
           root = root.replace(path: '${root.path}/');
-        library = root
+        }
+        return root
             .resolve(entry['packageUri'] as String? ?? 'lib/')
-            .resolve('src/dart_doc_worker.dart');
-        break;
+            .resolve(relativeLibPath);
       }
     }
   }
+  final compilerRoot = await _compilerRoot();
+  if (compilerRoot != null) {
+    final candidate = File(
+        '${compilerRoot.path}${Platform.pathSeparator}lib${Platform.pathSeparator}$relativeLibPath');
+    if (candidate.existsSync()) return candidate.uri;
+  }
+  return null;
+}
+
+// Kept out of normal CLI imports: the Dart documentation AST parser is loaded
+// only by this optional editor service, never by build/run/pub/create.
+Future<void> _docPreviewService() async {
+  final config = _packageConfigPath();
+  final library = await _resolvePackageWorker('src/dart_doc_worker.dart');
   if (library == null) {
     stderr.writeln('Documentation preview service unavailable.');
     exitCode = 1;

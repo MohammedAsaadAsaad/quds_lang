@@ -52,8 +52,9 @@ Existing platform files follow Flutter's default no-overwrite behavior; explicit
 but platform generation is not a crash-safe filesystem transaction. Existing
 root-level `main.quds` is preserved rather than silently moved to `lib/`.
 
-`quds create <name>` still creates a plain Quds console project; the existing
-`quds create flutter <name>` command remains available for a new Flutter app.
+`quds create <name>` still creates a plain Quds console project; use
+`quds create --f <name>` (aliases: `-f`, `--flutter`, or `quds create flutter <name>`)
+to create a new Flutter app.
 
 ## Run with a default entry point
 

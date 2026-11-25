@@ -2,7 +2,7 @@
 
 > **Status: Public Alpha (`0.1.0-alpha.1`)** — Statically typed, indentation-based general-purpose language that compiles to clean, readable Dart — with full Dart & Flutter interop, zero `build_runner` boilerplate, and an integrated CLI, LSP server, and debugger.
 
-Quds keeps Dart's type safety, null safety, AOT/JIT/Web/Flutter ecosystem, and zero runtime overhead — while removing braces, semicolons, closing-parenthesis pyramids, and repetitive model boilerplate. The formal language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md); rule-by-rule certification progress is tracked in [LANGUAGE_READINESS.md](docs/LANGUAGE_READINESS.md) and [LANGUAGE_READINESS_AR.md](docs/LANGUAGE_READINESS_AR.md).
+Quds keeps Dart's type safety, null safety, AOT/JIT/Web/Flutter ecosystem, and zero runtime overhead — while removing braces, semicolons, closing-parenthesis pyramids, and repetitive model boilerplate. The formal language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md).
 
 ---
 
@@ -197,20 +197,14 @@ main():
 
 ## Install
 
-Install [Dart](https://dart.dev/get-dart) 3.3 or newer (below 4), then activate `quds` and install editor support:
+Install [Dart](https://dart.dev/get-dart) 3.3 or newer (below 4), then activate `quds` from [pub.dev](https://pub.dev/packages/quds) and install editor support:
 
 ```sh
-# From pub.dev:
 dart pub global activate quds
-
-# Or directly from GitHub:
-dart pub global activate --source git https://github.com/MohammedAsaadAsaad/quds_lang.git
-
-# Install editor extensions (VS Code, Cursor, JetBrains, Claude Code):
 quds install
 ```
 
-The first command puts `quds` on your `PATH` (`~/.pub-cache/bin` on Linux/macOS, `%LOCALAPPDATA%\Pub\Cache\bin` on Windows). Open a new terminal if your shell does not see `quds` yet.
+`dart pub global activate quds` puts `quds` on your `PATH` (`~/.pub-cache/bin` on Linux/macOS, `%LOCALAPPDATA%\Pub\Cache\bin` on Windows). Open a new terminal if your shell does not see `quds` yet.
 
 - `quds doctor` checks Dart, Flutter, the `quds` CLI, and editor integrations.
 - `quds help` lists every command.
@@ -241,13 +235,32 @@ quds test examples/flutter_app/quds_ledger/test/quds_ledger_test.quds
 ### Flutter App
 
 ```sh
-quds create flutter hello
+quds create --f hello
 cd hello
 quds run -d chrome    # or -d windows / -d linux / -d android
 ```
 
 - `quds run -d <device>` compiles `lib/main.quds` and its dependencies (including external pure-Quds packages under `lib/quds_gen/_packages/`), prints live step-by-step progress, and launches Flutter with automatic Hot Reload on save (`r` reload, `R` hot restart, `q` quit).
 - `quds build apk --release`, `quds build web`, `quds build windows`, and `quds build linux` compile Quds sources before invoking Flutter. See [project commands](docs/PROJECT_CLI.md) and [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md).
+
+### Migrate an Existing Dart or Flutter Project
+
+Convert an existing Dart or Flutter project to Quds safely with the built-in AST migrator:
+
+```sh
+cd your_dart_or_flutter_app
+quds migrate
+```
+
+`quds migrate` runs in three safe steps:
+1. **Feasibility check** — parses `lib/**/*.dart` via the Dart AST, verifies every converted file against the Quds parser, skips generated files (`*.g.dart`, `*.freezed.dart`), and reports any file that needs manual review with exact line numbers.
+2. **Automatic `lib/` backup** — copies your entire `lib/` folder to `.quds_backup/lib_<timestamp>/` before touching any source file.
+3. **Interactive confirmation** — asks for your confirmation before writing `.quds` files, creating `quds.yaml`, and updating `.gitignore`.
+
+Useful flags:
+- `quds migrate --check` — run only the feasibility report without creating a backup or modifying files.
+- `quds migrate --keep-dart` — write `.quds` files alongside original `.dart` files.
+- `quds migrate --yes` — skip the confirmation prompt (backup is still created first).
 
 ---
 
@@ -268,21 +281,13 @@ The [`editors/vscode`](editors/vscode) extension provides:
 
 ---
 
-## Development & Documentation
+## Documentation
 
-```sh
-dart pub get --enforce-lockfile
-dart format .
-dart analyze
-dart test -j 1 --reporter expanded
-```
-
-Key references:
-- [Language Specification 1.2](docs/QUDS_LANGUAGE_SPECIFICATION.md) & [Approved Decisions](docs/LANGUAGE_DECISIONS.md)
-- [Language Readiness Inventory](docs/LANGUAGE_READINESS.md), [Arabic Working Plan](docs/LANGUAGE_READINESS_AR.md), & [Open Limits](docs/OPEN_QUESTIONS.md)
+- [Language Specification 1.2](docs/QUDS_LANGUAGE_SPECIFICATION.md)
+- [Keyword Reference](docs/KEYWORD_REFERENCE.md)
+- [Project CLI](docs/PROJECT_CLI.md) & [Flutter Live Updates](docs/FLUTTER_LIVE_UPDATES.md)
 - [Math Accuracy & API Coverage](docs/MATH_ACCURACY.md) / [MATH_COVERAGE.md](docs/MATH_COVERAGE.md)
-- [Function Types & Nullability](docs/FUNCTION_NULLABILITY.md), [Generic Constraints](docs/GENERIC_CONSTRAINTS.md), [Provider Defaults](docs/QUDS_PROVIDER_DEFAULTS.md)
-- [Validation Results](docs/VALIDATION.md) & [Environment Setup](docs/ENVIRONMENT.md)
+- [Function Types & Nullability](docs/FUNCTION_NULLABILITY.md), [Generic Constraints](docs/GENERIC_CONSTRAINTS.md), & [Provider Defaults](docs/QUDS_PROVIDER_DEFAULTS.md)
 
 ## License
 

@@ -18,7 +18,7 @@ First public alpha release of the Quds language compiler, standard library, CLI,
 - External pure-Quds packages via `pubspec.yaml` path/git dependencies, dual Quds+Dart publishing (`quds build --package`), barrel re-exports, and isolated Flutter generation under `lib/quds_gen/_packages/`.
 
 ### CLI, Editor & Debugging
-- `quds` CLI: `run`, `build`, `test`, `analyze`, `format`, `doc`, `create`, `pub`, `flutter`, `doctor`, `install`, `lsp`, `debug`.
+- `quds` CLI: `run`, `build`, `test`, `analyze`, `format`, `doc`, `create` (including `quds create --f <name>` for Flutter apps), `migrate` (AST-based Dart/Flutter → Quds migrator with feasibility check, `lib/` backup, and confirmation), `pub`, `flutter`, `doctor`, `install`, `lsp`, `debug`.
 - Live step-by-step progress output on `quds run -d ...` and `quds build ...`, plus Windows-safe path handling.
 - VS Code extension with TextMate grammar, LSP diagnostics/hover/completion/definition/rename, and live DAP debugging (breakpoints, Flutter hot reload, and live evaluation of `$` / `$.index` / `$.iteration` / `$.item`).
 - Cross-platform Flutter example `budget_ledger` paired with standalone pure-Quds package `quds_ledger`.

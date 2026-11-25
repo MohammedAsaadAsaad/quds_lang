@@ -376,9 +376,11 @@ class PropertyDeclaration extends Node {
 }
 
 class SuperConstructorCall extends Node {
-  const SuperConstructorCall(this.name, this.arguments, super.span);
+  const SuperConstructorCall(this.name, this.arguments, super.span,
+      {this.isRedirect = false});
   final String? name;
   final List<Argument> arguments;
+  final bool isRedirect;
 }
 
 class ConstructorDeclaration extends Node {
@@ -870,10 +872,11 @@ class YieldStatement extends Statement {
 
 class DestructureStatement extends Statement {
   const DestructureStatement(this.pattern, this.value, super.span,
-      {this.elseBody});
+      {this.elseBody, this.mutable = false});
   final Pattern pattern;
   final Expression value;
   final List<Statement>? elseBody;
+  final bool mutable;
 }
 
 class GuardStatement extends Statement {

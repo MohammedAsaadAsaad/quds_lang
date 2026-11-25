@@ -246,4 +246,112 @@ main():
       );
     });
   });
+
+  group('Redirecting generative constructors (this(...))', () {
+    test('supports positional, named, and const redirecting constructors', () {
+      final out = runQuds('''
+class Point:
+  x: int required
+  y: int required
+  const init(this.x, this.y)
+  const init origin() this(0, 0)
+  const init onX(v: int) this(v, 0)
+  init fromAxis(v: int) this.onX(v * 2)
+
+  show() -> String = "({x},{y})"
+
+main():
+  a = Point.origin()
+  b = Point.onX(4)
+  c = Point.fromAxis(5)
+  print "{a.show()} {b.show()} {c.show()}"
+''');
+      expect(out, '(0,0) (4,0) (10,0)\n');
+    });
+
+    test('rejects nonexistent redirecting target (E700)', () {
+      expect(
+        () => compile('''
+class P:
+  x: int required
+  init(this.x)
+  init bad() this.missing(1)
+'''),
+        throwsA(isA<CompilerException>()
+            .having((e) => e.code, 'code', equals('E700'))),
+      );
+    });
+
+    test('rejects redirecting constructor with a body (E700)', () {
+      expect(
+        () => compile('''
+class P:
+  x: int required
+  init(this.x)
+  init bad() this(1):
+    print x
+'''),
+        throwsA(isA<CompilerException>()
+            .having((e) => e.code, 'code', equals('E700'))),
+      );
+    });
+
+    test('rejects redirecting constructor argument type mismatch (E300)', () {
+      expect(
+        () => compile('''
+class P:
+  x: int required
+  init(this.x)
+  init bad() this("nope")
+'''),
+        throwsA(isA<CompilerException>()
+            .having((e) => e.code, 'code', equals('E300'))),
+      );
+    });
+  });
+
+  group('Inline MapPattern and mutable/mixed destructuring', () {
+    test('supports inline map(...) patterns in match and if-is with guards',
+        () {
+      final out = runQuds('''
+describe(payload: Object?) -> String:
+  match payload:
+    map("kind": "user", "name": String n, "age": int age) when age >= 18:
+      return "adult:{n}:{age}"
+    map("kind": "user", "name": String n):
+      return "minor:{n}"
+    map("coords": [int x, int y]):
+      return "pt:{x},{y}"
+    _:
+      return "other"
+
+main():
+  print describe(Map<String, Object?>.fromEntries([MapEntry("kind", "user"), MapEntry("name", "Lina"), MapEntry("age", 24)]))
+  print describe(Map<String, Object?>.fromEntries([MapEntry("kind", "user"), MapEntry("name", "Sami"), MapEntry("age", 12)]))
+  print describe(Map<String, Object?>.fromEntries([MapEntry("coords", [3, 8])]))
+  print describe(Map<String, Object?>())
+''');
+      expect(out, 'adult:Lina:24\nminor:Sami\npt:3,8\nother\n');
+    });
+
+    test('supports var destructuring, swap assignment, and mixed records', () {
+      final out = runQuds('''
+main():
+  var (a, b) = (1, 2)
+  a += 10
+  (a, b) = (b, a)
+  print "{a}:{b}"
+
+  var [head, ...tail] = [10, 20, 30]
+  head += 5
+  tail.add(40)
+  print "{head}:{tail}"
+
+  mixed = (7, label: "ok")
+  (numVal, label: tag) = mixed
+  print "{numVal}:{tag}"
+''');
+      expect(out, '2:11\n15:[20, 30, 40]\n7:ok\n');
+    });
+  });
 }

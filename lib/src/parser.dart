@@ -555,6 +555,13 @@ class Parser {
     if (guardDestructureAhead()) {
       return destructure(span);
     }
+    if (word('var') &&
+        (peek().kind == TokenKind.leftParen ||
+            peek().kind == TokenKind.leftBracket) &&
+        destructureAhead(offset: 1)) {
+      take();
+      return finishLine(destructure(span, mutable: true));
+    }
     if ((at(TokenKind.leftParen) || at(TokenKind.leftBracket)) &&
         destructureAhead()) {
       return finishLine(destructure(span));
@@ -1732,17 +1739,20 @@ class Parser {
     }
     final parameters = parameterList();
     SuperConstructorCall? superCall;
-    if (word('super')) {
+    if (word('super') || word('this')) {
+      final isRedirect = current.lexeme == 'this';
       final superSpan = take().span;
       String? superName;
       if (match(TokenKind.dot)) {
         superName = name().lexeme;
       }
       if (!at(TokenKind.leftParen)) {
-        fail('Expected ( after super constructor reference');
+        fail(
+            'Expected ( after ${isRedirect ? 'this' : 'super'} constructor reference');
       }
       final superArgs = _parenArguments();
-      superCall = SuperConstructorCall(superName, superArgs, extent(superSpan));
+      superCall = SuperConstructorCall(superName, superArgs, extent(superSpan),
+          isRedirect: isRedirect);
     }
     if (!at(TokenKind.colon) && !at(TokenKind.equals)) {
       endLine();
@@ -2119,9 +2129,9 @@ class Parser {
     return ParallelAssignment(targets, values, extent(span));
   }
 
-  bool destructureAhead() {
+  bool destructureAhead({int offset = 0}) {
     var depth = 0;
-    for (var j = index; j < tokens.length; j++) {
+    for (var j = index + offset; j < tokens.length; j++) {
       final kind = tokens[j].kind;
       if (kind == TokenKind.leftParen || kind == TokenKind.leftBracket) {
         depth++;
@@ -2179,7 +2189,7 @@ class Parser {
     return false;
   }
 
-  DestructureStatement destructure(SourceSpan span) {
+  DestructureStatement destructure(SourceSpan span, {bool mutable = false}) {
     final Pattern pattern;
     if (word('let') &&
         peek().kind == TokenKind.identifier &&
@@ -2199,7 +2209,7 @@ class Parser {
       elseBody = suite();
     }
     return DestructureStatement(pattern, value, extent(span),
-        elseBody: elseBody);
+        elseBody: elseBody, mutable: mutable);
   }
 
   Statement guardStatement(SourceSpan span) {
@@ -2346,6 +2356,22 @@ class Parser {
         word('false') ||
         word('null')) {
       return LiteralPattern(prefix(), span);
+    }
+    if (word('map') && peek().kind == TokenKind.leftParen) {
+      take();
+      take();
+      final keys = <Expression>[];
+      final values = <Pattern>[];
+      if (!at(TokenKind.rightParen)) {
+        while (true) {
+          keys.add(expression());
+          expect(TokenKind.colon, ':');
+          values.add(patternLiteral());
+          if (!match(TokenKind.comma) || at(TokenKind.rightParen)) break;
+        }
+      }
+      expect(TokenKind.rightParen, ')');
+      return MapPattern(keys, values, extent(span));
     }
     if (word('map') && peek().kind == TokenKind.colon) {
       take();

@@ -3506,6 +3506,21 @@ class DartEmitter {
             .where((r) => r.kind == 'assert')
             .toList()
         : const <RequireStatement>[];
+    final isConst =
+        constructor.constant || (type.kind == 'enum' && !constructor.factory);
+    if (constructor.superCall case final sc? when sc.isRedirect) {
+      final target = type.constructors
+          .where((c) => c.name == sc.name && !c.factory)
+          .firstOrNull;
+      final args = _redirectArgs(target, sc.arguments, isConst);
+      final suffix = sc.name == null ? '' : '.${sc.name}';
+      final prefix = '${isConst ? 'const ' : ''}';
+      final name = constructor.name == null
+          ? type.name
+          : '${type.name}.${constructor.name}';
+      line('$prefix$name($params) : this$suffix(${args.join(', ')});');
+      return;
+    }
     String? superInit;
     if (constructor.superCall case final sc?) {
       final superArgs = <String>[];
@@ -3555,8 +3570,6 @@ class DartEmitter {
       superInit =
           'super(${constructor.parameters.where((p) => p.initializing == 'super').map((p) => '${p.name}: ${model.declarations[p]!.dartName}').join(', ')})';
     }
-    final isConst =
-        constructor.constant || (type.kind == 'enum' && !constructor.factory);
     final inits = [
       ...private.map((parameter) => '_${parameter.name} = ${parameter.name}'),
       ..._copyInitializers(type, constructor),
@@ -3599,6 +3612,41 @@ class DartEmitter {
     _skipBindings = saved;
     _depth--;
     line('}');
+  }
+
+  List<String> _redirectArgs(
+    ConstructorDeclaration? target,
+    List<Argument> arguments,
+    bool constantContext,
+  ) {
+    if (target == null) {
+      return [
+        for (final arg in arguments)
+          arg.name != null
+              ? '${arg.name}: ${expression(arg.value, constantContext: constantContext)}'
+              : expression(arg.value, constantContext: constantContext),
+      ];
+    }
+    final namedKinds = {
+      ParameterKind.optionalNamed,
+      ParameterKind.requiredNamed,
+    };
+    final out = <String>[];
+    for (final arg in arguments) {
+      final rendered = expression(arg.value, constantContext: constantContext);
+      if (arg.name != null) {
+        final param =
+            target.parameters.where((p) => p.name == arg.name).firstOrNull;
+        if (param != null && !namedKinds.contains(param.kind)) {
+          out.add(rendered);
+        } else {
+          out.add('${arg.name}: $rendered');
+        }
+      } else {
+        out.add(rendered);
+      }
+    }
+    return out;
   }
 
   List<Binding> _liftedFields(
@@ -4579,12 +4627,19 @@ class DartEmitter {
       NullCheckPattern() => '${_pattern(pattern.inner)}?',
       NullAssertPattern() => '${_pattern(pattern.inner)}!',
       ConstructorPattern() => pattern.typeName.isEmpty
-          ? '(${[
-              for (var i = 0; i < pattern.fields.length; i++)
-                i < pattern.names.length && pattern.names[i] != null
-                    ? '${pattern.names[i]}: ${_pattern(pattern.fields[i])}'
-                    : _pattern(pattern.fields[i])
-            ].join(', ')})'
+          ? () {
+              final items = [
+                for (var i = 0; i < pattern.fields.length; i++)
+                  i < pattern.names.length && pattern.names[i] != null
+                      ? '${pattern.names[i]}: ${_pattern(pattern.fields[i])}'
+                      : _pattern(pattern.fields[i])
+              ];
+              final trailing = items.length == 1 &&
+                      (pattern.names.isEmpty || pattern.names[0] == null)
+                  ? ','
+                  : '';
+              return '(${items.join(', ')}$trailing)';
+            }()
           : '${_dartType(pattern.typeName)}(${[
               for (var i = 0; i < pattern.fields.length; i++)
                 pattern.names[i] == null
@@ -4663,7 +4718,8 @@ class DartEmitter {
       line('${declared.dartName} = $source;');
       return;
     }
-    line('final ${_dartType(declared.type)} ${declared.dartName} = $source;');
+    final prefix = declared.mutable ? '' : 'final ';
+    line('$prefix${_dartType(declared.type)} ${declared.dartName} = $source;');
   }
 
   void _assignList(ListPattern pattern, String source) {
@@ -4701,7 +4757,9 @@ class DartEmitter {
             pattern.name != null &&
             model.declarations[pattern] != null) {
           final declared = model.declarations[pattern]!;
-          line('final ${declared.type} ${declared.dartName} = $source;');
+          final prefix = declared.mutable ? '' : 'final ';
+          line(
+              '$prefix${_dartType(declared.type)} ${declared.dartName} = $source;');
         }
         return;
       case BindingPattern():
@@ -4710,8 +4768,9 @@ class DartEmitter {
           if (model.rebinding.contains(pattern)) {
             line('${declared.dartName} = $source;');
           } else {
+            final prefix = declared.mutable ? '' : 'final ';
             line(
-                'final ${_dartType(declared.type)} ${declared.dartName} = $source;');
+                '$prefix${_dartType(declared.type)} ${declared.dartName} = $source;');
           }
         }
       case ListPattern():
@@ -4739,9 +4798,10 @@ class DartEmitter {
       case NullAssertPattern():
         _destructure(pattern.inner, source, position);
       case ConstructorPattern():
+        var pos = 0;
         for (var i = 0; i < pattern.fields.length; i++) {
           final field = pattern.names[i];
-          final child = field == null ? '$source.\$${i + 1}' : '$source.$field';
+          final child = field == null ? '$source.\$${++pos}' : '$source.$field';
           _destructure(pattern.fields[i], child, position);
         }
       case LiteralPattern():

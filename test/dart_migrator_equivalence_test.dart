@@ -778,6 +778,128 @@ void main() {
 }
 ''');
     });
+
+    test('14. redirecting generative constructors (: this / : this.named)',
+        () async {
+      await assertDartAndQudsEquivalent('redirecting_ctors', r'''
+class Vec {
+  final int x;
+  final int y;
+
+  const Vec(this.x, this.y);
+  const Vec.zero() : this(0, 0);
+  const Vec.unitX() : this(1, 0);
+  Vec.scaled(int factor) : this(factor, factor * 2);
+  Vec.doubledUnit() : this.scaled(3);
+
+  String fmt() => '($x,$y)';
+}
+
+void main() {
+  const a = Vec.zero();
+  const b = Vec.unitX();
+  final c = Vec.scaled(4);
+  final d = Vec.doubledUnit();
+  print('${a.fmt()}|${b.fmt()}|${c.fmt()}|${d.fmt()}');
+}
+''');
+    });
+
+    test(
+        '15. Dart 3 destructuring declarations, pattern assignments, and pattern for-in loops',
+        () async {
+      await assertDartAndQudsEquivalent('destructure_and_pattern_loops', r'''
+class Box {
+  final String tag;
+  final int count;
+  const Box(this.tag, this.count);
+}
+
+void main() {
+  var evals = 0;
+
+  Box nextBox(String tag, int count) {
+    evals++;
+    return Box(tag, count);
+  }
+
+  final (first, second) = (10, 'ten');
+  print('$first:$second');
+
+  var (a, b) = (1, 2);
+  a += 5;
+  (a, b) = (b, a);
+  print('swap:$a:$b');
+
+  var [head, ...tail] = [1, 2, 3, 4];
+  head *= 10;
+  tail.add(5);
+  print('list:$head:$tail');
+
+  final Box(:tag, :count) = nextBox('crate', 7);
+  print('box:$tag:$count:evals=$evals');
+
+  final (:name, score: points) = (name: 'Quds', score: 99);
+  print('rec:$name:$points');
+
+  var outTag = '';
+  var outCount = 0;
+  Box(tag: outTag, count: outCount) = nextBox('reassigned', 12);
+  print('assign:$outTag:$outCount:evals=$evals');
+
+  final pairs = [(1, 'a'), (2, 'b'), (3, 'c')];
+  final acc = <String>[];
+  for (final (k, v) in pairs) {
+    acc.add('$k=$v');
+  }
+  print(acc.join(','));
+
+  final boxes = [const Box('x', 2), const Box('y', 5)];
+  var total = 0;
+  for (final Box(:tag, :count) in boxes) {
+    total += count;
+    print('$tag->$count');
+  }
+  print('total=$total');
+}
+''');
+    });
+
+    test('16. Dart 3 map patterns in switch and if-case with nested guards',
+        () async {
+      await assertDartAndQudsEquivalent('map_patterns', r'''
+String route(Object? msg) {
+  switch (msg) {
+    case {'type': 'login', 'user': String u, 'admin': true}:
+      return 'admin:$u';
+    case {'type': 'login', 'user': String u}:
+      return 'user:$u';
+    case {'type': 'move', 'pos': [int x, int y]} when x >= 0 && y >= 0:
+      return 'move:$x,$y';
+    default:
+      return 'unknown';
+  }
+}
+
+void main() {
+  final messages = <Object?>[
+    {'type': 'login', 'user': 'ali', 'admin': true},
+    {'type': 'login', 'user': 'sara', 'admin': false},
+    {'type': 'move', 'pos': [4, 9]},
+    {'type': 'move', 'pos': [-1, 5]},
+    {'type': 'ping'},
+  ];
+  for (final m in messages) {
+    print(route(m));
+  }
+
+  final cfg = <String, Object?>{'host': 'localhost', 'port': 8080};
+  if (cfg case {'host': String h, 'port': int p} when p > 1000) {
+    print('$h:$p');
+  }
+}
+''');
+    });
   });
 
   group('Safety gates: never silently alter semantics', () {

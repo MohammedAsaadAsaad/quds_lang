@@ -589,6 +589,9 @@ class _DartToQudsEmitter {
   /// Lexical variable scopes to emit Quds `shadow` whenever Dart shadows an
   /// outer local or parameter binding (`QUDS-090`).
   final List<Set<String>> _scopes = [];
+  var _tempCounter = 0;
+
+  String _freshTemp([String prefix = '_qd']) => '$prefix${_tempCounter++}';
 
   static const _qudsReservedIdentifiers = {
     'readonly',
@@ -1124,6 +1127,12 @@ class _DartToQudsEmitter {
             final argsText = _inlineArgs(init.argumentList, depth);
             superSuffix = ' super$ctorName($argsText)';
           }
+        } else if (init is d.RedirectingConstructorInvocation) {
+          final ctorName = init.constructorName == null
+              ? ''
+              : '.${init.constructorName!.name}';
+          final argsText = _inlineArgs(init.argumentList, depth);
+          superSuffix = ' this$ctorName($argsText)';
         } else if (init is d.AssertInitializer) {
           initLines.add(
               '${'  ' * (depth + 1)}assert ${_expression(init.condition, depth + 1)}');
@@ -1442,6 +1451,23 @@ class _DartToQudsEmitter {
     if (node is d.VariableDeclarationStatement) {
       return _variableList(node.variables, depth);
     }
+    if (node is d.PatternVariableDeclarationStatement) {
+      final decl = node.declaration;
+      final mutable = decl.keyword.lexeme == 'var';
+      final boundNames = <String>[];
+      final valueExpr = _expression(decl.expression, depth);
+      final lines = _patternDestructureLines(
+        decl.pattern,
+        valueExpr,
+        depth,
+        mutable: mutable,
+        boundNames: boundNames,
+      );
+      for (final b in boundNames) {
+        _declareInCurrentScope(b);
+      }
+      return lines.join('\n');
+    }
     if (node is d.FunctionDeclarationStatement) {
       final fnName = node.functionDeclaration.name.lexeme;
       _declareInCurrentScope(fnName);
@@ -1453,6 +1479,18 @@ class _DartToQudsEmitter {
     }
     if (node is d.ExpressionStatement) {
       final expr = node.expression;
+      if (expr is d.PatternAssignment) {
+        final valueExpr = _expression(expr.expression, depth);
+        final lines = _patternDestructureLines(
+          expr.pattern,
+          valueExpr,
+          depth,
+          mutable: false,
+          assignment: true,
+          boundNames: <String>[],
+        );
+        return lines.join('\n');
+      }
       if (expr is d.PostfixExpression &&
           (expr.operator.lexeme == '++' || expr.operator.lexeme == '--')) {
         final op = expr.operator.lexeme == '++' ? '+=' : '-=';
@@ -1623,6 +1661,29 @@ class _DartToQudsEmitter {
       final iter = _expression(parts.iterable, depth);
       final body = _branchBody(node.body, depth + 1);
       return '$pad${awaitPrefix}for ${parts.identifier.name} in $iter:\n$body';
+    }
+    if (parts is d.ForEachPartsWithPattern) {
+      final awaitPrefix = node.awaitKeyword != null ? 'await ' : '';
+      final iter = _expression(parts.iterable, depth);
+      final temp = _freshTemp('_qItem');
+      final mutable = parts.keyword.lexeme == 'var';
+      final bodyText = _withScope(() {
+        final boundNames = <String>[];
+        final destructLines = _patternDestructureLines(
+          parts.pattern,
+          temp,
+          depth + 1,
+          mutable: mutable,
+          sourceIsTemp: true,
+          boundNames: boundNames,
+        );
+        for (final b in boundNames) {
+          _declareInCurrentScope(b);
+        }
+        final inner = _branchBody(node.body, depth + 1);
+        return [...destructLines, inner].join('\n');
+      }, initial: [temp]);
+      return '$pad${awaitPrefix}for $temp in $iter:\n$bodyText';
     }
     if (parts is d.ForPartsWithDeclarations) {
       // Single-variable C-style `for (var i = init; cond; updater)`.
@@ -1849,6 +1910,11 @@ class _DartToQudsEmitter {
       }
       return '$shadowPrefix$name';
     }
+    if (pattern is d.AssignedVariablePattern) {
+      final name = pattern.name.lexeme;
+      _checkIdentifierName(pattern, name);
+      return name;
+    }
     if (pattern is d.CastPattern) {
       final inner = _dartPattern(pattern.pattern, depth, boundNames);
       return '$inner as ${_typeAnnotation(pattern.type)}';
@@ -1891,6 +1957,17 @@ class _DartToQudsEmitter {
       }).join(', ');
       return '[$elems]';
     }
+    if (pattern is d.MapPattern) {
+      final entries = pattern.elements.map((el) {
+        if (el is d.MapPatternEntry) {
+          final k = _expression(el.key, depth);
+          final v = _dartPattern(el.value, depth, boundNames);
+          return '$k: $v';
+        }
+        _fail(el, 'unsupported map pattern element: ${el.runtimeType}');
+      }).join(', ');
+      return 'map($entries)';
+    }
     if (pattern is d.RecordPattern) {
       var hasNamed = false;
       final fields = pattern.fields.map((f) {
@@ -1916,8 +1993,282 @@ class _DartToQudsEmitter {
         'Dart 3 pattern ${pattern.runtimeType} requires manual migration review');
   }
 
+  bool _isSimpleIrrefutableDestructure(d.DartPattern pattern) {
+    if (pattern is d.WildcardPattern) return pattern.type == null;
+    if (pattern is d.DeclaredVariablePattern) return pattern.type == null;
+    if (pattern is d.AssignedVariablePattern) return true;
+    if (pattern is d.ParenthesizedPattern) {
+      return _isSimpleIrrefutableDestructure(pattern.pattern);
+    }
+    if (pattern is d.RecordPattern) {
+      return pattern.fields
+          .every((f) => _isSimpleIrrefutableDestructure(f.pattern));
+    }
+    if (pattern is d.ListPattern) {
+      return pattern.elements.every((el) {
+        if (el is d.RestPatternElement) {
+          return el.pattern == null ||
+              _isSimpleIrrefutableDestructure(el.pattern!);
+        }
+        return el is d.DartPattern && _isSimpleIrrefutableDestructure(el);
+      });
+    }
+    return false;
+  }
+
+  List<String> _patternDestructureLines(
+    d.DartPattern pattern,
+    String valueExpr,
+    int depth, {
+    required bool mutable,
+    bool assignment = false,
+    bool sourceIsTemp = false,
+    required List<String> boundNames,
+  }) {
+    final pad = '  ' * depth;
+    if ((pattern is d.RecordPattern || pattern is d.ListPattern) &&
+        _isSimpleIrrefutableDestructure(pattern)) {
+      final rendered = _dartPattern(pattern, depth, boundNames);
+      final varPrefix = (!assignment && mutable) ? 'var ' : '';
+      return ['$pad$varPrefix$rendered = $valueExpr'];
+    }
+    final lines = <String>[];
+    _emitStructuralDestructure(
+      pattern,
+      valueExpr,
+      depth,
+      mutable: mutable,
+      assignment: assignment,
+      sourceIsTemp: sourceIsTemp,
+      boundNames: boundNames,
+      out: lines,
+    );
+    return lines;
+  }
+
+  void _emitStructuralDestructure(
+    d.DartPattern pattern,
+    String sourceExpr,
+    int depth, {
+    required bool mutable,
+    required bool assignment,
+    required bool sourceIsTemp,
+    required List<String> boundNames,
+    required List<String> out,
+  }) {
+    final pad = '  ' * depth;
+    if (pattern is d.ParenthesizedPattern) {
+      _emitStructuralDestructure(
+        pattern.pattern,
+        sourceExpr,
+        depth,
+        mutable: mutable,
+        assignment: assignment,
+        sourceIsTemp: sourceIsTemp,
+        boundNames: boundNames,
+        out: out,
+      );
+      return;
+    }
+    if (pattern is d.WildcardPattern) {
+      if (!sourceIsTemp) {
+        final tmp = _freshTemp();
+        out.add('$pad$tmp = $sourceExpr');
+      }
+      return;
+    }
+    if (pattern is d.DeclaredVariablePattern) {
+      final name = pattern.name.lexeme;
+      _checkIdentifierName(pattern, name);
+      final shadowPrefix = _isDeclaredInOuterScope(name) ? 'shadow ' : '';
+      final varPrefix = mutable ? 'var ' : '';
+      final typeSuffix =
+          pattern.type == null ? '' : ': ${_typeAnnotation(pattern.type!)}';
+      boundNames.add(name);
+      out.add('$pad$shadowPrefix$varPrefix$name$typeSuffix = $sourceExpr');
+      return;
+    }
+    if (pattern is d.AssignedVariablePattern) {
+      final name = pattern.name.lexeme;
+      _checkIdentifierName(pattern, name);
+      out.add('$pad$name = $sourceExpr');
+      return;
+    }
+    if (pattern is d.CastPattern) {
+      _emitStructuralDestructure(
+        pattern.pattern,
+        '($sourceExpr as ${_typeAnnotation(pattern.type)})',
+        depth,
+        mutable: mutable,
+        assignment: assignment,
+        sourceIsTemp: false,
+        boundNames: boundNames,
+        out: out,
+      );
+      return;
+    }
+    if (pattern is d.NullAssertPattern) {
+      _emitStructuralDestructure(
+        pattern.pattern,
+        '($sourceExpr!)',
+        depth,
+        mutable: mutable,
+        assignment: assignment,
+        sourceIsTemp: false,
+        boundNames: boundNames,
+        out: out,
+      );
+      return;
+    }
+    if ((pattern is d.RecordPattern || pattern is d.ListPattern) &&
+        _isSimpleIrrefutableDestructure(pattern)) {
+      final rendered = _dartPattern(pattern, depth, boundNames);
+      final varPrefix = (!assignment && mutable) ? 'var ' : '';
+      out.add('$pad$varPrefix$rendered = $sourceExpr');
+      return;
+    }
+    String ensureTemp() {
+      if (sourceIsTemp) return sourceExpr;
+      final tmp = _freshTemp();
+      out.add('$pad$tmp = $sourceExpr');
+      return tmp;
+    }
+
+    if (pattern is d.ObjectPattern) {
+      final tmp = ensureTemp();
+      for (final f in pattern.fields) {
+        final fieldName =
+            f.name?.name?.lexeme ?? _inferredPatternFieldName(f.pattern);
+        if (fieldName == null) {
+          _fail(f, 'object pattern field without name requires manual review');
+        }
+        _emitStructuralDestructure(
+          f.pattern,
+          '$tmp.$fieldName',
+          depth,
+          mutable: mutable,
+          assignment: assignment,
+          sourceIsTemp: false,
+          boundNames: boundNames,
+          out: out,
+        );
+      }
+      return;
+    }
+    if (pattern is d.RecordPattern) {
+      final tmp = ensureTemp();
+      var pos = 0;
+      for (final f in pattern.fields) {
+        final String access;
+        if (f.name != null) {
+          final fieldName =
+              f.name!.name?.lexeme ?? _inferredPatternFieldName(f.pattern);
+          if (fieldName == null) {
+            _fail(
+                f, 'record pattern field without name requires manual review');
+          }
+          access = '$tmp.$fieldName';
+        } else {
+          access = '$tmp.\$${++pos}';
+        }
+        _emitStructuralDestructure(
+          f.pattern,
+          access,
+          depth,
+          mutable: mutable,
+          assignment: assignment,
+          sourceIsTemp: false,
+          boundNames: boundNames,
+          out: out,
+        );
+      }
+      return;
+    }
+    if (pattern is d.ListPattern) {
+      final tmp = ensureTemp();
+      var restAt = -1;
+      for (var i = 0; i < pattern.elements.length; i++) {
+        if (pattern.elements[i] is d.RestPatternElement) restAt = i;
+      }
+      final prefix = restAt < 0 ? pattern.elements.length : restAt;
+      final suffix = restAt < 0 ? 0 : pattern.elements.length - restAt - 1;
+      for (var i = 0; i < prefix; i++) {
+        final el = pattern.elements[i];
+        if (el is! d.DartPattern) {
+          _fail(el, 'unsupported list pattern element: ${el.runtimeType}');
+        }
+        _emitStructuralDestructure(
+          el,
+          '$tmp[$i]',
+          depth,
+          mutable: mutable,
+          assignment: assignment,
+          sourceIsTemp: false,
+          boundNames: boundNames,
+          out: out,
+        );
+      }
+      if (restAt >= 0) {
+        final rest = pattern.elements[restAt] as d.RestPatternElement;
+        if (rest.pattern != null) {
+          final end = suffix == 0 ? '$tmp.length' : '$tmp.length - $suffix';
+          _emitStructuralDestructure(
+            rest.pattern!,
+            '$tmp.sublist($prefix, $end)',
+            depth,
+            mutable: mutable,
+            assignment: assignment,
+            sourceIsTemp: false,
+            boundNames: boundNames,
+            out: out,
+          );
+        }
+        for (var j = 0; j < suffix; j++) {
+          final el = pattern.elements[restAt + 1 + j];
+          if (el is! d.DartPattern) {
+            _fail(el, 'unsupported list pattern element: ${el.runtimeType}');
+          }
+          _emitStructuralDestructure(
+            el,
+            '$tmp[($tmp.length - $suffix) + $j]',
+            depth,
+            mutable: mutable,
+            assignment: assignment,
+            sourceIsTemp: false,
+            boundNames: boundNames,
+            out: out,
+          );
+        }
+      }
+      return;
+    }
+    if (pattern is d.MapPattern) {
+      final tmp = ensureTemp();
+      for (final el in pattern.elements) {
+        if (el is! d.MapPatternEntry) {
+          _fail(el, 'unsupported map pattern element: ${el.runtimeType}');
+        }
+        final keyExpr = _expression(el.key, depth);
+        _emitStructuralDestructure(
+          el.value,
+          '$tmp[$keyExpr]',
+          depth,
+          mutable: mutable,
+          assignment: assignment,
+          sourceIsTemp: false,
+          boundNames: boundNames,
+          out: out,
+        );
+      }
+      return;
+    }
+    _fail(pattern,
+        'Dart 3 destructuring pattern ${pattern.runtimeType} requires manual review');
+  }
+
   String? _inferredPatternFieldName(d.DartPattern pattern) {
     if (pattern is d.DeclaredVariablePattern) return pattern.name.lexeme;
+    if (pattern is d.AssignedVariablePattern) return pattern.name.lexeme;
     if (pattern is d.CastPattern) {
       return _inferredPatternFieldName(pattern.pattern);
     }

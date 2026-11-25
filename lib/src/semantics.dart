@@ -2071,6 +2071,7 @@ class Analyzer {
         }
         for (final constructor
             in type.constructors.where((item) => !item.factory)) {
+          if (constructor.superCall?.isRedirect == true) continue;
           final initialized = constructor.parameters.any((parameter) =>
               parameter.initializing == 'this' && parameter.name == field.name);
           if (!initialized && !_bodyAssigns(constructor.body, field.name)) {
@@ -2095,6 +2096,29 @@ class Analyzer {
     for (final constructor in type.constructors) {
       final sc = constructor.superCall;
       if (sc == null) continue;
+      if (sc.isRedirect) {
+        if (constructor.factory) {
+          error('E700', 'A factory constructor cannot redirect with this', sc);
+        }
+        if (constructor.body != null && constructor.body!.isNotEmpty) {
+          error('E700', 'A redirecting constructor cannot have a body', sc);
+        }
+        if (sc.name == constructor.name) {
+          error('E700', 'A constructor cannot redirect to itself', sc);
+        }
+        final target = type.constructors
+            .where((c) => c.name == sc.name && !c.factory)
+            .toList();
+        if (target.isEmpty) {
+          final targetDesc = sc.name == null ? 'unnamed' : sc.name!;
+          error(
+              'E700', 'Class ${type.name} has no constructor $targetDesc', sc);
+        } else {
+          _checkSuperCallArgs(
+              constructor, sc, _ctorParameters(type, target.first));
+        }
+        continue;
+      }
       if (type.superclass == null) {
         error('E700', 'A super constructor call requires a superclass', sc);
       }
@@ -2113,6 +2137,7 @@ class Analyzer {
       }
       for (final constructor in type.constructors.where((c) => !c.factory)) {
         final sc = constructor.superCall;
+        if (sc != null && sc.isRedirect) continue;
         if (sc != null) {
           if (sc.name != null) {
             final target = parent.constructors
@@ -2625,34 +2650,42 @@ class Analyzer {
       parameterNames.add(parameter.name);
     }
     if (constructor.superCall case final sc?) {
-      final parentName = type.superclass;
-      final parent = parentName == null
-          ? null
-          : _typeSymbol(_genericHead(parentName))?.classDeclaration;
-      final subs = parent != null && parentName != null
-          ? _genericSubstitution(parentName, parent)
-          : const <String, String>{};
       List<Parameter>? parentParams;
-      if (parent != null) {
-        if (sc.name != null) {
-          final target = parent.constructors
-              .where((c) => c.name == sc.name && !c.factory)
-              .firstOrNull;
-          if (target != null) parentParams = _ctorParameters(parent, target);
-        } else if (parent.constructors.isEmpty) {
-          parentParams = _fieldsOf(parent)
-              .where((f) => !f.isStatic && f.lazyBody == null)
-              .map((f) => Parameter(f.name, f.type, false, f.span,
-                  defaultValue: f.initializer,
-                  kind: f.requiredField && f.initializer == null
-                      ? ParameterKind.requiredNamed
-                      : ParameterKind.optionalNamed))
-              .toList();
-        } else {
-          final target = parent.constructors
-              .where((c) => c.name == null && !c.factory)
-              .firstOrNull;
-          if (target != null) parentParams = _ctorParameters(parent, target);
+      Map<String, String> subs = const <String, String>{};
+      if (sc.isRedirect) {
+        final target = type.constructors
+            .where((c) => c.name == sc.name && !c.factory)
+            .firstOrNull;
+        if (target != null) parentParams = _ctorParameters(type, target);
+      } else {
+        final parentName = type.superclass;
+        final parent = parentName == null
+            ? null
+            : _typeSymbol(_genericHead(parentName))?.classDeclaration;
+        subs = parent != null && parentName != null
+            ? _genericSubstitution(parentName, parent)
+            : const <String, String>{};
+        if (parent != null) {
+          if (sc.name != null) {
+            final target = parent.constructors
+                .where((c) => c.name == sc.name && !c.factory)
+                .firstOrNull;
+            if (target != null) parentParams = _ctorParameters(parent, target);
+          } else if (parent.constructors.isEmpty) {
+            parentParams = _fieldsOf(parent)
+                .where((f) => !f.isStatic && f.lazyBody == null)
+                .map((f) => Parameter(f.name, f.type, false, f.span,
+                    defaultValue: f.initializer,
+                    kind: f.requiredField && f.initializer == null
+                        ? ParameterKind.requiredNamed
+                        : ParameterKind.optionalNamed))
+                .toList();
+          } else {
+            final target = parent.constructors
+                .where((c) => c.name == null && !c.factory)
+                .firstOrNull;
+            if (target != null) parentParams = _ctorParameters(parent, target);
+          }
         }
       }
       var pos = 0;
@@ -2663,10 +2696,12 @@ class Analyzer {
           if (arg.name != null) {
             param = parentParams.where((p) => p.name == arg.name).firstOrNull;
           } else {
-            final positional = parentParams
-                .where((p) => !constructor.parameters.any(
-                    (cp) => cp.initializing == 'super' && cp.name == p.name))
-                .toList();
+            final positional = sc.isRedirect
+                ? parentParams
+                : parentParams
+                    .where((p) => !constructor.parameters.any((cp) =>
+                        cp.initializing == 'super' && cp.name == p.name))
+                    .toList();
             if (pos < positional.length) param = positional[pos];
             pos++;
           }
@@ -2686,7 +2721,7 @@ class Analyzer {
             !_acceptExpected(arg.value, actual, expectedType)) {
           error(
               'E300',
-              'Super argument type $actual is incompatible with $expectedType',
+              '${sc.isRedirect ? 'Redirecting' : 'Super'} argument type $actual is incompatible with $expectedType',
               arg.value);
         }
       }
@@ -5524,9 +5559,16 @@ class Analyzer {
             error(
                 'E100', 'A refutable pattern cannot be assigned', node.pattern);
           }
-          _assignPattern = true;
-          bindPattern(node.pattern, type, declare: true);
-          _assignPattern = false;
+          final prevAssign = _assignPattern;
+          final prevMutable = _mutablePattern;
+          _assignPattern = !node.mutable;
+          _mutablePattern = node.mutable;
+          try {
+            bindPattern(node.pattern, type, declare: true);
+          } finally {
+            _assignPattern = prevAssign;
+            _mutablePattern = prevMutable;
+          }
         } else {
           final beforeElse = Map<Symbol, SourceSpan>.from(_consumed);
           statements(node.elseBody!, nested: true);
@@ -6343,6 +6385,7 @@ class Analyzer {
 
   /// True while a pattern on the left of `=` is binding its names.
   var _assignPattern = false;
+  var _mutablePattern = false;
 
   String elementType(String type, Node node) {
     if (type.startsWith('readonly ')) {
@@ -6398,7 +6441,7 @@ class Analyzer {
     } else if (declare && existing != null) {
       fail('Binding would shadow $name; use shadow in an inner scope', node);
     }
-    final symbol = create(name, type);
+    final symbol = create(name, type, mutable: _mutablePattern);
     _scope.symbols[name] = symbol;
     model.declarations[node] = symbol;
   }
@@ -6490,7 +6533,7 @@ class Analyzer {
           model.references[pattern] = existing!;
           return;
         }
-        if (!pattern.shadow && !_assignPattern) {
+        if (!pattern.shadow && !_assignPattern && !_mutablePattern) {
           final typeSym = _typeSymbol(pattern.name);
           if (typeSym != null &&
               (typeSym.classDeclaration != null ||
@@ -6510,7 +6553,7 @@ class Analyzer {
             bareType.startsWith('Iterable<') ||
             bareType.startsWith('Range<') ||
             bareType == 'String';
-        if (_assignPattern) {
+        if (_assignPattern || _mutablePattern) {
           if (!type.startsWith('List<') || !type.endsWith('>')) {
             fail('A list pattern requires a List', pattern);
           }
@@ -6615,13 +6658,14 @@ class Analyzer {
           bindPattern(pattern.fields[i], fieldType ?? type, declare: declare);
         }
       case MapPattern():
-        final valueType = type.startsWith('Map<') && type.endsWith('>')
+        final bareMap = nonNullableType(stripReadonlyType(type));
+        final valueType = bareMap.startsWith('Map<') && bareMap.endsWith('>')
             ? () {
-                final inner = type.substring(4, type.length - 1);
-                final splitAt = inner.indexOf(',');
-                return splitAt < 0 ? type : inner.substring(splitAt + 1).trim();
+                final parts =
+                    _splitTypes(bareMap.substring(4, bareMap.length - 1));
+                return parts.length == 2 ? parts[1] : 'Object?';
               }()
-            : type;
+            : 'Object?';
         for (var i = 0; i < pattern.keys.length; i++) {
           expression(pattern.keys[i]);
           bindPattern(pattern.values[i], valueType, declare: declare);

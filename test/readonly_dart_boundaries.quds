@@ -1,0 +1,55 @@
+sealed type Shape:
+  Circle(r: double)
+  Rect(w: double, h: double)
+
+type UserId wraps String
+
+type SafeList wraps List<int>
+
+exposePair(xs: List<int>) -> readonly (List<int>, String) = (xs, "ok")
+
+exposeNamed(xs: List<int>) -> readonly (items: List<int>, title: String) = (items: xs, title: "ok")
+
+exposeOk(xs: List<int>) -> readonly Result<List<int>, List<String>> = Ok(xs)
+
+exposeErr(errs: List<String>) -> readonly Result<List<int>, List<String>> = Error(errs)
+
+exposeEntry(xs: List<int>) -> readonly MapEntry<String, List<int>> = MapEntry("k", xs)
+
+exposeOptPresent(xs: List<int>) -> readonly Optional<List<int>> = present(xs)
+
+exposeOptMissing() -> readonly Optional<List<int>> = missing
+
+exposeShape(s: Shape) -> readonly Shape = s
+
+exposeUserId(id: UserId) -> readonly UserId = id
+
+exposeSafeList(xs: SafeList) -> readonly SafeList = xs
+
+exposeCallback(fn: () -> int) -> readonly () -> int = fn
+
+acceptErased(value: Object?) -> String = "{value}"
+
+test "readonly records, Result, MapEntry, Optional, sealed type, and extension types cross boundaries":
+  xs = [1, 2]
+  pair = exposePair(xs)
+  expect(pair.$1[0], 1)
+  expect(pair.$2, "ok")
+  named = exposeNamed(xs)
+  expect(named.items[1], 2)
+  expect(named.title, "ok")
+  okRes = exposeOk(xs)
+  match okRes:
+    Ok(v):
+      expect(v[0], 1)
+    Error(_):
+      expect(true, false)
+  entry = exposeEntry(xs)
+  expect(entry.key, "k")
+  expect(entry.value[0], 1)
+  shape = exposeShape(Circle(r: 3.5))
+  expect(acceptErased(shape).isNotEmpty, true)
+  uid = exposeUserId(UserId("u1"))
+  expect(acceptErased(uid), "u1")
+  cb = exposeCallback(() -> 7)
+  expect(cb(), 7)

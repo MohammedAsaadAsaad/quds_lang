@@ -37,6 +37,41 @@ List<String> splitTypeList(String text) {
   return parts;
 }
 
+/// Splits a record type like `(int, {String name, List<int> items})` into
+/// `(fieldNameOrNull, fieldType)` entries in declaration order.
+List<(String?, String)> splitRecordTypeFields(String type) {
+  if (!type.startsWith('(') || !type.endsWith(')')) return const [];
+  final inner = type.substring(1, type.length - 1).trim();
+  if (inner.isEmpty) return const [];
+  final result = <(String?, String)>[];
+  for (final raw in splitTypeList(inner)) {
+    final part = raw.trim();
+    if (part.isEmpty) continue;
+    if (part.startsWith('{') && part.endsWith('}')) {
+      for (final entry in splitTypeList(part.substring(1, part.length - 1))) {
+        final t = entry.trim();
+        if (t.isEmpty) continue;
+        final colon = t.indexOf(':');
+        if (colon > 0 && !t.substring(0, colon).contains(' ')) {
+          result.add(
+              (t.substring(0, colon).trim(), t.substring(colon + 1).trim()));
+        } else {
+          final space = t.lastIndexOf(' ');
+          if (space > 0) {
+            result.add(
+                (t.substring(space + 1).trim(), t.substring(0, space).trim()));
+          } else {
+            result.add((null, t));
+          }
+        }
+      }
+    } else {
+      result.add((null, part));
+    }
+  }
+  return result;
+}
+
 int _closeParen(String type) {
   if (!type.startsWith('(')) return -1;
   var depth = 0;

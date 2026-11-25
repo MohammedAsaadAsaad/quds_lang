@@ -6463,14 +6463,17 @@ class Analyzer {
         }
       case ConstructorPattern():
         if (pattern.typeName == 'Ok' || pattern.typeName == 'Error') {
-          if (!type.startsWith('Result<') || !type.endsWith('>')) {
+          final bareResult = stripReadonlyType(type);
+          if (!bareResult.startsWith('Result<') || !bareResult.endsWith('>')) {
             fail('${pattern.typeName} matches a Result', pattern);
           }
-          final parts = _splitTypes(type.substring(7, type.length - 1));
+          final parts =
+              _splitTypes(bareResult.substring(7, bareResult.length - 1));
           if (parts.length != 2) {
             fail('Result needs two type arguments', pattern);
           }
-          final fieldType = pattern.typeName == 'Ok' ? parts[0] : parts[1];
+          final rawFieldType = pattern.typeName == 'Ok' ? parts[0] : parts[1];
+          final fieldType = _readonlyView(type, rawFieldType);
           if (pattern.fields.length > 1) {
             fail('${pattern.typeName} has one field', pattern);
           }
@@ -6685,6 +6688,7 @@ class Analyzer {
           List.generate(sourceArgs.length,
               (i) => _sameType(sourceArgs[i], targetArgs[i])).every((v) => v);
     }
+    if (from == 'Optional<Never>' && toHead == 'Optional') return true;
     if ((fromHead == toHead ||
             toHead == 'Iterable' && const {'List', 'Set'}.contains(fromHead)) &&
         const {
@@ -7831,30 +7835,13 @@ class Analyzer {
     if (base.startsWith('(') &&
         base.endsWith(')') &&
         functionTypeParts(base) == null) {
-      final inner = base.substring(1, base.length - 1).trim();
-      final parts = inner.isEmpty ? const <String>[] : _splitTypes(inner);
       final positional = <String>[];
       final named = <String, String>{};
-      for (final part in parts) {
-        final trimmed = part.trim();
-        var depth = 0;
-        var colon = -1;
-        for (var i = 0; i < trimmed.length; i++) {
-          final ch = trimmed[i];
-          if (ch == '(' || ch == '<' || ch == '[') {
-            depth++;
-          } else if (ch == ')' || ch == '>' || ch == ']') {
-            depth--;
-          } else if (ch == ':' && depth == 0) {
-            colon = i;
-            break;
-          }
-        }
-        if (colon > 0) {
-          named[trimmed.substring(0, colon).trim()] =
-              trimmed.substring(colon + 1).trim();
-        } else if (trimmed.isNotEmpty) {
-          positional.add(trimmed);
+      for (final field in splitRecordTypeFields(base)) {
+        if (field.$1 != null) {
+          named[field.$1!] = field.$2;
+        } else {
+          positional.add(field.$2);
         }
       }
       String? fieldType;
@@ -9386,9 +9373,9 @@ class Analyzer {
   }
 
   // Only these shapes have a runtime view that can cross an erased boundary.
-  bool _readonlyBoundarySafe(String type) {
+  bool _readonlyBoundarySafe(String type, [Set<String> seen = const {}]) {
     type = stripReadonlyType(_resolveType(type));
-    if (isNullableType(type)) return _readonlyBoundarySafe(unwrap(type));
+    if (isNullableType(type)) return _readonlyBoundarySafe(unwrap(type), seen);
     if (const {
       'int',
       'double',
@@ -9403,27 +9390,98 @@ class Analyzer {
       'Uri',
       'RegExp',
       'Type',
-      'Symbol'
+      'Symbol',
+      'StackTrace',
+      'Runes',
     }.contains(type)) return true;
+    if (functionTypeParts(type) != null) return true;
     if (_typedStorage(type)) return true;
+    if (type.startsWith('(') && type.endsWith(')')) {
+      final fields = splitRecordTypeFields(type);
+      return fields.every((f) => _readonlyBoundarySafe(f.$2, seen));
+    }
     final declaration = readonlyClassFor(model, type);
-    if (declaration != null)
-      return declaration.kind == 'enum' ||
-          supportsReadonlyClass(model, declaration);
+    if (declaration != null) {
+      if (declaration.kind == 'enum') return true;
+      if (supportsReadonlyClass(model, declaration)) return true;
+      if (declaration.kind == 'extensionType' &&
+          declaration.fields.isNotEmpty) {
+        if (seen.contains(declaration.name)) return false;
+        return _readonlyBoundarySafe(
+            declaration.fields.single.type, {...seen, declaration.name});
+      }
+      if (declaration.kind == 'sealedType') {
+        if (seen.contains(declaration.name)) return false;
+        final next = {...seen, declaration.name};
+        return declaration.cases.every((c) => c.fields
+            .every((f) => _isDeeplyImmutableReadonlyType(f.type, next)));
+      }
+      return false;
+    }
     final head = _genericHead(type);
     if (head == type || !type.endsWith('>')) return false;
     final args = _splitTypes(type.substring(head.length + 1, type.length - 1));
     if (head == 'List' ||
         head == 'Iterable' ||
         head == 'Future' ||
-        head == 'Stream')
-      return args.length == 1 && _readonlyBoundarySafe(args[0]);
-    if (head == 'Set')
-      return args.length == 1 && _readonlyBoundarySafe(args[0]);
-    if (head == 'Map')
+        head == 'Stream' ||
+        head == 'Set' ||
+        head == 'Optional' ||
+        head == 'Range') {
+      return args.length == 1 && _readonlyBoundarySafe(args[0], seen);
+    }
+    if (head == 'Map' || head == 'Result' || head == 'MapEntry') {
       return args.length == 2 &&
-          _readonlyBoundarySafe(args[0]) &&
-          _readonlyBoundarySafe(args[1]);
+          _readonlyBoundarySafe(args[0], seen) &&
+          _readonlyBoundarySafe(args[1], seen);
+    }
+    return false;
+  }
+
+  bool _isDeeplyImmutableReadonlyType(String type, Set<String> seen) {
+    type = stripReadonlyType(_resolveType(type));
+    if (isNullableType(type)) {
+      return _isDeeplyImmutableReadonlyType(unwrap(type), seen);
+    }
+    if (const {
+      'int',
+      'double',
+      'num',
+      'bool',
+      'String',
+      'Null',
+      'Never',
+      'BigInt',
+      'DateTime',
+      'Duration',
+      'Uri',
+      'RegExp',
+      'Type',
+      'Symbol',
+      'StackTrace',
+      'Runes',
+    }.contains(type)) return true;
+    if (functionTypeParts(type) != null) return true;
+    if (type.startsWith('(') && type.endsWith(')')) {
+      return splitRecordTypeFields(type)
+          .every((f) => _isDeeplyImmutableReadonlyType(f.$2, seen));
+    }
+    final declaration = readonlyClassFor(model, type);
+    if (declaration != null) {
+      if (declaration.kind == 'enum') return true;
+      if (declaration.kind == 'extensionType' &&
+          declaration.fields.isNotEmpty) {
+        if (seen.contains(declaration.name)) return false;
+        return _isDeeplyImmutableReadonlyType(
+            declaration.fields.single.type, {...seen, declaration.name});
+      }
+      if (declaration.kind == 'sealedType') {
+        if (seen.contains(declaration.name)) return false;
+        final next = {...seen, declaration.name};
+        return declaration.cases.every((c) => c.fields
+            .every((f) => _isDeeplyImmutableReadonlyType(f.type, next)));
+      }
+    }
     return false;
   }
 
@@ -11570,11 +11628,18 @@ class Analyzer {
         fail('${symbol.name} expects one value', node);
       final type = expression(node.arguments.single.value);
       model.argumentOrder[node] = [0];
-      final returned = _returnType;
-      if (returned != null && returned.startsWith('Result<')) {
-        return returned.startsWith('Future<')
-            ? returned.substring(7, returned.length - 1)
-            : returned;
+      final expected = _expected == null ? null : stripReadonlyType(_expected!);
+      final returned =
+          _returnType == null ? null : stripReadonlyType(_returnType!);
+      final target = expected != null && expected.startsWith('Result<')
+          ? expected
+          : returned != null && returned.startsWith('Result<')
+              ? returned
+              : null;
+      if (target != null) {
+        return target.startsWith('Future<')
+            ? target.substring(7, target.length - 1)
+            : target;
       }
       return symbol.name == 'Ok'
           ? 'Result<$type, Object>'

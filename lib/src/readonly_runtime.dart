@@ -210,7 +210,9 @@ final class AutoGuard<T> extends ReadonlyGuard<T> {
         value is DateTime ||
         value is Duration ||
         value is Uri ||
-        value is RegExp) return value;
+        value is RegExp ||
+        value is StackTrace ||
+        value is Runes) return value;
     if (value is ByteBuffer)
       return value.asUint8List().asUnmodifiableView().buffer as T;
     if (value is TypedData) return (value as dynamic).asUnmodifiableView() as T;
@@ -437,6 +439,45 @@ final class StreamGuard<E> extends ReadonlyGuard<Stream<E>> {
     guards[Stream<E>] = this;
     element.install(guards);
   }
+}
+
+final class ResultGuard<T, E> extends ReadonlyGuard<Result<T, E>> {
+  const ResultGuard(this.ok, this.err);
+  final ReadonlyGuard<T> ok;
+  final ReadonlyGuard<E> err;
+  @override
+  Result<T, E> protect(Result<T, E> value) => switch (value) {
+        Ok<T, E>(:final value) => Ok<T, E>(ok.protect(value)),
+        Error<T, E>(:final error) => Error<T, E>(err.protect(error)),
+      };
+  @override
+  void install(Map<Type, ReadonlyGuard<dynamic>> guards) {
+    guards[Result<T, E>] = this;
+    ok.install(guards);
+    err.install(guards);
+  }
+}
+
+final class MapEntryGuard<K, V> extends ReadonlyGuard<MapEntry<K, V>> {
+  const MapEntryGuard(this.key, this.value);
+  final ReadonlyGuard<K> key;
+  final ReadonlyGuard<V> value;
+  @override
+  MapEntry<K, V> protect(MapEntry<K, V> entry) =>
+      MapEntry<K, V>(key.protect(entry.key), value.protect(entry.value));
+  @override
+  void install(Map<Type, ReadonlyGuard<dynamic>> guards) {
+    guards[MapEntry<K, V>] = this;
+    key.install(guards);
+    value.install(guards);
+  }
+}
+
+final class TransformGuard<T> extends ReadonlyGuard<T> {
+  const TransformGuard(this._transform);
+  final T Function(T) _transform;
+  @override
+  T protect(T value) => _transform(value);
 }
 
 class _ValueEquality {

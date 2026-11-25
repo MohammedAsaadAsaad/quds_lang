@@ -1,0 +1,29 @@
+sealed type Shape:
+  Circle(r: double)
+  Rect(w: double, h: double)
+
+type UserId wraps String
+
+type SafeList wraps List<int>
+
+exposePair(xs: List<int>) -> readonly (List<int>, String) = (xs, "ok")
+
+exposeNamed(xs: List<int>) -> readonly (items: List<int>, title: String) = (items: xs, title: "ok")
+
+exposeOk(xs: List<int>) -> readonly Result<List<int>, List<String>> = Ok(xs)
+
+exposeErr(errs: List<String>) -> readonly Result<List<int>, List<String>> = Error(errs)
+
+exposeEntry(xs: List<int>) -> readonly MapEntry<String, List<int>> = MapEntry("k", xs)
+
+exposeOptPresent(xs: List<int>) -> readonly Optional<List<int>> = present(xs)
+
+exposeOptMissing() -> readonly Optional<List<int>> = missing
+
+exposeShape(s: Shape) -> readonly Shape = s
+
+exposeUserId(id: UserId) -> readonly UserId = id
+
+exposeSafeList(xs: SafeList) -> readonly SafeList = xs
+
+exposeCallback(fn: () -> int) -> readonly () -> int = fn

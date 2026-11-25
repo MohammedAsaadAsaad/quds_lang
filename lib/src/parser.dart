@@ -1150,7 +1150,22 @@ class Parser {
       if (!match(TokenKind.question)) return inner;
       return inner.startsWith('(') ? '($inner)?' : '$inner?';
     }
-    final record = '(${parameters.join(', ')})';
+    final positional = <String>[];
+    final named = <String>[];
+    for (final p in parameters) {
+      final colon = p.indexOf(':');
+      if (colon > 0 && !p.substring(0, colon).contains(' ')) {
+        named.add(
+            '${p.substring(colon + 1).trim()} ${p.substring(0, colon).trim()}');
+      } else {
+        positional.add(p);
+      }
+    }
+    final record = named.isEmpty
+        ? '(${positional.join(', ')})'
+        : positional.isEmpty
+            ? '({${named.join(', ')}})'
+            : '(${positional.join(', ')}, {${named.join(', ')}})';
     if (match(TokenKind.question)) return '$record?';
     return record;
   }

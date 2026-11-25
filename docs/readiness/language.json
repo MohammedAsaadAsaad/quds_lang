@@ -1725,10 +1725,13 @@
         "test/extension_identity.quds",
         "test/extension_identity_test.dart",
         "test/function_value_cache_gc_test.dart",
-        "test/fixtures/value_cache_gc.quds"
+        "test/fixtures/value_cache_gc.quds",
+        "test/readonly_dart_boundaries.quds",
+        "test/readonly_dart_boundaries_web.quds",
+        "test/readonly_dart_boundaries_test.dart"
       ],
       "known_limits": [
-        "Some foreign final/sealed or erased readonly shapes intentionally report E910. A parameterized method value whose readonly view is wider than its declared result wraps the call result instead of rejecting the tear-off."
+        "Positional and named records, Result<T, E>, MapEntry<K, V>, Optional<T>, Range<T>, StackTrace, Runes, function values, extension types, and deeply immutable sealed types now enforce sound transitive readonly guards across Dart/erased boundaries on VM and JS. Mutable unproxyable foreign/native classes (e.g. dart:io File) and containers/sealed types holding them intentionally remain rejected with E910. A parameterized method value whose readonly view is wider than its declared result wraps the call result instead of rejecting the tear-off."
       ],
       "completion_evidence": {
         "positive": [],
@@ -2133,10 +2136,13 @@
         "test/fixtures/quds_value_adapters/helpers.quds",
         "test/union_flow.quds",
         "test/union_flow_test.dart",
-        "test/union_flow_web.quds"
+        "test/union_flow_web.quds",
+        "test/readonly_dart_boundaries.quds",
+        "test/readonly_dart_boundaries_web.quds",
+        "test/readonly_dart_boundaries_test.dart"
       ],
       "known_limits": [
-        "Readonly/foreign/generic boundary certification remains partial."
+        "Readonly/foreign/generic boundary certification remains partial; sound runtime guards now cover records, Result, MapEntry, Optional, extension types, and deeply immutable sealed types while rejecting unproxyable mutable foreign shapes with E910."
       ],
       "completion_evidence": {
         "positive": [],

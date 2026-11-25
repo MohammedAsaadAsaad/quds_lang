@@ -1708,6 +1708,98 @@ class DartEmitter {
     return '$view($value)';
   }
 
+  bool _isDeeplyImmutableType(String type, [Set<String> seen = const {}]) {
+    type = stripReadonlyType(_resolveType(type));
+    if (isNullableType(type)) {
+      return _isDeeplyImmutableType(nonNullableType(type), seen);
+    }
+    if (const {
+      'int',
+      'double',
+      'num',
+      'bool',
+      'String',
+      'Null',
+      'Never',
+      'BigInt',
+      'DateTime',
+      'Duration',
+      'Uri',
+      'RegExp',
+      'Type',
+      'Symbol',
+      'StackTrace',
+      'Runes',
+      'void',
+    }.contains(type)) return true;
+    if (type.startsWith('Range<') && type.endsWith('>')) return true;
+    if (functionTypeParts(type) != null) return true;
+    if (type.startsWith('(') && type.endsWith(')')) {
+      return splitRecordTypeFields(type)
+          .every((f) => _isDeeplyImmutableType(f.$2, seen));
+    }
+    final declaration = readonlyClassFor(model, type);
+    if (declaration != null) {
+      if (declaration.kind == 'enum') return true;
+      if (declaration.kind == 'extensionType' &&
+          declaration.fields.isNotEmpty) {
+        if (seen.contains(declaration.name)) return false;
+        return _isDeeplyImmutableType(
+            declaration.fields.single.type, {...seen, declaration.name});
+      }
+      if (declaration.kind == 'sealedType') {
+        if (seen.contains(declaration.name)) return false;
+        final next = {...seen, declaration.name};
+        return declaration.cases.every(
+            (c) => c.fields.every((f) => _isDeeplyImmutableType(f.type, next)));
+      }
+    }
+    return false;
+  }
+
+  bool _hasReadonlyBoundary(String type, [Set<String> seen = const {}]) {
+    type = substituteBridgeType(type, _interfaceTypeBindings);
+    final inner = stripReadonlyType(_resolveType(type));
+    final bare = nonNullableType(inner);
+    if (_typedReadonlySuffix('readonly $inner') != null) return true;
+    if (_isDeeplyImmutableType(bare, seen)) return true;
+    if (_openGenerics.contains(bare)) return true;
+    if (bare == 'dynamic' || bare == 'Object' || _guardEnvironment != null) {
+      return true;
+    }
+    if (bare.startsWith('(') && bare.endsWith(')')) {
+      return splitRecordTypeFields(bare)
+          .every((f) => _hasReadonlyBoundary(f.$2, seen));
+    }
+    final declaration = readonlyClassFor(model, bare);
+    if (declaration != null) {
+      if (supportsReadonlyClass(model, declaration)) return true;
+      if (declaration.kind == 'extensionType' &&
+          declaration.fields.isNotEmpty) {
+        if (seen.contains(declaration.name)) return false;
+        return _hasReadonlyBoundary(
+            declaration.fields.single.type, {...seen, declaration.name});
+      }
+      return false;
+    }
+    final bracket = bare.indexOf('<');
+    if (bracket > 0 && bare.endsWith('>')) {
+      final head = bare.substring(0, bracket);
+      final args = _splitTypeArgs(bare.substring(bracket + 1, bare.length - 1));
+      if (const {'List', 'Set', 'Iterable', 'Future', 'Stream', 'Optional'}
+              .contains(head) &&
+          args.length == 1) {
+        return _hasReadonlyBoundary(args.single, seen);
+      }
+      if (const {'Map', 'Result', 'MapEntry'}.contains(head) &&
+          args.length == 2) {
+        return _hasReadonlyBoundary(args[0], seen) &&
+            _hasReadonlyBoundary(args[1], seen);
+      }
+    }
+    return false;
+  }
+
   /// A Dart signature cannot spell `readonly`, so the boundary is a view.
   String? _readonlyBoundary(String type) {
     type = substituteBridgeType(type, _interfaceTypeBindings);
@@ -1715,40 +1807,34 @@ class DartEmitter {
     if (_typedReadonlySuffix(type) != null) return '@typed:$type';
     final inner = type.substring(9);
     final bare = nonNullableType(inner);
+    if (_isDeeplyImmutableType(bare)) return null;
+    if (!_hasReadonlyBoundary(type)) {
+      throw CompilerException(
+          'E910',
+          'No sound runtime readonly boundary for $type',
+          _span ?? const SourceSpan(1, 1, 1));
+    }
     if (bare.startsWith('List<') ||
         bare.startsWith('Map<') ||
         bare.startsWith('Set<') ||
         bare.startsWith('Iterable<') ||
         bare.startsWith('Future<') ||
-        bare.startsWith('Stream<')) {
+        bare.startsWith('Stream<') ||
+        bare.startsWith('Result<') ||
+        bare.startsWith('MapEntry<') ||
+        bare.startsWith('Optional<') ||
+        (bare.startsWith('(') && bare.endsWith(')'))) {
       final value = '_qr';
       return '((${_dartType(type)} $value) => ${_readonlyGuard(type, value)})';
     }
     final declaration = readonlyClassFor(model, inner);
-    if (declaration != null && supportsReadonlyClass(model, declaration) ||
+    if (declaration != null &&
+            (supportsReadonlyClass(model, declaration) ||
+                declaration.kind == 'extensionType') ||
         _openGenerics.contains(bare)) {
       _requireReadonlyRuntime();
       return '((${_dartType(type)} _qr) => ${_readonlyGuard(type, '_qr')})';
     }
-    if (const {
-          'int',
-          'double',
-          'num',
-          'bool',
-          'String',
-          'Null',
-          'Never',
-          'BigInt',
-          'DateTime',
-          'Duration',
-          'Uri',
-          'RegExp',
-          'Type',
-          'Symbol',
-          'void'
-        }.contains(bare) ||
-        declaration?.kind == 'enum' ||
-        bare.contains('->')) return null;
     if (bare == 'dynamic' || bare == 'Object' || _guardEnvironment != null) {
       _requireReadonlyRuntime();
       return '((${_dartType(type)} _qr) => ${_guardDescriptor(type)}.protect(_qr))';
@@ -1759,18 +1845,61 @@ class DartEmitter {
         _span ?? const SourceSpan(1, 1, 1));
   }
 
+  String _recordReadonlyGuard(String recordType, String value) {
+    final fields = splitRecordTypeFields(recordType);
+    if (fields.isEmpty || fields.every((f) => _isDeeplyImmutableType(f.$2))) {
+      return value;
+    }
+    final param = '_qrec${_temps++}';
+    var pos = 1;
+    var hasNamed = false;
+    final parts = <String>[];
+    for (final field in fields) {
+      final name = field.$1;
+      final fieldType = field.$2;
+      if (name != null) {
+        hasNamed = true;
+        parts.add('$name: ${_readonlyGuard(fieldType, '$param.$name')}');
+      } else {
+        final idx = pos++;
+        parts.add(_readonlyGuard(fieldType, '$param.\$$idx'));
+      }
+    }
+    final tuple = parts.length == 1 && !hasNamed
+        ? '(${parts.single},)'
+        : '(${parts.join(', ')})';
+    return '((${_dartType(recordType)} $param) => $tuple)($value)';
+  }
+
   String _readonlyGuard(String type, String value) {
     if (!type.startsWith('readonly ')) type = 'readonly $type';
     if (_typedReadonlySuffix(type) != null) return _typedReadonly(type, value);
     if (_hasParts ||
         type.startsWith('readonly Future<') ||
-        type.startsWith('readonly Stream<'))
+        type.startsWith('readonly Stream<') ||
+        type.startsWith('readonly Result<') ||
+        type.startsWith('readonly MapEntry<')) {
       return '${_guardDescriptor(type)}.protect($value)';
+    }
     final inner = type.substring(9);
     if (isNullableType(inner)) {
       final guarded =
           _readonlyGuard('readonly ${nonNullableType(inner)}', '_qn');
       return '((${_dartType(inner)} _qn) => _qn == null ? null : $guarded)($value)';
+    }
+    if (_isDeeplyImmutableType(inner)) return value;
+    if (inner.startsWith('(') && inner.endsWith(')')) {
+      return _recordReadonlyGuard(inner, value);
+    }
+    if (inner.startsWith('Optional<') && inner.endsWith('>')) {
+      _useOptional = true;
+      final elem = inner.substring(9, inner.length - 1);
+      final bareElem = nonNullableType(elem);
+      final elemDart = _dartType(elem);
+      final guarded = isNullableType(elem)
+          ? '_qo.value == null ? null : ${_readonlyGuard(bareElem, '_qo.value as ${_dartType(bareElem)}')}'
+          : _readonlyGuard(elem, '_qo.value as $elemDart');
+      return '((Optional<$elemDart> _qo) => !_qo.isPresent ? _qo : Optional<$elemDart>.present($guarded))($value)';
     }
     if (inner.startsWith('List<') && inner.endsWith('>')) {
       _useReadonly = true;
@@ -1801,29 +1930,16 @@ class DartEmitter {
       return '$value.map<${_dartType(element)}>((_qe) => ${_readonlyGuard(element, '_qe')})';
     }
     final declaration = readonlyClassFor(model, inner);
+    if (declaration != null &&
+        declaration.kind == 'extensionType' &&
+        declaration.fields.isNotEmpty) {
+      final rep = declaration.fields.single.type;
+      return '(${_readonlyGuard(rep, '$value as ${_dartType(rep)}')} as ${_dartType(inner)})';
+    }
     if (declaration != null && supportsReadonlyClass(model, declaration) ||
         _openGenerics.contains(inner)) {
       return '${_guardDescriptor(inner)}.protect($value)';
     }
-    if (const {
-          'int',
-          'double',
-          'num',
-          'bool',
-          'String',
-          'Null',
-          'Never',
-          'BigInt',
-          'DateTime',
-          'Duration',
-          'Uri',
-          'RegExp',
-          'Type',
-          'Symbol',
-          'void'
-        }.contains(inner) ||
-        declaration?.kind == 'enum' ||
-        inner.contains('->')) return value;
     return '${_guardDescriptor(inner)}.protect($value)';
   }
 
@@ -1845,6 +1961,12 @@ class DartEmitter {
       final environment = _guardEnvironment ?? '$_knownGuardsName';
       return '$_readonlyRuntime.guardFor<${_dartType(type)}>($environment)';
     }
+    if (type.startsWith('(') && type.endsWith(')')) {
+      if (_isDeeplyImmutableType(type)) {
+        return '$_readonlyRuntime.TransformGuard<${_dartType(type)}>((_qrv) => _qrv)';
+      }
+      return '$_readonlyRuntime.TransformGuard<${_dartType(type)}>((_qrv) => ${_recordReadonlyGuard(type, '_qrv')})';
+    }
     final bracket = type.indexOf('<');
     final head = bracket < 0 ? type : type.substring(0, bracket);
     final arguments = bracket < 0 || !type.endsWith('>')
@@ -1856,6 +1978,17 @@ class DartEmitter {
     }
     if (head == 'Map' && arguments.length == 2) {
       return '$_readonlyRuntime.MapGuard<${_dartType(arguments[0])}, ${_dartType(arguments[1])}>(${_guardDescriptor(arguments[0], includeKnown: false)}, ${_guardDescriptor(arguments[1], includeKnown: false)})';
+    }
+    if (head == 'Result' && arguments.length == 2) {
+      _useResult = true;
+      return '$_readonlyRuntime.ResultGuard<${_dartType(arguments[0])}, ${_dartType(arguments[1])}>(${_guardDescriptor(arguments[0], includeKnown: false)}, ${_guardDescriptor(arguments[1], includeKnown: false)})';
+    }
+    if (head == 'MapEntry' && arguments.length == 2) {
+      return '$_readonlyRuntime.MapEntryGuard<${_dartType(arguments[0])}, ${_dartType(arguments[1])}>(${_guardDescriptor(arguments[0], includeKnown: false)}, ${_guardDescriptor(arguments[1], includeKnown: false)})';
+    }
+    if (head == 'Optional' && arguments.length == 1) {
+      _useOptional = true;
+      return '$_readonlyRuntime.TransformGuard<${_dartType(type)}>((_qov) => ${_readonlyGuard(type, '_qov')})';
     }
     final declaration = readonlyClassFor(model, type);
     if (declaration != null && supportsReadonlyClass(model, declaration)) {
@@ -1898,8 +2031,16 @@ class DartEmitter {
       final declaration = readonlyClassFor(model, type);
       final head = type.substring(0, type.indexOf('<'));
       if (declaration != null && supportsReadonlyClass(model, declaration) ||
-          const {'List', 'Set', 'Map', 'Iterable', 'Future', 'Stream'}
-              .contains(head)) selected.add(type);
+          const {
+            'List',
+            'Set',
+            'Map',
+            'Iterable',
+            'Future',
+            'Stream',
+            'Result',
+            'MapEntry',
+          }.contains(head)) selected.add(type);
     }
     final saved = _guardEnvironment;
     _guardEnvironment = null;

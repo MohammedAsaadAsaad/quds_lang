@@ -1,0 +1,40 @@
+use fixtures.union_exchange.expanded as api
+
+test "imported union type aliases work for direct calls, stored values, and stored unions":
+  held: int | String = 4
+  expect(api.describeAlias(3), "ai:3")
+  expect(api.describeAlias("ok"), "as:ok")
+  echoed: int | String = api.echoAlias(held)
+  expect(echoed is int, true)
+  saved = api.echoAlias
+  back: int | String = saved("hi")
+  expect(back is String, true)
+  expect(api.describeAlias(back), "as:hi")
+  expect([api.matchAlias(7), api.matchAlias("ok")], ["mi:7", "ms:ok"])
+  expect([api.guardIntAlias(5), api.guardIntAlias("no")], [15, -1])
+
+test "imported async union functions work with await, Future values, and stored callables" async:
+  a = await api.asyncTag(9)
+  b = await api.asyncTag("go")
+  fut = api.asyncEcho(12)
+  c: int | String = await fut
+  saved = api.asyncEcho
+  d: int | String = await saved("done")
+  expect([a, b, api.describeAlias(c), api.describeAlias(d)], ["ai:9", "as:go", "ai:12", "as:done"])
+
+test "imported union partial application preserves left-to-right once evaluation and async" async:
+  var calls = 0
+  nextRight() -> int:
+    calls += 1
+    return 10 + calls
+  p1 = api.describeAlias(_)
+  expect(p1(5), "ai:5")
+  expect(p1("x"), "as:x")
+  p2 = api.combine(_, nextRight())
+  expect(calls, 1)
+  expect(p2(1), "ai:1:ai:11")
+  expect(p2("z"), "as:z:ai:11")
+  expect(calls, 1)
+  pAsync = api.asyncEcho(_)
+  out: int | String = await pAsync("async-part")
+  expect(api.describeAlias(out), "as:async-part")

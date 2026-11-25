@@ -83,20 +83,25 @@ The portable CI matrix now selects all three union drivers on Linux, Windows
 and macOS. This configuration is not evidence that those remote runs passed.
 Exact final commands and results are recorded at the top of `VALIDATION.md`.
 
+## Expanded certified slice (aliases, async, partial application)
+
+Building on ABI `provider-defaults-v16`, the checked union boundary also certifies:
+
+- **Local union type aliases**: top-level functions referencing local aliases such as `type Choice = int | String` (including `if is`, `guard is`, and `match` narrowing on alias-typed parameters).
+- **Async union signatures**: `async` top-level functions taking union parameters and returning `Future<T>` or `Future<A | B>`, with checked `async` `$QudsUnionCall…` bridges that reject invalid foreign payloads before invoking the provider and validate/wrap resolved union values on the consumer side.
+- **Imported union partial application**: placeholder expressions such as `api.describeAlias(_)`, `api.combine(_, expr)`, and `api.asyncEcho(_)` lowered through the checked union bridge while preserving left-to-right, once-only evaluation of bound arguments.
+
+Additional evidence:
+- `test/fixtures/union_exchange/expanded.quds`
+- `test/union_exchange_expanded.quds`
+- `test/union_exchange_expanded_test.dart` (Quds execution, strict generated Dart analysis, VM/JS parity, and invalid foreign payload rejection on the async bridge).
+
 ## Limits and next work
 
-Imported generic functions, async union signatures, union-only aliases, nested
-unions, union callbacks, variadics/mixed packet layouts, intersections combined
-with this ABI, and imported partial applications are not certified by this slice.
+Imported generic functions, nested unions (such as `List<int | String>`), union
+callbacks, variadics/mixed packet layouts, intersections combined with this ABI,
+and class/interface union boundaries are not certified by this slice.
 The tested unsupported top-level call/value contracts produce Quds `E910`
-rather than being advertised as working. The guard does not complete every local
-representation, alias expansion or owner signature. Class/interface union boundaries, foreign Dart
-implementors and conditional/section/part/cycle export combinations need separate
-conformance. Bare nominal typed patterns and `else` on the parser's `if … is`
-pattern statement also require further parser coverage; this milestone uses the
-existing returning-case remainder narrowing.
+rather than being advertised as working. Foreign Dart implementors and
+conditional/section/part/cycle export combinations need separate conformance.
 
-Next: expand the boundary contract structurally for aliases/nested types, then
-callbacks and generic/async/owner signatures, with Quds negative tests and VM/JS
-checks per slice. Keep all 115 readiness statuses unchanged until their full
-completion evidence exists. Do not resume or apply unrelated old worktree drafts.

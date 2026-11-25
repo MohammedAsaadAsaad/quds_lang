@@ -30,13 +30,9 @@ void main() {
     });
   }
   for (final statement in [
-    'saved = api.alias',
-    'saved = api.asynchronous',
-    'api.alias(3)',
     'api.generic<int>(3, 4)',
-    'api.asynchronous(3)',
-    'api.accept(_)',
     'api.nested([3])',
+    'api.callback((x: int | String) -> 1)',
   ]) {
     test('uncertified union boundaries produce Quds E910: $statement', () {
       final file = File('test/union_exchange_bad.quds').absolute.path;

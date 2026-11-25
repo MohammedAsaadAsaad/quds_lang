@@ -1784,11 +1784,14 @@
         "test/goldens/union_exchange.dart.txt",
         "test/fixtures/union_exchange/provider.quds",
         "test/fixtures/union_exchange/facade.quds",
-        "test/fixtures/union_exchange/second.quds"
+        "test/fixtures/union_exchange/second.quds",
+        "test/fixtures/union_exchange/expanded.quds",
+        "test/union_exchange_expanded.quds",
+        "test/union_exchange_expanded_test.dart"
       ],
       "known_limits": [
         "A returning is check on a two-arm sealed union narrows the following statements to the other arm. The generated read casts that sealed subclass. A wider union keeps the original sealed representation until one arm remains. Generic unions are not certified.",
-        "ABI v14 checks payloads for direct synchronous non-generic top-level union exchange, stored values and filtered re-exports. Generic/async/nested/alias-only/callback/owner union boundaries still need certification; see docs/UNION_LIBRARY_BOUNDARIES.md."
+        "Checked union bridges certify direct sync and async non-generic top-level union exchange, local union type aliases, stored values, imported partial applications, and filtered re-exports. Generic/nested/callback/owner union boundaries still reject with E910; see docs/UNION_LIBRARY_BOUNDARIES.md."
       ],
       "completion_evidence": {
         "positive": [],
@@ -2139,7 +2142,9 @@
         "test/union_flow_web.quds",
         "test/readonly_dart_boundaries.quds",
         "test/readonly_dart_boundaries_web.quds",
-        "test/readonly_dart_boundaries_test.dart"
+        "test/readonly_dart_boundaries_test.dart",
+        "test/union_exchange_expanded.quds",
+        "test/union_exchange_expanded_test.dart"
       ],
       "known_limits": [
         "Readonly/foreign/generic boundary certification remains partial; sound runtime guards now cover records, Result, MapEntry, Optional, extension types, and deeply immutable sealed types while rejecting unproxyable mutable foreign shapes with E910."

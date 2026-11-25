@@ -1149,14 +1149,26 @@ class DartEmitter {
     return '\$QudsFrom$name($value)';
   }
 
+  String _unwrapAsyncType(String type, bool isAsync) {
+    final resolved = _resolveType(type);
+    if (isAsync && resolved.startsWith('Future<') && resolved.endsWith('>')) {
+      return resolved.substring(7, resolved.length - 1);
+    }
+    return resolved;
+  }
+
   void _emitUnionBridge(FunctionDeclaration node) {
     final symbol = model.declarations[node]!;
-    final unionResult = _isUnionType(symbol.type);
-    final returned = unionResult ? 'Object?' : _dartType(symbol.type);
+    final isAsync = node.isAsync;
+    final innerRet = _unwrapAsyncType(symbol.type, isAsync);
+    final unionResult = _isUnionType(innerRet);
+    final returned = isAsync
+        ? (unionResult ? 'Future<Object?>' : _dartType(symbol.type))
+        : (unionResult ? 'Object?' : _dartType(symbol.type));
     final body = _packetInvocation(node.parameters, symbol.dartName, returned,
-        unionPayloads: true, unionResult: unionResult);
+        unionPayloads: true, unionResult: unionResult, asyncCall: isAsync);
     line('$returned ${providerUnionBridgeName(node)}'
-        '(List<Object?> \$qInputs, List<bool> \$qPresent) { $body }');
+        '(List<Object?> \$qInputs, List<bool> \$qPresent)${isAsync ? ' async' : ''} { $body }');
   }
 
   void _emitDefaultBridge(FunctionDeclaration node) {
@@ -1222,7 +1234,9 @@ class DartEmitter {
   /// Binds signature-order packet slots, then calls [target] in source order.
   String _packetInvocation(
       List<Parameter> parameters, String target, String returned,
-      {bool unionPayloads = false, bool unionResult = false}) {
+      {bool unionPayloads = false,
+      bool unionResult = false,
+      bool asyncCall = false}) {
     final saved = _names;
     _names = {..._names};
     final statements = <String>[];
@@ -1256,8 +1270,10 @@ class DartEmitter {
         for (final parameter in parameters)
           _names[model.declarations[parameter]!.dartName]!
       ];
-      final invocation =
-          '$target(${arguments.join(', ')})${unionResult ? '.value' : ''}';
+      final call = '$target(${arguments.join(', ')})';
+      final invocation = asyncCall
+          ? (unionResult ? '(await $call).value' : 'await $call')
+          : '$call${unionResult ? '.value' : ''}';
       final tail = returned == 'void' ? '$invocation;' : 'return $invocation;';
       return '${statements.join(' ')} $tail';
     } finally {
@@ -2306,15 +2322,21 @@ class DartEmitter {
     }
     if (type.startsWith('readonly ')) return _dartType(type.substring(9));
     if (type.contains(' & ') && functionTypeParts(type) == null) {
-      return _dartType(type.split(' & ').first.trim());
+      final parts = splitTopLevelTypeOp(type, ' & ');
+      if (parts.length > 1) {
+        return _dartType(parts.first);
+      }
     }
     if (type.contains(' | ') && functionTypeParts(type) == null) {
-      final name = _unionClass(type);
-      if (_importedUnionPrefix == null) {
-        _unions.add(type);
-        return name;
+      final parts = splitTopLevelTypeOp(type, ' | ');
+      if (parts.length > 1) {
+        final name = _unionClass(type);
+        if (_importedUnionPrefix == null) {
+          _unions.add(type);
+          return name;
+        }
+        return '$_importedUnionPrefix$name';
       }
-      return '$_importedUnionPrefix$name';
     }
     if (isNullableType(type)) {
       return '${_dartType(nonNullableType(type))}?';
@@ -4228,7 +4250,9 @@ class DartEmitter {
           statement(node.statement);
         }
       case MatchStatement():
-        _matched = model.types[node.value];
+        final savedMatched = _matched;
+        final rawMatched = model.types[node.value];
+        _matched = rawMatched == null ? null : _resolveType(rawMatched);
         if (_matched != null && _matched!.contains(' | ')) _dartType(_matched!);
         line('switch (${expression(node.value)}) {');
         _depth++;
@@ -4252,6 +4276,7 @@ class DartEmitter {
             _unionCaseBindings.remove(symbol);
           _depth--;
         }
+        _matched = savedMatched;
         if (model.warnings.any((warning) =>
             warning.code == 'W001' && identical(warning.span, node.span))) {
           line('default:');
@@ -4289,7 +4314,8 @@ class DartEmitter {
         break;
       case IfCaseStatement():
         final scrutinee = expression(node.scrutinee);
-        final matched = model.types[node.scrutinee];
+        final rawMatched = model.types[node.scrutinee];
+        final matched = rawMatched == null ? null : _resolveType(rawMatched);
         final savedMatched = _matched;
         if (matched != null && matched.contains(' | ')) _matched = matched;
         final typed =
@@ -4585,7 +4611,8 @@ class DartEmitter {
 
   void _openPattern(String keyword, Expression scrutinee, Pattern pattern) {
     final text = expression(scrutinee);
-    final matched = model.types[scrutinee];
+    final rawMatched = model.types[scrutinee];
+    final matched = rawMatched == null ? null : _resolveType(rawMatched);
     final saved = _matched;
     if (matched != null && matched.contains(' | ')) _matched = matched;
     final typed = pattern is TypedPattern ? pattern : null;
@@ -5193,8 +5220,12 @@ class DartEmitter {
     final function = lowering.function;
     final signature = functionTypeParts(model.types[node]!)!;
     final returnedType = signature.$2;
-    final returned =
-        _isUnionType(returnedType) ? 'Object?' : _dartType(returnedType);
+    final isAsync = function.isAsync;
+    final innerRet = _unwrapAsyncType(returnedType, isAsync);
+    final unionResult = _isUnionType(innerRet);
+    final returned = isAsync
+        ? (unionResult ? 'Future<Object?>' : _dartType(returnedType))
+        : (unionResult ? 'Object?' : _dartType(returnedType));
     final target = _unionTarget(node, function);
     final slot = '_qUnionSlot${_temps++}';
     final held =
@@ -5235,8 +5266,11 @@ class DartEmitter {
     final invoke =
         '$held(<Object?>[${slots.map((p) => payloads[p]).join(', ')}], '
         '<bool>[${slots.map((p) => presence[p]).join(', ')}])';
-    var result =
-        _isUnionType(returnedType) ? _unionFrom(returnedType, invoke) : invoke;
+    var result = unionResult
+        ? (isAsync
+            ? '($invoke).then((_quv) => ${_unionFrom(innerRet, '_quv')})'
+            : _unionFrom(returnedType, invoke))
+        : invoke;
     final guard = model.qudsValueResultGuards[node];
     if (guard != null) result = _readonlyGuard(guard, result);
     final body =
@@ -5245,6 +5279,79 @@ class DartEmitter {
     final key = _dartString(
         'union:${providerUnionBridgeName(function)}:${model.types[node]}:${guard ?? ''}');
     return '\$QudsCachedValue($target, $key, <Type>[], ($slot) { $slot.target = $target; return $body; }, functionKey: true) as ${_dartType(model.types[node]!)}';
+  }
+
+  String _emitUnionPartial(CallExpression node, FunctionDeclaration function) {
+    final target = _unionTarget(node.callee, function);
+    final order = model.argumentOrder[node] ?? const <int>[];
+    final slots = packetSlots(function.parameters);
+    final signature = functionTypeParts(model.types[node]!)!;
+    final returnedType = signature.$2;
+    final isAsync = function.isAsync;
+    final innerRet = _unwrapAsyncType(returnedType, isAsync);
+    final unionResult = _isUnionType(innerRet);
+
+    final preEval = <String>[];
+    final holeNames = <int, String>{};
+    final holeParams = <String>[];
+    var holeIndex = 0;
+    for (var i = 0; i < node.arguments.length; i++) {
+      final arg = node.arguments[i].value;
+      if (_isHole(arg)) {
+        final declIdx = order.indexOf(i);
+        final pType = declIdx >= 0 && declIdx < function.parameters.length
+            ? (model.instantiatedParameterTypes[node]?[declIdx] ??
+                model.declarations[function.parameters[declIdx]]?.type ??
+                function.parameters[declIdx].type)
+            : 'Object?';
+        final holeName = '_qh${holeIndex++}';
+        holeNames[i] = holeName;
+        holeParams.add('${_dartType(pType)} $holeName');
+      } else {
+        preEval.add('final _qa$i = ${expression(arg)};');
+      }
+    }
+
+    final payloads = <String>[];
+    final presence = <String>[];
+    for (final p in slots) {
+      final declIdx = function.parameters.indexOf(p);
+      final argIdx = declIdx < order.length ? order[declIdx] : -1;
+      if (argIdx < 0) {
+        payloads.add('null');
+        presence.add('false');
+      } else if (holeNames.containsKey(argIdx)) {
+        final hName = holeNames[argIdx]!;
+        final pType = model.instantiatedParameterTypes[node]?[declIdx] ??
+            model.declarations[p]?.type ??
+            p.type;
+        payloads.add(_isUnionType(pType) ? '($hName).value' : hName);
+        presence.add('true');
+      } else {
+        final argType = model.types[node.arguments[argIdx].value] ?? '';
+        final pType = model.instantiatedParameterTypes[node]?[declIdx] ??
+            model.declarations[p]?.type ??
+            p.type;
+        final unwrap = _isUnionType(argType) ||
+            (_isUnionType(pType) &&
+                (model.wrapAs.containsKey(node.arguments[argIdx].value) ||
+                    model.reboxAs.containsKey(node.arguments[argIdx].value)));
+        payloads.add(unwrap ? '(_qa$argIdx).value' : '_qa$argIdx');
+        presence.add('true');
+      }
+    }
+
+    final invoke =
+        '$target(<Object?>[${payloads.join(', ')}], <bool>[${presence.join(', ')}])';
+    final result = unionResult
+        ? (isAsync
+            ? '($invoke).then((_quv) => ${_unionFrom(innerRet, '_quv')})'
+            : _unionFrom(returnedType, invoke))
+        : invoke;
+    final closure =
+        '(${holeParams.join(', ')}) { ${returnedType == 'void' ? '' : 'return '}$result; }';
+    if (preEval.isEmpty) return closure;
+    return '(() { ${preEval.join(' ')} return $closure; })()';
   }
 
   bool _cacheLowering(FunctionDeclaration function, Expression node) =>
@@ -5832,7 +5939,8 @@ class DartEmitter {
 
   String _match(MatchExpression node) {
     final saved = _matched;
-    _matched = model.types[node.value];
+    final rawMatched = model.types[node.value];
+    _matched = rawMatched == null ? null : _resolveType(rawMatched);
     if (_matched != null && _matched!.contains(' | ')) _dartType(_matched!);
     final arms = node.arms.map((arm) {
       final guard = arm.guard == null ? '' : ' when ${expression(arm.guard!)}';
@@ -6293,9 +6401,17 @@ class DartEmitter {
     }
     final unionFunction = model.references[node.callee]?.function;
     if (unionFunction != null &&
-        model.providerUnionFunctions.contains(unionFunction) &&
-        !node.arguments.any((argument) => _isHole(argument.value))) {
+        model.providerUnionFunctions.contains(unionFunction)) {
+      if (node.arguments.any((argument) => _isHole(argument.value))) {
+        return _emitUnionPartial(node, unionFunction);
+      }
       final type = model.types[node]!;
+      final isAsync = unionFunction.isAsync;
+      final innerRet = _unwrapAsyncType(type, isAsync);
+      final unionResult = _isUnionType(innerRet);
+      final bridgeRet = isAsync
+          ? (unionResult ? 'Future<Object?>' : _dartType(type))
+          : (unionResult ? 'Object?' : _dartType(type));
       final result = _packetCall(
           node,
           _unionTarget(node.callee, unionFunction),
@@ -6304,10 +6420,13 @@ class DartEmitter {
               (model.argumentOrder[node] ??
                   const <int>[])[unionFunction.parameters.indexOf(p)]
           ],
-          _isUnionType(type) ? 'Object?' : _dartType(type),
+          bridgeRet,
           gap: false,
           unionPayloads: true);
-      return _isUnionType(type) ? _unionFrom(type, result) : result;
+      if (!unionResult) return result;
+      return isAsync
+          ? '($result).then((_quv) => ${_unionFrom(innerRet, '_quv')})'
+          : _unionFrom(type, result);
     }
     if (model.packetValueCalls.contains(node)) {
       return _packetCall(
@@ -6830,10 +6949,13 @@ class DartEmitter {
       return '${expression(cond.left)} $op ${expression(cond.right)}';
     }
     if (cond is TypeTestExpression &&
-        (cond.operator == 'is' || cond.operator == 'is!') &&
-        !(model.types[cond.operand]?.contains(' | ') ?? false)) {
-      final op = cond.operator == 'is!' ? 'is' : 'is!';
-      return '${expression(cond.operand)} $op ${_dartType(cond.type)}';
+        (cond.operator == 'is' || cond.operator == 'is!')) {
+      final rawType = model.types[cond.operand];
+      final resolvedType = rawType == null ? null : _resolveType(rawType);
+      if (!(resolvedType?.contains(' | ') ?? false)) {
+        final op = cond.operator == 'is!' ? 'is' : 'is!';
+        return '${expression(cond.operand)} $op ${_dartType(cond.type)}';
+      }
     }
     return '!(${expression(cond)})';
   }
@@ -7551,11 +7673,12 @@ class DartEmitter {
   String _unwrapPromotedUnion(Identifier node, String rendered) {
     final symbol = model.references[node];
     if (symbol == null) return rendered;
-    final stored = symbol.type;
+    final stored = _resolveType(symbol.type);
     if (!stored.contains(' | ') || functionTypeParts(stored) != null) {
       return rendered;
     }
-    final used = model.types[node];
+    final rawUsed = model.types[node];
+    final used = rawUsed == null ? null : _resolveType(rawUsed);
     if (used == null || used == stored || used.contains(' | ')) return rendered;
     final arms = stored.split(' | ').map((part) => part.trim());
     if (!arms.contains(used)) return rendered;

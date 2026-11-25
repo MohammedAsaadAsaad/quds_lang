@@ -1,0 +1,29 @@
+type Choice = int | String
+
+echoAlias(value: Choice) -> Choice = value
+
+describeAlias(value: Choice) -> String:
+  if value is int:
+    return "ai:{value}"
+  return "as:{value}"
+
+asyncTag(value: Choice) async -> String:
+  return await Future.value(describeAlias(value))
+
+asyncEcho(value: Choice) async -> Choice:
+  return await Future.value(value)
+
+combine(first: Choice, second: Choice, sep: String = ":") -> String = "{describeAlias(first)}{sep}{describeAlias(second)}"
+
+matchAlias(value: Choice) -> String:
+  match value:
+    int n:
+      return "mi:{n}"
+    String s:
+      return "ms:{s}"
+
+guardIntAlias(value: Choice) -> int:
+  guard value is int else:
+    return -1
+  return value + 10
+

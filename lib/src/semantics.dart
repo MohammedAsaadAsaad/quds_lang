@@ -116,21 +116,69 @@ bool directUnionType(String type) =>
     !type.contains('(') &&
     !type.startsWith('readonly ');
 
-bool supportsUnionBoundary(FunctionDeclaration function) =>
-    function.visibility != 'private' &&
-    !function.name.startsWith('_') &&
-    function.typeParameters.isEmpty &&
-    function.generator.isEmpty &&
-    !function.isAsync &&
-    !function.parameters.any((p) => p.variadic) &&
-    !packetValueLayout(function.parameters) &&
-    _providerDefaultsAreSynchronous(function) &&
-    [function.returnType ?? '', ...function.parameters.map((p) => p.type)]
-        .any(directUnionType) &&
-    [function.returnType ?? '', ...function.parameters.map((p) => p.type)]
-        .every((type) =>
-            !type.contains(' & ') &&
-            (!type.contains(' | ') || directUnionType(type)));
+String _expandUnionAliases(String type, Map<String, String> aliases) {
+  if (aliases.isEmpty) return type;
+  var current = type.trim();
+  for (var i = 0; i < aliases.length; i++) {
+    var next = current;
+    final readonly = next.startsWith('readonly ');
+    if (readonly) next = next.substring(9).trim();
+    final nullable = next.endsWith('?');
+    if (nullable) next = next.substring(0, next.length - 1).trim();
+    if (aliases.containsKey(next)) {
+      var target = aliases[next]!;
+      if (nullable && !target.endsWith('?')) target = '$target?';
+      if (readonly && !target.startsWith('readonly ')) {
+        target = 'readonly $target';
+      }
+      current = target;
+      continue;
+    }
+    final replaced = next.replaceAllMapped(
+      RegExp(r'\b([A-Za-z_]\w*)\b'),
+      (m) => aliases[m.group(1)!] ?? m.group(0)!,
+    );
+    if (replaced != next) {
+      var target = replaced;
+      if (nullable) target = '$target?';
+      if (readonly) target = 'readonly $target';
+      current = target;
+      continue;
+    }
+    break;
+  }
+  return current;
+}
+
+String _effectiveUnionReturnType(
+    FunctionDeclaration function, Map<String, String> aliases) {
+  final raw = _expandUnionAliases(function.returnType ?? '', aliases);
+  if (function.isAsync && raw.startsWith('Future<') && raw.endsWith('>')) {
+    return _expandUnionAliases(raw.substring(7, raw.length - 1), aliases);
+  }
+  return raw;
+}
+
+bool supportsUnionBoundary(FunctionDeclaration function,
+    {Map<String, String> aliases = const {}}) {
+  if (function.visibility == 'private' ||
+      function.name.startsWith('_') ||
+      function.typeParameters.isNotEmpty ||
+      function.generator.isNotEmpty ||
+      function.parameters.any((p) => p.variadic) ||
+      packetValueLayout(function.parameters) ||
+      !_providerDefaultsAreSynchronous(function)) {
+    return false;
+  }
+  final sigTypes = [
+    _effectiveUnionReturnType(function, aliases),
+    for (final p in function.parameters) _expandUnionAliases(p.type, aliases),
+  ];
+  return sigTypes.any(directUnionType) &&
+      sigTypes.every((type) =>
+          !type.contains(' & ') &&
+          (!type.contains(' | ') || directUnionType(type)));
+}
 
 String providerUnionBridgeName(FunctionDeclaration function) =>
     providerDefaultBridgeName(function)
@@ -980,9 +1028,13 @@ class Analyzer {
     for (final source in [program, ...libraries.values]) {
       final sdk = _sdkDefaultFiles.contains(source.span.file);
       if (!sdk) {
+        final localAliases = <String, String>{
+          for (final alias in source.statements.whereType<AliasDeclaration>())
+            alias.name: alias.target,
+        };
         model.providerUnionFunctions.addAll(source.statements
             .whereType<FunctionDeclaration>()
-            .where(supportsUnionBoundary));
+            .where((fn) => supportsUnionBoundary(fn, aliases: localAliases)));
       }
       model.providerDefaultFunctions.addAll(source.statements
           .whereType<FunctionDeclaration>()
@@ -4193,18 +4245,23 @@ class Analyzer {
       return;
     }
     if (type.contains(' & ') && functionTypeParts(type) == null) {
-      final parts = type.split(' & ').map((part) => part.trim()).toList();
-      _checkIntersection(parts, node);
-      for (final part in parts) {
-        validateType(part, node, allowVoid: false);
+      final parts = splitTopLevelTypeOp(type, ' & ');
+      if (parts.length > 1) {
+        _checkIntersection(parts, node);
+        for (final part in parts) {
+          validateType(part, node, allowVoid: false);
+        }
+        return;
       }
-      return;
     }
     if (type.contains(' | ') && functionTypeParts(type) == null) {
-      for (final part in type.split(' | ')) {
-        validateType(part.trim(), node, allowVoid: false);
+      final parts = splitTopLevelTypeOp(type, ' | ');
+      if (parts.length > 1) {
+        for (final part in parts) {
+          validateType(part, node, allowVoid: false);
+        }
+        return;
       }
-      return;
     }
     if (type.startsWith('(') && isNullableType(type)) {
       validateType(nonNullableType(type), node, allowVoid: false);
@@ -4875,12 +4932,19 @@ class Analyzer {
       }
       if (statement is MatchStatement &&
           statement.arms.isNotEmpty &&
-          statement.arms.any((arm) =>
-              arm.guard == null &&
-              (arm.pattern is WildcardPattern ||
-                  arm.pattern is BindingPattern)) &&
           statement.arms.every((arm) => returns(arm.body))) {
-        return true;
+        final hasCatchAll = statement.arms.any((arm) =>
+            arm.guard == null &&
+            (arm.pattern is WildcardPattern || arm.pattern is BindingPattern));
+        if (hasCatchAll) return true;
+        final matched = model.types[statement.value];
+        if (matched != null &&
+            _isMatchExhaustive(
+                matched,
+                statement.arms.map((arm) => arm.pattern),
+                statement.arms.map((arm) => arm.guard))) {
+          return true;
+        }
       }
     }
     return false;
@@ -12433,13 +12497,6 @@ class Analyzer {
     final home = model.declarations[function]?.library ?? '';
     if (home.isEmpty || home == _activeLibrary) return;
     if (model.providerUnionFunctions.contains(function)) {
-      if (node is CallExpression &&
-          node.arguments.any((a) => isHole(a.value))) {
-        error(
-            'E910',
-            'Imported union partial application needs additional boundary conformance',
-            node);
-      }
       return;
     }
     final types = [
@@ -13927,21 +13984,47 @@ class Analyzer {
     return false;
   }
 
+  Set<String>? _matchUniverse(String matched) {
+    final resolved = _resolveType(matched);
+    final unionParts = splitTopLevelTypeOp(resolved, ' | ');
+    if (unionParts.length > 1) {
+      return unionParts.map((part) => part.trim()).toSet();
+    }
+    final declaration =
+        _global.symbols[_genericHead(resolved)]?.classDeclaration;
+    final finite = declaration != null &&
+        (declaration.kind == 'sealedType' || declaration.kind == 'enum');
+    final result = resolved.startsWith('Result<') && resolved.endsWith('>');
+    if (result) return {'Ok', 'Error'};
+    if (finite) return declaration.cases.map((item) => item.name).toSet();
+    return _sealedSubtypes(declaration);
+  }
+
+  bool _isMatchExhaustive(String matched, Iterable<Pattern> patterns,
+      Iterable<Expression?> guards) {
+    final universe = _matchUniverse(matched);
+    if (universe == null || universe.isEmpty) return false;
+    final covered = <String>{};
+    final guardList = guards.toList();
+    var index = 0;
+    for (final pattern in patterns) {
+      final names = _covered(pattern, universe);
+      final guarded = index < guardList.length && guardList[index] != null;
+      index++;
+      if (guarded) continue;
+      if (names == null) {
+        covered.addAll(universe);
+      } else {
+        covered.addAll(names);
+      }
+    }
+    return covered.containsAll(universe);
+  }
+
   void checkExhaustive(Node node, String matched, Iterable<Pattern> patterns,
       Iterable<Expression?> guards,
       {bool expression = false}) {
-    final declaration =
-        _global.symbols[_genericHead(matched)]?.classDeclaration;
-    final finite = declaration != null &&
-        (declaration.kind == 'sealedType' || declaration.kind == 'enum');
-    final result = matched.startsWith('Result<') && matched.endsWith('>');
-    final universe = matched.contains(' | ')
-        ? matched.split(' | ').map((part) => part.trim()).toSet()
-        : result
-            ? {'Ok', 'Error'}
-            : finite
-                ? declaration.cases.map((item) => item.name).toSet()
-                : _sealedSubtypes(declaration);
+    final universe = _matchUniverse(matched);
     if (universe == null || universe.isEmpty) return;
     final covered = <String>{};
     var closed = false;

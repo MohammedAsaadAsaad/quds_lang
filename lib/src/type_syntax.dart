@@ -72,6 +72,49 @@ List<(String?, String)> splitRecordTypeFields(String type) {
   return result;
 }
 
+/// Splits [text] on a top-level operator (such as `' | '` or `' & '`) outside
+/// nested `()`, `<>`, `[]`, and `{}` delimiters.
+List<String> splitTopLevelTypeOp(String text, String op) {
+  final parts = <String>[];
+  var start = 0;
+  var parens = 0;
+  var angles = 0;
+  var brackets = 0;
+  var braces = 0;
+  for (var i = 0; i < text.length; i++) {
+    switch (text[i]) {
+      case '(':
+        parens++;
+      case ')':
+        parens--;
+      case '<':
+        angles++;
+      case '>':
+        if (i == 0 || text[i - 1] != '-') angles--;
+      case '[':
+        brackets++;
+      case ']':
+        brackets--;
+      case '{':
+        braces++;
+      case '}':
+        braces--;
+      default:
+        if (parens == 0 &&
+            angles == 0 &&
+            brackets == 0 &&
+            braces == 0 &&
+            text.startsWith(op, i)) {
+          parts.add(text.substring(start, i).trim());
+          i += op.length - 1;
+          start = i + 1;
+        }
+    }
+  }
+  parts.add(text.substring(start).trim());
+  return parts;
+}
+
 int _closeParen(String type) {
   if (!type.startsWith('(')) return -1;
   var depth = 0;

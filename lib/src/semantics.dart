@@ -1032,7 +1032,7 @@ class Analyzer {
     _installDartCore();
     _global.symbols['print'] = Symbol('print', 'print', 'void');
     _installChecks();
-    _global.symbols['range'] = Symbol(
+    _core.symbols['range'] = Symbol(
       'range',
       'range',
       'Range<num>',
@@ -1042,7 +1042,7 @@ class Analyzer {
           'Integers from start through end, including both ends. range(end) is range(0, end).',
     );
     for (final name in ['min', 'max']) {
-      _global.symbols[name] = Symbol(
+      _core.symbols[name] = Symbol(
         name,
         name,
         'num',
@@ -4584,6 +4584,15 @@ class Analyzer {
           returns(statement.elseBody)) {
         return true;
       }
+      if (statement is MatchStatement &&
+          statement.arms.isNotEmpty &&
+          statement.arms.any((arm) =>
+              arm.guard == null &&
+              (arm.pattern is WildcardPattern ||
+                  arm.pattern is BindingPattern)) &&
+          statement.arms.every((arm) => returns(arm.body))) {
+        return true;
+      }
     }
     return false;
   }
@@ -5918,7 +5927,7 @@ class Analyzer {
           Symbol(method.name, method.name, 'void', function: method)
               .withFunction(method);
     }
-    _global.symbols['log'] = Symbol('log', 'log', '_QudsLog');
+    _core.symbols['log'] = Symbol('log', 'log', '_QudsLog');
   }
 
   final _labels = <String>[];
@@ -6243,6 +6252,7 @@ class Analyzer {
     }
     if (from.startsWith('readonly ') && !to.startsWith('readonly '))
       return false;
+    if (_sameType(from, to)) return true;
     final fromClass = _typeSymbol(from)?.classDeclaration;
     final toClass = _typeSymbol(to)?.classDeclaration;
     if (fromClass != null && identical(fromClass, toClass)) return true;
@@ -7405,6 +7415,52 @@ class Analyzer {
       return _readonlyView(raw, lengthType);
     }
     if (base == 'dynamic') return _readonlyView(raw, 'dynamic');
+    if (base.startsWith('(') &&
+        base.endsWith(')') &&
+        functionTypeParts(base) == null) {
+      final inner = base.substring(1, base.length - 1).trim();
+      final parts = inner.isEmpty ? const <String>[] : _splitTypes(inner);
+      final positional = <String>[];
+      final named = <String, String>{};
+      for (final part in parts) {
+        final trimmed = part.trim();
+        var depth = 0;
+        var colon = -1;
+        for (var i = 0; i < trimmed.length; i++) {
+          final ch = trimmed[i];
+          if (ch == '(' || ch == '<' || ch == '[') {
+            depth++;
+          } else if (ch == ')' || ch == '>' || ch == ']') {
+            depth--;
+          } else if (ch == ':' && depth == 0) {
+            colon = i;
+            break;
+          }
+        }
+        if (colon > 0) {
+          named[trimmed.substring(0, colon).trim()] =
+              trimmed.substring(colon + 1).trim();
+        } else if (trimmed.isNotEmpty) {
+          positional.add(trimmed);
+        }
+      }
+      String? fieldType;
+      if (node.name.startsWith(r'$')) {
+        final idx = int.tryParse(node.name.substring(1));
+        if (idx != null && idx >= 1 && idx <= positional.length) {
+          fieldType = positional[idx - 1];
+        }
+      } else if (named.containsKey(node.name)) {
+        fieldType = named[node.name];
+      }
+      if (fieldType != null) {
+        model.references[node] = Symbol(node.name, node.name, fieldType);
+        final resolvedField = node.nullAware || isNullableType(type)
+            ? nullableType(fieldType)
+            : fieldType;
+        return _readonlyView(raw, resolvedField);
+      }
+    }
     final look = nullableExtension ? type : (_typeBounds[base] ?? base);
     if (look.contains(' & ')) {
       for (final part in look.split(' & ')) {
@@ -11472,8 +11528,13 @@ class Analyzer {
     if (parameters.length != arguments.length) {
       fail('Type arguments do not match $name', node);
     }
-    for (final argument in arguments) {
-      validateType(argument, node, allowVoid: false);
+    for (var i = 0; i < arguments.length; i++) {
+      final declaredBound = bounds[parameters[i].name] ?? parameters[i].bound;
+      final allowsVoid = declaredBound == null ||
+          declaredBound == 'Object?' ||
+          declaredBound == 'dynamic' ||
+          declaredBound == 'void';
+      validateType(arguments[i], node, allowVoid: allowsVoid);
     }
     final substitution = {
       for (var i = 0; i < parameters.length; i++)

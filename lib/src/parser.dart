@@ -1716,11 +1716,11 @@ class Parser {
           factory: factory, constant: constant);
     }
     final parameters = parameterList();
-    if (constant && !at(TokenKind.colon) && !at(TokenKind.equals)) {
+    if (!at(TokenKind.colon) && !at(TokenKind.equals)) {
       endLine();
       return ConstructorDeclaration(
           ctorName, parameters, null, null, extent(span),
-          factory: factory, constant: true);
+          factory: factory, constant: constant);
     }
     if (match(TokenKind.arrow)) typeName();
     if (match(TokenKind.equals)) {
@@ -3170,6 +3170,15 @@ class Parser {
       }
       if (at(TokenKind.dot) || at(TokenKind.questionDot)) {
         final nullAware = take().kind == TokenKind.questionDot;
+        if (at(TokenKind.dollar) &&
+            peek().kind == TokenKind.number &&
+            RegExp(r'^[1-9]\d*$').hasMatch(peek().lexeme)) {
+          take();
+          final indexToken = take();
+          left = MemberAccess(
+              left, '\$${indexToken.lexeme}', nullAware, extent(left.span));
+          continue;
+        }
         final member = name();
         left = MemberAccess(left, member.lexeme, nullAware, extent(left.span));
         continue;

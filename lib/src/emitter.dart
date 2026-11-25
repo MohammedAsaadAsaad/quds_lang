@@ -3215,9 +3215,7 @@ class DartEmitter {
     final name = constructor.name == null
         ? type.name
         : '${type.name}.${constructor.name}';
-    if (constructor.constant &&
-        constructor.body == null &&
-        constructor.expressionBody == null) {
+    if (constructor.body == null && constructor.expressionBody == null) {
       line('$prefix$name($params)$tail;');
       return;
     }
@@ -3246,6 +3244,7 @@ class DartEmitter {
     final body = constructor.body;
     if (body == null || constructor.factory) return const [];
     final lifted = <Binding>[];
+    final seenFields = <String>{};
     for (final statement in body) {
       if (statement is! Binding || !model.assignments.contains(statement)) {
         continue;
@@ -3254,7 +3253,14 @@ class DartEmitter {
       final field = type.fields
           .where((item) => item.name == statement.name && !item.isStatic)
           .firstOrNull;
-      if (symbol == null || !symbol.field || field == null || field.mutable) {
+      if (symbol == null || !symbol.field || field == null) {
+        continue;
+      }
+      final needsLift = !field.mutable ||
+          (field.initializer == null &&
+              field.lazyBody == null &&
+              !isNullableType(field.type));
+      if (!needsLift || !seenFields.add(field.name)) {
         continue;
       }
       lifted.add(statement);

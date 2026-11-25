@@ -7,6 +7,7 @@ import 'package:analyzer/dart/ast/ast.dart' as d;
 import 'package:analyzer/dart/ast/token.dart' as tok;
 import 'package:yaml_edit/yaml_edit.dart';
 
+import 'compiler.dart' as compiler;
 import 'lexer.dart';
 import 'parser.dart';
 
@@ -227,6 +228,131 @@ MigrationReport inspectProjectForMigration(Directory projectRoot) {
     }
   }
 
+  // Stage ready converted files in an isolated temporary mirror and verify them
+  // through Quds's full semantic analyzer + Dart emitter (not just parser).
+  final readyIndices = [
+    for (var i = 0; i < reports.length; i++)
+      if (reports[i].status == MigrationFileStatus.ready) i,
+  ];
+  if (readyIndices.isNotEmpty) {
+    final readyPaths = {
+      for (final idx in readyIndices) reports[idx].relativePath,
+    };
+    final packageConfigFile =
+        File(_join(_join(root.path, '.dart_tool'), 'package_config.json'));
+    final hasPackageConfig = packageConfigFile.existsSync();
+    final staging = Directory.systemTemp.createTempSync('quds-migrate-verify-');
+    try {
+      File(_join(staging.path, 'pubspec.yaml')).writeAsStringSync(pubspecText);
+      File(_join(staging.path, 'quds.yaml'))
+          .writeAsStringSync('language: 1.2\nname: $packageName\n');
+
+      final stagedQuds = <int, (File, String)>{};
+      for (final idx in readyIndices) {
+        final item = reports[idx];
+        var qudsText = item.qudsSource!;
+        // If some sibling files were blocked, re-convert so imports targeting
+        // non-migrated `.dart` files preserve their `.dart` suffix.
+        if (readyPaths.length != candidateRelPaths.length) {
+          final reconverted = convertDartToQuds(
+            item.sourceFile.readAsStringSync(),
+            packageName: packageName,
+            migratedLibraryPaths: readyPaths,
+            currentRelativePath: item.relativePath,
+          );
+          if (reconverted.qudsSource == null) {
+            reports[idx] = MigrationFileReport(
+              relativePath: item.relativePath,
+              sourceFile: item.sourceFile,
+              targetQudsPath: item.targetQudsPath,
+              status: MigrationFileStatus.needsManualReview,
+              issues: reconverted.issues,
+            );
+            continue;
+          }
+          qudsText = reconverted.qudsSource!;
+          reports[idx] = MigrationFileReport(
+            relativePath: item.relativePath,
+            sourceFile: item.sourceFile,
+            targetQudsPath: item.targetQudsPath,
+            status: MigrationFileStatus.ready,
+            qudsSource: qudsText,
+            notes: reconverted.notes,
+          );
+        }
+        final target = File(_join(staging.path, item.targetQudsPath));
+        target.parent.createSync(recursive: true);
+        target.writeAsStringSync(qudsText);
+        stagedQuds[idx] = (target, qudsText);
+      }
+
+      for (final item in reports) {
+        if (item.status != MigrationFileStatus.ready) {
+          final copied = File(_join(staging.path, item.relativePath));
+          copied.parent.createSync(recursive: true);
+          item.sourceFile.copySync(copied.path);
+        }
+      }
+
+      final externalPackageImport = RegExp(
+        r'^[ \t]*(?:use|export)[ \t]+package:([A-Za-z0-9_]+)/',
+        multiLine: true,
+      );
+      for (final entry in stagedQuds.entries) {
+        final idx = entry.key;
+        final (stagedFile, qudsText) = entry.value;
+        final item = reports[idx];
+        final importsExternalPackage = externalPackageImport
+            .allMatches(qudsText)
+            .any((m) => m.group(1) != packageName);
+        if (importsExternalPackage && !hasPackageConfig) {
+          reports[idx] = MigrationFileReport(
+            relativePath: item.relativePath,
+            sourceFile: item.sourceFile,
+            targetQudsPath: item.targetQudsPath,
+            status: MigrationFileStatus.ready,
+            qudsSource: qudsText,
+            notes: [
+              ...item.notes,
+              'External package imports verified by parser only (run pub get for full semantic check).',
+            ],
+          );
+          continue;
+        }
+        try {
+          compiler.compile(
+            qudsText,
+            file: stagedFile.path,
+            flutter: isFlutter,
+            packageConfigFrom: hasPackageConfig ? pubspecFile.path : null,
+          );
+        } on CompilerException catch (error) {
+          reports[idx] = MigrationFileReport(
+            relativePath: item.relativePath,
+            sourceFile: item.sourceFile,
+            targetQudsPath: item.targetQudsPath,
+            status: MigrationFileStatus.needsManualReview,
+            issues: [
+              'Quds semantic check failed at line ${error.span.line}: ${error.code}: ${error.message}',
+            ],
+          );
+        } catch (error) {
+          reports[idx] = MigrationFileReport(
+            relativePath: item.relativePath,
+            sourceFile: item.sourceFile,
+            targetQudsPath: item.targetQudsPath,
+            status: MigrationFileStatus.needsManualReview,
+            issues: ['Quds semantic check failed: $error'],
+          );
+        }
+      }
+    } finally {
+      if (staging.existsSync()) {
+        staging.deleteSync(recursive: true);
+      }
+    }
+  }
+
   return MigrationReport(
     projectRoot: root,
     packageName: packageName,
@@ -379,12 +505,16 @@ class DartConversionResult {
 }
 
 /// Converts a single Dart compilation unit to valid Quds 1.2 source using
-/// `package:analyzer`'s Dart AST and validates the output with Quds's parser.
+/// `package:analyzer`'s Dart AST and validates the output with Quds's parser
+/// (and optionally Quds's full semantic compiler when [verifySemantics] is true).
 DartConversionResult convertDartToQuds(
   String dartSource, {
   String? packageName,
   Set<String> migratedLibraryPaths = const {},
   String? currentRelativePath,
+  bool verifySemantics = false,
+  bool isFlutter = false,
+  String? packageConfigFrom,
 }) {
   final parsed = dart.parseString(
     content: dartSource,
@@ -409,17 +539,26 @@ DartConversionResult convertDartToQuds(
 
   try {
     final quds = emitter.emitUnit(parsed.unit);
+    final fileLabel = currentRelativePath ?? '<migrated>';
     // Validate that the emitted Quds source parses cleanly with Quds's parser.
-    Parser(Lexer().tokenize(quds, file: currentRelativePath ?? '<migrated>'))
-        .parse();
+    Parser(Lexer().tokenize(quds, file: fileLabel)).parse();
+    if (verifySemantics) {
+      compiler.compile(
+        quds,
+        file: '<input>',
+        flutter: isFlutter,
+        packageConfigFrom: packageConfigFrom,
+      );
+    }
     return DartConversionResult(qudsSource: quds, notes: emitter.notes);
   } on _UnsupportedDart catch (error) {
     return DartConversionResult(
         issues: ['Line ${error.line}: ${error.reason}']);
   } on CompilerException catch (error) {
+    final stage = verifySemantics ? 'verification' : 'parse verification';
     return DartConversionResult(
       issues: [
-        'Generated Quds failed parse verification at line ${error.span.line}: ${error.message}',
+        'Generated Quds failed $stage at line ${error.span.line}: ${error.code}: ${error.message}',
       ],
     );
   } catch (error) {
@@ -447,11 +586,65 @@ class _DartToQudsEmitter {
   final String? currentRelativePath;
   final List<String> notes = [];
 
+  /// Lexical variable scopes to emit Quds `shadow` whenever Dart shadows an
+  /// outer local or parameter binding (`QUDS-090`).
+  final List<Set<String>> _scopes = [];
+
+  static const _qudsReservedIdentifiers = {
+    'readonly',
+    'capture',
+    'shadow',
+    'sealed',
+    'use',
+    'label',
+    'match',
+    'type',
+  };
+
   int _lineOf(d.AstNode node) =>
       lineInfo.getLocation(node.offset).lineNumber as int;
 
   Never _fail(d.AstNode node, String reason) =>
       throw _UnsupportedDart(_lineOf(node), reason);
+
+  void _checkIdentifierName(d.AstNode node, String name) {
+    if (_qudsReservedIdentifiers.contains(name)) {
+      _fail(
+        node,
+        'identifier "$name" is a reserved keyword in Quds; rename it before migrating',
+      );
+    }
+  }
+
+  T _withScope<T>(T Function() body, {Iterable<String> initial = const []}) {
+    _scopes.add({...initial});
+    try {
+      return body();
+    } finally {
+      _scopes.removeLast();
+    }
+  }
+
+  bool _isDeclaredInOuterScope(String name) {
+    for (var i = 0; i < _scopes.length - 1; i++) {
+      if (_scopes[i].contains(name)) return true;
+    }
+    return false;
+  }
+
+  void _declareInCurrentScope(String name) {
+    if (_scopes.isNotEmpty) {
+      _scopes.last.add(name);
+    }
+  }
+
+  Iterable<String> _parameterNames(d.FormalParameterList? list) {
+    if (list == null) return const [];
+    return [
+      for (final p in list.parameters)
+        if (p.name != null) p.name!.lexeme,
+    ];
+  }
 
   String emitUnit(d.CompilationUnit unit) {
     final blocks = <String>[];
@@ -593,7 +786,7 @@ class _DartToQudsEmitter {
 
   String _typeAlias(d.GenericTypeAlias node) {
     final tp = node.typeParameters?.toSource() ?? '';
-    return 'alias ${node.name.lexeme}$tp = ${_typeAnnotation(node.type)}';
+    return 'type ${node.name.lexeme}$tp = ${_typeAnnotation(node.type)}';
   }
 
   String _enumDeclaration(d.EnumDeclaration node) {
@@ -618,16 +811,14 @@ class _DartToQudsEmitter {
     if (onClause == null) {
       _fail(node, 'extension without on-clause is unsupported');
     }
-    final tp = node.typeParameters?.toSource() ?? '';
     final name = node.name != null ? ' ${node.name!.lexeme}' : '';
     final buf = StringBuffer(
-        'extend$name$tp ${_typeAnnotation(onClause.extendedType)}:\n');
+        'extend ${_typeAnnotation(onClause.extendedType)}$name:\n');
     final members = _classMembers(node.body.members, const {}, 1);
     if (members.isEmpty) {
-      buf.write('  pass');
-    } else {
-      buf.write(members.join('\n\n'));
+      _fail(node, 'empty extension declaration requires manual review');
     }
+    buf.write(members.join('\n\n'));
     return buf.toString();
   }
 
@@ -647,10 +838,9 @@ class _DartToQudsEmitter {
     buf.writeln(':');
     final members = _classMembers(node.body.members, const {}, 1);
     if (members.isEmpty) {
-      buf.write('  pass');
-    } else {
-      buf.write(members.join('\n\n'));
+      _fail(node, 'empty mixin declaration requires manual review');
     }
+    buf.write(members.join('\n\n'));
     return buf.toString();
   }
 
@@ -683,7 +873,7 @@ class _DartToQudsEmitter {
 
     final body = node.body;
     if (body is! d.BlockClassBody) {
-      buf.write('  pass');
+      buf.write('  init()');
       return buf.toString();
     }
 
@@ -716,9 +906,16 @@ class _DartToQudsEmitter {
       for (final m in body.members)
         if (!identical(m, absorbedCtor)) m,
     ];
-    final rendered = _classMembers(remaining, absorbedFieldMeta, 1);
+    final hasExplicitConstructor =
+        remaining.any((m) => m is d.ConstructorDeclaration);
+    final rendered = _classMembers(
+      remaining,
+      absorbedFieldMeta,
+      1,
+      hasExplicitConstructor: hasExplicitConstructor,
+    );
     if (rendered.isEmpty) {
-      buf.write('  pass');
+      buf.write('  init()');
     } else {
       buf.write(rendered.join('\n\n'));
     }
@@ -735,7 +932,13 @@ class _DartToQudsEmitter {
   }
 
   bool _canAbsorbConstructor(d.ConstructorDeclaration ctor) {
+    // Only absorb constructors whose field parameters are ALL named (e.g.
+    // Flutter widgets `const MyWidget({super.key, required this.title})`),
+    // because Quds's synthesized field constructor accepts named parameters.
+    // Positional Dart constructors (`Point(this.x, this.y)`) must stay as
+    // explicit `init(...)` so positional call sites remain 100% compatible.
     for (final param in ctor.parameters.parameters) {
+      if (!param.isNamed) return false;
       if (param is d.FieldFormalParameter) continue;
       if (param is d.SuperFormalParameter && param.name.lexeme == 'key') {
         continue;
@@ -764,8 +967,9 @@ class _DartToQudsEmitter {
   List<String> _classMembers(
     List<d.ClassMember> members,
     Map<String, _FieldCtorMeta> absorbedFields,
-    int depth,
-  ) {
+    int depth, {
+    bool hasExplicitConstructor = false,
+  }) {
     final pad = '  ' * depth;
     final out = <String>[];
     final getterMap = <String, d.MethodDeclaration>{};
@@ -781,7 +985,8 @@ class _DartToQudsEmitter {
     for (final member in members) {
       final comments = _leadingComments(member, depth);
       if (member is d.FieldDeclaration) {
-        out.add('$comments${_fieldDeclaration(member, absorbedFields, depth)}');
+        out.add(
+            '$comments${_fieldDeclaration(member, absorbedFields, depth, hasExplicitConstructor: hasExplicitConstructor)}');
       } else if (member is d.ConstructorDeclaration) {
         out.add('$comments${_constructorDeclaration(member, depth)}');
       } else if (member is d.MethodDeclaration) {
@@ -809,8 +1014,9 @@ class _DartToQudsEmitter {
   String _fieldDeclaration(
     d.FieldDeclaration node,
     Map<String, _FieldCtorMeta> absorbed,
-    int depth,
-  ) {
+    int depth, {
+    bool hasExplicitConstructor = false,
+  }) {
     final pad = '  ' * depth;
     final isStatic = node.isStatic;
     final vars = node.fields;
@@ -821,6 +1027,7 @@ class _DartToQudsEmitter {
     final lines = <String>[];
     for (final v in vars.variables) {
       final name = v.name.lexeme;
+      _checkIdentifierName(v, name);
       final meta = absorbed[name];
       final prefix = StringBuffer();
       if (isStatic) prefix.write('static ');
@@ -839,6 +1046,8 @@ class _DartToQudsEmitter {
             '$pad$prefix$name$typeSuffix = ${_expression(meta.defaultValue!, depth)}');
       } else if (meta != null && meta.required) {
         lines.add('$pad$prefix$name$typeSuffix required');
+      } else if (hasExplicitConstructor || isLate) {
+        lines.add('$pad$prefix$name$typeSuffix');
       } else if (typeText != null && typeText.endsWith('?')) {
         lines.add('$pad$prefix$name$typeSuffix = null');
       } else {
@@ -859,44 +1068,52 @@ class _DartToQudsEmitter {
     if (node.constKeyword != null) kind.write('const ');
     final name = node.name != null ? ' ${node.name!.lexeme}' : '';
     final params = _parameterList(node.parameters);
+    final paramNames = _parameterNames(node.parameters).toSet();
     final body = node.body;
-    final initLines = <String>[];
-    for (final init in node.initializers) {
-      if (init is d.ConstructorFieldInitializer) {
-        initLines.add(
-            '${'  ' * (depth + 1)}this.${init.fieldName.name} = ${_expression(init.expression, depth + 1)}');
-      } else if (init is d.SuperConstructorInvocation) {
-        if (init.constructorName != null) {
+
+    return _withScope(() {
+      final initLines = <String>[];
+      for (final init in node.initializers) {
+        if (init is d.ConstructorFieldInitializer) {
+          final fieldName = init.fieldName.name;
+          final target =
+              paramNames.contains(fieldName) ? 'this.$fieldName' : fieldName;
+          initLines.add(
+              '${'  ' * (depth + 1)}$target = ${_expression(init.expression, depth + 1)}');
+        } else if (init is d.SuperConstructorInvocation) {
+          if (!_isTrivialSuperKeyInit(init) &&
+              (init.constructorName != null ||
+                  init.argumentList.arguments.isNotEmpty)) {
+            _fail(init,
+                'super(...) constructor initializer requires manual migration review');
+          }
+        } else if (init is d.AssertInitializer) {
+          initLines.add(
+              '${'  ' * (depth + 1)}assert ${_expression(init.condition, depth + 1)}');
+        } else {
           _fail(init,
-              'named super constructor invocation requires manual review');
+              'constructor initializer ${init.runtimeType} requires manual review');
         }
-        if (init.argumentList.arguments.isNotEmpty) {
-          notes.add(
-              'Line ${_lineOf(init)}: super(...) initializer arguments should be verified in Quds.');
+      }
+      if (body is d.EmptyFunctionBody) {
+        if (initLines.isEmpty) {
+          return '$pad${kind}init$name($params)';
         }
-      } else if (init is d.AssertInitializer) {
-        initLines.add(
-            '${'  ' * (depth + 1)}assert ${_expression(init.condition, depth + 1)}');
-      } else {
-        _fail(init,
-            'constructor initializer ${init.runtimeType} requires manual review');
+        return '$pad${kind}init$name($params):\n${initLines.join('\n')}';
       }
-    }
-    if (body is d.EmptyFunctionBody) {
-      if (initLines.isEmpty) {
-        return '$pad${kind}init$name($params):\n${'  ' * (depth + 1)}pass';
+      if (body is d.BlockFunctionBody) {
+        final stmts = _statements(body.block.statements, depth + 1);
+        final combined = [...initLines, if (stmts.isNotEmpty) stmts];
+        if (combined.isEmpty) {
+          return '$pad${kind}init$name($params)';
+        }
+        return '$pad${kind}init$name($params):\n${combined.join('\n')}';
       }
-      return '$pad${kind}init$name($params):\n${initLines.join('\n')}';
-    }
-    if (body is d.BlockFunctionBody) {
-      final stmts = _statements(body.block.statements, depth + 1);
-      final combined = [...initLines, if (stmts.isNotEmpty) stmts];
-      return '$pad${kind}init$name($params):\n${combined.isEmpty ? '${'  ' * (depth + 1)}pass' : combined.join('\n')}';
-    }
-    if (body is d.ExpressionFunctionBody) {
-      return '$pad${kind}init$name($params) = ${_expression(body.expression, depth)}';
-    }
-    _fail(node, 'unsupported constructor body');
+      if (body is d.ExpressionFunctionBody) {
+        return '$pad${kind}init$name($params) = ${_expression(body.expression, depth)}';
+      }
+      _fail(node, 'unsupported constructor body');
+    }, initial: paramNames);
   }
 
   String _propertyDeclaration(
@@ -910,6 +1127,7 @@ class _DartToQudsEmitter {
     if (isStatic) {
       _fail(getter ?? setter!, 'static getter/setter requires manual review');
     }
+    _checkIdentifierName(getter ?? setter!, name);
     final typeNode = getter?.returnType ??
         (setter?.parameters?.parameters.isNotEmpty == true
             ? _paramType(setter!.parameters!.parameters.first)
@@ -919,20 +1137,25 @@ class _DartToQudsEmitter {
     final buf = StringBuffer('${pad}property $name: $typeName:\n');
     if (getter != null) {
       final body = getter.body;
-      if (body is d.ExpressionFunctionBody) {
-        buf.writeln(
-            '${'  ' * (depth + 1)}get = ${_expression(body.expression, depth + 1)}');
-      } else {
-        buf.writeln('${'  ' * (depth + 1)}get:');
-        buf.writeln(_bodyStatements(body, depth + 2));
-      }
+      _withScope(() {
+        if (body is d.ExpressionFunctionBody) {
+          buf.writeln(
+              '${'  ' * (depth + 1)}get = ${_expression(body.expression, depth + 1)}');
+        } else {
+          buf.writeln('${'  ' * (depth + 1)}get:');
+          buf.writeln(_bodyStatements(body, depth + 2));
+        }
+      });
     }
     if (setter != null) {
       final paramName = setter.parameters?.parameters.isNotEmpty == true
           ? (setter.parameters!.parameters.first.name?.lexeme ?? 'value')
           : 'value';
-      buf.writeln('${'  ' * (depth + 1)}set($paramName):');
-      buf.writeln(_bodyStatements(setter.body, depth + 2));
+      _checkIdentifierName(setter, paramName);
+      _withScope(() {
+        buf.writeln('${'  ' * (depth + 1)}set($paramName):');
+        buf.writeln(_bodyStatements(setter.body, depth + 2));
+      }, initial: [paramName]);
     }
     return buf.toString().trimRight();
   }
@@ -945,7 +1168,10 @@ class _DartToQudsEmitter {
     final ret = node.returnType == null
         ? ''
         : ' -> ${_typeAnnotation(node.returnType!)}';
-    return _emitCallable('${pad}operator $op($params)$ret', node.body, depth);
+    return _withScope(
+      () => _emitCallable('${pad}operator $op($params)$ret', node.body, depth),
+      initial: _parameterNames(node.parameters),
+    );
   }
 
   String _methodDeclaration(d.MethodDeclaration node, int depth) {
@@ -958,7 +1184,10 @@ class _DartToQudsEmitter {
     final ret = _returnTypeClause(node.returnType, node.body);
     final header =
         '$pad$staticPrefix${node.name.lexeme}$tp($params)$asyncMod$ret';
-    return _emitCallable(header, node.body, depth);
+    return _withScope(
+      () => _emitCallable(header, node.body, depth),
+      initial: _parameterNames(node.parameters),
+    );
   }
 
   String _functionDeclaration(d.FunctionDeclaration node, int depth) {
@@ -972,7 +1201,10 @@ class _DartToQudsEmitter {
     final asyncMod = _asyncModifier(fn.body);
     final ret = _returnTypeClause(node.returnType, fn.body);
     final header = '$pad${node.name.lexeme}$tp($params)$asyncMod$ret';
-    return _emitCallable(header, fn.body, depth);
+    return _withScope(
+      () => _emitCallable(header, fn.body, depth),
+      initial: _parameterNames(fn.parameters),
+    );
   }
 
   String _asyncModifier(d.FunctionBody body) {
@@ -985,7 +1217,19 @@ class _DartToQudsEmitter {
   String _returnTypeClause(d.TypeAnnotation? type, d.FunctionBody body) {
     if (type == null) return '';
     var text = _typeAnnotation(type);
-    if (body.isAsynchronous && !body.isGenerator) {
+    if (body.isAsynchronous && body.isGenerator) {
+      if (text.startsWith('Stream<') && text.endsWith('>')) {
+        text = text.substring(7, text.length - 1).trim();
+      } else if (text == 'Stream') {
+        text = 'dynamic';
+      }
+    } else if (body.isSynchronous && body.isGenerator) {
+      if (text.startsWith('Iterable<') && text.endsWith('>')) {
+        text = text.substring(9, text.length - 1).trim();
+      } else if (text == 'Iterable') {
+        text = 'dynamic';
+      }
+    } else if (body.isAsynchronous) {
       if (text.startsWith('Future<') && text.endsWith('>')) {
         text = text.substring(7, text.length - 1).trim();
       } else if (text == 'Future') {
@@ -1008,7 +1252,7 @@ class _DartToQudsEmitter {
     }
     if (body is d.BlockFunctionBody) {
       final stmts = _statements(body.block.statements, depth + 1);
-      return '$header:\n${stmts.isEmpty ? '${'  ' * (depth + 1)}pass' : stmts}';
+      return '$header:\n${stmts.isEmpty ? '${'  ' * (depth + 1)}return' : stmts}';
     }
     _fail(body, 'unsupported function body: ${body.runtimeType}');
   }
@@ -1020,16 +1264,16 @@ class _DartToQudsEmitter {
     }
     if (body is d.BlockFunctionBody) {
       final stmts = _statements(body.block.statements, depth);
-      return stmts.isEmpty ? '${pad}pass' : stmts;
+      return stmts.isEmpty ? '${pad}return' : stmts;
     }
     _fail(body, 'unsupported accessor body');
   }
 
-  String _parameterList(d.FormalParameterList list) {
+  String _parameterList(d.FormalParameterList list, {bool isLambda = false}) {
     final parts = <String>[];
     final optPositional = <String>[];
     for (final p in list.parameters) {
-      final rendered = _singleParameter(p);
+      final rendered = _singleParameter(p, isLambda: isLambda);
       if (p.isOptionalPositional) {
         optPositional.add(rendered);
       } else {
@@ -1044,11 +1288,12 @@ class _DartToQudsEmitter {
 
   d.TypeAnnotation? _paramType(d.FormalParameter p) => p.type;
 
-  String _singleParameter(d.FormalParameter param) {
+  String _singleParameter(d.FormalParameter param, {bool isLambda = false}) {
     final isRequiredNamed = param.isRequiredNamed;
     final defaultValue = param.defaultClause?.value;
 
     final name = param.name?.lexeme ?? '_';
+    if (name != '_') _checkIdentifierName(param, name);
     final buf = StringBuffer();
     final fnSuffix = param.functionTypedSuffix;
     String? type;
@@ -1071,8 +1316,14 @@ class _DartToQudsEmitter {
         buf.write(': $type');
       }
     } else if (param is d.RegularFormalParameter) {
-      type = param.type == null ? 'dynamic' : _typeAnnotation(param.type!);
-      buf.write('$name: $type');
+      if (param.type == null && isLambda) {
+        // Omit `: dynamic` on untyped lambda parameters so Quds contextual
+        // type inference infers the exact element/callback parameter type.
+        buf.write(name);
+      } else {
+        type = param.type == null ? 'dynamic' : _typeAnnotation(param.type!);
+        buf.write('$name: $type');
+      }
     } else {
       _fail(param, 'unsupported parameter form: ${param.runtimeType}');
     }
@@ -1140,11 +1391,22 @@ class _DartToQudsEmitter {
   String _statement(d.Statement node, int depth) {
     final pad = '  ' * depth;
     if (node is d.EmptyStatement) return '';
-    if (node is d.Block) return _statements(node.statements, depth);
+    if (node is d.Block) {
+      return _withScope(() => _statements(node.statements, depth));
+    }
+    if (node is d.LabeledStatement) {
+      if (node.labels.length == 1) {
+        final lbl = node.labels.single.name.lexeme;
+        return '${pad}label $lbl\n${_statement(node.statement, depth)}';
+      }
+      _fail(node, 'multiple statement labels require manual migration review');
+    }
     if (node is d.VariableDeclarationStatement) {
       return _variableList(node.variables, depth);
     }
     if (node is d.FunctionDeclarationStatement) {
+      final fnName = node.functionDeclaration.name.lexeme;
+      _declareInCurrentScope(fnName);
       return _functionDeclaration(node.functionDeclaration, depth);
     }
     if (node is d.ReturnStatement) {
@@ -1162,6 +1424,13 @@ class _DartToQudsEmitter {
           (expr.operator.lexeme == '++' || expr.operator.lexeme == '--')) {
         final op = expr.operator.lexeme == '++' ? '+=' : '-=';
         return '$pad${_expression(expr.operand, depth)} $op 1';
+      }
+      if (expr is d.CascadeExpression && expr.target is d.SimpleIdentifier) {
+        return _emitCascadeSections(
+          (expr.target as d.SimpleIdentifier).name,
+          expr.cascadeSections,
+          depth,
+        );
       }
       return '$pad${_expression(expr, depth, allowBlock: true)}';
     }
@@ -1207,11 +1476,54 @@ class _DartToQudsEmitter {
     _fail(node, 'unsupported statement: ${node.runtimeType}');
   }
 
-  String _branchBody(d.Statement stmt, int depth) {
-    final text = stmt is d.Block
-        ? _statements(stmt.statements, depth)
-        : _statement(stmt, depth);
-    return text.isEmpty ? '${'  ' * depth}pass' : text;
+  String _emitCascadeSections(
+    String target,
+    List<d.Expression> sections,
+    int depth,
+  ) {
+    final pad = '  ' * depth;
+    final lines = <String>[];
+    for (final section in sections) {
+      if (section is d.MethodInvocation) {
+        final ta = section.typeArguments == null
+            ? ''
+            : '<${section.typeArguments!.arguments.map(_typeAnnotation).join(', ')}>';
+        final op = section.operator?.lexeme == '?..' ? '?.' : '.';
+        lines.add(
+            '$pad$target$op${section.methodName.name}$ta(${_inlineArgs(section.argumentList, depth)})');
+      } else if (section is d.AssignmentExpression) {
+        final lhs = section.leftHandSide;
+        String targetLhs;
+        if (lhs is d.PropertyAccess) {
+          final op = lhs.operator.lexeme == '?..' ? '?.' : '.';
+          targetLhs = '$target$op${lhs.propertyName.name}';
+        } else if (lhs is d.IndexExpression) {
+          final q = lhs.question != null ? '?' : '';
+          targetLhs = '$target$q[${_expression(lhs.index, depth)}]';
+        } else {
+          _fail(section,
+              'Dart cascade assignment requires manual migration review');
+        }
+        lines.add(
+            '$pad$targetLhs ${section.operator.lexeme} ${_expression(section.rightHandSide, depth)}');
+      } else {
+        _fail(section, 'Dart cascade section requires manual migration review');
+      }
+    }
+    return lines.join('\n');
+  }
+
+  String _branchBody(
+    d.Statement stmt,
+    int depth, {
+    Iterable<String> extraScope = const [],
+  }) {
+    return _withScope(() {
+      final text = stmt is d.Block
+          ? _statements(stmt.statements, depth)
+          : _statement(stmt, depth);
+      return text.isEmpty ? '${'  ' * depth}null' : text;
+    }, initial: extraScope);
   }
 
   String _ifStatement(d.IfStatement node, int depth) {
@@ -1236,45 +1548,107 @@ class _DartToQudsEmitter {
   String _forStatement(d.ForStatement node, int depth) {
     final pad = '  ' * depth;
     final parts = node.forLoopParts;
-    final body = _branchBody(node.body, depth + 1);
     if (parts is d.ForEachPartsWithDeclaration) {
+      final loopVar = parts.loopVariable.name.lexeme;
+      _checkIdentifierName(parts.loopVariable, loopVar);
       final awaitPrefix = node.awaitKeyword != null ? 'await ' : '';
-      return '$pad${awaitPrefix}for ${parts.loopVariable.name.lexeme} in ${_expression(parts.iterable, depth)}:\n$body';
+      final iter = _expression(parts.iterable, depth);
+      final body = _branchBody(node.body, depth + 1, extraScope: [loopVar]);
+      return '$pad${awaitPrefix}for $loopVar in $iter:\n$body';
     }
     if (parts is d.ForEachPartsWithIdentifier) {
       final awaitPrefix = node.awaitKeyword != null ? 'await ' : '';
-      return '$pad${awaitPrefix}for ${parts.identifier.name} in ${_expression(parts.iterable, depth)}:\n$body';
+      final iter = _expression(parts.iterable, depth);
+      final body = _branchBody(node.body, depth + 1);
+      return '$pad${awaitPrefix}for ${parts.identifier.name} in $iter:\n$body';
     }
     if (parts is d.ForPartsWithDeclarations) {
-      // Recognize canonical `for (var i = a; i < b; i++)` -> `for i in a..<b:`.
+      // Single-variable C-style `for (var i = init; cond; updater)`.
       if (parts.variables.variables.length == 1 &&
-          parts.updaters.length == 1 &&
-          parts.condition is d.BinaryExpression) {
+          parts.updaters.length <= 1 &&
+          parts.variables.variables.single.initializer != null) {
         final v = parts.variables.variables.single;
-        final cond = parts.condition as d.BinaryExpression;
-        final upd = parts.updaters.single;
         final varName = v.name.lexeme;
-        final isInc = (upd is d.PostfixExpression &&
-                upd.operator.lexeme == '++' &&
-                upd.operand.toSource() == varName) ||
-            (upd is d.PrefixExpression &&
-                upd.operator.lexeme == '++' &&
-                upd.operand.toSource() == varName);
-        if (v.initializer != null &&
-            isInc &&
-            cond.leftOperand.toSource() == varName &&
-            (cond.operator.lexeme == '<' || cond.operator.lexeme == '<=')) {
-          final rangeOp = cond.operator.lexeme == '<' ? '..<' : '..';
-          return '${pad}for $varName in ${_expression(v.initializer!, depth)}$rangeOp${_expression(cond.rightOperand, depth)}:\n$body';
+        _checkIdentifierName(v, varName);
+        final initExpr = _expression(v.initializer!, depth);
+        final body = _branchBody(node.body, depth + 1, extraScope: [varName]);
+
+        // Recognize canonical `for (var i = a; i < b; i++)` -> `for i in a..<b:`
+        // ONLY when the body does not mutate `i` (so behavior is 100% identical).
+        if (parts.updaters.length == 1 &&
+            parts.condition is d.BinaryExpression &&
+            !_mutatesVariable(node.body, varName)) {
+          final cond = parts.condition as d.BinaryExpression;
+          final upd = parts.updaters.single;
+          final isInc = (upd is d.PostfixExpression &&
+                  upd.operator.lexeme == '++' &&
+                  upd.operand.toSource() == varName) ||
+              (upd is d.PrefixExpression &&
+                  upd.operator.lexeme == '++' &&
+                  upd.operand.toSource() == varName);
+          if (isInc &&
+              cond.leftOperand.toSource() == varName &&
+              (cond.operator.lexeme == '<' || cond.operator.lexeme == '<=')) {
+            final rangeOp = cond.operator.lexeme == '<' ? '..<' : '..';
+            return '${pad}for $varName in $initExpr$rangeOp${_expression(cond.rightOperand, depth)}:\n$body';
+          }
         }
+
+        // Otherwise emit Quds native CForStatement:
+        //   `for var i = init while cond step updater:`
+        // which compiles directly to Dart's `for (var i = init; cond; updater)`
+        // preserving exact `continue`, `break`, and loop-variable mutation semantics!
+        final typeText = parts.variables.type == null
+            ? ''
+            : ': ${_typeAnnotation(parts.variables.type!)}';
+        final condText = parts.condition == null
+            ? 'true'
+            : _expression(parts.condition!, depth);
+        final stepClause = parts.updaters.isEmpty
+            ? ''
+            : ' step ${_updaterExpr(parts.updaters.single, depth)}';
+        return '${pad}for var $varName$typeText = $initExpr while $condText$stepClause:\n$body';
       }
-      // General C-style for loop -> init + while loop.
+
+      // Multi-variable or multi-updater C-style for loop: only desugar to
+      // `while` if there is no unnested `continue` (which would skip updaters).
+      if (parts.updaters.isNotEmpty && _hasUnnestedContinue(node.body)) {
+        _fail(node,
+            'multi-variable for-loop with continue requires manual migration review');
+      }
+      final declNames = [
+        for (final v in parts.variables.variables) v.name.lexeme,
+      ];
       final lines = <String>[_variableList(parts.variables, depth)];
       final condText = parts.condition == null
           ? 'true'
           : _expression(parts.condition!, depth);
+      final body = _branchBody(node.body, depth + 1, extraScope: declNames);
       final updaterLines = [
-        for (final u in parts.updaters) _updaterLine(u, depth + 1),
+        for (final u in parts.updaters)
+          '${'  ' * (depth + 1)}${_updaterExpr(u, depth + 1)}',
+      ];
+      lines.add('${pad}while $condText:');
+      lines.add(body);
+      lines.addAll(updaterLines);
+      return lines.join('\n');
+    }
+    if (parts is d.ForPartsWithExpression) {
+      if (parts.updaters.isNotEmpty && _hasUnnestedContinue(node.body)) {
+        _fail(node,
+            'expression-init for-loop with continue requires manual migration review');
+      }
+      final lines = <String>[];
+      if (parts.initialization != null) {
+        lines.add('$pad${_expression(parts.initialization!, depth)}');
+      }
+      final condText = parts.condition == null
+          ? 'true'
+          : _expression(parts.condition!, depth);
+      final body = _branchBody(node.body, depth + 1);
+      final updaterLines = [
+        for (final u in parts.updaters)
+          '${'  ' * (depth + 1)}${_updaterExpr(u, depth + 1)}',
       ];
       lines.add('${pad}while $condText:');
       lines.add(body);
@@ -1284,17 +1658,16 @@ class _DartToQudsEmitter {
     _fail(node, 'unsupported for-loop form: ${parts.runtimeType}');
   }
 
-  String _updaterLine(d.Expression u, int depth) {
-    final pad = '  ' * depth;
+  String _updaterExpr(d.Expression u, int depth) {
     if (u is d.PostfixExpression &&
         (u.operator.lexeme == '++' || u.operator.lexeme == '--')) {
-      return '$pad${_expression(u.operand, depth)} ${u.operator.lexeme == '++' ? '+=' : '-='} 1';
+      return '${_expression(u.operand, depth)} ${u.operator.lexeme == '++' ? '+=' : '-='} 1';
     }
     if (u is d.PrefixExpression &&
         (u.operator.lexeme == '++' || u.operator.lexeme == '--')) {
-      return '$pad${_expression(u.operand, depth)} ${u.operator.lexeme == '++' ? '+=' : '-='} 1';
+      return '${_expression(u.operand, depth)} ${u.operator.lexeme == '++' ? '+=' : '-='} 1';
     }
-    return '$pad${_expression(u, depth)}';
+    return _expression(u, depth);
   }
 
   String _switchStatement(d.SwitchStatement node, int depth) {
@@ -1302,27 +1675,132 @@ class _DartToQudsEmitter {
     final innerPad = '  ' * (depth + 1);
     final buf =
         StringBuffer('${pad}match ${_expression(node.expression, depth)}:\n');
-    for (final member in node.members) {
-      if (member is d.SwitchCase) {
-        final pat = _expression(member.expression, depth + 1);
-        final stmts = member.statements
-            .where((s) => s is! d.BreakStatement || s.label != null)
-            .toList();
-        buf.writeln('$innerPad$pat:');
-        final rendered = _statements(stmts, depth + 2);
-        buf.writeln(rendered.isEmpty ? '${'  ' * (depth + 2)}pass' : rendered);
-      } else if (member is d.SwitchDefault) {
-        final stmts = member.statements
-            .where((s) => s is! d.BreakStatement || s.label != null)
-            .toList();
-        buf.writeln('${innerPad}_:');
-        final rendered = _statements(stmts, depth + 2);
-        buf.writeln(rendered.isEmpty ? '${'  ' * (depth + 2)}pass' : rendered);
-      } else {
-        _fail(member, 'switch pattern case requires manual migration review');
+    final pendingPatterns = <String>[];
+
+    for (var i = 0; i < node.members.length; i++) {
+      final member = node.members[i];
+      if (member.labels.isNotEmpty) {
+        _fail(member, 'labeled switch case requires manual migration review');
       }
+      if (member is d.SwitchDefault) {
+        if (pendingPatterns.isNotEmpty) {
+          // A case falling straight into `default:` behaves identically to
+          // `default:` (`_`) as long as no guard is attached.
+          pendingPatterns.clear();
+        }
+        final stmts = _stripTrailingSwitchBreak(member.statements);
+        buf.writeln('${innerPad}_:');
+        final rendered = _withScope(() => _statements(stmts, depth + 2));
+        buf.writeln(rendered.isEmpty ? '${'  ' * (depth + 2)}null' : rendered);
+        continue;
+      }
+
+      String pat;
+      String? guard;
+      final boundNames = <String>[];
+      if (member is d.SwitchCase) {
+        pat = _expression(member.expression, depth + 1);
+      } else if (member is d.SwitchPatternCase) {
+        pat =
+            _dartPattern(member.guardedPattern.pattern, depth + 1, boundNames);
+        if (member.guardedPattern.whenClause != null) {
+          guard = _expression(
+              member.guardedPattern.whenClause!.expression, depth + 1);
+        }
+      } else {
+        _fail(member, 'unsupported switch member: ${member.runtimeType}');
+      }
+
+      // Dart allows grouped empty cases: `case 1: case 2: body(); break;`.
+      if (member.statements.isEmpty && i + 1 < node.members.length) {
+        if (guard != null || boundNames.isNotEmpty) {
+          _fail(member,
+              'grouped guarded/binding switch case requires manual migration review');
+        }
+        pendingPatterns.add(pat);
+        continue;
+      }
+
+      final combinedPattern = pendingPatterns.isEmpty
+          ? pat
+          : '${pendingPatterns.join(' | ')} | $pat';
+      pendingPatterns.clear();
+      final guardClause = guard == null ? '' : ' when $guard';
+      final stmts = _stripTrailingSwitchBreak(member.statements);
+      buf.writeln('$innerPad$combinedPattern$guardClause:');
+      final rendered = _withScope(
+        () => _statements(stmts, depth + 2),
+        initial: boundNames,
+      );
+      buf.writeln(rendered.isEmpty ? '${'  ' * (depth + 2)}null' : rendered);
     }
     return buf.toString().trimRight();
+  }
+
+  List<d.Statement> _stripTrailingSwitchBreak(List<d.Statement> statements) {
+    if (statements.isEmpty) return const [];
+    final out = [...statements];
+    if (out.last is d.BreakStatement &&
+        (out.last as d.BreakStatement).label == null) {
+      out.removeLast();
+    }
+    return out;
+  }
+
+  String _dartPattern(
+    d.DartPattern pattern,
+    int depth,
+    List<String> boundNames,
+  ) {
+    if (pattern is d.ConstantPattern) {
+      return _expression(pattern.expression, depth);
+    }
+    if (pattern is d.WildcardPattern) {
+      if (pattern.type != null) {
+        return '${_typeAnnotation(pattern.type!)} _';
+      }
+      return '_';
+    }
+    if (pattern is d.LogicalOrPattern) {
+      final l = _dartPattern(pattern.leftOperand, depth, boundNames);
+      final r = _dartPattern(pattern.rightOperand, depth, boundNames);
+      return '$l | $r';
+    }
+    if (pattern is d.LogicalAndPattern) {
+      final l = _dartPattern(pattern.leftOperand, depth, boundNames);
+      final r = _dartPattern(pattern.rightOperand, depth, boundNames);
+      return '$l and $r';
+    }
+    if (pattern is d.ParenthesizedPattern) {
+      return '(${_dartPattern(pattern.pattern, depth, boundNames)})';
+    }
+    if (pattern is d.RelationalPattern) {
+      return '${pattern.operator.lexeme} ${_expression(pattern.operand, depth)}';
+    }
+    if (pattern is d.DeclaredVariablePattern) {
+      final name = pattern.name.lexeme;
+      _checkIdentifierName(pattern, name);
+      final shadowPrefix = _isDeclaredInOuterScope(name) ? 'shadow ' : '';
+      boundNames.add(name);
+      if (pattern.type != null) {
+        return '${_typeAnnotation(pattern.type!)} $shadowPrefix$name';
+      }
+      return '$shadowPrefix$name';
+    }
+    if (pattern is d.CastPattern) {
+      final inner = _dartPattern(pattern.pattern, depth, boundNames);
+      return '$inner as ${_typeAnnotation(pattern.type)}';
+    }
+    if (pattern is d.NullCheckPattern) {
+      final inner = _dartPattern(pattern.pattern, depth, boundNames);
+      return '$inner?';
+    }
+    if (pattern is d.NullAssertPattern) {
+      final inner = _dartPattern(pattern.pattern, depth, boundNames);
+      return '$inner!';
+    }
+    _fail(pattern,
+        'Dart 3 pattern ${pattern.runtimeType} requires manual migration review');
   }
 
   String _tryStatement(d.TryStatement node, int depth) {
@@ -1335,6 +1813,8 @@ class _DartToQudsEmitter {
           : ' ${_typeAnnotation(c.exceptionType!)}';
       final exc = c.exceptionParameter?.name.lexeme;
       final stack = c.stackTraceParameter?.name.lexeme;
+      if (exc != null) _checkIdentifierName(c.exceptionParameter!, exc);
+      if (stack != null) _checkIdentifierName(c.stackTraceParameter!, stack);
       final header = StringBuffer('${pad}catch');
       if (exc != null && onType.isNotEmpty) {
         header.write(' $exc:$onType');
@@ -1344,7 +1824,12 @@ class _DartToQudsEmitter {
         header.write(' _:$onType');
       }
       if (stack != null) header.write(', $stack');
-      buf.write('\n$header:\n${_branchBody(c.body, depth + 1)}');
+      final catchVars = [
+        if (exc != null) exc,
+        if (stack != null) stack,
+      ];
+      buf.write(
+          '\n$header:\n${_branchBody(c.body, depth + 1, extraScope: catchVars)}');
     }
     if (node.finallyBlock != null) {
       buf.write(
@@ -1361,20 +1846,33 @@ class _DartToQudsEmitter {
     final typeText = node.type == null ? null : _typeAnnotation(node.type!);
     final lines = <String>[];
     for (final v in node.variables) {
+      final name = v.name.lexeme;
+      _checkIdentifierName(v, name);
+      final isShadowing = _scopes.length > 1 && _isDeclaredInOuterScope(name);
       final prefix = StringBuffer();
       if (isLate) prefix.write('late ');
       if (isConst) {
         prefix.write('const ');
+      } else if (isShadowing) {
+        prefix.write(isFinal ? 'shadow ' : 'shadow var ');
       } else if (!isFinal) {
         prefix.write('var ');
       }
       final typeSuffix = typeText == null ? '' : ': $typeText';
-      if (v.initializer != null) {
-        lines.add(
-            '$pad$prefix${v.name.lexeme}$typeSuffix = ${_expression(v.initializer!, depth, allowBlock: true)}');
+      final init = v.initializer;
+      if (init is d.CascadeExpression) {
+        final targetRhs = _expression(init.target, depth, allowBlock: true);
+        lines.add('$pad$prefix$name$typeSuffix = $targetRhs');
+        lines.add(_emitCascadeSections(name, init.cascadeSections, depth));
+      } else if (init != null) {
+        final rhs = _expression(init, depth, allowBlock: true);
+        lines.add('$pad$prefix$name$typeSuffix = $rhs');
+      } else if (typeText != null && typeText.endsWith('?') && !isLate) {
+        lines.add('$pad$prefix$name$typeSuffix = null');
       } else {
-        lines.add('$pad$prefix${v.name.lexeme}$typeSuffix');
+        lines.add('$pad$prefix$name$typeSuffix');
       }
+      _declareInCurrentScope(name);
     }
     return lines.join('\n');
   }
@@ -1483,7 +1981,16 @@ class _DartToQudsEmitter {
 
   String _expression(d.Expression node, int depth, {bool allowBlock = false}) {
     if (node is d.SimpleStringLiteral) {
-      if (node.isRaw) return 'r"${node.value.replaceAll('"', r'\"')}"';
+      if (node.isRaw) {
+        // Raw Quds strings r"..." do not unescape `\"` or newlines; fall back
+        // to an escaped regular string when the raw string contains quotes/newlines.
+        if (!node.value.contains('"') &&
+            !node.value.contains('\n') &&
+            !node.value.contains('\r')) {
+          return 'r"${node.value}"';
+        }
+        return '"${_escapeQudsString(node.value)}"';
+      }
       return '"${_escapeQudsString(node.value)}"';
     }
     if (node is d.StringInterpolation) {
@@ -1548,15 +2055,56 @@ class _DartToQudsEmitter {
       return '${_expression(node.function, depth)}$ta(${_inlineArgs(node.argumentList, depth)})';
     }
     if (node is d.AssignmentExpression) {
-      return '${_expression(node.leftHandSide, depth)} ${node.operator.lexeme} ${_expression(node.rightHandSide, depth, allowBlock: allowBlock)}';
+      final op = node.operator.lexeme;
+      const qudsCompoundOps = {'=', '+=', '-=', '*=', '/=', '??='};
+      if (qudsCompoundOps.contains(op)) {
+        return '${_expression(node.leftHandSide, depth)} $op ${_expression(node.rightHandSide, depth, allowBlock: allowBlock)}';
+      }
+      // Desugar Dart-only compound ops (`~/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`, `>>>=`)
+      // ONLY when LHS is a pure identifier (preserving left-to-right, exactly-once evaluation).
+      if (node.leftHandSide is d.SimpleIdentifier && op.endsWith('=')) {
+        final binOp = op.substring(0, op.length - 1);
+        final lhs = (node.leftHandSide as d.SimpleIdentifier).name;
+        final rhs = _expression(node.rightHandSide, depth);
+        final rhsWrapped =
+            node.rightHandSide is d.BinaryExpression ? '($rhs)' : rhs;
+        return '$lhs = $lhs $binOp $rhsWrapped';
+      }
+      _fail(node,
+          'compound assignment $op on complex target requires manual review');
     }
     if (node is d.BinaryExpression) {
-      final op = switch (node.operator.lexeme) {
+      final dartOp = node.operator.lexeme;
+      final op = switch (dartOp) {
         '&&' => 'and',
         '||' => 'or',
         final other => other,
       };
-      return '${_expression(node.leftOperand, depth)} $op ${_expression(node.rightOperand, depth)}';
+      var left = _expression(node.leftOperand, depth);
+      var right = _expression(node.rightOperand, depth);
+      // In Dart `??` binds tighter than `&&`/`||`, whereas in Quds `??` has
+      // lower precedence than `and`/`or`. Always parenthesize across that boundary.
+      if ((dartOp == '&&' || dartOp == '||') &&
+          node.leftOperand is d.BinaryExpression &&
+          (node.leftOperand as d.BinaryExpression).operator.lexeme == '??') {
+        left = '($left)';
+      }
+      if ((dartOp == '&&' || dartOp == '||') &&
+          node.rightOperand is d.BinaryExpression &&
+          (node.rightOperand as d.BinaryExpression).operator.lexeme == '??') {
+        right = '($right)';
+      }
+      if (dartOp == '??') {
+        if (node.leftOperand is d.BinaryExpression) {
+          final lo = (node.leftOperand as d.BinaryExpression).operator.lexeme;
+          if (lo == '&&' || lo == '||') left = '($left)';
+        }
+        if (node.rightOperand is d.BinaryExpression) {
+          final ro = (node.rightOperand as d.BinaryExpression).operator.lexeme;
+          if (ro == '&&' || ro == '||') right = '($right)';
+        }
+      }
+      return '$left $op $right';
     }
     if (node is d.PrefixExpression) {
       final op = node.operator.lexeme;
@@ -1579,7 +2127,10 @@ class _DartToQudsEmitter {
       return '${_expression(node.expression, depth)} as ${_typeAnnotation(node.type)}';
     }
     if (node is d.ConditionalExpression) {
-      return '${_expression(node.thenExpression, depth)} if ${_expression(node.condition, depth)} else ${_expression(node.elseExpression, depth)}';
+      final condText = _expression(node.condition, depth);
+      final thenText = _expression(node.thenExpression, depth);
+      final elseText = _expression(node.elseExpression, depth);
+      return '(if $condText: $thenText else: $elseText)';
     }
     if (node is d.AwaitExpression) {
       return 'await ${_expression(node.expression, depth)}';
@@ -1591,23 +2142,19 @@ class _DartToQudsEmitter {
       return 'rethrow';
     }
     if (node is d.ListLiteral) {
+      final typeArg = node.typeArguments?.arguments.length == 1
+          ? _typeAnnotation(node.typeArguments!.arguments.single)
+          : null;
+      if (node.elements.isEmpty) {
+        if (typeArg != null) return 'List<$typeArg>.empty(growable: true)';
+        return '[]';
+      }
       final els = node.elements.map((e) => _inlineElement(e, depth)).join(', ');
+      if (typeArg != null) return 'List<$typeArg>.of([$els])';
       return '[$els]';
     }
     if (node is d.SetOrMapLiteral) {
-      if (node.isMap) {
-        if (node.elements.isEmpty) return 'map: {}';
-        final entries = node.elements.map((e) {
-          if (e is d.MapLiteralEntry) {
-            return '${_expression(e.key, depth)}: ${_expression(e.value, depth)}';
-          }
-          _fail(e, 'complex map literal element requires manual review');
-        }).join(', ');
-        return '{$entries}';
-      }
-      if (node.elements.isEmpty) return 'set: {}';
-      final els = node.elements.map((e) => _inlineElement(e, depth)).join(', ');
-      return '{$els}';
+      return _setOrMapLiteral(node, depth, allowBlock: allowBlock);
     }
     if (node is d.RecordLiteral) {
       final parts = node.fields.map((f) {
@@ -1619,43 +2166,62 @@ class _DartToQudsEmitter {
       return '($parts)';
     }
     if (node is d.FunctionExpression) {
-      final params =
-          node.parameters == null ? '' : _parameterList(node.parameters!);
+      final params = node.parameters == null
+          ? ''
+          : _parameterList(node.parameters!, isLambda: true);
       final asyncMod = _asyncModifier(node.body);
       final body = node.body;
-      if (body is d.ExpressionFunctionBody) {
-        return '($params)$asyncMod -> ${_expression(body.expression, depth, allowBlock: allowBlock)}';
-      }
-      if (body is d.BlockFunctionBody) {
-        if (!allowBlock) {
-          if (body.block.statements.length == 1 &&
-              body.block.statements.single is d.ExpressionStatement) {
-            final expr = (body.block.statements.single as d.ExpressionStatement)
-                .expression;
-            return '($params)$asyncMod -> ${_expression(expr, depth)}';
-          }
-          if (body.block.statements.length == 1 &&
-              body.block.statements.single is d.ReturnStatement &&
-              (body.block.statements.single as d.ReturnStatement).expression !=
-                  null) {
-            final expr =
-                (body.block.statements.single as d.ReturnStatement).expression!;
-            return '($params)$asyncMod -> ${_expression(expr, depth)}';
-          }
-          _fail(node,
-              'multiline block lambda inside inline call requires binding to a local variable');
+      return _withScope(() {
+        if (body is d.ExpressionFunctionBody) {
+          return '($params)$asyncMod -> ${_expression(body.expression, depth, allowBlock: allowBlock)}';
         }
-        final stmts = _statements(body.block.statements, depth + 1);
-        return '($params)$asyncMod -> :\n${stmts.isEmpty ? '${'  ' * (depth + 1)}pass' : stmts}';
-      }
+        if (body is d.BlockFunctionBody) {
+          if (!allowBlock) {
+            if (body.block.statements.length == 1 &&
+                body.block.statements.single is d.ExpressionStatement) {
+              final expr =
+                  (body.block.statements.single as d.ExpressionStatement)
+                      .expression;
+              return '($params)$asyncMod -> ${_expression(expr, depth)}';
+            }
+            if (body.block.statements.length == 1 &&
+                body.block.statements.single is d.ReturnStatement &&
+                (body.block.statements.single as d.ReturnStatement)
+                        .expression !=
+                    null) {
+              final expr = (body.block.statements.single as d.ReturnStatement)
+                  .expression!;
+              return '($params)$asyncMod -> ${_expression(expr, depth)}';
+            }
+            _fail(node,
+                'multiline block lambda inside inline call requires binding to a local variable');
+          }
+          final stmts = _statements(body.block.statements, depth + 1);
+          return '($params)$asyncMod -> :\n${stmts.isEmpty ? '${'  ' * (depth + 1)}return' : stmts}';
+        }
+        _fail(node, 'unsupported lambda body: ${body.runtimeType}');
+      }, initial: _parameterNames(node.parameters));
     }
     if (node is d.SwitchExpression) {
+      if (!allowBlock) {
+        _fail(node,
+            'switch expression inside inline expression requires binding to a local variable');
+      }
       final buf =
           StringBuffer('match ${_expression(node.expression, depth)}:\n');
       final armPad = '  ' * (depth + 1);
       for (final arm in node.cases) {
-        buf.writeln(
-            '$armPad${arm.guardedPattern.toSource()}: ${_expression(arm.expression, depth + 1)}');
+        final boundNames = <String>[];
+        final pat =
+            _dartPattern(arm.guardedPattern.pattern, depth + 1, boundNames);
+        final guard = arm.guardedPattern.whenClause == null
+            ? ''
+            : ' when ${_expression(arm.guardedPattern.whenClause!.expression, depth + 1)}';
+        final armExpr = _withScope(
+          () => _expression(arm.expression, depth + 1),
+          initial: boundNames,
+        );
+        buf.writeln('$armPad$pat$guard: $armExpr');
       }
       return buf.toString().trimRight();
     }
@@ -1665,12 +2231,158 @@ class _DartToQudsEmitter {
     _fail(node, 'unsupported expression: ${node.runtimeType}');
   }
 
+  String _setOrMapLiteral(
+    d.SetOrMapLiteral node,
+    int depth, {
+    required bool allowBlock,
+  }) {
+    final typeArgs = node.typeArguments?.arguments;
+    final hasMapEntries = node.elements.any((e) => e is d.MapLiteralEntry);
+    // On unresolved Dart AST, `{}` has `isMap == false && isSet == false`, but
+    // in Dart an untyped empty `{}` is ALWAYS a Map, never a Set.
+    final isSet = node.isSet ||
+        (typeArgs != null && typeArgs.length == 1) ||
+        (node.elements.isNotEmpty && !hasMapEntries && !node.isMap);
+    final isMap = !isSet;
+
+    if (isMap) {
+      final typeSuffix = (typeArgs != null && typeArgs.length == 2)
+          ? '<${_typeAnnotation(typeArgs[0])}, ${_typeAnnotation(typeArgs[1])}>'
+          : '';
+      if (node.elements.isEmpty) {
+        return typeSuffix.isEmpty
+            ? 'Map<dynamic, dynamic>()'
+            : 'Map$typeSuffix()';
+      }
+      final allPlainEntries =
+          node.elements.every((e) => e is d.MapLiteralEntry);
+      if (allowBlock && typeSuffix.isEmpty && allPlainEntries) {
+        final entryPad = '  ' * (depth + 1);
+        final buf = StringBuffer('map:\n');
+        for (final e in node.elements) {
+          final entry = e as d.MapLiteralEntry;
+          buf.writeln(
+              '$entryPad${_expression(entry.key, depth + 1)}: ${_expression(entry.value, depth + 1)}');
+        }
+        return buf.toString().trimRight();
+      }
+      if (!allPlainEntries) {
+        _fail(node, 'complex map literal element requires manual review');
+      }
+      final entries = node.elements.map((e) {
+        final entry = e as d.MapLiteralEntry;
+        return 'MapEntry(${_expression(entry.key, depth)}, ${_expression(entry.value, depth)})';
+      }).join(', ');
+      return 'Map$typeSuffix.fromEntries([$entries])';
+    }
+
+    // Set literal.
+    final typeSuffix = (typeArgs != null && typeArgs.length == 1)
+        ? '<${_typeAnnotation(typeArgs.single)}>'
+        : '';
+    if (node.elements.isEmpty) {
+      return typeSuffix.isEmpty ? 'Set<dynamic>()' : 'Set$typeSuffix()';
+    }
+    if (allowBlock && typeSuffix.isEmpty) {
+      final itemPad = '  ' * (depth + 1);
+      final buf = StringBuffer('set:\n');
+      for (final el in node.elements) {
+        buf.writeln('$itemPad${_inlineElement(el, depth + 1)}');
+      }
+      return buf.toString().trimRight();
+    }
+    final els = node.elements.map((e) => _inlineElement(e, depth)).join(', ');
+    return 'Set$typeSuffix.of([$els])';
+  }
+
   String _inlineElement(d.CollectionElement e, int depth) {
     if (e is d.Expression) return _expression(e, depth);
     if (e is d.SpreadElement) {
       return '${e.isNullAware ? '...?' : '...'}${_expression(e.expression, depth)}';
     }
+    if (e is d.IfElement && e.caseClause == null) {
+      final cond = _expression(e.expression, depth);
+      final thenEl = _inlineElement(e.thenElement, depth);
+      if (e.elseElement != null) {
+        return 'if $cond: $thenEl else: ${_inlineElement(e.elseElement!, depth)}';
+      }
+      return 'if $cond: $thenEl';
+    }
+    if (e is d.ForElement) {
+      final parts = e.forLoopParts;
+      if (parts is d.ForEachPartsWithDeclaration) {
+        final v = parts.loopVariable.name.lexeme;
+        _checkIdentifierName(parts.loopVariable, v);
+        final body = _withScope(
+          () => _inlineElement(e.body, depth),
+          initial: [v],
+        );
+        return 'for $v in ${_expression(parts.iterable, depth)}: $body';
+      }
+      if (parts is d.ForEachPartsWithIdentifier) {
+        return 'for ${parts.identifier.name} in ${_expression(parts.iterable, depth)}: ${_inlineElement(e.body, depth)}';
+      }
+    }
     _fail(e, 'inline collection element ${e.runtimeType} requires block form');
+  }
+
+  bool _mutatesVariable(d.AstNode root, String varName) {
+    var mutated = false;
+    void walk(d.AstNode node) {
+      if (mutated) return;
+      if (node is d.AssignmentExpression &&
+          node.leftHandSide is d.SimpleIdentifier &&
+          (node.leftHandSide as d.SimpleIdentifier).name == varName) {
+        mutated = true;
+        return;
+      }
+      if (node is d.PrefixExpression &&
+          (node.operator.lexeme == '++' || node.operator.lexeme == '--') &&
+          node.operand is d.SimpleIdentifier &&
+          (node.operand as d.SimpleIdentifier).name == varName) {
+        mutated = true;
+        return;
+      }
+      if (node is d.PostfixExpression &&
+          (node.operator.lexeme == '++' || node.operator.lexeme == '--') &&
+          node.operand is d.SimpleIdentifier &&
+          (node.operand as d.SimpleIdentifier).name == varName) {
+        mutated = true;
+        return;
+      }
+      for (final entity in node.childEntities) {
+        if (entity is d.AstNode) walk(entity);
+      }
+    }
+
+    walk(root);
+    return mutated;
+  }
+
+  bool _hasUnnestedContinue(d.AstNode root) {
+    var found = false;
+    void walk(d.AstNode node) {
+      if (found) return;
+      if (node is d.ContinueStatement && node.label == null) {
+        found = true;
+        return;
+      }
+      // Do not descend into nested loops or closures whose own `continue`
+      // does not target the enclosing loop.
+      if (node is d.ForStatement ||
+          node is d.WhileStatement ||
+          node is d.DoStatement ||
+          node is d.FunctionExpression ||
+          node is d.FunctionDeclaration) {
+        return;
+      }
+      for (final entity in node.childEntities) {
+        if (entity is d.AstNode) walk(entity);
+      }
+    }
+
+    walk(root);
+    return found;
   }
 }
 

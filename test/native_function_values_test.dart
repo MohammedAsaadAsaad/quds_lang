@@ -87,13 +87,23 @@ main():
       () async {
     final input = File('test/native_function_values_web.quds').absolute;
     final compilation = compile(input.readAsStringSync(), file: input.path);
-    final normalized = compilation.dart
-        .replaceAll(Directory.current.absolute.uri.toString(), '<repo>/');
+    String normalizeNativePrefixes(String source) {
+      final ids = <String, String>{};
+      return source
+          .replaceAll(Directory.current.absolute.uri.toString(), '<repo>/')
+          .replaceAllMapped(RegExp(r'_qNative[0-9a-f]{12}'), (m) {
+        final key = m.group(0)!;
+        return ids.putIfAbsent(key, () => '_qNative<${ids.length}>');
+      });
+    }
+
+    final normalized = normalizeNativePrefixes(compilation.dart);
     expect(
         normalized,
-        File('test/goldens/native_function_values.dart.txt')
-            .readAsStringSync()
-            .replaceAll('\r\n', '\n'));
+        normalizeNativePrefixes(
+            File('test/goldens/native_function_values.dart.txt')
+                .readAsStringSync()
+                .replaceAll('\r\n', '\n')));
     expect(compilation.dart,
         compile(input.readAsStringSync(), file: input.path).dart);
     final root = Directory.systemTemp.createTempSync('quds-native-values-web-');

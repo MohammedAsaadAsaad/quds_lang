@@ -40,6 +40,8 @@ jobs:
           dart run bin/quds.dart test test/readonly_classes.quds
           dart run bin/quds.dart test test/readonly_graph.quds
           dart run bin/quds.dart test test/readonly_paths.quds
+          dart run bin/quds.dart test test/readonly_dart_boundaries.quds
+          dart run bin/quds.dart test test/union_exchange_expanded.quds
           dart run bin/quds.dart test test/math_symbolic.quds
           dart run bin/quds.dart test test/math_symbolic_imports.quds
           dart run bin/quds.dart test test/math_symbolic_reference.quds
@@ -82,7 +84,7 @@ jobs:
           reject test/math_reject_show.quds "E200"
           reject test/math_reject_hide.quds "E200"
       - name: Compiler and platform integration tests
-        run: dart test --reporter expanded
+        run: dart test -j 1 --reporter expanded
   portable:
     strategy:
       fail-fast: false
@@ -104,7 +106,7 @@ jobs:
       - run: python tool/audit_language.py --check
       - run: python tool/sync_keyword_docs.py --check
       - run: dart run bin/quds.dart test examples/flutter_app/quds_ledger/test/quds_ledger_test.quds
-      - run: dart test -j 1 test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/quds_function_values_test.dart test/quds_method_values_test.dart test/target_platform_test.dart test/union_exchange_test.dart test/union_boundaries_test.dart test/union_flow_test.dart test/loop_context_test.dart test/console_repeat_test.dart test/external_packages_test.dart test/toolchain_update_test.dart test/toolchain_activation_test.dart --reporter expanded
+      - run: dart test -j 1 test/lexer_test.dart test/parser_test.dart test/semantics_test.dart test/constants_test.dart test/native_function_values_test.dart test/quds_function_values_test.dart test/quds_method_values_test.dart test/target_platform_test.dart test/union_exchange_test.dart test/union_exchange_expanded_test.dart test/union_boundaries_test.dart test/union_flow_test.dart test/readonly_dart_boundaries_test.dart test/dart3_patterns_super_enum_test.dart test/dart_migrator_equivalence_test.dart test/loop_context_test.dart test/console_repeat_test.dart test/external_packages_test.dart test/toolchain_update_test.dart test/toolchain_activation_test.dart --reporter expanded
   flutter-engine:
     runs-on: ubuntu-latest
     defaults:

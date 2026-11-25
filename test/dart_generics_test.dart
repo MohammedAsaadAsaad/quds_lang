@@ -62,11 +62,21 @@ main():
     final compilation = compile(input.readAsStringSync(), file: input.path);
     expect(compilation.dart,
         compile(input.readAsStringSync(), file: input.path).dart);
+    String normalizeNativePrefixes(String source) {
+      final ids = <String, String>{};
+      return source
+          .replaceAll(Directory.current.absolute.uri.toString(), '<repo>/')
+          .replaceAllMapped(RegExp(r'_qNative[0-9a-f]{12}'), (m) {
+        final key = m.group(0)!;
+        return ids.putIfAbsent(key, () => '_qNative<${ids.length}>');
+      });
+    }
+
     final golden = File('test/goldens/dart_generics.dart.txt');
     expect(
-        compilation.dart
-            .replaceAll(Directory.current.absolute.uri.toString(), '<repo>/'),
-        golden.readAsStringSync());
+        normalizeNativePrefixes(compilation.dart),
+        normalizeNativePrefixes(
+            golden.readAsStringSync().replaceAll('\r\n', '\n')));
     final output = File('${dir.path}/program.dart')
       ..writeAsStringSync(compilation.dart.replaceAll(
           "import 'fixtures/dart_generics/api.dart'",

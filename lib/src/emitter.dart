@@ -381,11 +381,13 @@ class DartEmitter {
     return names;
   }
 
-  void _directives(List<Statement> statements) {
+  void _directives(List<Statement> statements,
+      [Map<String, int>? syntheticProviders]) {
+    syntheticProviders ??= _collectSyntheticProviders(statements);
     for (final node in statements) {
       if (model.skipped.contains(node)) continue;
       if (node is WhenStatement) {
-        _directives(node.body);
+        _directives(node.body, syntheticProviders);
         continue;
       }
       if (node is ImportDeclaration) {
@@ -451,20 +453,21 @@ class DartEmitter {
                     ? ' hide ${_providerCombinator(node.hide, node).join(', ')}'
                     : '';
         if (sectionNames != null && combinator.isEmpty) continue;
-        final isQuds = !node.uri.startsWith('dart:') &&
-            !node.uri.endsWith('.dart') &&
-            !target.endsWith('.dart');
-        String hideSynthetic(String current) {
-          if (!isQuds || current.startsWith(' show ')) return current;
-          const internal = ['Optional', 'missing', r'$qudsKnownGuards'];
+        final isLoadedQuds = model.importSynthetics.containsKey(node);
+        final provided = model.importSynthetics[node] ?? const <String>{};
+        String hideNames(String current, List<String> names) {
+          if (names.isEmpty || current.startsWith(' show ')) return current;
           if (current.startsWith(' hide ')) {
-            return '$current, ${internal.join(', ')}';
+            return '$current, ${names.join(', ')}';
           }
-          return ' hide ${internal.join(', ')}';
+          return ' hide ${names.join(', ')}';
         }
 
         if (node.export) {
-          final exported = hideSynthetic(combinator);
+          final exported = isLoadedQuds
+              ? hideNames(combinator,
+                  const ['Optional', 'missing', r'$qudsKnownGuards'])
+              : combinator;
           final hid = exported != combinator;
           _imports.add(
               "${hid ? '// ignore: undefined_hidden_name\n' : ''}export '$uri'$exported;");
@@ -482,8 +485,13 @@ class DartEmitter {
                 node.hide.isNotEmpty)) {
           _imports.add("import 'dart:core';");
         }
-        final effectiveCombinator =
-            node.prefix == null ? hideSynthetic(combinator) : combinator;
+        final colliding = node.prefix == null
+            ? ([
+                for (final name in provided)
+                  if ((syntheticProviders[name] ?? 0) >= 2) name,
+              ]..sort())
+            : const <String>[];
+        final effectiveCombinator = hideNames(combinator, colliding);
         final hidSynthetic = effectiveCombinator != combinator;
         final providerShow = node.show.isNotEmpty &&
             _providerCombinator(node.show, node).length > node.show.length;
@@ -501,6 +509,91 @@ class DartEmitter {
         _parts.add(node.of ? "part of '$uri';" : "part '$uri';");
       }
     }
+  }
+
+  Map<String, int> _collectSyntheticProviders(List<Statement> statements) {
+    final counts = <String, int>{};
+    void addLocal(String name) => counts[name] = 1;
+    void checkType(String? type) {
+      if (type == null || type.isEmpty) return;
+      if (type.contains('Optional')) {
+        addLocal('Optional');
+        addLocal('missing');
+      }
+      if (type.contains('readonly ')) {
+        addLocal(r'$qudsKnownGuards');
+      }
+    }
+
+    void inspect(Node node) {
+      switch (node) {
+        case ClassDeclaration():
+          if (node.kind != 'enum' && node.kind != 'extensionType') {
+            addLocal(r'$qudsKnownGuards');
+          }
+          if (node.kind == 'value' || node.kind == 'sealedType') {
+            addLocal('Optional');
+            addLocal('missing');
+          }
+          if (node.modifiers.contains('readonly')) {
+            addLocal(r'$qudsKnownGuards');
+          }
+          for (final f in node.fields) {
+            checkType(f.type);
+            if (!f.isStatic &&
+                f.initializer != null &&
+                f.initializer is! Literal) {
+              addLocal('Optional');
+              addLocal('missing');
+            }
+          }
+        case FunctionDeclaration():
+          if (node.readonlyMethod) addLocal(r'$qudsKnownGuards');
+          checkType(node.returnType);
+          for (final p in node.parameters) {
+            checkType(p.type);
+            if (p.defaultValue != null && p.defaultValue is! Literal) {
+              addLocal('Optional');
+              addLocal('missing');
+            }
+          }
+        case Binding():
+          checkType(node.type);
+        case Identifier():
+          if (node.name == 'missing' || node.name == 'Optional') {
+            addLocal('Optional');
+            addLocal('missing');
+          }
+        default:
+          break;
+      }
+    }
+
+    void walkImports(List<Statement> body) {
+      for (final node in body) {
+        if (model.skipped.contains(node)) continue;
+        if (node is WhenStatement) {
+          walkImports(node.body);
+        } else if (node is ImportDeclaration &&
+            !node.export &&
+            node.prefix == null &&
+            node.show.isEmpty) {
+          final provided = model.importSynthetics[node];
+          if (provided != null) {
+            for (final name in provided) {
+              counts[name] = (counts[name] ?? 0) + 1;
+            }
+          }
+        }
+      }
+    }
+
+    for (final stmt in statements) {
+      if (model.skipped.contains(stmt)) continue;
+      walkAst(stmt, inspect);
+    }
+    walkImports(statements);
+    return counts;
   }
 
   String _deferBody(Expression node) {

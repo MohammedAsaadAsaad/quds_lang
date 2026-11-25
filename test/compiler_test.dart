@@ -2960,23 +2960,26 @@ main():
     );
     expect(installed.exitCode, 0,
         reason: '${installed.stdout}\n${installed.stderr}');
+    final extVersion =
+        (jsonDecode(File('editors/vscode/package.json').readAsStringSync())
+            as Map<String, Object?>)['version'] as String;
     final extension = File(
-        '${home.path}/.vscode/extensions/quds-lang.quds-0.0.1/package.json');
+        '${home.path}/.vscode/extensions/quds-lang.quds-$extVersion/package.json');
     expect(extension.existsSync(), isTrue);
     expect(extension.readAsStringSync(), contains('"name": "quds"'));
     expect(extension.readAsStringSync(), contains('quds.showDart'));
     expect(
-        File('${home.path}/.cursor/extensions/quds-lang.quds-0.0.1/extension.js')
+        File('${home.path}/.cursor/extensions/quds-lang.quds-$extVersion/extension.js')
             .existsSync(),
         isTrue);
     expect(
-        File('${home.path}/.vscode/extensions/quds-lang.quds-0.0.1/syntaxes/quds.tmLanguage.json')
+        File('${home.path}/.vscode/extensions/quds-lang.quds-$extVersion/syntaxes/quds.tmLanguage.json')
             .existsSync(),
         isTrue);
     expect(extension.readAsStringSync(), contains('./icons/quds.png'));
     expect(extension.readAsStringSync(), contains('"breakpoints"'));
     expect(
-        File('${home.path}/.vscode/extensions/quds-lang.quds-0.0.1/icons/quds.png')
+        File('${home.path}/.vscode/extensions/quds-lang.quds-$extVersion/icons/quds.png')
             .existsSync(),
         isTrue);
   });
@@ -3011,7 +3014,7 @@ main():
     ]) {
       expect(help.stdout, contains('quds $command'));
     }
-    expect(help.stdout, contains('quds create flutter <name>'));
+    expect(help.stdout, contains('quds create --f <name>'));
     expect((await cli(['help', 'build'])).stdout,
         contains('quds build [--watch] <input.quds>'));
     expect((await cli(['--help'])).exitCode, 0);

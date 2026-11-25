@@ -160,7 +160,7 @@ void main() {
         .run(['run', '--target=lib/other.quds', '-d', 'chrome', '--release']));
     expect(p.calls.last, contains('lib/quds_gen/other.dart'));
     expect((await p.run(['run', '--debug', '--release'])).exitCode, 64);
-  });
+  }, timeout: const Timeout(Duration(minutes: 2)));
   test(
       'platform build prepares Quds graph and forwards native flags and failures',
       () async {

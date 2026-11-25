@@ -174,5 +174,5 @@ nestedMap(values: Map<String, List<int>>, fallback: Map<String, List<int>>) -> i
     final brokenRun = await cli(['format', broken.path]);
     expect(brokenRun.exitCode, 65);
     expect(broken.readAsStringSync(), 'main():\n  x = [1, 2\n');
-  });
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }

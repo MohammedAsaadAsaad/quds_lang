@@ -1754,13 +1754,13 @@ class Parser {
       superCall = SuperConstructorCall(superName, superArgs, extent(superSpan),
           isRedirect: isRedirect);
     }
+    if (match(TokenKind.arrow)) typeName();
     if (!at(TokenKind.colon) && !at(TokenKind.equals)) {
       endLine();
       return ConstructorDeclaration(
           ctorName, parameters, null, null, extent(span),
           factory: factory, constant: constant, superCall: superCall);
     }
-    if (match(TokenKind.arrow)) typeName();
     if (match(TokenKind.equals)) {
       final value = expression(bare: true);
       endLine();

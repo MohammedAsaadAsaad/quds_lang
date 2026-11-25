@@ -604,6 +604,10 @@ class SemanticModel {
   /// Library key whose touched names belong to [sectionImports].
   final importHomes = <ImportDeclaration, String>{};
 
+  /// Synthetic runtime symbols (`Optional`, `missing`, `$qudsKnownGuards`) that
+  /// an imported or exported Quds library may emit into Dart scope.
+  final importSynthetics = <ImportDeclaration, Set<String>>{};
+
   /// Emit `@protected` because this package depends on `package:meta`.
   var protectWithMeta = false;
 
@@ -3210,6 +3214,7 @@ class Analyzer {
     final imported = _libraries[path];
     if (imported == null) fail('Unknown import: ${node.uri}', node);
     _checkInternalLibraryAccess(_file, path, node);
+    model.importSynthetics[node] = _librarySynthetics(path);
     final filtered = _filteredImport(node, imported, path);
     if (filtered.empty) return;
     if (node.export) {
@@ -3260,6 +3265,9 @@ class Analyzer {
     final imported = libraryName == null ? null : _libraries[node.uri];
     if (libraryName == null || (imported == null && !prelude)) {
       fail('Unknown import: ${node.uri}', node);
+    }
+    if (imported != null) {
+      model.importSynthetics[node] = _librarySynthetics(node.uri);
     }
     var dartNames = imported == null ? <String>{} : _sdkDartNames(imported);
     var aliasNames = imported == null ? <String>{} : _sdkAliasNames(imported);
@@ -3679,6 +3687,7 @@ class Analyzer {
       fail('Unknown import: ${node.uri}', node);
     }
     _checkInternalLibraryAccess(_file, path, node);
+    model.importSynthetics[node] = _librarySynthetics(path);
     if (dartUri != null) model.resolvedImports[node] = dartUri;
     if (path == _file) return;
     final filtered = _filteredImport(node, imported, path);
@@ -3690,6 +3699,108 @@ class Analyzer {
     }
     _importLibrary(imported, path,
         filter: filtered.filter, qualify: node.prefix);
+  }
+
+  Set<String> _librarySynthetics(String path, [Set<String>? visiting]) {
+    final seen = visiting ?? <String>{};
+    if (!seen.add(path)) return const {};
+    final program = _libraries[path];
+    if (program == null) return const {};
+    final out = <String>{};
+    void checkType(String? type) {
+      if (type == null || type.isEmpty) return;
+      if (type.contains('Optional')) {
+        out.add('Optional');
+        out.add('missing');
+      }
+      if (type.contains('readonly ')) {
+        out.add(r'$qudsKnownGuards');
+      }
+    }
+
+    void inspect(Node node) {
+      switch (node) {
+        case ClassDeclaration():
+          if (node.kind != 'enum' && node.kind != 'extensionType') {
+            out.add(r'$qudsKnownGuards');
+          }
+          if (node.kind == 'value' || node.kind == 'sealedType') {
+            out.add('Optional');
+            out.add('missing');
+          }
+          if (node.modifiers.contains('readonly')) {
+            out.add(r'$qudsKnownGuards');
+          }
+          for (final field in node.fields) {
+            checkType(field.type);
+            if (!field.isStatic &&
+                field.initializer != null &&
+                field.initializer is! Literal) {
+              out.add('Optional');
+              out.add('missing');
+            }
+          }
+          for (final prop in node.properties) {
+            checkType(prop.type);
+          }
+          for (final ctor in node.constructors) {
+            for (final p in ctor.parameters) {
+              checkType(p.type);
+              if (p.defaultValue != null && p.defaultValue is! Literal) {
+                out.add('Optional');
+                out.add('missing');
+              }
+            }
+          }
+          for (final method in node.methods) {
+            if (method.readonlyMethod) out.add(r'$qudsKnownGuards');
+            checkType(method.returnType);
+            for (final p in method.parameters) {
+              checkType(p.type);
+              if (p.defaultValue != null && p.defaultValue is! Literal) {
+                out.add('Optional');
+                out.add('missing');
+              }
+            }
+          }
+        case FunctionDeclaration():
+          if (node.readonlyMethod) out.add(r'$qudsKnownGuards');
+          checkType(node.returnType);
+          for (final p in node.parameters) {
+            checkType(p.type);
+            if (p.defaultValue != null && p.defaultValue is! Literal) {
+              out.add('Optional');
+              out.add('missing');
+            }
+          }
+        case Binding():
+          checkType(node.type);
+        case AliasDeclaration():
+          checkType(node.target);
+        case Identifier():
+          if (node.name == 'missing' || node.name == 'Optional') {
+            out.add('Optional');
+            out.add('missing');
+          }
+        case ImportDeclaration():
+          if (node.export) {
+            final target = _resolveLibrary(path, node.uri);
+            out.addAll(_librarySynthetics(target, seen));
+          }
+        case PartDirective():
+          if (!node.of) {
+            final target = _resolveLibrary(path, node.uri);
+            out.addAll(_librarySynthetics(target, seen));
+          }
+        default:
+          break;
+      }
+    }
+
+    for (final stmt in program.statements) {
+      walkAst(stmt, inspect);
+    }
+    return out;
   }
 
   String _resolveLibrary(String from, String uri) {

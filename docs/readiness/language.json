@@ -478,8 +478,13 @@
         "test/language_test.dart",
         "test/compiler_test.dart"
       ],
-      "verified_slice_files": [],
-      "known_limits": [],
+      "verified_slice_files": [
+        "test/dart3_patterns_super_enum_test.dart",
+        "test/dart_migrator_equivalence_test.dart"
+      ],
+      "known_limits": [
+        "Enhanced enums support case arguments, synthesized and explicit const/named constructors, immutable fields, properties, methods, mixins/interfaces (including native Dart interfaces like Comparable), and qualified Enum.value match exhaustiveness; mutable var enum fields are rejected (E706)."
+      ],
       "completion_evidence": {
         "positive": [],
         "negative": [],
@@ -505,10 +510,12 @@
         "test/constructor_packet_regressions_web.quds",
         "test/call_suspension.quds",
         "test/call_suspension_test.dart",
-        "test/call_suspension_web.quds"
+        "test/call_suspension_web.quds",
+        "test/dart3_patterns_super_enum_test.dart",
+        "test/dart_migrator_equivalence_test.dart"
       ],
       "known_limits": [
-        "A child with no constructor forwards exactly one unnamed generative parent constructor. Named-only, factory, variadic, and field-name collisions stay E910.",
+        "A child with no constructor forwards exactly one unnamed generative parent constructor. Named-only, factory, variadic, and field-name collisions stay E910. Explicit init(...) super(...) and super.named(...) forward positional/named arguments to explicit, named, synthesized, and generic superclasses, and initializer-only const init bodies lift field initializers and asserts into Dart initializer lists.",
         "Explicit constructor signatures retain required/bracket metadata and prefixed generic construction. Literal defaults execute at the call site. An omitted non-literal imported default is evaluated by the provider static constructor bridge. A synthesized child calls the parent slots bridge for an imported non-literal default. Const literal defaults, a super parameter default, and a generic class with an int default execute. A computed default whose type uses a class type parameter is checked in the declaring library and substituted at the call, including an imported private default. ABI v8 also covers named/local constructor packets, earlier resolved slots, bounded generic helper invocations, native-alias collisions and constant prefixed construction."
       ],
       "completion_evidence": {

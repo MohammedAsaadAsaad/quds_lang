@@ -639,25 +639,163 @@ void main() {
           reason: '${qudsRun.stdout}\n${qudsRun.stderr}');
       expect(qudsRun.stdout, equals(dartRun.stdout));
     });
+
+    test(
+        '11. super(...) and super.named(...) constructor forwarding & inheritance chains',
+        () async {
+      await assertDartAndQudsEquivalent('super_constructors', r'''
+class Entity {
+  final String id;
+  final String kind;
+  Entity(this.id, this.kind);
+  Entity.named(String prefix, int num)
+      : id = '$prefix-$num',
+        kind = 'named';
+  String describe() => '$kind:$id';
+}
+
+class User extends Entity {
+  final String role;
+  User(String rawId, this.role) : super(rawId.toUpperCase(), 'user');
+  User.admin(int num)
+      : role = 'admin',
+        super.named('ADM', num);
+  String summary() => '${describe()}($role)';
+}
+
+class SpecialUser extends User {
+  final int level;
+  SpecialUser(String id, this.level) : super(id, 'special') {
+    assert(level > 0);
+  }
+}
+
+void main() {
+  final u1 = User('abc', 'member');
+  final u2 = User.admin(7);
+  final u3 = SpecialUser('xyz', 3);
+  print(u1.summary());
+  print(u2.summary());
+  print('${u3.summary()}@${u3.level}');
+}
+''');
+    });
+
+    test(
+        '12. Dart 3 enhanced enums: case args, named ctor, fields, getters, methods, Comparable',
+        () async {
+      await assertDartAndQudsEquivalent('enhanced_enums', r'''
+enum HttpStatus implements Comparable<HttpStatus> {
+  ok(200, 'OK'),
+  created(201, 'Created'),
+  notFound.error(404, 'Not Found'),
+  serverError.error(500, 'Server Error');
+
+  final int code;
+  final String title;
+  final bool isErr;
+
+  const HttpStatus(this.code, this.title) : isErr = false;
+  const HttpStatus.error(this.code, this.title) : isErr = true;
+
+  String get tag => '$code $title';
+  bool isSuccess() => !isErr && code >= 200 && code < 300;
+
+  @override
+  int compareTo(HttpStatus other) => code.compareTo(other.code);
+}
+
+String classify(HttpStatus s) {
+  return switch (s) {
+    HttpStatus.ok => 'fine',
+    HttpStatus.created => 'made',
+    HttpStatus.notFound => 'missing',
+    HttpStatus.serverError => 'boom',
+  };
+}
+
+void main() {
+  final sorted = [...HttpStatus.values]..sort();
+  for (final s in sorted) {
+    print('${s.name}|${s.tag}|${s.isSuccess()}|${classify(s)}');
+  }
+}
+''');
+    });
+
+    test(
+        '13. Dart 3 if-case statements, collection if-case, guards, Object/List/Record patterns',
+        () async {
+      await assertDartAndQudsEquivalent('if_case_and_patterns', r'''
+class Point {
+  final int x;
+  final int y;
+  Point(this.x, this.y);
+}
+
+String inspectValue(Object? v) {
+  if (v case int n when n > 10) {
+    return 'big:$n';
+  } else if (v case int n) {
+    return 'small:$n';
+  } else if (v case Point(x: var px, y: > 0)) {
+    return 'posY:$px';
+  } else if (v case Point(:var x, :var y)) {
+    return 'pt:$x,$y';
+  } else if (v case [var head, ...var tail]) {
+    return 'list:$head+${tail.length}';
+  } else if (v case (var a, var b)) {
+    return 'pair:$a:$b';
+  } else {
+    return 'other:$v';
+  }
+}
+
+void main() {
+  final items = <Object?>[
+    42,
+    5,
+    Point(3, 9),
+    Point(2, -1),
+    [10, 20, 30],
+    ('hi', 7),
+    null,
+  ];
+  for (final item in items) {
+    print(inspectValue(item));
+  }
+
+  final rec = (name: 'Quds', score: 95);
+  if (rec case (:var name, score: var s) when s >= 90) {
+    print('top:$name:$s');
+  }
+
+  final picked = [
+    for (final item in items)
+      if (item case int n when n > 0) n * 2 else -1,
+  ];
+  print(picked);
+}
+''');
+    });
   });
 
   group('Safety gates: never silently alter semantics', () {
     test(
-        'rejects non-trivial super(...) constructor initializer instead of silently dropping it',
+        'rejects redirecting factory constructor instead of silently altering it',
         () {
       const dartCode = '''
-class Animal {
-  final String name;
-  Animal(this.name);
+abstract class Animal {
+  factory Animal() = Dog;
 }
 
-class Dog extends Animal {
-  Dog(String n) : super(n);
+class Dog implements Animal {
+  Dog();
 }
 ''';
       final res = convertDartToQuds(dartCode);
       expect(res.qudsSource, isNull);
-      expect(res.issues.join('\n'), contains('super(...)'));
+      expect(res.issues.join('\n'), contains('redirecting factory'));
     });
 
     test('rejects reserved Quds keyword identifier with clear diagnostic', () {

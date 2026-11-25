@@ -375,22 +375,35 @@ class PropertyDeclaration extends Node {
   final String visibility;
 }
 
+class SuperConstructorCall extends Node {
+  const SuperConstructorCall(this.name, this.arguments, super.span);
+  final String? name;
+  final List<Argument> arguments;
+}
+
 class ConstructorDeclaration extends Node {
   const ConstructorDeclaration(
       this.name, this.parameters, this.body, this.expressionBody, super.span,
-      {this.factory = false, this.constant = false});
+      {this.factory = false, this.constant = false, this.superCall});
   final String? name;
   final List<Parameter> parameters;
   final List<Statement>? body;
   final Expression? expressionBody;
   final bool factory;
   final bool constant;
+  final SuperConstructorCall? superCall;
 }
 
 class ClassCase extends Node {
-  const ClassCase(this.name, this.fields, super.span);
+  const ClassCase(this.name, this.fields, super.span,
+      {this.arguments = const [],
+      this.constructorName,
+      this.typeArguments = const []});
   final String name;
   final List<FieldDeclaration> fields;
+  final List<Argument> arguments;
+  final String? constructorName;
+  final List<String> typeArguments;
 }
 
 class TypeParameter extends Node {
@@ -460,10 +473,13 @@ class DeferStatement extends Statement {
 }
 
 class IfCaseStatement extends Statement {
-  const IfCaseStatement(this.scrutinee, this.pattern, this.body, super.span);
+  const IfCaseStatement(this.scrutinee, this.pattern, this.body, super.span,
+      {this.guard, this.elseBody = const []});
   final Expression scrutinee;
   final Pattern pattern;
+  final Expression? guard;
   final List<Statement> body;
+  final List<Statement> elseBody;
 }
 
 class WhenStatement extends Statement {
@@ -631,8 +647,9 @@ class SetExpression extends Expression {
 }
 
 class RecordExpression extends Expression {
-  const RecordExpression(this.fields, super.span);
+  const RecordExpression(this.fields, super.span, {this.names = const []});
   final List<Expression> fields;
+  final List<String?> names;
 }
 
 class RangeExpression extends Expression {
@@ -918,8 +935,11 @@ class NullAwareElement extends Expression {
 
 class CollectionIf extends Expression {
   const CollectionIf(
-      this.condition, this.thenElements, this.elseElements, super.span);
+      this.condition, this.thenElements, this.elseElements, super.span,
+      {this.pattern, this.guard});
   final Expression condition;
+  final Pattern? pattern;
+  final Expression? guard;
   final List<Expression> thenElements;
   final List<Expression> elseElements;
 }

@@ -791,17 +791,50 @@ class _DartToQudsEmitter {
 
   String _enumDeclaration(d.EnumDeclaration node) {
     final body = node.body;
-    final buf = StringBuffer('enum ${node.namePart.typeName.lexeme}:\n');
+    final header = StringBuffer('enum ${node.namePart.typeName.lexeme}');
+    final typeParams = node.namePart.typeParameters;
+    if (typeParams != null) {
+      header.write(typeParams.toSource());
+    }
+    if (node.withClause != null) {
+      header.write(
+          ' with ${node.withClause!.mixinTypes.map(_typeAnnotation).join(', ')}');
+    }
+    if (node.implementsClause != null) {
+      header.write(
+          ' implements ${node.implementsClause!.interfaces.map(_typeAnnotation).join(', ')}');
+    }
+    final buf = StringBuffer('$header:\n');
     for (final c in body.constants) {
-      if (c.arguments != null) {
-        _fail(c,
-            'enhanced enum constant arguments require manual migration review');
+      final name = c.name.lexeme;
+      _checkIdentifierName(c, name);
+      final args = c.arguments;
+      if (args == null) {
+        buf.writeln('  $name');
+      } else {
+        final ta = args.typeArguments == null
+            ? ''
+            : '<${args.typeArguments!.arguments.map(_typeAnnotation).join(', ')}>';
+        final ctor = args.constructorSelector == null
+            ? ''
+            : '.${args.constructorSelector!.name.name}';
+        final argText = _inlineArgs(args.argumentList, 1);
+        buf.writeln('  $name$ta$ctor($argText)');
       }
-      buf.writeln('  ${c.name.lexeme}');
     }
     if (body.members.isNotEmpty) {
-      _fail(body.members.first,
-          'enum methods/fields require manual migration review');
+      final hasExplicitCtor =
+          body.members.any((m) => m is d.ConstructorDeclaration);
+      final members = _classMembers(
+        body.members,
+        const {},
+        1,
+        hasExplicitConstructor: hasExplicitCtor,
+      );
+      if (members.isNotEmpty) {
+        buf.writeln();
+        buf.writeln(members.join('\n\n'));
+      }
     }
     return buf.toString().trimRight();
   }
@@ -1073,6 +1106,7 @@ class _DartToQudsEmitter {
 
     return _withScope(() {
       final initLines = <String>[];
+      var superSuffix = '';
       for (final init in node.initializers) {
         if (init is d.ConstructorFieldInitializer) {
           final fieldName = init.fieldName.name;
@@ -1084,8 +1118,11 @@ class _DartToQudsEmitter {
           if (!_isTrivialSuperKeyInit(init) &&
               (init.constructorName != null ||
                   init.argumentList.arguments.isNotEmpty)) {
-            _fail(init,
-                'super(...) constructor initializer requires manual migration review');
+            final ctorName = init.constructorName == null
+                ? ''
+                : '.${init.constructorName!.name}';
+            final argsText = _inlineArgs(init.argumentList, depth);
+            superSuffix = ' super$ctorName($argsText)';
           }
         } else if (init is d.AssertInitializer) {
           initLines.add(
@@ -1095,22 +1132,23 @@ class _DartToQudsEmitter {
               'constructor initializer ${init.runtimeType} requires manual review');
         }
       }
+      final header = '$pad${kind}init$name($params)$superSuffix';
       if (body is d.EmptyFunctionBody) {
         if (initLines.isEmpty) {
-          return '$pad${kind}init$name($params)';
+          return header;
         }
-        return '$pad${kind}init$name($params):\n${initLines.join('\n')}';
+        return '$header:\n${initLines.join('\n')}';
       }
       if (body is d.BlockFunctionBody) {
         final stmts = _statements(body.block.statements, depth + 1);
         final combined = [...initLines, if (stmts.isNotEmpty) stmts];
         if (combined.isEmpty) {
-          return '$pad${kind}init$name($params)';
+          return header;
         }
-        return '$pad${kind}init$name($params):\n${combined.join('\n')}';
+        return '$header:\n${combined.join('\n')}';
       }
       if (body is d.ExpressionFunctionBody) {
-        return '$pad${kind}init$name($params) = ${_expression(body.expression, depth)}';
+        return '$header = ${_expression(body.expression, depth)}';
       }
       _fail(node, 'unsupported constructor body');
     }, initial: paramNames);
@@ -1526,17 +1564,41 @@ class _DartToQudsEmitter {
     }, initial: extraScope);
   }
 
+  String _ifHeader(d.IfStatement node, int depth, List<String> boundNames) {
+    final expr = _expression(node.expression, depth);
+    final cc = node.caseClause;
+    if (cc == null) return expr;
+    final pat = _dartPattern(cc.guardedPattern.pattern, depth, boundNames);
+    final when = cc.guardedPattern.whenClause == null
+        ? ''
+        : ' when ${_withScope(() => _expression(cc.guardedPattern.whenClause!.expression, depth), initial: boundNames)}';
+    return '$expr is $pat$when';
+  }
+
+  String _ifElementHeader(
+      d.IfElement node, int depth, List<String> boundNames) {
+    final expr = _expression(node.expression, depth);
+    final cc = node.caseClause;
+    if (cc == null) return expr;
+    final pat = _dartPattern(cc.guardedPattern.pattern, depth, boundNames);
+    final when = cc.guardedPattern.whenClause == null
+        ? ''
+        : ' when ${_withScope(() => _expression(cc.guardedPattern.whenClause!.expression, depth), initial: boundNames)}';
+    return '$expr is $pat$when';
+  }
+
   String _ifStatement(d.IfStatement node, int depth) {
-    if (node.caseClause != null) {
-      _fail(node, 'if-case pattern statement requires manual migration review');
-    }
     final pad = '  ' * depth;
+    final boundNames = <String>[];
+    final header = _ifHeader(node, depth, boundNames);
     final buf = StringBuffer(
-        '${pad}if ${_expression(node.expression, depth)}:\n${_branchBody(node.thenStatement, depth + 1)}');
+        '${pad}if $header:\n${_branchBody(node.thenStatement, depth + 1, extraScope: boundNames)}');
     var elseStmt = node.elseStatement;
-    while (elseStmt is d.IfStatement && elseStmt.caseClause == null) {
+    while (elseStmt is d.IfStatement) {
+      final elseBound = <String>[];
+      final elseHeader = _ifHeader(elseStmt, depth, elseBound);
       buf.write(
-          '\n${pad}else if ${_expression(elseStmt.expression, depth)}:\n${_branchBody(elseStmt.thenStatement, depth + 1)}');
+          '\n${pad}else if $elseHeader:\n${_branchBody(elseStmt.thenStatement, depth + 1, extraScope: elseBound)}');
       elseStmt = elseStmt.elseStatement;
     }
     if (elseStmt != null) {
@@ -1799,8 +1861,76 @@ class _DartToQudsEmitter {
       final inner = _dartPattern(pattern.pattern, depth, boundNames);
       return '$inner!';
     }
+    if (pattern is d.ObjectPattern) {
+      final type = _typeAnnotation(pattern.type);
+      final fields = pattern.fields.map((f) {
+        final inner = _dartPattern(f.pattern, depth, boundNames);
+        final explicit = f.name?.name?.lexeme;
+        if (explicit != null) {
+          return '$explicit: $inner';
+        }
+        // Shorthand `Point(:var x)` -> `Point(x: x)` (or `Point(x: shadow x)`).
+        final inferred = _inferredPatternFieldName(f.pattern);
+        if (inferred != null) {
+          return '$inferred: $inner';
+        }
+        _fail(f, 'object pattern field without name requires manual review');
+      }).join(', ');
+      return '$type($fields)';
+    }
+    if (pattern is d.ListPattern) {
+      final elems = pattern.elements.map((el) {
+        if (el is d.RestPatternElement) {
+          if (el.pattern == null) return '...';
+          return '...${_dartPattern(el.pattern!, depth, boundNames)}';
+        }
+        if (el is d.DartPattern) {
+          return _dartPattern(el, depth, boundNames);
+        }
+        _fail(el, 'unsupported list pattern element: ${el.runtimeType}');
+      }).join(', ');
+      return '[$elems]';
+    }
+    if (pattern is d.RecordPattern) {
+      var hasNamed = false;
+      final fields = pattern.fields.map((f) {
+        final inner = _dartPattern(f.pattern, depth, boundNames);
+        if (f.name != null) {
+          hasNamed = true;
+          final fieldName =
+              f.name!.name?.lexeme ?? _inferredPatternFieldName(f.pattern);
+          if (fieldName == null) {
+            _fail(
+                f, 'record pattern field without name requires manual review');
+          }
+          return '$fieldName: $inner';
+        }
+        return inner;
+      }).toList();
+      if (fields.length == 1 && !hasNamed) {
+        return '(${fields.single},)';
+      }
+      return '(${fields.join(', ')})';
+    }
     _fail(pattern,
         'Dart 3 pattern ${pattern.runtimeType} requires manual migration review');
+  }
+
+  String? _inferredPatternFieldName(d.DartPattern pattern) {
+    if (pattern is d.DeclaredVariablePattern) return pattern.name.lexeme;
+    if (pattern is d.CastPattern) {
+      return _inferredPatternFieldName(pattern.pattern);
+    }
+    if (pattern is d.NullCheckPattern) {
+      return _inferredPatternFieldName(pattern.pattern);
+    }
+    if (pattern is d.NullAssertPattern) {
+      return _inferredPatternFieldName(pattern.pattern);
+    }
+    if (pattern is d.ParenthesizedPattern) {
+      return _inferredPatternFieldName(pattern.pattern);
+    }
+    return null;
   }
 
   String _tryStatement(d.TryStatement node, int depth) {
@@ -1943,9 +2073,14 @@ class _DartToQudsEmitter {
       final op = element.isNullAware ? '...?' : '...';
       return '$pad$op${_expression(element.expression, depth)}';
     }
-    if (element is d.IfElement && element.caseClause == null) {
-      final buf = StringBuffer(
-          '${pad}if ${_expression(element.expression, depth)}:\n${_collectionRow(element.thenElement, depth + 1)}');
+    if (element is d.IfElement) {
+      final boundNames = <String>[];
+      final cond = _ifElementHeader(element, depth, boundNames);
+      final thenRow = _withScope(
+        () => _collectionRow(element.thenElement, depth + 1),
+        initial: boundNames,
+      );
+      final buf = StringBuffer('${pad}if $cond:\n$thenRow');
       if (element.elseElement != null) {
         buf.write(
             '\n${pad}else:\n${_collectionRow(element.elseElement!, depth + 1)}');
@@ -2300,9 +2435,13 @@ class _DartToQudsEmitter {
     if (e is d.SpreadElement) {
       return '${e.isNullAware ? '...?' : '...'}${_expression(e.expression, depth)}';
     }
-    if (e is d.IfElement && e.caseClause == null) {
-      final cond = _expression(e.expression, depth);
-      final thenEl = _inlineElement(e.thenElement, depth);
+    if (e is d.IfElement) {
+      final boundNames = <String>[];
+      final cond = _ifElementHeader(e, depth, boundNames);
+      final thenEl = _withScope(
+        () => _inlineElement(e.thenElement, depth),
+        initial: boundNames,
+      );
       if (e.elseElement != null) {
         return 'if $cond: $thenEl else: ${_inlineElement(e.elseElement!, depth)}';
       }

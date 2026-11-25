@@ -1716,11 +1716,24 @@ class Parser {
           factory: factory, constant: constant);
     }
     final parameters = parameterList();
+    SuperConstructorCall? superCall;
+    if (word('super')) {
+      final superSpan = take().span;
+      String? superName;
+      if (match(TokenKind.dot)) {
+        superName = name().lexeme;
+      }
+      if (!at(TokenKind.leftParen)) {
+        fail('Expected ( after super constructor reference');
+      }
+      final superArgs = _parenArguments();
+      superCall = SuperConstructorCall(superName, superArgs, extent(superSpan));
+    }
     if (!at(TokenKind.colon) && !at(TokenKind.equals)) {
       endLine();
       return ConstructorDeclaration(
           ctorName, parameters, null, null, extent(span),
-          factory: factory, constant: constant);
+          factory: factory, constant: constant, superCall: superCall);
     }
     if (match(TokenKind.arrow)) typeName();
     if (match(TokenKind.equals)) {
@@ -1728,11 +1741,11 @@ class Parser {
       endLine();
       return ConstructorDeclaration(
           ctorName, parameters, null, value, extent(span),
-          factory: factory, constant: constant);
+          factory: factory, constant: constant, superCall: superCall);
     }
     return ConstructorDeclaration(
         ctorName, parameters, block(), null, extent(span),
-        factory: factory, constant: constant);
+        factory: factory, constant: constant, superCall: superCall);
   }
 
   Statement typeForm(SourceSpan span, {String visibility = ''}) {
@@ -2283,13 +2296,25 @@ class Parser {
     }
     const typeWords = {'int', 'double', 'num', 'bool', 'String', 'Null'};
     if (at(TokenKind.identifier) && typeWords.contains(current.lexeme)) {
-      final type = take().lexeme;
+      var type = take().lexeme;
+      if (at(TokenKind.question) &&
+          (peek().lexeme == 'shadow' ||
+              (peek().kind == TokenKind.identifier &&
+                  !const {'when', 'and', 'as', 'or', 'if', 'else'}
+                      .contains(peek().lexeme)))) {
+        take();
+        type = '$type?';
+      }
       final shadowed = word('shadow');
       if (shadowed) take();
-      final name = at(TokenKind.identifier) && current.lexeme != 'when'
-          ? this.name().lexeme
-          : null;
-      return TypedPattern(type, name, span, shadow: shadowed);
+      String? boundName;
+      if (at(TokenKind.identifier) &&
+          !const {'when', 'and', 'as', 'or', 'if', 'else'}
+              .contains(current.lexeme)) {
+        final next = name().lexeme;
+        boundName = next == '_' ? null : next;
+      }
+      return TypedPattern(type, boundName, extent(span), shadow: shadowed);
     }
     if (word('shadow')) {
       take();
@@ -2326,19 +2351,28 @@ class Parser {
     if (at(TokenKind.leftParen)) {
       take();
       final fields = <Pattern>[];
+      final names = <String?>[];
       var comma = false;
+      var hasNamed = false;
       if (!at(TokenKind.rightParen)) {
         while (true) {
-          fields.add(patternLiteral());
+          if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+            names.add(name().lexeme);
+            take();
+            fields.add(patternLiteral());
+            hasNamed = true;
+          } else {
+            names.add(null);
+            fields.add(patternLiteral());
+          }
           if (!match(TokenKind.comma)) break;
           comma = true;
           if (at(TokenKind.rightParen)) break;
         }
       }
       expect(TokenKind.rightParen, ')');
-      if (fields.length == 1 && !comma) return fields.single;
-      return ConstructorPattern(
-          '', fields, List.filled(fields.length, null), extent(span));
+      if (fields.length == 1 && !comma && !hasNamed) return fields.single;
+      return ConstructorPattern('', fields, names, extent(span));
     }
     if (at(TokenKind.leftBracket)) {
       take();
@@ -2366,6 +2400,35 @@ class Parser {
       return ListPattern(elements, extent(span));
     }
     final typeOrName = name();
+    if (at(TokenKind.dot)) {
+      Expression target = Identifier(typeOrName.lexeme, typeOrName.span);
+      while (match(TokenKind.dot)) {
+        final member = name();
+        target = MemberAccess(target, member.lexeme, false, extent(span));
+      }
+      return LiteralPattern(target, extent(span));
+    }
+    var fullType = typeOrName.lexeme;
+    var hasTypeArgs = false;
+    if (at(TokenKind.less)) {
+      final after = _skipAngles(index);
+      if (after > index) {
+        final saved = index;
+        try {
+          index = saved;
+          take();
+          final args = <String>[];
+          do {
+            args.add(typeName());
+          } while (match(TokenKind.comma));
+          expect(TokenKind.greater, '>');
+          fullType = '$fullType<${args.join(', ')}>';
+          hasTypeArgs = true;
+        } catch (_) {
+          index = saved;
+        }
+      }
+    }
     if (at(TokenKind.leftParen)) {
       take();
       final fields = <Pattern>[];
@@ -2375,23 +2438,7 @@ class Parser {
           if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
             names.add(name().lexeme);
             take();
-            final token = current;
-            if (at(TokenKind.identifier) &&
-                token.lexeme != '_' &&
-                peek().kind != TokenKind.leftParen &&
-                peek().kind != TokenKind.leftBracket) {
-              final bound = name();
-              fields.add(BindingPattern(bound.lexeme, bound.span));
-            } else {
-              fields.add(patternLiteral());
-            }
-          } else if (at(TokenKind.identifier) &&
-              current.lexeme != '_' &&
-              peek().kind != TokenKind.leftParen &&
-              peek().kind != TokenKind.leftBracket) {
-            final token = name();
-            names.add(null);
-            fields.add(BindingPattern(token.lexeme, token.span));
+            fields.add(patternLiteral());
           } else {
             names.add(null);
             fields.add(patternLiteral());
@@ -2399,7 +2446,29 @@ class Parser {
         } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
       }
       expect(TokenKind.rightParen, ')');
-      return ConstructorPattern(typeOrName.lexeme, fields, names, extent(span));
+      return ConstructorPattern(fullType, fields, names, extent(span));
+    }
+    if (at(TokenKind.question) &&
+        (peek().lexeme == 'shadow' ||
+            (peek().kind == TokenKind.identifier &&
+                !const {'when', 'and', 'as', 'or', 'if', 'else'}
+                    .contains(peek().lexeme)))) {
+      take();
+      fullType = '$fullType?';
+      hasTypeArgs = true;
+    }
+    if (word('shadow') ||
+        (at(TokenKind.identifier) &&
+            !const {'when', 'and', 'as', 'or', 'if', 'else'}
+                .contains(current.lexeme))) {
+      final shadowed = word('shadow');
+      if (shadowed) take();
+      final bound = name().lexeme;
+      return TypedPattern(fullType, bound == '_' ? null : bound, extent(span),
+          shadow: shadowed);
+    }
+    if (hasTypeArgs) {
+      return TypedPattern(fullType, null, extent(span));
     }
     return BindingPattern(typeOrName.lexeme, typeOrName.span);
   }
@@ -2607,20 +2676,164 @@ class Parser {
       {String visibility = ''}) {
     take();
     final typeNameToken = name();
+    final typeParameters = typeParameterList();
+    final mixins = <String>[];
+    final interfaces = <String>[];
+    if (word('with')) {
+      take();
+      do {
+        mixins.add(typeName());
+      } while (match(TokenKind.comma));
+    }
+    if (word('implements')) {
+      take();
+      do {
+        interfaces.add(typeName());
+      } while (match(TokenKind.comma));
+    }
     expect(TokenKind.colon, ':');
     endLine();
     expect(TokenKind.indent, 'indented block');
     final cases = <ClassCase>[];
+    final fields = <FieldDeclaration>[];
+    final methods = <FunctionDeclaration>[];
+    final constructors = <ConstructorDeclaration>[];
+    final properties = <PropertyDeclaration>[];
     while (!at(TokenKind.dedent) && !at(TokenKind.eof)) {
-      final value = name();
+      final isMemberStart = at(TokenKind.at) ||
+          word('private') ||
+          word('protected') ||
+          (word('internal') &&
+              peek().kind != TokenKind.colon &&
+              peek().kind != TokenKind.equals &&
+              peek().kind != TokenKind.leftParen &&
+              peek().kind != TokenKind.dot) ||
+          word('property') ||
+          word('operator') ||
+          word('init') ||
+          (word('factory') && peek().lexeme == 'init') ||
+          (word('const') && peek().lexeme == 'init') ||
+          word('static') ||
+          (word('readonly') && functionAhead(from: index + 1)) ||
+          word('var') ||
+          word('late') ||
+          word('event') ||
+          (word('lazy') &&
+              peek().kind == TokenKind.identifier &&
+              (peek(2).kind == TokenKind.equals ||
+                  peek(2).kind == TokenKind.colon)) ||
+          (at(TokenKind.identifier) && peek().kind == TokenKind.colon) ||
+          functionAhead();
+      if (!isMemberStart) {
+        final value = name();
+        final caseTypeArgs = <String>[];
+        if (at(TokenKind.less)) {
+          take();
+          do {
+            caseTypeArgs.add(typeName());
+          } while (match(TokenKind.comma));
+          expect(TokenKind.greater, '>');
+        }
+        String? ctorName;
+        if (match(TokenKind.dot)) {
+          ctorName = name().lexeme;
+        }
+        final caseArgs =
+            at(TokenKind.leftParen) ? _parenArguments() : const <Argument>[];
+        endLine();
+        cases.add(ClassCase(value.lexeme, const [], extent(value.span),
+            arguments: caseArgs,
+            constructorName: ctorName,
+            typeArguments: caseTypeArgs));
+        continue;
+      }
+      final memberNotes = takeAnnotations();
+      var memberVisibility = '';
+      if (word('private') ||
+          word('protected') ||
+          (word('internal') &&
+              peek().kind != TokenKind.colon &&
+              peek().kind != TokenKind.equals &&
+              peek().kind != TokenKind.leftParen &&
+              peek().kind != TokenKind.dot)) {
+        memberVisibility = take().lexeme;
+      }
+      if (word('property')) {
+        properties.add(propertyDeclaration(memberVisibility));
+        continue;
+      }
+      if (word('operator')) {
+        methods.add(operatorDeclaration());
+        continue;
+      }
+      if (word('init') ||
+          (word('factory') && peek().lexeme == 'init') ||
+          (word('const') && peek().lexeme == 'init')) {
+        constructors.add(constructorDeclaration());
+        continue;
+      }
+      var isStatic = false;
+      if (word('static')) {
+        take();
+        isStatic = true;
+        if (word('const') && peek().lexeme != 'init') {
+          fields.add(staticConstant(visibility: memberVisibility));
+          continue;
+        }
+        if (!functionAhead() &&
+            !(word('readonly') && functionAhead(from: index + 1))) {
+          fields.add(staticField(visibility: memberVisibility));
+          continue;
+        }
+      }
+      var readonlyMethod = false;
+      if (word('readonly') && functionAhead(from: index + 1)) {
+        take();
+        readonlyMethod = true;
+      }
+      if (functionAhead()) {
+        methods.add(function(memberNotes,
+            visibility: memberVisibility,
+            readonlyMethod: readonlyMethod,
+            isStatic: isStatic));
+        continue;
+      }
+      if (isStatic) fail('static applies to a field, function, or const');
+      if (readonlyMethod) fail('readonly applies to a method');
+      final mutable = word('var');
+      if (mutable) take();
+      final fieldName = name();
+      expect(TokenKind.colon, ':');
+      final fieldType = typeName();
+      var requiredField = false;
+      Expression? initializer;
+      if (word('required')) {
+        take();
+        requiredField = true;
+      }
+      if (match(TokenKind.equals)) initializer = expression(bare: true);
       endLine();
-      cases.add(ClassCase(value.lexeme, const [], value.span));
+      fields.add(FieldDeclaration(fieldName.lexeme, fieldType, mutable,
+          requiredField, initializer, fieldName.span,
+          visibility: memberVisibility, annotations: memberNotes));
     }
     expect(TokenKind.dedent, 'end of enum');
     if (cases.isEmpty) fail('An enum needs a value', span);
-    return ClassDeclaration(typeNameToken.lexeme, 'enum', const [],
-        <FunctionDeclaration>[], cases, notes, extent(span),
-        visibility: visibility);
+    return ClassDeclaration(
+      typeNameToken.lexeme,
+      'enum',
+      fields,
+      methods,
+      cases,
+      notes,
+      extent(span),
+      mixins: mixins,
+      interfaces: interfaces,
+      constructors: constructors,
+      properties: properties,
+      typeParameters: typeParameters,
+      visibility: visibility,
+    );
   }
 
   Statement tryStatement(SourceSpan span) {
@@ -2693,7 +2906,23 @@ class Parser {
     if (word('is')) {
       take();
       final pattern = patternLiteral();
-      return IfCaseStatement(condition, pattern, suite(), extent(token.span));
+      Expression? guard;
+      if (word('when')) {
+        take();
+        guard = expression();
+      }
+      final body = suite();
+      final otherwise = <Statement>[];
+      if (word('else')) {
+        take();
+        if (word('if')) {
+          otherwise.add(ifStatement());
+        } else {
+          otherwise.addAll(suite());
+        }
+      }
+      return IfCaseStatement(condition, pattern, body, extent(token.span),
+          guard: guard, elseBody: otherwise);
     }
     final body = suite();
     final otherwise = <Statement>[];
@@ -2947,7 +3176,17 @@ class Parser {
 
   CollectionIf collectionIf() {
     final token = take();
-    final condition = expression();
+    final condition = expression(typeTest: false);
+    Pattern? pattern;
+    Expression? guard;
+    if (word('is')) {
+      take();
+      pattern = patternLiteral();
+      if (word('when')) {
+        take();
+        guard = expression();
+      }
+    }
     final thenElements = elementBlock();
     final elseElements = <Expression>[];
     if (word('else')) {
@@ -2959,7 +3198,8 @@ class Parser {
       }
     }
     return CollectionIf(
-        condition, thenElements, elseElements, extent(token.span));
+        condition, thenElements, elseElements, extent(token.span),
+        pattern: pattern, guard: guard);
   }
 
   CollectionFor collectionFor() {
@@ -3591,14 +3831,38 @@ class Parser {
         take();
         return RecordExpression(const [], extent(token.span));
       }
+      if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+        final fields = <Expression>[];
+        final names = <String?>[];
+        do {
+          if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+            names.add(name().lexeme);
+            take();
+            fields.add(expression());
+          } else {
+            names.add(null);
+            fields.add(expression());
+          }
+        } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
+        expect(TokenKind.rightParen, ')');
+        return RecordExpression(fields, extent(token.span), names: names);
+      }
       final value = expression();
       if (at(TokenKind.comma)) {
         final fields = <Expression>[value];
+        final names = <String?>[null];
         while (match(TokenKind.comma) && !at(TokenKind.rightParen)) {
-          fields.add(expression());
+          if (at(TokenKind.identifier) && peek().kind == TokenKind.colon) {
+            names.add(name().lexeme);
+            take();
+            fields.add(expression());
+          } else {
+            names.add(null);
+            fields.add(expression());
+          }
         }
         expect(TokenKind.rightParen, ')');
-        return RecordExpression(fields, extent(token.span));
+        return RecordExpression(fields, extent(token.span), names: names);
       }
       expect(TokenKind.rightParen, ')');
       return value;
@@ -3796,7 +4060,7 @@ class Parser {
     return DurationLiteral(microseconds, raw, token.span);
   }
 
-  CallExpression call(Expression callee) {
+  List<Argument> _parenArguments() {
     take();
     final arguments = <Argument>[];
     if (!at(TokenKind.rightParen)) {
@@ -3826,6 +4090,11 @@ class Parser {
       } while (match(TokenKind.comma) && !at(TokenKind.rightParen));
     }
     expect(TokenKind.rightParen, ')');
+    return arguments;
+  }
+
+  CallExpression call(Expression callee) {
+    final arguments = _parenArguments();
     return CallExpression(callee, arguments, extent(callee.span));
   }
 

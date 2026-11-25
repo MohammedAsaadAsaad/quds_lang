@@ -255,6 +255,11 @@ List<Map<String, Object>> _qudsLocals(
       add(model.declarations[parameter], parameter.span, functionEnd);
       visitExpression(parameter.defaultValue, functionEnd);
     }
+    if (node.superCall case final superCall?) {
+      for (final argument in superCall.arguments) {
+        visitExpression(argument.value, functionEnd);
+      }
+    }
     visitStatements(node.body, functionEnd);
     visitExpression(node.expressionBody, functionEnd);
   }
@@ -358,11 +363,19 @@ List<Map<String, Object>> _qudsLocals(
         visitExpression(value, end);
         visitStatements(thenBody, thenEnd);
         visitStatements(elseBody, _bodyEnd(elseBody, node.span, endLine));
-      case IfCaseStatement(:final scrutinee, :final pattern, :final body):
-        final armEnd = endLine(node.span);
+      case IfCaseStatement(
+          :final scrutinee,
+          :final pattern,
+          :final guard,
+          :final body,
+          :final elseBody
+        ):
+        final thenEnd = _bodyEnd(body, node.span, endLine);
         visitExpression(scrutinee, end);
-        patterns(pattern, armEnd);
-        visitStatements(body, armEnd);
+        patterns(pattern, thenEnd);
+        visitExpression(guard, thenEnd);
+        visitStatements(body, thenEnd);
+        visitStatements(elseBody, _bodyEnd(elseBody, node.span, endLine));
       case UsingStatement(:final value, :final body):
         final usedEnd = endLine(node.span);
         visitExpression(value, end);

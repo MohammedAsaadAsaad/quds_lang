@@ -2206,8 +2206,25 @@ class DartEmitter {
     }
     if (type.startsWith('(') && type.endsWith(')')) {
       final fields = splitTypeList(type.substring(1, type.length - 1));
-      final rendered = fields.map(_dartType).join(', ');
-      return '($rendered${fields.length == 1 ? ',' : ''})';
+      final hasNamed =
+          fields.any((f) => f.trim().startsWith('{') && f.trim().endsWith('}'));
+      final rendered = fields.map((f) {
+        final trimmed = f.trim();
+        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+          final entries =
+              splitTypeList(trimmed.substring(1, trimmed.length - 1)).map((e) {
+            final t = e.trim();
+            final space = t.lastIndexOf(' ');
+            if (space > 0) {
+              return '${_dartType(t.substring(0, space).trim())} ${t.substring(space + 1).trim()}';
+            }
+            return _dartType(t);
+          }).join(', ');
+          return '{$entries}';
+        }
+        return _dartType(trimmed);
+      }).join(', ');
+      return '($rendered${fields.length == 1 && !hasNamed ? ',' : ''})';
     }
     if (type.startsWith('Range<')) return 'Iterable<num>';
     final generic = type.indexOf('<');
@@ -2241,7 +2258,10 @@ class DartEmitter {
             _expressionPropagates(node.condition) ||
             (node.alternate != null && _expressionPropagates(node.alternate!)),
         ParallelAssignment() => node.values.any(_expressionPropagates),
-        IfCaseStatement() => _containsPropagate(node.body),
+        IfCaseStatement() => _expressionPropagates(node.scrutinee) ||
+            (node.guard != null && _expressionPropagates(node.guard!)) ||
+            _containsPropagate(node.body) ||
+            _containsPropagate(node.elseBody),
         IfLetStatement() => _containsPropagate(node.thenBody) ||
             _containsPropagate(node.elseBody),
         DeferStatement() => _expressionPropagates(node.expression),
@@ -2315,15 +2335,131 @@ class DartEmitter {
     _span = node.span;
     _markProtected(node.visibility);
     if (node.kind == 'enum') {
-      final values = node.cases.map((item) => item.name).join(', ');
-      if (!model.jsonClasses.contains(node)) {
-        line('enum ${node.name} { $values }');
+      final isEnhanced = node.fields.isNotEmpty ||
+          node.methods.isNotEmpty ||
+          node.properties.isNotEmpty ||
+          node.constructors.isNotEmpty ||
+          node.typeParameters.isNotEmpty ||
+          node.mixins.isNotEmpty ||
+          node.interfaces.isNotEmpty ||
+          node.cases.any((c) =>
+              c.arguments.isNotEmpty ||
+              c.constructorName != null ||
+              c.typeArguments.isNotEmpty);
+      if (!isEnhanced) {
+        final values = node.cases.map((item) => item.name).join(', ');
+        if (!model.jsonClasses.contains(node)) {
+          line('enum ${node.name} { $values }');
+          return;
+        }
+        line('enum ${node.name} {');
+        _depth++;
+        line('$values;');
+        _emitJsonEnumMethods(node);
+        _depth--;
+        line('}');
         return;
       }
-      line('enum ${node.name} {');
+      for (final note in node.annotations) {
+        _emitMetadata(note);
+      }
+      final enumTail = [
+        if (node.mixins.isNotEmpty) 'with ${node.mixins.join(', ')}',
+        if (node.interfaces.isNotEmpty)
+          'implements ${node.interfaces.join(', ')}',
+      ].join(' ');
+      line(
+          'enum ${node.name}${_typeParameters(node.typeParameters)}${enumTail.isEmpty ? '' : ' $enumTail'} {');
       _depth++;
-      line('$values;');
-      _emitJsonEnumMethods(node);
+      final savedEnumGenerics = _openGenerics;
+      _openGenerics = {
+        ...savedEnumGenerics,
+        for (final parameter in node.typeParameters) parameter.name,
+      };
+      final instanceFields = node.fields
+          .where((f) => !f.isStatic && !f.isEvent && f.lazyBody == null)
+          .toList();
+      final synthesizedNamed =
+          node.constructors.isEmpty && instanceFields.isNotEmpty;
+      for (var i = 0; i < node.cases.length; i++) {
+        final item = node.cases[i];
+        final typeArgs = item.typeArguments.isEmpty
+            ? ''
+            : '<${item.typeArguments.map(_dartType).join(', ')}>';
+        final ctorSuffix =
+            item.constructorName == null ? '' : '.${item.constructorName}';
+        var argsText = '';
+        if (item.arguments.isNotEmpty || item.constructorName != null) {
+          final rendered = <String>[];
+          var pos = 0;
+          for (final arg in item.arguments) {
+            final value = expression(arg.value, constantContext: true);
+            if (arg.name != null) {
+              rendered.add('${arg.name}: $value');
+            } else if (synthesizedNamed && pos < instanceFields.length) {
+              rendered.add('${instanceFields[pos].name}: $value');
+              pos++;
+            } else {
+              rendered.add(value);
+              pos++;
+            }
+          }
+          argsText = '(${rendered.join(', ')})';
+        }
+        final sep = i + 1 < node.cases.length ? ',' : ';';
+        line('${item.name}$typeArgs$ctorSuffix$argsText$sep');
+      }
+      if (synthesizedNamed) {
+        final initializers = <String>[];
+        final params = [
+          for (final field in instanceFields)
+            _constructorParameter(field, initializers),
+        ];
+        final initTail =
+            initializers.isEmpty ? '' : ' : ${initializers.join(', ')}';
+        line('const ${node.name}({${params.join(', ')}})$initTail;');
+      } else {
+        for (final constructor in node.constructors) {
+          _emitConstructor(node, constructor);
+        }
+      }
+      for (final field in node.fields) {
+        if (field.isStatic) {
+          final declared = model.declarations[field]?.type ?? field.type;
+          final initial = field.initializer == null
+              ? ''
+              : ' = ${expression(field.initializer!)}';
+          final kind = field.isConst
+              ? 'static const'
+              : field.mutable
+                  ? 'static'
+                  : 'static final';
+          line('$kind ${_dartType(declared)} ${field.name}$initial;');
+          continue;
+        }
+        _markProtected(field.visibility);
+        final declared = model.declarations[field]?.type ?? field.type;
+        final initializedByConstructor = node.constructors.isEmpty ||
+            node.constructors.any((constructor) => constructor.parameters.any(
+                (parameter) =>
+                    parameter.initializing == 'this' &&
+                    parameter.name == field.name));
+        final initial = field.initializer != null && !initializedByConstructor
+            ? ' = ${expression(field.initializer!, constantContext: true)}'
+            : '';
+        line('final ${_dartType(declared)} ${_fieldDart(field)}$initial;');
+      }
+      for (final property in node.properties) {
+        _emitProperty(property);
+      }
+      for (final method in node.methods) {
+        if (model.jsonSynthesizedMethods.contains(method)) continue;
+        emitFunction(method);
+      }
+      if (model.jsonClasses.contains(node)) {
+        _emitJsonEnumMethods(node);
+      }
+      _openGenerics = savedEnumGenerics;
       _depth--;
       line('}');
       return;
@@ -3201,21 +3337,84 @@ class DartEmitter {
       return field != null && field.visibility == 'private';
     });
     final lifted = _liftedFields(type, constructor);
+    final liftedAsserts = (constructor.constant && constructor.body != null)
+        ? constructor.body!
+            .whereType<RequireStatement>()
+            .where((r) => r.kind == 'assert')
+            .toList()
+        : const <RequireStatement>[];
+    String? superInit;
+    if (constructor.superCall case final sc?) {
+      final superArgs = <String>[];
+      if (namedSuper) {
+        final parentFields = (model.classFields[parent] ?? parent.fields)
+            .where((f) => !f.isStatic && !f.isEvent && f.lazyBody == null)
+            .toList();
+        final superFormalNames = constructor.parameters
+            .where((p) => p.initializing == 'super')
+            .map((p) => p.name)
+            .toSet();
+        for (final p
+            in constructor.parameters.where((p) => p.initializing == 'super')) {
+          superArgs.add('${p.name}: ${model.declarations[p]!.dartName}');
+        }
+        final remainingFields = parentFields
+            .where((f) => !superFormalNames.contains(f.name))
+            .toList();
+        var pos = 0;
+        for (final arg in sc.arguments) {
+          final value =
+              expression(arg.value, constantContext: constructor.constant);
+          if (arg.name != null) {
+            superArgs.add('${arg.name}: $value');
+          } else if (pos < remainingFields.length) {
+            superArgs.add('${remainingFields[pos].name}: $value');
+            pos++;
+          } else {
+            superArgs.add(value);
+            pos++;
+          }
+        }
+      } else {
+        for (final arg in sc.arguments) {
+          final value =
+              expression(arg.value, constantContext: constructor.constant);
+          if (arg.name != null) {
+            superArgs.add('${arg.name}: $value');
+          } else {
+            superArgs.add(value);
+          }
+        }
+      }
+      final superSuffix = sc.name == null ? '' : '.${sc.name}';
+      superInit = 'super$superSuffix(${superArgs.join(', ')})';
+    } else if (namedSuper) {
+      superInit =
+          'super(${constructor.parameters.where((p) => p.initializing == 'super').map((p) => '${p.name}: ${model.declarations[p]!.dartName}').join(', ')})';
+    }
+    final isConst =
+        constructor.constant || (type.kind == 'enum' && !constructor.factory);
     final inits = [
       ...private.map((parameter) => '_${parameter.name} = ${parameter.name}'),
       ..._copyInitializers(type, constructor),
       for (final binding in lifted)
-        '${model.references[binding]!.dartName} = ${expression(binding.value)}',
-      if (namedSuper)
-        'super(${constructor.parameters.where((p) => p.initializing == 'super').map((p) => '${p.name}: ${model.declarations[p]!.dartName}').join(', ')})',
+        '${model.references[binding]!.dartName} = ${expression(binding.value, constantContext: isConst)}',
+      for (final check in liftedAsserts)
+        check.message == null
+            ? 'assert(${expression(check.condition, constantContext: isConst)})'
+            : 'assert(${expression(check.condition, constantContext: isConst)}, ${expression(check.message!, constantContext: isConst)})',
+      if (superInit != null) superInit,
     ];
     final tail = inits.isEmpty ? '' : ' : ${inits.join(', ')}';
-    final prefix = '${constructor.constant ? 'const ' : ''}'
+    final prefix = '${isConst ? 'const ' : ''}'
         '${constructor.factory ? 'factory ' : ''}';
     final name = constructor.name == null
         ? type.name
         : '${type.name}.${constructor.name}';
-    if (constructor.body == null && constructor.expressionBody == null) {
+    final allLifted = constructor.body != null &&
+        constructor.body!.length == lifted.length + liftedAsserts.length;
+    if ((constructor.body == null || (isConst && allLifted)) &&
+        constructor.expressionBody == null) {
       line('$prefix$name($params)$tail;');
       return;
     }
@@ -3363,16 +3562,20 @@ class DartEmitter {
     if (constructor.factory || constructor.expressionBody != null) {
       return const [];
     }
-    if (type.kind != 'value' && !type.modifiers.contains('value')) {
-      return const [];
-    }
+    final isValue = type.kind == 'value' || type.modifiers.contains('value');
     final inits = <String>[];
     for (final field in type.fields) {
       if (field.isStatic || field.initializer == null) continue;
       final formal = constructor.parameters.any((parameter) =>
           parameter.initializing == 'this' && parameter.name == field.name);
       if (formal || _bodyAssigns(constructor.body, field.name)) continue;
-      inits.add('${_fieldDart(field)} = ${expression(field.initializer!)}');
+      final otherCtorInitializes = type.constructors.any((other) =>
+          other != constructor &&
+          other.parameters
+              .any((p) => p.initializing == 'this' && p.name == field.name));
+      if (!isValue && !otherCtorInitializes) continue;
+      inits.add(
+          '${_fieldDart(field)} = ${expression(field.initializer!, constantContext: constructor.constant || type.kind == 'enum')}');
     }
     return inits;
   }
@@ -3950,12 +4153,25 @@ class DartEmitter {
         if (matched != null && matched.contains(' | ')) _matched = matched;
         final typed =
             node.pattern is TypedPattern ? node.pattern as TypedPattern : null;
-        if (typed != null &&
+        final typeBindingRef = node.pattern is BindingPattern
+            ? model.references[node.pattern]
+            : null;
+        final isBareTypeBinding = typeBindingRef != null &&
+            typeBindingRef.classCase == null &&
+            typeBindingRef.classDeclaration != null;
+        final guardSuffix =
+            node.guard == null ? '' : ' when ${expression(node.guard!)}';
+        if (node.guard == null &&
+            typed != null &&
             typed.name == null &&
             (_matched == null || !_matched!.contains(' | '))) {
-          line('if ($scrutinee is ${typed.type}) {');
+          line('if ($scrutinee is ${_dartType(typed.type)}) {');
+        } else if (node.guard == null &&
+            isBareTypeBinding &&
+            (_matched == null || !_matched!.contains(' | '))) {
+          line('if ($scrutinee is ${_dartType(typeBindingRef.dartName)}) {');
         } else {
-          line('if ($scrutinee case ${_pattern(node.pattern)}) {');
+          line('if ($scrutinee case ${_pattern(node.pattern)}$guardSuffix) {');
         }
         _matched = savedMatched;
         final symbol = node.scrutinee is Identifier
@@ -3974,6 +4190,12 @@ class DartEmitter {
         _depth--;
         if (symbol != null && !alreadyPromoted)
           _unionCaseBindings.remove(symbol);
+        if (node.elseBody.isNotEmpty) {
+          line('} else {');
+          _depth++;
+          statements(node.elseBody);
+          _depth--;
+        }
         line('}');
       case WhenStatement():
         if (model.skipped.contains(node)) break;
@@ -4168,8 +4390,8 @@ class DartEmitter {
       TypedPattern() => matched != null && matched.contains(' | ')
           ? _unionPattern(matched, pattern)
           : pattern.name == null
-              ? pattern.type
-              : '${pattern.type} ${model.declarations[pattern]!.dartName}',
+              ? '${_dartType(pattern.type)} _'
+              : '${_dartType(pattern.type)} ${model.declarations[pattern]!.dartName}',
       BindingPattern() => _bindingPattern(pattern),
       LiteralPattern() => expression(pattern.literal),
       ListPattern() => '[${pattern.elements.map(_pattern).join(', ')}]',
@@ -4190,8 +4412,13 @@ class DartEmitter {
       NullCheckPattern() => '${_pattern(pattern.inner)}?',
       NullAssertPattern() => '${_pattern(pattern.inner)}!',
       ConstructorPattern() => pattern.typeName.isEmpty
-          ? '(${pattern.fields.map(_pattern).join(', ')})'
-          : '${pattern.typeName}(${[
+          ? '(${[
+              for (var i = 0; i < pattern.fields.length; i++)
+                i < pattern.names.length && pattern.names[i] != null
+                    ? '${pattern.names[i]}: ${_pattern(pattern.fields[i])}'
+                    : _pattern(pattern.fields[i])
+            ].join(', ')})'
+          : '${_dartType(pattern.typeName)}(${[
               for (var i = 0; i < pattern.fields.length; i++)
                 pattern.names[i] == null
                     ? _resultField(pattern, i)
@@ -4224,7 +4451,7 @@ class DartEmitter {
     if (typed != null &&
         typed.name == null &&
         (_matched == null || !_matched!.contains(' | '))) {
-      line('$keyword ($text is ${typed.type}) {');
+      line('$keyword ($text is ${_dartType(typed.type)}) {');
     } else {
       line('$keyword ($text case ${_pattern(pattern)}) {');
     }
@@ -4246,6 +4473,11 @@ class DartEmitter {
       final fields = symbol.classCase!.fields;
       if (fields.isEmpty) return '${symbol.dartName}()';
       return '${symbol.dartName}(${fields.map((field) => '${field.name}: _').join(', ')})';
+    }
+    if (symbol != null &&
+        symbol.classCase == null &&
+        symbol.classDeclaration != null) {
+      return '${_dartType(symbol.dartName)} _';
     }
     return 'final ${model.declarations[pattern]!.dartName}';
   }
@@ -4499,8 +4731,7 @@ class DartEmitter {
           IndexExpression() => _index(node, constantContext: constantContext),
           MapExpression() => _map(node),
           SetExpression() => _set(node),
-          RecordExpression() =>
-            '(${node.fields.map((field) => expression(field)).join(', ')})',
+          RecordExpression() => _recordLiteral(node),
           RangeExpression() => _range(node),
           AwaitExpression() =>
             '(await ${expression(node.operand, constantContext: constantContext)})',
@@ -4533,6 +4764,25 @@ class DartEmitter {
           RetryExpression() => _retry(node),
           TimeoutExpression() => _timeout(node),
         });
+  }
+
+  String _recordLiteral(RecordExpression node) {
+    if (node.fields.isEmpty) return '()';
+    var hasNamed = false;
+    final parts = <String>[];
+    for (var i = 0; i < node.fields.length; i++) {
+      final fieldName = i < node.names.length ? node.names[i] : null;
+      if (fieldName != null) {
+        hasNamed = true;
+        parts.add('$fieldName: ${expression(node.fields[i])}');
+      } else {
+        parts.add(expression(node.fields[i]));
+      }
+    }
+    if (parts.length == 1 && !hasNamed) {
+      return '(${parts.single},)';
+    }
+    return '(${parts.join(', ')})';
   }
 
   bool _opaqueBoolLeaf(Expression node) {
@@ -6405,7 +6655,8 @@ class DartEmitter {
         WhileStatement() =>
           node.body.any(_doReturns) || node.elseBody.any(_doReturns),
         GuardedStatement() => _doReturns(node.statement),
-        IfCaseStatement() => node.body.any(_doReturns),
+        IfCaseStatement() =>
+          node.body.any(_doReturns) || node.elseBody.any(_doReturns),
         IfLetStatement() =>
           node.thenBody.any(_doReturns) || node.elseBody.any(_doReturns),
         WhenStatement() => node.body.any(_doReturns),
@@ -7079,6 +7330,11 @@ class DartEmitter {
       final tail = element.elseElements.isEmpty
           ? ''
           : ' else ...<$type>[${_pieces(element.elseElements, type)}]';
+      if (element.pattern case final pattern?) {
+        final guardPart =
+            element.guard == null ? '' : ' when ${expression(element.guard!)}';
+        return 'if (${expression(element.condition)} case ${_pattern(pattern)}$guardPart) ...<$type>[$thenList]$tail';
+      }
       return 'if (${expression(element.condition, opaqueBool: true)}) ...<$type>[$thenList]$tail';
     }
     if (element is CollectionFor) {

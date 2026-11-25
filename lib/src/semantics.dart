@@ -1999,11 +1999,20 @@ class Analyzer {
         }
       }
     }
+    if (type.kind == 'enum') {
+      for (final field in type.fields) {
+        if (!field.isStatic && field.mutable) {
+          error('E706', 'An enum field cannot be var', field);
+        }
+      }
+      _checkEnumCases(type);
+    }
     if (type.constructors.isNotEmpty &&
         !type.modifiers.contains('abstract') &&
         type.kind != 'interface') {
       for (final field in type.fields) {
-        if (field.mutable ||
+        if (field.isStatic ||
+            field.mutable ||
             field.initializer != null ||
             field.lazyBody != null) {
           continue;
@@ -2031,6 +2040,16 @@ class Analyzer {
           'A generic superclass needs explicit type arguments in this subset',
           type);
     }
+    for (final constructor in type.constructors) {
+      final sc = constructor.superCall;
+      if (sc == null) continue;
+      if (type.superclass == null) {
+        error('E700', 'A super constructor call requires a superclass', sc);
+      }
+      if (constructor.factory) {
+        error('E700', 'A factory constructor cannot call super', sc);
+      }
+    }
     if (parent != null && parent.kind != 'interface') {
       if (type.constructors.isEmpty &&
           parent.constructors.isNotEmpty &&
@@ -2041,6 +2060,47 @@ class Analyzer {
             type);
       }
       for (final constructor in type.constructors.where((c) => !c.factory)) {
+        final sc = constructor.superCall;
+        if (sc != null) {
+          if (sc.name != null) {
+            final target = parent.constructors
+                .where((c) => c.name == sc.name && !c.factory)
+                .toList();
+            if (target.isEmpty) {
+              error(
+                  'E700',
+                  'Superclass ${parent.name} has no constructor ${sc.name}',
+                  sc);
+            } else {
+              _checkSuperCallArgs(constructor, sc, target.first.parameters);
+            }
+          } else if (parent.constructors.isEmpty) {
+            final synthParams = _fieldsOf(parent)
+                .where((f) => !f.isStatic && f.lazyBody == null)
+                .map((f) => Parameter(
+                      f.name,
+                      f.type,
+                      false,
+                      f.span,
+                      defaultValue: f.initializer,
+                      kind: f.requiredField && f.initializer == null
+                          ? ParameterKind.requiredNamed
+                          : ParameterKind.optionalNamed,
+                    ))
+                .toList();
+            _checkSuperCallArgs(constructor, sc, synthParams);
+          } else {
+            final unnamed =
+                parent.constructors.where((c) => c.name == null && !c.factory);
+            if (unnamed.isEmpty) {
+              error('E700',
+                  'A superclass needs an unnamed generative constructor', sc);
+            } else {
+              _checkSuperCallArgs(constructor, sc, unnamed.first.parameters);
+            }
+          }
+          continue;
+        }
         final unnamed =
             parent.constructors.where((c) => c.name == null && !c.factory);
         if (parent.constructors.isNotEmpty && unnamed.isEmpty) {
@@ -2451,7 +2511,22 @@ class Analyzer {
   void analyzeConstructor(
       ClassDeclaration type, ConstructorDeclaration constructor) {
     if (constructor.constant && constructor.body != null) {
-      error('E401', 'A const constructor cannot have a body', constructor);
+      final ownFields = type.fields
+          .where((f) => !f.isStatic && f.lazyBody == null)
+          .map((f) => f.name)
+          .toSet();
+      final hasRuntimeStmt = constructor.body!.any((stmt) {
+        if (stmt is RequireStatement && stmt.kind == 'assert') return false;
+        if (stmt is Binding &&
+            stmt.mode == BindingMode.inferred &&
+            ownFields.contains(stmt.name)) {
+          return false;
+        }
+        return true;
+      });
+      if (hasRuntimeStmt) {
+        error('E401', 'A const constructor cannot have a body', constructor);
+      }
     }
     final savedTypes = {..._typeNames};
     final savedBounds = {..._typeBounds};
@@ -2497,6 +2572,73 @@ class Analyzer {
       }
       parameterNames.add(parameter.name);
     }
+    if (constructor.superCall case final sc?) {
+      final parentName = type.superclass;
+      final parent = parentName == null
+          ? null
+          : _typeSymbol(_genericHead(parentName))?.classDeclaration;
+      final subs = parent != null && parentName != null
+          ? _genericSubstitution(parentName, parent)
+          : const <String, String>{};
+      List<Parameter>? parentParams;
+      if (parent != null) {
+        if (sc.name != null) {
+          final target = parent.constructors
+              .where((c) => c.name == sc.name && !c.factory)
+              .firstOrNull;
+          if (target != null) parentParams = _ctorParameters(parent, target);
+        } else if (parent.constructors.isEmpty) {
+          parentParams = _fieldsOf(parent)
+              .where((f) => !f.isStatic && f.lazyBody == null)
+              .map((f) => Parameter(f.name, f.type, false, f.span,
+                  defaultValue: f.initializer,
+                  kind: f.requiredField && f.initializer == null
+                      ? ParameterKind.requiredNamed
+                      : ParameterKind.optionalNamed))
+              .toList();
+        } else {
+          final target = parent.constructors
+              .where((c) => c.name == null && !c.factory)
+              .firstOrNull;
+          if (target != null) parentParams = _ctorParameters(parent, target);
+        }
+      }
+      var pos = 0;
+      for (final arg in sc.arguments) {
+        String? expectedType;
+        if (parentParams != null) {
+          Parameter? param;
+          if (arg.name != null) {
+            param = parentParams.where((p) => p.name == arg.name).firstOrNull;
+          } else {
+            final positional = parentParams
+                .where((p) => !constructor.parameters.any(
+                    (cp) => cp.initializing == 'super' && cp.name == p.name))
+                .toList();
+            if (pos < positional.length) param = positional[pos];
+            pos++;
+          }
+          if (param != null) {
+            expectedType = _substitute(param.type, subs);
+          }
+        }
+        final savedExpected = _expected;
+        _expected = expectedType;
+        final String actual;
+        try {
+          actual = expression(arg.value);
+        } finally {
+          _expected = savedExpected;
+        }
+        if (expectedType != null &&
+            !_acceptExpected(arg.value, actual, expectedType)) {
+          error(
+              'E300',
+              'Super argument type $actual is incompatible with $expectedType',
+              arg.value);
+        }
+      }
+    }
     if (constructor.expressionBody case final value?) {
       final returned = expression(value);
       if (!compatible(returned, type.name) && !constructor.factory) {
@@ -2517,6 +2659,115 @@ class Analyzer {
     _typeBounds
       ..clear()
       ..addAll(savedBounds);
+  }
+
+  void _checkSuperCallArgs(ConstructorDeclaration constructor,
+      SuperConstructorCall sc, List<Parameter> parentParams) {
+    final superFormals = constructor.parameters
+        .where((p) => p.initializing == 'super')
+        .map((p) => p.name)
+        .toSet();
+    final namedSupplied =
+        sc.arguments.where((a) => a.name != null).map((a) => a.name!).toSet();
+    final positionalCount = sc.arguments.where((a) => a.name == null).length;
+    var posUsed = 0;
+    for (final param in parentParams) {
+      if (superFormals.contains(param.name)) continue;
+      if (namedSupplied.contains(param.name)) continue;
+      if (posUsed < positionalCount) {
+        posUsed++;
+        continue;
+      }
+      if (param.defaultValue == null &&
+          param.kind != ParameterKind.optionalPositional) {
+        error('E704', 'Superclass parameter ${param.name} is not initialized',
+            sc);
+      }
+    }
+  }
+
+  void _checkEnumCases(ClassDeclaration type) {
+    final instanceFields =
+        type.fields.where((f) => !f.isStatic && f.lazyBody == null).toList();
+    for (final item in type.cases) {
+      if (item.arguments.isEmpty &&
+          item.constructorName == null &&
+          instanceFields.isEmpty &&
+          type.constructors.isEmpty) {
+        continue;
+      }
+      List<Parameter> targetParams;
+      if (type.constructors.isEmpty) {
+        targetParams = instanceFields
+            .map((f) => Parameter(f.name, f.type, false, f.span,
+                defaultValue: f.initializer,
+                kind: f.requiredField && f.initializer == null
+                    ? ParameterKind.requiredNamed
+                    : ParameterKind.optionalNamed))
+            .toList();
+      } else {
+        final ctor = type.constructors
+            .where((c) => c.name == item.constructorName && !c.factory)
+            .firstOrNull;
+        if (ctor == null) {
+          error(
+              'E700',
+              'Enum ${type.name} has no constructor ${item.constructorName ?? '(unnamed)'}',
+              item);
+        }
+        targetParams = _ctorParameters(type, ctor);
+      }
+      final subs = <String, String>{};
+      for (var i = 0;
+          i < type.typeParameters.length && i < item.typeArguments.length;
+          i++) {
+        subs[type.typeParameters[i].name] = item.typeArguments[i];
+      }
+      var pos = 0;
+      final namedSupplied = <String>{};
+      for (final arg in item.arguments) {
+        Parameter? param;
+        if (arg.name != null) {
+          namedSupplied.add(arg.name!);
+          param = targetParams.where((p) => p.name == arg.name).firstOrNull;
+        } else {
+          if (pos < targetParams.length) param = targetParams[pos];
+          pos++;
+        }
+        final expectedType =
+            param == null ? null : _substitute(param.type, subs);
+        final savedExpected = _expected;
+        _expected = expectedType;
+        final String actual;
+        try {
+          actual = expression(arg.value);
+        } finally {
+          _expected = savedExpected;
+        }
+        if (expectedType != null &&
+            !_acceptExpected(arg.value, actual, expectedType)) {
+          error(
+              'E300',
+              'Enum case ${item.name} argument type $actual is incompatible with $expectedType',
+              arg.value);
+        }
+      }
+      var posRemaining = pos;
+      for (final param in targetParams) {
+        if (namedSupplied.contains(param.name)) continue;
+        if (posRemaining > 0) {
+          posRemaining--;
+          continue;
+        }
+        if (param.defaultValue == null &&
+            param.kind != ParameterKind.optionalPositional) {
+          error(
+              'E704',
+              'Enum case ${item.name} is missing required argument ${param.name}',
+              item);
+        }
+      }
+    }
   }
 
   void analyzeProperty(ClassDeclaration type, PropertyDeclaration property) {
@@ -2654,6 +2905,12 @@ class Analyzer {
         _scope.symbols[field.name] = model.declarations[field]!;
         _fieldSymbols.add(model.declarations[field]!);
       }
+    }
+    if (type.kind == 'enum') {
+      _scope.symbols.putIfAbsent(
+          'name', () => Symbol('name', 'name', 'String', field: true));
+      _scope.symbols.putIfAbsent(
+          'index', () => Symbol('index', 'index', 'int', field: true));
     }
   }
 
@@ -4060,8 +4317,30 @@ class Analyzer {
     if (type.startsWith('(') && type.endsWith(')')) {
       final inner = type.substring(1, type.length - 1);
       if (inner.isEmpty) return;
-      for (final part in _splitTypes(inner)) {
-        validateType(part.trim(), node, allowVoid: false);
+      for (final raw in _splitTypes(inner)) {
+        final part = raw.trim();
+        if (part.startsWith('{') && part.endsWith('}')) {
+          final namedInner = part.substring(1, part.length - 1);
+          for (final entry in _splitTypes(namedInner)) {
+            final t = entry.trim();
+            if (t.isEmpty) continue;
+            final colon = t.indexOf(':');
+            if (colon > 0) {
+              validateType(t.substring(colon + 1).trim(), node,
+                  allowVoid: false);
+            } else {
+              final space = t.lastIndexOf(' ');
+              if (space > 0) {
+                validateType(t.substring(0, space).trim(), node,
+                    allowVoid: false);
+              } else {
+                validateType(t, node, allowVoid: false);
+              }
+            }
+          }
+        } else {
+          validateType(part, node, allowVoid: false);
+        }
       }
       return;
     }
@@ -4564,6 +4843,16 @@ class Analyzer {
           returns(statement.elseBody)) {
         return true;
       }
+      if (statement is IfCaseStatement &&
+          returns(statement.body) &&
+          returns(statement.elseBody)) {
+        return true;
+      }
+      if (statement is IfLetStatement &&
+          returns(statement.thenBody) &&
+          returns(statement.elseBody)) {
+        return true;
+      }
       if (statement is ForStatement &&
           !_mentionsBreak(statement.body) &&
           returns(statement.elseBody)) {
@@ -4625,6 +4914,16 @@ class Analyzer {
               _mentionsBreak(statement.elseBody)) {
             return true;
           }
+        case IfCaseStatement():
+          if (_mentionsBreak(statement.body) ||
+              _mentionsBreak(statement.elseBody)) {
+            return true;
+          }
+        case IfLetStatement():
+          if (_mentionsBreak(statement.thenBody) ||
+              _mentionsBreak(statement.elseBody)) {
+            return true;
+          }
         case GuardedStatement():
           if (statement.statement is BreakStatement) return true;
         case LabelStatement():
@@ -4668,7 +4967,10 @@ class Analyzer {
       final promoted = _promotions(node.condition, whenTrue: true);
       return promoted.isEmpty ? null : promoted;
     }
-    if (node is! IfCaseStatement || !_alwaysExits(node.body)) return null;
+    if (node is! IfCaseStatement ||
+        node.guard != null ||
+        node.elseBody.isNotEmpty ||
+        !_alwaysExits(node.body)) return null;
     final scrutinee = node.scrutinee;
     final pattern = node.pattern;
     if (scrutinee is! Identifier || pattern is! TypedPattern) return null;
@@ -5414,13 +5716,47 @@ class Analyzer {
         _scope = _Scope(savedCase);
         bindPattern(node.pattern, matched, declare: true);
         final facts = <String, String>{};
-        if (node.scrutinee is Identifier && node.pattern is TypedPattern) {
-          facts[(node.scrutinee as Identifier).name] =
-              (node.pattern as TypedPattern).type;
+        if (node.scrutinee is Identifier) {
+          if (node.pattern is TypedPattern) {
+            facts[(node.scrutinee as Identifier).name] =
+                (node.pattern as TypedPattern).type;
+          } else if (node.pattern is BindingPattern) {
+            final ref = model.references[node.pattern];
+            if (ref != null && ref.classCase == null && ref.type.isNotEmpty) {
+              facts[(node.scrutinee as Identifier).name] = ref.type;
+            }
+          }
         }
-        _withPromotions(facts, () => statements(node.body));
+        _withPromotions(facts, () {
+          if (node.guard case final guard?) {
+            final guardType = expression(guard);
+            if (guardType != 'bool' && guardType != 'dynamic') {
+              fail('Guard must be bool', guard);
+            }
+          }
+          statements(node.body);
+        });
         _scope = savedCase;
-        if (_alwaysExits(node.body)) {
+        final afterCaseThen = Map<Symbol, SourceSpan>.from(_consumed);
+        final caseThenExits = _alwaysExits(node.body);
+        if (node.elseBody.isNotEmpty) {
+          _consumed
+            ..clear()
+            ..addAll(beforeCase);
+          statements(node.elseBody, nested: true);
+          final afterCaseElse = Map<Symbol, SourceSpan>.from(_consumed);
+          final caseElseExits = _alwaysExits(node.elseBody);
+          _consumed.clear();
+          if (caseThenExits && !caseElseExits) {
+            _consumed.addAll(afterCaseElse);
+          } else if (!caseThenExits && caseElseExits) {
+            _consumed.addAll(afterCaseThen);
+          } else {
+            _consumed
+              ..addAll(afterCaseThen)
+              ..addAll(afterCaseElse);
+          }
+        } else if (caseThenExits) {
           _consumed
             ..clear()
             ..addAll(beforeCase);
@@ -6090,11 +6426,26 @@ class Analyzer {
           model.references[pattern] = existing!;
           return;
         }
+        if (!pattern.shadow && !_assignPattern) {
+          final typeSym = _typeSymbol(pattern.name);
+          if (typeSym != null &&
+              (typeSym.classDeclaration != null ||
+                  model.aliases.containsKey(pattern.name))) {
+            model.references[pattern] = typeSym;
+            return;
+          }
+        }
         _bindPatternName(pattern.name, type, pattern,
             declare: declare, shadow: pattern.shadow);
       case LiteralPattern():
         expression(pattern.literal);
       case ListPattern():
+        final bareType = nonNullableType(stripReadonlyType(type));
+        final isKnownCollection = bareType.startsWith('List<') ||
+            bareType.startsWith('Set<') ||
+            bareType.startsWith('Iterable<') ||
+            bareType.startsWith('Range<') ||
+            bareType == 'String';
         if (_assignPattern) {
           if (!type.startsWith('List<') || !type.endsWith('>')) {
             fail('A list pattern requires a List', pattern);
@@ -6103,9 +6454,11 @@ class Analyzer {
             fail('A list pattern has one rest', pattern);
           }
         }
-        final element = elementType(type, pattern);
+        final element =
+            isKnownCollection ? elementType(type, pattern) : 'Object?';
+        final restType = isKnownCollection ? type : 'List<Object?>';
         for (final item in pattern.elements) {
-          bindPattern(item, item is RestPattern ? type : element,
+          bindPattern(item, item is RestPattern ? restType : element,
               declare: declare);
         }
       case ConstructorPattern():
@@ -6129,31 +6482,70 @@ class Analyzer {
         if (pattern.typeName.isEmpty &&
             type.startsWith('(') &&
             type.endsWith(')')) {
-          final parts = _splitTypes(type.substring(1, type.length - 1));
+          final inner = type.substring(1, type.length - 1).trim();
+          final parts = _splitTypes(inner);
+          final positional = <String>[];
+          final named = <String, String>{};
+          for (final part in parts) {
+            final p = part.trim();
+            if (p.startsWith('{') && p.endsWith('}')) {
+              for (final entry in _splitTypes(p.substring(1, p.length - 1))) {
+                final e = entry.trim();
+                final colon = e.indexOf(':');
+                if (colon > 0) {
+                  named[e.substring(0, colon).trim()] =
+                      e.substring(colon + 1).trim();
+                } else {
+                  final space = e.lastIndexOf(' ');
+                  if (space > 0) {
+                    named[e.substring(space + 1).trim()] =
+                        e.substring(0, space).trim();
+                  }
+                }
+              }
+            } else {
+              positional.add(p);
+            }
+          }
+          var posIdx = 0;
           for (var i = 0; i < pattern.fields.length; i++) {
-            bindPattern(pattern.fields[i], i < parts.length ? parts[i] : type,
-                declare: declare);
+            final fieldName =
+                i < pattern.names.length ? pattern.names[i] : null;
+            final fieldType = fieldName != null
+                ? (named[fieldName] ?? 'dynamic')
+                : (posIdx < positional.length ? positional[posIdx++] : type);
+            bindPattern(pattern.fields[i], fieldType, declare: declare);
           }
           return;
         }
+        final head = _genericHead(pattern.typeName);
         final declaration =
-            pattern.typeName.isEmpty ? null : _global.symbols[pattern.typeName];
+            head.isEmpty ? null : (_typeSymbol(head) ?? _global.symbols[head]);
         if (declaration != null) model.references[pattern] = declaration;
+        final declClass = declaration?.classDeclaration;
+        final subs = declClass != null && pattern.typeName.contains('<')
+            ? _genericSubstitution(pattern.typeName, declClass)
+            : const <String, String>{};
         final fields = declaration?.classCase?.fields ??
-            declaration?.classDeclaration?.fields ??
-            const <FieldDeclaration>[];
+            (declClass != null
+                ? _fieldsOf(declClass)
+                : const <FieldDeclaration>[]);
         for (var i = 0; i < pattern.fields.length; i++) {
           final explicitName =
               i < pattern.names.length ? pattern.names[i] : null;
-          FieldDeclaration? matchedField;
+          String? fieldType;
           if (explicitName != null) {
-            matchedField =
+            final matchedField =
                 fields.where((f) => f.name == explicitName).firstOrNull;
+            if (matchedField != null) {
+              fieldType = _substitute(matchedField.type, subs);
+            } else {
+              fieldType = memberType(pattern.typeName, explicitName);
+            }
           } else if (i < fields.length) {
-            matchedField = fields[i];
+            fieldType = _substitute(fields[i].type, subs);
           }
-          final fieldType = matchedField?.type ?? type;
-          bindPattern(pattern.fields[i], fieldType, declare: declare);
+          bindPattern(pattern.fields[i], fieldType ?? type, declare: declare);
         }
       case MapPattern():
         final valueType = type.startsWith('Map<') && type.endsWith('>')
@@ -6389,7 +6781,28 @@ class Analyzer {
       error('E700', 'Cyclic interface inheritance', implementation);
     validateType(type, implementation, allowVoid: false);
     final face = _typeSymbol(head)?.classDeclaration;
-    if (face == null || face.kind != 'interface')
+    if (face == null) {
+      const dartInterfaces = {
+        'Comparable',
+        'Exception',
+        'Error',
+        'Iterator',
+        'Iterable',
+        'Pattern',
+        'Sink',
+        'EventSink',
+        'StreamSink',
+        'Converter',
+        'Codec',
+        'Stream',
+        'Future',
+      };
+      if (dartInterfaces.contains(head) || _nativeShape(head) != null) {
+        return;
+      }
+      error('E700', 'implements expects an interface', implementation);
+    }
+    if (face.kind != 'interface')
       error('E700', 'implements expects an interface', implementation);
     final substitution = _genericSubstitution(type, face);
     void requireMember(String name, String expected, {bool getter = true}) {
@@ -8768,8 +9181,25 @@ class Analyzer {
   }
 
   String record(RecordExpression node) {
-    final types = node.fields.map(expression).join(', ');
-    return '($types)';
+    final positional = <String>[];
+    final named = <String>[];
+    for (var i = 0; i < node.fields.length; i++) {
+      final t = expression(node.fields[i]);
+      final fieldName = i < node.names.length ? node.names[i] : null;
+      if (fieldName != null) {
+        named.add('$t $fieldName');
+      } else {
+        positional.add(t);
+      }
+    }
+    if (named.isEmpty) {
+      return '(${positional.join(', ')})';
+    }
+    final namedPart = '{${named.join(', ')}}';
+    if (positional.isEmpty) {
+      return '($namedPart)';
+    }
+    return '(${positional.join(', ')}, $namedPart)';
   }
 
   String range(RangeExpression node) {
@@ -9933,19 +10363,19 @@ class Analyzer {
 
   String list(ListExpression node) {
     final bareExpected = _expected == null ? null : unwrap(_expected!);
+    final wanted = bareExpected != null && bareExpected.endsWith('>')
+        ? (bareExpected.startsWith('List<')
+            ? bareExpected.substring(5, bareExpected.length - 1)
+            : bareExpected.startsWith('Iterable<')
+                ? bareExpected.substring(9, bareExpected.length - 1)
+                : null)
+        : null;
     if (node.elements.isEmpty) {
-      if (bareExpected != null &&
-          bareExpected.startsWith('List<') &&
-          bareExpected.endsWith('>')) {
-        return bareExpected;
+      if (wanted != null) {
+        return 'List<$wanted>';
       }
       error('E302', 'Empty lists require a contextual List<T> type', node);
     }
-    final wanted = bareExpected != null &&
-            bareExpected.startsWith('List<') &&
-            bareExpected.endsWith('>')
-        ? bareExpected.substring(5, bareExpected.length - 1)
-        : null;
     final elements = <String>[];
     for (var i = 0; i < node.elements.length; i++) {
       final saved = _expected;
@@ -9957,7 +10387,7 @@ class Analyzer {
       }
     }
     if (wanted != null && elements.every((type) => compatible(type, wanted))) {
-      return bareExpected!;
+      return 'List<$wanted>';
     }
     var type = elements.first;
     for (var i = 1; i < elements.length; i++) {
@@ -13256,6 +13686,43 @@ class Analyzer {
   }
 
   String collectionIfType(CollectionIf node) {
+    if (node.pattern case final pattern?) {
+      final matched = expression(node.condition);
+      if (node.thenElements.isEmpty) {
+        fail('collection if needs an element', node);
+      }
+      final savedScope = _scope;
+      _scope = _Scope(savedScope);
+      bindPattern(pattern, matched, declare: true);
+      final facts = <String, String>{};
+      if (node.condition is Identifier) {
+        if (pattern is TypedPattern) {
+          facts[(node.condition as Identifier).name] = pattern.type;
+        } else if (pattern is BindingPattern) {
+          final ref = model.references[pattern];
+          if (ref != null && ref.classCase == null && ref.type.isNotEmpty) {
+            facts[(node.condition as Identifier).name] = ref.type;
+          }
+        }
+      }
+      final type = _withPromoted(facts, () {
+        if (node.guard case final guard?) {
+          final guardType = expression(guard);
+          if (guardType != 'bool' && guardType != 'dynamic') {
+            fail('Guard must be bool', guard);
+          }
+        }
+        return groupElementType(node.thenElements);
+      });
+      _scope = savedScope;
+      if (node.elseElements.isNotEmpty) {
+        final other = groupElementType(node.elseElements);
+        if (other != type) {
+          return joinTypes(type, other, node);
+        }
+      }
+      return type;
+    }
     if (expression(node.condition) != 'bool') {
       fail('collection if condition must be bool', node.condition);
     }
@@ -13685,11 +14152,16 @@ class Analyzer {
     return switch (pattern) {
       WildcardPattern() => null,
       TypedPattern() => {pattern.type},
-      BindingPattern() =>
-        model.references[pattern]?.classCase == null ? null : {pattern.name},
+      BindingPattern() => model.references[pattern]?.classCase != null ||
+              model.references[pattern]?.classDeclaration != null
+          ? {pattern.name}
+          : null,
       ConstructorPattern() =>
         pattern.typeName.isEmpty ? null : {pattern.typeName},
-      LiteralPattern() ||
+      LiteralPattern(:final literal) =>
+        literal is MemberAccess && model.references[literal]?.classCase != null
+            ? {literal.name}
+            : <String>{},
       ListPattern() ||
       MapPattern() ||
       RestPattern() ||

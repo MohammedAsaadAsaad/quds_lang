@@ -133,16 +133,21 @@ void walkAst(Node node, void Function(Node node) visit,
         _optional(getter, visit);
         _nodes(getterBody, visit);
         _nodes(setterBody, visit);
+      case SuperConstructorCall(:final arguments):
+        _nodes(arguments, visit);
       case ConstructorDeclaration(
           :final parameters,
           :final body,
           :final expressionBody,
+          :final superCall,
         ):
         _nodes(parameters, visit);
+        _optional(superCall, visit);
         _nodes(body, visit);
         _optional(expressionBody, visit);
-      case ClassCase(:final fields):
+      case ClassCase(:final fields, :final arguments):
         _nodes(fields, visit);
+        _nodes(arguments, visit);
       case ClassDeclaration(
           :final fields,
           :final methods,
@@ -167,10 +172,18 @@ void walkAst(Node node, void Function(Node node) visit,
         _nodes(elseBody, visit);
       case DeferStatement(:final expression):
         walkAst(expression, visit);
-      case IfCaseStatement(:final scrutinee, :final pattern, :final body):
+      case IfCaseStatement(
+          :final scrutinee,
+          :final pattern,
+          :final guard,
+          :final body,
+          :final elseBody
+        ):
         walkAst(scrutinee, visit);
         walkAst(pattern, visit);
+        _optional(guard, visit);
         _nodes(body, visit);
+        _nodes(elseBody, visit);
       case WhenStatement(:final condition, :final body):
         walkAst(condition, visit);
         _nodes(body, visit);
@@ -373,10 +386,14 @@ void walkAst(Node node, void Function(Node node) visit,
         if (fallbackStmts != null) _nodes(fallbackStmts, visit);
       case CollectionIf(
           :final condition,
+          :final pattern,
+          :final guard,
           :final thenElements,
           :final elseElements
         ):
         walkAst(condition, visit);
+        _optional(pattern, visit);
+        _optional(guard, visit);
         _nodes(thenElements, visit);
         _nodes(elseElements, visit);
       case CollectionFor(:final iterable, :final body, :final filter):

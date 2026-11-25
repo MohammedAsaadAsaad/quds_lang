@@ -7,6 +7,7 @@ List<String> splitTypeList(String text) {
   var parens = 0;
   var angles = 0;
   var brackets = 0;
+  var braces = 0;
   for (var i = 0; i < text.length; i++) {
     switch (text[i]) {
       case '(':
@@ -21,8 +22,12 @@ List<String> splitTypeList(String text) {
         brackets++;
       case ']':
         brackets--;
+      case '{':
+        braces++;
+      case '}':
+        braces--;
       case ',':
-        if (parens == 0 && angles == 0 && brackets == 0) {
+        if (parens == 0 && angles == 0 && brackets == 0 && braces == 0) {
           parts.add(text.substring(start, i).trim());
           start = i + 1;
         }

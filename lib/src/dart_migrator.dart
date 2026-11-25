@@ -5,6 +5,7 @@ import 'package:analyzer/dart/analysis/features.dart';
 import 'package:analyzer/dart/analysis/utilities.dart' as dart;
 import 'package:analyzer/dart/ast/ast.dart' as d;
 import 'package:analyzer/dart/ast/token.dart' as tok;
+import 'package:yaml_edit/yaml_edit.dart';
 
 import 'lexer.dart';
 import 'parser.dart';
@@ -73,10 +74,31 @@ class MigrationBackup {
   const MigrationBackup({
     required this.backupDirectory,
     required this.fileCount,
+    this.analysisOptionsUpdated = false,
+    this.gitignoreUpdated = false,
   });
 
   final Directory backupDirectory;
   final int fileCount;
+  final bool analysisOptionsUpdated;
+  final bool gitignoreUpdated;
+}
+
+class MigratedFileStat {
+  const MigratedFileStat({
+    required this.sourceDartPath,
+    required this.targetQudsPath,
+    required this.dartLines,
+    required this.qudsLines,
+  });
+
+  final String sourceDartPath;
+  final String targetQudsPath;
+  final int dartLines;
+  final int qudsLines;
+
+  int get lineDelta => qudsLines - dartLines;
+  int get linesSaved => dartLines - qudsLines;
 }
 
 class MigrationExecutionResult {
@@ -85,12 +107,24 @@ class MigrationExecutionResult {
     required this.keptDartFiles,
     required this.qudsYamlCreated,
     required this.gitignoreUpdated,
+    this.analysisOptionsUpdated = false,
+    this.fileStats = const [],
   });
 
   final List<String> migratedFiles;
   final List<String> keptDartFiles;
   final bool qudsYamlCreated;
   final bool gitignoreUpdated;
+  final bool analysisOptionsUpdated;
+  final List<MigratedFileStat> fileStats;
+
+  int get totalDartLines =>
+      fileStats.fold<int>(0, (sum, item) => sum + item.dartLines);
+
+  int get totalQudsLines =>
+      fileStats.fold<int>(0, (sum, item) => sum + item.qudsLines);
+
+  int get totalLinesSaved => totalDartLines - totalQudsLines;
 }
 
 /// Inspects a Dart or Flutter project under [projectRoot] and reports whether
@@ -203,13 +237,22 @@ MigrationReport inspectProjectForMigration(Directory projectRoot) {
 }
 
 /// Creates a full timestamped backup copy of `<projectRoot>/lib/` under
-/// `<projectRoot>/.quds_backup/lib_<timestamp>/`.
+/// `<projectRoot>/.quds_backup/lib_<timestamp>/`, and excludes `.quds_backup/**`
+/// from `analysis_options.yaml` and `.gitignore` before writing backup files so
+/// editors and the Dart/Flutter analyzer never inspect old backed-up Dart code.
 MigrationBackup backupProjectLib(Directory projectRoot, {DateTime? now}) {
   final root = projectRoot.absolute;
   final libDir = Directory(_join(root.path, 'lib'));
   if (!libDir.existsSync()) {
     throw FileSystemException('lib/ directory was not found', root.path);
   }
+
+  // Exclude backup directory BEFORE creating Dart files inside it so IDE file
+  // watchers and Dart Analysis Server never scan the backed-up sources.
+  final analysisOptionsUpdated =
+      _ensureAnalysisOptionsExclude(root, '.quds_backup/**');
+  final gitignoreUpdated = _ensureGitignoreEntries(root, ['.quds_backup/']);
+
   final stamp = _timestamp(now ?? DateTime.now());
   final backupsRoot = Directory(_join(root.path, '.quds_backup'));
   backupsRoot.createSync(recursive: true);
@@ -237,12 +280,17 @@ MigrationBackup backupProjectLib(Directory projectRoot, {DateTime? now}) {
   }
 
   copyTree(libDir, destination);
-  return MigrationBackup(backupDirectory: destination, fileCount: count);
+  return MigrationBackup(
+    backupDirectory: destination,
+    fileCount: count,
+    analysisOptionsUpdated: analysisOptionsUpdated,
+    gitignoreUpdated: gitignoreUpdated,
+  );
 }
 
 /// Writes migrated `.quds` files for every ready file in [report], updates
-/// `quds.yaml` and `.gitignore`, and removes migrated `.dart` files unless
-/// [keepDart] is true.
+/// `quds.yaml`, `analysis_options.yaml`, and `.gitignore`, and removes migrated
+/// `.dart` files unless [keepDart] is true.
 MigrationExecutionResult executeProjectMigration(
   MigrationReport report, {
   bool keepDart = false,
@@ -250,6 +298,7 @@ MigrationExecutionResult executeProjectMigration(
   final readyPaths = {for (final f in report.readyFiles) f.relativePath};
   final migrated = <String>[];
   final kept = <String>[];
+  final stats = <MigratedFileStat>[];
 
   for (final item in report.readyFiles) {
     // Re-convert using only the actually-migrated path set so imports pointing
@@ -266,15 +315,21 @@ MigrationExecutionResult executeProjectMigration(
       kept.add(item.relativePath);
       continue;
     }
+    final normalizedQuds = qudsText.endsWith('\n') ? qudsText : '$qudsText\n';
     final targetFile =
         File(_join(report.projectRoot.path, item.targetQudsPath));
     targetFile.parent.createSync(recursive: true);
-    targetFile
-        .writeAsStringSync(qudsText.endsWith('\n') ? qudsText : '$qudsText\n');
+    targetFile.writeAsStringSync(normalizedQuds);
     if (!keepDart && item.sourceFile.existsSync()) {
       item.sourceFile.deleteSync();
     }
     migrated.add(item.targetQudsPath);
+    stats.add(MigratedFileStat(
+      sourceDartPath: item.relativePath,
+      targetQudsPath: item.targetQudsPath,
+      dartLines: _countLines(source),
+      qudsLines: _countLines(normalizedQuds),
+    ));
   }
 
   for (final item in report.files) {
@@ -290,6 +345,9 @@ MigrationExecutionResult executeProjectMigration(
     qudsYamlCreated = true;
   }
 
+  final analysisOptionsUpdated =
+      _ensureAnalysisOptionsExclude(report.projectRoot, '.quds_backup/**');
+
   final gitignoreUpdated = _ensureGitignoreEntries(
     report.projectRoot,
     [
@@ -303,6 +361,8 @@ MigrationExecutionResult executeProjectMigration(
     keptDartFiles: kept,
     qudsYamlCreated: qudsYamlCreated,
     gitignoreUpdated: gitignoreUpdated,
+    analysisOptionsUpdated: analysisOptionsUpdated,
+    fileStats: stats,
   );
 }
 
@@ -1648,6 +1708,65 @@ String? _resolveRelativePosix(String fromRel, String target) {
   final resolved = Uri.parse('file:///$baseDir').resolve(target).path;
   if (!resolved.startsWith('/')) return null;
   return resolved.substring(1);
+}
+
+int _countLines(String content) {
+  if (content.isEmpty) return 0;
+  final normalized = content.replaceAll('\r\n', '\n');
+  final lines = normalized.split('\n');
+  return normalized.endsWith('\n') ? lines.length - 1 : lines.length;
+}
+
+bool _ensureAnalysisOptionsExclude(Directory root, String pattern) {
+  final file = File(_join(root.path, 'analysis_options.yaml'));
+  if (!file.existsSync()) {
+    file.writeAsStringSync('analyzer:\n  exclude:\n    - $pattern\n');
+    return true;
+  }
+  final existing = file.readAsStringSync();
+  try {
+    final editor = YamlEditor(existing);
+    final rootNode = editor.parseAt([]).value;
+    if (rootNode == null) {
+      final sep = existing.isEmpty || existing.endsWith('\n') ? '' : '\n';
+      file.writeAsStringSync(
+          '${existing}${sep}analyzer:\n  exclude:\n    - $pattern\n');
+      return true;
+    }
+    if (rootNode is! Map) return false;
+    final analyzer = rootNode['analyzer'];
+    if (analyzer == null) {
+      editor.update([
+        'analyzer'
+      ], {
+        'exclude': [pattern]
+      });
+    } else if (analyzer is Map) {
+      final exclude = analyzer['exclude'];
+      if (exclude == null) {
+        editor.update(['analyzer', 'exclude'], [pattern]);
+      } else if (exclude is List) {
+        if (exclude.any((item) => item.toString() == pattern)) {
+          return false;
+        }
+        editor.appendToList(['analyzer', 'exclude'], pattern);
+      } else if (exclude is String) {
+        if (exclude == pattern) return false;
+        editor.update(['analyzer', 'exclude'], [exclude, pattern]);
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
+    final updated = editor.toString();
+    file.writeAsStringSync(updated.endsWith('\n') ? updated : '$updated\n');
+    return true;
+  } catch (_) {
+    // Fall back safely without corrupting non-standard YAML.
+    if (existing.contains(pattern)) return false;
+    return false;
+  }
 }
 
 bool _ensureGitignoreEntries(Directory root, List<String> entries) {

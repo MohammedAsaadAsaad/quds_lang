@@ -275,6 +275,11 @@ int x() => 1;
       expect(
           File('${backups.single.path}/math_utils.dart').existsSync(), isTrue);
 
+      // Backup is immediately excluded from editors/analyzer even when cancelled.
+      final analysisOptions = File('${dir.path}/analysis_options.yaml');
+      expect(analysisOptions.existsSync(), isTrue);
+      expect(analysisOptions.readAsStringSync(), contains('.quds_backup/**'));
+
       // Original lib/ was NOT modified.
       expect(File('${dir.path}/lib/main.dart').existsSync(), isTrue);
       expect(File('${dir.path}/lib/main.quds').existsSync(), isFalse);
@@ -282,7 +287,7 @@ int x() => 1;
     });
 
     test(
-        'interactive confirmation backs up lib/, migrates to .quds, and migrated app executes with quds run',
+        'interactive confirmation backs up lib/, prints line-count summary, migrates to .quds, and migrated app executes with quds run',
         () async {
       final dir = makeSampleDartProject();
       addTearDown(() => dir.deleteSync(recursive: true));
@@ -291,9 +296,14 @@ int x() => 1;
       expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
       expect(res.stdout, contains('[1/3] Checking project feasibility'));
       expect(res.stdout, contains('[2/3] Backing up lib/'));
-      expect(res.stdout, contains('Migrated 2 file(s) to Quds:'));
+      expect(res.stdout,
+          contains('Excluded .quds_backup/** in analysis_options.yaml'));
+      expect(res.stdout,
+          contains('Migration Summary (2 file(s) migrated to Quds):'));
       expect(res.stdout, contains('+ lib/main.quds'));
       expect(res.stdout, contains('+ lib/math_utils.quds'));
+      expect(res.stdout, matches(RegExp(r'\(\d+ -> \d+ lines,')));
+      expect(res.stdout, matches(RegExp(r'Total lines: \d+ Dart -> \d+ Quds')));
       expect(res.stdout, contains('Created quds.yaml'));
 
       // Backup created before migration.
@@ -314,12 +324,71 @@ int x() => 1;
           contains('language: 1.2'));
       expect(File('${dir.path}/.gitignore').readAsStringSync(),
           contains('.quds_backup/'));
+      expect(File('${dir.path}/analysis_options.yaml').readAsStringSync(),
+          contains('.quds_backup/**'));
 
       // Run the migrated Quds program end-to-end!
       final run =
           await _runQuds(['run', 'lib/main.quds'], workingDirectory: dir.path);
       expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
       expect((run.stdout as String).trim(), 'result=12,10');
+    });
+
+    test(
+        'preserves existing analysis_options.yaml rules and dart analyze ignores backed-up Dart files',
+        () async {
+      final dir = Directory.systemTemp.createTempSync('quds-migrate-analyze-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      File('${dir.path}/pubspec.yaml').writeAsStringSync('''
+name: analyze_check_app
+version: 1.0.0
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+''');
+      File('${dir.path}/analysis_options.yaml').writeAsStringSync('''
+analyzer:
+  exclude:
+    - lib/generated/**
+linter:
+  rules:
+    - avoid_print
+''');
+      Directory('${dir.path}/lib').createSync(recursive: true);
+      File('${dir.path}/lib/main.dart').writeAsStringSync('''
+int add(int a, int b) {
+  final sum = a + b;
+  return sum;
+}
+''');
+
+      final report = inspectProjectForMigration(dir);
+      final backup = backupProjectLib(dir);
+      expect(backup.analysisOptionsUpdated, isTrue);
+      final exec = executeProjectMigration(report);
+      expect(exec.fileStats, hasLength(1));
+      expect(exec.totalDartLines, 4);
+      expect(exec.totalQudsLines, greaterThan(0));
+      expect(exec.totalQudsLines, lessThanOrEqualTo(exec.totalDartLines));
+
+      final optionsText =
+          File('${dir.path}/analysis_options.yaml').readAsStringSync();
+      expect(optionsText, contains('lib/generated/**'));
+      expect(optionsText, contains('.quds_backup/**'));
+      expect(optionsText, contains('avoid_print'));
+
+      // Even if a broken Dart file sits inside .quds_backup/, dart analyze must
+      // completely ignore it so editors never surface errors from the backup.
+      File('${backup.backupDirectory.path}/broken_old.dart')
+          .writeAsStringSync('this is not valid dart syntax {{{{');
+
+      final analyzed = await Process.run(
+        Platform.resolvedExecutable,
+        ['analyze'],
+        workingDirectory: dir.path,
+      );
+      expect(analyzed.exitCode, 0,
+          reason: '${analyzed.stdout}\n${analyzed.stderr}');
+      expect(analyzed.stdout, contains('No issues found!'));
     });
 
     test('migrates Flutter project and adds lib/quds_gen/ to .gitignore',

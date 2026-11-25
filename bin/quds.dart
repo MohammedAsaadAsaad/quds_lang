@@ -2346,7 +2346,13 @@ void _format(List<String> arguments) {
 }
 
 void _collectQudsFiles(Directory dir, List<File> out, Set<String> seen) {
-  const skipped = {'.git', '.dart_tool', 'build', 'node_modules'};
+  const skipped = {
+    '.git',
+    '.dart_tool',
+    '.quds_backup',
+    'build',
+    'node_modules',
+  };
   for (final entity in dir.listSync(followLinks: false)) {
     final name = entity.uri.pathSegments
         .where((segment) => segment.isNotEmpty)
@@ -2810,8 +2816,8 @@ _FlutterPreparation _prepareFlutter(File input,
       for (final entity in directory.listSync(followLinks: false)) {
         if (entity is Directory) {
           final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
-          if (!{'.git', '.dart_tool', 'build', 'quds_gen'}.contains(name))
-            scan(entity);
+          if (!{'.git', '.dart_tool', '.quds_backup', 'build', 'quds_gen'}
+              .contains(name)) scan(entity);
         } else if (entity is File && entity.path.endsWith('.quds')) {
           paths.add(entity.absolute.path);
         }

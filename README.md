@@ -254,8 +254,8 @@ quds migrate
 
 `quds migrate` runs in three safe steps:
 1. **Feasibility check** — parses `lib/**/*.dart` via the Dart AST, verifies every converted file against the Quds parser, skips generated files (`*.g.dart`, `*.freezed.dart`), and reports any file that needs manual review with exact line numbers.
-2. **Automatic `lib/` backup** — copies your entire `lib/` folder to `.quds_backup/lib_<timestamp>/` before touching any source file.
-3. **Interactive confirmation** — asks for your confirmation before writing `.quds` files, creating `quds.yaml`, and updating `.gitignore`.
+2. **Automatic `lib/` backup** — copies your entire `lib/` folder to `.quds_backup/lib_<timestamp>/` and automatically excludes `.quds_backup/**` in `analysis_options.yaml` and `.gitignore` so editors and the Dart/Flutter analyzer ignore backed-up Dart files.
+3. **Interactive confirmation & summary** — asks for your confirmation before writing `.quds` files, creating `quds.yaml`, and printing a summary of all generated files with line counts before and after migration.
 
 Useful flags:
 - `quds migrate --check` — run only the feasibility report without creating a backup or modifying files.

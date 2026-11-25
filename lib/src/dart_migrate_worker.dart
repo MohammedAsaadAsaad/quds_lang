@@ -123,6 +123,10 @@ Future<void> main(List<String> arguments) async {
   }
   stdout.writeln(
       '  Backed up ${backup.fileCount} file(s) to ${backup.backupDirectory.path}');
+  if (backup.analysisOptionsUpdated) {
+    stdout.writeln(
+        '  Excluded .quds_backup/** in analysis_options.yaml (editors & Dart analyzer will ignore backup files)');
+  }
 
   // Step 3: Ask the user before starting migration.
   if (!autoApprove) {
@@ -141,9 +145,19 @@ Future<void> main(List<String> arguments) async {
   }
 
   final result = executeProjectMigration(report, keepDart: keepDart);
-  stdout.writeln('\nMigrated ${result.migratedFiles.length} file(s) to Quds:');
-  for (final path in result.migratedFiles) {
-    stdout.writeln('  + $path');
+  stdout.writeln(
+      '\nMigration Summary (${result.migratedFiles.length} file(s) migrated to Quds):');
+  if (result.fileStats.isNotEmpty) {
+    for (final stat in result.fileStats) {
+      stdout.writeln(
+          '  + ${stat.targetQudsPath}  (${stat.dartLines} -> ${stat.qudsLines} lines, ${_formatLineDelta(stat.dartLines, stat.qudsLines)})');
+    }
+    stdout.writeln(
+        '  Total lines: ${result.totalDartLines} Dart -> ${result.totalQudsLines} Quds (${_formatLineDelta(result.totalDartLines, result.totalQudsLines)})');
+  } else {
+    for (final path in result.migratedFiles) {
+      stdout.writeln('  + $path');
+    }
   }
   if (result.keptDartFiles.isNotEmpty) {
     stdout.writeln(
@@ -155,7 +169,10 @@ Future<void> main(List<String> arguments) async {
   if (result.qudsYamlCreated) {
     stdout.writeln('Created quds.yaml (language: 1.2)');
   }
-  if (result.gitignoreUpdated) {
+  if (result.analysisOptionsUpdated && !backup.analysisOptionsUpdated) {
+    stdout.writeln('Updated analysis_options.yaml (excluded .quds_backup/**)');
+  }
+  if (result.gitignoreUpdated || backup.gitignoreUpdated) {
     stdout.writeln(
         'Updated .gitignore (.quds_backup/${report.isFlutter ? ', lib/quds_gen/' : ''})');
   }
@@ -165,4 +182,15 @@ Future<void> main(List<String> arguments) async {
   } else {
     stdout.writeln('Next step: run `quds analyze` or `quds run`.');
   }
+}
+
+String _formatLineDelta(int before, int after) {
+  final delta = after - before;
+  if (before <= 0) {
+    return delta == 0 ? '0 lines' : '${delta > 0 ? '+' : ''}$delta lines';
+  }
+  final pct = (delta.abs() * 100.0 / before).toStringAsFixed(1);
+  if (delta < 0) return '$delta lines, -$pct%';
+  if (delta > 0) return '+$delta lines, +$pct%';
+  return '0 lines, 0.0%';
 }

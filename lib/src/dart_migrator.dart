@@ -45,6 +45,8 @@ class MigrationReport {
     required this.isFlutter,
     required this.hasQudsYaml,
     required this.files,
+    this.dartSdkConstraint,
+    this.sdkCompatibilityError,
   });
 
   final Directory projectRoot;
@@ -52,6 +54,8 @@ class MigrationReport {
   final bool isFlutter;
   final bool hasQudsYaml;
   final List<MigrationFileReport> files;
+  final String? dartSdkConstraint;
+  final String? sdkCompatibilityError;
 
   List<MigrationFileReport> get readyFiles => [
         for (final file in files)
@@ -68,8 +72,10 @@ class MigrationReport {
           if (file.status == MigrationFileStatus.needsManualReview) file,
       ];
 
-  bool get canMigrate => readyFiles.isNotEmpty;
-  bool get fullyReady => readyFiles.isNotEmpty && blockedFiles.isEmpty;
+  bool get isSdkCompatible => sdkCompatibilityError == null;
+  bool get canMigrate => isSdkCompatible && readyFiles.isNotEmpty;
+  bool get fullyReady =>
+      isSdkCompatible && readyFiles.isNotEmpty && blockedFiles.isEmpty;
 }
 
 class MigrationBackup {
@@ -129,6 +135,109 @@ class MigrationExecutionResult {
   int get totalLinesSaved => totalDartLines - totalQudsLines;
 }
 
+/// Validates whether a pubspec `environment.sdk` constraint is compatible with
+/// Quds (which requires Dart `>=3.3.0 <4.0.0`).
+///
+/// Returns `null` when compatible or unspecified, or a clear user-facing
+/// explanation when the project's Dart SDK is too old or unsupported.
+String? checkDartSdkCompatibility(String? sdkConstraint) {
+  if (sdkConstraint == null) return null;
+  final trimmed = sdkConstraint.trim();
+  if (trimmed.isEmpty || trimmed == 'any') return null;
+
+  (int, int, int)? parseVersion(String raw) {
+    final match = RegExp(r'^(\d+)\.(\d+)(?:\.(\d+))?').firstMatch(raw.trim());
+    if (match == null) return null;
+    return (
+      int.parse(match.group(1)!),
+      int.parse(match.group(2)!),
+      int.parse(match.group(3) ?? '0'),
+    );
+  }
+
+  int cmp((int, int, int) a, (int, int, int) b) {
+    if (a.$1 != b.$1) return a.$1.compareTo(b.$1);
+    if (a.$2 != b.$2) return a.$2.compareTo(b.$2);
+    return a.$3.compareTo(b.$3);
+  }
+
+  const minQuds = (3, 3, 0);
+  const maxQudsExclusive = (4, 0, 0);
+
+  String incompatibleMessage() =>
+      'Project Dart SDK constraint "$trimmed" is too old / incompatible with Quds '
+      '(requires Dart >=3.3.0 <4.0.0). '
+      'Upgrade `environment.sdk` in pubspec.yaml and project dependencies to Dart 3.3+ before migrating to Quds.';
+
+  if (trimmed.startsWith('^')) {
+    final v = parseVersion(trimmed.substring(1));
+    if (v == null) return null;
+    if (cmp(v, minQuds) < 0 || cmp(v, maxQudsExclusive) >= 0) {
+      return incompatibleMessage();
+    }
+    return null;
+  }
+
+  final clauses = RegExp(r'(>=|<=|>|<|=)?\s*(\d+\.\d+(?:\.\d+)?[^\s,]*)')
+      .allMatches(trimmed)
+      .toList();
+  if (clauses.isEmpty) return null;
+
+  for (final match in clauses) {
+    final op = match.group(1) ?? '=';
+    final v = parseVersion(match.group(2)!);
+    if (v == null) continue;
+    switch (op) {
+      case '>=':
+        if (cmp(v, minQuds) < 0 || cmp(v, maxQudsExclusive) >= 0) {
+          return incompatibleMessage();
+        }
+      case '>':
+        if (cmp(v, (3, 2, 999999)) < 0 || cmp(v, maxQudsExclusive) >= 0) {
+          return incompatibleMessage();
+        }
+      case '<':
+        if (cmp(v, minQuds) <= 0) {
+          return incompatibleMessage();
+        }
+      case '<=':
+        if (cmp(v, minQuds) < 0) {
+          return incompatibleMessage();
+        }
+      case '=':
+        if (cmp(v, minQuds) < 0 || cmp(v, maxQudsExclusive) >= 0) {
+          return incompatibleMessage();
+        }
+    }
+  }
+  return null;
+}
+
+String? _extractPubspecSdkConstraint(String pubspecText) {
+  try {
+    final value = YamlEditor(pubspecText).parseAt(['environment', 'sdk']).value;
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+  } catch (_) {
+    final envMatch = RegExp(
+      r'^environment:\s*\n((?:[ \t]+.*\n?)*)',
+      multiLine: true,
+    ).firstMatch(pubspecText);
+    if (envMatch != null) {
+      final sdkMatch = RegExp(
+        r'''^[ \t]+sdk:[ \t]*["']?([^"'\n#]+)["']?''',
+        multiLine: true,
+      ).firstMatch(envMatch.group(1)!);
+      if (sdkMatch != null) {
+        final raw = sdkMatch.group(1)!.trim();
+        if (raw.isNotEmpty) return raw;
+      }
+    }
+  }
+  return null;
+}
+
 /// Inspects a Dart or Flutter project under [projectRoot] and reports whether
 /// its `lib/**/*.dart` sources can be migrated to Quds cleanly.
 MigrationReport inspectProjectForMigration(Directory projectRoot) {
@@ -146,15 +255,19 @@ MigrationReport inspectProjectForMigration(Directory projectRoot) {
   final isFlutter = RegExp(r'^[ \t]*sdk:[ \t]*flutter\b', multiLine: true)
       .hasMatch(pubspecText);
   final hasQudsYaml = File(_join(root.path, 'quds.yaml')).existsSync();
+  final dartSdkConstraint = _extractPubspecSdkConstraint(pubspecText);
+  final sdkCompatibilityError = checkDartSdkCompatibility(dartSdkConstraint);
 
   final libDir = Directory(_join(root.path, 'lib'));
-  if (!libDir.existsSync()) {
+  if (sdkCompatibilityError != null || !libDir.existsSync()) {
     return MigrationReport(
       projectRoot: root,
       packageName: packageName,
       isFlutter: isFlutter,
       hasQudsYaml: hasQudsYaml,
       files: const [],
+      dartSdkConstraint: dartSdkConstraint,
+      sdkCompatibilityError: sdkCompatibilityError,
     );
   }
 
@@ -360,6 +473,8 @@ MigrationReport inspectProjectForMigration(Directory projectRoot) {
     isFlutter: isFlutter,
     hasQudsYaml: hasQudsYaml,
     files: reports,
+    dartSdkConstraint: dartSdkConstraint,
+    sdkCompatibilityError: sdkCompatibilityError,
   );
 }
 

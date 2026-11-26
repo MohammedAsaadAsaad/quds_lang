@@ -450,6 +450,39 @@ class DemoApp extends StatelessWidget {
       expect(out, contains('[REVIEW] lib/legacy_part.dart'));
       expect(out, contains('Feasibility: PARTIAL'));
     });
+
+    test(
+        'blocks migration with a clear message when pubspec Dart SDK is too old for Quds',
+        () async {
+      expect(checkDartSdkCompatibility('>=2.15.1 <3.0.0'), isNotNull);
+      expect(checkDartSdkCompatibility('^2.19.0'), isNotNull);
+      expect(checkDartSdkCompatibility('^3.0.0'), isNotNull);
+      expect(checkDartSdkCompatibility('>=3.0.0 <3.3.0'), isNotNull);
+      expect(checkDartSdkCompatibility('>=3.3.0 <4.0.0'), isNull);
+      expect(checkDartSdkCompatibility('^3.5.0'), isNull);
+      expect(checkDartSdkCompatibility('any'), isNull);
+
+      final dir = Directory.systemTemp.createTempSync('quds-migrate-old-sdk-');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      File('${dir.path}/pubspec.yaml').writeAsStringSync('''
+name: legacy_app
+environment:
+  sdk: ">=2.15.1 <3.0.0"
+''');
+      Directory('${dir.path}/lib').createSync(recursive: true);
+      File('${dir.path}/lib/main.dart')
+          .writeAsStringSync('void main() { print("hi"); }\n');
+
+      final res = await _runQuds(['migrate', '--yes', dir.path]);
+      expect(res.exitCode, 1);
+      expect('${res.stderr}', contains('[BLOCKED]'));
+      expect('${res.stderr}', contains('>=2.15.1 <3.0.0'));
+      expect('${res.stderr}', contains('>=3.3.0 <4.0.0'));
+      expect('${res.stdout}', contains('Feasibility: BLOCKED'));
+      expect(Directory('${dir.path}/.quds_backup').existsSync(), isFalse);
+      expect(File('${dir.path}/lib/main.quds').existsSync(), isFalse);
+      expect(File('${dir.path}/lib/main.dart').existsSync(), isTrue);
+    });
   });
 
   group('quds create --f <name>', () {

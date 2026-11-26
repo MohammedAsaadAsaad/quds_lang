@@ -14,6 +14,7 @@ export 'src/dart_migrator.dart'
         MigrationFileStatus,
         MigrationReport,
         backupProjectLib,
+        checkDartSdkCompatibility,
         convertDartToQuds,
         executeProjectMigration,
         inspectProjectForMigration;

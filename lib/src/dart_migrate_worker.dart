@@ -64,6 +64,16 @@ Future<void> main(List<String> arguments) async {
   final kind = report.isFlutter ? 'Flutter' : 'Dart';
   stdout.writeln('  Project: ${report.packageName} ($kind)');
   stdout.writeln('  Root:    ${report.projectRoot.path}');
+  if (report.dartSdkConstraint != null) {
+    stdout.writeln('  SDK:     ${report.dartSdkConstraint}');
+  }
+  if (!report.isSdkCompatible) {
+    stderr.writeln('\n[BLOCKED] ${report.sdkCompatibilityError}');
+    stdout.writeln(
+        '\nFeasibility: BLOCKED — project Dart SDK is incompatible with Quds (requires Dart >=3.3.0 <4.0.0).');
+    exitCode = 1;
+    return;
+  }
   stdout.writeln(
       '  Files:   ${report.readyFiles.length} ready, ${report.skippedFiles.length} skipped (generated), ${report.blockedFiles.length} need manual review');
 

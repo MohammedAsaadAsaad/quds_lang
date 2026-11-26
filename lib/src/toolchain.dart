@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'cli_ui.dart';
+
 /// Activates the `quds` command and installs editor support for this machine.
 ///
 /// VS Code and the editors built on it receive the extension. JetBrains IDEs,
@@ -20,10 +22,19 @@ Future<int> installToolchain({
     stderr.writeln('HOME is not set, so Quds has nowhere to install.');
     return 1;
   }
+  final ui = CliUi.current;
+  final totalWatch = Stopwatch()..start();
   final hosted = isHostedPubCachePackage(packageRoot);
-  final activated =
-      hosted ? _confirmHostedActivation(home) : activateCommand(packageRoot);
-  rememberPath(home, pubBin(home));
+  ui.step(1, 4,
+      hosted ? 'Verifying pub.dev quds command' : 'Activating quds command');
+  final activated = ui.phase(
+    hosted ? 'Verifying pub.dev quds command' : 'Activating quds command',
+    () =>
+        hosted ? _confirmHostedActivation(home) : activateCommand(packageRoot),
+  );
+  ui.step(2, 4, 'Updating PATH');
+  ui.phase('Updating user PATH', () => rememberPath(home, pubBin(home)));
+  ui.step(3, 4, 'Installing VS Code / editor extensions');
   final failed = await _installEditors(
     home: home,
     source: extensionSource,
@@ -31,12 +42,15 @@ Future<int> installToolchain({
     extensionFiles: extensionFiles,
     vsixBytes: vsixBytes,
   );
+  ui.step(4, 4, 'Configuring JetBrains & Claude Code support');
   final bundle = _shareEditor(home, extensionSource, extensionFiles);
   _installJetBrains(home, bundle);
   await _installClaude(home, packageRoot, extensionSource);
+  ui.clearProgress();
   if (failed) return 1;
   stdout.writeln('Extension id: $extensionId');
   stdout.writeln('Reload each editor and open a .quds file.');
+  ui.done('Quds toolchain installation complete', elapsed: totalWatch.elapsed);
   return activated ? 0 : 1;
 }
 

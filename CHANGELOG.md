@@ -12,6 +12,7 @@ Maintenance and package-quality release targeting full Windows compatibility and
 - Expanded public API dartdoc coverage across `lib/quds.dart`, `lib/migrate.dart`, AST nodes, lexer, and source spans (well above the 20% pub.dev threshold).
 - Fixed `quds install` when activated from `pub.dev` so users can install VS Code/Cursor/Windsurf/JetBrains/Claude editor support directly without `--no-update` or mutating the pub cache.
 - Added automated VS Code extension packaging & release workflow (`.github/workflows/vscode-release.yml`) attaching `quds-<version>.vsix` to GitHub Releases and supporting automated VS Code Marketplace / Open VSX publishing.
+- Organized `quds help` into clear command categories, added live non-blocking progress spinners/phase indicators on interactive terminals (on `stderr`, keeping `stdout` pure) across `run`, `build`, `compile`, `analyze`, `test`, `format`, `fix`, `create`, `migrate`, `doctor`, `install`, `benchmark`, and `pub`, and added global `-V`/`--verbose` (or `-v` after a command) and `-q`/`--quiet` flags.
 - Updated GitHub Actions CI (`dart.yml`) to Dart `3.14.0` and verified Linux, macOS, Windows, and Flutter pipelines.
 
 ## 0.1.0-alpha.1

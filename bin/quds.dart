@@ -13,9 +13,13 @@ import 'package:quds/src/libraries.dart'
     show libraryTarget, resolveLibraryPath, packageUsesFlutter, packageFileInfo;
 import 'package:quds/src/walk.dart';
 import 'package:quds/src/sdk.dart';
+import 'package:quds/src/cli_ui.dart';
 import 'package:quds/src/toolchain.dart';
 
-Future<void> main(List<String> arguments) async {
+Future<void> main(List<String> rawArguments) async {
+  final parsed = extractGlobalCliFlags(rawArguments);
+  CliUi.current = CliUi.detect(verbose: parsed.verbose, quiet: parsed.quiet);
+  final arguments = parsed.arguments;
   if (arguments.isEmpty) {
     _usage();
     return;
@@ -74,9 +78,9 @@ Future<void> main(List<String> arguments) async {
     case 'run':
       await _run(arguments);
     case 'analyze':
-      _analyze(arguments);
+      await _analyze(arguments);
     case 'test':
-      _test(arguments);
+      await _test(arguments);
     case 'format':
       _format(arguments);
     case 'fix':
@@ -108,7 +112,7 @@ Future<void> main(List<String> arguments) async {
     case 'migrate':
       await _migrate(arguments);
     case 'benchmark':
-      _benchmark(arguments);
+      await _benchmark(arguments);
     case 'help':
     case '--help':
     case '-h':
@@ -199,8 +203,10 @@ String _atQuds(Object? text, String? sourceMap, String generatedName,
 }
 
 void _usage() {
-  stderr.writeln('Usage: quds <command> ...');
-  stderr.writeln('Run `quds help` for the command list.');
+  stderr.writeln('Usage: quds <command> [options] [arguments]');
+  stderr.writeln(
+      'Global options: -V/--verbose (details), -q/--quiet, -v/--version, -h/--help');
+  stderr.writeln('Run `quds help` for the full command list.');
   exitCode = 64;
 }
 
@@ -225,6 +231,8 @@ void _help(List<String> arguments) {
 
 String? _helpText(String? topic) {
   const entries = <String, String>{
+    'run': 'quds run [vm-options] [input.quds] [arguments] [-e <code>] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
+        '    Run a Quds program (or evaluate a snippet with -e/--eval). Supports Dart VM options (--enable-asserts, -D/--define, --observe, --verbosity) and Flutter hot reload.\n',
     'build': 'quds build [--watch] <input.quds>\n'
         '    Compile to Dart under .dart_tool/quds/out/ (defaults to lib/main.quds or main.quds). --watch rebuilds when a source changes.\n'
         'quds build --package [dir]\n'
@@ -234,81 +242,157 @@ String? _helpText(String? topic) {
     'compile': 'quds compile <exe|aot-snapshot|jit-snapshot|kernel|js|wasm> [options] <input.quds>\n'
         '    Compile a Quds program to a native binary, snapshot, JavaScript, or WebAssembly via Dart.\n'
         '    Forwards Dart compile options (-o/--output, -D/--define, -O0..-O4, --target-os, --target-arch, etc.).\n',
-    'run': 'quds run [vm-options] [input.quds] [arguments] [-e <code>] [-d device] [--debug|--profile|--release] [flutter arguments]\n'
-        '    Run the program (or evaluate a Quds snippet with -e/--eval). Supports Dart VM options (--enable-asserts, -D/--define, --observe, --verbosity) and Flutter hot reload.\n',
+    'test': 'quds test [file.quds|dir ...] [-n/--name <regex>] [-N/--plain-name <text>] [--fail-fast] [--[no-]enable-asserts] [-r/--reporter <compact|expanded>]\n'
+        '    Run Quds test declarations (defaults to test/ when no target is given).\n',
+    'benchmark':
+        'quds benchmark <input.quds> [--baseline <microseconds>] [--measure] [--warmup <count>] [--repeat <count>]\n'
+            '    Check debug/release output; --measure separates Quds compilation, Dart AOT compilation and AOT process execution including startup.\n',
     'analyze':
         'quds analyze [--fatal-infos] [--[no-]fatal-warnings] [file.quds|dir ...]\n'
             '    Compile and run dart analyze on Quds file(s) or directory (defaults to the current directory).\n',
-    'test': 'quds test [file.quds|dir ...] [-n/--name <regex>] [-N/--plain-name <text>] [--fail-fast] [--[no-]enable-asserts] [-r/--reporter <compact|expanded>]\n'
-        '    Run Quds test declarations (defaults to test/ when no target is given).\n',
     'format':
         'quds format [file.quds|dir ...] [--check|--set-exit-if-changed] [-o/--output <write|show|none>] [--stdout] [--indent N] [-l/--width/--line-length N] [--no-single-line-if]\n'
             '    Format Quds source files in place (defaults to the current directory).\n',
     'fix': 'quds fix [--dry-run|-n|--apply] [file.quds|dir ...]\n'
         '    Preview (--dry-run, default) or apply (--apply) safe automated fixes (missing shadow/var/(), unused use imports).\n',
-    'create': 'quds create --f <name>\n'
-        '    Create a Flutter app whose program is lib/main.quds (aliases: -f, --flutter, -t flutter).\n'
-        'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
-        '    Add Flutter platform support in the current project, preserving Quds sources.\n'
-        'quds create [-t/--template <console|cli|package|flutter>] [--force] [--[no-]pub] <name>\n'
-        '    Create a new Quds project or publishable Quds package.\n',
-    'pub':
-        'quds pub [arguments]\n    Forward all pub commands (add, remove, get, upgrade, outdated, deps, publish, ...) to Dart, or Flutter in a Flutter project.\n',
-    'add':
-        'quds add <package>\n    Forward to native pub add (Flutter in Flutter projects).\n',
-    'remove':
-        'quds remove <package>\n    Forward to native pub remove (Flutter in Flutter projects).\n',
-    'get':
-        'quds get\n    Forward to native pub get (Flutter in Flutter projects).\n',
-    'upgrade': 'quds upgrade [arguments]\n    Forward to native pub upgrade.\n',
-    'outdated':
-        'quds outdated [arguments]\n    Forward to native pub outdated.\n',
-    'deps': 'quds deps [arguments]\n    Forward to native pub deps.\n',
-    'publish': 'quds publish [arguments]\n    Forward to native pub publish.\n',
     'doc': 'quds doc [-o/--output <path>] <input.quds|dir>\n'
         '    Print /// documentation (or write HTML with -o <out.html|dir>).\n'
         'quds doc test <input.quds>\n'
         '    Check documentation examples.\n'
         'quds doc html <input.quds> <output.html>\n'
         '    Write the documentation as HTML.\n',
+    'create': 'quds create --f <name>\n'
+        '    Create a Flutter app whose program is lib/main.quds (aliases: -f, --flutter, -t flutter).\n'
+        'quds create . [--platforms=linux,android,web] [flutter create arguments]\n'
+        '    Add Flutter platform support in the current project, preserving Quds sources.\n'
+        'quds create [-t/--template <console|cli|package|flutter>] [--force] [--[no-]pub] <name>\n'
+        '    Create a new Quds project or publishable Quds package.\n',
     'migrate': 'quds migrate [project-dir] [--check|--dry-run] [--yes|-y] [--keep-dart]\n'
         '    Inspect a Dart or Flutter project for Quds compatibility, back up lib/ under .quds_backup/, ask confirmation, and migrate lib/**/*.dart to .quds.\n'
         'quds migrate <quds.yaml>\n'
         '    Write language: 1.2 to a quds.yaml file. A file pinned to another version is left unchanged.\n',
-    'benchmark':
-        'quds benchmark <input.quds> [--baseline <microseconds>] [--measure] [--warmup <count>] [--repeat <count>]\n'
-            '    Check debug/release output; --measure separates Quds compilation, Dart AOT compilation and AOT process execution including startup.\n',
+    'pub':
+        'quds pub [arguments]\n    Forward all pub commands (add, remove, get, upgrade, outdated, deps, publish, ...) to Dart, or Flutter in a Flutter project.\n',
+    'get':
+        'quds get\n    Forward to native pub get (Flutter in Flutter projects).\n',
+    'add':
+        'quds add <package>\n    Forward to native pub add (Flutter in Flutter projects).\n',
+    'remove':
+        'quds remove <package>\n    Forward to native pub remove (Flutter in Flutter projects).\n',
+    'upgrade': 'quds upgrade [arguments]\n    Forward to native pub upgrade.\n',
+    'outdated':
+        'quds outdated [arguments]\n    Forward to native pub outdated.\n',
+    'deps': 'quds deps [arguments]\n    Forward to native pub deps.\n',
+    'publish': 'quds publish [arguments]\n    Forward to native pub publish.\n',
+    'doctor': 'quds doctor\n'
+        '    Check Dart, the quds command, Flutter, and the editors on this machine.\n',
+    'install': 'quds install [--no-update]\n'
+        '    Update a Git checkout (or use the active pub.dev install), activate Quds, and install VS Code / editor support.\n'
+        '    --no-update skips the repository update and installs the current files.\n',
+    'info': 'quds info [arguments]\n'
+        '    Show Quds and Dart diagnostic tooling information.\n',
     'lsp': 'quds lsp\n'
         '    Serve the language protocol on standard input and output.\n',
     'debug': 'quds debug <input.quds>\n'
         '    Proxy the debug adapter. A Flutter package uses flutter debug-adapter.\n',
-    'help': 'quds help [command]\n'
-        '    Show every command, or the usage of one command.\n',
-    'version': 'quds --version\n'
-        '    Print the Quds CLI and Dart SDK versions.\n',
-    'doctor': 'quds doctor\n'
-        '    Check Dart, the quds command, Flutter, and the editors on this machine.\n',
-    'info': 'quds info [arguments]\n'
-        '    Show Quds and Dart diagnostic tooling information.\n',
     'devtools': 'quds devtools [arguments]\n'
         '    Launch Dart DevTools.\n',
     'dart': 'quds dart <arguments>\n'
         '    Forward any Dart CLI command with its normal arguments.\n',
     'flutter': 'quds flutter <arguments>\n'
         '    Forward Flutter commands, including clean, with their normal arguments.\n',
-    'install': 'quds install [--no-update]\n'
-        '    Fast-forward the compiler from origin/main, then activate Quds and install editor support.\n'
-        '    --no-update skips the repository update and installs the current checkout.\n',
+    'help': 'quds help [command]\n'
+        '    Show every command, or detailed usage for one command.\n',
+    'version': 'quds --version\n'
+        '    Print the Quds CLI and Dart SDK versions.\n',
   };
-  if (topic == null) {
-    final buffer = StringBuffer('Quds commands\n\n');
-    for (final entry in entries.values) {
-      buffer.writeln(entry.trimRight());
-      buffer.writeln();
-    }
+
+  bool useColor;
+  try {
+    useColor = stdout.hasTerminal &&
+        stdout.supportsAnsiEscapes &&
+        !Platform.environment.containsKey('NO_COLOR');
+  } catch (_) {
+    useColor = false;
+  }
+  String heading(String text) => useColor ? '\x1b[1;36m$text\x1b[0m' : text;
+  String strong(String text) => useColor ? '\x1b[1m$text\x1b[0m' : text;
+  String muted(String text) => useColor ? '\x1b[2m$text\x1b[0m' : text;
+
+  if (topic != null) {
+    final entry = entries[topic];
+    if (entry == null) return null;
+    final buffer = StringBuffer();
+    buffer.writeln(heading('Quds — $topic'));
+    buffer.writeln();
+    buffer.writeln(entry.trimRight());
+    buffer.writeln();
+    buffer.writeln(muted(
+        'Global options: -V/--verbose (or -v after command) for detailed steps, -q/--quiet to hide live progress.'));
     return buffer.toString();
   }
-  return entries[topic];
+
+  const sections = <(String, List<String>)>[
+    ('Build & Run', ['run', 'build', 'compile', 'test', 'benchmark']),
+    ('Code Quality & Docs', ['analyze', 'format', 'fix', 'doc']),
+    (
+      'Projects & Packages',
+      [
+        'create',
+        'migrate',
+        'pub',
+        'get',
+        'add',
+        'remove',
+        'upgrade',
+        'outdated',
+        'deps',
+        'publish',
+      ]
+    ),
+    (
+      'Toolchain & Editors',
+      [
+        'doctor',
+        'install',
+        'info',
+        'lsp',
+        'debug',
+        'devtools',
+        'dart',
+        'flutter',
+        'help',
+        'version',
+      ]
+    ),
+  ];
+
+  final buffer = StringBuffer();
+  buffer
+      .writeln(strong('Quds CLI — General-purpose language compiling to Dart'));
+  buffer.writeln('Usage: quds <command> [options] [arguments]');
+  buffer.writeln();
+  buffer.writeln(heading('Global Options'));
+  buffer.writeln(
+      '  -V, --verbose        Show detailed step-by-step progress and timings (or -v after a command).');
+  buffer.writeln(
+      '  -q, --quiet          Hide live progress indicators on interactive terminals.');
+  buffer.writeln(
+      '  -v, --version        Print the Quds CLI and Dart SDK versions.');
+  buffer.writeln(
+      '  -h, --help           Show this help, or `quds <command> --help` for one command.');
+  buffer.writeln();
+  for (final (title, commands) in sections) {
+    buffer.writeln(heading(title));
+    for (final name in commands) {
+      final entry = entries[name]!;
+      for (final line in entry.trimRight().split('\n')) {
+        buffer.writeln('  $line');
+      }
+    }
+    buffer.writeln();
+  }
+  return buffer.toString();
 }
 
 void _reportCompilerError(CompilerException error, {String? source}) {
@@ -375,12 +459,17 @@ void _fix(List<String> arguments) {
     return;
   }
 
+  final ui = CliUi.current;
+  final watch = Stopwatch()..start();
   var totalFixes = 0;
   var changedFiles = 0;
-  for (final file in files) {
+  for (var i = 0; i < files.length; i++) {
+    final file = files[i];
+    ui.step(i + 1, files.length, 'Checking ${file.path}');
     final source = file.readAsStringSync();
     final result = fixQudsSource(source, file: file.path);
     if (!result.changed) continue;
+    ui.clearProgress();
     changedFiles++;
     totalFixes += result.fixes.length;
     for (final fix in result.fixes) {
@@ -391,6 +480,7 @@ void _fix(List<String> arguments) {
       file.writeAsStringSync(result.source);
     }
   }
+  ui.clearProgress();
 
   if (totalFixes == 0) {
     stdout.writeln('Nothing to fix!');
@@ -401,6 +491,8 @@ void _fix(List<String> arguments) {
     stdout.writeln(
         '$totalFixes proposed fix${totalFixes == 1 ? '' : 'es'} in $changedFiles file${changedFiles == 1 ? '' : 's'}. Run with --apply to write changes.');
   }
+  ui.detail(
+      'Checked ${files.length} file(s) in ${ui.formatDuration(watch.elapsed)}.');
 }
 
 Future<void> _doctor(List<String> arguments) async {
@@ -409,10 +501,14 @@ Future<void> _doctor(List<String> arguments) async {
     exitCode = 64;
     return;
   }
+  final ui = CliUi.current;
+  final watch = Stopwatch()..start();
   final root = await _compilerRoot();
   final version = root == null ? '' : _pubspecVersion(root);
-  stdout.writeln(version.isEmpty ? 'Quds CLI' : 'Quds CLI $version');
-  final lines = <String>[_dartCheck()];
+  stdout.writeln(ui.bold(version.isEmpty ? 'Quds CLI' : 'Quds CLI $version'));
+  final lines = <String>[
+    ui.phase('Checking Dart SDK', _dartCheck),
+  ];
   final quds = commandOnPath('quds');
   if (quds == null) {
     lines.add(
@@ -423,11 +519,12 @@ Future<void> _doctor(List<String> arguments) async {
   final flutter = commandOnPath('flutter');
   lines.add(flutter == null
       ? '[note] Flutter was not found. Flutter apps need Flutter.'
-      : _flutterLine(flutter));
-  lines.addAll(editorReport());
+      : await ui.spin('Checking Flutter SDK', () => _flutterLine(flutter)));
+  lines.addAll(ui.phase('Checking installed editors', editorReport));
   for (final line in lines) {
-    stdout.writeln(line);
+    stdout.writeln(ui.formatStatusLine(line));
   }
+  ui.detail('Doctor completed in ${ui.formatDuration(watch.elapsed)}.');
   if (lines.any((line) => line.startsWith('[missing]'))) exitCode = 1;
 }
 
@@ -524,9 +621,9 @@ String _dartCheck() {
   }
 }
 
-String _flutterLine(String executable) {
+Future<String> _flutterLine(String executable) async {
   try {
-    final result = Process.runSync(executable, ['--version']);
+    final result = await Process.run(executable, ['--version']);
     final text = '${result.stdout}'.trim();
     final line = (text.isEmpty ? '${result.stderr}' : text).trim();
     final first = line.split('\n').first.trim();
@@ -793,9 +890,16 @@ void _build(List<String> arguments) {
     input = File(path);
   }
   if (!watch) {
-    _writeTree(input, <String>{});
+    final ui = CliUi.current;
+    final total = Stopwatch()..start();
+    ui.phase('Compiling ${input.path}', () => _writeTree(input, <String>{}));
+    if (exitCode == 0) {
+      ui.done('Build finished for ${input.path}', elapsed: total.elapsed);
+    }
     return;
   }
+  CliUi.current
+      .status('Watching ${input.path} for changes (Ctrl+C to stop)...');
   _watch(input);
 }
 
@@ -907,10 +1011,16 @@ Future<void> _compile(List<String> arguments) async {
     exitCode = entry == null ? 64 : 74;
     return;
   }
+  final ui = CliUi.current;
+  final total = Stopwatch()..start();
   try {
-    final output = _ensureOutput(input);
+    final output = ui.phase(
+      'Compiling ${input.path} to Dart',
+      () => _ensureOutput(input),
+    );
     if (output == null) return;
     final compileArgs = <String>['compile', target, ...flags];
+    String? targetOutput;
     if (!hasOutput) {
       final stem = input.path.endsWith('.quds')
           ? input.path.substring(0, input.path.length - 5)
@@ -924,7 +1034,8 @@ Future<void> _compile(List<String> arguments) async {
         'wasm' => '.wasm',
         _ => '',
       };
-      compileArgs.addAll(['-o', '$stem$ext']);
+      targetOutput = '$stem$ext';
+      compileArgs.addAll(['-o', targetOutput]);
     }
     if (!hasPackages && target != 'js' && target != 'wasm') {
       final pkgArgs = _withPackages(const [], input: input);
@@ -932,12 +1043,24 @@ Future<void> _compile(List<String> arguments) async {
     }
     compileArgs.add(output.path);
     compileArgs.addAll(trainingArgs);
+    ui.status(targetOutput == null
+        ? 'Building $target from ${input.path}...'
+        : 'Building $target -> $targetOutput...');
+    ui.detail('Running: ${_dartExecutable()} ${compileArgs.join(' ')}');
     final child = await Process.start(
       _dartExecutable(),
       compileArgs,
       mode: ProcessStartMode.inheritStdio,
     );
     exitCode = await child.exitCode;
+    if (exitCode == 0) {
+      ui.done(
+        targetOutput == null
+            ? 'Compiled $target'
+            : 'Compiled $target -> $targetOutput',
+        elapsed: total.elapsed,
+      );
+    }
   } on CompilerException catch (error) {
     _reportCompilerError(error);
     exitCode = 65;
@@ -986,8 +1109,13 @@ void _buildPackage(Directory target) {
     stdout.writeln('No .quds files found under ${libDir.path}');
     return;
   }
+  final ui = CliUi.current;
+  final totalWatch = Stopwatch()..start();
+  var builtCount = 0;
   final sdkDir = Directory('${root.path}/lib/src/_quds_sdk');
-  for (final input in sources) {
+  for (var i = 0; i < sources.length; i++) {
+    final input = sources[i];
+    ui.step(i + 1, sources.length, 'Building ${input.path}');
     try {
       final source = input.readAsStringSync();
       var result = compile(source, file: input.path);
@@ -1002,29 +1130,38 @@ void _buildPackage(Directory target) {
       }
       final existing = output.existsSync() ? output.readAsStringSync() : null;
       if (existing != null && !existing.startsWith(_generatedHeader)) {
+        ui.clearProgress();
         stderr.writeln(
             'Refusing to overwrite non-generated file: ${output.path}');
         exitCode = 73;
         return;
       }
       writeSdkBundles(output.parent.path, result);
+      ui.clearProgress();
       if (existing != null && existing == result.dart) {
         stdout.writeln('Unchanged ${output.path}');
         continue;
       }
       output.parent.createSync(recursive: true);
       output.writeAsStringSync(result.dart);
+      builtCount++;
       stdout.writeln('Built ${output.path}');
     } on CompilerException catch (error) {
+      ui.clearProgress();
       _reportCompilerError(error);
       exitCode = 65;
       return;
     } on FileSystemException catch (error) {
+      ui.clearProgress();
       stderr.writeln(error.message);
       exitCode = 74;
       return;
     }
   }
+  ui.done(
+    'Package build finished ($builtCount rebuilt, ${sources.length - builtCount} unchanged)',
+    elapsed: totalWatch.elapsed,
+  );
 }
 
 Future<void> _watch(File input) async {
@@ -1674,17 +1811,24 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
         return;
       }
     }
-    final output = _ensureOutput(input);
+    final ui = CliUi.current;
+    final runWatch = Stopwatch()..start();
+    final output = ui.phase(
+      'Compiling ${evalTemp == null ? input.path : 'snippet'}',
+      () => _ensureOutput(input),
+    );
     if (output == null) return;
     final mapFile = File('${output.path}.map');
     final sourceMap = mapFile.existsSync() ? mapFile.readAsStringSync() : null;
     final generatedName = output.uri.pathSegments.last;
     final qudsSource = input.existsSync() ? input.readAsStringSync() : null;
+    final launchArgs = _withPackages(
+        [...vmFlags, output.path, ...plainArgs, ...programArguments],
+        input: evalTemp == null ? input : null);
+    ui.detail('Running: ${_dartExecutable()} ${launchArgs.join(' ')}');
     final process = await Process.start(
       _dartExecutable(),
-      _withPackages(
-          [...vmFlags, output.path, ...plainArgs, ...programArguments],
-          input: evalTemp == null ? input : null),
+      launchArgs,
       workingDirectory: evalTemp == null
           ? _packageRoot(input.absolute.parent).path
           : Directory.current.path,
@@ -1697,6 +1841,8 @@ Future<void> _run(List<String> arguments, {String? buildTarget}) async {
     ]);
     exitCode = await process.exitCode;
     await streams;
+    ui.detail(
+        'Exited with code $exitCode (${ui.formatDuration(runWatch.elapsed)}).');
   } on CompilerException catch (error) {
     _reportCompilerError(error);
     exitCode = 65;
@@ -1815,7 +1961,7 @@ Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
   return (targets[inputPath]!, stagedRoot!);
 }
 
-void _analyze(List<String> arguments) {
+Future<void> _analyze(List<String> arguments) async {
   final dartFlags = <String>[];
   final targets = <String>[];
   for (var i = 1; i < arguments.length; i++) {
@@ -1861,18 +2007,29 @@ void _analyze(List<String> arguments) {
     return;
   }
 
+  final ui = CliUi.current;
+  final totalWatch = Stopwatch()..start();
   final singleExplicitFile =
       targets.length == 1 && FileSystemEntity.isFileSync(targets.first);
   var worstExit = 0;
   var failedCount = 0;
-  for (final input in files) {
-    final code =
-        _analyzeOne(input, dartFlags, quietSuccess: !singleExplicitFile);
+  for (var i = 0; i < files.length; i++) {
+    final input = files[i];
+    final label = files.length == 1
+        ? 'Analyzing ${input.path}'
+        : '[${i + 1}/${files.length}] Analyzing ${input.path}';
+    final code = await _analyzeOne(
+      input,
+      dartFlags,
+      quietSuccess: !singleExplicitFile,
+      progressLabel: label,
+    );
     if (code != 0) {
       failedCount++;
       if (worstExit == 0) worstExit = code;
     }
   }
+  ui.clearProgress();
   if (!singleExplicitFile) {
     if (failedCount == 0) {
       stdout.writeln(
@@ -1882,18 +2039,34 @@ void _analyze(List<String> arguments) {
           'Analyzed ${files.length} file${files.length == 1 ? '' : 's'}: $failedCount failed.');
     }
   }
+  ui.detail(
+      'Analysis finished in ${ui.formatDuration(totalWatch.elapsed)} (${files.length - failedCount}/${files.length} clean).');
   exitCode = worstExit;
 }
 
-int _analyzeOne(File input, List<String> dartFlags,
-    {bool quietSuccess = false}) {
+Future<int> _analyzeOne(
+  File input,
+  List<String> dartFlags, {
+  bool quietSuccess = false,
+  String? progressLabel,
+}) async {
+  final ui = CliUi.current;
+  final label = progressLabel ?? 'Analyzing ${input.path}';
   try {
-    final result = compile(input.readAsStringSync(), file: input.path);
+    final result = ui.phase(
+      'Compiling ${input.path}',
+      () => compile(input.readAsStringSync(), file: input.path),
+    );
     final directory = Directory.systemTemp.createTempSync('quds-analyze-');
     try {
       final (output, staged) = _temporaryDartTree(input, result, directory);
-      final analysis = Process.runSync(_dartExecutable(),
-          _withPackages(['analyze', ...dartFlags, output.path], input: input));
+      final analyzeArgs =
+          _withPackages(['analyze', ...dartFlags, output.path], input: input);
+      ui.detail('Running: ${_dartExecutable()} ${analyzeArgs.join(' ')}');
+      final analysis = await ui.spin(
+        label,
+        () => Process.run(_dartExecutable(), analyzeArgs),
+      );
       if (!quietSuccess || analysis.exitCode != 0) {
         _writeQuds(analysis.stdout, analysis.stderr, staged.sourceMap,
             output.uri.pathSegments.last);
@@ -1903,15 +2076,17 @@ int _analyzeOne(File input, List<String> dartFlags,
       directory.deleteSync(recursive: true);
     }
   } on CompilerException catch (error) {
+    ui.clearProgress();
     _reportCompilerError(error);
     return 65;
   } on FileSystemException catch (error) {
+    ui.clearProgress();
     stderr.writeln(error.message);
     return 74;
   }
 }
 
-void _test(List<String> arguments) {
+Future<void> _test(List<String> arguments) async {
   final regexPatterns = <String>[];
   final plainPatterns = <String>[];
   var failFast = false;
@@ -2030,18 +2205,26 @@ void _test(List<String> arguments) {
     return;
   }
 
+  final ui = CliUi.current;
+  final totalWatch = Stopwatch()..start();
   var passedSuites = 0;
   var worstExit = 0;
-  for (final input in files) {
+  for (var i = 0; i < files.length; i++) {
+    final input = files[i];
     if (!explicitSingleFile || reporter == 'expanded') {
+      ui.clearProgress();
       stdout.writeln('==> ${input.path}');
     }
-    final code = _runTestFile(
+    final label = files.length == 1
+        ? 'Running ${input.path}'
+        : '[${i + 1}/${files.length}] Running ${input.path}';
+    final code = await _runTestFile(
       input,
       regexPatterns: regexPatterns,
       plainPatterns: plainPatterns,
       failFast: failFast,
       enableAsserts: enableAsserts,
+      progressLabel: label,
     );
     if (code == 0) {
       passedSuites++;
@@ -2050,10 +2233,13 @@ void _test(List<String> arguments) {
       if (failFast) break;
     }
   }
+  ui.clearProgress();
   if (!explicitSingleFile || reporter == 'expanded') {
     stdout.writeln(
         '$passedSuites/${files.length} test file${files.length == 1 ? '' : 's'} passed.');
   }
+  ui.detail(
+      'Test run finished in ${ui.formatDuration(totalWatch.elapsed)} ($passedSuites/${files.length} suites passed).');
   exitCode = worstExit;
 }
 
@@ -2069,16 +2255,21 @@ Iterable<Statement> _activeTestStatements(
   }
 }
 
-int _runTestFile(
+Future<int> _runTestFile(
   File input, {
   required List<String> regexPatterns,
   required List<String> plainPatterns,
   required bool failFast,
   required bool enableAsserts,
-}) {
+  String? progressLabel,
+}) async {
+  final ui = CliUi.current;
+  final label = progressLabel ?? 'Running ${input.path}';
   try {
-    final result =
-        compile(input.readAsStringSync(), file: input.path, testing: true);
+    final result = ui.phase(
+      'Compiling ${input.path}',
+      () => compile(input.readAsStringSync(), file: input.path, testing: true),
+    );
     final activeTop =
         _activeTestStatements(result.program.statements, result.semantics)
             .toList();
@@ -2156,10 +2347,14 @@ int _runTestFile(
             'import $suiteUri as suite;\n'
             'Future<void> main() async {\n'
             '  io.exitCode = await suite.$entry();\n}\n');
-      final run = Process.runSync(
-          _dartExecutable(),
-          _withPackages([if (enableAsserts) '--enable-asserts', output.path],
-              input: input));
+      final runArgs = _withPackages(
+          [if (enableAsserts) '--enable-asserts', output.path],
+          input: input);
+      ui.detail('Running: ${_dartExecutable()} ${runArgs.join(' ')}');
+      final run = await ui.spin(
+        label,
+        () => Process.run(_dartExecutable(), runArgs),
+      );
       _writeQuds(run.stdout, run.stderr, staged.sourceMap,
           suite.uri.pathSegments.last);
       return run.exitCode;
@@ -2167,9 +2362,11 @@ int _runTestFile(
       directory.deleteSync(recursive: true);
     }
   } on CompilerException catch (error) {
+    ui.clearProgress();
     _reportCompilerError(error);
     return 65;
   } on FileSystemException catch (error) {
+    ui.clearProgress();
     stderr.writeln(error.message);
     return 74;
   }
@@ -2302,7 +2499,13 @@ void _format(List<String> arguments) {
   final singleFileTarget =
       targets.length == 1 && FileSystemEntity.isFileSync(targets.first);
 
-  for (final input in files) {
+  final ui = CliUi.current;
+  final formatWatch = Stopwatch()..start();
+  for (var i = 0; i < files.length; i++) {
+    final input = files[i];
+    if (!toStdout) {
+      ui.step(i + 1, files.length, 'Formatting ${input.path}');
+    }
     try {
       final source = input.readAsStringSync();
       Parser(Lexer().tokenize(source, file: input.path)).parse();
@@ -2320,6 +2523,7 @@ void _format(List<String> arguments) {
       final diff = formatted != source;
       if (dryRun) {
         if (diff) {
+          ui.clearProgress();
           changed++;
           stdout.writeln('Unformatted ${input.path}');
         }
@@ -2329,18 +2533,26 @@ void _format(List<String> arguments) {
           changed++;
         }
         if (singleFileTarget || diff) {
+          ui.clearProgress();
           stdout.writeln('Formatted ${input.path}');
         }
       }
     } on CompilerException catch (error) {
+      ui.clearProgress();
       _reportCompilerError(error);
       hadError = true;
       exitCode = 65;
     } on FileSystemException catch (error) {
+      ui.clearProgress();
       stderr.writeln(error.message);
       hadError = true;
       exitCode = 74;
     }
+  }
+  ui.clearProgress();
+  if (!toStdout) {
+    ui.detail(
+        'Formatted ${files.length} file(s) ($changed changed) in ${ui.formatDuration(formatWatch.elapsed)}.');
   }
 
   if (hadError) return;
@@ -2380,7 +2592,7 @@ void _collectQudsFiles(Directory dir, List<File> out, Set<String> seen) {
 
 Future<void> _create(List<String> arguments) async {
   if (arguments.length >= 2 && arguments[1] == '.') {
-    _createPlatforms(arguments.skip(2).toList());
+    await _createPlatforms(arguments.skip(2).toList());
     return;
   }
   if (arguments.length >= 2 && arguments[1] == 'flutter') {
@@ -2389,7 +2601,7 @@ Future<void> _create(List<String> arguments) async {
       exitCode = 64;
       return;
     }
-    _createFlutter(arguments[2]);
+    await _createFlutter(arguments[2]);
     return;
   }
   var template = 'console';
@@ -2443,7 +2655,7 @@ Future<void> _create(List<String> arguments) async {
     return;
   }
   if (template == 'flutter') {
-    _createFlutter(name);
+    await _createFlutter(name);
     return;
   }
   final directory = Directory(name);
@@ -2518,7 +2730,7 @@ A Quds package.
   }
 }
 
-void _createPlatforms(List<String> arguments) {
+Future<void> _createPlatforms(List<String> arguments) async {
   if (arguments
       .any((arg) => arg == '--overwrite' || arg == '--overwrite=true')) {
     stderr.writeln(
@@ -2532,6 +2744,8 @@ void _createPlatforms(List<String> arguments) {
     exitCode = 1;
     return;
   }
+  final ui = CliUi.current;
+  final totalWatch = Stopwatch()..start();
   final root = Directory.current;
   final spec = File('${root.path}/pubspec.yaml');
   String? updatedSpec;
@@ -2579,8 +2793,10 @@ void _createPlatforms(List<String> arguments) {
           (a) => a == '--project-name' || a.startsWith('--project-name='))) {
     forwarded.addAll(['--project-name', name]);
   }
-  final result =
-      Process.runSync(flutter, ['create', ...forwarded, '--no-pub', '.']);
+  final result = await ui.spin(
+    'Running flutter create (adding platforms)',
+    () => Process.run(flutter, ['create', ...forwarded, '--no-pub', '.']),
+  );
   stdout.write(result.stdout);
   stderr.write(result.stderr);
   for (final entry in saved.entries) {
@@ -2609,7 +2825,10 @@ void _createPlatforms(List<String> arguments) {
   }
   _ignoreGenerated(root.path);
   if (!arguments.contains('--no-pub')) {
-    final resolved = Process.runSync(flutter, ['pub', 'get']);
+    final resolved = await ui.spin(
+      'Running flutter pub get',
+      () => Process.run(flutter, ['pub', 'get']),
+    );
     stdout.write(resolved.stdout);
     stderr.write(resolved.stderr);
     if (resolved.exitCode != 0) {
@@ -2618,9 +2837,10 @@ void _createPlatforms(List<String> arguments) {
     }
   }
   stdout.writeln('Flutter platforms configured. Run: quds run -d <device>');
+  ui.done('Flutter platform setup complete', elapsed: totalWatch.elapsed);
 }
 
-void _createFlutter(String name) {
+Future<void> _createFlutter(String name) async {
   if (!RegExp(r'^[a-z][a-z0-9_]*$').hasMatch(name)) {
     stderr.writeln(
         'A Flutter project name must start with a letter and use only lowercase letters, digits, and underscores: $name');
@@ -2638,7 +2858,12 @@ void _createFlutter(String name) {
     exitCode = 1;
     return;
   }
-  final created = Process.runSync(flutter, ['create', name]);
+  final ui = CliUi.current;
+  final totalWatch = Stopwatch()..start();
+  final created = await ui.spin(
+    'Running flutter create $name',
+    () => Process.run(flutter, ['create', name]),
+  );
   stdout.write(created.stdout);
   stderr.write(created.stderr);
   if (created.exitCode != 0) {
@@ -2655,6 +2880,7 @@ void _createFlutter(String name) {
   _ignoreGenerated(name);
   stdout.writeln('Created Flutter project $name');
   stdout.writeln('Run it with: quds run $name/lib/main.quds');
+  ui.done('Created Flutter project $name', elapsed: totalWatch.elapsed);
 }
 
 void _ignoreGenerated(String name) {
@@ -3136,6 +3362,8 @@ Future<void> _pubCommand(List<String> arguments) async {
     exitCode = 1;
     return;
   }
+  final tool = flutter ? 'flutter' : 'dart';
+  CliUi.current.status('Running $tool pub ${arguments.join(' ')}...');
   final result = await Process.start(executable, ['pub', ...arguments],
       mode: ProcessStartMode.inheritStdio);
   exitCode = await result.exitCode;
@@ -3295,7 +3523,7 @@ String _escape(String text) => text
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
 
-void _benchmark(List<String> arguments) {
+Future<void> _benchmark(List<String> arguments) async {
   const usage =
       'Usage: quds benchmark <input.quds> [--baseline <microseconds>] '
       '[--measure] [--warmup <count>] [--repeat <count>]';
@@ -3313,6 +3541,7 @@ void _benchmark(List<String> arguments) {
     return value;
   }
 
+  final ui = CliUi.current;
   try {
     final baseline = option('--baseline', null);
     final warmup = option('--warmup', 1)!;
@@ -3328,19 +3557,30 @@ void _benchmark(List<String> arguments) {
     final source = input.readAsStringSync();
     final total = Stopwatch()..start();
     final compileWatch = Stopwatch()..start();
-    final result = compile(source, file: input.path);
+    final result = ui.phase(
+      'Compiling ${input.path}',
+      () => compile(source, file: input.path),
+    );
     compileWatch.stop();
     final directory = Directory.systemTemp.createTempSync('quds-bench-');
     try {
       final stageWatch = Stopwatch()..start();
       final (dart, staged) = _temporaryDartTree(input, result, directory);
       stageWatch.stop();
-      final debug = Process.runSync(_dartExecutable(),
-          _withPackages(['run', '--enable-asserts', dart.path], input: input));
-      final release = Process.runSync(
-          _dartExecutable(),
-          _withPackages(['run', '--no-enable-asserts', dart.path],
-              input: input));
+      final debug = await ui.spin(
+        'Checking debug output (${input.path})',
+        () => Process.run(
+            _dartExecutable(),
+            _withPackages(['run', '--enable-asserts', dart.path],
+                input: input)),
+      );
+      final release = await ui.spin(
+        'Checking release output (${input.path})',
+        () => Process.run(
+            _dartExecutable(),
+            _withPackages(['run', '--no-enable-asserts', dart.path],
+                input: input)),
+      );
       if (debug.exitCode != 0 || release.exitCode != 0) {
         stderr.write(_atQuds(
             debug.exitCode != 0 ? debug.stderr : release.stderr,
@@ -3358,6 +3598,7 @@ void _benchmark(List<String> arguments) {
       if (measured) {
         final compilerSamples = <int>[];
         for (var i = 0; i < warmup + repeat; i++) {
+          ui.step(i + 1, warmup + repeat, 'Measuring Quds compilation');
           final watch = Stopwatch()..start();
           final next = compile(source, file: input.path);
           watch.stop();
@@ -3366,17 +3607,21 @@ void _benchmark(List<String> arguments) {
           }
           if (i >= warmup) compilerSamples.add(watch.elapsedMicroseconds);
         }
+        ui.clearProgress();
         final binary =
             '${directory.path}/bench${Platform.isWindows ? '.exe' : ''}';
         final aotWatch = Stopwatch()..start();
-        final aot = Process.runSync(_dartExecutable(), [
-          'compile',
-          'exe',
-          if (_packageConfigPath() case final config?) '--packages=$config',
-          dart.path,
-          '-o',
-          binary
-        ]);
+        final aot = await ui.spin(
+          'Compiling AOT executable for benchmark',
+          () => Process.run(_dartExecutable(), [
+            'compile',
+            'exe',
+            if (_packageConfigPath() case final config?) '--packages=$config',
+            dart.path,
+            '-o',
+            binary
+          ]),
+        );
         aotWatch.stop();
         if (aot.exitCode != 0) {
           stderr.write(_atQuds(
@@ -3386,10 +3631,12 @@ void _benchmark(List<String> arguments) {
         }
         final runtimeSamples = <int>[];
         for (var i = 0; i < warmup + repeat; i++) {
+          ui.step(i + 1, warmup + repeat, 'Running AOT benchmark sample');
           final watch = Stopwatch()..start();
           final run = Process.runSync(binary, const []);
           watch.stop();
           if (run.exitCode != 0 || run.stdout != debug.stdout) {
+            ui.clearProgress();
             stderr.writeln('Measured AOT execution failed or output differs');
             stderr.write(run.stderr);
             exitCode = run.exitCode == 0 ? 1 : run.exitCode;
@@ -3397,6 +3644,7 @@ void _benchmark(List<String> arguments) {
           }
           if (i >= warmup) runtimeSamples.add(watch.elapsedMicroseconds);
         }
+        ui.clearProgress();
         Map<String, Object> samples(List<int> values) {
           final sorted = [...values]..sort();
           return {
@@ -3539,7 +3787,14 @@ Future<void> _migrate(List<String> arguments) async {
     exitCode = 1;
     return;
   }
+  final ui = CliUi.current;
+  ui.status('Starting Dart-to-Quds migration analyzer...');
   final config = _packageConfigPath();
+  final workerEnv = <String, String>{
+    ...Platform.environment,
+    if (ui.verbose) 'QUDS_VERBOSE': '1',
+    if (ui.quiet) 'QUDS_QUIET': '1',
+  };
   final child = await Process.start(
     _dartExecutable(),
     [
@@ -3548,6 +3803,7 @@ Future<void> _migrate(List<String> arguments) async {
       worker.toFilePath(),
       ...arguments.skip(1),
     ],
+    environment: workerEnv,
     mode: ProcessStartMode.inheritStdio,
   );
   final termination = Platform.isWindows

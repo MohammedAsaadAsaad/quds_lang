@@ -150,8 +150,9 @@ static int of(Object context) => 1;
         .listen((line) {
       final value = jsonDecode(line) as Map;
       if (value['ready'] == true && !ready.isCompleted) ready.complete();
-      if (value['id'] == 7 && !answer.isCompleted)
+      if (value['id'] == 7 && !answer.isCompleted) {
         answer.complete(value['markdown'] as String);
+      }
     });
     child.stdin.writeln(
         jsonEncode({'id': 7, 'markdown': '```dart\nfinal name = "قدس";\n```'}));

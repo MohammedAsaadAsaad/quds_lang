@@ -1080,7 +1080,9 @@ bool _writeTree(File input, Set<String> seen,
         projectRoot: ownerRoot,
         configOrigin: origin,
         flutter: flutter,
-        sourceText: source)) return false;
+        sourceText: source)) {
+      return false;
+    }
     _watched.add(path);
     for (final dependency in result.dependencies) {
       if (!dependency.endsWith('.quds')) continue;
@@ -1090,7 +1092,9 @@ bool _writeTree(File input, Set<String> seen,
           announce: announce,
           flutter: flutter,
           projectRoot: ownerRoot,
-          configOrigin: origin)) return false;
+          configOrigin: origin)) {
+        return false;
+      }
     }
     return exitCode == 0;
   } on CompilerException catch (error) {
@@ -1347,8 +1351,10 @@ bool _artifactsFresh(Map saved) {
   for (final entry in artifacts.entries) {
     if (entry.key is! String || entry.value is! String) return false;
     final file = File(entry.key as String);
-    if (!file.existsSync() || sha256Hex(file.readAsBytesSync()) != entry.value)
+    if (!file.existsSync() ||
+        sha256Hex(file.readAsBytesSync()) != entry.value) {
       return false;
+    }
   }
   return true;
 }
@@ -1443,7 +1449,9 @@ File? _ensureOutput(File input,
         destination: output,
         projectRoot: ownerRoot,
         configOrigin: origin,
-        sourceText: source)) return null;
+        sourceText: source)) {
+      return null;
+    }
     dependencies = result.dependencies;
   }
   for (final dependency in dependencies) {
@@ -1462,7 +1470,9 @@ File? _ensureOutput(File input,
         destination: output,
         projectRoot: ownerRoot,
         configOrigin: origin,
-        sourceText: source)) return null;
+        sourceText: source)) {
+      return null;
+    }
   }
   return output;
 }
@@ -1784,8 +1794,9 @@ Future<void> _copyMapped(Stream<List<int>> input, IOSink output,
       }
       if (sourcePath == null) continue;
       final target = targets[canonical(sourcePath)];
-      if (target != null)
+      if (target != null) {
         compiled.semantics.backendTypeImports[entry.key] = fileUri(target.path);
+      }
     }
     final emitter = DartEmitter(compiled.semantics);
     final dart = emitter.emit(compiled.program);
@@ -2531,10 +2542,12 @@ void _createPlatforms(List<String> arguments) {
       final values = editor.parseAt([]).value as Map;
       name = values['name'] as String?;
       final dependencies = values['dependencies'];
-      if (dependencies == null)
+      if (dependencies == null) {
         editor.update(['dependencies'], <String, Object?>{});
-      if (dependencies != null && dependencies is! Map)
+      }
+      if (dependencies != null && dependencies is! Map) {
         throw FormatException('dependencies must be a mapping');
+      }
       if (dependencies is! Map ||
           dependencies['flutter'] is! Map ||
           dependencies['flutter']['sdk'] != 'flutter') {
@@ -2591,8 +2604,9 @@ void _createPlatforms(List<String> arguments) {
     entry.writeAsStringSync(flutterApp);
   }
   final configuration = File('${root.path}/quds.yaml');
-  if (!configuration.existsSync())
+  if (!configuration.existsSync()) {
     configuration.writeAsStringSync('language: 1.2\n');
+  }
   _ignoreGenerated(root.path);
   if (!arguments.contains('--no-pub')) {
     final resolved = Process.runSync(flutter, ['pub', 'get']);
@@ -2664,13 +2678,15 @@ String _flutterPlatform(List<String> arguments,
   for (var index = 0; index < arguments.length; index++) {
     final option = arguments[index];
     if ((option == '-d' || option == '--device-id') &&
-        index + 1 < arguments.length)
+        index + 1 < arguments.length) {
       device = arguments[++index];
-    else if (option.startsWith('--device-id='))
+    } else if (option.startsWith('--device-id=')) {
       device = option.substring(12);
-    else if (option.startsWith('-d') &&
+    } else if (option.startsWith('-d') &&
         !option.startsWith('--') &&
-        option.length > 2) device = option.substring(2);
+        option.length > 2) {
+      device = option.substring(2);
+    }
   }
   return {'chrome', 'edge', 'web-server'}.contains(device) ? 'web' : 'flutter';
 }
@@ -2817,7 +2833,9 @@ _FlutterPreparation _prepareFlutter(File input,
         if (entity is Directory) {
           final name = entity.uri.pathSegments.where((s) => s.isNotEmpty).last;
           if (!{'.git', '.dart_tool', '.quds_backup', 'build', 'quds_gen'}
-              .contains(name)) scan(entity);
+              .contains(name)) {
+            scan(entity);
+          }
         } else if (entity is File && entity.path.endsWith('.quds')) {
           paths.add(entity.absolute.path);
         }
@@ -3034,7 +3052,9 @@ String _relativeGeneratedUri(Directory from, File to) {
       shared < right.length &&
       (Platform.isWindows
           ? left[shared].toLowerCase() == right[shared].toLowerCase()
-          : left[shared] == right[shared])) shared++;
+          : left[shared] == right[shared])) {
+    shared++;
+  }
   return [...List.filled(left.length - shared, '..'), ...right.skip(shared)]
       .map((s) => s == '..' ? s : Uri.encodeComponent(s))
       .join('/');
@@ -3101,11 +3121,13 @@ Future<void> _pubCommand(List<String> arguments) async {
   var directory = Directory.current.path;
   for (var i = 0; i < arguments.length; i++) {
     final arg = arguments[i];
-    if ((arg == '-C' || arg == '--directory') && i + 1 < arguments.length)
+    if ((arg == '-C' || arg == '--directory') && i + 1 < arguments.length) {
       directory = arguments[++i];
-    else if (arg.startsWith('-C') && arg.length > 2)
+    } else if (arg.startsWith('-C') && arg.length > 2) {
       directory = arg.substring(2);
-    else if (arg.startsWith('--directory=')) directory = arg.substring(12);
+    } else if (arg.startsWith('--directory=')) {
+      directory = arg.substring(12);
+    }
   }
   final flutter = _flutterPackage(File('$directory/_pub.quds'));
   final executable = flutter ? _flutterExecutable() : _dartExecutable();
@@ -3284,8 +3306,9 @@ void _benchmark(List<String> arguments) {
     if (index == -1) return fallback;
     if (index + 1 >= args.length) throw FormatException(usage);
     final value = int.tryParse(args[index + 1]);
-    if (value == null || value < 0)
+    if (value == null || value < 0) {
       throw FormatException('$name must be a nonnegative integer');
+    }
     args.removeRange(index, index + 2);
     return value;
   }
@@ -3338,8 +3361,9 @@ void _benchmark(List<String> arguments) {
           final watch = Stopwatch()..start();
           final next = compile(source, file: input.path);
           watch.stop();
-          if (next.dart != result.dart)
+          if (next.dart != result.dart) {
             throw StateError('Compiler output changed during measurement');
+          }
           if (i >= warmup) compilerSamples.add(watch.elapsedMicroseconds);
         }
         final binary =
@@ -3611,7 +3635,9 @@ Future<void> _debug(List<String> arguments) async {
   final fromEditor = _readFrames(stdin).listen((message) {
     if (flutter &&
         message['type'] == 'request' &&
-        live?.request(message) == true) return;
+        live?.request(message) == true) {
+      return;
+    }
     String? baseline;
     _FlutterPreparation? prepared;
     if (flutter && message['command'] == 'launch') {
@@ -3660,10 +3686,11 @@ Future<void> _debug(List<String> arguments) async {
             buildError: graph.error,
             refreshMaps: () => refreshMaps(graph),
             send: (value) {
-              if (value['type'] == 'response')
+              if (value['type'] == 'response') {
                 write(value);
-              else
+              } else {
                 toAdapter(value);
+              }
             },
             output: console);
       }

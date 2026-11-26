@@ -233,8 +233,9 @@ Future<bool> _installEditors({
     }
   } finally {
     final parent = vsix?.parent;
-    if (parent != null && parent.existsSync())
+    if (parent != null && parent.existsSync()) {
       parent.deleteSync(recursive: true);
+    }
   }
   return failed;
 }
@@ -314,8 +315,9 @@ String _textmateXml(String? existing, String payload) {
     r'<component name="TextMateUserBundlesSettings">.*?</component>',
     dotAll: true,
   );
-  if (pattern.hasMatch(existing))
+  if (pattern.hasMatch(existing)) {
     return existing.replaceFirst(pattern, component);
+  }
   if (existing.contains('</application>')) {
     return existing.replaceFirst(
         '</application>', '  $component\n</application>');

@@ -33,14 +33,17 @@ Future<void> main(List<String> args) async {
           jsonDecode(utf8.decode(buffer.sublist(start, start + length)))
               as Map<String, dynamic>;
       buffer.removeRange(0, start + length);
-      if (request['type'] != 'request')
+      if (request['type'] != 'request') {
         throw StateError('A proxy response reached Flutter');
+      }
       final command = request['command'];
       final record = <String, dynamic>{...request};
-      if (File('lib/quds_gen/main.dart').existsSync())
+      if (File('lib/quds_gen/main.dart').existsSync()) {
         record['main'] = File('lib/quds_gen/main.dart').readAsStringSync();
-      if (File('lib/quds_gen/helper.dart').existsSync())
+      }
+      if (File('lib/quds_gen/helper.dart').existsSync()) {
         record['helper'] = File('lib/quds_gen/helper.dart').readAsStringSync();
+      }
       File('dap-calls').writeAsStringSync('${jsonEncode(record)}\n',
           mode: FileMode.append, flush: true);
       send({
@@ -49,12 +52,13 @@ Future<void> main(List<String> args) async {
         'command': command,
         'success': true
       });
-      if (command == 'launch')
+      if (command == 'launch') {
         send({
           'type': 'event',
           'event': 'flutter.appStarted',
           'body': <String, dynamic>{}
         });
+      }
       if (command == 'disconnect') {
         await stdout.flush();
         return;

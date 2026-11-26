@@ -187,7 +187,9 @@ List<Map<String, Object>> _sectionFolds(List<String> lines) {
       end = headers[j].line - 1;
       break;
     }
-    while (end > header.line && lines[end].trim().isEmpty) end--;
+    while (end > header.line && lines[end].trim().isEmpty) {
+      end--;
+    }
     if (end <= header.line) continue;
     ranges.add({
       'startLine': header.line,
@@ -229,13 +231,17 @@ List<Map<String, Object>> _indentFolds(List<String> lines) {
   final stack = <({int line, int indent})>[];
   final ranges = <Map<String, Object>>[];
   var last = lines.length - 1;
-  while (last > 0 && lines[last].trim().isEmpty) last--;
+  while (last > 0 && lines[last].trim().isEmpty) {
+    last--;
+  }
 
   void close(int indent, int end) {
     while (stack.isNotEmpty && indent <= stack.last.indent) {
       final start = stack.removeLast();
       var line = end;
-      while (line > start.line && lines[line].trim().isEmpty) line--;
+      while (line > start.line && lines[line].trim().isEmpty) {
+        line--;
+      }
       if (line > start.line) {
         ranges.add({'startLine': start.line, 'endLine': line});
       }
@@ -467,8 +473,9 @@ String? dartLibraryUri(String from, String uri) {
     final rest = uri.substring('package:'.length);
     if (rest.isEmpty || rest.endsWith('/')) return null;
     if (rest.endsWith('.dart')) return uri;
-    if (rest.endsWith('.quds'))
+    if (rest.endsWith('.quds')) {
       return '${uri.substring(0, uri.length - 5)}.dart';
+    }
     if (rest.contains('/')) return '$uri.dart';
     return 'package:$rest/$rest.dart';
   }
@@ -634,8 +641,9 @@ bool packageUsesFlutter(String file) {
       final dependencies = values[section];
       if (dependencies is Map &&
           dependencies.values
-              .any((value) => value is Map && value['sdk'] == 'flutter'))
+              .any((value) => value is Map && value['sdk'] == 'flutter')) {
         return true;
+      }
     }
   } catch (_) {/* Project tools report malformed YAML separately. */}
   return false;

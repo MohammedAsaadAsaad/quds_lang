@@ -74,8 +74,9 @@ Future<void> main() async {
     void receive(String line) {
       output.add(line);
       final match = RegExp(r'http://127\.0\.0\.1:\d+/\S*').firstMatch(line);
-      if (match != null && !endpoint.isCompleted)
+      if (match != null && !endpoint.isCompleted) {
         endpoint.complete(Uri.parse(match.group(0)!));
+      }
       if (line == 'QUDS_GC_READY' && !ready.isCompleted) ready.complete();
       if (line.startsWith('QUDS_GC_RESULT:') && !result.isCompleted) {
         result.complete(jsonDecode(line.substring('QUDS_GC_RESULT:'.length))

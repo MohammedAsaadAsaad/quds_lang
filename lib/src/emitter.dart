@@ -183,8 +183,9 @@ class DartEmitter {
     for (final owner in topLevel.whereType<ClassDeclaration>()) {
       if (owner.kind != 'interface') continue;
       for (final method in owner.methods) {
-        if (model.providerDefaultMethods[method] == owner)
+        if (model.providerDefaultMethods[method] == owner) {
           _emitInterfaceDefaults(owner, method);
+        }
       }
     }
     _emitReflectableRegistry(program);
@@ -338,7 +339,9 @@ class DartEmitter {
     for (final node in topLevel) {
       if (node is! FunctionDeclaration || node.name == 'main') continue;
       if (node.name.startsWith('_') &&
-          !topLevel.any((item) => item is PartDirective)) continue;
+          !topLevel.any((item) => item is PartDirective)) {
+        continue;
+      }
       groups.putIfAbsent(node.name, () => []).add(node);
     }
     for (final entry in groups.entries) {
@@ -998,8 +1001,9 @@ class DartEmitter {
         ..writeln("import 'dart:core';")
         ..writeln("import 'dart:core' as _quds_core;");
     }
-    if (_useReadonlyList || _useReadonlyMap || _useReadonlySet)
+    if (_useReadonlyList || _useReadonlyMap || _useReadonlySet) {
       helpers.writeln(readonlyGraphHelpers);
+    }
     if (_useReadonlyList) helpers.writeln(readonlyListHelpers);
     if (_useReadonlyMap) helpers.writeln(readonlyMapHelpers);
     if (_useReadonlySet) helpers.writeln(readonlySetHelpers);
@@ -1210,10 +1214,12 @@ class DartEmitter {
 
   String _defaultBridgeName(FunctionDeclaration node) {
     final methodOwner = model.providerDefaultMethods[node];
-    if (methodOwner != null)
+    if (methodOwner != null) {
       return providerMethodDefaultBridgeName(methodOwner, node);
-    if (model.providerDefaultFunctions.contains(node))
+    }
+    if (model.providerDefaultFunctions.contains(node)) {
       return providerDefaultBridgeName(node);
+    }
     final owners =
         model.classes.values.where((owner) => owner.methods.contains(node));
     final owner = owners.isEmpty ? '' : '${owners.first.name}_';
@@ -1779,11 +1785,13 @@ class DartEmitter {
     if (model.classes.containsKey(base)) return null;
     final shape = model.dartShapes[base];
     if (shape == null) return null;
-    if (shape.members.containsKey('asUnmodifiableView'))
+    if (shape.members.containsKey('asUnmodifiableView')) {
       return '.asUnmodifiableView()';
+    }
     if (shape.name == 'TypedData') return '@base';
-    if (shape.name == 'ByteBuffer')
+    if (shape.name == 'ByteBuffer') {
       return '.asUint8List().asUnmodifiableView().buffer';
+    }
     return null;
   }
 
@@ -1811,8 +1819,9 @@ class DartEmitter {
     }
     final view = _returnView;
     if (view == null) return value;
-    if (view.startsWith('@typed:'))
+    if (view.startsWith('@typed:')) {
       return _typedReadonly(view.substring(7), value);
+    }
     _useReadonly = true;
     return '$view($value)';
   }
@@ -1840,7 +1849,9 @@ class DartEmitter {
       'StackTrace',
       'Runes',
       'void',
-    }.contains(type)) return true;
+    }.contains(type)) {
+      return true;
+    }
     if (type.startsWith('Range<') && type.endsWith('>')) return true;
     if (functionTypeParts(type) != null) return true;
     if (type.startsWith('(') && type.endsWith(')')) {
@@ -2054,8 +2065,9 @@ class DartEmitter {
 
   void _requireReadonlyRuntime() {
     _useReadonlyRuntime = true;
-    if (!_isPart)
+    if (!_isPart) {
       _imports.add("import 'quds_readonly.dart' as $_readonlyRuntime;");
+    }
   }
 
   String _guardDescriptor(String type, {bool includeKnown = true}) {
@@ -2120,10 +2132,12 @@ class DartEmitter {
       ..._openGenerics,
     };
     walkAst(program, (node) {
-      if (node is FunctionDeclaration)
+      if (node is FunctionDeclaration) {
         variables.addAll(node.typeParameters.map((p) => p.name));
-      if (node is ExtensionDeclaration)
+      }
+      if (node is ExtensionDeclaration) {
         variables.addAll(node.typeParameters.map((p) => p.name));
+      }
     });
     final selected = <String>{};
     for (var type in model.types.values) {
@@ -2131,12 +2145,17 @@ class DartEmitter {
       if (!type.contains('<') ||
           type.contains('->') ||
           type.contains('@dart.') ||
-          type.contains('<infer>')) continue;
-      if (variables
-          .any((name) => RegExp('\\b${RegExp.escape(name)}\\b').hasMatch(type)))
+          type.contains('<infer>')) {
         continue;
+      }
+      if (variables.any(
+          (name) => RegExp('\\b${RegExp.escape(name)}\\b').hasMatch(type))) {
+        continue;
+      }
       if (type.contains('@') &&
-          readonlyClassFor(model, type)?.name.startsWith('_') == true) continue;
+          readonlyClassFor(model, type)?.name.startsWith('_') == true) {
+        continue;
+      }
       final declaration = readonlyClassFor(model, type);
       final head = type.substring(0, type.indexOf('<'));
       if (declaration != null && supportsReadonlyClass(model, declaration) ||
@@ -2149,7 +2168,9 @@ class DartEmitter {
             'Stream',
             'Result',
             'MapEntry',
-          }.contains(head)) selected.add(type);
+          }.contains(head)) {
+        selected.add(type);
+      }
     }
     final saved = _guardEnvironment;
     _guardEnvironment = null;
@@ -2191,9 +2212,10 @@ class DartEmitter {
     if (parent != null && parent.contains('<')) {
       final arguments = _splitTypeArgs(
           parent.substring(parent.indexOf('<') + 1, parent.length - 1));
-      for (final argument in arguments)
+      for (final argument in arguments) {
         line(
             '${_guardDescriptor(argument, includeKnown: false)}.install(normalized);');
+      }
     }
     line(
         'final result = $_readonlyRuntime.cachedView<$type>(this, () => $proxy(this, normalized));');
@@ -2272,9 +2294,10 @@ class DartEmitter {
       line('@override');
       line(
           '${_dartType(fieldType)} get $name => $_readonlyRuntime.protectResult($source, $source.$name, (_qvalue) => ${_guardDescriptor(fieldType)}.protect(_qvalue));');
-      if (field.mutable)
+      if (field.mutable) {
         line(
             "set $name(${_dartType(fieldType)} value) => throw UnsupportedError('readonly field');");
+      }
     }
     for (final property in node.properties) {
       final name =
@@ -2295,13 +2318,15 @@ class DartEmitter {
         line('}');
       }
       _returnView = savedReturn;
-      if (property.setterBody != null)
+      if (property.setterBody != null) {
         line(
             "set $name(${_dartType(property.type)} value) => throw UnsupportedError('readonly property');");
+      }
     }
     for (final method in node.methods.where((m) => !m.isStatic)) {
-      if (hasAnnotation(node.annotations, 'macro') && method.name == 'define')
+      if (hasAnnotation(node.annotations, 'macro') && method.name == 'define') {
         continue;
+      }
       if (model.jsonSynthesizedMethods.contains(method)) {
         final symbol = model.declarations[method]!;
         line(
@@ -2332,11 +2357,13 @@ class DartEmitter {
           .toList();
       if (fields.isNotEmpty) _emitCopyWith(node, fields, readonlyResult: true);
     }
-    if (!node.methods.any((m) => m.name == 'toString') && parent == null)
+    if (!node.methods.any((m) => m.name == 'toString') && parent == null) {
       line('String toString() => $source.toString();');
+    }
     if (!node.methods.any((m) => m.isOperator && m.name == '==') &&
-        parent == null)
+        parent == null) {
       line('bool operator ==(Object other) => $source == other;');
+    }
     if (!node.properties.any((p) => p.name == 'hashCode') && parent == null) {
       if (node.kind == 'value' || node.modifiers.contains('value')) {
         final fields = node.fields
@@ -2449,11 +2476,13 @@ class DartEmitter {
           shapes.where((p) => !p.named && p.optional && !p.variadic).toList();
       final named = shapes.where((p) => p.named && !p.variadic).toList();
       final variadic = shapes.where((p) => p.variadic).toList();
-      if (optional.isNotEmpty)
+      if (optional.isNotEmpty) {
         parts.add('[${optional.map((p) => _dartType(p.type)).join(', ')}]');
-      if (named.isNotEmpty)
+      }
+      if (named.isNotEmpty) {
         parts.add(
             '{${named.map((p) => '${p.optional ? '' : 'required '}${_dartType(p.type)} ${p.name}').join(', ')}}');
+      }
       for (final parameter in variadic) {
         parts.add('List<${_dartType(parameter.type)}>');
       }
@@ -2760,8 +2789,9 @@ class DartEmitter {
         if (property.getter != null || property.getterBody != null) {
           line('$type get ${property.name};');
         }
-        if (property.setterBody != null)
+        if (property.setterBody != null) {
           line('set ${property.name}($type value);');
+        }
       }
       final savedGenerics = _openGenerics;
       _openGenerics = {
@@ -3395,8 +3425,9 @@ class DartEmitter {
     final tail = initializers.isEmpty ? '' : ' : ${initializers.join(', ')}';
     final list = names.join(', ');
     line(list.isEmpty ? '${node.name}()$tail;' : '${node.name}({$list})$tail;');
-    if (foreign)
+    if (foreign) {
       _emitSynthesizedParentBridge(node, parent, owner, substitution);
+    }
   }
 
   bool _foreignParentDefaults(
@@ -3582,8 +3613,9 @@ class DartEmitter {
         }
         return 'this.${parameter.name}';
       }
-      if (parameter.initializing == 'super' && !namedSuper)
+      if (parameter.initializing == 'super' && !namedSuper) {
         return 'super.${parameter.name}';
+      }
       return '${_dartType(declared.type)} ${declared.dartName}';
     }).join(', ');
     final private = constructor.parameters.where((parameter) {
@@ -4024,8 +4056,9 @@ class DartEmitter {
     if (index != null) {
       final counter = _contextCounter(index);
       line('$counter = $counter + 1;');
-      if (model.loopContextBodyIndexes.contains(node))
+      if (model.loopContextBodyIndexes.contains(node)) {
         line('final int ${index.dartName} = $counter;');
+      }
     }
     statements(body);
   }
@@ -4413,8 +4446,9 @@ class DartEmitter {
             if (symbol != null) _unionCaseBindings.add(symbol);
           }
           statements(arm.body);
-          if (symbol != null && !alreadyPromoted)
+          if (symbol != null && !alreadyPromoted) {
             _unionCaseBindings.remove(symbol);
+          }
           _depth--;
         }
         _matched = savedMatched;
@@ -4496,8 +4530,9 @@ class DartEmitter {
         _depth++;
         statements(node.body);
         _depth--;
-        if (symbol != null && !alreadyPromoted)
+        if (symbol != null && !alreadyPromoted) {
           _unionCaseBindings.remove(symbol);
+        }
         if (node.elseBody.isNotEmpty) {
           line('} else {');
           _depth++;
@@ -4918,9 +4953,10 @@ class DartEmitter {
     }
     final conversion = model.implicitConversions[node];
     if (conversion != null && _emittingConversions.add(node)) {
-      if (constantContext)
+      if (constantContext) {
         throw CompilerException(
             'E401', 'Custom conversion in const context', node.span);
+      }
       try {
         return '${_conversionTarget(conversion)}(${expression(node, opaqueBool: opaqueBool)})';
       } finally {
@@ -5257,8 +5293,9 @@ class DartEmitter {
       }
       return expression(node.callee);
     }
-    if (model.qudsValueLowerings.containsKey(node.callee))
+    if (model.qudsValueLowerings.containsKey(node.callee)) {
       return expression(node.callee);
+    }
     return _instantiateNativeValue(node.callee, node.arguments);
   }
 
@@ -5634,12 +5671,15 @@ class DartEmitter {
       hidden.add(lowering.parameterTypes[i].split(' & ').first.trim());
     }
     final arguments = [...lowering.typeArguments, ...hidden];
-    if (!instantiated && arguments.isNotEmpty)
+    if (!instantiated && arguments.isNotEmpty) {
       target = '$target<${arguments.map(_dartType).join(', ')}>';
+    }
     if (!declaration &&
         !forceClosure &&
         _defaultBridges.contains(function) &&
-        resultGuard == null) return target;
+        resultGuard == null) {
+      return target;
+    }
     if (!forceClosure &&
         resultGuard == null &&
         function.parameters.every((parameter) => !parameter.needsAdapter)) {
@@ -6064,8 +6104,9 @@ class DartEmitter {
         final contextIndex = model.loopContextIndexes[key];
         if (contextIndex != null) {
           var iterable = expression(key.iterable!);
-          if (_bareType(model.types[key.iterable!]) == 'String')
+          if (_bareType(model.types[key.iterable!]) == 'String') {
             iterable = '($iterable).split(\'\')';
+          }
           return 'for (final (${contextIndex.dartName}, ${symbol.dartName}) in ($iterable).indexed) '
               '...<$keyType, $valueType>{${_mapEntries(key.thenMap, keyType, valueType)}}';
         }
@@ -6485,8 +6526,9 @@ class DartEmitter {
     String owner;
     var suffix = '';
     var source = node.callee;
-    if (constructor?.name != null && source is MemberAccess)
+    if (constructor?.name != null && source is MemberAccess) {
       source = source.object;
+    }
     if (source is TypeApplication) {
       owner = expression(source.callee, constantContext: constantContext);
     } else {
@@ -6779,8 +6821,9 @@ class DartEmitter {
         target += '<${applied.arguments.map(_dartType).join(', ')}>';
       }
     } else if (model.inferredTypeArguments[node] case final arguments?) {
-      if (!targetSymbol.nativeConstructor || member != null)
+      if (!targetSymbol.nativeConstructor || member != null) {
         target += '<${arguments.map(_dartType).join(', ')}>';
+      }
     }
     if ((targetSymbol.dartName == 'min' || targetSymbol.dartName == 'max') &&
         !targetSymbol.external &&
@@ -6804,8 +6847,9 @@ class DartEmitter {
       return '$helper(${expression(node.arguments[0].value, constantContext: constantContext)}, ${expression(node.arguments[1].value, constantContext: constantContext)}, true)';
     }
     if (targetSymbol.external) {
-      if (model.nativeArguments.containsKey(node))
+      if (model.nativeArguments.containsKey(node)) {
         return _nativeInvocation(node, target, member, constantContext);
+      }
       final parts = [
         for (final argument in node.arguments)
           argument.name == null
@@ -6857,8 +6901,9 @@ class DartEmitter {
         } else {
           resolved.add('final $methodReceiver = ${expression(member.object)};');
         }
-        if (member.nullAware && !_nullAwareCalls.contains(node))
+        if (member.nullAware && !_nullAwareCalls.contains(node)) {
           resolved.add('if ($methodReceiver == null) return null;');
+        }
       }
       for (var i = 0; i < node.arguments.length; i++) {
         final temporary = '_qprovided${_temps++}';
@@ -7628,7 +7673,9 @@ class DartEmitter {
         if (directive.export ||
             directive.uri.startsWith('quds:') ||
             directive.show.isNotEmpty ||
-            librarySection(directive.uri) != null) continue;
+            librarySection(directive.uri) != null) {
+          continue;
+        }
         final home = resolveLibraryPath(directive.span.file, directive.uri);
         if (home != plan.library) continue;
         _imports.remove("import '$uri' as $prefix;");
@@ -7768,8 +7815,9 @@ class DartEmitter {
             : symbol.dartName;
         final savedNames = _names;
         _names = {..._names};
-        if (indexSymbol != null && !paired)
+        if (indexSymbol != null && !paired) {
           _names[indexSymbol.dartName] = contextIndex.dartName;
+        }
         try {
           final filter = element.filter == null
               ? ''

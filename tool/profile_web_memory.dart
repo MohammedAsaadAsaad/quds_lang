@@ -12,8 +12,9 @@ Future<void> main() async {
     final js = '${directory.path}/program.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', file.path, '-o', js]);
-    if (build.exitCode != 0)
+    if (build.exitCode != 0) {
       throw StateError('${build.stdout}\n${build.stderr}');
+    }
     final run = await Process.run(
         'node', ['--expose-gc', 'tool/profile_web_memory.cjs', js]);
     stdout.write(run.stdout);

@@ -92,7 +92,9 @@ void main() {
     final ready = Completer<void>();
     session.emit = (message) {
       if (message['method'] != 'textDocument/publishDiagnostics' ||
-          (message['params'] as Map)['qudsAnalysisComplete'] == false) return;
+          (message['params'] as Map)['qudsAnalysisComplete'] == false) {
+        return;
+      }
       if (!ready.isCompleted) ready.complete();
     };
     final uri = File('/tmp/quds_editor_large.quds').uri.toString();
@@ -127,7 +129,9 @@ void main() {
     final events = <String>{};
     session.emit = (message) {
       if (message['method'] != 'textDocument/publishDiagnostics' ||
-          (message['params'] as Map)['qudsAnalysisComplete'] == false) return;
+          (message['params'] as Map)['qudsAnalysisComplete'] == false) {
+        return;
+      }
       events.add((message['params'] as Map)['uri'] as String);
     };
     for (final (name, text) in [

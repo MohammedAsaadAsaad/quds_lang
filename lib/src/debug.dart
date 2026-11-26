@@ -284,9 +284,10 @@ class DebugTranslator {
       frame['line'] = hit.$2;
       frame['column'] = hit.$3;
       final name = frame['name'];
-      if (name is String)
+      if (name is String) {
         frame['name'] = _debugSourceExpression(
             name, _files[_key(hit.$1)]?.names ?? const {});
+      }
       final id = (frame['id'] as num?)?.toInt();
       if (id != null) {
         _frameFile[id] = _key(hit.$1);
@@ -797,7 +798,9 @@ String _debugSourceExpression(String expression, Map<String, String> names) {
     } else if (RegExp(r'[\w$]').hasMatch(expression[index])) {
       final start = index++;
       while (index < expression.length &&
-          RegExp(r'[\w$]').hasMatch(expression[index])) index++;
+          RegExp(r'[\w$]').hasMatch(expression[index])) {
+        index++;
+      }
       final name = expression.substring(start, index);
       out.write(names[name] ?? name);
     } else {

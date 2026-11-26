@@ -328,8 +328,9 @@ class ConstantEvaluator {
     final value = evaluate(node.operand);
     switch (node.operator) {
       case 'not':
-        if (value is! ConstBool)
+        if (value is! ConstBool) {
           throw StateError('Unary not on ${value.runtimeType}');
+        }
         return ConstBool(!value.value);
       case '+':
         if (value is! ConstInt && value is! ConstDouble) {
@@ -417,15 +418,17 @@ class ConstantEvaluator {
   ConstValue _logical(BinaryExpression node,
       {required bool whenLeft, required bool result}) {
     final left = evaluate(node.left);
-    if (left is! ConstBool)
+    if (left is! ConstBool) {
       throw StateError('Logical operand ${left.runtimeType}');
+    }
     if (left.value == whenLeft) {
       ensureConstant(node.right);
       return ConstBool(result);
     }
     final right = evaluate(node.right);
-    if (right is! ConstBool)
+    if (right is! ConstBool) {
       throw StateError('Logical operand ${right.runtimeType}');
+    }
     return right;
   }
 
@@ -488,8 +491,9 @@ class ConstantEvaluator {
     for (var i = 0; i < info.parameters.length; i++) {
       if (values[i] != null) continue;
       final fallback = info.parameters[i].defaultValue;
-      if (fallback == null)
+      if (fallback == null) {
         fail('const requires a compile-time constant', node);
+      }
       values[i] = evaluate(fallback);
     }
     if (info.requirements.isNotEmpty) {

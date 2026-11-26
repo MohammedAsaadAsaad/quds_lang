@@ -15,7 +15,9 @@ class HeapPauseCheckpoints {
   int get count => _seen.length;
   bool accept(Event event) {
     if (event.kind != EventKind.kPauseBreakpoint ||
-        event.isolate?.id != isolate) return false;
+        event.isolate?.id != isolate) {
+      return false;
+    }
     final location = event.topFrame?.location;
     if (location?.script?.id == null || location?.tokenPos == null) {
       throw StateError('Heap checkpoint has no source location');
@@ -47,8 +49,9 @@ Future<void> main() async {
     void receive(String line) {
       lines.add(line);
       final match = RegExp(r'http://127\.0\.0\.1:\d+/\S*').firstMatch(line);
-      if (match != null && !endpoint.isCompleted)
+      if (match != null && !endpoint.isCompleted) {
         endpoint.complete(Uri.parse(match.group(0)!));
+      }
     }
 
     process.stdout
@@ -71,9 +74,12 @@ Future<void> main() async {
     while (true) {
       final state = await service.getIsolate(isolate);
       if (state.runnable == true &&
-          state.pauseEvent?.kind == EventKind.kPauseStart) break;
-      if (DateTime.now().isAfter(startupDeadline))
+          state.pauseEvent?.kind == EventKind.kPauseStart) {
+        break;
+      }
+      if (DateTime.now().isAfter(startupDeadline)) {
         throw StateError('Isolate did not become runnable');
+      }
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
 
@@ -84,8 +90,9 @@ Future<void> main() async {
 
     Future<void> advance() async {
       await service!.resume(isolate).timeout(const Duration(seconds: 30));
-      if (!await iterator.moveNext().timeout(const Duration(seconds: 30)))
+      if (!await iterator.moveNext().timeout(const Duration(seconds: 30))) {
         throw StateError('Missing workload pause');
+      }
     }
 
     await advance();
@@ -137,13 +144,15 @@ Future<void> main() async {
     final views = await service.getAllocationProfile(isolate, gc: true);
     await advance();
     final weakCache = await service.getAllocationProfile(isolate, gc: true);
-    if (checkpoints.count != 6)
+    if (checkpoints.count != 6) {
       throw StateError(
           'Unexpected heap checkpoint count: ${checkpoints.count}');
+    }
     await service.resume(isolate);
     final code = await process.exitCode.timeout(const Duration(seconds: 30));
-    if (code != 0 || !lines.contains('213097200'))
+    if (code != 0 || !lines.contains('213097200')) {
       throw StateError('Workload checksum failed: $lines');
+    }
     final before =
         baseline.members!.singleWhere((m) => m.classRef?.id == cell.id);
     final after =
@@ -151,13 +160,15 @@ Future<void> main() async {
     final cleared =
         released.members!.singleWhere((m) => m.classRef?.id == cell.id);
     if (after.instancesCurrent! - before.instancesCurrent! != 20000 ||
-        cleared.instancesCurrent != before.instancesCurrent)
+        cleared.instancesCurrent != before.instancesCurrent) {
       throw StateError('Retain/release object counts disagree');
+    }
     if (weakCache.members!
             .singleWhere((m) => m.classRef?.id == cell.id)
             .instancesCurrent !=
-        before.instancesCurrent)
+        before.instancesCurrent) {
       throw StateError('Readonly cache retained removed graph elements');
+    }
     print(const JsonEncoder.withIndent('  ').convert({
       'schema': 1,
       'dart': Platform.version,

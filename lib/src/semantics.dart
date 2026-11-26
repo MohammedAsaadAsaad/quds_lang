@@ -530,8 +530,9 @@ class SemanticModel {
       if (next == current) break;
       current = next;
     }
-    for (final entry in protected.entries)
+    for (final entry in protected.entries) {
       current = current.replaceAll(entry.value, entry.key);
+    }
     return current;
   }
 
@@ -845,7 +846,9 @@ bool supportsReadonlyClass(SemanticModel model, ClassDeclaration node,
     [Set<ClassDeclaration> seen = const {}]) {
   if (seen.contains(node) ||
       node.kind == 'sealed' ||
-      node.modifiers.contains('sealed')) return false;
+      node.modifiers.contains('sealed')) {
+    return false;
+  }
   if (!const {
         'class',
         'value',
@@ -856,11 +859,15 @@ bool supportsReadonlyClass(SemanticModel model, ClassDeclaration node,
         'interface',
         'mixinClass'
       }.contains(node.kind) ||
-      node.mixins.isNotEmpty) return false;
+      node.mixins.isNotEmpty) {
+    return false;
+  }
   if (node.superclass case final parentType?) {
     final parent = readonlyClassFor(model, parentType);
     if (parent == null ||
-        (node.kind != 'interface' && parent.kind == 'interface')) return false;
+        (node.kind != 'interface' && parent.kind == 'interface')) {
+      return false;
+    }
     return supportsReadonlyClass(model, parent, {...seen, node});
   }
   return true;
@@ -993,8 +1000,10 @@ class Analyzer {
   Set<FunctionDeclaration> _exportedDefaultFunctions(
       Program program, String home, Set<Program> seen,
       {bool unions = false}) {
-    if (seen.contains(program) || _sdkDefaultFiles.contains(program.span.file))
+    if (seen.contains(program) ||
+        _sdkDefaultFiles.contains(program.span.file)) {
       return {};
+    }
     final next = {...seen, program};
     final result = program.statements
         .whereType<FunctionDeclaration>()
@@ -1014,9 +1023,10 @@ class Analyzer {
       } else if (node is PartDirective && !node.of) {
         final path = _resolveLibrary(home, node.uri);
         final target = _libraries[path];
-        if (target != null)
+        if (target != null) {
           result.addAll(
               _exportedDefaultFunctions(target, path, next, unions: unions));
+        }
       }
     }
     return result;
@@ -1052,18 +1062,25 @@ class Analyzer {
           'mixin',
           'mixinClass',
         };
-        if (!bridgeOwners.contains(owner.kind) || owner.name.startsWith('_'))
+        if (!bridgeOwners.contains(owner.kind) || owner.name.startsWith('_')) {
           continue;
+        }
         for (final method in owner.methods) {
           if (method.visibility == 'private' ||
               method.name.startsWith('_') ||
-              !supportsProviderDefaults(method)) continue;
+              !supportsProviderDefaults(method)) {
+            continue;
+          }
           if (owner.kind == 'interface' &&
-              !supportsInterfaceDefaults(owner, method)) continue;
+              !supportsInterfaceDefaults(owner, method)) {
+            continue;
+          }
           if (owner.methods
                   .where((other) => other.name == method.name)
                   .length !=
-              1) continue;
+              1) {
+            continue;
+          }
           model.providerDefaultMethods[method] = owner;
         }
       }
@@ -1252,7 +1269,9 @@ class Analyzer {
         .any((owner) => owner.kind == 'interface')) {
       for (final implementation in model.classes.values.toSet()) {
         if (_sdkDefaultFiles.contains(implementation.span.file) ||
-            implementation.kind == 'interface') continue;
+            implementation.kind == 'interface') {
+          continue;
+        }
         final saved = _scope;
         final home = model.libraryOf[implementation] ?? '';
         try {
@@ -1265,18 +1284,21 @@ class Analyzer {
             if (owner == null || path.contains(owner)) return;
             final previous = seen[owner];
             if (previous != null) {
-              if (previous != type)
+              if (previous != type) {
                 error(
                     'E300',
                     'Conflicting interface instantiations: $previous and $type',
                     implementation);
+              }
               return;
             }
             seen[owner] = type;
             final substitution = _genericSubstitution(type, owner);
             for (final method in owner.methods) {
               if (model.providerDefaultMethods[method] != owner ||
-                  owner.kind != 'interface') continue;
+                  owner.kind != 'interface') {
+                continue;
+              }
               final methodSub = {...substitution};
               for (var i = 0; i < method.typeParameters.length; i++) {
                 methodSub[method.typeParameters[i].name] =
@@ -1310,8 +1332,9 @@ class Analyzer {
             }
           }
 
-          for (final edge in implementation.interfaces)
+          for (final edge in implementation.interfaces) {
             collect(_classMemberType(edge, implementation), {});
+          }
           model.interfaceForwardingPlans[implementation] =
               plans.values.toList();
         } finally {
@@ -1379,7 +1402,9 @@ class Analyzer {
       if (a.parameters[i].kind != b.parameters[i].kind ||
           a.parameters[i].isNamed &&
               a.parameters[i].name != b.parameters[i].name ||
-          a.parameters[i].variadic != b.parameters[i].variadic) return false;
+          a.parameters[i].variadic != b.parameters[i].variadic) {
+        return false;
+      }
       if (a.parameters[i].type != b.parameters[i].type) return false;
     }
     return true;
@@ -1396,8 +1421,9 @@ class Analyzer {
       final visited = <String>{};
       String? current = name;
       while (current != null) {
-        if (!visited.add(current))
+        if (!visited.add(current)) {
           error('E300', 'Cyclic type parameter bounds', node);
+        }
         current = edges[current];
       }
     }
@@ -1432,8 +1458,9 @@ class Analyzer {
     final savedBounds = {..._typeBounds};
     for (final parameter in statement.typeParameters) {
       _typeBounds.remove(parameter.name);
-      if (parameter.bound != null)
+      if (parameter.bound != null) {
         _typeBounds[parameter.name] = parameter.bound!;
+      }
     }
     _typeNames.addAll(statement.typeParameters.map((item) => item.name));
     if (effective != '<infer>') validateType(effective, statement);
@@ -1515,8 +1542,9 @@ class Analyzer {
     final savedBounds = {..._typeBounds};
     for (final parameter in statement.typeParameters) {
       _typeBounds.remove(parameter.name);
-      if (parameter.bound != null)
+      if (parameter.bound != null) {
         _typeBounds[parameter.name] = parameter.bound!;
+      }
     }
     _typeNames.addAll(statement.typeParameters.map((item) => item.name));
     for (final parameter in statement.typeParameters) {
@@ -1577,8 +1605,9 @@ class Analyzer {
       final savedMethodBounds = {..._typeBounds};
       for (final parameter in method.typeParameters) {
         _typeBounds.remove(parameter.name);
-        if (parameter.bound != null)
+        if (parameter.bound != null) {
           _typeBounds[parameter.name] = parameter.bound!;
+        }
       }
       if (effective != '<infer>') validateType(effective, method);
       _typeBounds
@@ -2234,17 +2263,20 @@ class Analyzer {
       final seen = <ClassDeclaration>{};
       ClassDeclaration? current = type;
       while (current != null) {
-        if (!seen.add(current))
+        if (!seen.add(current)) {
           error('E700', 'Cyclic interface inheritance', type);
+        }
         final edge = current.superclass;
         if (edge == null) break;
         final next = _typeSymbol(_genericHead(edge))?.classDeclaration;
-        if (next?.kind != 'interface')
+        if (next?.kind != 'interface') {
           error('E700', 'An interface extends an interface', type);
+        }
         current = next;
       }
-      if (type.superclass != null)
+      if (type.superclass != null) {
         validateType(type.superclass!, type, allowVoid: false);
+      }
     }
     for (final name in type.mixins) {
       final mixin = _global.symbols[name]?.classDeclaration;
@@ -2563,8 +2595,9 @@ class Analyzer {
     _typeNames.addAll(type.typeParameters.map((parameter) => parameter.name));
     for (final parameter in type.typeParameters) {
       _typeBounds.remove(parameter.name);
-      if (parameter.bound != null)
+      if (parameter.bound != null) {
         _typeBounds[parameter.name] = parameter.bound!;
+      }
     }
     _scope = _Scope(home.isEmpty ? _global : _libraryScope(home));
     try {
@@ -2894,8 +2927,9 @@ class Analyzer {
       }
     } else if (property.getterBody case final body?) {
       statements(body);
-      if (!returns(body))
+      if (!returns(body)) {
         fail('A getter must explicitly return on every path', property);
+      }
     }
     if (property.setterBody case final body?) {
       _returnType = 'void';
@@ -2955,8 +2989,9 @@ class Analyzer {
     final home = model.libraryOf[owner] ?? library;
     for (final parameter in owner.typeParameters) {
       _typeBounds.remove(parameter.name);
-      if (parameter.bound != null)
+      if (parameter.bound != null) {
         _typeBounds[parameter.name] = parameter.bound!;
+      }
     }
     _typeNames.addAll(owner.typeParameters.map((item) => item.name));
     _scope = _Scope(
@@ -3146,10 +3181,12 @@ class Analyzer {
       'dart.library.typed_data',
     };
     if (path == 'dart.library.io') return targetPlatform != 'web';
-    if (path == 'dart.library.html' || path == 'dart.library.js_interop')
+    if (path == 'dart.library.html' || path == 'dart.library.js_interop') {
       return targetPlatform == 'web';
-    if (path == 'dart.library.ui')
+    }
+    if (path == 'dart.library.ui') {
       return flutter || targetPlatform == 'flutter';
+    }
     return enabled.contains(path);
   }
 
@@ -3565,8 +3602,9 @@ class Analyzer {
           RegExp(r'[A-Za-z_][A-Za-z0-9_]*'),
           (m) => names[m[0]] ?? _typedTypeNames[m[0]] ?? m[0]!);
       final mapped = mapDartSurfaceTypes(surface, canonical);
-      for (final name in names.keys)
+      for (final name in names.keys) {
         model.dartShapes[names[name]!] = mapped.types[name]!;
+      }
       return mapped;
     }
     if (uri != 'dart:typed_data') return surface;
@@ -3783,7 +3821,7 @@ class Analyzer {
             out.add('missing');
           }
         case ImportDeclaration():
-          if (node.export) {
+          if (node.export && !node.uri.startsWith('dart:')) {
             final target = _resolveLibrary(path, node.uri);
             out.addAll(_librarySynthetics(target, seen));
           }
@@ -3804,10 +3842,11 @@ class Analyzer {
   }
 
   String _resolveLibrary(String from, String uri) {
-    if (uri.startsWith('quds:')) return uri;
+    if (uri.startsWith('quds:') || uri.startsWith('dart:')) return uri;
     final resolved =
         resolveLibraryPath(from, uri, packageConfigFrom: _packageConfigFrom);
     if (resolved != null) return resolved;
+    if (from.startsWith('quds:') || from == '<input>') return uri;
     final target = Uri.file(from).resolve(uri);
     if (target.scheme != 'file' && target.scheme.isNotEmpty) return uri;
     return target.toFilePath();
@@ -4066,7 +4105,9 @@ class Analyzer {
           final restricted = _restrict(filter, statement);
           if (((filter?.show.isNotEmpty ?? false) ||
                   statement.show.isNotEmpty) &&
-              restricted.show.isEmpty) break;
+              restricted.show.isEmpty) {
+            break;
+          }
           _importLibrary(exported, exportedPath,
               seen: visited,
               filter: restricted,
@@ -4138,7 +4179,9 @@ class Analyzer {
       {required String home, String? qualify}) {
     if (model.extensions.contains(statement)) return;
     if (qualify != null &&
-        !(statement.name?.startsWith(r'$QudsAugment') ?? false)) return;
+        !(statement.name?.startsWith(r'$QudsAugment') ?? false)) {
+      return;
+    }
     final saved = _scope;
     final savedAliasShadows = {...model.activeAliasShadows};
     _scope = _libraryScope(home);
@@ -4421,9 +4464,10 @@ class Analyzer {
         final shapes = functionParameters(parameters);
         for (var i = 0; i < shapes.length; i++) {
           final part = shapes[i];
-          if (part.name != null && !names.add(part.name!))
+          if (part.name != null && !names.add(part.name!)) {
             error('E503', 'Duplicate function-type parameter: ${part.name}',
                 node);
+          }
           if (part.variadic) {
             validateType(part.type, node, allowVoid: false);
             continue;
@@ -4431,11 +4475,12 @@ class Analyzer {
           if (part.named) {
             namedPosition = true;
           } else {
-            if (namedPosition || optionalPosition && !part.optional)
+            if (namedPosition || optionalPosition && !part.optional) {
               error(
                   'E503',
                   'Required positional parameters must precede optional/named parameters',
                   node);
+            }
             optionalPosition |= part.optional;
           }
           validateType(part.type, node, allowVoid: false);
@@ -4650,7 +4695,9 @@ class Analyzer {
       if (directive.uri.startsWith('dart:') ||
           (directive.uri.startsWith('package:') &&
               directive.uri.endsWith('.dart')) ||
-          _isLocalDart(directive)) continue;
+          _isLocalDart(directive)) {
+        continue;
+      }
       final target = _resolveLibrary(home, directive.uri);
       if (!_libraries.containsKey(target) || target == home) continue;
       final targetScope = _libraryScope(target);
@@ -4658,7 +4705,9 @@ class Analyzer {
           in (_libraryTypes[target] ?? <String, String>{}).entries.toList()) {
         if (entry.key.contains('.') ||
             entry.key.startsWith('_') ||
-            !_keeps(entry.key, directive)) continue;
+            !_keeps(entry.key, directive)) {
+          continue;
+        }
         final local = directive.prefix == null
             ? entry.key
             : '${directive.prefix}.${entry.key}';
@@ -4779,8 +4828,9 @@ class Analyzer {
       List<Parameter> parameters, FunctionDeclaration? function) {
     final home =
         function == null ? null : model.declarations[function]?.library;
-    if (home == null || home.isEmpty || home == _activeLibrary)
+    if (home == null || home.isEmpty || home == _activeLibrary) {
       return parameters;
+    }
     _libraryScope(home);
     return [
       for (final parameter in parameters)
@@ -4869,9 +4919,10 @@ class Analyzer {
       _typeBounds
         ..clear()
         ..addAll(savedBounds);
-      if (model.declarations[function]!.type == '<infer>')
+      if (model.declarations[function]!.type == '<infer>') {
         fail('Recursive expression functions require a return annotation',
             function);
+      }
       return;
     }
     final savedScope = _scope,
@@ -4924,9 +4975,10 @@ class Analyzer {
       final stored =
           parameter.variadic ? 'List<${parameter.type}>' : parameter.type;
       validateType(stored, parameter, allowVoid: false);
-      if (_lookupNonCore(parameter.name) != null)
+      if (_lookupNonCore(parameter.name) != null) {
         fail('Parameter would shadow an existing symbol: ${parameter.name}',
             parameter);
+      }
       final symbol = create(parameter.name, stored, mutable: parameter.mutable);
       _scope.symbols[parameter.name] = symbol;
       model.declarations[parameter] = symbol;
@@ -5018,7 +5070,9 @@ class Analyzer {
       // Throwing paths cannot fall through to a missing return value.
       if (statement is ReturnStatement ||
           statement is ThrowStatement ||
-          statement is RethrowStatement) return true;
+          statement is RethrowStatement) {
+        return true;
+      }
       if (statement is GuardedStatement &&
           statement.alternate != null &&
           statement.statement is ReturnStatement) {
@@ -5180,7 +5234,9 @@ class Analyzer {
     if (node is! IfCaseStatement ||
         node.guard != null ||
         node.elseBody.isNotEmpty ||
-        !_alwaysExits(node.body)) return null;
+        !_alwaysExits(node.body)) {
+      return null;
+    }
     final scrutinee = node.scrutinee;
     final pattern = node.pattern;
     if (scrutinee is! Identifier || pattern is! TypedPattern) return null;
@@ -5293,8 +5349,9 @@ class Analyzer {
         }
         var type = expression(node.value);
         _expected = savedExpected;
-        if (type == 'void')
+        if (type == 'void') {
           fail('A void expression cannot initialize a binding', node);
+        }
         if (existing != null &&
             node.mode == BindingMode.inferred &&
             node.type == null) {
@@ -5302,8 +5359,9 @@ class Analyzer {
               (_readonlyMethod && _fieldSymbols.contains(existing))) {
             error('E307', 'A readonly reference cannot be mutated', node);
           }
-          if (!existing.mutable && !existing.lateOpen)
+          if (!existing.mutable && !existing.lateOpen) {
             fail('Cannot assign immutable binding ${node.name}', node);
+          }
           if (node.operator == '??=') {
             _checkIfNull(existing.type, type, node);
           } else {
@@ -5318,9 +5376,10 @@ class Analyzer {
                   method.parameters.isNotEmpty) {
                 final expected = _qualifyType(_genericHead(existing.type),
                     method.parameters.first.type, owner!.name);
-                if (_acceptExpected(node.value, type, expected))
+                if (_acceptExpected(node.value, type, expected)) {
                   type =
                       model.implicitConversions[node.value]?.resultType ?? type;
+                }
               }
             }
             final result = node.operator == '='
@@ -5357,13 +5416,15 @@ class Analyzer {
               node.operator);
           return;
         }
-        if (node.operator != '=')
+        if (node.operator != '=') {
           fail(
               'Compound assignment requires an existing mutable binding', node);
+        }
         if (node.mode == BindingMode.shadow ||
             node.mode == BindingMode.shadowMutable) {
-          if (existing == null || _scope.symbols.containsKey(node.name))
+          if (existing == null || _scope.symbols.containsKey(node.name)) {
             fail('shadow requires a binding in an outer scope', node);
+          }
         } else if (existing != null) {
           fail(
               'Binding would shadow ${node.name}; use shadow in an inner scope',
@@ -5371,8 +5432,9 @@ class Analyzer {
         }
         final target = node.type ?? type;
         validateType(target, node, allowVoid: false);
-        if (!_acceptExpected(node.value, type, target))
+        if (!_acceptExpected(node.value, type, target)) {
           fail('Cannot initialize $target with $type', node);
+        }
         var stored = target;
         var readonly = false;
         if (stored.startsWith('readonly ')) {
@@ -5459,8 +5521,9 @@ class Analyzer {
                         .substring(7, stripReadonlyType(type).length - 1))
                 : fail('await for requires a Stream', node.iterable))
             : elementType(type, node.iterable);
-        if (_lookupNonCore(node.name) != null)
+        if (_lookupNonCore(node.name) != null) {
           fail('Loop binding would shadow ${node.name}', node);
+        }
         if (node.index != null) {
           if (node.index == node.name) {
             fail('Loop bindings must have different names', node);
@@ -5566,8 +5629,9 @@ class Analyzer {
         }
         if (elseType != null) _joinGuarded(node, elseType);
       case ParallelAssignment():
-        if (node.targets.isEmpty)
+        if (node.targets.isEmpty) {
           fail('Parallel assignment needs a name', node);
+        }
         if (node.values.length == 1) {
           final type = expression(node.values.single);
           final parts = _recordParts(type) ?? _deconstructParts(type);
@@ -5725,8 +5789,9 @@ class Analyzer {
         if (_returnType == '<infer>') break;
         if (!(node.value == null
             ? compatible(type, _returnType!)
-            : _acceptExpected(node.value!, type, _returnType!)))
+            : _acceptExpected(node.value!, type, _returnType!))) {
           fail('Return type $type is incompatible with $_returnType', node);
+        }
       case ExpressionStatement():
         final valueType = expression(node.expression);
         if (node.expression is Identifier && valueType.contains('->')) {
@@ -6248,13 +6313,16 @@ class Analyzer {
     _expected = saved;
     if (node.operator == '??=') {
       if (isMap) {
-        if (!_acceptExpected(node.value, value, target))
+        if (!_acceptExpected(node.value, value, target)) {
           fail('Cannot assign $value to $target', node.value);
+        }
       } else {
-        if (!isNullableType(target) && target != 'Null')
+        if (!isNullableType(target) && target != 'Null') {
           fail('??= requires a nullable binding', node);
-        if (!_acceptExpected(node.value, value, target))
+        }
+        if (!_acceptExpected(node.value, value, target)) {
           fail('Cannot assign $value to $target', node.value);
+        }
       }
       return;
     }
@@ -6504,11 +6572,12 @@ class Analyzer {
     }
     final typed = _nativeShape(type)?.listElement;
     if (typed != null) {
-      if (isNullableType(type))
+      if (isNullableType(type)) {
         error(
             'E308',
             'A nullable value is used where a non-null value is required',
             node);
+      }
       return typed;
     }
     if (type.startsWith('List<') && type.endsWith('>')) {
@@ -6815,8 +6884,9 @@ class Analyzer {
     final source = _typeSymbol(from)?.classDeclaration;
     final target = _typeSymbol(to)?.classDeclaration;
     if (source != null && identical(source, target)) return true;
-    if (isNullableType(from) && isNullableType(to))
+    if (isNullableType(from) && isNullableType(to)) {
       return _sameType(unwrap(from), unwrap(to));
+    }
     final left = _genericHead(from);
     final right = _genericHead(to);
     if ((left == right ||
@@ -6842,7 +6912,9 @@ class Analyzer {
     if (from == to || from == '*') return true;
     if ((to == 'dynamic' || to == 'Object' || to == 'Object?') &&
         from.startsWith('readonly ') &&
-        !_readonlyBoundarySafe(from)) return false;
+        !_readonlyBoundarySafe(from)) {
+      return false;
+    }
     if (to == 'dynamic') return true;
     if (to == 'Object?' && from != 'void') return true;
     final variable = unwrap(from);
@@ -6864,8 +6936,9 @@ class Analyzer {
         _checkingBounds.remove(pair);
       }
     }
-    if (from.startsWith('readonly ') && !to.startsWith('readonly '))
+    if (from.startsWith('readonly ') && !to.startsWith('readonly ')) {
       return false;
+    }
     if (_sameType(from, to)) return true;
     final fromClass = _typeSymbol(from)?.classDeclaration;
     final toClass = _typeSymbol(to)?.classDeclaration;
@@ -6874,7 +6947,9 @@ class Analyzer {
     if (to == 'Object' &&
         from != 'void' &&
         from != 'Null' &&
-        !isNullableType(from)) return true;
+        !isNullableType(from)) {
+      return true;
+    }
     if (to.contains(' & ')) {
       return to.split(' & ').every((part) => compatible(from, part.trim()));
     }
@@ -6958,16 +7033,19 @@ class Analyzer {
     if (native != null &&
         !from.startsWith('readonly ') &&
         !isNullableType(from)) {
-      if (native.instantiatedSupertypes.any((parent) => compatible(parent, to)))
+      if (native.instantiatedSupertypes
+          .any((parent) => compatible(parent, to))) {
         return true;
+      }
       if (!to.contains('<') && native.supertypes.contains(to)) return true;
       final element = native.listElement;
       for (final prefix in ['List<', 'Iterable<']) {
         if (element != null &&
             to.startsWith(prefix) &&
             to.endsWith('>') &&
-            _sameType(element, to.substring(prefix.length, to.length - 1)))
+            _sameType(element, to.substring(prefix.length, to.length - 1))) {
           return true;
+        }
       }
     }
     if (to == 'num' && (from == 'int' || from == 'double')) return true;
@@ -6979,7 +7057,9 @@ class Analyzer {
       [Set<String> visited = const {}]) {
     if (isNullableType(from) ||
         isNullableType(to) ||
-        visited.contains(_genericHead(from))) return false;
+        visited.contains(_genericHead(from))) {
+      return false;
+    }
     final declaration = _typeSymbol(_genericHead(from))?.classDeclaration;
     if (declaration == null) return false;
     final substitution = _genericSubstitution(from, declaration);
@@ -6991,8 +7071,9 @@ class Analyzer {
           _substitute(_classMemberType(edge, declaration), substitution);
       if (_sameType(parent, to) ||
           (_nativeShape(parent) != null && compatible(parent, to)) ||
-          _implementsType(parent, to, {...visited, _genericHead(from)}))
+          _implementsType(parent, to, {...visited, _genericHead(from)})) {
         return true;
+      }
     }
     return false;
   }
@@ -7000,8 +7081,9 @@ class Analyzer {
   void _checkInterface(
       ClassDeclaration implementation, String type, Set<String> visited) {
     final head = _genericHead(type);
-    if (!visited.add(head))
+    if (!visited.add(head)) {
       error('E700', 'Cyclic interface inheritance', implementation);
+    }
     validateType(type, implementation, allowVoid: false);
     final face = _typeSymbol(head)?.classDeclaration;
     if (face == null) {
@@ -7025,8 +7107,9 @@ class Analyzer {
       }
       error('E700', 'implements expects an interface', implementation);
     }
-    if (face.kind != 'interface')
+    if (face.kind != 'interface') {
       error('E700', 'implements expects an interface', implementation);
+    }
     final substitution = _genericSubstitution(type, face);
     void requireMember(String name, String expected, {bool getter = true}) {
       if (getter) {
@@ -7044,8 +7127,9 @@ class Analyzer {
       }
       final field =
           _fieldsOf(implementation).where((f) => f.name == name).lastOrNull;
-      if (field?.isStatic == true)
+      if (field?.isStatic == true) {
         error('E700', 'interface member $name is static', implementation);
+      }
       final actual = memberType(implementation.name, name);
       if (actual == null ||
           !compatible(actual,
@@ -7130,7 +7214,9 @@ class Analyzer {
     if (actual.typeParameters.length != expected.typeParameters.length ||
         actual.isStatic != expected.isStatic ||
         isReadonlyMethod(expected) && !isReadonlyMethod(actual) ||
-        actual.parameters.length != expected.parameters.length) return false;
+        actual.parameters.length != expected.parameters.length) {
+      return false;
+    }
     final actualMap = {...actualClass};
     final expectedMap = {...expectedClass};
     final bounds = <String, String>{};
@@ -7163,7 +7249,9 @@ class Analyzer {
               actual.parameters[i].name != expected.parameters[i].name ||
           actual.parameters[i].variadic != expected.parameters[i].variadic ||
           expected.parameters[i].defaultValue != null &&
-              actual.parameters[i].defaultValue == null) return false;
+              actual.parameters[i].defaultValue == null) {
+        return false;
+      }
     }
     String signature(FunctionDeclaration method) => ignoreReturn
         ? _callableSignature(method.parameters,
@@ -7178,8 +7266,9 @@ class Analyzer {
   bool _contractTypeCompatible(
       String from, String to, Map<String, String> bounds,
       [Set<String> visited = const {}]) {
-    if (from == to || to == 'dynamic' || to == 'Object?' && from != 'void')
+    if (from == to || to == 'dynamic' || to == 'Object?' && from != 'void') {
       return true;
+    }
     final key = '$from -> $to';
     if (visited.contains(key)) return false;
     final next = {...visited, key};
@@ -7191,14 +7280,17 @@ class Analyzer {
       return _contractTypeCompatible(source, unwrap(to), bounds, next);
     }
     if (isNullableType(from) || from == 'Null') return false;
-    if (bounds[from] case final bound?)
+    if (bounds[from] case final bound?) {
       return _contractTypeCompatible(bound, to, bounds, next);
+    }
     if (bounds.containsKey(to)) return false;
     final left = functionTypeParts(from);
     final right = functionTypeParts(to);
     if (left != null && right != null) {
       if (!functionParametersCompatible(left.$1, right.$1,
-          (a, b) => _contractTypeCompatible(a, b, bounds, next))) return false;
+          (a, b) => _contractTypeCompatible(a, b, bounds, next))) {
+        return false;
+      }
       return right.$2 == 'void' ||
           _contractTypeCompatible(left.$2, right.$2, bounds, next);
     }
@@ -7921,15 +8013,17 @@ class Analyzer {
           node.span.offset >= span.offset &&
           node.span.offset < span.offset + span.length;
     }).firstOrNull;
-    if (context == null)
+    if (context == null) {
       error('E300', 'Loop context requires an enclosing loop body', node);
+    }
     if (!{'index', 'iteration', 'item', 'isFirst'}.contains(node.name)) {
       error('E300', 'Unknown loop context property: ${node.name}', node);
     }
     final Symbol symbol;
     if (node.name == 'item') {
-      if (context.$2 == null)
+      if (context.$2 == null) {
         error('E300', 'This loop has no item; item requires for-in', node);
+      }
       symbol = context.$2!;
     } else {
       symbol = model.loopContextIndexes
@@ -7963,8 +8057,9 @@ class Analyzer {
         model.types[node.object] =
             owner.type == 'prefix' ? 'prefix' : owner.type;
         if (node.name == 'loadLibrary') {
-          if (!_deferredPrefix((node.object as Identifier).name))
+          if (!_deferredPrefix((node.object as Identifier).name)) {
             error('E300', 'loadLibrary requires a deferred import', node);
+          }
           final symbol = Symbol('loadLibrary', 'loadLibrary', 'Future<void>');
           model.references[node] = symbol;
           return '() -> Future<void>';
@@ -8227,8 +8322,10 @@ class Analyzer {
       return _readonlyView(raw, foundType);
     }
     final sdk = _sdkMember(base, node.name);
-    if (sdk != null && model.references[node.object]?.nativeTop?.isType == true)
+    if (sdk != null &&
+        model.references[node.object]?.nativeTop?.isType == true) {
       fail('Instance member ${node.name} is used on the type', node);
+    }
     if (sdk != null && !sdk.getter) {
       if (raw.startsWith('readonly ')) {
         error(
@@ -8265,20 +8362,24 @@ class Analyzer {
         ? _nativeInstantiationArguments
         : null;
     final owner = _methodReceiver(receiverType, method);
-    if (owner == null || !owner.$2.methods.contains(method))
+    if (owner == null || !owner.$2.methods.contains(method)) {
       error('E910', 'This method value needs unambiguous owner metadata', node);
+    }
     final ownerDeclaration = owner.$2;
-    if (method.isStatic && ownerDeclaration != declaration)
+    if (method.isStatic && ownerDeclaration != declaration) {
       model.staticValueOwners[node] = _genericHead(owner.$1);
+    }
     final classArguments = {
       ..._genericSubstitution(owner.$1, ownerDeclaration)
     }..removeWhere((key, _) => method.typeParameters.any((p) => p.name == key));
     final declared = model.declarations[method]!;
-    if (declared.type == '<infer>' && !_checking.contains(method))
+    if (declared.type == '<infer>' && !_checking.contains(method)) {
       analyzeMethod(ownerDeclaration, method);
-    if (declared.type == '<infer>')
+    }
+    if (declared.type == '<infer>') {
       error('E302', 'A method value needs an inferred or declared result type',
           node);
+    }
     String specialize(String type) => _selfType(
         _substitute(_qualifiedMethodType(type, ownerDeclaration, method),
             classArguments),
@@ -8301,11 +8402,12 @@ class Analyzer {
     } else if (method.typeParameters.isEmpty) {
       arguments = const [];
     } else {
-      if (!contextual)
+      if (!contextual) {
         error(
             'E302',
             'A generic method value needs type arguments or a function context',
             node);
+      }
       arguments = _inferNativeFunctionValue(
           Symbol(method.name, declared.dartName, returned), node, [
         for (var i = 0; i < method.parameters.length; i++)
@@ -8338,18 +8440,22 @@ class Analyzer {
     final exposed = viewed;
     final signature =
         _callableSignature(method.parameters, specialized, exposed);
-    if (contextual && !compatible(signature, expected))
+    if (contextual && !compatible(signature, expected)) {
       fail('Method value $signature is incompatible with $expected', node);
+    }
     model.references[node] = Symbol(method.name, declared.dartName, exposed,
             library: declared.library, documentation: method.documentation)
         .withFunction(method);
     model.validatedQudsFunctionValues.add(node);
     _rememberValueLowering(node, method, arguments, specialized,
         staticOwner: model.staticValueOwners[node]);
-    if (explicit == null && arguments.isNotEmpty)
+    if (explicit == null && arguments.isNotEmpty) {
       model.contextualFunctionArguments[node] = arguments;
+    }
     if (method.parameters.any((p) => p.defaultValue != null) &&
-        !_checking.contains(method)) analyzeMethod(ownerDeclaration, method);
+        !_checking.contains(method)) {
+      analyzeMethod(ownerDeclaration, method);
+    }
     return node is MemberAccess && node.nullAware
         ? nullableType(signature)
         : signature;
@@ -8366,11 +8472,14 @@ class Analyzer {
     }
     if (extension != null &&
         method.parameters.any((parameter) => parameter.defaultValue != null) &&
-        !_checking.contains(method)) analyzeExtension(extension, method);
+        !_checking.contains(method)) {
+      analyzeExtension(extension, method);
+    }
     final declared = model.declarations[method]!;
-    if (declared.type == '<infer>')
+    if (declared.type == '<infer>') {
       error('E302', 'A method value needs an inferred or declared result type',
           node);
+    }
     final classArguments = _extensionSubstitution(receiverType, method);
     String specialize(String type) => _substitute(type, classArguments);
     final parameterTypes = [
@@ -8391,11 +8500,12 @@ class Analyzer {
     } else if (method.typeParameters.isEmpty) {
       arguments = const [];
     } else {
-      if (!contextual)
+      if (!contextual) {
         error(
             'E302',
             'A generic method value needs type arguments or a function context',
             node);
+      }
       arguments = _inferNativeFunctionValue(
           Symbol(method.name, declared.dartName, returned), node, [
         for (var i = 0; i < method.parameters.length; i++)
@@ -8427,18 +8537,21 @@ class Analyzer {
     ];
     final signature =
         _callableSignature(method.parameters, specialized, result);
-    if (contextual && !compatible(signature, expected))
+    if (contextual && !compatible(signature, expected)) {
       fail('Method value $signature is incompatible with $expected', node);
-    if (raw.startsWith('readonly ') && !isReadonlyMethod(method))
+    }
+    if (raw.startsWith('readonly ') && !isReadonlyMethod(method)) {
       error(
           'E307', 'A readonly reference cannot expose a mutating method', node);
+    }
     model.references[node] = Symbol(method.name, declared.dartName, result,
             library: declared.library, documentation: method.documentation)
         .withFunction(method);
     model.validatedQudsFunctionValues.add(node);
     _rememberValueLowering(node, method, arguments, specialized);
-    if (explicit == null && arguments.isNotEmpty)
+    if (explicit == null && arguments.isNotEmpty) {
       model.contextualFunctionArguments[node] = arguments;
+    }
     return node.nullAware ? nullableType(signature) : signature;
   }
 
@@ -9162,8 +9275,9 @@ class Analyzer {
     final indexType = expression(node.index);
     final listElement = _listElement(type);
     if (listElement != null) {
-      if (!compatible(indexType, 'int'))
+      if (!compatible(indexType, 'int')) {
         fail('List index must be int', node.index);
+      }
       return _readonlyView(raw, listElement);
     }
     if (type.startsWith('Map<')) {
@@ -9173,14 +9287,16 @@ class Analyzer {
       final value = parts[1];
       if (!compatible(indexType, key) &&
           !(indexType.startsWith('readonly ') &&
-              compatible(indexType, 'readonly $key')))
+              compatible(indexType, 'readonly $key'))) {
         fail('Map key type is $key', node.index);
+      }
       final lookup = nullableType(value);
       return _readonlyView(raw, lookup);
     }
     if (type == 'String') {
-      if (!compatible(indexType, 'int'))
+      if (!compatible(indexType, 'int')) {
         fail('String index must be int', node.index);
+      }
       return 'String';
     }
     fail('Cannot index $type', node);
@@ -9204,8 +9320,9 @@ class Analyzer {
     if (type == 'String') return 'String';
     if (type.startsWith('List<') && type.endsWith('>')) return type;
     final native = _nativeShape(type);
-    if (native?.listElement != null)
+    if (native?.listElement != null) {
       return native!.members['sublist']?.type ?? 'List<${native.listElement}>';
+    }
     fail('Cannot slice $type', node);
   }
 
@@ -9380,8 +9497,9 @@ class Analyzer {
     var type = elementTypeOf(node.elements.first, aware(node.nullAware, 0));
     for (var i = 1; i < node.elements.length; i++) {
       final next = elementTypeOf(node.elements[i], aware(node.nullAware, i));
-      if (next != type)
+      if (next != type) {
         fail('Set elements must share a type', node.elements[i]);
+      }
     }
     return _widenCollection('Set<$type>', 'Set<');
   }
@@ -9411,8 +9529,9 @@ class Analyzer {
   String range(RangeExpression node) {
     final start = expression(node.start);
     final end = expression(node.end);
-    if (!numeric(start) || !numeric(end))
+    if (!numeric(start) || !numeric(end)) {
       fail('Range bounds must be numeric', node);
+    }
     final type = start == 'int' && end == 'int' ? 'int' : 'num';
     return 'Range<$type>';
   }
@@ -9612,7 +9731,9 @@ class Analyzer {
       'Symbol',
       'StackTrace',
       'Runes',
-    }.contains(type)) return true;
+    }.contains(type)) {
+      return true;
+    }
     if (functionTypeParts(type) != null) return true;
     if (_typedStorage(type)) return true;
     if (type.startsWith('(') && type.endsWith(')')) {
@@ -9679,7 +9800,9 @@ class Analyzer {
       'Symbol',
       'StackTrace',
       'Runes',
-    }.contains(type)) return true;
+    }.contains(type)) {
+      return true;
+    }
     if (functionTypeParts(type) != null) return true;
     if (type.startsWith('(') && type.endsWith(')')) {
       return splitRecordTypeFields(type)
@@ -9792,7 +9915,9 @@ class Analyzer {
             '<<',
             '>>',
             '>>>'
-          }.contains(node.operator)) rethrow;
+          }.contains(node.operator)) {
+        rethrow;
+      }
       final options = <(Expression, ConversionPlan, String)>[];
       final owner = _typeSymbol(_genericHead(unwrap(left)))?.classDeclaration;
       final method =
@@ -9840,8 +9965,9 @@ class Analyzer {
         }
       }
       if (options.isEmpty) rethrow;
-      if (options.length != 1)
+      if (options.length != 1) {
         error('E310', 'Ambiguous implicit operator conversion', node);
+      }
       model.implicitConversions[options.single.$1] = options.single.$2;
       return options.single.$3;
     }
@@ -9849,8 +9975,9 @@ class Analyzer {
 
   String binaryType(String left, String op, String right, Node node) {
     final bitwise = {'&', '|', '^', '<<', '>>', '>>>'}.contains(op);
-    if (left == 'void' || right == 'void')
+    if (left == 'void' || right == 'void') {
       fail('Void expressions cannot be operands', node);
+    }
     if (op == '??') {
       final inner = unwrap(left);
       if (compatible(right, inner)) return inner;
@@ -10123,7 +10250,9 @@ class Analyzer {
     while (scope != null) {
       for (final entry in scope.symbols.entries) {
         if (!seen.add(entry.key) ||
-            entry.value.function?.conversionKind.isNotEmpty == true) continue;
+            entry.value.function?.conversionKind.isNotEmpty == true) {
+          continue;
+        }
         if (entry.key.startsWith('_') && entry.value.library.isNotEmpty) {
           continue;
         }
@@ -10194,8 +10323,9 @@ class Analyzer {
   }
 
   String identifier(Identifier node) {
-    if (node.name == r'$')
+    if (node.name == r'$') {
       error('E300', 'Use a loop context property such as \$.index', node);
+    }
     final symbol = _scope.lookup(node.name);
     if (symbol == null && _thisType != null) {
       final current = _thisType!;
@@ -10282,8 +10412,9 @@ class Analyzer {
       return '(${symbol.parameterTypes.join(', ')}) -> ${symbol.type}';
     }
     final visible = _promoted[symbol.name] ?? symbol.type;
-    if (_readonlyMethod && symbol.field)
+    if (_readonlyMethod && symbol.field) {
       return _readonlyView('readonly this', visible);
+    }
     return symbol.readonly ? 'readonly $visible' : visible;
   }
 
@@ -10297,27 +10428,34 @@ class Analyzer {
         candidates.single.typeParameters.isEmpty &&
         explicit == null &&
         symbol.library.isEmpty &&
-        !_valueNeedsLowering(candidates.single)) return null;
-    if (candidates.any(_methodOwners.containsKey))
+        !_valueNeedsLowering(candidates.single)) {
+      return null;
+    }
+    if (candidates.any(_methodOwners.containsKey)) {
       error(
           'E910',
           'These Quds function values need a method/default/variadic adapter',
           node);
+    }
     final expected =
         _expected == null ? null : nonNullableType(_resolveType(_expected!));
     final contextual = expected != null && functionTypeParts(expected) != null;
-    if (candidates.length > 1 && explicit == null && !contextual)
+    if (candidates.length > 1 && explicit == null && !contextual) {
       error('E311', 'An overload value needs one expected function signature',
           node);
+    }
     final matches = <(Symbol, String, List<String>, List<String>)>[];
     for (final candidate in candidates) {
       if (explicit != null &&
           candidate.typeParameters.length != explicit.length &&
-          candidates.length > 1) continue;
+          candidates.length > 1) {
+        continue;
+      }
       final home = (model.declarations[candidate] ?? symbol).library;
       if (home.isNotEmpty && home != _activeLibrary) _libraryScope(home);
-      if (model.declarations[candidate]?.type == '<infer>')
+      if (model.declarations[candidate]?.type == '<infer>') {
         analyzeFunction(candidate);
+      }
       final declaration = model.declarations[candidate] ?? symbol;
       final binders = candidate.typeParameters.map((p) => p.name).toSet();
       String lexical(String type) => home.isEmpty || home == _activeLibrary
@@ -10331,11 +10469,12 @@ class Analyzer {
         } else if (candidate.typeParameters.isEmpty) {
           arguments = const [];
         } else {
-          if (!contextual)
+          if (!contextual) {
             error(
                 'E302',
                 'A generic Quds function value needs type arguments or a function context',
                 node);
+          }
           arguments = _inferNativeFunctionValue(
               Symbol(candidate.name, declaration.dartName, returned), node, [
             for (final p in candidate.parameters)
@@ -10360,9 +10499,10 @@ class Analyzer {
         final signature = _callableSignature(candidate.parameters, specialized,
             _substitute(returned, substitution));
         if (contextual && !compatible(signature, expected)) {
-          if (candidates.length == 1)
+          if (candidates.length == 1) {
             fail('Function value $signature is incompatible with $expected',
                 node);
+          }
           continue;
         }
         final selected = Symbol(
@@ -10381,9 +10521,10 @@ class Analyzer {
         if (candidates.length == 1) rethrow;
       }
     }
-    if (matches.length != 1)
+    if (matches.length != 1) {
       error('E311', 'The function context does not select exactly one overload',
           node);
+    }
     final selected = matches.single;
     model.references[node] = selected.$1;
     model.validatedQudsFunctionValues.add(node);
@@ -10391,10 +10532,12 @@ class Analyzer {
     _rememberValueLowering(
         node, selected.$1.function!, selected.$3, selected.$4);
     if (selected.$1.function!.parameters.any((p) => p.defaultValue != null) &&
-        !_checking.contains(selected.$1.function))
+        !_checking.contains(selected.$1.function)) {
       analyzeFunction(selected.$1.function!);
-    if (explicit == null && selected.$3.isNotEmpty)
+    }
+    if (explicit == null && selected.$3.isNotEmpty) {
       model.contextualFunctionArguments[node] = selected.$3;
+    }
     return selected.$2;
   }
 
@@ -10457,9 +10600,10 @@ class Analyzer {
         ? _nativeInstantiationArguments
         : null;
     if (symbol.type.contains('@unsupported.') ||
-        parameters.any((p) => p.$2.contains('@unsupported.')))
+        parameters.any((p) => p.$2.contains('@unsupported.'))) {
       error('E910', 'This native function value needs additional conformance',
           node);
+    }
     final contextual = explicit == null &&
         formals.isNotEmpty &&
         _expected != null &&
@@ -10489,9 +10633,10 @@ class Analyzer {
         '(${nativeFunctionParameters(specialized, named, optional)}) -> ${_substitute(symbol.type, substitution)}';
     if (contextual) {
       final expected = nonNullableType(_resolveType(_expected!));
-      if (!compatible(type, expected))
+      if (!compatible(type, expected)) {
         fail('Inferred function type $type is incompatible with $expected',
             node);
+      }
       model.contextualFunctionArguments[node as Expression] = explicit!;
     }
     return type;
@@ -10508,9 +10653,10 @@ class Analyzer {
         functionTypeParts(nonNullableType(_resolveType(_expected!)))!;
     final encoded = nativeFunctionParameters(parameters, named, optional);
     if (!functionParametersCompatible(
-        encoded, expected.$1, (_source, _target) => true))
+        encoded, expected.$1, (_source, _target) => true)) {
       fail(
           'Function parameter forms do not match the expected signature', node);
+    }
     final source = functionParameters(encoded);
     final target = functionParameters(expected.$1);
     final positions = source.where((p) => !p.named).toList();
@@ -10537,10 +10683,12 @@ class Analyzer {
       // must not widen an already inferred input type; it is checked afterward.
       if (fromReturn) pattern = _substitute(pattern, inferred);
       if (!fresh.values.any(
-          (name) => RegExp('\\b${RegExp.escape(name)}\\b').hasMatch(pattern)))
+          (name) => RegExp('\\b${RegExp.escape(name)}\\b').hasMatch(pattern))) {
         return;
-      if (!_inferGeneric(pattern, actual, inferred, typeParameters))
+      }
+      if (!_inferGeneric(pattern, actual, inferred, typeParameters)) {
         fail('Conflicting contextual types for ${symbol.name}', node);
+      }
     }
 
     for (final parameter in target) {
@@ -10548,13 +10696,15 @@ class Analyzer {
           parameter.named ? labels[parameter.name]! : positions[position++];
       infer(original.type, parameter.type);
     }
-    if (expected.$2 != 'void')
+    if (expected.$2 != 'void') {
       infer(symbol.type, expected.$2, fromReturn: true);
-    if (fresh.values.any((name) => !inferred.containsKey(name)))
+    }
+    if (fresh.values.any((name) => !inferred.containsKey(name))) {
       error(
           'E302',
           'The expected signature does not determine every type argument',
           node);
+    }
     return [for (final name in formals.keys) inferred[fresh[name]]!];
   }
 
@@ -10729,8 +10879,9 @@ class Analyzer {
 
   String interpolation(InterpolatedString node) {
     for (final part in node.parts) {
-      if (expression(part) == 'void')
+      if (expression(part) == 'void') {
         fail('Cannot interpolate a void expression', part);
+      }
     }
     return 'String';
   }
@@ -10790,8 +10941,9 @@ class Analyzer {
   String _passExternal(CallExpression node, Symbol symbol) {
     model.references[node.callee] = symbol;
     _touch(symbol);
-    if (symbol.nativeTop != null || symbol.nativeMember != null)
+    if (symbol.nativeTop != null || symbol.nativeMember != null) {
       return _nativeCall(node, symbol);
+    }
     for (final argument in node.arguments) {
       _checkReadonlyEscape(expression(argument.value), argument);
     }
@@ -10805,10 +10957,12 @@ class Analyzer {
     model.references[id] = owner;
     model.types[id] = owner.type == 'prefix' ? 'prefix' : owner.type;
     if (callee.name == 'loadLibrary') {
-      if (!_deferredPrefix(owner.name))
+      if (!_deferredPrefix(owner.name)) {
         error('E300', 'loadLibrary requires a deferred import', callee);
-      if (node.arguments.isNotEmpty)
+      }
+      if (node.arguments.isNotEmpty) {
         fail('loadLibrary takes no arguments', node);
+      }
       model.references[callee] =
           Symbol('loadLibrary', 'loadLibrary', 'Future<void>');
       model.types[callee] = '() -> Future<void>';
@@ -10845,11 +10999,14 @@ class Analyzer {
       var selectedVariadic = false;
       for (final candidate in found.overloads) {
         if (!argumentsMatch(node, candidate.parameters,
-            commit: false, function: candidate)) continue;
+            commit: false, function: candidate)) {
+          continue;
+        }
         final variadic =
             candidate.parameters.any((parameter) => parameter.variadic);
-        if (selected != null && selectedVariadic == variadic)
+        if (selected != null && selectedVariadic == variadic) {
           fail('Ambiguous overload: ${callee.name}', node);
+        }
         if (selected == null || (selectedVariadic && !variadic)) {
           selected = candidate;
           selectedVariadic = variadic;
@@ -10862,9 +11019,12 @@ class Analyzer {
               commit: false,
               allowConversions: true,
               function: candidate,
-              checked: trial)) continue;
-          if (selected != null)
+              checked: trial)) {
+            continue;
+          }
+          if (selected != null) {
             fail('Ambiguous overload: ${callee.name}', node);
+          }
           selected = candidate;
         }
       }
@@ -10940,8 +11100,9 @@ class Analyzer {
         final home = model.libraryOf[type] ?? '';
         if (callee.name.startsWith('_') &&
             home.isNotEmpty &&
-            home != _activeLibrary)
+            home != _activeLibrary) {
           error('E204', 'Private constructor is not accessible', callee);
+        }
         final returned = _finishConstruct(node, type,
             _ctorParameters(type, named.first), const [], named.first);
         final function = model.references[node.callee]?.function;
@@ -11023,8 +11184,9 @@ class Analyzer {
         final home = model.libraryOf[constructorOwner] ?? '';
         if (callee.name.startsWith('_') &&
             home.isNotEmpty &&
-            home != _activeLibrary)
+            home != _activeLibrary) {
           error('E204', 'Private constructor is not accessible', callee);
+        }
         final returned = _finishConstruct(
             node,
             constructorOwner,
@@ -11104,14 +11266,16 @@ class Analyzer {
             ? !_mutating.contains(name) &&
                 !const {'setRange', 'setInt8', 'setUint8'}.contains(name)
             : name.startsWith('get') || name.startsWith('as');
-        if (!safe)
+        if (!safe) {
           error('E307', 'A readonly reference cannot be mutated', callee);
+        }
       }
 
       final eventPayload = _eventPayload(objectType);
       if (eventPayload != null) {
-        if (callee.name != 'add')
+        if (callee.name != 'add') {
           fail('No method ${callee.name} on an event', callee);
+        }
         if (node.arguments.length != 1) fail('add expects one handler', node);
         final savedExpected = _expected;
         _expected = eventPayload;
@@ -11126,11 +11290,12 @@ class Analyzer {
         return 'void';
       }
       if (objectType == 'dynamic') {
-        if (rawObject.startsWith('readonly ') && callee.name != 'toString')
+        if (rawObject.startsWith('readonly ') && callee.name != 'toString') {
           error(
               'E307',
               'A readonly dynamic reference cannot call an unclassified method',
               callee);
+        }
         return _passExternal(
             node, Symbol(callee.name, callee.name, 'dynamic', external: true));
       }
@@ -11171,11 +11336,12 @@ class Analyzer {
           final native = _dartCall(objectType, callee.name, node,
               explicitTypes: explicitMethodTypes);
           if (native != null) {
-            if (rawObject.startsWith('readonly '))
+            if (rawObject.startsWith('readonly ')) {
               error(
                   'E307',
                   'A readonly reference cannot call an unclassified Dart method',
                   callee);
+            }
             return native;
           }
           error(
@@ -11290,8 +11456,9 @@ class Analyzer {
       if (functionResolved.isStatic &&
           declaration != null &&
           ownerDeclaration != null &&
-          ownerDeclaration != declaration)
+          ownerDeclaration != declaration) {
         model.staticValueOwners[callee] = _genericHead(methodOwner!.$1);
+      }
       final classArguments = {
         ..._genericSubstitution(
             methodOwner?.$1 ?? objectType, ownerDeclaration),
@@ -11300,8 +11467,9 @@ class Analyzer {
           functionResolved.typeParameters.any((p) => p.name == key));
       if (model.declarations[functionResolved]!.type == '<infer>' &&
           ownerDeclaration != null &&
-          !_checking.contains(functionResolved))
+          !_checking.contains(functionResolved)) {
         analyzeMethod(ownerDeclaration, functionResolved);
+      }
       String specialize(String type) => _selfType(
           _substitute(
               _qualifiedMethodType(type, ownerDeclaration, functionResolved),
@@ -11351,8 +11519,9 @@ class Analyzer {
             'A nullable value is used where a non-null value is required',
             callee);
       }
-      if (functionTypeParts(type) == null)
+      if (functionTypeParts(type) == null) {
         fail('Value is not callable', callee);
+      }
       return _functionValueCall(node, type);
     }
     final symbol = _scope.lookup(callee.name);
@@ -11503,11 +11672,12 @@ class Analyzer {
         symbol.parameterTypes.isEmpty &&
         functionTypeParts(unwrap(_resolveType(symbol.type))) != null) {
       final callable = _resolveType(_promoted[symbol.name] ?? symbol.type);
-      if (isNullableType(callable))
+      if (isNullableType(callable)) {
         error(
             'E308',
             'A nullable value is used where a non-null value is required',
             callee);
+      }
       return _functionValueCall(node, callable);
     }
     final invoked = _instanceCall(symbol);
@@ -11548,7 +11718,9 @@ class Analyzer {
             commit: false,
             allowConversions: true,
             function: candidate,
-            checked: trial)) continue;
+            checked: trial)) {
+          continue;
+        }
         if (selected != null) fail('Ambiguous overload: ${callee.name}', node);
         selected = candidate;
       }
@@ -11617,24 +11789,27 @@ class Analyzer {
     for (var i = 0; i < node.arguments.length; i++) {
       final argument = node.arguments[i];
       if (argument.value is SpreadElement) {
-        if (variadicAt < 0 || position < positional.length)
+        if (variadicAt < 0 || position < positional.length) {
           fail('A spread belongs in the variadic argument', argument);
+        }
         final spread = argument.value as SpreadElement;
         final collection = expression(spread.operand);
         final element = _collectionElement(
             spread.nullAware ? unwrap(collection) : collection);
         if (element == null ||
-            !compatible(element, parameters[variadicAt].type))
+            !compatible(element, parameters[variadicAt].type)) {
           fail(
               'Spread element is incompatible with ${parameters[variadicAt].type}',
               argument);
+        }
         variadicArgs.add(i);
         continue;
       }
       int target;
       if (argument.name == null) {
-        if (sawNamed)
+        if (sawNamed) {
           fail('Positional arguments must precede named arguments', argument);
+        }
         if (position >= positional.length) {
           if (variadicAt < 0) fail('Too many positional arguments', argument);
           final saved = _expected;
@@ -11642,10 +11817,11 @@ class Analyzer {
           final actual = expression(argument.value);
           _expected = saved;
           if (!_acceptExpected(
-              argument.value, actual, parameters[variadicAt].type))
+              argument.value, actual, parameters[variadicAt].type)) {
             fail(
                 'Argument type $actual is incompatible with ${parameters[variadicAt].type}',
                 argument);
+          }
           variadicArgs.add(i);
           continue;
         }
@@ -11662,8 +11838,9 @@ class Analyzer {
       _expected = expected;
       final actual = expression(argument.value);
       _expected = saved;
-      if (!_acceptExpected(argument.value, actual, expected))
+      if (!_acceptExpected(argument.value, actual, expected)) {
         fail('Argument type $actual is incompatible with $expected', argument);
+      }
       _noteUnionWrap(
           argument.value, actual, expected, _calleeUnionPrefix(node.callee));
       order[target] = i;
@@ -11674,8 +11851,9 @@ class Analyzer {
       final p = parameters[i];
       if (p.variadic) continue;
       if (order[i] < 0) {
-        if (!p.optional)
+        if (!p.optional) {
           fail('Missing required argument: ${p.name ?? i + 1}', node);
+        }
         if (!p.named) omitted = true;
         continue;
       }
@@ -11711,13 +11889,15 @@ class Analyzer {
       {List<String>? explicitTypes}) {
     final top = symbol.nativeTop;
     final member = symbol.nativeMember;
-    if (top?.isType == true && !top!.callable)
+    if (top?.isType == true && !top!.callable) {
       fail('Class ${symbol.name} has no accessible unnamed constructor', node);
+    }
     final parameters = top?.parameters ?? member!.parameters;
     if (symbol.type.contains('@unsupported.') ||
-        parameters.any((p) => p.$2.contains('@unsupported.')))
+        parameters.any((p) => p.$2.contains('@unsupported.'))) {
       error('E910', 'This Dart callback signature needs additional conformance',
           node);
+    }
     final named = top?.namedParameters ?? member!.namedParameters;
     final optional = top?.optionalNames ?? member!.optionalNames;
     final formals = symbol.nativeConstructor
@@ -11747,18 +11927,21 @@ class Analyzer {
       final argument = node.arguments[i];
       final int target;
       if (argument.name == null) {
-        if (sawNamed)
+        if (sawNamed) {
           fail('Positional arguments must precede named arguments', argument);
+        }
         target = positional++;
       } else {
         sawNamed = true;
         target = parameters.indexWhere((p) => p.$1 == argument.name);
         if (target < 0) fail('Unknown argument: ${argument.name}', argument);
       }
-      if (target >= parameters.length)
+      if (target >= parameters.length) {
         fail('Too many arguments for ${symbol.name}', argument);
-      if (order[target] >= 0)
+      }
+      if (order[target] >= 0) {
         fail('Duplicate argument: ${parameters[target].$1}', argument);
+      }
       final pattern = parameters[target].$2;
       final saved = _expected;
       final expected = _substitute(pattern, inferred);
@@ -11786,8 +11969,9 @@ class Analyzer {
       order[target] = i;
     }
     for (var i = 0; i < parameters.length; i++) {
-      if (order[i] < 0 && !optional.contains(parameters[i].$1))
+      if (order[i] < 0 && !optional.contains(parameters[i].$1)) {
         fail('Missing required argument: ${parameters[i].$1}', node);
+      }
     }
     for (final formal in formals.entries) {
       inferred.putIfAbsent(
@@ -11800,9 +11984,10 @@ class Analyzer {
     }
     for (final entry in actual.entries) {
       final expected = _substitute(parameters[entry.key].$2, inferred);
-      if (!compatible(entry.value, expected))
+      if (!compatible(entry.value, expected)) {
         fail('Argument type ${entry.value} is incompatible with $expected',
             node.arguments[order[entry.key]]);
+      }
     }
     var omittedPositional = false;
     final layout = <(String?, int)>[];
@@ -11812,11 +11997,12 @@ class Analyzer {
         if (!named.contains(name)) omittedPositional = true;
         continue;
       }
-      if (!named.contains(name) && omittedPositional)
+      if (!named.contains(name) && omittedPositional) {
         error(
             'E910',
             'A later optional Dart positional argument requires earlier values explicitly',
             node);
+      }
       layout.add((named.contains(name) ? name : null, order[i]));
     }
     model.nativeArguments[node] = layout;
@@ -11832,19 +12018,22 @@ class Analyzer {
   }
 
   String externalCall(CallExpression node, Symbol symbol) {
-    if (symbol.nativeTop != null || symbol.nativeMember != null)
+    if (symbol.nativeTop != null || symbol.nativeMember != null) {
       return _nativeCall(node, symbol);
+    }
 
     if (symbol.name == 'present') {
-      if (node.arguments.length != 1)
+      if (node.arguments.length != 1) {
         fail('present expects one argument', node);
+      }
       final type = expression(node.arguments.single.value);
       model.argumentOrder[node] = [0];
       return 'Optional<$type>';
     }
     if (symbol.name == 'Ok' || symbol.name == 'Error') {
-      if (node.arguments.length != 1)
+      if (node.arguments.length != 1) {
         fail('${symbol.name} expects one value', node);
+      }
       final type = expression(node.arguments.single.value);
       model.argumentOrder[node] = [0];
       final expected = _expected == null ? null : stripReadonlyType(_expected!);
@@ -11945,9 +12134,10 @@ class Analyzer {
       final prefix = member.object is Identifier
           ? _scope.lookup((member.object as Identifier).name)?.namespace
           : null;
-      if (prefix == null)
+      if (prefix == null) {
         return call(node,
             calleeOverride: member, explicitMethodTypes: applied.arguments);
+      }
     }
     final symbol = _appliedSymbol(node, applied);
     final name = symbol.name;
@@ -12144,8 +12334,9 @@ class Analyzer {
     if (hasPacket ||
         synthesizedForeign && _omitsForeignDefault(node, instantiated)) {
       model.constructorGapTargets[node] = type;
-      if (constructor != null)
+      if (constructor != null) {
         model.constructorGapDeclarations[node] = constructor;
+      }
     }
     if (constructor != null) {
       _typeConstructorDefaults(type, constructor);
@@ -12340,7 +12531,9 @@ class Analyzer {
       if (left.length != right.length) return false;
       for (var i = 0; i < left.length; i++) {
         if (!_inferGeneric(functionParameterType(left[i]),
-            functionParameterType(right[i]), found, parameters)) return false;
+            functionParameterType(right[i]), found, parameters)) {
+          return false;
+        }
       }
       return _inferGeneric(
           expectedFunction.$2, actualFunction.$2, found, parameters);
@@ -12366,8 +12559,9 @@ class Analyzer {
             _genericHead(source).length + 1, source.length - 1));
         if (left.length != right.length) return false;
         for (var i = 0; i < left.length; i++) {
-          if (!_inferGeneric(left[i], right[i], found, parameters))
+          if (!_inferGeneric(left[i], right[i], found, parameters)) {
             return false;
+          }
         }
         return true;
       }
@@ -12530,7 +12724,9 @@ class Analyzer {
         type = plan.resultType;
         if (function != null &&
             !_inferGeneric(parameters[target].type, type, inferred,
-                function.typeParameters)) return false;
+                function.typeParameters)) {
+          return false;
+        }
       }
       types[target] = type;
       if (checked != null) checked.types[argument.value] = type;
@@ -12545,8 +12741,9 @@ class Analyzer {
     }
     for (final entry in types.entries) {
       if (!compatible(
-          entry.value, _substitute(parameters[entry.key].type, inferred)))
+          entry.value, _substitute(parameters[entry.key].type, inferred))) {
         return false;
+      }
     }
     if (function != null) {
       for (final parameter in function.typeParameters) {
@@ -12556,7 +12753,9 @@ class Analyzer {
             !_satisfiesTypeBound(
                 argument,
                 _substitute(parameterBounds[parameter.name] ?? parameter.bound!,
-                    inferred))) return false;
+                    inferred))) {
+          return false;
+        }
       }
     }
     checked?.inferred.addAll(inferred);
@@ -12604,7 +12803,9 @@ class Analyzer {
         function == null ? '' : model.declarations[function]?.library ?? '';
     if (home.isEmpty ||
         home == _activeLibrary ||
-        model.providerUnionFunctions.contains(function)) return null;
+        model.providerUnionFunctions.contains(function)) {
+      return null;
+    }
     for (final node in model.imports) {
       if (node.export) continue;
       if (_resolveLibrary(_file, node.uri) != home) continue;
@@ -12717,8 +12918,9 @@ class Analyzer {
       final argument = node.arguments[i];
       int target;
       if (argument.name == null) {
-        if (named)
+        if (named) {
           fail('Positional arguments must precede named arguments', argument);
+        }
         while (positional < parameters.length &&
             _skipsPositional(parameters[positional])) {
           positional++;
@@ -12914,8 +13116,9 @@ class Analyzer {
   }
 
   String? _listElement(String type) {
-    if (type.startsWith('List<') && type.endsWith('>'))
+    if (type.startsWith('List<') && type.endsWith('>')) {
       return type.substring(5, type.length - 1);
+    }
     return _nativeShape(type)?.listElement;
   }
 
@@ -13053,8 +13256,9 @@ class Analyzer {
         ? (node.callee as TypeApplication).callee
         : node.callee;
     if (callee is MemberAccess &&
-        model.references[callee.object]?.nativeTop?.isType == true)
+        model.references[callee.object]?.nativeTop?.isType == true) {
       fail('Instance member $name is used on the type', callee);
+    }
     final symbol = _dartMemberSymbol(member, member.type);
     model.references[node.callee] = symbol;
     return _nativeCall(node, symbol, explicitTypes: explicitTypes);
@@ -13313,8 +13517,9 @@ class Analyzer {
       case 'flat':
         if (node.arguments.isNotEmpty) fail('flat expects no arguments', node);
         final inner = _collectionElement(element);
-        if (inner == null)
+        if (inner == null) {
           fail('flat must be a collection of collections', node);
+        }
         return _bindCollection(name, '_qflat', const [], 'List<$inner>', node,
             'flat() -> List<$inner>');
       case 'group':
@@ -13778,13 +13983,17 @@ class Analyzer {
       final instantiatedSource = _substitute(source, inferred);
       final instantiatedResult = _substitute(result, inferred);
       if (!compatible(from, instantiatedSource) ||
-          !compatible(instantiatedResult, to)) continue;
+          !compatible(instantiatedResult, to)) {
+        continue;
+      }
       if (f.typeParameters.any((p) =>
           p.bound != null &&
           !_satisfiesTypeBound(
               inferred[p.name]!,
               _substitute(_conversionSignatureType(p.bound!, home, shadows),
-                  inferred)))) continue;
+                  inferred)))) {
+        continue;
+      }
       final score = (compatible(instantiatedSource, from) ? 2 : 0) +
           (compatible(to, instantiatedResult) ? 2 : 0) +
           (f.typeParameters.isEmpty ? 1 : 0);
@@ -13800,8 +14009,9 @@ class Analyzer {
     if (candidates.isEmpty) return null;
     final best = candidates.map((c) => c.$2).reduce((a, b) => a > b ? a : b);
     final winners = candidates.where((c) => c.$2 == best).toList();
-    if (winners.length != 1)
+    if (winners.length != 1) {
       error('E310', 'Ambiguous conversion from $from to $to', at);
+    }
     final plan = winners.single.$1;
     if (plan.library.isNotEmpty && plan.library != library) {
       final prefix =
@@ -14409,7 +14619,9 @@ class Analyzer {
     final expected = _expected;
     if (expected != null &&
         compatible(left, expected) &&
-        compatible(right, expected)) return expected;
+        compatible(right, expected)) {
+      return expected;
+    }
     final pending = <String>[left];
     final seen = <String>{};
     while (pending.isNotEmpty) {
@@ -14425,10 +14637,12 @@ class Analyzer {
               _genericSubstitution(current, declaration)));
       for (final parent in parents) {
         final candidate = _resolveType(parent);
-        if (const {'Object', 'Object?', 'dynamic'}.contains(candidate))
+        if (const {'Object', 'Object?', 'dynamic'}.contains(candidate)) {
           continue;
-        if (compatible(left, candidate) && compatible(right, candidate))
+        }
+        if (compatible(left, candidate) && compatible(right, candidate)) {
           return candidate;
+        }
         pending.add(candidate);
       }
     }

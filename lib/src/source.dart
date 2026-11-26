@@ -1,22 +1,43 @@
 /// Original source coordinates. Offsets and lengths count UTF-8 bytes;
 /// lines and columns are one-based (columns count UTF-16 code units).
 class SourceSpan {
+  /// Creates a source span at [line], [column], and UTF-8 byte [length].
   const SourceSpan(this.line, this.column, this.length,
       {this.file = '<input>', this.offset = 0});
+
+  /// One-based line number in [file].
   final int line;
+
+  /// One-based column offset in UTF-16 code units.
   final int column;
+
+  /// UTF-8 byte length of the spanned token or node.
   final int length;
+
+  /// Source file path or `<input>` for in-memory sources.
   final String file;
+
+  /// Zero-based UTF-8 byte offset from the start of [file].
   final int offset;
+
   @override
   String toString() => '$file:$line:$column';
 }
 
+/// Diagnostic exception thrown by the Quds lexer, parser, or analyzer.
 class CompilerException implements Exception {
+  /// Creates a compiler diagnostic with registry [code], [message], and [span].
   const CompilerException(this.code, this.message, this.span);
+
+  /// Registry diagnostic code (for example `E100`, `E300`, or `E910`).
   final String code;
+
+  /// Human-readable diagnostic message.
   final String message;
+
+  /// Original `.quds` source span where the error occurred.
   final SourceSpan span;
+
   @override
   String toString() => '$span: $code: $message';
 }

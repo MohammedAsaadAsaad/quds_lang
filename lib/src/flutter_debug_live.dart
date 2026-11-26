@@ -32,8 +32,9 @@ class FlutterDebugLive {
   final _manual = <Map<String, dynamic>>[];
 
   bool request(Map<String, dynamic> message) {
-    if (!{'hotReload', 'hotRestart', 'restart'}.contains(message['command']))
+    if (!{'hotReload', 'hotRestart', 'restart'}.contains(message['command'])) {
       return false;
+    }
     _manual.add(message);
     _drain();
     return true;
@@ -47,15 +48,20 @@ class FlutterDebugLive {
       _drain();
     }
     if (message['type'] == 'event' &&
-        {'terminated', 'exited'}.contains(message['event'])) dispose();
+        {'terminated', 'exited'}.contains(message['event'])) {
+      dispose();
+    }
     if (message['type'] != 'response' ||
         _pending == null ||
-        message['request_seq'] != _pending) return true;
+        message['request_seq'] != _pending) {
+      return true;
+    }
     final hidden = _internal;
     _pending = null;
-    if (message['success'] == false)
+    if (message['success'] == false) {
       output(
           'Flutter rejected the update: ${message['message'] ?? 'restart may be required'}');
+    }
     _drain();
     return !hidden;
   }
@@ -83,8 +89,12 @@ class FlutterDebugLive {
   }
 
   void _drain() {
-    if (_closed || !_ready || _pending != null || (!_dirty && _manual.isEmpty))
+    if (_closed ||
+        !_ready ||
+        _pending != null ||
+        (!_dirty && _manual.isEmpty)) {
       return;
+    }
     final request = _manual.isEmpty ? null : _manual.removeAt(0);
     _dirty = false;
     try {

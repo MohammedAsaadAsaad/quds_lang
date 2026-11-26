@@ -11,7 +11,7 @@ class ConversionError implements Exception {
   String toString() => 'ConversionError: $message';
 }
 
-/// Shared Result<T, E> identity across generated Quds libraries.
+/// Shared `Result<T, E>` identity across generated Quds libraries.
 sealed class Result<T, E> {
   const Result();
 }
@@ -53,7 +53,9 @@ Object? _qReadonlyUnwrap(Object? value) {
       value is num ||
       value is bool ||
       value is String ||
-      value is Record) return value;
+      value is Record) {
+    return value;
+  }
   return _qReadonlySources[value] ?? value;
 }
 
@@ -68,8 +70,9 @@ bool _qReadonlyMatches(Object? source, Object? candidate) {
 }
 
 T cachedView<T extends Object>(Object source, T Function() create) {
-  if (source is ReadonlyView || _qReadonlySources[source] != null)
+  if (source is ReadonlyView || _qReadonlySources[source] != null) {
     return source as T;
+  }
   try {
     if ((source as dynamic).$qudsReadonly == true) return source as T;
   } on NoSuchMethodError {/* An ordinary mutable source. */}
@@ -213,12 +216,16 @@ final class AutoGuard<T> extends ReadonlyGuard<T> {
         value is Uri ||
         value is RegExp ||
         value is StackTrace ||
-        value is Runes) return value;
-    if (value is ByteBuffer)
-      return value.asUint8List().asUnmodifiableView().buffer as T;
-    if (value is TypedData) return (value as dynamic).asUnmodifiableView() as T;
-    if (value is ReadonlyView || _qReadonlySources[value as Object] != null)
+        value is Runes) {
       return value;
+    }
+    if (value is ByteBuffer) {
+      return value.asUint8List().asUnmodifiableView().buffer as T;
+    }
+    if (value is TypedData) return (value as dynamic).asUnmodifiableView() as T;
+    if (value is ReadonlyView || _qReadonlySources[value as Object] != null) {
+      return value;
+    }
     try {
       if ((value as dynamic).$qudsReadonly == true) return value;
       final protected = (value as dynamic)
@@ -321,18 +328,22 @@ bool sameSourceEquals(Object? left, Object? right) =>
 bool readonlyEquals(Object? left, Object? right) {
   final originalLeft = _qReadonlyUnwrap(left);
   final originalRight = _qReadonlyUnwrap(right);
-  if (!identical(left, originalLeft) || !identical(right, originalRight))
+  if (!identical(left, originalLeft) || !identical(right, originalRight)) {
     return originalLeft == originalRight;
-  if (left == null || left is num || left is bool || left is String)
+  }
+  if (left == null || left is num || left is bool || left is String) {
     return left == right;
+  }
   try {
-    if ((left as dynamic).$qudsReadonly == true)
+    if ((left as dynamic).$qudsReadonly == true) {
       return (left as dynamic).$qudsReadonlyMatches(right) == true;
+    }
   } on NoSuchMethodError {/* An ordinary source object. */}
   if (right != null && right is! num && right is! bool && right is! String) {
     try {
-      if ((right as dynamic).$qudsReadonly == true)
+      if ((right as dynamic).$qudsReadonly == true) {
         return (right as dynamic).$qudsReadonlyMatches(left) == true;
+      }
     } on NoSuchMethodError {/* An ordinary source object. */}
   }
   return left == right;
@@ -349,8 +360,9 @@ void recordLazyOrigin(Object owner, Object? protected, Object? original) {
   final context = _activeLazyComputation;
   if (context == null) return;
   try {
-    if ((owner as dynamic).$qudsIsLazySlot(context.slot) == true)
+    if ((owner as dynamic).$qudsIsLazySlot(context.slot) == true) {
       context.origins[protected] = original;
+    }
   } on NoSuchMethodError {/* Not the declaring Quds owner. */}
 }
 

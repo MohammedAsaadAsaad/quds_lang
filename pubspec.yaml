@@ -2,7 +2,7 @@ name: quds
 description: >-
   Quds language compiler, standard library, CLI, LSP server, and debugger
   compiling indentation-based Quds (.quds) code to readable Dart and Flutter.
-version: 0.1.0-alpha.1
+version: 0.1.0-alpha.2
 homepage: https://github.com/MohammedAsaadAsaad/quds_lang
 repository: https://github.com/MohammedAsaadAsaad/quds_lang
 issue_tracker: https://github.com/MohammedAsaadAsaad/quds_lang/issues
@@ -15,7 +15,7 @@ topics:
 environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:
-  analyzer: ">=6.4.1 <15.0.0"
+  analyzer: ^14.0.0
   matcher: ^0.12.16
   yaml_edit: ^2.2.0
 dev_dependencies:

@@ -23,8 +23,9 @@ Future<bool> updateCompilerCheckout(Directory root,
     }
     output('Checking origin/main for Quds updates...');
     final fetched = await git(['fetch', 'origin', 'main']);
-    if (fetched.exitCode != 0)
+    if (fetched.exitCode != 0) {
       throw StateError('Update fetch failed: ${fetched.stderr}');
+    }
     final merged = await git(['merge', '--ff-only', 'FETCH_HEAD']);
     if (merged.exitCode != 0) {
       throw StateError(

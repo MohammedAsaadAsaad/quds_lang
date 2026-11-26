@@ -15,8 +15,9 @@ String presentDartExamples(String markdown) {
           multiLine: true, dotAll: true), (match) {
     final source = match[3]!;
     final converted = dartExampleToQuds(source);
-    if (converted == null)
+    if (converted == null) {
       return '${match[0]}\n\n*Original Dart example; automatic Quds preview unavailable.*';
+    }
     return '${match[1]}${match[2]}quds\n$converted\n${match[1]}${match[2]}\n\n*Quds example translated for display.*';
   });
 }
@@ -40,8 +41,9 @@ String? dartExampleToQuds(String source) {
         parsed = dart.parseString(
             content: 'void __preview() {\n$terminated\n}',
             throwIfDiagnostics: false);
-        if (parsed.errors.isNotEmpty)
+        if (parsed.errors.isNotEmpty) {
           throw const FormatException('Not a complete Dart fragment');
+        }
         final fn = parsed.unit.declarations.single as d.FunctionDeclaration;
         result = printer.statements(
             (fn.functionExpression.body as d.BlockFunctionBody)
@@ -53,8 +55,9 @@ String? dartExampleToQuds(String source) {
       // placement instead of silently dropping or moving them.
       var token = parsed.unit.beginToken;
       while (true) {
-        if (token.precedingComments != null)
+        if (token.precedingComments != null) {
           throw const FormatException('Comment placement');
+        }
         if (token.isEof) break;
         token = token.next!;
       }
@@ -83,15 +86,18 @@ class _Preview {
 
   String declaration(d.CompilationUnitMember node) {
     if (node is d.FunctionDeclaration) return function(node, 0);
-    if (node is d.TopLevelVariableDeclaration)
+    if (node is d.TopLevelVariableDeclaration) {
       return variables(node.variables, 0);
+    }
     return unsupported();
   }
 
   String function(d.FunctionDeclaration node, int depth) {
     if (node.isGetter ||
         node.isSetter ||
-        node.functionExpression.typeParameters != null) return unsupported();
+        node.functionExpression.typeParameters != null) {
+      return unsupported();
+    }
     final fn = node.functionExpression;
     final parameters = fn.parameters;
     if (parameters == null) return unsupported();
@@ -103,7 +109,9 @@ class _Preview {
           .firstMatch(source);
       if (match == null ||
           source.startsWith('required ') ||
-          source.startsWith('this.')) return unsupported();
+          source.startsWith('this.')) {
+        return unsupported();
+      }
       return '${match[2]}: ${match[1]}';
     }).join(', ');
     final body = fn.body;
@@ -117,10 +125,12 @@ class _Preview {
     }
     final head =
         '${'  ' * depth}${node.name.lexeme}($args)${body.isAsynchronous ? ' async' : ''} -> $returnType';
-    if (body is d.ExpressionFunctionBody)
+    if (body is d.ExpressionFunctionBody) {
       return '$head = ${expression(body.expression)}';
-    if (body is d.BlockFunctionBody && !body.isGenerator)
+    }
+    if (body is d.BlockFunctionBody && !body.isGenerator) {
       return '$head:\n${statements(body.block.statements, depth + 1)}';
+    }
     return unsupported();
   }
 
@@ -131,14 +141,18 @@ class _Preview {
   String statement(d.Statement node, int depth) {
     final pad = '  ' * depth;
     if (node is d.EmptyStatement) return '';
-    if (node is d.VariableDeclarationStatement)
+    if (node is d.VariableDeclarationStatement) {
       return variables(node.variables, depth);
-    if (node is d.ExpressionStatement)
+    }
+    if (node is d.ExpressionStatement) {
       return '$pad${expression(node.expression)}';
-    if (node is d.ReturnStatement)
+    }
+    if (node is d.ReturnStatement) {
       return '${pad}return${node.expression == null ? '' : ' ${expression(node.expression!)}'}';
-    if (node is d.FunctionDeclarationStatement)
+    }
+    if (node is d.FunctionDeclarationStatement) {
       return function(node.functionDeclaration, depth);
+    }
     if (node is d.IfStatement) {
       String branch(d.Statement n) => n is d.Block
           ? statements(n.statements, depth + 1)
@@ -189,13 +203,18 @@ class _Preview {
         node is d.NullLiteral ||
         node is d.SimpleIdentifier ||
         node is d.ThisExpression ||
-        node is d.SuperExpression) return node.toSource();
-    if (node is d.ParenthesizedExpression)
+        node is d.SuperExpression) {
+      return node.toSource();
+    }
+    if (node is d.ParenthesizedExpression) {
       return '(${expression(node.expression)})';
-    if (node is d.PrefixedIdentifier)
+    }
+    if (node is d.PrefixedIdentifier) {
       return '${node.prefix.name}.${node.identifier.name}';
-    if (node is d.PropertyAccess && !node.isCascaded)
+    }
+    if (node is d.PropertyAccess && !node.isCascaded) {
       return '${expression(node.target!)}${node.operator.lexeme}${node.propertyName.name}';
+    }
     if (node is d.MethodInvocation && !node.isCascaded) {
       final target = node.target == null
           ? ''
@@ -203,13 +222,18 @@ class _Preview {
       if (node.typeArguments == null &&
           node.argumentList.arguments.isEmpty &&
           {'abs', 'round', 'floor', 'ceil'}.contains(node.methodName.name) &&
-          node.target != null) return unsupported();
+          node.target != null) {
+        return unsupported();
+      }
       return '$target${node.methodName.name}${node.typeArguments?.toSource() ?? ''}(${arguments(node.argumentList)})';
     }
-    if (node is d.InstanceCreationExpression && node.keyword?.lexeme != 'const')
+    if (node is d.InstanceCreationExpression &&
+        node.keyword?.lexeme != 'const') {
       return '${node.constructorName.toSource()}(${arguments(node.argumentList)})';
-    if (node is d.AssignmentExpression)
+    }
+    if (node is d.AssignmentExpression) {
       return '${expression(node.leftHandSide)} ${node.operator.lexeme} ${expression(node.rightHandSide)}';
+    }
     if (node is d.BinaryExpression) {
       final op = switch (node.operator.lexeme) {
         '&&' => 'and',
@@ -219,12 +243,15 @@ class _Preview {
       return '(${expression(node.leftOperand)} $op ${expression(node.rightOperand)})';
     }
     if (node is d.PrefixExpression &&
-        !{'++', '--'}.contains(node.operator.lexeme))
+        !{'++', '--'}.contains(node.operator.lexeme)) {
       return '${node.operator.lexeme == '!' ? 'not ' : node.operator.lexeme}${expression(node.operand)}';
-    if (node is d.ConditionalExpression)
+    }
+    if (node is d.ConditionalExpression) {
       return '(if (${expression(node.condition)}): (${expression(node.thenExpression)}) else: (${expression(node.elseExpression)}))';
-    if (node is d.AwaitExpression)
+    }
+    if (node is d.AwaitExpression) {
       return 'await ${expression(node.expression)}';
+    }
     if (node is d.ListLiteral &&
         node.constKeyword == null &&
         node.typeArguments == null) {

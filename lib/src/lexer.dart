@@ -1,6 +1,7 @@
 import 'source.dart';
 export 'source.dart';
 
+/// Lexical token categories produced by [Lexer].
 enum TokenKind {
   identifier,
   dollar,
@@ -58,27 +59,45 @@ enum TokenKind {
   eof,
 }
 
+/// A single lexical token paired with its original [SourceSpan].
 class Token {
+  /// Creates a token with [kind], source [lexeme], and [span].
   const Token(this.kind, this.lexeme, this.span, {this.documentation});
+
+  /// Lexical category of this token.
   final TokenKind kind;
+
+  /// Raw source text matched for this token.
   final String lexeme;
+
+  /// Original `.quds` source coordinates of this token.
   final SourceSpan span;
 
   /// `#` or `///` lines immediately above this token.
   final String? documentation;
+
   @override
   String toString() => '${kind.name}($lexeme)@$span';
 }
 
+/// Exception thrown when [Lexer] encounters an invalid lexeme or indentation.
 class LexerException extends CompilerException {
-  const LexerException(String code, String message, SourceSpan span)
-      : super(code, message, span);
+  /// Creates a lexer diagnostic with [code], [message], and [span].
+  const LexerException(super.code, super.message, super.span);
 }
 
+/// Indentation-aware tokenizer for Quds source code.
 class Lexer {
+  /// Pattern matching valid starting characters of a Quds identifier.
   static RegExp get identifierStart => _Scanner.identifierStart;
+
+  /// Pattern matching valid continuation characters of a Quds identifier.
   static RegExp get identifierPart => _Scanner.identifierPart;
+
+  /// Creates a stateless Quds lexer.
   const Lexer();
+
+  /// Tokenizes [source] (associated with [file]) into a stream ending in `eof`.
   List<Token> tokenize(String source, {String file = '<input>'}) =>
       _Scanner(source, file).scan();
 }
@@ -110,8 +129,9 @@ class _Scanner {
     final first = source.codeUnitAt(i);
     if (first >= 0xd800 && first <= 0xdbff && i + 1 < source.length) {
       final second = source.codeUnitAt(i + 1);
-      if (second >= 0xdc00 && second <= 0xdfff)
+      if (second >= 0xdc00 && second <= 0xdfff) {
         return source.substring(i, i + 2);
+      }
     }
     return source[i];
   }
@@ -197,8 +217,9 @@ class _Scanner {
           while (ch == ' ') {
             advance();
           }
-          if (ch == '\t')
+          if (ch == '\t') {
             fail('E002', 'Tabs are not permitted for indentation');
+          }
         }
         if (end) break;
         if (ch != '\n' &&
@@ -214,8 +235,9 @@ class _Scanner {
               indents.removeLast();
               tokens.add(Token(TokenKind.dedent, '', here));
             }
-            if (spaces != indents.last)
+            if (spaces != indents.last) {
               fail('E001', 'Indentation does not match any outer block');
+            }
           }
         }
         lineStart = false;
@@ -471,13 +493,15 @@ class _Scanner {
         final expected = kind == TokenKind.rightParen
             ? TokenKind.leftParen
             : TokenKind.leftBracket;
-        if (brackets.isEmpty || brackets.last.kind != expected)
+        if (brackets.isEmpty || brackets.last.kind != expected) {
           fail('E100', 'Mismatched closing bracket', tokens.last.span);
+        }
         brackets.removeLast();
       }
     }
-    if (brackets.isNotEmpty)
+    if (brackets.isNotEmpty) {
       fail('E100', 'Unclosed bracket', brackets.last.span);
+    }
     if (hasCode) tokens.add(Token(TokenKind.newline, '', here));
     while (indents.length > 1) {
       indents.removeLast();
@@ -528,8 +552,9 @@ class _Scanner {
         }
         advance();
       } else {
-        if (!triple && (ch == '\n' || ch == '\r'))
+        if (!triple && (ch == '\n' || ch == '\r')) {
           fail('E004', 'Unterminated string', location);
+        }
         advance();
       }
     }

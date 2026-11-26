@@ -1,6 +1,11 @@
 # Quds
 
-> **Status: Public Alpha (`0.1.0-alpha.1`)** — Statically typed, indentation-based general-purpose language that compiles to clean, readable Dart — with full Dart & Flutter interop, zero `build_runner` boilerplate, and an integrated CLI, LSP server, and debugger.
+[![pub package](https://img.shields.io/pub/v/quds.svg?include_prereleases)](https://pub.dev/packages/quds)
+[![pub points](https://img.shields.io/pub/points/quds)](https://pub.dev/packages/quds/score)
+[![CI](https://github.com/MohammedAsaadAsaad/quds_lang/actions/workflows/dart.yml/badge.svg)](https://github.com/MohammedAsaadAsaad/quds_lang/actions/workflows/dart.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+> **Status: Public Alpha (`0.1.0-alpha.2`)** — Statically typed, indentation-based general-purpose language that compiles to clean, readable Dart — with full Dart & Flutter interop, zero `build_runner` boilerplate, and an integrated CLI, LSP server, and debugger.
 
 Quds keeps Dart's type safety, null safety, AOT/JIT/Web/Flutter ecosystem, and zero runtime overhead — while removing braces, semicolons, closing-parenthesis pyramids, and repetitive model boilerplate. The formal language design is version 1.2 in [the specification](docs/QUDS_LANGUAGE_SPECIFICATION.md).
 

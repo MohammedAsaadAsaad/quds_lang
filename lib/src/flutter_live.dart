@@ -179,8 +179,9 @@ class FlutterLiveSession {
             process.kill();
           }
         }
-        if (byte == 104)
+        if (byte == 104) {
           log('Quds: save = hot reload; r = reload; R = restart; q = quit.');
+        }
       }
     });
     _timer = Timer.periodic(pollInterval, (_) {

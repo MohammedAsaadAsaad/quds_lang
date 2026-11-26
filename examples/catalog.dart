@@ -310,7 +310,7 @@ int netPay(int gross, int taxRate) {
 }
 
 int countChar(String text, String mark) {
-  if (mark.length == 0) {
+  if (mark.isEmpty) {
     return 0;
   }
   final parts = text.split(mark);

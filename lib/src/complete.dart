@@ -51,8 +51,9 @@ Node? _loopCompletionOwner(String source, String prefix, int offset) {
         Node? owner;
         walkAst(program, (node) {
           if (!_loopContextContains(node, offset)) return;
-          if (owner == null || node.span.length < owner!.span.length)
+          if (owner == null || node.span.length < owner!.span.length) {
             owner = node;
+          }
         });
         if (owner != null) return owner;
         if (parser.errors.any((e) => e.message == 'Expected while')) {
@@ -105,11 +106,12 @@ bool _loopContextContains(Node node, int offset) {
     RepeatStatement() => node.body,
     _ => null,
   };
-  if (body != null)
+  if (body != null) {
     return body.any(contains) ||
         node is RepeatStatement &&
             node.condition != null &&
             contains(node.condition!);
+  }
   if (node is RetryExpression) {
     return (node.bodyExpr != null && contains(node.bodyExpr!)) ||
         (node.bodyStmts != null && node.bodyStmts!.any(contains)) ||
@@ -232,7 +234,9 @@ List<Map<String, Object?>> completeAt({
   }
   for (final entry in scope.names.entries) {
     if (entry.key == '_' ||
-        entry.value.function?.conversionKind.isNotEmpty == true) continue;
+        entry.value.function?.conversionKind.isNotEmpty == true) {
+      continue;
+    }
     for (final item in _symbolItems(resolved, entry.value, range)) {
       add(item);
     }
@@ -293,7 +297,9 @@ Map<String, Object?>? keywordHoverAt(String source, int line, int character) {
     if (word.read(source) != 'new' ||
         receiverPrefix.isNotEmpty &&
             RegExp(r'[\w\p{L}\p{N}?)\]]$', unicode: true)
-                .hasMatch(receiverPrefix)) return null;
+                .hasMatch(receiverPrefix)) {
+      return null;
+    }
   }
   var end = word.end;
   var key = source.substring(word.start, end);
@@ -312,7 +318,9 @@ Map<String, Object?>? keywordHoverAt(String source, int line, int character) {
       source.substring(end, lineEnd < 0 ? source.length : lineEnd).trim();
   if (!_keywordContext(key, before, after)) return null;
   if ((key == 'get' || key == 'set' && after.startsWith('(')) &&
-      !_insideProperty(source, word.start)) return null;
+      !_insideProperty(source, word.start)) {
+    return null;
+  }
   return {
     'contents': {'kind': 'markdown', 'value': documentation},
     'range': _range(source, word.start, end)['range'],
@@ -521,13 +529,15 @@ Map<String, Object?>? signatureHelpAt(
   } else {
     final symbol = scope.names[call.callee];
     if (symbol == null) return null;
-    if (symbol.classDeclaration != null)
+    if (symbol.classDeclaration != null) {
       add(_constructorParameters(symbol.classDeclaration!));
-    else if (symbol.nativeTop != null)
+    } else if (symbol.nativeTop != null) {
       add([for (final p in symbol.nativeTop!.parameters) _Param(p.$1, p.$2)]);
-    else
-      for (final fn in symbol.overloads)
+    } else {
+      for (final fn in symbol.overloads) {
         add([for (final p in fn.parameters) _Param(p.name, p.type)]);
+      }
+    }
   }
   if (signatures.isEmpty) return null;
   var depth = 0, active = 0;
@@ -630,7 +640,9 @@ int? _dotBefore(String source, int wordStart) {
   }
   if (previous > 0 && _digit(source.codeUnitAt(previous - 1))) {
     var start = previous;
-    while (start > 0 && _ident(source.codeUnitAt(start - 1))) start--;
+    while (start > 0 && _ident(source.codeUnitAt(start - 1))) {
+      start--;
+    }
     // A decimal literal is unfinished at `12.`; a variable such as values12
     // still needs member completion as the file grows.
     if (start < previous && _digit(source.codeUnitAt(start))) return null;
@@ -1159,11 +1171,13 @@ Iterable<(ClassDeclaration, String)> _typedLineage(
   yield (declaration, type);
   final args = _typeArgs(declaration, type);
   final visited = {...seen, declaration};
-  for (final mixin in declaration.mixins.reversed)
+  for (final mixin in declaration.mixins.reversed) {
     yield* _typedLineage(compilation, _applyArgs(mixin, args), visited);
-  if (declaration.superclass != null)
+  }
+  if (declaration.superclass != null) {
     yield* _typedLineage(
         compilation, _applyArgs(declaration.superclass!, args), visited);
+  }
 }
 
 void _members(
@@ -1370,12 +1384,16 @@ List<_Step>? _chain(String source, int dot) {
   var index = dot;
   while (true) {
     if (index > 0 && source.codeUnitAt(index - 1) == 63) index--;
-    while (index > 0 && _space(source.codeUnitAt(index - 1))) index--;
+    while (index > 0 && _space(source.codeUnitAt(index - 1))) {
+      index--;
+    }
     if (index == 0) return null;
     final unit = source.codeUnitAt(index - 1);
     if (_ident(unit)) {
       final end = index;
-      while (index > 0 && _ident(source.codeUnitAt(index - 1))) index--;
+      while (index > 0 && _ident(source.codeUnitAt(index - 1))) {
+        index--;
+      }
       final text = source.substring(index, end);
       if (_digit(text.codeUnitAt(0))) return null;
       steps.add(_Step(text));
@@ -1386,10 +1404,14 @@ List<_Step>? _chain(String source, int dot) {
       index = start;
       var called = '';
       var cursor = index;
-      while (cursor > 0 && _space(source.codeUnitAt(cursor - 1))) cursor--;
+      while (cursor > 0 && _space(source.codeUnitAt(cursor - 1))) {
+        cursor--;
+      }
       if (cursor > 0 && _ident(source.codeUnitAt(cursor - 1))) {
         final end = cursor;
-        while (cursor > 0 && _ident(source.codeUnitAt(cursor - 1))) cursor--;
+        while (cursor > 0 && _ident(source.codeUnitAt(cursor - 1))) {
+          cursor--;
+        }
         called = source.substring(cursor, end);
         if (_digit(called.codeUnitAt(0))) return null;
         index = cursor;
@@ -1398,7 +1420,9 @@ List<_Step>? _chain(String source, int dot) {
     } else {
       return null;
     }
-    while (index > 0 && _space(source.codeUnitAt(index - 1))) index--;
+    while (index > 0 && _space(source.codeUnitAt(index - 1))) {
+      index--;
+    }
     if (index > 1 &&
         source.codeUnitAt(index - 1) == 46 &&
         source.codeUnitAt(index - 2) != 46) {
@@ -1426,7 +1450,9 @@ int _skipBack(String source, int close, int open, int shut) {
 
 int _lineStart(String source, int index) {
   var start = index;
-  while (start > 0 && source.codeUnitAt(start - 1) != 10) start--;
+  while (start > 0 && source.codeUnitAt(start - 1) != 10) {
+    start--;
+  }
   return start;
 }
 
@@ -1438,8 +1464,9 @@ Expression? _receiverExpression(
   // can be the receiver. Reject other AST nodes before any offset conversion.
   var suffix = dot;
   final closing = RegExp(r'^[)\s]$');
-  while (suffix > 0 && closing.hasMatch(source.substring(suffix - 1, suffix)))
+  while (suffix > 0 && closing.hasMatch(source.substring(suffix - 1, suffix))) {
     suffix--;
+  }
   final earliest = positions.byteOffset(suffix);
   Expression? best;
   var size = 1 << 30;
@@ -1486,13 +1513,17 @@ Map<String, String>? _extensionArgs(
     if (pattern == actual || pattern == _head(actual)) return true;
     if (_head(pattern) != _head(actual) ||
         !pattern.endsWith('>') ||
-        !actual.endsWith('>')) return false;
+        !actual.endsWith('>')) {
+      return false;
+    }
     final p = splitTypeList(
         pattern.substring(pattern.indexOf('<') + 1, pattern.length - 1));
     final a = splitTypeList(
         actual.substring(actual.indexOf('<') + 1, actual.length - 1));
     if (p.length != a.length) return false;
-    for (var i = 0; i < p.length; i++) if (!match(p[i], a[i])) return false;
+    for (var i = 0; i < p.length; i++) {
+      if (!match(p[i], a[i])) return false;
+    }
     return true;
   }
 
@@ -1503,12 +1534,16 @@ Map<String, String>? _extensionArgs(
     if (bound == null ||
         bound == 'Object?' ||
         actual == null ||
-        bound == actual) continue;
-    if (bound == 'num' && const {'int', 'double', 'num'}.contains(actual))
+        bound == actual) {
       continue;
+    }
+    if (bound == 'num' && const {'int', 'double', 'num'}.contains(actual)) {
+      continue;
+    }
     if (bound == 'Object' && !isNullableType(actual)) continue;
-    if (_typedLineage(compilation, actual).any((entry) => entry.$2 == bound))
+    if (_typedLineage(compilation, actual).any((entry) => entry.$2 == bound)) {
       continue;
+    }
     return null;
   }
   return found;
@@ -1518,14 +1553,17 @@ bool _completionVisible(Compilation compilation, ClassDeclaration declaration,
     String visibility, ClassDeclaration? owner) {
   if (visibility != 'private' &&
       visibility != 'protected' &&
-      visibility != 'internal') return true;
+      visibility != 'internal') {
+    return true;
+  }
   final home = compilation.semantics.libraryOf[declaration] ?? '';
   final current = compilation.program.span.file;
   if (visibility == 'internal') {
     return home.isEmpty || samePackage(current, home);
   }
-  if (home.isEmpty || home == current || home == File(current).absolute.path)
+  if (home.isEmpty || home == current || home == File(current).absolute.path) {
     return true;
+  }
   return visibility == 'protected' &&
       owner != null &&
       _typedLineage(compilation, owner.name)
@@ -1580,7 +1618,9 @@ void _typeMembers(
                 accessOwner ?? known) ||
             field.isStatic != onType ||
             !_name(field.name) ||
-            !seen.add(field.name)) continue;
+            !seen.add(field.name)) {
+          continue;
+        }
         final shown = _applyArgs(
             compilation.semantics.declarations[field]?.type ?? field.type,
             args);
@@ -1600,7 +1640,9 @@ void _typeMembers(
                 accessOwner ?? known) ||
             onType ||
             !_name(property.name) ||
-            !seen.add(property.name)) continue;
+            !seen.add(property.name)) {
+          continue;
+        }
         final reads = property.getter != null || property.getterBody != null;
         final writes = property.setter != null || property.setterBody != null;
         final kind = reads && writes
@@ -2161,14 +2203,18 @@ _Call? _argumentBlock(String source, int cursor) {
     if (leading >= indent) continue;
     if (!line.endsWith(':') ||
         RegExp(r'^(class|interface|extend|mixin|enum|sealed|value|abstract|final|base)\b')
-            .hasMatch(line.trimLeft())) return null;
+            .hasMatch(line.trimLeft())) {
+      return null;
+    }
     final colon = from + line.length - 1;
     final nameStart = _calleeStart(source, colon);
     var nameEnd = colon;
-    while (nameEnd > nameStart && _space(source.codeUnitAt(nameEnd - 1)))
+    while (nameEnd > nameStart && _space(source.codeUnitAt(nameEnd - 1))) {
       nameEnd--;
-    if (nameEnd > 0 && source.codeUnitAt(nameEnd - 1) == 62)
+    }
+    if (nameEnd > 0 && source.codeUnitAt(nameEnd - 1) == 62) {
       nameEnd = _skipBack(source, nameEnd - 1, 60, 62);
+    }
     if (nameEnd <= nameStart) return null;
     return _Call(colon, source.substring(nameStart, nameEnd),
         nameStart > 0 && source.codeUnitAt(nameStart - 1) == 46);
@@ -2322,11 +2368,16 @@ Iterable<_Param> _parametersOf(
     final parameters =
         imported.nativeTop?.parameters ?? imported.nativeMember?.parameters;
     if (parameters != null) {
-      for (final p in parameters) yield _Param(p.$1, p.$2);
+      for (final p in parameters) {
+        yield _Param(p.$1, p.$2);
+      }
       return;
     }
-    for (final function in imported.overloads)
-      for (final p in function.parameters) yield _Param(p.name, p.type);
+    for (final function in imported.overloads) {
+      for (final p in function.parameters) {
+        yield _Param(p.name, p.type);
+      }
+    }
     if (imported.overloads.isNotEmpty) return;
   }
   final declaration = symbol.classDeclaration;
@@ -2351,8 +2402,11 @@ Iterable<_Param> _parametersOf(
             ? (shape.statics[member] ?? shape.constructors[member])
             : shape.members[member]) ??
         shape.members[member];
-    if (method != null)
-      for (final p in method.parameters) yield _Param(p.$1, p.$2);
+    if (method != null) {
+      for (final p in method.parameters) {
+        yield _Param(p.$1, p.$2);
+      }
+    }
     return;
   }
   for (final (current, applied) in _typedLineage(compilation, type)) {
@@ -2361,8 +2415,9 @@ Iterable<_Param> _parametersOf(
       final args = Map.of(_typeArgs(current, applied))
         ..removeWhere(
             (key, _) => method.typeParameters.any((p) => p.name == key));
-      for (final p in method.parameters)
+      for (final p in method.parameters) {
         yield _Param(p.name, _applyArgs(p.type, args));
+      }
       return;
     }
   }
@@ -2384,7 +2439,7 @@ List<Map<String, Object?>> _symbolItems(
   if (symbol.namespace != null && symbol.type == 'prefix') {
     return [_plain(symbol.name, 9, 'prefix', range, sort: '1')];
   }
-  if (symbol.nativeTop?.isType == true)
+  if (symbol.nativeTop?.isType == true) {
     return [
       _plain(
           symbol.name,
@@ -2396,6 +2451,7 @@ List<Map<String, Object?>> _symbolItems(
           range,
           sort: '0')
     ];
+  }
   if (symbol.external &&
       symbol.type == symbol.name &&
       symbol.classDeclaration == null &&
@@ -3150,7 +3206,9 @@ List<Map<String, Object?>> _relativeEntries(String source, int start, int end,
     } else if (entity is File && name.endsWith('.quds')) {
       if (partsOnly &&
           file != null &&
-          entity.absolute.path == File(file).absolute.path) continue;
+          entity.absolute.path == File(file).absolute.path) {
+        continue;
+      }
       final stem = name.substring(0, name.length - 5);
       if (stem.isEmpty || !stem.startsWith(partial)) continue;
       items.add(_importItem(source, start, end, stem, stem, name, 17,

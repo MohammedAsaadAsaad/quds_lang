@@ -1154,7 +1154,9 @@ int _changedLine(String previous, String current) {
   var prefix = 0;
   while (prefix < previous.length &&
       prefix < current.length &&
-      previous.codeUnitAt(prefix) == current.codeUnitAt(prefix)) prefix++;
+      previous.codeUnitAt(prefix) == current.codeUnitAt(prefix)) {
+    prefix++;
+  }
   var oldEnd = previous.length, end = current.length;
   while (oldEnd > prefix &&
       end > prefix &&
@@ -1163,8 +1165,10 @@ int _changedLine(String previous, String current) {
     end--;
   }
   while (end > 0 &&
-      (current.codeUnitAt(end - 1) == 10 || current.codeUnitAt(end - 1) == 13))
+      (current.codeUnitAt(end - 1) == 10 ||
+          current.codeUnitAt(end - 1) == 13)) {
     end--;
+  }
   return '\n'.allMatches(current.substring(0, end)).length;
 }
 
@@ -1177,9 +1181,10 @@ String? _trimEditingMember(String source, int line) {
   if (dot < 0 || dot > 0 && row[dot - 1] == '.') return null;
   final tail = row.substring(dot + 1).trim();
   if (tail.isNotEmpty &&
-      !tail.runes
-          .every((r) => Lexer.identifierPart.hasMatch(String.fromCharCode(r))))
+      !tail.runes.every(
+          (r) => Lexer.identifierPart.hasMatch(String.fromCharCode(r)))) {
     return null;
+  }
   final prefix = row.substring(0, dot);
   final replacement =
       prefix + ' ' * (utf8.encode(row).length - utf8.encode(prefix).length);
@@ -1301,7 +1306,9 @@ List<int> _projectTokens(String previous, String current, List<int> data) {
   var start = 0;
   while (start < previous.length &&
       start < current.length &&
-      previous.codeUnitAt(start) == current.codeUnitAt(start)) start++;
+      previous.codeUnitAt(start) == current.codeUnitAt(start)) {
+    start++;
+  }
   var oldEnd = previous.length, newEnd = current.length;
   while (oldEnd > start &&
       newEnd > start &&
@@ -1360,8 +1367,11 @@ List<int> _mergeTokens(List<int> previous, List<int> syntax) {
                     right.current.$2 <= left.current.$2);
     final token = takeRight ? right.current : left.current;
     if (takeRight) {
-      if (hasLeft && left.current.$1 == token.$1 && left.current.$2 == token.$2)
+      if (hasLeft &&
+          left.current.$1 == token.$1 &&
+          left.current.$2 == token.$2) {
         hasLeft = left.moveNext();
+      }
       hasRight = right.moveNext();
     } else {
       hasLeft = left.moveNext();

@@ -20,8 +20,9 @@ Future<void> main(List<String> args) async {
   for (final mode in ['full', 'analysis']) {
     final result = await Process.run(
         Platform.resolvedExecutable, ['run', 'tool/profile_editor.dart', mode]);
-    if (result.exitCode != 0)
+    if (result.exitCode != 0) {
       throw StateError('${result.stdout}\n${result.stderr}');
+    }
     phases[mode] = jsonDecode('${result.stdout}');
   }
   final session = LspSession()..background = true;
@@ -37,8 +38,9 @@ Future<void> main(List<String> args) async {
       'textDocument': {'uri': uri, 'version': 1, 'text': workload}
     }
   });
-  while (!analyzed && ready.elapsed < const Duration(seconds: 30))
+  while (!analyzed && ready.elapsed < const Duration(seconds: 30)) {
     await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
   if (!analyzed) throw StateError('Analysis timed out');
   phases['background_ready_ms'] = ready.elapsedMicroseconds / 1000;
   final samples = <double>[];

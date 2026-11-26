@@ -79,7 +79,9 @@ void main() {
     session.emit = (message) {
       if (message['method'] == 'textDocument/publishDiagnostics' &&
           (message['params'] as Map)['qudsAnalysisComplete'] != false &&
-          !ready.isCompleted) ready.complete();
+          !ready.isCompleted) {
+        ready.complete();
+      }
     };
     const text = 'main():\n  var count = 1\n  print count\n';
     send(session, uri, 1, text);
@@ -118,8 +120,9 @@ void main() {
     send(session, a, 1, 'main():\n  print 1\n');
     send(session, b, 1, 'main():\n  print 2\n');
     final deadline = DateTime.now().add(const Duration(seconds: 20));
-    while (initial.length < 2 && DateTime.now().isBefore(deadline))
+    while (initial.length < 2 && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     expect(initial, hasLength(2));
     typing = true;
     send(session, b, 2, 'main():\n  print 3\n');

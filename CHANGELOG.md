@@ -2,6 +2,16 @@
 
 All notable changes to the Quds compiler, SDK, and CLI are documented here.
 
+## 0.1.0-alpha.2
+
+Maintenance and package-quality release targeting full Windows compatibility and 160/160 pub.dev score readiness:
+
+- Fixed a Windows `Uri.file` path crash when analyzing `quds:` SDK libraries that re-export `dart:` libraries (such as `quds:math` exporting `dart:math`).
+- Tightened `analyzer` lower bound to `^14.0.0` so `dart pub downgrade && dart analyze` passes cleanly.
+- Enabled `package:lints/core.yaml` in `analysis_options.yaml` and resolved all core lint infos (`dart analyze --fatal-infos` passes with 0 issues).
+- Expanded public API dartdoc coverage across `lib/quds.dart`, `lib/migrate.dart`, AST nodes, lexer, and source spans (well above the 20% pub.dev threshold).
+- Updated GitHub Actions CI (`dart.yml`) to Dart `3.14.0` and verified Linux, macOS, Windows, and Flutter pipelines.
+
 ## 0.1.0-alpha.1
 
 First public alpha release of the Quds language compiler, standard library, CLI, and editor tooling (targeting language specification 1.2).

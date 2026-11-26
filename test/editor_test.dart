@@ -219,7 +219,9 @@ main():
     final seen = <String, Map>{};
     session.emit = (event) {
       if (event['method'] != 'textDocument/publishDiagnostics' ||
-          (event['params'] as Map)['qudsAnalysisComplete'] == false) return;
+          (event['params'] as Map)['qudsAnalysisComplete'] == false) {
+        return;
+      }
       seen[(event['params'] as Map)['uri'] as String] = event;
     };
     final first = File('/tmp/editor_queue_a.quds').uri.toString();
@@ -227,8 +229,9 @@ main():
     open(session, first, 'main():\n  print 1\n');
     open(session, second, 'main():\n  print 2\n');
     final deadline = DateTime.now().add(const Duration(seconds: 15));
-    while (seen.length < 2 && DateTime.now().isBefore(deadline))
+    while (seen.length < 2 && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
     expect(seen.keys, containsAll([first, second]));
     final pending = response(session, first, 1, 7);
     expect(pending['isIncomplete'], isFalse);

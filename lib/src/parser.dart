@@ -95,8 +95,9 @@ class Parser {
       'async',
       'type',
     };
-    if (reserved.contains(token.lexeme))
+    if (reserved.contains(token.lexeme)) {
       fail('Reserved word cannot be a name', token.span);
+    }
     return token;
   }
 
@@ -143,8 +144,9 @@ class Parser {
 
   bool functionAhead({int? from}) {
     final start = from ?? index;
-    if (start >= tokens.length || tokens[start].kind != TokenKind.identifier)
+    if (start >= tokens.length || tokens[start].kind != TokenKind.identifier) {
       return false;
+    }
     var open = start + 1;
     if (open < tokens.length && tokens[open].kind == TokenKind.less) {
       final after = _skipAngles(open);
@@ -190,11 +192,13 @@ class Parser {
         var depth = 1;
         for (; close < end; close++) {
           if (tokens[close].kind == TokenKind.leftBracket) depth++;
-          if (tokens[close].kind == TokenKind.rightBracket && --depth == 0)
+          if (tokens[close].kind == TokenKind.rightBracket && --depth == 0) {
             break;
+          }
         }
-        if (close >= end || close == i + 1 || !_parameterList(i + 1, close))
+        if (close >= end || close == i + 1 || !_parameterList(i + 1, close)) {
           return false;
+        }
         i = close + 1;
         if (i < end && tokens[i].kind == TokenKind.comma) {
           i++;
@@ -364,8 +368,9 @@ class Parser {
         peek().kind != TokenKind.eof) {
       topVisibility = take().lexeme;
     }
-    if (topLevel && topVisibility.isEmpty && word('use'))
+    if (topLevel && topVisibility.isEmpty && word('use')) {
       return useImport(span);
+    }
     if (topLevel && topVisibility.isEmpty && word('export')) {
       return exportDirective(span);
     }
@@ -378,9 +383,10 @@ class Parser {
     if (topLevel && topVisibility.isEmpty && word('config')) {
       return configDeclaration(span);
     }
-    if (topLevel && word('augment') && peek().kind == TokenKind.identifier)
+    if (topLevel && word('augment') && peek().kind == TokenKind.identifier) {
       return typeDeclaration(span, notes,
           forced: 'augment', visibility: topVisibility);
+    }
     if (word('extend')) {
       return extensionDeclaration(span, notes, visibility: topVisibility);
     }
@@ -1114,10 +1120,12 @@ class Parser {
         label = name().lexeme;
         take();
       }
-      if (variadic && (label == null || optional))
+      if (variadic && (label == null || optional)) {
         fail('A variadic parameter needs name: Type');
-      if (optional && label == null)
+      }
+      if (optional && label == null) {
         fail('An optional positional parameter needs name: Type');
+      }
       final type = typeName();
       var rendered = label == null ? type : '$label: $type';
       if (word('required')) {
@@ -1126,8 +1134,9 @@ class Parser {
         rendered += ' required';
       }
       if (match(TokenKind.equals)) {
-        if (label == null || rendered.endsWith(' required'))
+        if (label == null || rendered.endsWith(' required')) {
           fail('A default needs an optional parameter');
+        }
         expression();
         // A type records omission, not a replacement declaration default.
         if (!optional) rendered += ' = missing';
@@ -1793,8 +1802,9 @@ class Parser {
             endLine();
             continue;
           }
-          if (!functionAhead())
+          if (!functionAhead()) {
             fail('An extension type member must be a function');
+          }
           methods.add(function(const []));
         }
         expect(TokenKind.dedent, 'end of extension type');
@@ -2638,8 +2648,9 @@ class Parser {
     if (!at(TokenKind.rightParen)) {
       do {
         if (match(TokenKind.leftBracket)) {
-          if (at(TokenKind.rightBracket))
+          if (at(TokenKind.rightBracket)) {
             fail('An optional parameter group cannot be empty');
+          }
           do {
             parameters.add(parameter(optionalPositional: true));
           } while (match(TokenKind.comma) && !at(TokenKind.rightBracket));
@@ -3843,8 +3854,9 @@ class Parser {
         'switch',
         'type',
       };
-      if (unsupported.contains(token.lexeme))
+      if (unsupported.contains(token.lexeme)) {
         fail('Unsupported syntax: ${token.lexeme}', token.span);
+      }
       return Identifier(token.lexeme, token.span);
     }
     if (token.kind == TokenKind.leftParen) {
@@ -4287,8 +4299,9 @@ class Parser {
       }
     }
     flush();
-    if (parts.every((p) => p is Literal))
+    if (parts.every((p) => p is Literal)) {
       return Literal(parts.map((p) => (p as Literal).value).join(), token.span);
+    }
     return InterpolatedString(parts, token.span);
   }
 

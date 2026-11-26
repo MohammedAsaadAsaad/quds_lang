@@ -29,11 +29,13 @@ Future<Map<String, Object?>> measure(String name, int size,
   session.emit = (message) {
     final params = message['params'] as Map;
     if (params['version'] != target) return;
-    if (message['method'] == 'quds/semanticTokensReady')
+    if (message['method'] == 'quds/semanticTokensReady') {
       firstColor ??= watch.elapsedMicroseconds / 1000;
+    }
     if (message['method'] == 'textDocument/publishDiagnostics') {
-      if ((params['diagnostics'] as List).isNotEmpty)
+      if ((params['diagnostics'] as List).isNotEmpty) {
         firstError ??= watch.elapsedMicroseconds / 1000;
+      }
       if (params['qudsAnalysisComplete'] != false) {
         firstColor ??= watch.elapsedMicroseconds / 1000;
         ready.putIfAbsent(target, Completer<void>.new).complete();
@@ -93,8 +95,9 @@ Future<Map<String, Object?>> continuous() async {
       count++;
       first ??= watch.elapsedMicroseconds / 1000;
     }
-    if (params['version'] == 22 && !finalCheck.isCompleted)
+    if (params['version'] == 22 && !finalCheck.isCompleted) {
       finalCheck.complete();
+    }
   };
   try {
     send(session, uri, 1, 'main():\n  print 1\n');

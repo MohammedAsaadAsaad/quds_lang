@@ -1,3 +1,8 @@
+/// Core Quds language compiler library.
+///
+/// Exposes the Quds lexer, parser, typed AST, static semantic analyzer,
+/// Dart code generator, formatter, quick-fix engine, source maps, and LSP/DAP
+/// editor protocol helpers.
 library quds;
 
 export 'src/ast.dart';

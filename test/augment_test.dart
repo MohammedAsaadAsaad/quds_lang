@@ -20,11 +20,12 @@ void main() {
     'augment int:\n  value: int = 0\n',
     'augment int:\n  init():\n    print 1\n',
     'class A<T>:\n  value: T required\naugment A<int>:\n  read() -> int = 1\n',
-  ])
+  ]) {
     test('rejects invalid augment $body', () {
       expect(() => compile(body, file: 'invalid_augment.quds'),
           throwsA(isA<CompilerException>()));
     });
+  }
   test('merged part members retain their original source file', () {
     final file = File('test/fixtures/augment/owner.quds').absolute;
     final result = compile(file.readAsStringSync(), file: file.path);

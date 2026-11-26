@@ -26,9 +26,10 @@ void main() {
         Directory.systemTemp.createTempSync('quds-readonly-graph-');
     addTearDown(() => directory.deleteSync(recursive: true));
     final source = File('test/readonly_graph_web.quds').readAsStringSync();
-    for (final name in ['first', 'second'])
+    for (final name in ['first', 'second']) {
       File('${directory.path}/$name.dart')
           .writeAsStringSync(compile(source).dart);
+    }
     final driver = File('${directory.path}/driver.dart')..writeAsStringSync(r'''
 import 'first.dart' as q;
 import 'second.dart' as other;

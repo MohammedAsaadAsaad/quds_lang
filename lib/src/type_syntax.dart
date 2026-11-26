@@ -198,8 +198,9 @@ List<FunctionParameterShape> functionParameters(String text) {
     final optional = type.endsWith(' = missing');
     final named = optional || type.endsWith(' required');
     if (optional) type = type.substring(0, type.length - 10).trim();
-    if (type.endsWith(' required'))
+    if (type.endsWith(' required')) {
       type = type.substring(0, type.length - 9).trim();
+    }
     result.add(FunctionParameterShape(type,
         name: label?.group(1), named: named, optional: optional));
   }
@@ -210,8 +211,9 @@ String nativeFunctionParameters(List<(String, String)> parameters,
     Set<String> named, Set<String> optional) {
   return parameters.map((p) {
     if (p.$2.startsWith('...')) return '...${p.$1}: ${p.$2.substring(3)}';
-    if (named.contains(p.$1))
+    if (named.contains(p.$1)) {
       return '${p.$1}: ${p.$2}${optional.contains(p.$1) ? ' = missing' : ' required'}';
+    }
     return optional.contains(p.$1) ? '[${p.$1}: ${p.$2}]' : p.$2;
   }).join(', ');
 }
@@ -226,22 +228,27 @@ bool functionParametersCompatible(String source, String destination,
         to.isEmpty ||
         !from.last.variadic ||
         !to.last.variadic ||
-        !compatible(to.last.type, from.last.type)) return false;
+        !compatible(to.last.type, from.last.type)) {
+      return false;
+    }
     from = from.sublist(0, from.length - 1);
     to = to.sublist(0, to.length - 1);
   }
   final a = from.where((p) => !p.named).toList();
   final b = to.where((p) => !p.named).toList();
   if (a.where((p) => !p.optional).length > b.where((p) => !p.optional).length ||
-      a.length < b.length) return false;
+      a.length < b.length) {
+    return false;
+  }
   for (var i = 0; i < b.length; i++) {
     if (!compatible(b[i].type, a[i].type)) return false;
   }
   final an = {for (final p in from.where((p) => p.named)) p.name: p};
   final bn = {for (final p in to.where((p) => p.named)) p.name: p};
   for (final p in an.values) {
-    if (!p.optional && (bn[p.name] == null || bn[p.name]!.optional))
+    if (!p.optional && (bn[p.name] == null || bn[p.name]!.optional)) {
       return false;
+    }
   }
   for (final p in bn.values) {
     final other = an[p.name];

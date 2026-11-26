@@ -18294,8 +18294,9 @@ List<String> _packageRoots() {
           '''^[ \\t]*name:[ \\t]*["']?([^"'\\s#]+)''',
           multiLine: true,
         ).firstMatch(spec.readAsStringSync());
-        if (match?.group(1) == 'quds' || match?.group(1) == 'quds_lang')
+        if (match?.group(1) == 'quds' || match?.group(1) == 'quds_lang') {
           roots.add(directory.path);
+        }
       }
       final parent = directory.parent;
       if (parent.path == directory.path) return;

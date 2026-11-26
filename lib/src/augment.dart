@@ -18,7 +18,9 @@ String _augmentationIdentity(Node node) {
 Map<String, Program> normalizeAugments(Map<String, Program> programs) {
   if (!programs.values.any((p) => p.statements
       .whereType<ClassDeclaration>()
-      .any((c) => c.kind == 'augment'))) return programs;
+      .any((c) => c.kind == 'augment'))) {
+    return programs;
+  }
   Never fail(String code, String message, Node node) =>
       throw CompilerException(code, message, node.span);
   String canonical(String path) => path.startsWith('quds:') || path == '<input>'
@@ -39,8 +41,9 @@ Map<String, Program> normalizeAugments(Map<String, Program> programs) {
       if (parent == null ||
           !parent.statements
               .whereType<PartDirective>()
-              .any((p) => !p.of && resolve(home, p.uri) == canonical(e.key)))
+              .any((p) => !p.of && resolve(home, p.uri) == canonical(e.key))) {
         fail('E903', 'part of does not match the owning library', ofs.single);
+      }
     }
     groups.putIfAbsent(home, () => []).add(e.key);
   }
@@ -49,11 +52,14 @@ Map<String, Program> normalizeAugments(Map<String, Program> programs) {
   final removed = <ClassDeclaration>{};
   for (final group in groups.values) {
     final classes = <String, ClassDeclaration>{};
-    for (final path in group)
-      for (final c in programs[path]!.statements.whereType<ClassDeclaration>())
+    for (final path in group) {
+      for (final c
+          in programs[path]!.statements.whereType<ClassDeclaration>()) {
         if (c.kind != 'augment') classes.putIfAbsent(c.name, () => c);
+      }
+    }
     final additions = <ClassDeclaration, List<ClassDeclaration>>{};
-    for (final path in group)
+    for (final path in group) {
       for (final aug in programs[path]!
           .statements
           .whereType<ClassDeclaration>()
@@ -62,11 +68,12 @@ Map<String, Program> normalizeAugments(Map<String, Program> programs) {
             aug.mixins.isNotEmpty ||
             aug.interfaces.isNotEmpty ||
             aug.modifiers.isNotEmpty ||
-            aug.annotations.isNotEmpty)
+            aug.annotations.isNotEmpty) {
           fail(
               'E720',
               'augment does not change inheritance, modifiers or annotations',
               aug);
+        }
         final head = aug.name.split('<').first;
         final owner = classes[head];
         if (owner != null) {
@@ -74,30 +81,34 @@ Map<String, Program> normalizeAugments(Map<String, Program> programs) {
               splitTypeList(aug.name.substring(
                           aug.name.indexOf('<') + 1, aug.name.length - 1))
                       .join(',') !=
-                  owner.typeParameters.map((p) => p.name).join(','))
+                  owner.typeParameters.map((p) => p.name).join(',')) {
             fail('E300', 'augment must use the original formal type parameters',
                 aug);
+          }
           additions.putIfAbsent(owner, () => []).add(aug);
           removed.add(aug);
         } else {
           if (aug.fields.isNotEmpty ||
               aug.constructors.isNotEmpty ||
-              aug.cases.isNotEmpty)
+              aug.cases.isNotEmpty) {
             fail(
                 'E910',
                 'External augment cannot add storage, constructors or cases',
                 aug);
-          if (aug.methods.any((m) => m.isStatic && m.conversionKind.isEmpty))
+          }
+          if (aug.methods.any((m) => m.isStatic && m.conversionKind.isEmpty)) {
             fail(
                 'E910',
                 'External static augment members need further conformance',
                 aug);
+          }
           if (aug.methods.any((m) => m.visibility.isNotEmpty) ||
-              aug.properties.any((p) => p.visibility.isNotEmpty))
+              aug.properties.any((p) => p.visibility.isNotEmpty)) {
             fail(
                 'E910',
                 'External augment members cannot grant private or protected access',
                 aug);
+          }
           final id = sha256Hex(utf8.encode(_augmentationIdentity(aug)))
               .substring(0, 12);
           extensions[aug] = ExtensionDeclaration(
@@ -105,6 +116,7 @@ Map<String, Program> normalizeAugments(Map<String, Program> programs) {
               typeParameters: aug.typeParameters, properties: aug.properties);
         }
       }
+    }
     for (final e in additions.entries) {
       final c = e.key;
       final fields = [...c.fields, for (final a in e.value) ...a.fields];
@@ -118,28 +130,37 @@ Map<String, Program> normalizeAugments(Map<String, Program> programs) {
         for (final a in e.value) ...a.constructors
       ];
       final names = <String>{};
-      for (final field in fields)
-        if (!names.add(field.name))
+      for (final field in fields) {
+        if (!names.add(field.name)) {
           fail('E201', 'Duplicate augmented member: ${field.name}', field);
-      for (final property in properties)
-        if (!names.add(property.name))
+        }
+      }
+      for (final property in properties) {
+        if (!names.add(property.name)) {
           fail(
               'E201', 'Duplicate augmented member: ${property.name}', property);
-      for (final method in methods)
+        }
+      }
+      for (final method in methods) {
         if (method.conversionKind.isEmpty &&
             !names.add(method.isOperator
                 ? 'operator ${method.name}/${method.parameters.length}'
-                : method.name))
+                : method.name)) {
           fail('E201', 'Duplicate augmented member: ${method.name}', method);
+        }
+      }
       final ctors = <String>{};
-      for (final ctor in constructors)
-        if (!ctors.add(ctor.name ?? ''))
+      for (final ctor in constructors) {
+        if (!ctors.add(ctor.name ?? '')) {
           fail('E201', 'Duplicate augmented constructor', ctor);
-      if (const {'enum', 'sealedType', 'extensionType'}.contains(c.kind))
+        }
+      }
+      if (const {'enum', 'sealedType', 'extensionType'}.contains(c.kind)) {
         fail(
             'E910',
             'This declaration cannot merge augment storage or bodies yet',
             e.value.first);
+      }
       replacements[c] = ClassDeclaration(
           c.name, c.kind, fields, methods, c.cases, c.annotations, c.span,
           superclass: c.superclass,
@@ -204,9 +225,10 @@ List<Statement> _extractConversions(Statement node) {
               .hasMatch(signature)),
       ...method.typeParameters
     ];
-    if (generics.map((p) => p.name).toSet().length != generics.length)
+    if (generics.map((p) => p.name).toSet().length != generics.length) {
       throw CompilerException(
           'E300', 'Duplicate conversion type parameter', method.span);
+    }
     final endpoints = [method.parameters.single.type, method.returnType!];
     final head = owner.split('<').first;
     if (!endpoints.any((t) =>
@@ -214,12 +236,14 @@ List<Statement> _extractConversions(Statement node) {
             .replaceFirst(RegExp(r'\?$'), '')
             .split('<')
             .first ==
-        head))
+        head)) {
       throw CompilerException('E300',
           'One conversion endpoint must be its declaring type', method.span);
-    if (endpoints[0] == endpoints[1])
+    }
+    if (endpoints[0] == endpoints[1]) {
       throw CompilerException(
           'E300', 'An identity conversion cannot be redefined', method.span);
+    }
     final id =
         sha256Hex(utf8.encode(_augmentationIdentity(method))).substring(0, 12);
     helpers.add(FunctionDeclaration('\$QudsCast$id', method.parameters,

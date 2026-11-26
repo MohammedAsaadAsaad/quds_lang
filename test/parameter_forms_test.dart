@@ -40,8 +40,9 @@ void main() {
       final saved = jsonDecode(file.readAsStringSync()) as Map<String, dynamic>;
       saved['abi'] = 'provider-defaults-v4';
       final paths = (saved['paths'] as List).cast<String>();
-      if (paths.length == 1 && paths.single == provider.path)
+      if (paths.length == 1 && paths.single == provider.path) {
         saved['output'] = sha256Hex(utf8.encode(legacy));
+      }
       file.writeAsStringSync(jsonEncode(saved));
     }
     final run = await Process.run(Platform.resolvedExecutable,

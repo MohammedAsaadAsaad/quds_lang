@@ -99,8 +99,9 @@ Compilation relocateGeneratedLibraries(Compilation result, String directory) {
         for (final name in names) {
           for (final kind in ['import', 'export']) {
             final prefix = "$kind '$name'";
-            if (line.startsWith(prefix))
+            if (line.startsWith(prefix)) {
               return "$kind '$directory$name'${line.substring(prefix.length)}";
+            }
           }
         }
         return line;
@@ -146,8 +147,9 @@ Compilation compile(String source,
   final framework =
       flutter ?? (sourcePath != '<input>' && packageUsesFlutter(sourcePath));
   final target = targetPlatform ?? (framework ? 'flutter' : 'vm');
-  if (!{'vm', 'web', 'flutter'}.contains(target))
+  if (!{'vm', 'web', 'flutter'}.contains(target)) {
     throw ArgumentError.value(target, 'targetPlatform');
+  }
   final selector = Analyzer(
       file: sourcePath,
       targetPlatform: target,
@@ -187,12 +189,13 @@ Compilation compile(String source,
       sourcePath != '<input>' && packageDependsOnMeta(sourcePath);
   final emitter = DartEmitter(semantics);
   final dart = emitter.emit(program);
-  if (!emitDart)
+  if (!emitDart) {
     return Compilation(program, semantics, '',
         dependencies: [
           for (final key in libraries.keys)
             if (!key.startsWith('quds:')) key,
         ]..sort());
+  }
   final generated = file.endsWith('.quds')
       ? '${file.substring(0, file.length - 5)}.dart'
       : 'out.dart';
@@ -268,8 +271,9 @@ Iterable<Statement> _activeStatements(
     List<Statement> statements, Analyzer selector) sync* {
   for (final statement in statements) {
     if (statement is WhenStatement) {
-      if (selector.compileTimeCondition(statement.condition) == true)
+      if (selector.compileTimeCondition(statement.condition) == true) {
         yield* _activeStatements(statement.body, selector);
+      }
     } else if (statement is ImportDeclaration &&
         statement.condition != null &&
         selector.compileTimeCondition(statement.condition!) == false) {

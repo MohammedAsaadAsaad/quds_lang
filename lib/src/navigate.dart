@@ -556,8 +556,9 @@ String? _libraryHover(SemanticModel model, Symbol? symbol) {
   if (signature == null && documentation == null) return null;
   if (documentation == null) return signature;
   if (signature == null) return _markdownHover('', documentation, 'quds');
-  if (symbol.external)
+  if (symbol.external) {
     return nativeDocumentationHover(signature, documentation);
+  }
   return _markdownHover(signature, documentation, 'quds');
 }
 
@@ -773,8 +774,9 @@ String? _valueHover(String name, String? type, {required bool mutable}) {
 }
 
 (int, int) _memberKind(SemanticModel model, MemberAccess node) {
-  if (model.loopContextMembers.containsKey(node))
+  if (model.loopContextMembers.containsKey(node)) {
     return (_property, _bits(readonly: true));
+  }
   final found = _findMember(model, node);
   switch (found) {
     case _PropertyFound(:final declaration):

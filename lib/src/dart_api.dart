@@ -544,12 +544,14 @@ _Loaded _load(File entry, {String? from}) {
       }
       if (directive.$2.isNotEmpty || directive.$3.isNotEmpty) {
         for (final name in names.keys.toList()) {
-          if (keeps(name) || identical(names[name], beforeNames[name]))
+          if (keeps(name) || identical(names[name], beforeNames[name])) {
             continue;
-          if (beforeNames.containsKey(name))
+          }
+          if (beforeNames.containsKey(name)) {
             names[name] = beforeNames[name]!;
-          else
+          } else {
             names.remove(name);
+          }
         }
         // Hidden bases still provide inherited signatures, but cannot replace
         // an already visible, unrelated class with the same spelling.
@@ -589,11 +591,12 @@ _Loaded _load(File entry, {String? from}) {
             : substituteDartType(parameter.value, substitution);
         index++;
       }
-      if (base.listElement != null)
+      if (base.listElement != null) {
         type.listElement ??= substituteDartType(
           base.listElement!,
           substitution,
         );
+      }
       type.superNames.addAll(base.superNames);
       type.instantiatedSupers.addAll(
         base.instantiatedSupers.map((s) => substituteDartType(s, substitution)),
@@ -719,8 +722,9 @@ _Loaded _load(File entry, {String? from}) {
   };
   final expandedTypes = <String, String>{};
   String expand(String type, [Set<String> active = const {}]) {
-    if (active.isEmpty && expandedTypes.containsKey(type))
+    if (active.isEmpty && expandedTypes.containsKey(type)) {
       return expandedTypes[type]!;
+    }
     var result = type;
     for (final entry in aliases.entries) {
       if (active.contains(entry.key) || !result.contains(entry.key)) continue;
@@ -1123,13 +1127,15 @@ class _Parser {
     final hidden = <String>{};
     Set<String>? filter;
     while (i < tokens.length && peek != ';') {
-      if (tokens[i].kind == 's' && uri == null)
+      if (tokens[i].kind == 's' && uri == null) {
         uri = tokens[i].text;
-      else if (peek == 'show')
+      } else if (peek == 'show') {
         filter = shown;
-      else if (peek == 'hide')
+      } else if (peek == 'hide') {
         filter = hidden;
-      else if (filter != null && isIdent) filter.add(peek);
+      } else if (filter != null && isIdent) {
+        filter.add(peek);
+      }
       i++;
     }
     if (peek == ';') i++;
@@ -1137,7 +1143,9 @@ class _Parser {
         (uri.contains(':') &&
             !uri.startsWith('package:') &&
             !uri.startsWith('dart:')) ||
-        uri.contains('\\')) return;
+        uri.contains('\\')) {
+      return;
+    }
     if (kind == 'part') parts.add(uri);
     if (kind == 'export') exports.add((uri, shown, hidden));
   }
@@ -1225,16 +1233,18 @@ class _Parser {
           final raw = _rawType();
           final head = _head(raw);
           if (head.isNotEmpty && edgeKind != 'on') {
-            if (edgeKind == 'extends' || edgeKind == 'with')
+            if (edgeKind == 'extends' || edgeKind == 'with') {
               type.implementationSupers.add(raw);
+            }
             type.supers.add(raw);
             type.instantiatedSupers.add(raw);
             type.superNames.add(head);
           }
           final list =
               RegExp(r'^(?:List|TypedDataList)<(.+)>$').firstMatch(raw);
-          if (list != null)
+          if (list != null) {
             type.listElement = _simplify(list.group(1)!, params);
+          }
           if (peek == ',') {
             i++;
             continue;
@@ -1253,8 +1263,9 @@ class _Parser {
     if (!type.hasConstructor &&
         kind == 'class' &&
         !modifiers.contains('abstract') &&
-        !modifiers.contains('sealed'))
+        !modifiers.contains('sealed')) {
       type.constructors[''] = _noted(type.name, type.name, at, _declarationDoc);
+    }
     for (final entry in type.constructors.entries.toList()) {
       final m = entry.value;
       type.constructors[entry.key] = DartMember(
@@ -1436,8 +1447,9 @@ class _Parser {
       final own = peek == '<' ? _typeParameters() : const <String, String>{};
       final scope = {...params, ...own};
       if (member.startsWith('_')) {
-        if (peek != '(' && !isStatic)
+        if (peek != '(' && !isStatic) {
           type.fields[member] = _simplify(leading, scope);
+        }
         _skipMember();
         if (i == before) i++;
         continue;

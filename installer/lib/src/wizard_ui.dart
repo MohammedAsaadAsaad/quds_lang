@@ -955,67 +955,70 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
           width: isSelected ? 1.5 : 1,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(15),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _statusIcon(item.status),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    t(item.nameAr, item.nameEn),
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 112),
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _statusIcon(item.status),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      t(item.nameAr, item.nameEn),
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                ),
-                _statusPill(item.status),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              t(item.detailAr, item.detailEn),
-              style: TextStyle(
-                fontSize: 12.5,
-                color: widget.isDark ? Colors.white70 : Colors.black87,
+                  _statusPill(item.status),
+                ],
               ),
-            ),
-            if (item.path != null) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
-                item.path!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                t(item.detailAr, item.detailEn),
                 style: TextStyle(
-                  fontSize: 11,
-                  fontFamily: 'monospace',
-                  color: widget.isDark ? Colors.white54 : Colors.black54,
+                  fontSize: 12.5,
+                  color: widget.isDark ? Colors.white70 : Colors.black87,
                 ),
               ),
-            ],
-            if (canAssist) ...[
-              const SizedBox(height: 10),
-              Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: TextButton.icon(
-                  key: Key('prereq-help-${item.id}'),
-                  onPressed: () => setState(() => _selectedPrereq = item),
-                  icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
-                  label: Text(
-                    t('مساعد التثبيت القبلي', 'Install Guide'),
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
+              if (item.path != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  item.path!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontFamily: 'monospace',
+                    color: widget.isDark ? Colors.white54 : Colors.black54,
+                  ),
+                ),
+              ],
+              if (canAssist) ...[
+                const SizedBox(height: 10),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: TextButton.icon(
+                    key: Key('prereq-help-${item.id}'),
+                    onPressed: () => setState(() => _selectedPrereq = item),
+                    icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
+                    label: Text(
+                      t('مساعد التثبيت القبلي', 'Install Guide'),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

@@ -46,7 +46,6 @@ class QudsPalette {
         style: FilledButton.styleFrom(
           backgroundColor: domeGold,
           foregroundColor: midnightBg,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -92,7 +91,6 @@ class QudsPalette {
         style: FilledButton.styleFrom(
           backgroundColor: deepBlue,
           foregroundColor: Colors.white,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),

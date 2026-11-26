@@ -86,8 +86,7 @@ class _InstallerWizardScreen extends StatefulWidget {
   State<_InstallerWizardScreen> createState() => _InstallerWizardScreenState();
 }
 
-class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
-    with SingleTickerProviderStateMixin {
+class _InstallerWizardScreenState extends State<_InstallerWizardScreen> {
   int _step = 0; // 0: Scan, 1: Options, 2: Installing, 3: Complete
   bool _scanning = true;
   SystemReport? _report;
@@ -106,6 +105,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
   bool _addToPath = true;
   bool _removeLegacy = false;
   bool _installEditors = true;
+  bool _showAllEditors = false;
   final Set<String> _selectedEditors = {};
   bool _runVerification = true;
 
@@ -116,27 +116,29 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
   final List<LogEntry> _installLogs = [];
   final ScrollController _logScrollController = ScrollController();
 
-  // Subtle ambient animation for the Quds brand emblem
-  late final AnimationController _pulseController;
-
   String t(String ar, String en) => widget.isArabic ? ar : en;
+
+  Color get _border =>
+      widget.isDark ? QudsPalette.darkBorder : QudsPalette.lightBorder;
+  Color get _textPrimary => widget.isDark
+      ? QudsPalette.darkTextPrimary
+      : QudsPalette.lightTextPrimary;
+  Color get _textSecondary => widget.isDark
+      ? QudsPalette.darkTextSecondary
+      : QudsPalette.lightTextSecondary;
+  Color get _textMuted =>
+      widget.isDark ? QudsPalette.darkTextMuted : QudsPalette.lightTextMuted;
+  Color get _surface =>
+      widget.isDark ? QudsPalette.darkSurface : QudsPalette.lightSurface;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2800),
-    );
-    if (widget.enableAmbientAnimations) {
-      _pulseController.repeat(reverse: true);
-    }
     _runScan();
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
     _versionController.dispose();
     _localPathController.dispose();
     _logScrollController.dispose();
@@ -144,9 +146,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
   }
 
   Future<void> _runScan() async {
-    setState(() {
-      _scanning = true;
-    });
+    setState(() => _scanning = true);
     final report = await widget.analyzer.scan();
     if (!mounted) return;
     setState(() {
@@ -163,7 +163,6 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
           _selectedEditors.add(editor.id);
         }
       }
-      // Auto-focus prerequisite assistant if Dart SDK is missing or outdated.
       if (!report.canInstallQuds) {
         _selectedPrereq = report.dartCheck;
       } else if (_selectedPrereq?.id == 'dart') {
@@ -232,7 +231,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
           if (_logScrollController.hasClients) {
             _logScrollController.animateTo(
               _logScrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 180),
+              duration: const Duration(milliseconds: 160),
               curve: Curves.easeOut,
             );
           }
@@ -264,32 +263,27 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isDark = widget.isDark;
-    final borderColor = isDark
-        ? QudsPalette.midnightBorder
-        : QudsPalette.lightBorder;
-
     return Scaffold(
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 860;
+          final sidebarWidth = constraints.maxWidth < 860 ? 204.0 : 236.0;
           return Row(
             children: [
-              _buildSidebar(compact: compact, borderColor: borderColor),
+              _buildSidebar(width: sidebarWidth),
               Expanded(
                 child: Column(
                   children: [
-                    _buildTopBar(borderColor),
+                    _buildTopBar(),
                     Expanded(
                       child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 280),
+                        duration: const Duration(milliseconds: 220),
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
                         transitionBuilder: (child, animation) => FadeTransition(
                           opacity: animation,
                           child: SlideTransition(
                             position: Tween<Offset>(
-                              begin: const Offset(0, 0.02),
+                              begin: const Offset(0, 0.015),
                               end: Offset.zero,
                             ).animate(animation),
                             child: child,
@@ -301,7 +295,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                         ),
                       ),
                     ),
-                    _buildBottomBar(borderColor),
+                    _buildBottomBar(),
                   ],
                 ),
               ),
@@ -312,280 +306,194 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     );
   }
 
-  Widget _buildSidebar({required bool compact, required Color borderColor}) {
-    final isDark = widget.isDark;
-    final width = compact ? 220.0 : 272.0;
-
+  // ---------------------------------------------------------------------------
+  // Calm Minimal Sidebar
+  // ---------------------------------------------------------------------------
+  Widget _buildSidebar({required double width}) {
     final steps = [
-      (
-        icon: Icons.radar_rounded,
-        titleAr: 'فحص النظام',
-        titleEn: 'System Analysis',
-        subAr: 'الأدوات والمتطلبات',
-        subEn: 'SDKs & prerequisites',
-      ),
-      (
-        icon: Icons.tune_rounded,
-        titleAr: 'خيارات التثبيت',
-        titleEn: 'Customize Setup',
-        subAr: 'المصدر والمحررات',
-        subEn: 'Source & editors',
-      ),
-      (
-        icon: Icons.downloading_rounded,
-        titleAr: 'التثبيت المباشر',
-        titleEn: 'Installing',
-        subAr: 'التقدم والسجل الحي',
-        subEn: 'Live progress & logs',
-      ),
-      (
-        icon: Icons.verified_rounded,
-        titleAr: 'جاهز للانطلاق',
-        titleEn: 'Complete',
-        subAr: 'البداية السريعة',
-        subEn: 'Quick start guide',
-      ),
+      (t('فحص النظام', 'System Analysis')),
+      (t('خيارات التثبيت', 'Setup Options')),
+      (t('التثبيت', 'Installing')),
+      (t('جاهز للانطلاق', 'Complete')),
     ];
 
     return Container(
       width: width,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: isDark
-              ? const [Color(0xFF0A162C), Color(0xFF071122)]
-              : const [Color(0xFFFFFFFF), Color(0xFFEAF2FC)],
-        ),
-        border: BorderDirectional(end: BorderSide(color: borderColor)),
+        color: widget.isDark
+            ? QudsPalette.darkSidebar
+            : QudsPalette.lightSidebar,
+        border: BorderDirectional(end: BorderSide(color: _border)),
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+          padding: const EdgeInsets.fromLTRB(18, 26, 18, 18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Brand header with animated Quds logo
-              Center(
-                child: AnimatedBuilder(
-                  animation: _pulseController,
-                  builder: (context, child) {
-                    final glow = 0.20 + (_pulseController.value * 0.22);
-                    return Container(
-                      width: 82,
-                      height: 82,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF0E2144), Color(0xFF081429)],
-                        ),
-                        border: Border.all(
-                          color: QudsPalette.domeGold.withValues(alpha: 0.55),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: QudsPalette.domeGold.withValues(alpha: glow),
-                            blurRadius: 22,
-                            spreadRadius: 1,
-                          ),
-                        ],
+              // Clean brand mark (no neon glow)
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0A1426),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: QudsPalette.domeGold.withValues(alpha: 0.38),
                       ),
-                      child: child,
-                    );
-                  },
-                  child: Image.asset(
-                    'assets/quds_logo.png',
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                t('مثبّت لغة قدس', 'Quds Installer'),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: isDark ? Colors.white : QudsPalette.midnightBg,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: QudsPalette.domeGold.withValues(
-                      alpha: isDark ? 0.16 : 0.22,
                     ),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(
-                      color: QudsPalette.domeGold.withValues(alpha: 0.45),
+                    child: Image.asset(
+                      'assets/quds_logo.png',
+                      fit: BoxFit.contain,
                     ),
                   ),
-                  child: Text(
-                    'Quds $defaultQudsVersion',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: isDark
-                          ? QudsPalette.warmGold
-                          : QudsPalette.midnightBg,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t('مثبّت لغة قدس', 'Quds Installer'),
+                          style: TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w700,
+                            color: _textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _report == null
+                              ? defaultQudsVersion
+                              : '$defaultQudsVersion · ${_report!.osLabel}',
+                          textDirection: TextDirection.ltr,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11.5, color: _textMuted),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                ],
               ),
-              if (_report != null) ...[
-                const SizedBox(height: 10),
-                Center(child: _osBadge(_report!.os, _report!.osLabel)),
-              ],
-              const SizedBox(height: 24),
-              // Vertical stepper rail
+              const SizedBox(height: 30),
+
+              // Minimal numbered stepper
               Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: List.generate(steps.length, (index) {
-                      final item = steps[index];
-                      final isActive = _step == index;
-                      final isCompleted = _step > index;
-                      final canTap =
-                          !_installing &&
-                          index <= 1 &&
-                          (index == 0 || (_report?.canInstallQuds ?? false));
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: InkWell(
-                          onTap: canTap
-                              ? () => setState(() => _step = index)
-                              : null,
-                          borderRadius: BorderRadius.circular(14),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 11,
-                            ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(14),
-                              color: isActive
-                                  ? (isDark
-                                        ? QudsPalette.royalBlue.withValues(
-                                            alpha: 0.22,
-                                          )
-                                        : QudsPalette.deepBlue.withValues(
-                                            alpha: 0.10,
-                                          ))
-                                  : Colors.transparent,
-                              border: Border.all(
-                                color: isActive
-                                    ? (isDark
-                                          ? QudsPalette.domeGold.withValues(
-                                              alpha: 0.65,
-                                            )
-                                          : QudsPalette.deepBlue.withValues(
-                                              alpha: 0.45,
-                                            ))
-                                    : Colors.transparent,
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 220),
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
+                child: Column(
+                  children: List.generate(steps.length, (index) {
+                    final isActive = _step == index;
+                    final isCompleted = _step > index;
+                    final canTap =
+                        !_installing &&
+                        index <= 1 &&
+                        (index == 0 || (_report?.canInstallQuds ?? false));
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: InkWell(
+                        onTap: canTap
+                            ? () => setState(() => _step = index)
+                            : null,
+                        borderRadius: BorderRadius.circular(10),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            color: isActive
+                                ? (widget.isDark
+                                      ? Colors.white.withValues(alpha: 0.06)
+                                      : QudsPalette.deepBlue.withValues(
+                                          alpha: 0.07,
+                                        ))
+                                : Colors.transparent,
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 22,
+                                height: 22,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: isCompleted
+                                      ? QudsPalette.okGreen
+                                      : isActive
+                                      ? (widget.isDark
+                                            ? QudsPalette.domeGold
+                                            : QudsPalette.deepBlue)
+                                      : Colors.transparent,
+                                  border: Border.all(
                                     color: isCompleted
                                         ? QudsPalette.okGreen
                                         : isActive
-                                        ? QudsPalette.domeGold
-                                        : (isDark
-                                              ? QudsPalette.midnightCard
-                                              : const Color(0xFFE2EBF8)),
-                                  ),
-                                  child: Icon(
-                                    isCompleted
-                                        ? Icons.check_rounded
-                                        : item.icon,
-                                    size: 17,
-                                    color: isCompleted
-                                        ? Colors.white
-                                        : isActive
-                                        ? QudsPalette.midnightBg
-                                        : (isDark
-                                              ? Colors.white70
-                                              : QudsPalette.deepBlue),
+                                        ? Colors.transparent
+                                        : _border,
                                   ),
                                 ),
-                                const SizedBox(width: 11),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        t(item.titleAr, item.titleEn),
-                                        style: TextStyle(
-                                          fontSize: 13.5,
-                                          fontWeight: isActive
-                                              ? FontWeight.w800
-                                              : FontWeight.w600,
-                                          color: isActive
-                                              ? (isDark
-                                                    ? Colors.white
-                                                    : QudsPalette.deepBlue)
-                                              : (isDark
-                                                    ? Colors.white70
-                                                    : Colors.black87),
-                                        ),
-                                      ),
-                                      Text(
-                                        t(item.subAr, item.subEn),
+                                child: isCompleted
+                                    ? const Icon(
+                                        Icons.check_rounded,
+                                        size: 13,
+                                        color: Colors.white,
+                                      )
+                                    : Text(
+                                        '${index + 1}',
                                         style: TextStyle(
                                           fontSize: 11,
-                                          color: isDark
-                                              ? Colors.white54
-                                              : Colors.black54,
+                                          fontWeight: FontWeight.w700,
+                                          color: isActive
+                                              ? (widget.isDark
+                                                    ? QudsPalette.darkCanvas
+                                                    : Colors.white)
+                                              : _textMuted,
                                         ),
                                       ),
-                                    ],
+                              ),
+                              const SizedBox(width: 11),
+                              Expanded(
+                                child: Text(
+                                  steps[index],
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: isActive
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: isActive
+                                        ? _textPrimary
+                                        : _textSecondary,
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                      );
-                    }),
-                  ),
+                      ),
+                    );
+                  }),
                 ),
               ),
-              const Divider(height: 20),
-              // Language & Theme toggles
+
+              const Divider(),
+              const SizedBox(height: 12),
+
+              // Quiet footer controls
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: OutlinedButton(
                       key: const Key('toggle-language-btn'),
                       onPressed: widget.onToggleLanguage,
-                      icon: const Icon(Icons.translate_rounded, size: 16),
-                      label: Text(
-                        widget.isArabic ? 'English' : 'العربية',
-                        style: const TextStyle(fontSize: 12.5),
-                      ),
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 10,
-                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 9),
                       ),
+                      child: Text(widget.isArabic ? 'English' : 'العربية'),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -593,11 +501,18 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                     key: const Key('toggle-theme-btn'),
                     tooltip: t('تبديل المظهر', 'Toggle theme'),
                     onPressed: widget.onToggleTheme,
+                    style: IconButton.styleFrom(
+                      side: BorderSide(color: _border),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
                     icon: Icon(
-                      isDark
-                          ? Icons.light_mode_rounded
-                          : Icons.dark_mode_rounded,
-                      size: 18,
+                      widget.isDark
+                          ? Icons.light_mode_outlined
+                          : Icons.dark_mode_outlined,
+                      size: 17,
+                      color: _textSecondary,
                     ),
                   ),
                 ],
@@ -609,85 +524,46 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     );
   }
 
-  Widget _osBadge(DesktopOs os, String label) {
-    final icon = switch (os) {
-      DesktopOs.windows => Icons.window_rounded,
-      DesktopOs.macos => Icons.laptop_mac_rounded,
-      DesktopOs.linux => Icons.terminal_rounded,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: widget.isDark
-            ? Colors.white.withValues(alpha: 0.06)
-            : QudsPalette.deepBlue.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 14,
-            color: widget.isDark ? Colors.white70 : QudsPalette.deepBlue,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: widget.isDark ? Colors.white70 : QudsPalette.deepBlue,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopBar(Color borderColor) {
+  // ---------------------------------------------------------------------------
+  // Clean Top Header
+  // ---------------------------------------------------------------------------
+  Widget _buildTopBar() {
     final titles = [
       (
-        t('تحليل النظام والمتطلبات القبلية', 'System Analysis & Prerequisites'),
+        t('فحص النظام والمتطلبات', 'System Analysis'),
         t(
-          'نفحص بيئتك تلقائياً لتحديد ما هو جاهز وما يلزم تثبيته لعمل لغة قدس بسلاسة.',
-          'Automatically inspecting your SDKs, PATH, and editors to prepare Quds.',
+          'نراجع أدوات النظام والمحررات قبل بدء التثبيت.',
+          'Checking installed SDKs, PATH, and editors before setup.',
         ),
       ),
       (
+        t('خيارات التثبيت', 'Customize Setup'),
         t(
-          'تخصيص التثبيت وإضافات المحررات',
-          'Customize Installation & Editor Support',
-        ),
-        t(
-          'اختر مصدر التثبيت والمحررات التي تريد تفعيل دعم لغة قدس فيها.',
-          'Choose the install source, PATH setup, and editor extensions to configure.',
+          'اختر مصدر الحزمة وإعدادات النظام والمحررات.',
+          'Configure package source, PATH, and editor extensions.',
         ),
       ),
       (
-        t('جارٍ تثبيت وتهيئة لغة قدس', 'Installing & Configuring Quds'),
+        t('جارٍ التثبيت', 'Installing Quds'),
         t(
-          'تابع تقدم كل خطوة ومخرجات الطرفية مباشرة في الوقت الحقيقي.',
-          'Watch each installation phase and live command output in real time.',
+          'تُنفّذ الخطوات وتُعرض المخرجات مباشرة.',
+          'Running setup steps with live output below.',
         ),
       ),
       (
+        t('اكتمل التثبيت', 'Installation Complete'),
         t(
-          'اكتمل التثبيت — أهلاً بك في لغة قدس!',
-          'Installation Complete — Welcome to Quds!',
-        ),
-        t(
-          'بيئتك جاهزة الآن لكتابة مشاريع Dart و Flutter بلغة قدس.',
-          'Your machine is ready to build Dart and Flutter projects in Quds.',
+          'لغة قدس جاهزة للعمل على جهازك.',
+          'Quds is configured and ready to use.',
         ),
       ),
     ];
     final current = titles[_step];
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: borderColor)),
+        border: Border(bottom: BorderSide(color: _border)),
       ),
       child: Row(
         children: [
@@ -697,18 +573,16 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
               children: [
                 Text(
                   current.$1,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
+                  style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: _textPrimary,
                   ),
                 ),
-                const SizedBox(height: 3),
+                const SizedBox(height: 2),
                 Text(
                   current.$2,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: widget.isDark ? Colors.white60 : Colors.black54,
-                  ),
+                  style: TextStyle(fontSize: 13, color: _textSecondary),
                 ),
               ],
             ),
@@ -719,11 +593,11 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
               onPressed: _scanning || _runningPrereq ? null : _runScan,
               icon: _scanning
                   ? const SizedBox(
-                      width: 14,
-                      height: 14,
+                      width: 13,
+                      height: 13,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.refresh_rounded, size: 17),
+                  : const Icon(Icons.refresh_rounded, size: 16),
               label: Text(t('إعادة الفحص', 'Re-Scan')),
             ),
         ],
@@ -740,8 +614,18 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     };
   }
 
+  Widget _centeredPage(Widget child) => SingleChildScrollView(
+    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 740),
+        child: child,
+      ),
+    ),
+  );
+
   // ---------------------------------------------------------------------------
-  // Step 1: System Analysis & Prerequisite Guidance
+  // Step 1: Calm Unified Checklist & Prerequisite Assistant
   // ---------------------------------------------------------------------------
   Widget _buildStepScan() {
     if (_scanning && _report == null) {
@@ -749,31 +633,22 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SizedBox(
-              width: 72,
-              height: 72,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  const SizedBox(
-                    width: 72,
-                    height: 72,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3.5,
-                      color: QudsPalette.domeGold,
-                    ),
-                  ),
-                  Image.asset('assets/quds_logo.png', width: 42, height: 42),
-                ],
+            const SizedBox(
+              width: 32,
+              height: 32,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                color: QudsPalette.domeGold,
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             Text(
-              t(
-                'جارٍ فحص النظام والأدوات والمحررات...',
-                'Scanning your system, SDKs, and editors...',
+              t('جارٍ فحص النظام...', 'Analyzing your environment...'),
+              style: TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w500,
+                color: _textSecondary,
               ),
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -782,298 +657,365 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
 
     final report = _report!;
     final ready = report.canInstallQuds;
+    final detectedEditors = report.detectedEditors;
+    final hiddenCount = report.editors.length - detectedEditors.length;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+    return _centeredPage(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Status Hero Card
+          // Quiet single-line status banner
           Container(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: ready
-                    ? (widget.isDark
-                          ? const [Color(0xFF0E2942), Color(0xFF102A38)]
-                          : const [Color(0xFFE9F5FF), Color(0xFFECFAF2)])
-                    : (widget.isDark
-                          ? const [Color(0xFF2B1F12), Color(0xFF1A1829)]
-                          : const [Color(0xFFFFF5E5), Color(0xFFFFEFEF)]),
-              ),
+              color: (ready ? QudsPalette.okGreen : QudsPalette.warnAmber)
+                  .withValues(alpha: widget.isDark ? 0.08 : 0.09),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: (ready ? QudsPalette.okGreen : QudsPalette.warnAmber)
-                    .withValues(alpha: 0.45),
+                    .withValues(alpha: 0.28),
               ),
             ),
             child: Row(
               children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: QudsPalette.midnightBg,
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(
-                      color: QudsPalette.domeGold.withValues(alpha: 0.6),
-                    ),
-                  ),
-                  child: Image.asset('assets/quds_logo.png'),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        ready
-                            ? t(
-                                'نظامك جاهز لتثبيت لغة قدس!',
-                                'Your system is ready to install Quds!',
-                              )
-                            : t(
-                                'يلزم تثبيت أو تحديث Dart SDK (3.3+) أولاً',
-                                'Dart SDK 3.3+ is required before installing Quds',
-                              ),
-                        style: const TextStyle(
-                          fontSize: 16.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        ready
-                            ? t(
-                                'تم العثور على Dart ${report.dartCheck.version} و ${report.detectedEditors.length} محرر/بيئة تطوير على ${report.osLabel}.',
-                                'Found Dart ${report.dartCheck.version} and ${report.detectedEditors.length} editor(s) on ${report.osLabel}.',
-                              )
-                            : t(
-                                'استخدم مساعد المتطلبات بالأسفل لتثبيت Dart SDK بنقرة واحدة أو نسخ أمر التثبيت ثم أعد الفحص.',
-                                'Use the Prerequisite Assistant below to install Dart SDK or copy the command, then click Re-Scan.',
-                              ),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: widget.isDark
-                              ? Colors.white70
-                              : Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
+                Icon(
+                  ready
+                      ? Icons.check_circle_rounded
+                      : Icons.info_outline_rounded,
+                  size: 19,
+                  color: ready ? QudsPalette.okGreen : QudsPalette.warnAmber,
                 ),
                 const SizedBox(width: 12),
-                _statusPill(
-                  ready ? CheckStatus.ready : CheckStatus.missing,
-                  customAr: ready ? 'جاهز للتثبيت' : 'متطلب ناقص',
-                  customEn: ready ? 'Ready' : 'Action needed',
+                Expanded(
+                  child: Text(
+                    ready
+                        ? t(
+                            'نظامك جاهز لتثبيت لغة قدس — Dart ${report.dartCheck.version} متوافق و${detectedEditors.length} محررات مكتشفة.',
+                            'Your system is ready — Dart ${report.dartCheck.version} is compatible and ${detectedEditors.length} editor(s) detected.',
+                          )
+                        : t(
+                            'يلزم تثبيت أو تحديث Dart SDK 3.3+ قبل المتابعة. استخدم المساعد بالأسفل.',
+                            'Dart SDK 3.3+ is required before continuing. Use the assistant below.',
+                          ),
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w500,
+                      color: _textPrimary,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
 
-          const SizedBox(height: 20),
-          Text(
-            t('الأدوات الأساسية والمتطلبات', 'Core Tools & Requirements'),
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 22),
 
-          // Core checks grid
-          LayoutBuilder(
-            builder: (context, box) {
-              final twoCols = box.maxWidth >= 660;
-              final itemWidth = twoCols
-                  ? (box.maxWidth - 12) / 2
-                  : box.maxWidth;
-              return Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  for (final item in report.coreChecks)
-                    SizedBox(width: itemWidth, child: _buildCheckCard(item)),
-                  SizedBox(width: box.maxWidth, child: _buildPathCard(report)),
-                ],
-              );
-            },
+          // Unified environment checklist card
+          _sectionLabel(t('بيئة النظام', 'Environment')),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                _buildCheckRow(report.dartCheck),
+                const Divider(),
+                _buildQudsRow(report),
+                const Divider(),
+                _buildCheckRow(report.gitCheck),
+                const Divider(),
+                _buildCheckRow(report.flutterCheck),
+                const Divider(),
+                _buildPathRow(report),
+              ],
+            ),
           ),
 
-          // Prerequisite Helper Panel
+          // Prerequisite Helper Panel (shown when required or requested)
           if (_selectedPrereq != null && _selectedPrereq!.action != null) ...[
             const SizedBox(height: 18),
             _buildPrerequisiteHelper(_selectedPrereq!),
           ],
 
           const SizedBox(height: 22),
+
+          // Clean detected editors strip (no noise from undetected tools)
           Row(
             children: [
-              Text(
-                t('المحررات والبيئات المكتشفة', 'Detected Editors & IDEs'),
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
+              _sectionLabel(t('المحررات المكتشفة', 'Detected Editors')),
               const SizedBox(width: 8),
-              Text(
-                '(${report.detectedEditors.length}/${report.editors.length})',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: widget.isDark ? Colors.white54 : Colors.black54,
+              if (hiddenCount > 0)
+                Text(
+                  t(
+                    '($hiddenCount أخرى غير مثبّتة)',
+                    '($hiddenCount not installed)',
+                  ),
+                  style: TextStyle(fontSize: 12, color: _textMuted),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: report.editors.map(_buildEditorChip).toList(),
+          if (detectedEditors.isEmpty)
+            Text(
+              t(
+                'لم يُكتشف محرر مدعوم حالياً — يمكنك تثبيت الإضافات لاحقاً عبر quds install.',
+                'No supported editors detected yet — you can run `quds install` later.',
+              ),
+              style: TextStyle(fontSize: 13, color: _textSecondary),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: detectedEditors.map(_buildEditorPill).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(String text) => Text(
+    text,
+    style: TextStyle(
+      fontSize: 12.5,
+      fontWeight: FontWeight.w600,
+      color: _textSecondary,
+    ),
+  );
+
+  Widget _buildCheckRow(SystemCheckItem item) {
+    final canAssist = item.action != null && item.status != CheckStatus.ready;
+    final (dotColor, statusText) = switch (item.status) {
+      CheckStatus.ready => (QudsPalette.okGreen, t('جاهز', 'Ready')),
+      CheckStatus.warning => (QudsPalette.warnAmber, t('تحديث', 'Update')),
+      CheckStatus.missing => (QudsPalette.errRed, t('مطلوب', 'Missing')),
+      CheckStatus.optional => (_textMuted, t('اختياري', 'Optional')),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(
+        children: [
+          _statusDot(dotColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      t(item.nameAr, item.nameEn),
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: _textPrimary,
+                      ),
+                    ),
+                    if (item.version != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        item.version!,
+                        style: TextStyle(
+                          fontFamily: QudsPalette.fontMono,
+                          fontSize: 11.5,
+                          color: _textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  t(item.detailAr, item.detailEn),
+                  style: TextStyle(fontSize: 12, color: _textSecondary),
+                ),
+              ],
+            ),
+          ),
+          if (canAssist) ...[
+            TextButton(
+              key: Key('prereq-help-${item.id}'),
+              onPressed: () => setState(() => _selectedPrereq = item),
+              child: Text(t('مساعد التثبيت', 'Install Guide')),
+            ),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            statusText,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: dotColor,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCheckCard(SystemCheckItem item) {
-    final canAssist = item.action != null && item.status != CheckStatus.ready;
-    final isSelected = _selectedPrereq?.id == item.id;
+  Widget _buildQudsRow(SystemReport report) {
+    final item = report.qudsCheck;
+    final installed = item.status == CheckStatus.ready;
+    final dotColor = installed
+        ? QudsPalette.okGreen
+        : (widget.isDark ? QudsPalette.domeGold : QudsPalette.deepBlue);
+    final label = installed
+        ? t('مثبّتة', 'Installed')
+        : report.legacyQudsLangActive
+        ? t('سيُحدّث', 'Will upgrade')
+        : t('سيُثبّت الآن', 'Will install');
 
-    return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: isSelected
-              ? QudsPalette.domeGold
-              : (widget.isDark
-                    ? QudsPalette.midnightBorder
-                    : QudsPalette.lightBorder),
-          width: isSelected ? 1.5 : 1,
-        ),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 112),
-        child: Padding(
-          padding: const EdgeInsets.all(15),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  _statusIcon(item.status),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(
+        children: [
+          _statusDot(dotColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
                       t(item.nameAr, item.nameEn),
-                      style: const TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: _textPrimary,
                       ),
                     ),
-                  ),
-                  _statusPill(item.status),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                t(item.detailAr, item.detailEn),
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: widget.isDark ? Colors.white70 : Colors.black87,
+                    if (item.version != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        item.version!,
+                        style: TextStyle(
+                          fontFamily: QudsPalette.fontMono,
+                          fontSize: 11.5,
+                          color: _textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-              ),
-              if (item.path != null) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: 2),
                 Text(
-                  item.path!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontFamily: 'monospace',
-                    color: widget.isDark ? Colors.white54 : Colors.black54,
-                  ),
+                  t(item.detailAr, item.detailEn),
+                  style: TextStyle(fontSize: 12, color: _textSecondary),
                 ),
               ],
-              if (canAssist) ...[
-                const SizedBox(height: 10),
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: TextButton.icon(
-                    key: Key('prereq-help-${item.id}'),
-                    onPressed: () => setState(() => _selectedPrereq = item),
-                    icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
-                    label: Text(
-                      t('مساعد التثبيت القبلي', 'Install Guide'),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
+            ),
           ),
-        ),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: dotColor,
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildPathCard(SystemReport report) {
+  Widget _buildPathRow(SystemReport report) {
     final onPath = report.pubCacheBinOnPath;
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
-        child: Row(
-          children: [
-            _statusIcon(onPath ? CheckStatus.ready : CheckStatus.warning),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    t(
-                      'مسار الأوامر العامة (PATH / pub-cache/bin)',
-                      'Global CLI PATH (pub-cache/bin)',
-                    ),
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
+    final color = onPath ? QudsPalette.okGreen : _textSecondary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(
+        children: [
+          _statusDot(onPath ? QudsPalette.okGreen : QudsPalette.royalBlue),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t('مسار الأوامر العامة (PATH)', 'Global CLI PATH'),
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: _textPrimary,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    onPath
-                        ? t(
-                            'مضاف مسبقاً إلى PATH: ${report.pubCacheBin}',
-                            'Already configured on PATH: ${report.pubCacheBin}',
-                          )
-                        : t(
-                            'سيضيفه المثبّت تلقائياً إلى PATH: ${report.pubCacheBin}',
-                            'Will be added to PATH automatically: ${report.pubCacheBin}',
-                          ),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: widget.isDark ? Colors.white70 : Colors.black87,
-                    ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  report.pubCacheBin,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: QudsPalette.fontMono,
+                    fontSize: 11.5,
+                    color: _textMuted,
                   ),
-                ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            onPath
+                ? t('مضبوط', 'Configured')
+                : t('سيُضبط تلقائياً', 'Auto-configure'),
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusDot(Color color) => Container(
+    width: 8,
+    height: 8,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+
+  Widget _buildEditorPill(EditorStatus editor) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            editor.extensionInstalled
+                ? Icons.check_circle_rounded
+                : Icons.extension_outlined,
+            size: 15,
+            color: editor.extensionInstalled
+                ? QudsPalette.okGreen
+                : _textSecondary,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            editor.name,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: _textPrimary,
+            ),
+          ),
+          if (editor.extensionInstalled) ...[
+            const SizedBox(width: 6),
+            Text(
+              t('مثبّتة', 'Installed'),
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: QudsPalette.okGreen,
               ),
             ),
-            _statusPill(
-              onPath ? CheckStatus.ready : CheckStatus.warning,
-              customAr: onPath ? 'مضبوط' : 'سيُضبط تلقائياً',
-              customEn: onPath ? 'Configured' : 'Will auto-fix',
-            ),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -1082,13 +1024,9 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     final action = item.action!;
     return Card(
       key: const Key('prereq-helper-panel'),
-      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: QudsPalette.domeGold.withValues(alpha: 0.7),
-          width: 1.4,
-        ),
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: QudsPalette.domeGold.withValues(alpha: 0.45)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(18),
@@ -1097,38 +1035,33 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
           children: [
             Row(
               children: [
-                const Icon(
-                  Icons.build_circle_rounded,
-                  color: QudsPalette.domeGold,
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     t(
-                      'مساعد المتطلبات القبلية: ${action.titleAr}',
-                      'Prerequisite Assistant: ${action.titleEn}',
+                      'مساعد المتطلبات القبلية — ${action.titleAr}',
+                      'Prerequisite Assistant — ${action.titleEn}',
                     ),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: _textPrimary,
                     ),
                   ),
                 ),
                 IconButton(
                   tooltip: t('إغلاق', 'Close'),
                   onPressed: () => setState(() => _selectedPrereq = null),
-                  icon: const Icon(Icons.close_rounded, size: 18),
+                  icon: Icon(Icons.close_rounded, size: 17, color: _textMuted),
                 ),
               ],
             ),
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: const Color(0xFF040A15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: QudsPalette.midnightBorder),
+                color: QudsPalette.darkConsole,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: QudsPalette.darkBorder),
               ),
               child: Row(
                 children: [
@@ -1137,7 +1070,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                       action.command,
                       textDirection: TextDirection.ltr,
                       style: const TextStyle(
-                        fontFamily: 'monospace',
+                        fontFamily: QudsPalette.fontMono,
                         fontSize: 12.5,
                         color: QudsPalette.warmGold,
                       ),
@@ -1149,7 +1082,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                         _copyText(action.command, 'أمر التثبيت', 'command'),
                     icon: const Icon(
                       Icons.copy_rounded,
-                      size: 17,
+                      size: 16,
                       color: Colors.white70,
                     ),
                   ),
@@ -1169,44 +1102,41 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                         : () => _runPrerequisiteAction(action),
                     icon: _runningPrereq
                         ? const SizedBox(
-                            width: 15,
-                            height: 15,
+                            width: 14,
+                            height: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              color: QudsPalette.midnightBg,
+                              color: QudsPalette.darkCanvas,
                             ),
                           )
-                        : const Icon(
-                            Icons.download_for_offline_rounded,
-                            size: 18,
-                          ),
+                        : const Icon(Icons.download_rounded, size: 17),
                     label: Text(
                       _runningPrereq
                           ? t('جارٍ التثبيت...', 'Installing...')
-                          : t('تثبيت تلقائي الآن', 'Install Automatically'),
+                          : t('تثبيت تلقائي', 'Install Automatically'),
                     ),
                   ),
                 OutlinedButton.icon(
                   onPressed: () => widget.analyzer.openUrl(action.downloadUrl),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 17),
-                  label: Text(t('فتح الصفحة الرسمية', 'Open Official Guide')),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                  label: Text(t('الدليل الرسمي', 'Official Guide')),
                 ),
                 OutlinedButton.icon(
                   onPressed: _runningPrereq ? null : _runScan,
-                  icon: const Icon(Icons.refresh_rounded, size: 17),
-                  label: Text(t('أعد الفحص الآن', 'Re-Scan Now')),
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: Text(t('إعادة الفحص', 'Re-Scan')),
                 ),
               ],
             ),
             if (_prereqLogs.isNotEmpty) ...[
               const SizedBox(height: 12),
               Container(
-                height: 120,
+                height: 110,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF040A15),
+                  color: QudsPalette.darkConsole,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: QudsPalette.midnightBorder),
+                  border: Border.all(color: QudsPalette.darkBorder),
                 ),
                 child: ListView.builder(
                   itemCount: _prereqLogs.length,
@@ -1220,143 +1150,42 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     );
   }
 
-  Widget _buildEditorChip(EditorStatus editor) {
-    final bg = editor.detected
-        ? (widget.isDark ? QudsPalette.midnightCard : QudsPalette.lightSurface)
-        : (widget.isDark
-              ? Colors.white.withValues(alpha: 0.03)
-              : Colors.black.withValues(alpha: 0.03));
-    final border = editor.extensionInstalled
-        ? QudsPalette.okGreen.withValues(alpha: 0.55)
-        : editor.detected
-        ? QudsPalette.royalBlue.withValues(alpha: 0.55)
-        : (widget.isDark
-              ? QudsPalette.midnightBorder
-              : QudsPalette.lightBorder);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            editor.extensionInstalled
-                ? Icons.check_circle_rounded
-                : editor.detected
-                ? Icons.extension_rounded
-                : Icons.radio_button_unchecked_rounded,
-            size: 16,
-            color: editor.extensionInstalled
-                ? QudsPalette.okGreen
-                : editor.detected
-                ? QudsPalette.domeGold
-                : (widget.isDark ? Colors.white38 : Colors.black38),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                editor.name,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: editor.detected
-                      ? null
-                      : (widget.isDark ? Colors.white54 : Colors.black54),
-                ),
-              ),
-              Text(
-                editor.extensionInstalled
-                    ? t('الإضافة مثبّتة', 'Extension installed')
-                    : editor.detected
-                    ? t(
-                        'مكتشف — جاهز لتثبيت الإضافة',
-                        'Detected — ready for extension',
-                      )
-                    : t('غير مثبّت على الجهاز', 'Not detected'),
-                style: TextStyle(
-                  fontSize: 10.5,
-                  color: widget.isDark ? Colors.white54 : Colors.black54,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   // ---------------------------------------------------------------------------
-  // Step 2: Customize Installation Options
+  // Step 2: Clean Grouped Preferences
   // ---------------------------------------------------------------------------
   Widget _buildStepOptions() {
     final report = _report!;
-    final hasLocalRepo = report.detectedLocalRepo != null;
+    final visibleEditors = _showAllEditors || report.detectedEditors.isEmpty
+        ? report.editors
+        : report.detectedEditors;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+    return _centeredPage(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Source selection
+          _sectionLabel(t('مصدر التثبيت', 'Package Source')),
+          const SizedBox(height: 8),
           Card(
-            margin: EdgeInsets.zero,
             child: Padding(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(
                     children: [
-                      const Icon(
-                        Icons.cloud_download_rounded,
-                        color: QudsPalette.domeGold,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        t('مصدر تثبيت لغة قدس', 'Quds Package Source'),
-                        style: const TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
                       Expanded(
-                        child: _sourceChoiceTile(
+                        child: _sourceSegment(
                           selected: _source == InstallSource.pubDev,
-                          title: t(
-                            'pub.dev الرسمي (موصى به)',
-                            'Official pub.dev (Recommended)',
-                          ),
-                          subtitle: t(
-                            'يثبّت أحدث إصدار مستقر من حزمة quds عالمياً',
-                            'Installs the published `quds` package globally',
-                          ),
+                          title: t('pub.dev الرسمي', 'Official pub.dev'),
                           onTap: () =>
                               setState(() => _source = InstallSource.pubDev),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: _sourceChoiceTile(
+                        child: _sourceSegment(
                           selected: _source == InstallSource.localPath,
-                          title: t('مسار مستودع محلي', 'Local Repository Path'),
-                          subtitle: hasLocalRepo
-                              ? report.detectedLocalRepo!
-                              : t(
-                                  'للمطورين من نسخة Git محلية',
-                                  'For contributors using a local checkout',
-                                ),
+                          title: t('مسار محلي', 'Local Repository'),
                           onTap: () =>
                               setState(() => _source = InstallSource.localPath),
                         ),
@@ -1368,14 +1197,15 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                     TextField(
                       controller: _versionController,
                       textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontFamily: QudsPalette.fontMono,
+                        fontSize: 13,
+                      ),
                       decoration: InputDecoration(
-                        labelText: t(
-                          'إصدار حزمة quds على pub.dev',
-                          'Quds package version on pub.dev',
-                        ),
+                        labelText: t('الإصدار', 'Version'),
                         hintText: defaultQudsVersion,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         isDense: true,
                       ),
@@ -1384,14 +1214,15 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                     TextField(
                       controller: _localPathController,
                       textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontFamily: QudsPalette.fontMono,
+                        fontSize: 13,
+                      ),
                       decoration: InputDecoration(
-                        labelText: t(
-                          'مسار مجلد مستودع quds_lang المحلي',
-                          'Local quds_lang repository path',
-                        ),
+                        labelText: t('مسار المستودع المحلي', 'Local path'),
                         hintText: '/path/to/quds_lang',
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         isDense: true,
                       ),
@@ -1401,139 +1232,145 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
             ),
           ),
 
-          const SizedBox(height: 16),
-
-          // 2. System integration toggles
+          const SizedBox(height: 20),
+          _sectionLabel(t('إعدادات النظام', 'System Configuration')),
+          const SizedBox(height: 8),
           Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    value: _addToPath,
-                    onChanged: (v) => setState(() => _addToPath = v),
-                    title: Text(
-                      t(
-                        'إضافة pub-cache/bin إلى PATH تلقائياً',
-                        'Add pub-cache/bin to user PATH automatically',
-                      ),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
+            child: Column(
+              children: [
+                SwitchListTile(
+                  value: _addToPath,
+                  onChanged: (v) => setState(() => _addToPath = v),
+                  title: Text(
+                    t(
+                      'إضافة pub-cache/bin إلى PATH تلقائياً',
+                      'Add pub-cache/bin to PATH automatically',
                     ),
-                    subtitle: Text(
-                      report.pubCacheBin,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                      ),
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (report.legacyQudsLangActive)
-                    SwitchListTile(
-                      value: _removeLegacy,
-                      onChanged: (v) => setState(() => _removeLegacy = v),
-                      title: Text(
-                        t(
-                          'إزالة التفعيل القديم (quds_lang)',
-                          'Deactivate legacy `quds_lang` global package',
-                        ),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      subtitle: Text(
-                        t(
-                          'يمنع تعارض أمر quds بين الحزمة القديمة والجديدة',
-                          'Prevents command collisions between legacy and new packages',
-                        ),
-                      ),
+                  subtitle: Text(
+                    report.pubCacheBin,
+                    style: TextStyle(
+                      fontFamily: QudsPalette.fontMono,
+                      fontSize: 11.5,
+                      color: _textMuted,
                     ),
+                  ),
+                ),
+                if (report.legacyQudsLangActive) ...[
+                  const Divider(),
                   SwitchListTile(
-                    value: _runVerification,
-                    onChanged: (v) => setState(() => _runVerification = v),
+                    value: _removeLegacy,
+                    onChanged: (v) => setState(() => _removeLegacy = v),
                     title: Text(
                       t(
-                        'التحقق التلقائي بعد التثبيت (quds doctor)',
-                        'Run post-install verification (quds doctor)',
+                        'إزالة الحزمة القديمة quds_lang',
+                        'Remove legacy quds_lang activation',
                       ),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      t(
-                        'يتأكد من جاهزية CLI و Dart SDK وإضافات المحررات',
-                        'Confirms CLI, Dart SDK, and editor support are healthy',
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // 3. Editor extensions card
-          Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _installEditors,
-                    onChanged: (v) => setState(() => _installEditors = v),
-                    title: Text(
-                      t(
-                        'تثبيت إضافات المحررات وبيئات التطوير',
-                        'Install Editor Extensions & IDE Support',
-                      ),
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
+                const Divider(),
+                SwitchListTile(
+                  value: _runVerification,
+                  onChanged: (v) => setState(() => _runVerification = v),
+                  title: Text(
+                    t(
+                      'التحقق التلقائي بعد التثبيت (quds doctor)',
+                      'Verify installation with quds doctor',
                     ),
-                    subtitle: Text(
-                      t(
-                        'يشمل تلوين الصياغة والاختصارات لـ VS Code / Cursor / Windsurf و JetBrains / Android Studio ومهارة Claude Code',
-                        'Includes syntax highlighting & snippets for VS Code / Cursor / Windsurf, JetBrains / Android Studio, and Claude Code',
-                      ),
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (_installEditors) ...[
-                    const Divider(),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: report.editors.map((editor) {
-                        final checked = _selectedEditors.contains(editor.id);
-                        return FilterChip(
-                          selected: checked,
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedEditors.add(editor.id);
-                              } else {
-                                _selectedEditors.remove(editor.id);
-                              }
-                            });
-                          },
-                          avatar: Icon(
-                            editor.detected
-                                ? Icons.check_circle_outline_rounded
-                                : Icons.desktop_windows_rounded,
-                            size: 16,
-                          ),
-                          label: Text(
-                            editor.detected
-                                ? editor.name
-                                : '${editor.name} (${t('غير مكتشف', 'not detected')})',
-                          ),
-                        );
-                      }).toList(),
+                ),
+                const Divider(),
+                SwitchListTile(
+                  value: _installEditors,
+                  onChanged: (v) => setState(() => _installEditors = v),
+                  title: Text(
+                    t(
+                      'تثبيت إضافات المحررات وبيئات التطوير',
+                      'Install editor extensions & IDE support',
                     ),
-                  ],
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    t(
+                      'VS Code / Cursor / Windsurf / JetBrains / Claude Code',
+                      'VS Code / Cursor / Windsurf / JetBrains / Claude Code',
+                    ),
+                    style: TextStyle(fontSize: 12, color: _textSecondary),
+                  ),
+                ),
+                if (_installEditors) ...[
+                  const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: visibleEditors.map((editor) {
+                            final checked = _selectedEditors.contains(
+                              editor.id,
+                            );
+                            return FilterChip(
+                              selected: checked,
+                              onSelected: (selected) {
+                                setState(() {
+                                  if (selected) {
+                                    _selectedEditors.add(editor.id);
+                                  } else {
+                                    _selectedEditors.remove(editor.id);
+                                  }
+                                });
+                              },
+                              label: Text(
+                                editor.name,
+                                style: const TextStyle(fontSize: 12.5),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        if (report.detectedEditors.length <
+                            report.editors.length) ...[
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: () => setState(
+                              () => _showAllEditors = !_showAllEditors,
+                            ),
+                            child: Text(
+                              _showAllEditors
+                                  ? t(
+                                      'إخفاء غير المثبّتة',
+                                      'Hide undetected editors',
+                                    )
+                                  : t(
+                                      'عرض جميع المحررات المدعومة',
+                                      'Show all supported editors',
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
         ],
@@ -1541,66 +1378,44 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     );
   }
 
-  Widget _sourceChoiceTile({
+  Widget _sourceSegment({
     required bool selected,
     required String title,
-    required String subtitle,
     required VoidCallback onTap,
   }) {
+    final activeBorder = widget.isDark
+        ? QudsPalette.domeGold
+        : QudsPalette.deepBlue;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(14),
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(10),
           color: selected
-              ? (widget.isDark
-                    ? QudsPalette.royalBlue.withValues(alpha: 0.22)
-                    : QudsPalette.deepBlue.withValues(alpha: 0.08))
+              ? activeBorder.withValues(alpha: widget.isDark ? 0.12 : 0.08)
               : Colors.transparent,
-          border: Border.all(
-            color: selected
-                ? QudsPalette.domeGold
-                : (widget.isDark
-                      ? QudsPalette.midnightBorder
-                      : QudsPalette.lightBorder),
-            width: selected ? 1.5 : 1,
-          ),
+          border: Border.all(color: selected ? activeBorder : _border),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Row(
-              children: [
-                Icon(
-                  selected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_off_rounded,
-                  size: 18,
-                  color: selected ? QudsPalette.domeGold : null,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              size: 16,
+              color: selected ? activeBorder : _textMuted,
             ),
-            const SizedBox(height: 6),
+            const SizedBox(width: 8),
             Text(
-              subtitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+              title,
               style: TextStyle(
-                fontSize: 11.5,
-                color: widget.isDark ? Colors.white60 : Colors.black54,
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                color: selected ? _textPrimary : _textSecondary,
               ),
             ),
           ],
@@ -1610,7 +1425,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // Step 3: Live Installation Progress & Console
+  // Step 3: Minimalist Progress & Live Console
   // ---------------------------------------------------------------------------
   Widget _buildStepInstalling() {
     final total = _installSteps.isEmpty ? 1 : _installSteps.length;
@@ -1627,186 +1442,172 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     final percent = (progress * 100).round();
 
     return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Animated progress bar card
-          Card(
-            margin: EdgeInsets.zero,
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 740),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          _installing
-                              ? t(
-                                  'جارٍ تنفيذ خطوات التثبيت...',
-                                  'Running installation steps...',
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _installing
+                                  ? t(
+                                      'جارٍ تنفيذ خطوات التثبيت...',
+                                      'Running installation steps...',
+                                    )
+                                  : _installSucceeded
+                                  ? t('اكتملت كل الخطوات', 'Completed')
+                                  : t(
+                                      'توقّف التثبيت — راجع السجل',
+                                      'Installation stopped — check logs',
+                                    ),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: _textPrimary,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '$percent%',
+                            style: TextStyle(
+                              fontFamily: QudsPalette.fontMono,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: widget.isDark
+                                  ? QudsPalette.domeGold
+                                  : QudsPalette.deepBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: progress),
+                        duration: const Duration(milliseconds: 300),
+                        builder: (context, value, _) => ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: value,
+                            minHeight: 5,
+                            backgroundColor: _border,
+                            color:
+                                _installSteps.any(
+                                  (s) => s.state == StepRunState.failed,
                                 )
-                              : _installSucceeded
-                              ? t(
-                                  'اكتملت كل الخطوات بنجاح!',
-                                  'All steps completed!',
-                                )
-                              : t(
-                                  'توقّف التثبيت — راجع السجل بالأسفل',
-                                  'Installation stopped — inspect logs below',
-                                ),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
+                                ? QudsPalette.errRed
+                                : (widget.isDark
+                                      ? QudsPalette.domeGold
+                                      : QudsPalette.deepBlue),
                           ),
                         ),
                       ),
-                      Text(
-                        '$percent%',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: QudsPalette.domeGold,
-                        ),
-                      ),
+                      const SizedBox(height: 16),
+                      ..._installSteps.map(_buildStepProgressRow),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0, end: progress),
-                    duration: const Duration(milliseconds: 350),
-                    builder: (context, value, _) => ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: LinearProgressIndicator(
-                        value: value,
-                        minHeight: 9,
-                        backgroundColor: widget.isDark
-                            ? QudsPalette.midnightBg
-                            : const Color(0xFFE2EBF8),
-                        color:
-                            _installSteps.any(
-                              (s) => s.state == StepRunState.failed,
-                            )
-                            ? QudsPalette.errRed
-                            : QudsPalette.domeGold,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ..._installSteps.map(_buildStepProgressRow),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // Live Console Header + Output
-          Row(
-            children: [
-              const Icon(
-                Icons.terminal_rounded,
-                size: 18,
-                color: QudsPalette.domeGold,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                t('سجل التثبيت المباشر', 'Live Installation Console'),
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
                 ),
               ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _installLogs.isEmpty
-                    ? null
-                    : () => _copyText(
-                        _installLogs.map((e) => e.message).join('\n'),
-                        'سجل التثبيت',
-                        'installation logs',
-                      ),
-                icon: const Icon(Icons.copy_rounded, size: 15),
-                label: Text(t('نسخ السجل', 'Copy Logs')),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  _sectionLabel(t('سجل المخرجات', 'Console Output')),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: _installLogs.isEmpty
+                        ? null
+                        : () => _copyText(
+                            _installLogs.map((e) => e.message).join('\n'),
+                            'سجل التثبيت',
+                            'logs',
+                          ),
+                    icon: const Icon(Icons.copy_rounded, size: 14),
+                    label: Text(t('نسخ السجل', 'Copy Logs')),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: QudsPalette.darkConsole,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _border),
+                  ),
+                  child: ListView.builder(
+                    controller: _logScrollController,
+                    itemCount: _installLogs.length,
+                    itemBuilder: (context, index) =>
+                        _buildLogLine(_installLogs[index]),
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF040A15),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: QudsPalette.midnightBorder),
-              ),
-              child: ListView.builder(
-                controller: _logScrollController,
-                itemCount: _installLogs.length,
-                itemBuilder: (context, index) =>
-                    _buildLogLine(_installLogs[index]),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildStepProgressRow(InstallStepProgress step) {
-    Widget leading;
-    switch (step.state) {
-      case StepRunState.running:
-        leading = const SizedBox(
-          width: 18,
-          height: 18,
-          child: CircularProgressIndicator(
-            strokeWidth: 2.2,
-            color: QudsPalette.domeGold,
-          ),
-        );
-      case StepRunState.done:
-        leading = const Icon(
-          Icons.check_circle_rounded,
-          size: 19,
-          color: QudsPalette.okGreen,
-        );
-      case StepRunState.warning:
-        leading = const Icon(
-          Icons.warning_amber_rounded,
-          size: 19,
-          color: QudsPalette.warnAmber,
-        );
-      case StepRunState.failed:
-        leading = const Icon(
-          Icons.error_rounded,
-          size: 19,
-          color: QudsPalette.errRed,
-        );
-      case StepRunState.pending:
-        leading = Icon(
-          Icons.circle_outlined,
-          size: 18,
-          color: widget.isDark ? Colors.white38 : Colors.black38,
-        );
-    }
+    final Widget icon = switch (step.state) {
+      StepRunState.running => const SizedBox(
+        width: 15,
+        height: 15,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: QudsPalette.domeGold,
+        ),
+      ),
+      StepRunState.done => const Icon(
+        Icons.check_circle_rounded,
+        size: 16,
+        color: QudsPalette.okGreen,
+      ),
+      StepRunState.warning => const Icon(
+        Icons.info_outline_rounded,
+        size: 16,
+        color: QudsPalette.warnAmber,
+      ),
+      StepRunState.failed => const Icon(
+        Icons.cancel_rounded,
+        size: 16,
+        color: QudsPalette.errRed,
+      ),
+      StepRunState.pending => Icon(
+        Icons.circle_outlined,
+        size: 15,
+        color: _textMuted,
+      ),
+    };
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
-          leading,
-          const SizedBox(width: 12),
+          icon,
+          const SizedBox(width: 11),
           Expanded(
             child: Text(
               t(step.titleAr, step.titleEn),
               style: TextStyle(
-                fontSize: 13.5,
+                fontSize: 13,
                 fontWeight: step.state == StepRunState.running
-                    ? FontWeight.w700
-                    : FontWeight.w500,
+                    ? FontWeight.w600
+                    : FontWeight.w400,
+                color: step.state == StepRunState.pending
+                    ? _textSecondary
+                    : _textPrimary,
               ),
             ),
           ),
@@ -1821,7 +1622,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
       LogLevel.success => QudsPalette.okGreen,
       LogLevel.warning => QudsPalette.warnAmber,
       LogLevel.error => QudsPalette.errRed,
-      LogLevel.info => const Color(0xFFD6E4FF),
+      LogLevel.info => const Color(0xFFCBD5E1),
     };
     final hh = entry.timestamp.hour.toString().padLeft(2, '0');
     final mm = entry.timestamp.minute.toString().padLeft(2, '0');
@@ -1830,201 +1631,196 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Text(
-        '[$hh:$mm:$ss] ${entry.message}',
+        '$hh:$mm:$ss  ${entry.message}',
         textDirection: TextDirection.ltr,
         style: TextStyle(
-          fontFamily: 'monospace',
+          fontFamily: QudsPalette.fontMono,
           fontSize: 12,
           color: color,
-          height: 1.35,
+          height: 1.45,
         ),
       ),
     );
   }
 
   // ---------------------------------------------------------------------------
-  // Step 4: Completion & Quick Start
+  // Step 4: Serene Completion & Quick Start
   // ---------------------------------------------------------------------------
   Widget _buildStepComplete() {
     final quickCommands = [
       (
         cmd: 'quds create hello_quds',
-        descAr: 'إنشاء مشروع Dart جديد بلغة قدس وتشغيله فوراً',
+        descAr: 'إنشاء مشروع Dart جديد بلغة قدس',
         descEn: 'Create a new Dart-target Quds project',
       ),
       (
         cmd: 'quds create --f my_app',
-        descAr: 'إنشاء مشروع تطبيق Flutter كامل بلغة قدس',
-        descEn: 'Create a Flutter application written in Quds',
+        descAr: 'إنشاء تطبيق Flutter كامل بلغة قدس',
+        descEn: 'Create a Flutter app written in Quds',
       ),
       (
         cmd: 'quds doctor',
-        descAr: 'فحص صحة البيئة والمحررات وإصدار Quds CLI',
-        descEn: 'Check compiler, PATH, and editor extension health',
+        descAr: 'فحص صحة البيئة والمحررات',
+        descEn: 'Verify CLI and editor health',
       ),
       (
         cmd: 'quds help',
-        descAr: 'استعراض قائمة كل أوامر أداة قدس المنسقة',
-        descEn: 'Explore all available Quds CLI commands',
+        descAr: 'عرض جميع أوامر Quds CLI',
+        descEn: 'List all Quds CLI commands',
       ),
     ];
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
+    return _centeredPage(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: widget.isDark
-                    ? const [Color(0xFF0E2942), Color(0xFF0D2E2A)]
-                    : const [Color(0xFFEAF5FF), Color(0xFFE9FBF2)],
-              ),
-              border: Border.all(
-                color: QudsPalette.okGreen.withValues(alpha: 0.55),
-              ),
-            ),
-            child: Column(
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: QudsPalette.midnightBg,
-                        borderRadius: BorderRadius.circular(22),
-                        border: Border.all(
-                          color: QudsPalette.domeGold,
-                          width: 1.8,
-                        ),
-                      ),
-                      child: Image.asset('assets/quds_logo.png'),
-                    ),
-                    const Positioned(
-                      right: -6,
-                      bottom: -6,
-                      child: CircleAvatar(
-                        radius: 15,
-                        backgroundColor: QudsPalette.okGreen,
-                        child: Icon(
-                          Icons.check_rounded,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  t('تم تثبيت لغة قدس بنجاح!', 'Quds is installed and ready!'),
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  t(
-                    'افتح نافذة طرفية جديدة (Terminal / PowerShell) لتفعيل PATH المحدّث ثم جرّب أحد أوامر البداية السريعة بالأسفل.',
-                    'Open a new terminal window if PATH was updated, then try any Quick Start command below.',
-                  ),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    color: widget.isDark ? Colors.white70 : Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: () => widget.analyzer.openUrl(
-                        'https://pub.dev/packages/quds',
-                      ),
-                      icon: const Icon(Icons.menu_book_rounded, size: 17),
-                      label: Text(t('توثيق pub.dev', 'Open pub.dev Docs')),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () {
-                        setState(() => _step = 0);
-                        _runScan();
-                      },
-                      icon: const Icon(Icons.radar_rounded, size: 17),
-                      label: Text(t('إعادة فحص النظام', 'Re-Scan System')),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-          Text(
-            t('أوامر البداية السريعة', 'Quick Start Commands'),
-            style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 10),
-          ...quickCommands.map(
-            (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Card(
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Row(
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: Column(
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.cmd,
-                              textDirection: TextDirection.ltr,
-                              style: const TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: QudsPalette.domeGold,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              t(item.descAr, item.descEn),
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: widget.isDark
-                                    ? Colors.white70
-                                    : Colors.black87,
-                              ),
-                            ),
-                          ],
+                      Container(
+                        width: 64,
+                        height: 64,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0A1426),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: QudsPalette.domeGold.withValues(alpha: 0.45),
+                          ),
                         ),
+                        child: Image.asset('assets/quds_logo.png'),
                       ),
-                      IconButton.outlined(
-                        tooltip: t('نسخ الأمر', 'Copy command'),
-                        onPressed: () =>
-                            _copyText(item.cmd, item.cmd, item.cmd),
-                        icon: const Icon(Icons.copy_rounded, size: 17),
+                      const Positioned(
+                        right: -5,
+                        bottom: -5,
+                        child: CircleAvatar(
+                          radius: 12,
+                          backgroundColor: QudsPalette.okGreen,
+                          child: Icon(
+                            Icons.check_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 14),
+                  Text(
+                    t(
+                      'تم تثبيت لغة قدس بنجاح!',
+                      'Quds is installed and ready!',
+                    ),
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      color: _textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    t(
+                      'افتح نافذة طرفية جديدة لتفعيل PATH ثم ابدأ بأحد الأوامر أدناه.',
+                      'Open a new terminal window if PATH was updated, then try a command below.',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: _textSecondary),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => widget.analyzer.openUrl(
+                          'https://pub.dev/packages/quds',
+                        ),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 15),
+                        label: Text(t('توثيق pub.dev', 'pub.dev Docs')),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          setState(() => _step = 0);
+                          _runScan();
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 15),
+                        label: Text(t('إعادة فحص النظام', 'Re-Scan')),
+                      ),
+                    ],
+                  ),
+                ],
               ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          _sectionLabel(t('أوامر البداية السريعة', 'Quick Start')),
+          const SizedBox(height: 8),
+          Card(
+            child: Column(
+              children: [
+                for (var i = 0; i < quickCommands.length; i++) ...[
+                  if (i > 0) const Divider(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                quickCommands[i].cmd,
+                                textDirection: TextDirection.ltr,
+                                style: TextStyle(
+                                  fontFamily: QudsPalette.fontMono,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: widget.isDark
+                                      ? QudsPalette.warmGold
+                                      : QudsPalette.deepBlue,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                t(
+                                  quickCommands[i].descAr,
+                                  quickCommands[i].descEn,
+                                ),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: t('نسخ الأمر', 'Copy command'),
+                          onPressed: () => _copyText(
+                            quickCommands[i].cmd,
+                            quickCommands[i].cmd,
+                            quickCommands[i].cmd,
+                          ),
+                          icon: Icon(
+                            Icons.copy_rounded,
+                            size: 16,
+                            color: _textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -2033,60 +1829,53 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
   }
 
   // ---------------------------------------------------------------------------
-  // Bottom Action Bar
+  // Clean Bottom Action Bar
   // ---------------------------------------------------------------------------
-  Widget _buildBottomBar(Color borderColor) {
-    final canProceedToOptions =
+  Widget _buildBottomBar() {
+    final canProceed =
         !_scanning && !_runningPrereq && (_report?.canInstallQuds ?? false);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: borderColor)),
+        border: Border(top: BorderSide(color: _border)),
       ),
       child: Row(
         children: [
           if (_step == 1)
-            OutlinedButton.icon(
+            OutlinedButton(
               onPressed: () => setState(() => _step = 0),
-              icon: const Icon(Icons.arrow_back_rounded, size: 17),
-              label: Text(t('السابق', 'Back')),
+              child: Text(t('السابق', 'Back')),
             )
           else if (_step == 2 && !_installing && !_installSucceeded)
-            OutlinedButton.icon(
+            OutlinedButton(
               onPressed: () => setState(() => _step = 1),
-              icon: const Icon(Icons.arrow_back_rounded, size: 17),
-              label: Text(t('تعديل الخيارات', 'Back to Options')),
+              child: Text(t('تعديل الخيارات', 'Back to Options')),
             ),
           const Spacer(),
           if (_step == 0)
-            FilledButton.icon(
+            FilledButton(
               key: const Key('next-to-options-btn'),
-              onPressed: canProceedToOptions
-                  ? () => setState(() => _step = 1)
-                  : null,
-              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-              label: Text(
-                canProceedToOptions
-                    ? t('متابعة إلى خيارات التثبيت', 'Continue to Options')
-                    : t('أكمل تثبيت Dart SDK أولاً', 'Install Dart SDK First'),
+              onPressed: canProceed ? () => setState(() => _step = 1) : null,
+              child: Text(
+                canProceed
+                    ? t('متابعة', 'Continue')
+                    : t('ثبّت Dart SDK أولاً', 'Install Dart SDK First'),
               ),
             )
           else if (_step == 1)
-            FilledButton.icon(
+            FilledButton(
               key: const Key('start-install-btn'),
               onPressed: _startInstallation,
-              icon: const Icon(Icons.rocket_launch_rounded, size: 18),
-              label: Text(t('بدء تثبيت لغة قدس', 'Install Quds Now')),
+              child: Text(t('تثبيت لغة قدس', 'Install Quds')),
             )
           else if (_step == 2 && !_installing && !_installSucceeded)
-            FilledButton.icon(
+            FilledButton(
               onPressed: _startInstallation,
-              icon: const Icon(Icons.replay_rounded, size: 18),
-              label: Text(t('إعادة المحاولة', 'Retry Installation')),
+              child: Text(t('إعادة المحاولة', 'Retry')),
             )
           else if (_step == 3)
-            FilledButton.icon(
+            FilledButton(
               key: const Key('finish-close-btn'),
               onPressed: () {
                 if (widget.onClose != null) {
@@ -2095,56 +1884,9 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen>
                   exit(0);
                 }
               },
-              icon: const Icon(Icons.check_rounded, size: 18),
-              label: Text(t('إنهاء وإغلاق', 'Finish & Close')),
+              child: Text(t('إنهاء', 'Finish')),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _statusIcon(CheckStatus status) {
-    return switch (status) {
-      CheckStatus.ready => const Icon(
-        Icons.check_circle_rounded,
-        color: QudsPalette.okGreen,
-      ),
-      CheckStatus.warning => const Icon(
-        Icons.warning_amber_rounded,
-        color: QudsPalette.warnAmber,
-      ),
-      CheckStatus.missing => const Icon(
-        Icons.cancel_rounded,
-        color: QudsPalette.errRed,
-      ),
-      CheckStatus.optional => const Icon(
-        Icons.info_outline_rounded,
-        color: QudsPalette.royalBlue,
-      ),
-    };
-  }
-
-  Widget _statusPill(CheckStatus status, {String? customAr, String? customEn}) {
-    final (color, ar, en) = switch (status) {
-      CheckStatus.ready => (QudsPalette.okGreen, 'جاهز', 'Ready'),
-      CheckStatus.warning => (QudsPalette.warnAmber, 'تنبيه', 'Needs update'),
-      CheckStatus.missing => (QudsPalette.errRed, 'ناقص', 'Missing'),
-      CheckStatus.optional => (QudsPalette.royalBlue, 'اختياري', 'Optional'),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.45)),
-      ),
-      child: Text(
-        t(customAr ?? ar, customEn ?? en),
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
       ),
     );
   }

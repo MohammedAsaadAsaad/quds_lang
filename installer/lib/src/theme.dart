@@ -1,25 +1,42 @@
 import 'package:material_ui/material_ui.dart';
 
-/// Brand palette derived directly from the official Quds logo
-/// (Deep Royal Blue + Dome Gold + Ice White).
+/// Refined, low-noise design tokens for the Quds Desktop Installer.
 class QudsPalette {
-  static const midnightBg = Color(0xFF071122);
-  static const midnightSurface = Color(0xFF0E1C36);
-  static const midnightCard = Color(0xFF132546);
-  static const midnightBorder = Color(0xFF213A66);
+  static const fontUi = 'IBMPlexSansArabic';
+  static const fontMono = 'JetBrainsMono';
 
-  static const royalBlue = Color(0xFF0070D2);
-  static const deepBlue = Color(0xFF004B97);
-  static const domeGold = Color(0xFFF5B718);
-  static const warmGold = Color(0xFFFFD147);
+  // Calm dark surfaces
+  static const darkCanvas = Color(0xFF0A0F1A);
+  static const darkSidebar = Color(0xFF0E1525);
+  static const darkSurface = Color(0xFF121B2E);
+  static const darkConsole = Color(0xFF070B14);
+  static const darkBorder = Color(0xFF1E2A42);
 
-  static const lightBg = Color(0xFFF3F7FD);
+  // Calm light surfaces
+  static const lightCanvas = Color(0xFFF8FAFC);
+  static const lightSidebar = Color(0xFFFFFFFF);
   static const lightSurface = Color(0xFFFFFFFF);
-  static const lightBorder = Color(0xFFD6E2F5);
+  static const lightBorder = Color(0xFFE2E8F0);
 
+  // Brand accents (used with restraint)
+  static const royalBlue = Color(0xFF1D6FD8);
+  static const deepBlue = Color(0xFF0F4C81);
+  static const domeGold = Color(0xFFF2B71D);
+  static const warmGold = Color(0xFFFAD161);
+
+  // Semantic accents
   static const okGreen = Color(0xFF22C55E);
   static const warnAmber = Color(0xFFF59E0B);
   static const errRed = Color(0xFFEF4444);
+
+  // Text hierarchy
+  static const darkTextPrimary = Color(0xFFF1F5F9);
+  static const darkTextSecondary = Color(0xFF94A3B8);
+  static const darkTextMuted = Color(0xFF64748B);
+
+  static const lightTextPrimary = Color(0xFF0F172A);
+  static const lightTextSecondary = Color(0xFF475569);
+  static const lightTextMuted = Color(0xFF94A3B8);
 
   static ThemeData darkTheme() {
     final scheme = ColorScheme.fromSeed(
@@ -27,42 +44,67 @@ class QudsPalette {
       brightness: Brightness.dark,
       primary: domeGold,
       secondary: royalBlue,
-      surface: midnightSurface,
+      surface: darkSurface,
     );
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      fontFamily: fontUi,
       colorScheme: scheme,
-      scaffoldBackgroundColor: midnightBg,
+      scaffoldBackgroundColor: darkCanvas,
       cardTheme: CardThemeData(
-        color: midnightCard,
+        color: darkSurface,
         elevation: 0,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: midnightBorder),
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: darkBorder),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: domeGold,
-          foregroundColor: midnightBg,
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+          foregroundColor: darkCanvas,
+          textStyle: const TextStyle(
+            fontFamily: fontUi,
+            fontWeight: FontWeight.w600,
+            fontSize: 13.5,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.white,
-          side: const BorderSide(color: midnightBorder),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          foregroundColor: darkTextPrimary,
+          side: const BorderSide(color: darkBorder),
+          textStyle: const TextStyle(
+            fontFamily: fontUi,
+            fontWeight: FontWeight.w500,
+            fontSize: 13,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
       ),
-      dividerTheme: const DividerThemeData(color: midnightBorder),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          textStyle: const TextStyle(
+            fontFamily: fontUi,
+            fontWeight: FontWeight.w600,
+            fontSize: 12.5,
+          ),
+        ),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: darkBorder,
+        thickness: 1,
+        space: 1,
+      ),
     );
   }
 
@@ -77,13 +119,15 @@ class QudsPalette {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      fontFamily: fontUi,
       colorScheme: scheme,
-      scaffoldBackgroundColor: lightBg,
+      scaffoldBackgroundColor: lightCanvas,
       cardTheme: CardThemeData(
         color: lightSurface,
         elevation: 0,
+        margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           side: const BorderSide(color: lightBorder),
         ),
       ),
@@ -91,23 +135,46 @@ class QudsPalette {
         style: FilledButton.styleFrom(
           backgroundColor: deepBlue,
           foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+          textStyle: const TextStyle(
+            fontFamily: fontUi,
+            fontWeight: FontWeight.w600,
+            fontSize: 13.5,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: deepBlue,
+          foregroundColor: lightTextPrimary,
           side: const BorderSide(color: lightBorder),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+          textStyle: const TextStyle(
+            fontFamily: fontUi,
+            fontWeight: FontWeight.w500,
+            fontSize: 13,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
       ),
-      dividerTheme: const DividerThemeData(color: lightBorder),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          textStyle: const TextStyle(
+            fontFamily: fontUi,
+            fontWeight: FontWeight.w600,
+            fontSize: 12.5,
+          ),
+        ),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: lightBorder,
+        thickness: 1,
+        space: 1,
+      ),
     );
   }
 }

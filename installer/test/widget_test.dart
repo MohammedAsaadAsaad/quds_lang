@@ -367,7 +367,7 @@ void main() {
         // Step 1 -> Step 2
         await tester.tap(find.byKey(const Key('next-to-options-btn')));
         await tester.pumpAndSettle();
-        expect(find.text('تخصيص التثبيت وإضافات المحررات'), findsOneWidget);
+        expect(find.text('مصدر التثبيت'), findsOneWidget);
 
         // Step 2 -> Step 3 -> Step 4 (simulated runner completes immediately)
         await tester.tap(find.byKey(const Key('start-install-btn')));

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Optional existing GitHub Release tag to attach installer archives to (e.g. v0.1.0-alpha.2)'
+        description: 'Optional existing GitHub Release tag to attach single-file installers to (e.g. v0.1.0-alpha.2)'
         required: false
         default: ''
 
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    name: Build Quds Installer (${{ matrix.platform }})
+    name: Build Single-File Quds Installer (${{ matrix.platform }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,13 +24,13 @@ jobs:
         include:
           - platform: windows
             os: windows-latest
-            artifact_name: Quds-Installer-Windows-x64.zip
+            artifact_name: Quds-Installer-Windows-x64.exe
           - platform: linux
             os: ubuntu-latest
-            artifact_name: Quds-Installer-Linux-x64.tar.gz
+            artifact_name: Quds-Installer-Linux-x64
           - platform: macos
             os: macos-latest
-            artifact_name: Quds-Installer-macOS.zip
+            artifact_name: Quds-Installer-macOS.dmg
 
     steps:
       - name: Checkout repository
@@ -40,7 +40,13 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev zip
+
+      - name: Set up Go (for Windows & Linux single-file executable bundler)
+        if: matrix.platform != 'macos'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -55,53 +61,66 @@ jobs:
           flutter analyze
           flutter test
 
-      - name: Build & package Windows installer
+      - name: Test single-file launcher
+        if: matrix.platform != 'macos'
+        working-directory: installer/launcher
+        run: go test ./...
+
+      - name: Build single-file Windows installer (.exe with Quds icon)
         if: matrix.platform == 'windows'
         working-directory: installer
         shell: pwsh
         run: |
           flutter build windows --release
-          $stage = "dist\Quds-Installer-Windows-x64"
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item -Recurse -Force "build\windows\x64\runner\Release\*" $stage
-          Compress-Archive -Path "$stage\*" -DestinationPath "dist\Quds-Installer-Windows-x64.zip" -Force
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath "launcher\payload.zip" -Force
 
-      - name: Build & package Linux installer
+          # Embed official Quds app icon + Windows manifest directly into the single .exe
+          go install github.com/akavel/rsrc@latest
+          $gopath = (go env GOPATH)
+          & "$gopath\bin\rsrc.exe" -arch amd64 -ico "windows\runner\resources\app_icon.ico" -manifest "windows\runner\runner.exe.manifest" -o "launcher\rsrc_windows_amd64.syso"
+
+          Push-Location launcher
+          go build -tags bundle -ldflags="-s -w -H=windowsgui" -o "..\dist\Quds-Installer-Windows-x64.exe" .
+          Pop-Location
+
+      - name: Build single-file Linux installer (standalone ELF executable)
         if: matrix.platform == 'linux'
         working-directory: installer
         run: |
           flutter build linux --release
-          mkdir -p dist/Quds-Installer-Linux-x64
-          cp -r build/linux/x64/release/bundle/* dist/Quds-Installer-Linux-x64/
-          cp linux/quds_installer.png dist/Quds-Installer-Linux-x64/
-          cp linux/quds-installer.desktop dist/Quds-Installer-Linux-x64/
-          tar -czf dist/Quds-Installer-Linux-x64.tar.gz -C dist Quds-Installer-Linux-x64
+          mkdir -p dist
+          (cd build/linux/x64/release/bundle && zip -ry ../../../../../launcher/payload.zip .)
+          (cd launcher && go build -tags bundle -ldflags="-s -w" -o ../dist/Quds-Installer-Linux-x64 .)
+          chmod +x dist/Quds-Installer-Linux-x64
 
-      - name: Build & package macOS installer
+      - name: Build single-file macOS installer (.dmg with Quds Installer.app)
         if: matrix.platform == 'macos'
         working-directory: installer
         run: |
           flutter build macos --release
-          mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent "build/macos/Build/Products/Release/Quds Installer.app" dist/Quds-Installer-macOS.zip
+          mkdir -p dist dmg_stage
+          cp -R "build/macos/Build/Products/Release/Quds Installer.app" dmg_stage/
+          ln -s /Applications dmg_stage/Applications
+          hdiutil create -volname "Quds Installer" -srcfolder dmg_stage -ov -format UDZO dist/Quds-Installer-macOS.dmg
 
-      - name: Upload installer artifact
+      - name: Upload single-file installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: installer/dist/${{ matrix.artifact_name }}
           if-no-files-found: error
 
-      - name: Attach installer archive to GitHub Release (if tag exists)
+      - name: Attach single-file installer to GitHub Release (if tag exists)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
-          ARCHIVE: installer/dist/${{ matrix.artifact_name }}
+          ARTIFACT: installer/dist/${{ matrix.artifact_name }}
         shell: bash
         run: |
           if [ -n "$TAG" ]; then
             if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" "$ARCHIVE" --clobber
+              gh release upload "$TAG" "$ARTIFACT" --clobber
             else
               echo "Release $TAG does not exist yet; skipping release upload."
             fi

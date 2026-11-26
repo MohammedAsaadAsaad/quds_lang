@@ -3466,7 +3466,8 @@ class Analyzer {
         qualify == null ? _global.symbols : _space(qualify, statement);
     for (final entry in surface.names.entries) {
       if (!_keeps(entry.key, statement) || !_keeps(entry.key, filter)) continue;
-      if (target.containsKey(entry.key)) {
+      if (target.containsKey(entry.key) ||
+          (qualify == null && _core.symbols.containsKey(entry.key))) {
         if (qualify != null) {
           error('E204', 'Two imports define ${entry.key}', statement);
         }

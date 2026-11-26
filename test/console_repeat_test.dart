@@ -61,7 +61,7 @@ void main() {
         '$repeated\n$repeated\n$repeated\nSC\n$repeated\nCS\n$repeated\nCS\ntrue\n';
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
-    expect(vm.stdout, expected);
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), expected);
     final js = '${root.path}/main.js';
     final built = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);
@@ -69,6 +69,6 @@ void main() {
     final run = await Process.run('node',
         ['-e', 'globalThis.self = globalThis; require(process.argv[1]);', js]);
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
-    expect(run.stdout, expected);
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), expected);
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

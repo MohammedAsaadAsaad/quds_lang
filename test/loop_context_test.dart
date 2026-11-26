@@ -271,7 +271,7 @@ void main() {
     final run = await Process.run(Platform.resolvedExecutable,
         ['run', 'bin/quds.dart', 'run', input.path]);
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
-    expect(run.stdout, '10\n');
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), '10\n');
     expect(jsonDecode(cacheFile.readAsStringSync())['abi'],
         'provider-defaults-v16');
   });
@@ -295,7 +295,7 @@ void main() {
         '0:1:10:true\n1:2:20:false\ninner0\nwhile0\nwhile2\nfor1\nfor2\nrepeat0\nrepeat1\npost0\npost1\n[10, 21]\n[10, 32]\n[a:10:0, b:20:1]\n{0: 5, 1: 7}\nstream0:10\nstream1:20\n10\n21\nlet0:3\npattern0\n20\n[10, 22]\n';
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
-    expect(vm.stdout, expected);
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), expected);
     final js = '${root.path}/main.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);
@@ -303,6 +303,6 @@ void main() {
     final run = await Process.run('node',
         ['-e', 'globalThis.self = globalThis; require(process.argv[1]);', js]);
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
-    expect(run.stdout, expected);
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), expected);
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

@@ -78,7 +78,7 @@ void main() {
         'n3\nn3\nsq\nn3\nn7\ntrue\nn3\nn4:sx\nBA\nn1:n2\nn5:n3\nsx:n3\nn5\n2\n12\nsset\nsq\ntrue\nn3\n12\nbool\n';
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
-    expect(vm.stdout, expected);
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), expected);
     final js = '${root.path}/main.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);
@@ -86,7 +86,7 @@ void main() {
     final run = await Process.run('node',
         ['-e', 'globalThis.self = globalThis; require(process.argv[1]);', js]);
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
-    expect(run.stdout, expected);
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), expected);
     // The reserved bridge must validate payloads even for foreign Dart callers.
     final provider = File(files[1]).readAsStringSync();
     final bridge = RegExp(r'String (\$QudsUnionCall\w+)\(List<Object\?>')
@@ -104,7 +104,7 @@ void main() {
         await Process.run(Platform.resolvedExecutable, [invalid.path]);
     expect(rejected.exitCode, 0,
         reason: '${rejected.stdout}${rejected.stderr}');
-    expect(rejected.stdout, 'checked\n');
+    expect('${rejected.stdout}'.replaceAll('\r\n', '\n'), 'checked\n');
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('current ABI rebuilds a checksum-valid v13 union consumer', () async {

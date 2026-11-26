@@ -43,7 +43,7 @@ void main() {
     const expected = 'n1\nsa\nn2\nsb\n4\n';
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
-    expect(vm.stdout, expected);
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), expected);
     final js = '${root.path}/main.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);
@@ -51,6 +51,6 @@ void main() {
     final node = await Process.run('node',
         ['-e', 'globalThis.self = globalThis; require(process.argv[1]);', js]);
     expect(node.exitCode, 0, reason: '${node.stderr}');
-    expect(node.stdout, expected);
+    expect('${node.stdout}'.replaceAll('\r\n', '\n'), expected);
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

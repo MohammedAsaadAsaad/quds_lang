@@ -146,7 +146,7 @@ void main() {
       workingDirectory: greeter.path,
     );
     expect(pkgBin.exitCode, 0, reason: '${pkgBin.stdout}\n${pkgBin.stderr}');
-    expect(pkgBin.stdout, 'INTERNAL!\n');
+    expect('${pkgBin.stdout}'.replaceAll('\r\n', '\n'), 'INTERNAL!\n');
 
     // Consumer app depends on greeter via a real Git URL (same mechanism as GitHub).
     final app = Directory('${sandbox.path}/app')..createSync();
@@ -203,7 +203,7 @@ test "external Quds package functions, extensions, and re-exported classes work"
         await _runQuds(['run', 'bin/main.quds'], workingDirectory: app.path);
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
     expect(
-      run.stdout,
+      '${run.stdout}'.replaceAll('\r\n', '\n'),
       'Hello, Quds!\nWorld!\nGreetings, Ada.\nINTERNAL:v1\nOK\n',
     );
 
@@ -240,7 +240,8 @@ test "external Quds package functions, extensions, and re-exported classes work"
         reason: '${jsCompile.stdout}\n${jsCompile.stderr}');
     final nodeRun = await Process.run('node', [jsOut]);
     expect(nodeRun.exitCode, 0, reason: '${nodeRun.stdout}\n${nodeRun.stderr}');
-    expect(nodeRun.stdout, run.stdout);
+    expect('${nodeRun.stdout}'.replaceAll('\r\n', '\n'),
+        '${run.stdout}'.replaceAll('\r\n', '\n'));
   }, timeout: const Timeout.factor(4));
 
   test(
@@ -317,7 +318,7 @@ main():
     final run =
         await _runQuds(['run', 'bin/main.quds'], workingDirectory: app.path);
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-    expect(run.stdout, 'mid(leaf:ok)\n');
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), 'mid(leaf:ok)\n');
 
     final analyze = await _runQuds(['analyze', 'bin/main.quds'],
         workingDirectory: app.path);
@@ -471,7 +472,8 @@ void main() {
       workingDirectory: dartConsumer.path,
     );
     expect(dartRun.exitCode, 0, reason: '${dartRun.stdout}\n${dartRun.stderr}');
-    expect(dartRun.stdout, 'Hello, Dart!\nINTERNAL:dual\n');
+    expect('${dartRun.stdout}'.replaceAll('\r\n', '\n'),
+        'Hello, Dart!\nINTERNAL:dual\n');
 
     // Hand-written Dart file is never overwritten.
     File('${greeter.path}/lib/manual.quds')
@@ -666,7 +668,7 @@ main():
     final run =
         await _runQuds(['run', 'bin/main.quds'], workingDirectory: app.path);
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-    expect(run.stdout, '1/2|1/4|[5, 1]|2\n');
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), '1/2|1/4|[5, 1]|2\n');
   }, timeout: const Timeout.factor(4));
 
   test(
@@ -796,6 +798,6 @@ void main() {
       workingDirectory: app.path,
     );
     expect(dartRun.exitCode, 0, reason: '${dartRun.stdout}\n${dartRun.stderr}');
-    expect(dartRun.stdout, '42|ready|12|ok:go\n');
+    expect('${dartRun.stdout}'.replaceAll('\r\n', '\n'), '42|ready|12|ok:go\n');
   }, timeout: const Timeout.factor(4));
 }

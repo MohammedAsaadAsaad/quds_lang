@@ -49,7 +49,7 @@ void main() {
         'fallback\nnested\nsq\nq\nnumber\nend\nq\ntrue\nnumber\nq\n';
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
-    expect(vm.stdout, expected);
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), expected);
     final js = '${root.path}/main.js';
     final build = await Process.run(
         Platform.resolvedExecutable, ['compile', 'js', output.path, '-o', js]);
@@ -57,7 +57,7 @@ void main() {
     final run = await Process.run('node',
         ['-e', 'globalThis.self = globalThis; require(process.argv[1]);', js]);
     expect(run.exitCode, 0, reason: '${run.stdout}${run.stderr}');
-    expect(run.stdout, expected);
+    expect('${run.stdout}'.replaceAll('\r\n', '\n'), expected);
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('if, match, and try expressions box branches into expected union types',
@@ -99,6 +99,7 @@ main():
       workingDirectory: sandbox.path,
     );
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-    expect(run.stdout, 's:sd|i:4|s:five|i:99|ok\n');
+    expect(
+        '${run.stdout}'.replaceAll('\r\n', '\n'), 's:sd|i:4|s:five|i:99|ok\n');
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

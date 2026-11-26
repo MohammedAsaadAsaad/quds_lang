@@ -107,7 +107,8 @@ void main() {
     final vm =
         await Process.run(Platform.resolvedExecutable, ['run', driver.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}\n${vm.stderr}');
-    expect(vm.stdout, 'READONLY DART BOUNDARIES OK\n');
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'),
+        'READONLY DART BOUNDARIES OK\n');
     final build = await Process.run(Platform.resolvedExecutable,
         ['compile', 'js', driver.path, '-o', '${dir.path}/driver.js']);
     expect(build.exitCode, 0, reason: '${build.stdout}\n${build.stderr}');
@@ -117,7 +118,8 @@ void main() {
       '${dir.path}/driver.js'
     ]);
     expect(js.exitCode, 0, reason: '${js.stdout}\n${js.stderr}');
-    expect(js.stdout, vm.stdout);
+    expect('${js.stdout}'.replaceAll('\r\n', '\n'),
+        '${vm.stdout}'.replaceAll('\r\n', '\n'));
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   group('unsound readonly Dart boundaries stay rejected with E910', () {

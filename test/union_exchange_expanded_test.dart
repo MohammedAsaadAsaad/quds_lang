@@ -67,7 +67,7 @@ main() async:
     final vm =
         await Process.run(Platform.resolvedExecutable, [consumerOut.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}\n${vm.stderr}');
-    expect(vm.stdout, expected);
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), expected);
 
     final jsPath = '${dir.path}/main.js';
     final build = await Process.run(Platform.resolvedExecutable,
@@ -79,7 +79,7 @@ main() async:
       jsPath
     ]);
     expect(js.exitCode, 0, reason: '${js.stdout}\n${js.stderr}');
-    expect(js.stdout, expected);
+    expect('${js.stdout}'.replaceAll('\r\n', '\n'), expected);
 
     // Verify the async bridge also rejects invalid foreign payloads with ArgumentError.
     final providerCode = providerOut.readAsStringSync();
@@ -104,6 +104,6 @@ Future<void> main() async {
         await Process.run(Platform.resolvedExecutable, [invalid.path]);
     expect(rejected.exitCode, 0,
         reason: '${rejected.stdout}\n${rejected.stderr}');
-    expect(rejected.stdout, 'async-checked\n');
+    expect('${rejected.stdout}'.replaceAll('\r\n', '\n'), 'async-checked\n');
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

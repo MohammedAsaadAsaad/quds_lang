@@ -14,7 +14,7 @@ void main() {
       final proc = Process.runSync(Platform.resolvedExecutable, [file.path]);
       expect(proc.exitCode, 0,
           reason: 'Dart failed:\n${proc.stderr}\nCode:\n${result.dart}');
-      return proc.stdout as String;
+      return (proc.stdout as String).replaceAll('\r\n', '\n');
     } finally {
       dir.deleteSync(recursive: true);
     }

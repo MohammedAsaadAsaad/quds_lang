@@ -71,7 +71,7 @@ main():
         reason: '${analysis.stdout}${analysis.stderr}');
     final vm = await Process.run(Platform.resolvedExecutable, [output.path]);
     expect(vm.exitCode, 0, reason: '${vm.stdout}${vm.stderr}');
-    expect(vm.stdout, '4\n4\ntrue\n');
+    expect('${vm.stdout}'.replaceAll('\r\n', '\n'), '4\n4\ntrue\n');
   });
 
   test('selected Quds values produce deterministic Dart and execute on VM/JS',

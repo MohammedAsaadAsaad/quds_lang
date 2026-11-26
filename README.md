@@ -11,6 +11,92 @@ Quds keeps Dart's type safety, null safety, AOT/JIT/Web/Flutter ecosystem, and z
 
 ---
 
+## Install Quds
+
+Choose either the **Desktop Installer (recommended)** or the **CLI**.
+
+### Option 1 — Desktop Installer (Recommended)
+
+Single-file graphical installer (Arabic & English) that checks your system (`Dart SDK`, `Git`, `Flutter`, `PATH`), helps install missing prerequisites, installs `quds`, and configures extensions for **VS Code, Cursor, Windsurf, VSCodium, Android Studio / JetBrains, and Claude Code**:
+
+| Platform | Direct Download (Single File) | Notes |
+| --- | --- | --- |
+| **Windows (x64)** | [Download `Quds-Installer-Windows-x64.exe`](https://github.com/MohammedAsaadAsaad/quds_lang/releases/download/v0.1.0-alpha.2/Quds-Installer-Windows-x64.exe) | Double-click to run directly — no folder or ZIP extraction needed |
+| **macOS** | [Download `Quds-Installer-macOS.dmg`](https://github.com/MohammedAsaadAsaad/quds_lang/releases/download/v0.1.0-alpha.2/Quds-Installer-macOS.dmg) | Open `.dmg` and launch **Quds Installer** |
+| **Linux (x64)** | [Download `Quds-Installer-Linux-x64`](https://github.com/MohammedAsaadAsaad/quds_lang/releases/download/v0.1.0-alpha.2/Quds-Installer-Linux-x64) | Run `chmod +x Quds-Installer-Linux-x64 && ./Quds-Installer-Linux-x64` |
+| **VS Code / Cursor Extension** | [Download `quds-0.1.0.vsix`](https://github.com/MohammedAsaadAsaad/quds_lang/releases/download/v0.1.0-alpha.2/quds-0.1.0.vsix) | Also installed automatically by the installer or `quds install` |
+
+All release files are also listed on [GitHub Releases (`v0.1.0-alpha.2`)](https://github.com/MohammedAsaadAsaad/quds_lang/releases/tag/v0.1.0-alpha.2).
+
+### Option 2 — Install via CLI (`pub.dev`)
+
+Requires [Dart SDK](https://dart.dev/get-dart) `>=3.3.0 <4.0.0`:
+
+```sh
+dart pub global activate quds 0.1.0-alpha.2
+quds install
+```
+
+`dart pub global activate` installs `quds` into `~/.pub-cache/bin` (Linux/macOS) or `%LOCALAPPDATA%\Pub\Cache\bin` (Windows). Open a new terminal if your shell does not see `quds` yet.
+
+- `quds doctor` checks Dart, Flutter, `PATH`, `quds` CLI, and editor integrations.
+- `quds help` lists every available command.
+
+---
+
+## Quick Start
+
+### Console / CLI Program
+
+```quds
+square(n: int) -> int = n * n
+
+main():
+  name = "Quds"
+  print "Hello {name}"
+  print square(6)
+```
+
+```sh
+quds create hello_quds
+cd hello_quds
+quds run lib/main.quds
+```
+
+`quds build` writes clean, standalone Dart under `.dart_tool/quds/out/` (with source maps) without touching hand-written `.dart` files. Use `quds build --package` to generate publishable `lib/*.dart` files for dual Quds + Dart packages.
+
+### Flutter App
+
+```sh
+quds create --f hello
+cd hello
+quds run -d chrome    # or -d windows / -d linux / -d android
+```
+
+- `quds run -d <device>` compiles `lib/main.quds` and its dependencies (including external pure-Quds packages under `lib/quds_gen/_packages/`), prints live step-by-step progress, and launches Flutter with automatic Hot Reload on save (`r` reload, `R` hot restart, `q` quit).
+- `quds build apk --release`, `quds build web`, `quds build windows`, and `quds build linux` compile Quds sources before invoking Flutter. See [project commands](docs/PROJECT_CLI.md) and [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md).
+
+### Migrate an Existing Dart or Flutter Project
+
+Convert an existing Dart or Flutter project to Quds safely with the built-in AST migrator:
+
+```sh
+cd your_dart_or_flutter_app
+quds migrate
+```
+
+`quds migrate` runs in three safe steps:
+1. **SDK & feasibility check** — verifies Dart SDK compatibility (`>=3.3.0 <4.0.0`), parses `lib/**/*.dart` via the Dart AST, verifies every converted file against the Quds parser, skips generated files (`*.g.dart`, `*.freezed.dart`), and reports any file that needs manual review with exact line numbers.
+2. **Automatic `lib/` backup** — copies your entire `lib/` folder to `.quds_backup/lib_<timestamp>/` and automatically excludes `.quds_backup/**` in `analysis_options.yaml` and `.gitignore` so editors and the Dart/Flutter analyzer ignore backed-up Dart files.
+3. **Interactive confirmation & summary** — asks for your confirmation before writing `.quds` files, creating `quds.yaml`, and printing a summary of all generated files with line counts before and after migration.
+
+Useful flags:
+- `quds migrate --check` — run only the feasibility report without creating a backup or modifying files.
+- `quds migrate --keep-dart` — write `.quds` files alongside original `.dart` files.
+- `quds migrate --yes` — skip the confirmation prompt (backup is still created first).
+
+---
+
 ## Why Quds? Side-by-Side with Dart
 
 ### 1. Value Classes, `copyWith`, Equality & JSON — **6 lines vs ~45 lines**
@@ -197,75 +283,6 @@ main():
 | Indexed `for-in` loops | Manual index / `.asMap().entries` | Built-in `$.index`, `$.iteration`, `$.isFirst` |
 | Safe string/number parsing | `int.tryParse` / `double.tryParse` | Unified `expr to? Type` (and custom `cast`) |
 | Immutable-by-default bindings | `final` on every local | `name = value` immutable; `var` only when mutable |
-
----
-
-## Install
-
-Install [Dart](https://dart.dev/get-dart) 3.3 or newer (below 4), then activate `quds` from [pub.dev](https://pub.dev/packages/quds) and install editor support:
-
-```sh
-dart pub global activate quds
-quds install
-```
-
-`dart pub global activate quds` puts `quds` on your `PATH` (`~/.pub-cache/bin` on Linux/macOS, `%LOCALAPPDATA%\Pub\Cache\bin` on Windows). Open a new terminal if your shell does not see `quds` yet.
-
-- `quds doctor` checks Dart, Flutter, the `quds` CLI, and editor integrations.
-- `quds help` lists every command.
-
----
-
-## Quick Start
-
-### Console / CLI Program
-
-```quds
-square(n: int) -> int = n * n
-
-main():
-  name = "Quds"
-  print "Hello {name}"
-  print square(6)
-```
-
-```sh
-quds run example/hello.quds
-quds build example/hello.quds
-quds test examples/flutter_app/quds_ledger/test/quds_ledger_test.quds
-```
-
-`quds build` writes clean, standalone Dart under `.dart_tool/quds/out/` (with source maps) without touching hand-written `.dart` files. Use `quds build --package` to generate publishable `lib/*.dart` files for dual Quds + Dart packages.
-
-### Flutter App
-
-```sh
-quds create --f hello
-cd hello
-quds run -d chrome    # or -d windows / -d linux / -d android
-```
-
-- `quds run -d <device>` compiles `lib/main.quds` and its dependencies (including external pure-Quds packages under `lib/quds_gen/_packages/`), prints live step-by-step progress, and launches Flutter with automatic Hot Reload on save (`r` reload, `R` hot restart, `q` quit).
-- `quds build apk --release`, `quds build web`, `quds build windows`, and `quds build linux` compile Quds sources before invoking Flutter. See [project commands](docs/PROJECT_CLI.md) and [Flutter live updates](docs/FLUTTER_LIVE_UPDATES.md).
-
-### Migrate an Existing Dart or Flutter Project
-
-Convert an existing Dart or Flutter project to Quds safely with the built-in AST migrator:
-
-```sh
-cd your_dart_or_flutter_app
-quds migrate
-```
-
-`quds migrate` runs in three safe steps:
-1. **Feasibility check** — parses `lib/**/*.dart` via the Dart AST, verifies every converted file against the Quds parser, skips generated files (`*.g.dart`, `*.freezed.dart`), and reports any file that needs manual review with exact line numbers.
-2. **Automatic `lib/` backup** — copies your entire `lib/` folder to `.quds_backup/lib_<timestamp>/` and automatically excludes `.quds_backup/**` in `analysis_options.yaml` and `.gitignore` so editors and the Dart/Flutter analyzer ignore backed-up Dart files.
-3. **Interactive confirmation & summary** — asks for your confirmation before writing `.quds` files, creating `quds.yaml`, and printing a summary of all generated files with line counts before and after migration.
-
-Useful flags:
-- `quds migrate --check` — run only the feasibility report without creating a backup or modifying files.
-- `quds migrate --keep-dart` — write `.quds` files alongside original `.dart` files.
-- `quds migrate --yes` — skip the confirmation prompt (backup is still created first).
 
 ---
 

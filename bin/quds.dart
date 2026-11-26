@@ -552,7 +552,7 @@ Future<void> _install(List<String> arguments) async {
     exitCode = 1;
     return;
   }
-  if (!arguments.contains('--no-update')) {
+  if (!arguments.contains('--no-update') && !isHostedPubCachePackage(root)) {
     if (!await updateCompilerCheckout(root, report: stderr.writeln)) {
       exitCode = 1;
       return;

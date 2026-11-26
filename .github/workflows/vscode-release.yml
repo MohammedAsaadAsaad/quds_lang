@@ -1,0 +1,87 @@
+name: VS Code Extension Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional existing GitHub Release tag to attach the .vsix to (e.g. v0.1.0-alpha.2)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  package-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate extension scripts and manifests
+        working-directory: editors/vscode
+        run: |
+          node --check extension.js
+          node -e "
+            for (const f of ['package.json', 'language-configuration.json', 'syntaxes/quds.tmLanguage.json']) {
+              JSON.parse(require('fs').readFileSync(f, 'utf8'));
+            }
+          "
+
+      - name: Package .vsix
+        id: package
+        working-directory: editors/vscode
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          VSIX="quds-${VERSION}.vsix"
+          npx --yes @vscode/vsce package --no-dependencies --out "${VSIX}"
+          echo "vsix_name=${VSIX}" >> "$GITHUB_OUTPUT"
+          echo "vsix_path=editors/vscode/${VSIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload .vsix build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quds-vscode-extension
+          path: ${{ steps.package.outputs.vsix_path }}
+
+      - name: Attach .vsix to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+        run: |
+          if [ -z "$TAG" ]; then
+            echo "No release tag specified; skipping GitHub Release attachment."
+            exit 0
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${{ steps.package.outputs.vsix_path }}" --clobber
+          else
+            echo "Release $TAG does not exist yet; skipping attachment."
+          fi
+
+      - name: Publish to VS Code Marketplace (if VSCE_PAT secret is configured)
+        working-directory: editors/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "VSCE_PAT secret is not set; skipping VS Code Marketplace publish."
+            exit 0
+          fi
+          npx --yes @vscode/vsce publish --no-dependencies --packagePath "${{ steps.package.outputs.vsix_name }}" -p "$VSCE_PAT"
+
+      - name: Publish to Open VSX (if OVSX_PAT secret is configured)
+        working-directory: editors/vscode
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "OVSX_PAT secret is not set; skipping Open VSX publish."
+            exit 0
+          fi
+          npx --yes ovsx publish "${{ steps.package.outputs.vsix_name }}" -p "$OVSX_PAT"

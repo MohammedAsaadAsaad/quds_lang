@@ -20,7 +20,9 @@ Future<int> installToolchain({
     stderr.writeln('HOME is not set, so Quds has nowhere to install.');
     return 1;
   }
-  final activated = activateCommand(packageRoot);
+  final hosted = isHostedPubCachePackage(packageRoot);
+  final activated =
+      hosted ? _confirmHostedActivation(home) : activateCommand(packageRoot);
   rememberPath(home, pubBin(home));
   final failed = await _installEditors(
     home: home,
@@ -36,6 +38,50 @@ Future<int> installToolchain({
   stdout.writeln('Extension id: $extensionId');
   stdout.writeln('Reload each editor and open a .quds file.');
   return activated ? 0 : 1;
+}
+
+/// Returns `true` when [root] is a hosted package directory inside the active
+/// Dart pub cache (for example after `dart pub global activate quds`).
+bool isHostedPubCachePackage(Directory root) {
+  if (Directory(_join(root.path, '.git')).existsSync()) return false;
+  final lower = root.absolute.path.replaceAll('\\', '/').toLowerCase();
+  final cache = Platform.environment['PUB_CACHE'];
+  if (cache != null && cache.isNotEmpty) {
+    final normalizedCache =
+        cache.replaceAll('\\', '/').replaceAll(RegExp(r'/+$'), '');
+    if (lower.startsWith('${normalizedCache.toLowerCase()}/hosted/')) {
+      return true;
+    }
+  }
+  return lower.contains('/.pub-cache/hosted/') ||
+      lower.contains('/pub/cache/hosted/');
+}
+
+bool _confirmHostedActivation(String home) {
+  final bin = pubBin(home);
+  final executable = File(_join(bin, Platform.isWindows ? 'quds.bat' : 'quds'));
+  if (executable.existsSync()) {
+    stdout.writeln('Using active quds command from pub.dev ($bin).');
+    return true;
+  }
+  final offlineOnly = Platform.environment['QUDS_INSTALL_OFFLINE'] == '1';
+  if (offlineOnly) {
+    stdout.writeln(
+        '[note] The quds command was not found in the pub cache bin directory.');
+    return false;
+  }
+  final result = Process.runSync(
+    Platform.resolvedExecutable,
+    ['pub', 'global', 'activate', 'quds'],
+  );
+  if (result.exitCode != 0) {
+    stdout.writeln('[note] The quds command was not added to the pub cache.');
+    final message = '${result.stderr}'.trim();
+    if (message.isNotEmpty) stderr.writeln(message.split('\n').first);
+    return false;
+  }
+  stdout.writeln('Activated the quds command from pub.dev.');
+  return true;
 }
 
 /// Status lines for the editors this machine can host.
@@ -344,16 +390,19 @@ Future<void> _installClaude(
           'version': '0.0.1',
         })}\n',
   );
+  final hosted = isHostedPubCachePackage(packageRoot);
+  final lspCommand = hosted
+      ? _join(pubBin(home), Platform.isWindows ? 'quds.bat' : 'quds')
+      : Platform.resolvedExecutable;
+  final lspArgs = hosted
+      ? <String>['lsp']
+      : <String>['run', _join(packageRoot.path, 'bin', 'quds.dart'), 'lsp'];
   _writeText(
     File(_join(plugin.path, '.lsp.json')),
     '${jsonEncode({
           'quds': {
-            'command': Platform.resolvedExecutable,
-            'args': [
-              'run',
-              _join(packageRoot.path, 'bin', 'quds.dart'),
-              'lsp',
-            ],
+            'command': lspCommand,
+            'args': lspArgs,
             'extensionToLanguage': {'.quds': 'quds'},
             'transport': 'stdio',
           },

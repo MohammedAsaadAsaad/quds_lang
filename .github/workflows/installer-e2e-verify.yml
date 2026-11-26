@@ -1,0 +1,272 @@
+name: Verify Single-File Installers on Real OSes
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'GitHub Release tag to download single-file installers from'
+        required: false
+        default: 'v0.1.0-alpha.2'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Real E2E Run (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            asset: Quds-Installer-Windows-x64.exe
+          - platform: linux
+            os: ubuntu-latest
+            asset: Quds-Installer-Linux-x64
+          - platform: macos
+            os: macos-latest
+            asset: Quds-Installer-macOS.dmg
+
+    steps:
+      - name: Set up Dart SDK (so real SystemAnalyzer detects a real Dart environment)
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Download published single-file installer from GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          mkdir -p verify_out
+          gh release download "$TAG" --repo "${{ github.repository }}" --pattern "${{ matrix.asset }}" --dir verify_out
+          ls -lh verify_out/
+
+      # -----------------------------------------------------------------------
+      # REAL LINUX TEST (Ubuntu + Xvfb + Openbox + scrot)
+      # -----------------------------------------------------------------------
+      - name: Run & capture real Quds-Installer-Linux-x64 on Ubuntu
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb openbox scrot xdotool wmctrl libgtk-3-0 libgl1-mesa-dri libegl1 libgles2-mesa-dev imagemagick
+
+          chmod +x verify_out/Quds-Installer-Linux-x64
+          Xvfb :99 -screen 0 1280x800x24 -ac +extension GLX +render -noreset &
+          XVFB_PID=$!
+          sleep 2
+
+          export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          openbox &
+          sleep 1
+
+          echo "Launching single-file binary: verify_out/Quds-Installer-Linux-x64"
+          ./verify_out/Quds-Installer-Linux-x64 > verify_out/linux_stdout.log 2>&1 &
+          APP_PID=$!
+
+          # Wait for extraction + Flutter startup + real SystemAnalyzer.scan()
+          for i in $(seq 1 25); do
+            if xdotool search --name "Quds Installer" >/dev/null 2>&1; then
+              echo "Detected Quds Installer X11 window after ${i}s!"
+              break
+            fi
+            sleep 1
+          done
+          sleep 6
+
+          echo "--- Running processes ---"
+          ps aux | grep -i quds || true
+          echo "--- X11 windows ---"
+          wmctrl -lG || true
+
+          WID=$(xdotool search --name "Quds Installer" | head -n 1 || true)
+          if [ -n "$WID" ]; then
+            xdotool windowactivate --sync "$WID" || true
+            sleep 1
+            import -window "$WID" verify_out/real_linux_window.png || true
+          fi
+          scrot -z verify_out/real_linux_desktop.png || true
+
+          # Click "Continue" (متابعة) in bottom-left area (RTL) to also capture Step 2!
+          if [ -n "$WID" ]; then
+            eval $(xdotool getwindowgeometry --shell "$WID")
+            CLICK_X=$((X + 80))
+            CLICK_Y=$((Y + HEIGHT - 32))
+            xdotool mousemove "$CLICK_X" "$CLICK_Y" click 1 || true
+            sleep 2
+            import -window "$WID" verify_out/real_linux_step2.png || true
+          fi
+
+          kill "$APP_PID" 2>/dev/null || true
+          kill "$XVFB_PID" 2>/dev/null || true
+          echo "--- App stdout/stderr ---"
+          cat verify_out/linux_stdout.log || true
+          ls -lh verify_out/*.png || true
+
+      # -----------------------------------------------------------------------
+      # REAL WINDOWS TEST (Windows Server + Win32 PrintWindow + CopyFromScreen)
+      # -----------------------------------------------------------------------
+      - name: Run & capture real Quds-Installer-Windows-x64.exe on Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "verify_out\Quds-Installer-Windows-x64.exe"
+          Write-Host "Launching single-file Windows exe: $exe"
+          $launcher = Start-Process -FilePath $exe -PassThru
+
+          $proc = $null
+          for ($i = 0; $i -lt 35; $i++) {
+            $proc = Get-Process -Name "quds_installer" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+            if ($proc) {
+              Write-Host "Detected quds_installer.exe window (PID=$($proc.Id), Title='$($proc.MainWindowTitle)') after ${i}s!"
+              break
+            }
+            Start-Sleep -Seconds 1
+          }
+
+          if (-not $proc) {
+            Write-Host "Checking extracted cache under LOCALAPPDATA..."
+            Get-ChildItem "$env:LOCALAPPDATA\QudsInstaller" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName
+            throw "quds_installer.exe window did not appear!"
+          }
+
+          # Wait for SystemAnalyzer.scan() and Flutter first frames to settle
+          Start-Sleep -Seconds 7
+
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class WinCap {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+            [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+          }
+          "@
+
+          $hwnd = $proc.MainWindowHandle
+          [WinCap]::ShowWindow($hwnd, 9) | Out-Null
+          [WinCap]::SetForegroundWindow($hwnd) | Out-Null
+          Start-Sleep -Seconds 2
+
+          function Capture-Win([string]$outPath, [string]$screenPath) {
+            $rect = New-Object WinCap+RECT
+            [WinCap]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
+            $w = $rect.Right - $rect.Left
+            $h = $rect.Bottom - $rect.Top
+            Write-Host "Window rect: $($rect.Left),$($rect.Top) -> ${w}x${h}"
+            if ($w -gt 100 -and $h -gt 100) {
+              $bmp = New-Object System.Drawing.Bitmap($w, $h)
+              $g = [System.Drawing.Graphics]::FromImage($bmp)
+              $hdc = $g.GetHdc()
+              # PW_RENDERFULLCONTENT = 2
+              [WinCap]::PrintWindow($hwnd, $hdc, 2) | Out-Null
+              $g.ReleaseHdc($hdc)
+              $g.Dispose()
+              $bmp.Save($outPath, [System.Drawing.Imaging.ImageFormat]::Png)
+              $bmp.Dispose()
+            }
+            $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $sbmp = New-Object System.Drawing.Bitmap($bounds.Width, $bounds.Height)
+            $sg = [System.Drawing.Graphics]::FromImage($sbmp)
+            $sg.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
+            $sg.Dispose()
+            $sbmp.Save($screenPath, [System.Drawing.Imaging.ImageFormat]::Png)
+            $sbmp.Dispose()
+          }
+
+          Capture-Win "verify_out\real_windows_window.png" "verify_out\real_windows_desktop.png"
+
+          # Also click "Continue" button (bottom-left in RTL) to capture Step 2!
+          $rect = New-Object WinCap+RECT
+          [WinCap]::GetWindowRect($hwnd, [ref]$rect) | Out-Null
+          $cx = $rect.Left + 75
+          $cy = $rect.Bottom - 36
+          [WinCap]::SetCursorPos($cx, $cy) | Out-Null
+          [WinCap]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+          [WinCap]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+          Start-Sleep -Seconds 2
+          Capture-Win "verify_out\real_windows_step2.png" "verify_out\real_windows_desktop_step2.png"
+
+          Write-Host "Extracted single-file cache:"
+          Get-ChildItem "$env:LOCALAPPDATA\QudsInstaller" -Depth 2 | Select-Object FullName
+
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          if (-not $launcher.HasExited) { Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue }
+          Get-ChildItem verify_out\*.png | Format-Table Name, Length
+
+      # -----------------------------------------------------------------------
+      # REAL MACOS TEST (macOS runner + DMG mount + screencapture)
+      # -----------------------------------------------------------------------
+      - name: Run & capture real Quds-Installer-macOS.dmg on macOS
+        if: matrix.platform == 'macos'
+        run: |
+          echo "Mounting Quds-Installer-macOS.dmg..."
+          hdiutil attach verify_out/Quds-Installer-macOS.dmg -nobrowse -mountpoint /Volumes/QudsInstaller
+          ls -la /Volumes/QudsInstaller
+
+          cp -R "/Volumes/QudsInstaller/Quds Installer.app" "/tmp/Quds Installer.app"
+          hdiutil detach /Volumes/QudsInstaller || true
+          xattr -cr "/tmp/Quds Installer.app" || true
+
+          echo "Launching Quds Installer.app via LaunchServices..."
+          open "/tmp/Quds Installer.app"
+
+          # Wait for Flutter window + real SystemAnalyzer.scan() on macOS
+          sleep 9
+          ps aux | grep -i "Quds" || true
+
+          # Bring window to front via AppleScript
+          osascript -e 'tell application "Quds Installer" to activate' || true
+          sleep 2
+
+          # Capture full desktop AND exact window ID via native Swift CoreGraphics
+          screencapture -x verify_out/real_macos_desktop.png || true
+          WID=$(swift - <<'SWIFT'
+          import CoreGraphics
+          import Foundation
+          if let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] {
+            for w in list {
+              let owner = (w[kCGWindowOwnerName as String] as? String) ?? ""
+              let name = (w[kCGWindowName as String] as? String) ?? ""
+              let bounds = (w[kCGWindowBounds as String] as? [String: Any]) ?? [:]
+              let width = (bounds["Width"] as? Double) ?? 0
+              let height = (bounds["Height"] as? Double) ?? 0
+              if (owner.contains("Quds") || name.contains("Quds")) && width > 200 && height > 200 {
+                if let num = w[kCGWindowNumber as String] as? Int {
+                  print(num)
+                  break
+                }
+              }
+            }
+          }
+          SWIFT
+          ) || true
+          echo "Detected macOS window ID: ${WID:-none}"
+          if [ -n "$WID" ]; then
+            screencapture -x -l "$WID" verify_out/real_macos_window.png || true
+          fi
+
+          osascript -e 'tell application "Quds Installer" to quit' || true
+          pkill -f "Quds Installer" || true
+          ls -lh verify_out/*.png || true
+
+      - name: Upload real OS screenshots and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-os-screenshots-${{ matrix.platform }}
+          path: |
+            verify_out/*.png
+            verify_out/*.log
+          if-no-files-found: warn

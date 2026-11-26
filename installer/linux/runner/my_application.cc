@@ -22,7 +22,7 @@ static void my_application_activate(GApplication* application) {
 
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
-  gtk_window_set_default_size(window, 1120, 740);
+  gtk_window_set_default_size(window, 980, 680);
 
   gtk_window_set_title(window, "Quds Installer");
 

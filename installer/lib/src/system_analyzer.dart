@@ -307,7 +307,10 @@ class SystemAnalyzer {
     final sep = _os == DesktopOs.windows ? r'\' : '/';
     final custom = _env['PUB_CACHE'];
     if (custom != null && custom.isNotEmpty) {
-      return '$custom${sep}bin';
+      final normalized = _os == DesktopOs.windows
+          ? custom.replaceAll('/', r'\').replaceAll(RegExp(r'\\+$'), '')
+          : custom.replaceAll(RegExp(r'/+$'), '');
+      return '$normalized${sep}bin';
     }
     if (_os == DesktopOs.windows) {
       final local = _env['LOCALAPPDATA'] ?? '$home${sep}AppData${sep}Local';

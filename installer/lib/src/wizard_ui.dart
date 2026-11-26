@@ -942,6 +942,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen> {
                 const SizedBox(height: 2),
                 Text(
                   report.pubCacheBin,
+                  textDirection: TextDirection.ltr,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1253,6 +1254,7 @@ class _InstallerWizardScreenState extends State<_InstallerWizardScreen> {
                   ),
                   subtitle: Text(
                     report.pubCacheBin,
+                    textDirection: TextDirection.ltr,
                     style: TextStyle(
                       fontFamily: QudsPalette.fontMono,
                       fontSize: 11.5,

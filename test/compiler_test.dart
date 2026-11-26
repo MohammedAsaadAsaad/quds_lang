@@ -3032,8 +3032,10 @@ main():
     final env = {
       'HOME': home.path,
       'USERPROFILE': home.path,
-      // Keep JetBrains discovery under this HOME even when the runner sets XDG.
+      // Keep JetBrains discovery and pub cache under this HOME even when the
+      // runner sets XDG_CONFIG_HOME or PUB_CACHE (e.g. setup-dart on CI).
       'XDG_CONFIG_HOME': '${home.path}/.config',
+      'PUB_CACHE': '${home.path}/.pub-cache',
       'PATH': bin.path,
       'LANG': Platform.environment['LANG'] ?? 'C.UTF-8',
       'QUDS_INSTALL_OFFLINE': '1',

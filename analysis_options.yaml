@@ -5,4 +5,5 @@ include: package:lints/core.yaml
 analyzer:
   exclude:
     - examples/flutter_app/**
+    - installer/**
     - toolchains/**

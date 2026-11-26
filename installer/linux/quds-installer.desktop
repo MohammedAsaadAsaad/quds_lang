@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Quds Installer
+Comment=Install and configure the Quds programming language, CLI, and editor extensions
+Exec=quds_installer
+Icon=quds_installer
+Categories=Development;IDE;
+Terminal=false
+StartupNotify=true

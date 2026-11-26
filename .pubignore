@@ -7,6 +7,7 @@ build/
 docs/
 examples/
 install.sh
+installer/
 test/
 tool/
 *.vsix

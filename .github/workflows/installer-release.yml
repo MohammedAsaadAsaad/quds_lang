@@ -1,0 +1,108 @@
+name: Build Desktop Installers
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional existing GitHub Release tag to attach installer archives to (e.g. v0.1.0-alpha.2)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Quds Installer (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            os: windows-latest
+            artifact_name: Quds-Installer-Windows-x64.zip
+          - platform: linux
+            os: ubuntu-latest
+            artifact_name: Quds-Installer-Linux-x64.tar.gz
+          - platform: macos
+            os: macos-latest
+            artifact_name: Quds-Installer-macOS.zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Verify installer dependencies, analyzer, and tests
+        working-directory: installer
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Build & package Windows installer
+        if: matrix.platform == 'windows'
+        working-directory: installer
+        shell: pwsh
+        run: |
+          flutter build windows --release
+          $stage = "dist\Quds-Installer-Windows-x64"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Recurse -Force "build\windows\x64\runner\Release\*" $stage
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\Quds-Installer-Windows-x64.zip" -Force
+
+      - name: Build & package Linux installer
+        if: matrix.platform == 'linux'
+        working-directory: installer
+        run: |
+          flutter build linux --release
+          mkdir -p dist/Quds-Installer-Linux-x64
+          cp -r build/linux/x64/release/bundle/* dist/Quds-Installer-Linux-x64/
+          cp linux/quds_installer.png dist/Quds-Installer-Linux-x64/
+          cp linux/quds-installer.desktop dist/Quds-Installer-Linux-x64/
+          tar -czf dist/Quds-Installer-Linux-x64.tar.gz -C dist Quds-Installer-Linux-x64
+
+      - name: Build & package macOS installer
+        if: matrix.platform == 'macos'
+        working-directory: installer
+        run: |
+          flutter build macos --release
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "build/macos/Build/Products/Release/Quds Installer.app" dist/Quds-Installer-macOS.zip
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: installer/dist/${{ matrix.artifact_name }}
+          if-no-files-found: error
+
+      - name: Attach installer archive to GitHub Release (if tag exists)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
+          ARCHIVE: installer/dist/${{ matrix.artifact_name }}
+        shell: bash
+        run: |
+          if [ -n "$TAG" ]; then
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release upload "$TAG" "$ARCHIVE" --clobber
+            else
+              echo "Release $TAG does not exist yet; skipping release upload."
+            fi
+          fi

@@ -7776,12 +7776,13 @@ class Analyzer {
   }
 
   String lambda(Lambda node) {
-    final expected = _expected;
-    final expectedParams = expected != null &&
-            expected.startsWith('(') &&
-            expected.contains('->') &&
-            !expected.endsWith(')?')
-        ? _splitTypes(_functionParts(expected).$1)
+    final rawExpected = _expected;
+    final expected = rawExpected == null
+        ? null
+        : nonNullableType(stripReadonlyType(rawExpected));
+    final expectedParts = expected == null ? null : functionTypeParts(expected);
+    final expectedParams = expectedParts != null
+        ? _splitTypes(expectedParts.$1)
         : const <String>[];
     for (var i = 0; i < node.parameters.length; i++) {
       final parameter = node.parameters[i];

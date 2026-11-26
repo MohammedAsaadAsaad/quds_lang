@@ -5,6 +5,7 @@ import 'package:analyzer/dart/analysis/features.dart';
 import 'package:analyzer/dart/analysis/utilities.dart' as dart;
 import 'package:analyzer/dart/ast/ast.dart' as d;
 import 'package:analyzer/dart/ast/token.dart' as tok;
+import 'package:analyzer/dart/ast/visitor.dart' as dv;
 import 'package:yaml_edit/yaml_edit.dart';
 
 import 'compiler.dart' as compiler;
@@ -590,8 +591,93 @@ class _DartToQudsEmitter {
   /// outer local or parameter binding (`QUDS-090`).
   final List<Set<String>> _scopes = [];
   var _tempCounter = 0;
+  final List<({int depth, List<String> lines})?> _hoistFrames = [];
 
   String _freshTemp([String prefix = '_qd']) => '$prefix${_tempCounter++}';
+
+  String _withHoistFrame(int depth, String Function() emit) {
+    final frame = (depth: depth, lines: <String>[]);
+    _hoistFrames.add(frame);
+    try {
+      final body = emit();
+      if (frame.lines.isEmpty) return body;
+      return '${frame.lines.join('\n')}\n$body';
+    } finally {
+      _hoistFrames.removeLast();
+    }
+  }
+
+  T _withoutHoisting<T>(T Function() body) {
+    _hoistFrames.add(null);
+    try {
+      return body();
+    } finally {
+      _hoistFrames.removeLast();
+    }
+  }
+
+  bool _needsBlockLambda(d.FunctionExpression node) {
+    final body = node.body;
+    if (body is d.ExpressionFunctionBody) {
+      return !_canInlineLambdaExpr(body.expression);
+    }
+    if (body is d.BlockFunctionBody) {
+      final stmts = body.block.statements;
+      if (stmts.length != 1) return true;
+      final single = stmts.single;
+      if (single is d.ExpressionStatement) {
+        return !_canInlineLambdaExpr(single.expression);
+      }
+      if (single is d.ReturnStatement && single.expression != null) {
+        return !_canInlineLambdaExpr(single.expression!);
+      }
+      return true;
+    }
+    return true;
+  }
+
+  bool _canInlineLambdaExpr(d.Expression expr) {
+    if (expr is d.AssignmentExpression ||
+        expr is d.CascadeExpression ||
+        expr is d.ThrowExpression ||
+        expr is d.SwitchExpression) {
+      return false;
+    }
+    if (expr is d.PostfixExpression &&
+        (expr.operator.lexeme == '++' || expr.operator.lexeme == '--')) {
+      return false;
+    }
+    if (expr is d.PrefixExpression &&
+        (expr.operator.lexeme == '++' || expr.operator.lexeme == '--')) {
+      return false;
+    }
+    if (expr is d.FunctionExpression && _needsBlockLambda(expr)) {
+      return false;
+    }
+    return !_containsBlockConstruct(expr);
+  }
+
+  bool _containsBlockConstruct(d.AstNode root) {
+    final finder = _BlockConstructFinder(this);
+    root.visitChildren(finder);
+    return finder.found;
+  }
+
+  String? _tryHoistBlockLambda(
+    String params,
+    String asyncMod,
+    d.BlockFunctionBody body,
+  ) {
+    final frame = _hoistFrames.isEmpty ? null : _hoistFrames.last;
+    if (frame == null) return null;
+    final name = _freshTemp('_qfn');
+    final pad = '  ' * frame.depth;
+    final stmts = _statements(body.block.statements, frame.depth + 1);
+    final blockBody =
+        stmts.isEmpty ? '${'  ' * (frame.depth + 1)}return' : stmts;
+    frame.lines.add('$pad$name = ($params)$asyncMod -> :\n$blockBody');
+    return name;
+  }
 
   static const _qudsReservedIdentifiers = {
     'readonly',
@@ -1292,10 +1378,29 @@ class _DartToQudsEmitter {
     }
     if (body is d.ExpressionFunctionBody) {
       final expr = body.expression;
-      if (_shouldFormatAsBlockCall(expr)) {
-        return '$header:\n${'  ' * (depth + 1)}return ${_expression(expr, depth + 1, allowBlock: true)}';
+      final isVoid = header.endsWith('-> void');
+      final pad = '  ' * (depth + 1);
+      final frame = (depth: depth + 1, lines: <String>[]);
+      _hoistFrames.add(frame);
+      late final String rendered;
+      final useBlock = _shouldFormatAsBlockCall(expr);
+      try {
+        rendered = _expression(
+          expr,
+          useBlock ? depth + 1 : depth,
+          allowBlock: useBlock,
+        );
+      } finally {
+        _hoistFrames.removeLast();
       }
-      return '$header = ${_expression(expr, depth)}';
+      if (frame.lines.isNotEmpty) {
+        final stmt = isVoid ? '$pad$rendered' : '${pad}return $rendered';
+        return '$header:\n${frame.lines.join('\n')}\n$stmt';
+      }
+      if (useBlock) {
+        return '$header:\n${pad}return $rendered';
+      }
+      return '$header = $rendered';
     }
     if (body is d.BlockFunctionBody) {
       final stmts = _statements(body.block.statements, depth + 1);
@@ -1307,7 +1412,11 @@ class _DartToQudsEmitter {
   String _bodyStatements(d.FunctionBody body, int depth) {
     final pad = '  ' * depth;
     if (body is d.ExpressionFunctionBody) {
-      return '${pad}return ${_expression(body.expression, depth, allowBlock: true)}';
+      return _withHoistFrame(
+        depth,
+        () =>
+            '${pad}return ${_expression(body.expression, depth, allowBlock: true)}',
+      );
     }
     if (body is d.BlockFunctionBody) {
       final stmts = _statements(body.block.statements, depth);
@@ -1425,7 +1534,7 @@ class _DartToQudsEmitter {
     final rendered = <String>[];
     for (final s in list) {
       final comments = _leadingComments(s, depth);
-      final text = _statement(s, depth);
+      final text = _withHoistFrame(depth, () => _statement(s, depth));
       if (text.isNotEmpty) {
         rendered.add('$comments$text');
       } else if (comments.isNotEmpty) {
@@ -1517,12 +1626,14 @@ class _DartToQudsEmitter {
       return _forStatement(node, depth);
     }
     if (node is d.WhileStatement) {
+      final cond = _withoutHoisting(() => _expression(node.condition, depth));
       final body = _branchBody(node.body, depth + 1);
-      return '${pad}while ${_expression(node.condition, depth)}:\n$body';
+      return '${pad}while $cond:\n$body';
     }
     if (node is d.DoStatement) {
+      final cond = _withoutHoisting(() => _expression(node.condition, depth));
       final body = _branchBody(node.body, depth + 1);
-      return '${pad}repeat:\n$body\n${pad}while ${_expression(node.condition, depth)}';
+      return '${pad}repeat:\n$body\n${pad}while $cond';
     }
     if (node is d.SwitchStatement) {
       return _switchStatement(node, depth);
@@ -1597,7 +1708,7 @@ class _DartToQudsEmitter {
     return _withScope(() {
       final text = stmt is d.Block
           ? _statements(stmt.statements, depth)
-          : _statement(stmt, depth);
+          : _withHoistFrame(depth, () => _statement(stmt, depth));
       return text.isEmpty ? '${'  ' * depth}null' : text;
     }, initial: extraScope);
   }
@@ -2366,13 +2477,32 @@ class _DartToQudsEmitter {
       args = node.argumentList;
     }
     if (args == null) return false;
-    final namedCount = args.arguments.whereType<d.NamedArgument>().length;
-    if (namedCount < 2) return false;
-    if (args.arguments.length - namedCount > 1) return false;
-    return args.toSource().length >= 52 ||
-        args.arguments.any((a) =>
-            a is d.NamedArgument &&
-            (a.name.lexeme == 'child' || a.name.lexeme == 'children'));
+    final named = args.arguments.whereType<d.NamedArgument>().toList();
+    if (named.isEmpty) return false;
+    if (args.arguments.length - named.length > 1) return false;
+    if (named.any((a) {
+      final v = a.argumentExpression;
+      return (v is d.FunctionExpression && _needsBlockLambda(v)) ||
+          v is d.SwitchExpression ||
+          _containsBlockConstruct(v);
+    })) {
+      return true;
+    }
+    if (named.length >= 2) {
+      return args.toSource().length >= 52 ||
+          named.any(
+              (a) => a.name.lexeme == 'child' || a.name.lexeme == 'children');
+    }
+    final single = named.single;
+    final key = single.name.lexeme;
+    return (key == 'child' ||
+            key == 'children' ||
+            key == 'body' ||
+            key == 'builder' ||
+            key == 'itemBuilder' ||
+            key == 'onTap' ||
+            key == 'onPressed') &&
+        args.toSource().length >= 52;
   }
 
   String _blockCall(
@@ -2428,7 +2558,10 @@ class _DartToQudsEmitter {
       final boundNames = <String>[];
       final cond = _ifElementHeader(element, depth, boundNames);
       final thenRow = _withScope(
-        () => _collectionRow(element.thenElement, depth + 1),
+        () => boundNames.isEmpty
+            ? _collectionRow(element.thenElement, depth + 1)
+            : _withoutHoisting(
+                () => _collectionRow(element.thenElement, depth + 1)),
         initial: boundNames,
       );
       final buf = StringBuffer('${pad}if $cond:\n$thenRow');
@@ -2441,10 +2574,14 @@ class _DartToQudsEmitter {
     if (element is d.ForElement) {
       final parts = element.forLoopParts;
       if (parts is d.ForEachPartsWithDeclaration) {
-        return '${pad}for ${parts.loopVariable.name.lexeme} in ${_expression(parts.iterable, depth)}:\n${_collectionRow(element.body, depth + 1)}';
+        final body =
+            _withoutHoisting(() => _collectionRow(element.body, depth + 1));
+        return '${pad}for ${parts.loopVariable.name.lexeme} in ${_expression(parts.iterable, depth)}:\n$body';
       }
       if (parts is d.ForEachPartsWithIdentifier) {
-        return '${pad}for ${parts.identifier.name} in ${_expression(parts.iterable, depth)}:\n${_collectionRow(element.body, depth + 1)}';
+        final body =
+            _withoutHoisting(() => _collectionRow(element.body, depth + 1));
+        return '${pad}for ${parts.identifier.name} in ${_expression(parts.iterable, depth)}:\n$body';
       }
     }
     _fail(element, 'unsupported collection element: ${element.runtimeType}');
@@ -2659,7 +2796,41 @@ class _DartToQudsEmitter {
       final body = node.body;
       return _withScope(() {
         if (body is d.ExpressionFunctionBody) {
-          return '($params)$asyncMod -> ${_expression(body.expression, depth, allowBlock: allowBlock)}';
+          if (allowBlock) {
+            final frame = (depth: depth + 1, lines: <String>[]);
+            _hoistFrames.add(frame);
+            late final String rendered;
+            try {
+              rendered = _expression(body.expression, depth + 1,
+                  allowBlock: _shouldFormatAsBlockCall(body.expression));
+            } finally {
+              _hoistFrames.removeLast();
+            }
+            if (frame.lines.isNotEmpty) {
+              final bodyPad = '  ' * (depth + 1);
+              return '($params)$asyncMod -> :\n${frame.lines.join('\n')}\n${bodyPad}return $rendered';
+            }
+            if (_shouldFormatAsBlockCall(body.expression)) {
+              final bodyPad = '  ' * (depth + 1);
+              return '($params)$asyncMod -> :\n${bodyPad}return $rendered';
+            }
+            return '($params)$asyncMod -> $rendered';
+          }
+          if (!_canInlineLambdaExpr(body.expression)) {
+            final frame = _hoistFrames.isEmpty ? null : _hoistFrames.last;
+            if (frame != null) {
+              final name = _freshTemp('_qfn');
+              final pad = '  ' * frame.depth;
+              final inner = _withHoistFrame(
+                frame.depth + 1,
+                () =>
+                    '${'  ' * (frame.depth + 1)}return ${_expression(body.expression, frame.depth + 1, allowBlock: true)}',
+              );
+              frame.lines.add('$pad$name = ($params)$asyncMod -> :\n$inner');
+              return name;
+            }
+          }
+          return '($params)$asyncMod -> ${_withoutHoisting(() => _expression(body.expression, depth))}';
         }
         if (body is d.BlockFunctionBody) {
           if (!allowBlock) {
@@ -2668,7 +2839,9 @@ class _DartToQudsEmitter {
               final expr =
                   (body.block.statements.single as d.ExpressionStatement)
                       .expression;
-              return '($params)$asyncMod -> ${_expression(expr, depth)}';
+              if (_canInlineLambdaExpr(expr)) {
+                return '($params)$asyncMod -> ${_withoutHoisting(() => _expression(expr, depth))}';
+              }
             }
             if (body.block.statements.length == 1 &&
                 body.block.statements.single is d.ReturnStatement &&
@@ -2677,8 +2850,12 @@ class _DartToQudsEmitter {
                     null) {
               final expr = (body.block.statements.single as d.ReturnStatement)
                   .expression!;
-              return '($params)$asyncMod -> ${_expression(expr, depth)}';
+              if (_canInlineLambdaExpr(expr)) {
+                return '($params)$asyncMod -> ${_withoutHoisting(() => _expression(expr, depth))}';
+              }
             }
+            final hoisted = _tryHoistBlockLambda(params, asyncMod, body);
+            if (hoisted != null) return hoisted;
             _fail(node,
                 'multiline block lambda inside inline call requires binding to a local variable');
           }
@@ -2702,9 +2879,9 @@ class _DartToQudsEmitter {
             _dartPattern(arm.guardedPattern.pattern, depth + 1, boundNames);
         final guard = arm.guardedPattern.whenClause == null
             ? ''
-            : ' when ${_expression(arm.guardedPattern.whenClause!.expression, depth + 1)}';
+            : ' when ${_withoutHoisting(() => _expression(arm.guardedPattern.whenClause!.expression, depth + 1))}';
         final armExpr = _withScope(
-          () => _expression(arm.expression, depth + 1),
+          () => _withoutHoisting(() => _expression(arm.expression, depth + 1)),
           initial: boundNames,
         );
         buf.writeln('$armPad$pat$guard: $armExpr');
@@ -3004,4 +3181,26 @@ String _join(String root, String relative) {
   final tail = relative.replaceAll('/', Platform.pathSeparator);
   if (root.endsWith(Platform.pathSeparator)) return '$root$tail';
   return '$root${Platform.pathSeparator}$tail';
+}
+
+class _BlockConstructFinder extends dv.RecursiveAstVisitor<void> {
+  _BlockConstructFinder(this._migrator);
+
+  final _DartToQudsEmitter _migrator;
+  var found = false;
+
+  @override
+  void visitFunctionExpression(d.FunctionExpression node) {
+    if (found) return;
+    if (_migrator._needsBlockLambda(node)) {
+      found = true;
+      return;
+    }
+    super.visitFunctionExpression(node);
+  }
+
+  @override
+  void visitSwitchExpression(d.SwitchExpression node) {
+    found = true;
+  }
 }

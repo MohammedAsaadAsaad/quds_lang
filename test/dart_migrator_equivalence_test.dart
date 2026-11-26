@@ -900,6 +900,115 @@ void main() {
 }
 ''');
     });
+
+    test(
+        '17. Flutter-style setState assignment lambdas, multiline/empty lambdas, and single-named-arg widget trees',
+        () async {
+      await assertDartAndQudsEquivalent('flutter_lambdas', '''
+class Box {
+  final Box? child;
+  final List<Box>? children;
+  final void Function()? onTap;
+  final String title;
+  final Box Function(int)? itemBuilder;
+  final int itemCount;
+
+  Box({
+    this.child,
+    this.children,
+    this.onTap,
+    this.title = '',
+    this.itemBuilder,
+    this.itemCount = 0,
+  });
+
+  String render() {
+    if (onTap != null) onTap!();
+    final parts = <String>[];
+    if (title.isNotEmpty) parts.add(title);
+    if (child != null) parts.add(child!.render());
+    if (children != null) {
+      for (final c in children!) {
+        parts.add(c.render());
+      }
+    }
+    if (itemBuilder != null) {
+      for (var i = 0; i < itemCount; i++) {
+        parts.add(itemBuilder!(i).render());
+      }
+    }
+    return parts.join('|');
+  }
+}
+
+class Screen {
+  int selected = -1;
+  int count = 0;
+  final List<String> bag = ['A', 'B', 'C'];
+
+  void setState(void Function() fn) {
+    fn();
+  }
+
+  void selectPage(int index) {
+    setState(() {
+      selected = index;
+    });
+  }
+
+  void bumpCount() => setState(() {
+        count++;
+      });
+
+  Box build() {
+    return Box(
+      child: Box(
+        children: [
+          Box(
+            onTap: () {
+              setState(() {
+                bag.remove('B');
+                count = bag.length;
+              });
+            },
+            title: 'bag',
+          ),
+          Box(
+            onTap: () {},
+            title: 'noop',
+          ),
+          Box(
+            itemCount: 3,
+            itemBuilder: (index) {
+              final tag = 'item_\$index';
+              return Box(
+                onTap: () {
+                  setState(() {
+                    selected = index;
+                  });
+                },
+                title: tag,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void main() {
+  final s = Screen();
+  s.selectPage(7);
+  print('afterSelect:\${s.selected}');
+  s.bumpCount();
+  print('afterBump:\${s.count}');
+  final rendered = s.build().render();
+  print(rendered);
+  print('final:\${s.selected}:\${s.count}:\${s.bag}');
+}
+''');
+    });
   });
 
   group('Safety gates: never silently alter semantics', () {

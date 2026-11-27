@@ -108,4 +108,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('P102'), findsOneWidget);
   });
+
+  testWidgets('Mobile phone viewport renders 3-tab bottom NavigationBar without overflow',
+      (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(initialPresetIndex: 0));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    expect(find.byKey(const Key('mobile_bottom_nav')), findsOneWidget);
+    await tester.tap(find.text('اللوحة'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+  });
 }

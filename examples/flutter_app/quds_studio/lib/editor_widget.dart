@@ -175,15 +175,19 @@ class QudsCodeEditorView extends StatelessWidget {
                     size: 16,
                     color: Color(palette.colorFor(QudsTokenCategory.keyword))),
                 const SizedBox(width: 8),
-                Text(
-                  isArabic ? 'محرر كود Quds' : 'Quds Code Editor',
-                  style: TextStyle(
-                    color: Color(palette.foreground),
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
+                Flexible(
+                  child: Text(
+                    isArabic ? 'محرر كود Quds' : 'Quds Code Editor',
+                    style: TextStyle(
+                      color: Color(palette.foreground),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 if (analysis.hasErrors)
                   _StatusPill(
                     color: const Color(0xFFEF4444),

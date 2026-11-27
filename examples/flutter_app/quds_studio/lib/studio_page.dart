@@ -66,6 +66,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   bool _running = false;
   String? _liveEvalOutput;
 
+  int _mobileTabIndex = 0;
+
   QudsEditorThemePalette get _palette =>
       _isDark ? QudsEditorThemePalette.dark() : QudsEditorThemePalette.light();
 
@@ -90,7 +92,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
 
     if (widget.autoRunInitial && _breakpoints.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _runCode();
+        if (mounted) _runCode(switchMobileTab: false);
       });
     }
   }
@@ -143,6 +145,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       setState(() {
         _activePause = pause;
         _inspectorTabs.index = 2; // Jump to Debugger tab on pause!
+        _mobileTabIndex = 2;
       });
     });
     _resumeSub = _debugger.onResumed.listen((_) {
@@ -178,7 +181,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     }
   }
 
-  Future<void> _runCode() async {
+  Future<void> _runCode({bool switchMobileTab = true}) async {
     if (_running) return;
     _debugger.setLineBreakpoints(_preset.fileName, _breakpoints);
     setState(() {
@@ -192,6 +195,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _running = false;
       _activePause = null;
       _lastResult = res;
+      if (switchMobileTab) {
+        _mobileTabIndex =
+            (res.lastGeometryScene != null || res.lastPlot != null) ? 1 : 2;
+      }
     });
     _reanalyze();
   }
@@ -354,64 +361,104 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       data: theme,
       child: Directionality(
         textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
-        child: Scaffold(
-          body: Column(
-            children: [
-              _buildToolbar(theme),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      // Left Pane: Quds Code Editor
-                      Expanded(
-                        flex: 5,
-                        child: QudsCodeEditorView(
-                          controller: _codeController,
-                          focusNode: _editorFocus,
-                          palette: _palette,
-                          analysis: _analysis,
-                          breakpoints: _breakpoints,
-                          pausedLine: _activePause?.span.line,
-                          completions: _completions,
-                          signatureHelp: _signatureHelp,
-                          onToggleBreakpoint: (line) {
-                            setState(() {
-                              if (!_breakpoints.remove(line)) {
-                                _breakpoints.add(line);
-                              }
-                            });
-                            _debugger.setLineBreakpoints(
-                                _preset.fileName, _breakpoints);
-                          },
-                          onApplyCompletion: _applyCompletion,
-                          onApplyQuickFix: _applyQuickFix,
-                          onSmartEnter: () {},
-                          onSmartTab: _smartTab,
-                          onFormat: _formatCode,
-                          onToggleComment: _toggleComment,
-                          isArabic: _isArabic,
-                        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isCompact = constraints.maxWidth < 840;
+            final editorView = QudsCodeEditorView(
+              controller: _codeController,
+              focusNode: _editorFocus,
+              palette: _palette,
+              analysis: _analysis,
+              breakpoints: _breakpoints,
+              pausedLine: _activePause?.span.line,
+              completions: _completions,
+              signatureHelp: _signatureHelp,
+              onToggleBreakpoint: (line) {
+                setState(() {
+                  if (!_breakpoints.remove(line)) {
+                    _breakpoints.add(line);
+                  }
+                });
+                _debugger.setLineBreakpoints(_preset.fileName, _breakpoints);
+              },
+              onApplyCompletion: _applyCompletion,
+              onApplyQuickFix: _applyQuickFix,
+              onSmartEnter: () {},
+              onSmartTab: _smartTab,
+              onFormat: _formatCode,
+              onToggleComment: _toggleComment,
+              isArabic: _isArabic,
+            );
+
+            return Scaffold(
+              body: SafeArea(
+                child: Column(
+                  children: [
+                    _buildToolbar(theme),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.all(isCompact ? 8 : 12),
+                        child: isCompact
+                            ? IndexedStack(
+                                index: _mobileTabIndex,
+                                children: [
+                                  editorView,
+                                  _buildVisualStage(theme),
+                                  _buildInspectorPanel(theme),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  Expanded(flex: 5, child: editorView),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 5,
+                                    child: Column(
+                                      children: [
+                                        Expanded(
+                                            flex: 6,
+                                            child: _buildVisualStage(theme)),
+                                        const SizedBox(height: 12),
+                                        Expanded(
+                                            flex: 4,
+                                            child: _buildInspectorPanel(theme)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                       ),
-                      const SizedBox(width: 12),
-                      // Right Pane: Visual Interactive Canvas + Inspector
-                      Expanded(
-                        flex: 5,
-                        child: Column(
-                          children: [
-                            Expanded(flex: 6, child: _buildVisualStage(theme)),
-                            const SizedBox(height: 12),
-                            Expanded(
-                                flex: 4, child: _buildInspectorPanel(theme)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+              bottomNavigationBar: isCompact
+                  ? NavigationBar(
+                      key: const Key('mobile_bottom_nav'),
+                      selectedIndex: _mobileTabIndex,
+                      height: 62,
+                      onDestinationSelected: (idx) =>
+                          setState(() => _mobileTabIndex = idx),
+                      destinations: [
+                        NavigationDestination(
+                          icon: const Icon(Icons.code_rounded),
+                          label: _isArabic ? 'المحرر' : 'Editor',
+                        ),
+                        NavigationDestination(
+                          icon: const Icon(Icons.auto_graph_rounded),
+                          label: _isArabic ? 'اللوحة' : 'Canvas',
+                        ),
+                        NavigationDestination(
+                          icon: Icon(_activePause != null
+                              ? Icons.bug_report_rounded
+                              : Icons.terminal_rounded),
+                          label: _isArabic ? 'المصحح' : 'Console',
+                        ),
+                      ],
+                    )
+                  : null,
+            );
+          },
         ),
       ),
     );
@@ -460,32 +507,38 @@ class _QudsStudioPageState extends State<QudsStudioPage>
 
           // Preset selector
           DropdownButtonHideUnderline(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest
-                    .withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: DropdownButton<String>(
-                key: const Key('preset_dropdown'),
-                value: _preset.id,
-                isDense: true,
-                items: [
-                  for (final p in studioPresets)
-                    DropdownMenuItem(
-                      value: p.id,
-                      child: Text(
-                        _isArabic ? p.titleAr : p.titleEn,
-                        style: const TextStyle(fontSize: 12.5),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 260),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: DropdownButton<String>(
+                  key: const Key('preset_dropdown'),
+                  value: _preset.id,
+                  isDense: true,
+                  isExpanded: true,
+                  items: [
+                    for (final p in studioPresets)
+                      DropdownMenuItem(
+                        value: p.id,
+                        child: Text(
+                          _isArabic ? p.titleAr : p.titleEn,
+                          style: const TextStyle(fontSize: 12.5),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                ],
-                onChanged: (id) {
-                  if (id == null) return;
-                  final target = studioPresets.firstWhere((p) => p.id == id);
-                  _selectPreset(target);
-                },
+                  ],
+                  onChanged: (id) {
+                    if (id == null) return;
+                    final target = studioPresets.firstWhere((p) => p.id == id);
+                    _selectPreset(target);
+                  },
+                ),
               ),
             ),
           ),

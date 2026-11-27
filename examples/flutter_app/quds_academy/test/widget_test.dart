@@ -137,7 +137,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
     await capture(tester, boundary, 'phone-ar');
-    for (final title in ['تعلّم', 'المرجع', 'تقدّمي', 'الرئيسية']) {
+    for (final title in ['تعلّم', 'المرجع', 'تقدّمي', 'المختبر', 'الرئيسية']) {
       await tester.tap(find.text(title).last);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: title);
@@ -154,6 +154,77 @@ void main() {
         expect(tester.takeException(), isNull);
       }
     }
+  });
+
+  testWidgets(
+      'embedded playground executes custom Quds code, math SDK, and geometry',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 1024));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(Academy(storage: TestStorage()));
+    await tester.pumpAndSettle();
+
+    // Open Playground from sidebar
+    await tester.tap(find.text('المختبر').first);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('academy_playground_editor')), findsOneWidget);
+
+    // Enter custom Quds code using quds:math and execute via embedded interpreter
+    await tester.enterText(
+      find.byKey(const Key('academy_playground_editor')),
+      'use quds:math\n'
+      'vals = [10.0, 20.0, 30.0]\n'
+      'print "avg={mean(vals)}"\n',
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('academy_playground_run')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('avg=20.0'), findsOneWidget);
+
+    // Switch to the Interactive Geometry starter snippet and run it
+    await tester.tap(find.text('هندسة تفاعلية'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('academy_playground_run')));
+    await tester.pumpAndSettle();
+    expect(find.byType(Slider), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('lesson code opens in Playground and executes via interpreter',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 1024));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(Academy(storage: TestStorage()));
+    await tester.pumpAndSettle();
+
+    // Switch to English and open lesson 1
+    await tester.tap(find.text('EN'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start learning'));
+    await tester.pumpAndSettle();
+
+    // Tap "Try in Playground" button next to Run lesson demo
+    final tryBtn = find.text('Try in Playground');
+    await tester.ensureVisible(tryBtn);
+    await tester.tap(tryBtn);
+    await tester.pumpAndSettle();
+
+    // Verify Playground loaded the lesson code and executes main() live
+    final editor = tester.widget<TextField>(
+      find.byKey(const Key('academy_playground_editor')),
+    );
+    expect(editor.controller!.text, contains('print "Hello {name}"'));
+
+    await tester.tap(find.byKey(const Key('academy_playground_run')));
+    await tester.pumpAndSettle();
+    final consoleOutput = tester.widgetList<SelectableText>(
+      find.byType(SelectableText),
+    );
+    expect(
+      consoleOutput.any((w) => (w.data ?? '').contains('Hello Quds')),
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('storage errors offer retry without replacing saved data',

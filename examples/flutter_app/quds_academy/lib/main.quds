@@ -2,6 +2,7 @@ use package:flutter.material
 use package:flutter/services.dart
 use package:flutter_localizations/flutter_localizations.dart
 use package:quds_academy/platform/storage.dart
+use package:quds_academy/platform/playground.dart
 use dart:typed_data
 use src.catalog
 use src.keywords
@@ -114,6 +115,7 @@ class AcademyState extends State<Academy>:
   var query: String = ""
   var output: String = ""
   var notice: String = ""
+  var playgroundCode: String = ""
   var completed: List<String> = []
   var store: ProgressStore? = null
   var storage: AcademyStorage? = null
@@ -185,6 +187,13 @@ class AcademyState extends State<Academy>:
       output = ""
       notice = ""
     setState(change7)
+
+  openInPlayground(code: String) -> void:
+    change = () -> :
+      playgroundCode = code
+      page = 4
+      notice = ""
+    setState(change)
 
   switchLanguage() async -> void:
     if saving or store == null: return
@@ -329,7 +338,8 @@ class AcademyState extends State<Academy>:
   pageTitle() -> String:
     titles = [tr("Your learning studio", "مساحتك للتعلّم"),
     tr("The learning path", "مسار التعلّم"), tr("The language, at a glance",
-    "اللغة أمامك بوضوح"), tr("Every step counts", "كل خطوة تصنع فرقًا")]
+    "اللغة أمامك بوضوح"), tr("Every step counts", "كل خطوة تصنع فرقًا"),
+    tr("Live Quds Playground", "مختبر قدس التفاعلي")]
     return titles[page]
 
   brandMark(context: BuildContext) -> Widget:
@@ -344,9 +354,9 @@ class AcademyState extends State<Academy>:
 
   navigation(context: BuildContext) -> Widget:
     labels = [tr("Overview", "نظرة عامة"), tr("Learn", "تعلّم"), tr("Reference",
-    "المرجع"), tr("My progress", "تقدّمي")]
+    "المرجع"), tr("My progress", "تقدّمي"), tr("Playground", "المختبر")]
     icons = [Icons.grid_view_rounded, Icons.route_rounded,
-    Icons.auto_stories_rounded, Icons.insights_rounded]
+    Icons.auto_stories_rounded, Icons.insights_rounded, Icons.terminal_rounded]
     entries: List<Widget> = []
     for index in 0..<labels.length:
       selected = page == index
@@ -369,7 +379,7 @@ class AcademyState extends State<Academy>:
   hero(context: BuildContext, width: double) -> Widget:
     intro = Column(crossAxisAlignment: CrossAxisAlignment.start,
     children: [Container(padding: EdgeInsets.symmetric(horizontal: 12.0,
-    vertical: 6.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.11), borderRadius: BorderRadius.circular(30.0)), child: Text(tr("YOUR NEXT CHAPTER STARTS HERE", "فصلك القادم يبدأ هنا"), style: TextStyle(fontSize: 10.0, letterSpacing: 1.2, fontWeight: FontWeight.w700, color: brand()))), SizedBox(height: 22.0), Text(tr("Small syntax.\nBig possibilities.", "ابدأ صغيرًا.\nوابنِ بلا حدود."), style: TextStyle(fontSize: (if (width > 700.0): (43.0) else: (32.0)), height: 1.35, fontWeight: FontWeight.w800, letterSpacing: -1.5, color: ink(context))), SizedBox(height: 16.0), prose(context, tr("Learn Quds by making things. Clear lessons, real examples, and a little discovery at every step.", "تعلّم قدس بالبناء. دروس واضحة وأمثلة حقيقية، واكتشاف صغير مع كل خطوة.")), SizedBox(height: 25.0), FilledButton.icon(onPressed: () -> openLesson(nextLesson()), icon: Icon(Icons.arrow_forward_rounded, size: 19.0), label: Text((if (completed.isEmpty): (tr("Start learning", "ابدأ التعلّم")) else: (tr("Continue your journey", "أكمل رحلتك")))), style: FilledButton.styleFrom(backgroundColor: brand(), padding: EdgeInsets.symmetric(horizontal: 22.0, vertical: 20.0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0))))])
+    vertical: 6.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.11), borderRadius: BorderRadius.circular(30.0)), child: Text(tr("YOUR NEXT CHAPTER STARTS HERE", "فصلك القادم يبدأ هنا"), style: TextStyle(fontSize: 10.0, letterSpacing: 1.2, fontWeight: FontWeight.w700, color: brand()))), SizedBox(height: 22.0), Text(tr("Small syntax.\nBig possibilities.", "ابدأ صغيرًا.\nوابنِ بلا حدود."), style: TextStyle(fontSize: (if (width > 700.0): (43.0) else: (32.0)), height: 1.35, fontWeight: FontWeight.w800, letterSpacing: -1.5, color: ink(context))), SizedBox(height: 16.0), prose(context, tr("Learn Quds by making things. Clear lessons, real examples, and a little discovery at every step.", "تعلّم قدس بالبناء. دروس واضحة وأمثلة حقيقية، واكتشاف صغير مع كل خطوة.")), SizedBox(height: 25.0), Wrap(spacing: 12.0, runSpacing: 12.0, children: [FilledButton.icon(onPressed: () -> openLesson(nextLesson()), icon: Icon(Icons.arrow_forward_rounded, size: 19.0), label: Text((if (completed.isEmpty): (tr("Start learning", "ابدأ التعلّم")) else: (tr("Continue your journey", "أكمل رحلتك")))), style: FilledButton.styleFrom(backgroundColor: brand(), padding: EdgeInsets.symmetric(horizontal: 22.0, vertical: 20.0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)))), OutlinedButton.icon(onPressed: () -> selectPage(4), icon: Icon(Icons.terminal_rounded, size: 19.0), label: Text(tr("Open Playground", "افتح المختبر")), style: OutlinedButton.styleFrom(foregroundColor: brand(), side: BorderSide(color: brand()), padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0))))])])
     demo = Container(padding: EdgeInsets.all(23.0),
     decoration: BoxDecoration(color: night(),
     borderRadius: BorderRadius.circular(20.0),
@@ -475,7 +485,7 @@ class AcademyState extends State<Academy>:
 
   codePanel(context: BuildContext, code: String) -> Widget:
     return Container(decoration: BoxDecoration(color: night(),
-    borderRadius: BorderRadius.circular(18.0)), padding: EdgeInsets.all(20.0), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.code_rounded, color: Color(0xFF9BCAB3), size: 18.0), SizedBox(width: 9.0), Text("QUDS", style: TextStyle(fontFamily: "JetBrainsMono", color: Color(0xFF9BCAB3), fontSize: 10.0, letterSpacing: 1.8)), Spacer(), IconButton(tooltip: tr("Copy example", "نسخ المثال"), onPressed: () -> Clipboard.setData(ClipboardData(text: code)), icon: Icon(Icons.copy_rounded, size: 16.0, color: Color(0xFFA5BDB1)))]), SizedBox(height: 10.0), SingleChildScrollView(scrollDirection: Axis.horizontal, child: SelectableText.rich(codeText(code), style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 12.0, color: Color(0xFFD3EDDF), height: 1.9)))])))
+    borderRadius: BorderRadius.circular(18.0)), padding: EdgeInsets.all(20.0), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(Icons.code_rounded, color: Color(0xFF9BCAB3), size: 18.0), SizedBox(width: 9.0), Text("QUDS", style: TextStyle(fontFamily: "JetBrainsMono", color: Color(0xFF9BCAB3), fontSize: 10.0, letterSpacing: 1.8)), Spacer(), IconButton(tooltip: tr("Try in Playground", "جرّب في المختبر"), onPressed: () -> openInPlayground(code), icon: Icon(Icons.play_circle_outline_rounded, size: 18.0, color: Color(0xFF91D5AE))), IconButton(tooltip: tr("Copy example", "نسخ المثال"), onPressed: () -> Clipboard.setData(ClipboardData(text: code)), icon: Icon(Icons.copy_rounded, size: 16.0, color: Color(0xFFA5BDB1)))]), SizedBox(height: 10.0), SingleChildScrollView(scrollDirection: Axis.horizontal, child: SelectableText.rich(codeText(code), style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 12.0, color: Color(0xFFD3EDDF), height: 1.9)))])))
 
   lessonContent(context: BuildContext) -> Widget:
     lesson = catalog[currentLesson]
@@ -500,7 +510,7 @@ class AcademyState extends State<Academy>:
     color: brand())), SizedBox(height: 9.0), heading(context,
     (if (arabic): (lesson.titleAr) else: (lesson.titleEn)),
     32.0), SizedBox(height: 10.0), prose(context,
-    (if (arabic): (lesson.descriptionAr) else: (lesson.descriptionEn))), SizedBox(height: 24.0), panel(context, prose(context, (if (arabic): (lesson.bodyAr) else: (lesson.bodyEn)))), SizedBox(height: 22.0), codePanel(context, lesson.code), SizedBox(height: 12.0), Align(alignment: AlignmentDirectional.centerEnd, child: FilledButton.icon(onPressed: (if (running): (null) else: (runCurrent)), icon: Icon(Icons.play_arrow_rounded, size: 19.0), label: Text((if (running): (tr("Running…", "جارٍ التشغيل…")) else: (tr("Run lesson demo", "شغّل مثال الدرس")))))), if output.isNotEmpty: AnimatedSize(duration: motion(context, 240), child: Container(margin: EdgeInsets.only(top: 12.0), padding: EdgeInsets.all(20.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14.0)), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("OUTPUT", style: TextStyle(fontSize: 10.0, letterSpacing: 1.5, color: brand())), SizedBox(height: 8.0), SelectableText(output, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 13.0, color: ink(context)))])))), SizedBox(height: 9.0), Text(tr("Curated demos run the Quds code compiled into this app. Copy examples to your editor for free-form changes.", "تعمل أمثلة الدروس بكود قدس المترجم داخل التطبيق. انسخ المثال إلى محررك لتعديله بحرية."), style: TextStyle(fontSize: 10.0, height: 1.8, color: muted(context))), SizedBox(height: 29.0), panel(context, Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Row(children: [Icon(Icons.psychology_alt_outlined, color: brand(), size: 23.0), SizedBox(width: 9.0), heading(context, tr("Make it click", "ثبّت الفكرة"), 21.0)]), SizedBox(height: 12.0), Text((if (arabic): (lesson.questionAr) else: (lesson.questionEn)), style: TextStyle(fontSize: 15.0, fontWeight: FontWeight.w600, color: ink(context))), SizedBox(height: 18.0), ...options, if choice >= 0: Padding(padding: EdgeInsets.symmetric(vertical: 9.0), child: Text((if (choice == lesson.correct): (tr("Exactly. You're ready for the next step.", "صحيح! أنت مستعد للخطوة التالية.")) else: (tr("Not quite. Revisit the explanation and try again.", "ليست الإجابة الصحيحة. راجع الشرح وحاول مجددًا."))), style: TextStyle(color: (if (choice == lesson.correct): (brand()) else: (Color(0xFFBA7253))), fontSize: 12.0, height: 1.8))), SizedBox(height: 8.0), FilledButton.icon(onPressed: (if (saving or done or choice != lesson.correct): (null) else: (finishLesson)), icon: Icon(Icons.check_rounded, size: 18.0), label: Text((if (done): (tr("Lesson completed", "أكملت الدرس")) else: ((if (saving): (tr("Saving…", "جارٍ الحفظ…")) else: (tr("Complete lesson · +25 points", "أكمل الدرس · +25 نقطة"))))))), if done and currentLesson < catalog.length - 1: TextButton(onPressed: () -> openLesson(currentLesson + 1), child: Text(tr("Continue to next lesson →", "انتقل إلى الدرس التالي ←")))]))])
+    (if (arabic): (lesson.descriptionAr) else: (lesson.descriptionEn))), SizedBox(height: 24.0), panel(context, prose(context, (if (arabic): (lesson.bodyAr) else: (lesson.bodyEn)))), SizedBox(height: 22.0), codePanel(context, lesson.code), SizedBox(height: 12.0), Wrap(alignment: WrapAlignment.end, spacing: 10.0, runSpacing: 10.0, children: [OutlinedButton.icon(onPressed: () -> openInPlayground(lesson.code), icon: Icon(Icons.terminal_rounded, size: 18.0), label: Text(tr("Try in Playground", "جرّب في المختبر"))), FilledButton.icon(onPressed: (if (running): (null) else: (runCurrent)), icon: Icon(Icons.play_arrow_rounded, size: 19.0), label: Text((if (running): (tr("Running…", "جارٍ التشغيل…")) else: (tr("Run lesson demo", "شغّل مثال الدرس")))))]), if output.isNotEmpty: AnimatedSize(duration: motion(context, 240), child: Container(margin: EdgeInsets.only(top: 12.0), padding: EdgeInsets.all(20.0), decoration: BoxDecoration(color: brand().withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14.0)), child: Directionality(textDirection: TextDirection.ltr, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("OUTPUT", style: TextStyle(fontSize: 10.0, letterSpacing: 1.5, color: brand())), SizedBox(height: 8.0), SelectableText(output, style: TextStyle(fontFamily: "JetBrainsMono", fontSize: 13.0, color: ink(context)))])))), SizedBox(height: 9.0), Text(tr("Run the compiled lesson demo right here, or open it in the built-in Playground to edit, debug, and run Quds code live.", "شغّل مثال الدرس هنا مباشرةً، أو افتحه في المختبر المدمج لتعديل الكود وتنقيحه وتشغيله حيًّا."), style: TextStyle(fontSize: 10.0, height: 1.8, color: muted(context))), SizedBox(height: 29.0), panel(context, Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Row(children: [Icon(Icons.psychology_alt_outlined, color: brand(), size: 23.0), SizedBox(width: 9.0), heading(context, tr("Make it click", "ثبّت الفكرة"), 21.0)]), SizedBox(height: 12.0), Text((if (arabic): (lesson.questionAr) else: (lesson.questionEn)), style: TextStyle(fontSize: 15.0, fontWeight: FontWeight.w600, color: ink(context))), SizedBox(height: 18.0), ...options, if choice >= 0: Padding(padding: EdgeInsets.symmetric(vertical: 9.0), child: Text((if (choice == lesson.correct): (tr("Exactly. You're ready for the next step.", "صحيح! أنت مستعد للخطوة التالية.")) else: (tr("Not quite. Revisit the explanation and try again.", "ليست الإجابة الصحيحة. راجع الشرح وحاول مجددًا."))), style: TextStyle(color: (if (choice == lesson.correct): (brand()) else: (Color(0xFFBA7253))), fontSize: 12.0, height: 1.8))), SizedBox(height: 8.0), FilledButton.icon(onPressed: (if (saving or done or choice != lesson.correct): (null) else: (finishLesson)), icon: Icon(Icons.check_rounded, size: 18.0), label: Text((if (done): (tr("Lesson completed", "أكملت الدرس")) else: ((if (saving): (tr("Saving…", "جارٍ الحفظ…")) else: (tr("Complete lesson · +25 points", "أكمل الدرس · +25 نقطة"))))))), if done and currentLesson < catalog.length - 1: TextButton(onPressed: () -> openLesson(currentLesson + 1), child: Text(tr("Continue to next lesson →", "انتقل إلى الدرس التالي ←")))]))])
 
   learn(context: BuildContext, width: double) -> Widget:
     navigationItems: List<Widget> = []
@@ -605,6 +615,7 @@ class AcademyState extends State<Academy>:
     if page == 1: content = learn(context, available)
     if page == 2: content = referencePage(context, available)
     if page == 3: content = progressPage(context)
+    if page == 4: content = AcademyPlayground(initialCode: playgroundCode, arabic: arabic, dark: dark)
     scrollSection = currentCategory if page == 2 else ""
     return SingleChildScrollView(key: PageStorageKey("page-{page}-{scrollSection}"),
     padding: EdgeInsets.all(padding),
@@ -628,7 +639,9 @@ class AcademyState extends State<Academy>:
       selectedIcon: Icon(Icons.auto_stories_rounded), label: tr("Reference",
       "المرجع")), NavigationDestination(icon: Icon(Icons.insights_outlined),
       selectedIcon: Icon(Icons.insights_rounded), label: tr("Progress",
-      "تقدّمي"))])
+      "تقدّمي")), NavigationDestination(icon: Icon(Icons.terminal_outlined),
+      selectedIcon: Icon(Icons.terminal_rounded), label: tr("Playground",
+      "المختبر"))])
       return Scaffold(body: SafeArea(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [if wide: navigation(layoutContext), Expanded(child: mainColumn)])), bottomNavigationBar: (if (wide): (null) else: (bottom)))
     return LayoutBuilder(builder: layout)
 

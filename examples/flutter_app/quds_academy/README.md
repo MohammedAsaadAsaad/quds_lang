@@ -5,8 +5,9 @@ quizzes, keyword reference, and SQL operations are written in Quds.
 
 ## What is included
 
-- Four responsive destinations: overview, lessons, keyword reference, progress.
-- Twelve bilingual lessons with curated executable Quds demonstrations and quizzes.
+- Five responsive destinations: overview, lessons, keyword reference, progress, and an embedded interactive **Playground (المختبر)**.
+- Twelve bilingual lessons with curated executable Quds demonstrations, quizzes, and one-click **"Try in Playground / جرّب في المختبر"** buttons on every lesson and reference example.
+- Embedded pure-Dart Quds interpreter (`package:quds/interpreter.dart`) and code editor engine (`package:quds/editor_engine.dart`) with syntax highlighting, live diagnostics, Quick Fixes, auto-formatting, autocomplete, line breakpoints/stepping, Sandbox vs. Scientific policy toggle, and interactive `quds:viz` 2D geometry rendering.
 - All 111 entries from the English keyword reference, with Arabic explanations.
 - Arabic RTL and English LTR, light/dark appearance, bundled Cairo and JetBrains Mono.
 - Animated transitions, progress indicators, hover/focus feedback and reduced-motion support.
@@ -14,8 +15,6 @@ quizzes, keyword reference, and SQL operations are written in Quds.
   preferences, export/reopen and reset are exercised by executable Quds tests.
 - Browser storage and native file persistence through small Dart platform adapters.
   If browser persistence is unavailable, the interface explicitly reports session storage.
-
-The demonstrations are curated lessons, not an arbitrary code execution sandbox.
 
 ## Run with a Flutter SDK
 

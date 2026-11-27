@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import '../ast.dart';
 import '../lexer.dart';
 import '../parser.dart';
+import 'bytecode_vm.dart';
 import 'dart_stdlib_bridge.dart';
 import 'data_module.dart';
 import 'debugger.dart';
@@ -35,6 +36,7 @@ class QudsRunResult {
     this.stepsExecuted = 0,
     this.elapsed = Duration.zero,
     this.error,
+    this.usedBytecodeVm = false,
   });
 
   /// Whether execution completed without uncaught parse, runtime, or policy error.
@@ -49,7 +51,7 @@ class QudsRunResult {
   /// Structured rich outputs emitted during this run (plots, geometry, tables, etc.).
   final List<Object> outputs;
 
-  /// Total AST steps executed during this run.
+  /// Total AST or bytecode steps executed during this run.
   final int stepsExecuted;
 
   /// Wall-clock duration of this run.
@@ -58,6 +60,9 @@ class QudsRunResult {
   /// The caught error when [succeeded] is false (`CompilerException`,
   /// `QudsRuntimeException`, or `QudsPolicyViolationException`).
   final Object? error;
+
+  /// Whether this run was accelerated by the stack-based [QudsBytecodeVm].
+  final bool usedBytecodeVm;
 
   /// Joined stdout lines.
   String get stdout => printedLines.join('\n');
@@ -389,6 +394,7 @@ class QudsSession {
     String file = '<session>',
     Map<String, Object?>? interactiveInputs,
     bool resetVizQuota = true,
+    bool preferBytecode = false,
   }) async {
     if (interactiveInputs != null) {
       _interactiveInputs.addAll(interactiveInputs);
@@ -439,6 +445,45 @@ class QudsSession {
     final needsCallHook = policy.onCallIntercept != null ||
         _onBeforeCall != null ||
         policy.onPermissionCheck != null;
+
+    if (preferBytecode && !needsStatementHook && !needsCallHook) {
+      final importsAllowed = program.statements
+          .whereType<ImportDeclaration>()
+          .every(
+              (imp) => policy.allowImports && policy.isLibraryAllowed(imp.uri));
+      if (importsAllowed) {
+        final compiled = QudsBytecodeCompiler.tryCompile(program, file: file);
+        if (compiled != null) {
+          final vmRes = QudsBytecodeVm.run(
+            compiled,
+            maxSteps: policy.maxSteps,
+            maxCallDepth: policy.maxCallDepth,
+            timeout: policy.timeout,
+            onPrint: (line) {
+              printed.add(line);
+              _events.add(QudsPrintEvent(line));
+            },
+          );
+          for (final entry in vmRes.globals.entries) {
+            _globalEnv.define(entry.key, entry.value, mutable: true);
+          }
+          stopwatch.stop();
+          if (!vmRes.succeeded && vmRes.error != null) {
+            _events.add(QudsErrorEvent(vmRes.error!));
+          }
+          return QudsRunResult(
+            succeeded: vmRes.succeeded,
+            value: vmRes.value,
+            printedLines: List.unmodifiable(printed),
+            outputs: const [],
+            stepsExecuted: vmRes.stepsExecuted,
+            elapsed: stopwatch.elapsed,
+            error: vmRes.error,
+            usedBytecodeVm: true,
+          );
+        }
+      }
+    }
 
     late QudsEvaluator evaluator;
     evaluator = QudsEvaluator(

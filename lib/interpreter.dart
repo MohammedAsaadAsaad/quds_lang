@@ -6,6 +6,14 @@
 library quds.interpreter;
 
 export 'src/source.dart' show CompilerException, SourceSpan;
+export 'src/interpreter/bytecode_vm.dart'
+    show
+        QudsBytecodeCompiler,
+        QudsBytecodeFunction,
+        QudsBytecodeProgram,
+        QudsBytecodeRunResult,
+        QudsBytecodeVm,
+        QudsOp;
 export 'src/interpreter/data_module.dart' show buildQudsDataModule;
 export 'src/interpreter/debugger.dart'
     show

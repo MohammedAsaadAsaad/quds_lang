@@ -39,7 +39,8 @@ class QudsSdkCatalog {
         'collection',
         'async',
         'json',
-        'viz'
+        'viz',
+        'data',
       ];
 
   /// Returns all `:: section` headers declared in [library] (e.g. `math`).

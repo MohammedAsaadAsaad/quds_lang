@@ -82,4 +82,53 @@ void main() {
     );
     expect(executedCount, greaterThanOrEqualTo(255));
   });
+
+  test('Every Reference syntax panel and Lesson Playground handoff transfers a complete runnable example', () async {
+    final keywords = keywordEntries();
+    final allLessons = lessons();
+    final failures = <String>[];
+
+    // Verify all 111 Reference rules transfer complete runnable code (never broken syntax snippets!)
+    for (final kw in keywords) {
+      final transferred = runnableExampleForKeyword(kw.name, kw.example);
+      final res = await runAcademyExampleCode(
+        transferred,
+        file: 'handoff_kw_${kw.name}.quds',
+      );
+      if (!res.succeeded) {
+        failures.add('Reference handoff "${kw.name}" FAILED: ${res.error}');
+      }
+    }
+
+    // Verify all 12 Lessons transfer complete runnable code (with Playground main() auto-invoke)
+    for (final lesson in allLessons) {
+      var transferred = runnableExampleForLesson(lesson.id, lesson.code);
+      final mainDecl = RegExp(
+        r'^main\(\s*\)\s*(async\s*)?:',
+        multiLine: true,
+      ).firstMatch(transferred);
+      if (mainDecl != null &&
+          !RegExp(
+            r'^(?:await\s+)?main\(\s*\)\s*$',
+            multiLine: true,
+          ).hasMatch(transferred)) {
+        transferred = mainDecl.group(1) != null
+            ? '$transferred\nawait main()\n'
+            : '$transferred\nmain()\n';
+      }
+      final res = await runAcademyExampleCode(
+        transferred,
+        file: 'handoff_lesson_${lesson.id}.quds',
+      );
+      if (!res.succeeded) {
+        failures.add('Lesson handoff "${lesson.id}" FAILED: ${res.error}');
+      }
+    }
+
+    expect(
+      failures,
+      isEmpty,
+      reason: 'Broken Playground handoffs:\n${failures.join('\n')}',
+    );
+  });
 }

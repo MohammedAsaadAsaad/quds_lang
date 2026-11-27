@@ -23,6 +23,26 @@ List<AcademyRuleExample> examplesForKeyword(String name) =>
 List<AcademyRuleExample> examplesForLesson(String lessonId) =>
     lessonExtraExamples[lessonId] ?? const [];
 
+/// Returns a complete, self-contained runnable example for [keyword] when
+/// transferring from the short Reference syntax panel to the Playground.
+String runnableExampleForKeyword(String keyword, String fallback) {
+  final list = allKeywordRuleExamples[keyword];
+  if (list != null && list.isNotEmpty) return list.first.code;
+  return fallback;
+}
+
+/// Returns a complete, runnable Playground example for [lessonId].
+/// Keeps simple lesson demos intact while swapping external `package:` demos
+/// for a self-contained runnable interpreter example so Playground execution
+/// always succeeds.
+String runnableExampleForLesson(String lessonId, String lessonCode) {
+  if (lessonCode.contains('use package:')) {
+    final list = lessonExtraExamples[lessonId];
+    if (list != null && list.isNotEmpty) return list.first.code;
+  }
+  return lessonCode;
+}
+
 int totalRuleExamplesCount() {
   var total = 0;
   for (final list in allKeywordRuleExamples.values) {

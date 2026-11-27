@@ -387,9 +387,17 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
     var source = _controller.text;
     // Many Academy lesson snippets define `main(): ...` without invoking it.
     // Auto-invoke `main()` cleanly if defined and not already called at top-level!
-    if (RegExp(r'^main\(\s*\):', multiLine: true).hasMatch(source) &&
-        !RegExp(r'^main\(\s*\)\s*$', multiLine: true).hasMatch(source)) {
-      source = '$source\nmain()\n';
+    final mainDecl = RegExp(
+      r'^main\(\s*\)\s*(async\s*)?:',
+      multiLine: true,
+    ).firstMatch(source);
+    if (mainDecl != null &&
+        !RegExp(
+          r'^(?:await\s+)?main\(\s*\)\s*$',
+          multiLine: true,
+        ).hasMatch(source)) {
+      final isAsync = mainDecl.group(1) != null;
+      source = isAsync ? '$source\nawait main()\n' : '$source\nmain()\n';
     }
 
     final res = await _session.run(source, file: 'playground.quds');
@@ -1181,25 +1189,31 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                     ),
                   )
                 else if (_result!.succeeded && _result!.value != null)
-                  SelectableText(
-                    qudsFormatValue(_result!.value),
+                  Directionality(
                     textDirection: TextDirection.ltr,
-                    style: TextStyle(
-                      fontFamily: 'JetBrainsMono',
-                      fontFamilyFallback: const ['Cairo'],
-                      fontSize: 13,
-                      color: ink,
+                    child: SelectableText(
+                      qudsFormatValue(_result!.value),
+                      textAlign: TextAlign.left,
+                      style: TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontFamilyFallback: const ['Cairo'],
+                        fontSize: 13,
+                        color: ink,
+                      ),
                     ),
                   )
                 else if (!_result!.succeeded && _result!.error != null)
-                  SelectableText(
-                    '${_result!.error}',
+                  Directionality(
                     textDirection: TextDirection.ltr,
-                    style: const TextStyle(
-                      fontFamily: 'JetBrainsMono',
-                      fontFamilyFallback: ['Cairo'],
-                      fontSize: 12.5,
-                      color: Color(0xFFEF4444),
+                    child: SelectableText(
+                      '${_result!.error}',
+                      textAlign: TextAlign.left,
+                      style: const TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontFamilyFallback: ['Cairo'],
+                        fontSize: 12.5,
+                        color: Color(0xFFEF4444),
+                      ),
                     ),
                   )
                 else

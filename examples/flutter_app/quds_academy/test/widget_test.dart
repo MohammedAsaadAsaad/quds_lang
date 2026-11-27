@@ -294,6 +294,63 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'reference rules and lessons run live interpreter examples and display output',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 1024));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(Academy(storage: TestStorage()));
+      await tester.pumpAndSettle();
+
+      // 1. Open Reference -> Patterns & queries -> match -> run all examples live
+      await tester.tap(find.text('المرجع').first);
+      await tester.pumpAndSettle();
+      final cat = find.text('الأنماط والاستعلامات');
+      await tester.ensureVisible(cat);
+      await tester.tap(cat);
+      await tester.pumpAndSettle();
+
+      final matchChip = find.widgetWithText(ChoiceChip, 'match');
+      await tester.ensureVisible(matchChip);
+      await tester.tap(matchChip);
+      await tester.pumpAndSettle();
+
+      final runAllMatch = find.byKey(
+        const Key('btn_run_all_examples_kw_match'),
+      );
+      expect(runAllMatch, findsOneWidget);
+      await tester.ensureVisible(runAllMatch);
+      await tester.tap(runAllMatch);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const Key('rule_example_output_kw_match_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('rule_example_output_kw_match_1')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('شهر 4 -> ربيع'), findsOneWidget);
+
+      // 2. Open Learn -> run first extra lesson example live
+      await tester.tap(find.text('تعلّم').first);
+      await tester.pumpAndSettle();
+      final runLessonEx0 = find.byKey(
+        const Key('btn_run_example_lesson_hello_0'),
+      );
+      expect(runLessonEx0, findsOneWidget);
+      await tester.ensureVisible(runLessonEx0);
+      await tester.tap(runLessonEx0);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('rule_example_output_lesson_hello_0')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('storage errors offer retry without replacing saved data', (
     tester,
   ) async {

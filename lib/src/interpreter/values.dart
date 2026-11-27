@@ -317,6 +317,7 @@ class QudsUserFunction extends QudsCallable {
     this.body,
     this.expressionBody,
     this.isAsync = false,
+    this.generator = '',
     this.returnType = '',
     this.receiver,
     this.definingClass,
@@ -330,6 +331,7 @@ class QudsUserFunction extends QudsCallable {
   final List<Statement>? body;
   final Expression? expressionBody;
   final bool isAsync;
+  final String generator;
   final String returnType;
   final QudsInstance? receiver;
   final QudsClass? definingClass;
@@ -342,6 +344,7 @@ class QudsUserFunction extends QudsCallable {
         body: body,
         expressionBody: expressionBody,
         isAsync: isAsync,
+        generator: generator,
         returnType: returnType,
         receiver: instance,
         definingClass: definingClass,
@@ -349,6 +352,25 @@ class QudsUserFunction extends QudsCallable {
 
   @override
   String toString() => '<fn $name>';
+}
+
+/// Runtime event channel backing `event name: (...) -> void` and `raise`.
+class QudsEventChannel {
+  QudsEventChannel(this.name);
+
+  final String name;
+  final List<QudsCallable> listeners = [];
+
+  @override
+  String toString() => '<event $name>';
+}
+
+/// Proxy backing `super.member` dispatch inside subclass methods.
+class QudsSuperProxy {
+  const QudsSuperProxy(this.instance, this.superclass);
+
+  final QudsInstance instance;
+  final QudsClass superclass;
 }
 
 /// Holds overloaded Quds functions sharing the same name (QUDS-085).
@@ -400,12 +422,21 @@ class QudsNamespace {
   final Object? Function(String memberName)? onGetMember;
 
   bool hasMember(String member) =>
-      members.containsKey(member) || onGetMember?.call(member) != null;
+      member == 'loadLibrary' ||
+      members.containsKey(member) ||
+      onGetMember?.call(member) != null;
 
   Object? getMember(String member, SourceSpan span) {
     if (members.containsKey(member)) return members[member];
     final dynamicMember = onGetMember?.call(member);
     if (dynamicMember != null) return dynamicMember;
+    if (member == 'loadLibrary') {
+      return QudsNativeFunction(
+        'loadLibrary',
+        (pos, named, ctx) => null,
+        isSync: true,
+      );
+    }
     throw QudsRuntimeException(
       'Module `$name` has no exported member `$member`.',
       span,
@@ -424,12 +455,14 @@ class QudsClass extends QudsCallable {
     required this.declaration,
     required this.definingEnv,
     this.superclass,
+    this.mixins = const [],
     this.methods = const {},
     this.staticMethods = const {},
     this.staticFields = const {},
     this.constructors = const {},
     this.properties = const {},
     this.enumCases = const {},
+    this.conversions = const [],
   });
 
   @override
@@ -438,15 +471,19 @@ class QudsClass extends QudsCallable {
   final ClassDeclaration declaration;
   final QudsEnvironment definingEnv;
   final QudsClass? superclass;
+  final List<QudsClass> mixins;
   final Map<String, QudsUserFunction> methods;
   final Map<String, QudsUserFunction> staticMethods;
   final Map<String, Object?> staticFields;
   final Map<String, ConstructorDeclaration> constructors;
   final Map<String, PropertyDeclaration> properties;
   final Map<String, QudsInstance> enumCases;
+  final List<QudsUserFunction> conversions;
+  QudsInstance? singletonInstance;
 
   bool get isValueClass => kind == 'value';
   bool get isEnum => kind == 'enum';
+  bool get isSingleton => declaration.modifiers.contains('singleton');
 
   bool isSubtypeOf(String typeName) {
     if (name == typeName) return true;
@@ -455,14 +492,31 @@ class QudsClass extends QudsCallable {
     for (final iface in declaration.interfaces) {
       if (_stripTypeArgs(iface) == base) return true;
     }
+    for (final mx in mixins) {
+      if (mx.isSubtypeOf(base)) return true;
+    }
     return superclass?.isSubtypeOf(base) ?? false;
   }
 
-  QudsUserFunction? lookupMethod(String methodName) =>
-      methods[methodName] ?? superclass?.lookupMethod(methodName);
+  QudsUserFunction? lookupMethod(String methodName) {
+    final own = methods[methodName];
+    if (own != null) return own;
+    for (var i = mixins.length - 1; i >= 0; i--) {
+      final m = mixins[i].lookupMethod(methodName);
+      if (m != null) return m;
+    }
+    return superclass?.lookupMethod(methodName);
+  }
 
-  PropertyDeclaration? lookupProperty(String propName) =>
-      properties[propName] ?? superclass?.lookupProperty(propName);
+  PropertyDeclaration? lookupProperty(String propName) {
+    final own = properties[propName];
+    if (own != null) return own;
+    for (var i = mixins.length - 1; i >= 0; i--) {
+      final p = mixins[i].lookupProperty(propName);
+      if (p != null) return p;
+    }
+    return superclass?.lookupProperty(propName);
+  }
 
   @override
   String toString() => '<class $name>';

@@ -100,6 +100,14 @@ class QudsEvaluator {
   final List<QudsStackFrame> _callStack = [];
   final List<Object?> _thrownStack = [];
   final Map<String, Map<String, QudsUserFunction>> _extensions = {};
+  final List<QudsUserFunction> _customConversions = [];
+  final Set<int> _executedOnceSites = {};
+  final List<List<Object?>> _yieldStack = [];
+  final List<_QudsComputedEntry> _computedCells = [];
+  final List<_QudsWatchEntry> _watchers = [];
+  int _batchDepth = 0;
+  bool _watchersDirty = false;
+  final Set<QudsInstance> _initializingInstances = {};
 
   /// Total AST steps executed in the current run.
   int get stepsExecuted => _steps;
@@ -112,21 +120,27 @@ class QudsEvaluator {
     _stopped = true;
   }
 
-  /// Registers extension methods (from `extend Target:`).
+  /// Registers extension methods (from `extend Target:` or `augment Target:`).
   void registerExtension(ExtensionDeclaration ext, QudsEnvironment env) {
     final targetKey = _baseTypeName(ext.target);
     final bucket = _extensions.putIfAbsent(targetKey, () => {});
     for (final method in ext.methods) {
-      bucket[method.name] = QudsUserFunction(
+      final fn = QudsUserFunction(
         name: method.name,
         parameters: method.parameters,
         body: method.body,
         expressionBody: method.expressionBody,
         isAsync: method.isAsync,
+        generator: method.generator,
         returnType: method.returnType ?? '',
         closure: env,
         span: method.span,
       );
+      if (method.conversionKind.isNotEmpty) {
+        _customConversions.add(fn);
+      } else {
+        bucket[method.name] = fn;
+      }
     }
   }
 
@@ -355,6 +369,7 @@ class QudsEvaluator {
       body: decl.body,
       expressionBody: decl.expressionBody,
       isAsync: decl.isAsync,
+      generator: decl.generator,
       returnType: decl.returnType ?? '',
       closure: env,
       span: decl.span,
@@ -655,27 +670,202 @@ class QudsEvaluator {
       case DeferStatement():
         return null;
 
-      case TestDeclaration():
-      case ConfigDeclaration():
-      case LockStatement():
-      case WatchStatement():
-      case BatchStatement():
-      case OnceStatement():
-      case RaiseStatement():
-      case YieldStatement():
-      case TaskGroupStatement():
-        throw QudsRuntimeException(
-          'Statement `${stmt.runtimeType}` is not yet supported in the embedded interpreter.',
-          stmt.span,
-          code: 'E910',
-          stackFrames: stackFrames,
-        );
+      case TestDeclaration(:final body):
+        await executeBlock(body, env.child(), hoistDeclarations: true);
+        return null;
+
+      case ConfigDeclaration(:final name, :final value):
+        final v = value == null ? null : await _evalExpr(value, env);
+        final parts = name.split('.');
+        if (parts.length == 1) {
+          env.define(name, v);
+        } else {
+          final rootName = parts.first;
+          QudsNamespace current;
+          final existing = env.resolveSlot(rootName)?.value;
+          if (existing is QudsNamespace) {
+            current = existing;
+          } else {
+            current = QudsNamespace(rootName, {});
+            env.define(rootName, current);
+          }
+          for (var i = 1; i < parts.length - 1; i++) {
+            final seg = parts[i];
+            final next = current.members[seg];
+            if (next is QudsNamespace) {
+              current = next;
+            } else {
+              final child = QudsNamespace(seg, {});
+              current.members[seg] = child;
+              current = child;
+            }
+          }
+          current.members[parts.last] = v;
+        }
+        return null;
+
+      case LockStatement(:final body):
+        await executeBlock(body, env.child(), hoistDeclarations: true);
+        return null;
+
+      case OnceStatement(:final body):
+        if (_executedOnceSites.add(identityHashCode(stmt))) {
+          await executeBlock(body, env.child(), hoistDeclarations: true);
+        }
+        return null;
+
+      case YieldStatement(:final value, :final star):
+        if (_yieldStack.isEmpty) {
+          throw QudsRuntimeException(
+            '`yield` is only valid inside a `sync*` or `async*` generator.',
+            stmt.span,
+          );
+        }
+        final v = await _evalExpr(value, env);
+        if (star && v is Iterable) {
+          _yieldStack.last.addAll(v);
+        } else {
+          _yieldStack.last.add(v);
+        }
+        return null;
+
+      case TaskGroupStatement(:final children):
+        for (final child in children) {
+          if (child is Statement) {
+            await _execStatement(child, env);
+          } else if (child is Expression) {
+            final res = await _evalExpr(child, env);
+            if (res is QudsFuture) {
+              await res.future;
+            }
+          }
+        }
+        return null;
+
+      case WatchStatement(:final value, :final body):
+        final initial = await _evalExpr(value, env);
+        _watchers.add(_QudsWatchEntry(value, body, env, initial));
+        return null;
+
+      case BatchStatement(:final body):
+        _batchDepth++;
+        try {
+          await executeBlock(body, env, hoistDeclarations: true);
+        } finally {
+          _batchDepth--;
+          if (_batchDepth == 0 && _watchersDirty) {
+            _watchersDirty = false;
+            await _flushReactive();
+          }
+        }
+        return null;
+
+      case RaiseStatement(:final name, :final arguments):
+        Object? channel;
+        final thisVal = env.resolveSlot('this')?.value;
+        if (thisVal is QudsInstance && thisVal.fields.containsKey(name)) {
+          channel = thisVal.fields[name];
+        } else {
+          channel = env.resolveSlot(name)?.value;
+        }
+        if (channel is! QudsEventChannel) {
+          throw QudsRuntimeException('Undefined event `$name`.', stmt.span);
+        }
+        final pos = <Object?>[];
+        final named = <String, Object?>{};
+        for (final arg in arguments) {
+          final v = await _evalExpr(arg.value, env);
+          if (arg.name != null) {
+            named[arg.name!] = v;
+          } else {
+            pos.add(v);
+          }
+        }
+        for (final listener in List<QudsCallable>.from(channel.listeners)) {
+          await invokeCallable(listener, pos, named, stmt.span);
+        }
+        return null;
     }
+  }
+
+  Future<void> _notifyStateChanged() async {
+    if (_computedCells.isEmpty && _watchers.isEmpty) return;
+    if (_batchDepth > 0) {
+      _watchersDirty = true;
+      return;
+    }
+    await _flushReactive();
+  }
+
+  Future<void> _flushReactive() async {
+    for (final cell in _computedCells) {
+      final updated = await _evalExpr(cell.expr, cell.env);
+      final slot = cell.env.localSlots[cell.name];
+      if (slot != null) {
+        slot.value = updated;
+      }
+    }
+    for (final w in List<_QudsWatchEntry>.from(_watchers)) {
+      final next = await _evalExpr(w.expr, w.env);
+      if (!qudsEquals(next, w.lastValue)) {
+        w.lastValue = next;
+        await executeBlock(w.body, w.env.child(), hoistDeclarations: true);
+      }
+    }
+  }
+
+  Future<Object?> _evalDotShorthand(
+    DotShorthand shorthand,
+    String? declaredType,
+    QudsEnvironment env,
+    SourceSpan span,
+  ) async {
+    if (declaredType != null && declaredType.isNotEmpty) {
+      final baseName = _baseTypeName(declaredType);
+      final target = env.resolveSlot(baseName)?.value;
+      if (target is QudsClass) {
+        if (shorthand.arguments == null) {
+          if (target.enumCases.containsKey(shorthand.name)) {
+            return target.enumCases[shorthand.name];
+          }
+          if (target.staticFields.containsKey(shorthand.name)) {
+            return target.staticFields[shorthand.name];
+          }
+        } else {
+          final pos = <Object?>[];
+          final named = <String, Object?>{};
+          for (final arg in shorthand.arguments!) {
+            final v = await _evalExpr(arg.value, env);
+            if (arg.name != null) {
+              named[arg.name!] = v;
+            } else {
+              pos.add(v);
+            }
+          }
+          final ctor = shorthand.name == 'new'
+              ? null
+              : target.constructors[shorthand.name];
+          return _instantiateClass(target, pos, named, span, ctor: ctor);
+        }
+      }
+    }
+    throw QudsRuntimeException(
+      'Expression `DotShorthand` requires an explicit target type context.',
+      span,
+    );
   }
 
   Future<void> _execBinding(Binding stmt, QudsEnvironment env) async {
     if (stmt.operator == '=') {
-      final val = stmt.open ? null : await _evalExpr(stmt.value, env);
+      final Object? val;
+      if (stmt.open) {
+        val = null;
+      } else if (stmt.value is DotShorthand) {
+        val = await _evalDotShorthand(
+            stmt.value as DotShorthand, stmt.type, env, stmt.span);
+      } else {
+        val = await _evalExpr(stmt.value, env);
+      }
       env.bind(
         stmt.name,
         stmt.mode,
@@ -685,6 +875,11 @@ class QudsEvaluator {
         open: stmt.open,
         allowMutation: allowMutation,
       );
+      if (stmt.mode == BindingMode.computed) {
+        _computedCells.add(_QudsComputedEntry(stmt.name, stmt.value, env));
+      } else if (_computedCells.isNotEmpty || _watchers.isNotEmpty) {
+        await _notifyStateChanged();
+      }
       return;
     }
 
@@ -695,6 +890,7 @@ class QudsEvaluator {
         final rhs = await _evalExpr(stmt.value, env);
         env.assignExisting(stmt.name, rhs, stmt.span,
             allowMutation: allowMutation);
+        await _notifyStateChanged();
       }
       return;
     }
@@ -703,6 +899,7 @@ class QudsEvaluator {
     final updated = await _applyBinaryOp(current, baseOp, rhs, stmt.span);
     env.assignExisting(stmt.name, updated, stmt.span,
         allowMutation: allowMutation);
+    await _notifyStateChanged();
   }
 
   Future<Object?> _execWhile(
@@ -1089,20 +1286,33 @@ class QudsEvaluator {
               ..define(prop.setter!, newValue);
         _exposeInstanceFields(receiver, setterEnv);
         await executeBlock(prop.setterBody!, setterEnv);
+        _syncInstanceFieldsBack(receiver, setterEnv);
+        await _notifyStateChanged();
         return;
       }
       final fieldDecl = _findFieldDecl(receiver.qudsClass, name);
-      if (fieldDecl != null && !fieldDecl.mutable) {
+      if (fieldDecl != null &&
+          !fieldDecl.mutable &&
+          !_initializingInstances.contains(receiver)) {
         throw QudsRuntimeException(
             'Cannot assign to immutable field `${receiver.qudsClass.name}.$name`.',
             span,
             code: 'E202');
       }
       receiver.fields[name] = newValue;
+      // Keep exposed field slot in sync so `_syncInstanceFieldsBack` does not clobber `this.field = ...`.
+      if (identical(env.resolveSlot('this')?.value, receiver)) {
+        final fieldSlot = env.resolveSlot(name);
+        if (fieldSlot != null) {
+          fieldSlot.value = newValue;
+        }
+      }
+      await _notifyStateChanged();
       return;
     }
     if (receiver is QudsClass) {
       receiver.staticFields[name] = newValue;
+      await _notifyStateChanged();
       return;
     }
     throw QudsRuntimeException(
@@ -1208,10 +1418,58 @@ class QudsEvaluator {
 
   Future<void> _execClassDeclaration(
       ClassDeclaration decl, QudsEnvironment env) async {
+    if (decl.kind == 'augment') {
+      final existing = env.resolveSlot(decl.name)?.value;
+      if (existing is QudsClass) {
+        for (final field in decl.fields) {
+          if (field.isStatic) {
+            existing.staticFields[field.name] = field.initializer == null
+                ? null
+                : await _evalExpr(field.initializer!, env);
+          }
+        }
+        for (final prop in decl.properties) {
+          existing.properties[prop.name] = prop;
+        }
+        for (final ctor in decl.constructors) {
+          existing.constructors[ctor.name ?? ''] = ctor;
+        }
+        for (final m in decl.methods) {
+          final fn = QudsUserFunction(
+            name: m.name,
+            parameters: m.parameters,
+            body: m.body,
+            expressionBody: m.expressionBody,
+            isAsync: m.isAsync,
+            generator: m.generator,
+            returnType: m.returnType ?? '',
+            closure: env,
+            span: m.span,
+            definingClass: existing,
+          );
+          if (m.conversionKind.isNotEmpty) {
+            existing.conversions.add(fn);
+            _customConversions.add(fn);
+          } else if (m.isStatic) {
+            existing.staticMethods[m.name] = fn;
+          } else {
+            existing.methods[m.name] = fn;
+          }
+        }
+        return;
+      }
+    }
+
     QudsClass? superclass;
     if (decl.superclass != null) {
       final supVal = env.resolveSlot(_baseTypeName(decl.superclass!))?.value;
       if (supVal is QudsClass) superclass = supVal;
+    }
+
+    final mixins = <QudsClass>[];
+    for (final mixinName in decl.mixins) {
+      final mVal = env.resolveSlot(_baseTypeName(mixinName))?.value;
+      if (mVal is QudsClass) mixins.add(mVal);
     }
 
     final methods = <String, QudsUserFunction>{};
@@ -1220,6 +1478,7 @@ class QudsEvaluator {
     final constructors = <String, ConstructorDeclaration>{};
     final properties = <String, PropertyDeclaration>{};
     final enumCases = <String, QudsInstance>{};
+    final conversions = <QudsUserFunction>[];
 
     final klass = QudsClass(
       name: decl.name,
@@ -1227,12 +1486,14 @@ class QudsEvaluator {
       declaration: decl,
       definingEnv: env,
       superclass: superclass,
+      mixins: mixins,
       methods: methods,
       staticMethods: staticMethods,
       staticFields: staticFields,
       constructors: constructors,
       properties: properties,
       enumCases: enumCases,
+      conversions: conversions,
     );
     env.define(decl.name, klass);
 
@@ -1259,12 +1520,16 @@ class QudsEvaluator {
         body: m.body,
         expressionBody: m.expressionBody,
         isAsync: m.isAsync,
+        generator: m.generator,
         returnType: m.returnType ?? '',
         closure: env,
         span: m.span,
         definingClass: klass,
       );
-      if (m.isStatic) {
+      if (m.conversionKind.isNotEmpty) {
+        conversions.add(fn);
+        _customConversions.add(fn);
+      } else if (m.isStatic) {
         staticMethods[m.name] = fn;
       } else {
         methods[m.name] = fn;
@@ -2306,6 +2571,12 @@ class QudsEvaluator {
     final callEnv = fn.closure.child(isFunctionBoundary: true);
     if (fn.receiver != null) {
       callEnv.define('this', fn.receiver);
+      if (fn.receiver!.qudsClass.superclass != null) {
+        callEnv.define(
+          'super',
+          QudsSuperProxy(fn.receiver!, fn.receiver!.qudsClass.superclass!),
+        );
+      }
       _exposeInstanceFields(fn.receiver!, callEnv);
     }
 
@@ -2322,24 +2593,36 @@ class QudsEvaluator {
 
     final callNode = profiler?.enterCall(frameName, positional, named, span);
     Object? returnVal;
+    final isGen = fn.generator.isNotEmpty;
+    final List<Object?>? genBuffer = isGen ? <Object?>[] : null;
+    if (genBuffer != null) {
+      _yieldStack.add(genBuffer);
+    }
     _callDepth++;
     _callStack.add(frame);
     try {
       if (fn.expressionBody != null) {
         returnVal = await _evalExpr(fn.expressionBody!, callEnv);
-        return returnVal;
+        return isGen ? genBuffer : returnVal;
       }
       if (fn.body != null) {
         await executeBlock(fn.body!, callEnv, hoistDeclarations: true);
       }
+      if (isGen) {
+        returnVal = genBuffer;
+        return genBuffer;
+      }
       return null;
     } on ReturnSignal catch (ret) {
-      returnVal = ret.value;
+      returnVal = isGen ? genBuffer : ret.value;
       return returnVal;
     } on PropagateErrorSignal catch (prop) {
       returnVal = prop.errorResult;
       return returnVal;
     } finally {
+      if (genBuffer != null) {
+        _yieldStack.removeLast();
+      }
       profiler?.exitCall(callNode, returnVal);
       _callStack.removeLast();
       _callDepth--;
@@ -2469,9 +2752,11 @@ class QudsEvaluator {
     final fields = <String, Object?>{};
     final allFields = _collectAllInstanceFields(klass);
 
-    // Initialize default field initializers first.
+    // Initialize default field initializers and event channels first.
     for (final f in allFields) {
-      if (f.initializer != null) {
+      if (f.isEvent) {
+        fields[f.name] = QudsEventChannel(f.name);
+      } else if (f.initializer != null) {
         fields[f.name] = await _evalExpr(f.initializer!, klass.definingEnv);
       } else if (!f.requiredField && f.lazyBody == null) {
         fields[f.name] = null;
@@ -2490,16 +2775,22 @@ class QudsEvaluator {
           instance.fields[p.name] = ctorEnv.get(p.name, p.span);
         }
       }
-      _exposeInstanceFields(instance, ctorEnv);
+      _exposeInstanceFields(instance, ctorEnv, allowImmutableWrite: true);
       if (effectiveCtor.body != null) {
-        await executeBlock(effectiveCtor.body!, ctorEnv,
-            hoistDeclarations: true);
+        _initializingInstances.add(instance);
+        try {
+          await executeBlock(effectiveCtor.body!, ctorEnv,
+              hoistDeclarations: true);
+        } finally {
+          _initializingInstances.remove(instance);
+        }
       }
       _syncInstanceFieldsBack(instance, ctorEnv);
     } else {
       // Default field-based constructor (positional or named).
       final ctorFields = allFields
-          .where((f) => !f.isStatic && f.lazyBody == null && !f.isConst)
+          .where((f) =>
+              !f.isStatic && !f.isEvent && f.lazyBody == null && !f.isConst)
           .toList();
       var posIdx = 0;
       for (final f in ctorFields) {
@@ -2541,6 +2832,9 @@ class QudsEvaluator {
     if (klass.superclass != null) {
       result.addAll(_collectAllInstanceFields(klass.superclass!));
     }
+    for (final m in klass.mixins) {
+      result.addAll(_collectAllInstanceFields(m));
+    }
     for (final f in klass.declaration.fields) {
       if (!f.isStatic) result.add(f);
     }
@@ -2551,24 +2845,43 @@ class QudsEvaluator {
     for (final f in klass.declaration.fields) {
       if (!f.isStatic && f.name == name) return f;
     }
+    for (final m in klass.mixins.reversed) {
+      final hit = _findFieldDecl(m, name);
+      if (hit != null) return hit;
+    }
     return klass.superclass == null
         ? null
         : _findFieldDecl(klass.superclass!, name);
   }
 
-  void _exposeInstanceFields(QudsInstance instance, QudsEnvironment env) {
+  void _exposeInstanceFields(
+    QudsInstance instance,
+    QudsEnvironment env, {
+    bool allowImmutableWrite = false,
+  }) {
     for (final entry in instance.fields.entries) {
       if (!env.containsLocal(entry.key)) {
         final decl = _findFieldDecl(instance.qudsClass, entry.key);
-        env.define(entry.key, entry.value, mutable: decl?.mutable ?? true);
+        env.define(
+          entry.key,
+          entry.value,
+          mutable: allowImmutableWrite || (decl?.mutable ?? true),
+        );
       }
     }
-    // Also expose instance methods so bare `method()` calls work inside methods!
+    // Also expose instance methods (including mixins & superclasses) so bare `method()` calls work!
     QudsClass? cursor = instance.qudsClass;
     while (cursor != null) {
       for (final m in cursor.methods.entries) {
         if (!env.containsLocal(m.key)) {
           env.define(m.key, m.value.bind(instance));
+        }
+      }
+      for (final mix in cursor.mixins.reversed) {
+        for (final m in mix.methods.entries) {
+          if (!env.containsLocal(m.key)) {
+            env.define(m.key, m.value.bind(instance));
+          }
         }
       }
       cursor = cursor.superclass;
@@ -2687,7 +3000,65 @@ class QudsEvaluator {
       return receiver.getField(name, span);
     }
 
+    if (receiver is QudsSuperProxy) {
+      final prop = receiver.superclass.lookupProperty(name);
+      if (prop != null) {
+        final propEnv = receiver.superclass.definingEnv
+            .child(isFunctionBoundary: true)
+          ..define('this', receiver.instance);
+        _exposeInstanceFields(receiver.instance, propEnv);
+        if (prop.getter != null) return _evalExpr(prop.getter!, propEnv);
+        if (prop.getterBody != null) {
+          try {
+            return await executeBlock(prop.getterBody!, propEnv,
+                returnLastExpression: true);
+          } on ReturnSignal catch (ret) {
+            return ret.value;
+          }
+        }
+      }
+      final method = receiver.superclass.lookupMethod(name);
+      if (method != null) return method.bind(receiver.instance);
+      if (receiver.instance.fields.containsKey(name)) {
+        return receiver.instance.fields[name];
+      }
+      throw QudsRuntimeException(
+          'Superclass `${receiver.superclass.name}` has no member `$name`.',
+          span);
+    }
+
+    if (receiver is QudsEventChannel) {
+      if (name == 'listen' || name == 'add') {
+        return QudsNativeFunction(
+          name,
+          (pos, named, ctx) {
+            if (pos.isNotEmpty && pos[0] is QudsCallable) {
+              receiver.listeners.add(pos[0] as QudsCallable);
+            }
+            return null;
+          },
+          isSync: true,
+        );
+      }
+      if (name == 'clear') {
+        return QudsNativeFunction(
+          'clear',
+          (pos, named, ctx) {
+            receiver.listeners.clear();
+            return null;
+          },
+          isSync: true,
+        );
+      }
+      throw QudsRuntimeException(
+          'Event `${receiver.name}` has no member `$name`.', span);
+    }
+
     if (receiver is QudsClass) {
+      if (name == 'instance' && receiver.isSingleton) {
+        return receiver.singletonInstance ??=
+            await _instantiateClass(receiver, const [], const {}, span);
+      }
       if (receiver.enumCases.containsKey(name)) return receiver.enumCases[name];
       if (receiver.staticFields.containsKey(name)) {
         return receiver.staticFields[name];
@@ -2716,6 +3087,8 @@ class QudsEvaluator {
                 returnLastExpression: true);
           } on ReturnSignal catch (ret) {
             val = ret.value;
+          } on ResultSignal catch (res) {
+            val = res.value;
           }
           receiver.fields[name] = val;
           receiver.markLazyComputed(name);
@@ -2742,9 +3115,18 @@ class QudsEvaluator {
 
       final method = receiver.qudsClass.lookupMethod(name);
       if (method != null) return method.bind(receiver);
+
+      if (name == 'copyWith' && receiver.qudsClass.isValueClass) {
+        return QudsNativeFunction(
+          'copyWith',
+          (pos, named, ctx) =>
+              QudsInstance(receiver.qudsClass, {...receiver.fields, ...named}),
+          isSync: true,
+        );
+      }
     }
 
-    // Check user-defined extensions (`extend Type:`).
+    // Check user-defined extensions (`extend Type:` / `augment Type:`).
     final extMethod = _lookupExtension(receiver, name);
     if (extMethod != null) {
       return QudsNativeFunction(
@@ -2773,6 +3155,9 @@ class QudsEvaluator {
   ) async {
     final callEnv = fn.closure.child(isFunctionBoundary: true)
       ..define('this', receiver);
+    if (receiver is QudsInstance) {
+      _exposeInstanceFields(receiver, callEnv);
+    }
     await _bindParameters(fn.parameters, positional, named, callEnv, span);
     try {
       if (fn.expressionBody != null) {
@@ -2784,6 +3169,10 @@ class QudsEvaluator {
       return null;
     } on ReturnSignal catch (ret) {
       return ret.value;
+    } finally {
+      if (receiver is QudsInstance) {
+        _syncInstanceFieldsBack(receiver, callEnv);
+      }
     }
   }
 
@@ -3666,7 +4055,7 @@ class QudsEvaluator {
     }
   }
 
-  Object? _applyConversion(
+  FutureOr<Object?> _applyConversion(
       Object? value, String targetType, bool safe, SourceSpan span) {
     final nullable = targetType.endsWith('?');
     final base = _baseTypeName(targetType);
@@ -3678,6 +4067,16 @@ class QudsEvaluator {
           QudsConversionError('Cannot convert `null` to `$targetType`.'),
           span,
           stackFrames);
+    }
+
+    if (_customConversions.isNotEmpty) {
+      for (final conv in _customConversions) {
+        if (conv.parameters.length == 1 &&
+            _baseTypeName(conv.returnType) == base &&
+            _matchesType(value, conv.parameters.first.type)) {
+          return _invokeCustomConversion(conv, value, safe, span);
+        }
+      }
     }
 
     try {
@@ -3748,6 +4147,22 @@ class QudsEvaluator {
     } on QudsConversionError catch (e) {
       if (safe) return null;
       throw QudsThrownValue(e, span, stackFrames);
+    }
+  }
+
+  Future<Object?> _invokeCustomConversion(
+    QudsUserFunction conv,
+    Object? value,
+    bool safe,
+    SourceSpan span,
+  ) async {
+    try {
+      return await invokeCallable(conv, [value], const {}, span);
+    } on QudsPolicyViolationException {
+      rethrow;
+    } catch (_) {
+      if (safe) return null;
+      rethrow;
     }
   }
 
@@ -3985,6 +4400,12 @@ class QudsEvaluator {
       case ExpressionStatement(:final expression):
         return _evalExprFast(expression, env);
       case Binding():
+        if (stmt.value is DotShorthand ||
+            stmt.mode == BindingMode.computed ||
+            _computedCells.isNotEmpty ||
+            _watchers.isNotEmpty) {
+          return _execBinding(stmt, env);
+        }
         if (stmt.operator == '=') {
           if (stmt.open) {
             env.bind(
@@ -5246,16 +5667,20 @@ class QudsEvaluator {
         _callDepth--;
       }
     }
-    if (callee is QudsUserFunction && !callee.isAsync) {
+    if (callee is QudsUserFunction &&
+        !callee.isAsync &&
+        callee.generator.isEmpty) {
       return _invokeUserFunctionFast(callee, positional, named, span);
     }
     if (callee is QudsOverloadSet) {
       final selected = _selectOverload(callee, positional, named, span);
-      if (!selected.isAsync) {
+      if (!selected.isAsync && selected.generator.isEmpty) {
         return _invokeUserFunctionFast(selected, positional, named, span);
       }
     }
-    if (callee is QudsClass && callee.constructors[''] == null) {
+    if (callee is QudsClass &&
+        callee.constructors[''] == null &&
+        callee.declaration.requirements.isEmpty) {
       return _instantiateClassFast(callee, positional, named, span);
     }
     return invokeCallable(callee, positional, named, span);
@@ -5270,6 +5695,12 @@ class QudsEvaluator {
     final callEnv = fn.closure.child(isFunctionBoundary: true);
     if (fn.receiver != null) {
       callEnv.define('this', fn.receiver);
+      if (fn.receiver!.qudsClass.superclass != null) {
+        callEnv.define(
+          'super',
+          QudsSuperProxy(fn.receiver!, fn.receiver!.qudsClass.superclass!),
+        );
+      }
       _exposeInstanceFields(fn.receiver!, callEnv);
     }
 
@@ -5418,7 +5849,9 @@ class QudsEvaluator {
     final allFields = _collectAllInstanceFields(klass);
     final fields = <String, Object?>{};
     for (final f in allFields) {
-      if (f.initializer != null) {
+      if (f.isEvent) {
+        fields[f.name] = QudsEventChannel(f.name);
+      } else if (f.initializer != null) {
         final v = _evalExprFast(f.initializer!, klass.definingEnv);
         if (v is Future<Object?>) {
           return _instantiateClass(klass, positional, named, span);
@@ -5431,7 +5864,7 @@ class QudsEvaluator {
     final instance = QudsInstance(klass, fields);
     var posIdx = 0;
     for (final f in allFields) {
-      if (f.isStatic || f.lazyBody != null || f.isConst) continue;
+      if (f.isStatic || f.isEvent || f.lazyBody != null || f.isConst) continue;
       if (named.containsKey(f.name)) {
         instance.fields[f.name] = named[f.name];
       } else if (posIdx < positional.length &&
@@ -5447,4 +5880,21 @@ class QudsEvaluator {
     }
     return instance;
   }
+}
+
+class _QudsComputedEntry {
+  _QudsComputedEntry(this.name, this.expr, this.env);
+
+  final String name;
+  final Expression expr;
+  final QudsEnvironment env;
+}
+
+class _QudsWatchEntry {
+  _QudsWatchEntry(this.expr, this.body, this.env, this.lastValue);
+
+  final Expression expr;
+  final List<Statement> body;
+  final QudsEnvironment env;
+  Object? lastValue;
 }

@@ -1,28 +1,80 @@
 /// Curated Quds scientific & real-time motion presets for Quds Studio.
 library;
 
+import 'presets_extra.dart';
+
 enum StudioCategory {
   physics,
   chemistry,
   mathematics,
-  geometry,
   waves,
+  geometry,
   astronomy,
+  biology,
   math3d,
   tools,
 }
 
 extension StudioCategoryLabels on StudioCategory {
   String label(bool isArabic) => switch (this) {
-        StudioCategory.physics => isArabic ? 'فيزياء وميكانيكا' : 'Physics',
-        StudioCategory.chemistry => isArabic ? 'كيمياء وتفاعلات' : 'Chemistry',
+        StudioCategory.physics => isArabic ? 'الفيزياء والميكانيكا' : 'Physics',
+        StudioCategory.chemistry =>
+          isArabic ? 'الكيمياء والتفاعلات' : 'Chemistry',
         StudioCategory.mathematics =>
-          isArabic ? 'رياضيات وتحليل' : 'Mathematics',
-        StudioCategory.geometry => isArabic ? 'هندسة وفن' : 'Geometry & Art',
-        StudioCategory.waves => isArabic ? 'موجات وفورييه' : 'Waves & Fourier',
-        StudioCategory.astronomy => isArabic ? 'فلك ورادار' : 'Space & Radar',
-        StudioCategory.math3d => isArabic ? '3D وبيانات' : '3D & Data',
-        StudioCategory.tools => isArabic ? 'أدوات ومصحح' : 'Tools & Apps',
+          isArabic ? 'الرياضيات والتحليل' : 'Mathematics',
+        StudioCategory.waves =>
+          isArabic ? 'الموجات والبصريات' : 'Waves & Optics',
+        StudioCategory.geometry =>
+          isArabic ? 'الهندسة والفن الرياضي' : 'Geometry & Art',
+        StudioCategory.astronomy =>
+          isArabic ? 'الفلك والرادار' : 'Space & Radar',
+        StudioCategory.biology =>
+          isArabic ? 'الأحياء والطب والنظم' : 'Biology & Medicine',
+        StudioCategory.math3d =>
+          isArabic ? 'الذكاء الاصطناعي و3D' : 'AI, 3D & Data',
+        StudioCategory.tools => isArabic ? 'الأدوات والمصحح' : 'Tools & Apps',
+      };
+
+  String shortLabel(bool isArabic) => switch (this) {
+        StudioCategory.physics => isArabic ? 'فيزياء' : 'Physics',
+        StudioCategory.chemistry => isArabic ? 'كيمياء' : 'Chemistry',
+        StudioCategory.mathematics => isArabic ? 'رياضيات' : 'Math',
+        StudioCategory.waves => isArabic ? 'موجات' : 'Waves',
+        StudioCategory.geometry => isArabic ? 'هندسة وفن' : 'Art',
+        StudioCategory.astronomy => isArabic ? 'فلك' : 'Space',
+        StudioCategory.biology => isArabic ? 'أحياء وطب' : 'Bio/Med',
+        StudioCategory.math3d => isArabic ? 'AI و3D' : 'AI & 3D',
+        StudioCategory.tools => isArabic ? 'أدوات' : 'Tools',
+      };
+
+  String description(bool isArabic) => switch (this) {
+        StudioCategory.physics => isArabic
+            ? 'البندول، السيكلوترون، الكم، التصادمات، دوبلر، لورينز وRLC'
+            : 'Pendulums, cyclotron, quantum, collisions, Doppler & chaos',
+        StudioCategory.chemistry => isArabic
+            ? 'الحركية، المعايرة pH، ذرة بور، ماكسويل، الاتزان والاضمحلال'
+            : 'Kinetics, pH titration, Bohr spectra, equilibrium & decay',
+        StudioCategory.mathematics => isArabic
+            ? 'تايلور، ريمان، نيوتن، بيزييه، السيكلويد، فيلوتاكسيس والمركّب'
+            : 'Taylor, Riemann, Newton, Bezier, cycloid & complex roots',
+        StudioCategory.waves => isArabic
+            ? 'فورييه، الموجات الموقوفة، التداخل، سنيل البصري وAM/FM'
+            : 'Fourier epicycles, harmonics, optics & AM/FM modulation',
+        StudioCategory.geometry => isArabic
+            ? 'الفراشة، الوردة، نجمة مورير، هيبوتروكويد والهندسة التفاعلية'
+            : 'Butterfly, spirograph, Maurer rose & interactive geometry',
+        StudioCategory.astronomy => isArabic
+            ? 'مدارات كبلر، نظام الأرض والمريخ والقمر، والرادار الحي'
+            : 'Kepler orbits, Earth-Moon-Mars resonance & live radar',
+        StudioCategory.biology => isArabic
+            ? 'لوتكا–فولتيرا البيئي، انتشار الأوبئة SIR وتخطيط القلب ECG'
+            : 'Predator-prey ecology, SIR epidemic & live ECG monitor',
+        StudioCategory.math3d => isArabic
+            ? 'النزول التدرجي AI، السطوح ثلاثية الأبعاد، الحقول والبيانات'
+            : 'Gradient descent AI, 3D surfaces, vector fields & FFT',
+        StudioCategory.tools => isArabic
+            ? 'المصحح، الجسر الآمن، Bytecode VM، النماذج والرسوم البيانية'
+            : 'Debugger, sandbox bridge, Bytecode VM & micro-app forms',
       };
 }
 
@@ -59,7 +111,12 @@ enum StudioPolicyMode {
   custom,
 }
 
-const studioPresets = <StudioPreset>[
+final List<StudioPreset> studioPresets = <StudioPreset>[
+  ..._baseStudioPresets,
+  ...extraAnimatedPresets,
+];
+
+const _baseStudioPresets = <StudioPreset>[
   StudioPreset(
     id: 'interactive_geometry',
     titleAr: 'هندسة تفاعلية: مثلث ومركز الثقل',

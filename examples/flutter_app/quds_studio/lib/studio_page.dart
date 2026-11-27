@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:quds/editor_engine.dart';
 import 'package:quds/interpreter.dart';
 
@@ -40,7 +41,7 @@ class QudsStudioPage extends StatefulWidget {
 }
 
 class _QudsStudioPageState extends State<QudsStudioPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late bool _isArabic;
   late bool _isDark;
   late StudioPreset _preset;
@@ -82,10 +83,12 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   Map<String, Object?>? _pendingInteractivePatch;
   String? _liveEvalOutput;
 
-  // Bytecode VM, Time-Travel + Profiler, and 60fps Animation state
+  // Bytecode VM, Time-Travel + Profiler, and VSync 60/120fps Animation state
   bool _preferBytecode = false;
   bool _enableProfiling = false;
-  Timer? _animTimer;
+  Ticker? _animTicker;
+  Duration? _lastTickElapsed;
+  double _measuredFps = 0.0;
   bool _animPlaying = false;
   double _animSpeed = 1.0;
   QudsLineStyleSettings _lineStyle = QudsLineStyleSettings.balanced;
@@ -374,18 +377,36 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   }
 
   void _stopAnimTimer() {
-    _animTimer?.cancel();
-    _animTimer = null;
+    _animTicker?.stop();
+    _animTicker?.dispose();
+    _animTicker = null;
+    _lastTickElapsed = null;
     _animPlaying = false;
   }
 
   void _startAnimTimer() {
-    _animTimer?.cancel();
+    _stopAnimTimer();
     setState(() => _animPlaying = true);
-    _animTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+    _lastTickElapsed = null;
+    _animTicker = createTicker((elapsed) {
       if (!mounted || !_animPlaying) return;
-      _stepAnimFrame();
-    });
+      final prev = _lastTickElapsed;
+      if (prev == null) {
+        _lastTickElapsed = elapsed;
+        return;
+      }
+      final deltaUs = (elapsed - prev).inMicroseconds;
+      final minFrameUs = (1000000 / _lineStyle.targetFps).round();
+      if (deltaUs < minFrameUs - 1200) return;
+      if (_updatingInteractive || _running) return;
+      _lastTickElapsed = elapsed;
+      final dt = (deltaUs / 1000000.0).clamp(0.002, 0.05);
+      final instFps = 1.0 / dt;
+      _measuredFps =
+          _measuredFps <= 0 ? instFps : (_measuredFps * 0.85 + instFps * 0.15);
+      _stepAnimFrame(dtSeconds: dt);
+    })
+      ..start();
   }
 
   void _toggleAnimPlay() {
@@ -404,12 +425,13 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   String _activeExecutionFile() =>
       _workspaceMode ? _projectWorkspace.entryPoint : _preset.fileName;
 
-  Future<void> _stepAnimFrame() async {
+  Future<void> _stepAnimFrame({double? dtSeconds}) async {
     if (_updatingInteractive || _running) return;
     _updatingInteractive = true;
     try {
+      final stepDt = (dtSeconds ?? (1.0 / _lineStyle.targetFps)) * _animSpeed;
       final res = await _session.stepFrame(
-        0.033 * _animSpeed,
+        stepDt,
         source: _activeExecutionSource(),
         file: _activeExecutionFile(),
       );
@@ -520,8 +542,15 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       isDark: _isDark,
     );
     if (picked != null && mounted) {
-      _selectPreset(picked);
+      setState(() => _activeFilter = picked.filter);
+      _selectPreset(picked.preset);
     }
+  }
+
+  List<StudioPreset> _dropdownPresets() {
+    final list = filterStudioPresets(_activeFilter);
+    if (list.any((p) => p.id == _preset.id)) return list;
+    return [_preset, ...list];
   }
 
   void _switchPolicy(StudioPolicyMode mode) {
@@ -1301,7 +1330,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                         isDense: true,
                         isExpanded: true,
                         items: [
-                          for (final p in studioPresets)
+                          for (final p in _dropdownPresets())
                             DropdownMenuItem(
                               value: p.id,
                               child: Text(
@@ -1405,7 +1434,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                       isDense: true,
                       isExpanded: true,
                       items: [
-                        for (final p in studioPresets)
+                        for (final p in _dropdownPresets())
                           DropdownMenuItem(
                             value: p.id,
                             child: Text(
@@ -1785,7 +1814,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      _isArabic ? 'حدة الخط' : 'Lines',
+                      _isArabic ? 'النعومة والحدة' : 'Smoothness',
                       style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w600,
@@ -1806,6 +1835,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 settings: _lineStyle,
                 isArabic: _isArabic,
                 isDark: _isDark,
+                measuredFps: _animPlaying ? _measuredFps : null,
                 onChanged: (next) => setState(() => _lineStyle = next),
               )
             : null;
@@ -1818,7 +1848,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 speed: _animSpeed,
                 isArabic: _isArabic,
                 onTogglePlay: _toggleAnimPlay,
-                onStepFrame: _stepAnimFrame,
+                onStepFrame: () => _stepAnimFrame(),
                 onReset: _resetAnim,
                 onSpeedChanged: (s) => setState(() => _animSpeed = s),
                 onSeekTime: _seekAnimTime,

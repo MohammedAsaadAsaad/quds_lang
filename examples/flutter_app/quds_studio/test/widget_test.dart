@@ -341,10 +341,10 @@ void main() {
   });
 
   test(
-      'All 24 real-time motion presets (Physics, Chemistry, Mathematics, Geometry, Waves, Space) execute cleanly across multiple time frames with live telemetry',
+      'All 45 real-time motion presets across 9 scientific folders execute cleanly across multiple time frames with live telemetry',
       () async {
     final animated = studioPresets.where((p) => p.isAnimated).toList();
-    expect(animated, hasLength(24));
+    expect(animated, hasLength(45));
 
     for (final preset in animated) {
       final session = QudsSession(allowTopLevelRebind: true);
@@ -490,12 +490,16 @@ void main() {
         tester.widget<QudsGeometryCanvas>(find.byType(QudsGeometryCanvas));
     expect(geoCanvas.lineStyle.antiAlias, isFalse);
 
-    // 4. Switch to Soft Glow preset -> full smoothness + glow
+    // 4. Switch to Soft Glow preset + 120 FPS Ultra smoothness -> verify both persist
+    await tester.tap(find.byKey(const Key('fps_chip_120')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('line_preset_softGlow')));
     await tester.pumpAndSettle();
     geoCanvas =
         tester.widget<QudsGeometryCanvas>(find.byType(QudsGeometryCanvas));
-    expect(geoCanvas.lineStyle, QudsLineStyleSettings.softGlow);
+    expect(geoCanvas.lineStyle.targetFps, 120);
+    expect(geoCanvas.lineStyle.glowIntensity,
+        QudsLineStyleSettings.softGlow.glowIntensity);
 
     // 5. Filter by Chemistry and run Titration pH curve live via Gallery
     await tester.tap(find.byKey(const Key('filter_chemistry')));
@@ -524,6 +528,55 @@ void main() {
       find.descendant(
         of: find.byKey(const Key('quds_telemetry_hud')),
         matching: find.textContaining('مجموع ريمان'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'Creative 2-level Folder -> Examples Hub drills into folders, navigates back, and live-searches across 54 presets',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+        key: ValueKey('folder_hub_test'), autoRunInitial: false));
+    await tester.pumpAndSettle();
+
+    // 1. Open Folder Hub from Quick Bar -> starts on visual Folders Grid
+    await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gallery_folders_grid')), findsOneWidget);
+    expect(find.byKey(const Key('folder_card_physics')), findsOneWidget);
+    expect(find.byKey(const Key('folder_card_chemistry')), findsOneWidget);
+    expect(find.byKey(const Key('folder_card_biology')), findsOneWidget);
+
+    // 2. Drill into Biology & Medicine folder -> lists ECG, SIR, Lotka-Volterra
+    await tester.ensureVisible(find.byKey(const Key('folder_card_biology')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('folder_card_biology')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gallery_examples_list')), findsOneWidget);
+    expect(
+        find.byKey(const Key('gallery_item_bio_sir_epidemic')), findsOneWidget);
+
+    // 3. Breadcrumb back to Folders Grid
+    await tester.tap(find.byKey(const Key('btn_gallery_back_folders')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gallery_folders_grid')), findsOneWidget);
+
+    // 4. Live search "ECG" across all 54 presets and launch Live ECG Monitor!
+    await tester.enterText(
+        find.byKey(const Key('gallery_search_input')), 'ECG');
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const Key('gallery_item_bio_live_ecg_monitor')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('quds_telemetry_hud')),
+        matching: find.textContaining('BPM'),
       ),
       findsOneWidget,
     );

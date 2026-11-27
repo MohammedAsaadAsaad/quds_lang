@@ -20,13 +20,15 @@ enum QudsLineRenderPreset {
   rawVector,
 }
 
-/// User-controllable line sharpness, spline smoothness, glow, and anti-aliasing.
+/// User-controllable animation smoothness (FPS), line sharpness, spline
+/// smoothness, glow, and anti-aliasing.
 class QudsLineStyleSettings {
   const QudsLineStyleSettings({
     this.strokeScale = 0.92,
     this.smoothness = 0.85,
     this.glowIntensity = 0.20,
     this.antiAlias = true,
+    this.targetFps = 60,
   });
 
   static const crisp = QudsLineStyleSettings(
@@ -34,6 +36,7 @@ class QudsLineStyleSettings {
     smoothness: 0.80,
     glowIntensity: 0.0,
     antiAlias: true,
+    targetFps: 60,
   );
 
   static const balanced = QudsLineStyleSettings(
@@ -41,6 +44,7 @@ class QudsLineStyleSettings {
     smoothness: 0.85,
     glowIntensity: 0.20,
     antiAlias: true,
+    targetFps: 60,
   );
 
   static const softGlow = QudsLineStyleSettings(
@@ -48,6 +52,7 @@ class QudsLineStyleSettings {
     smoothness: 1.0,
     glowIntensity: 0.85,
     antiAlias: true,
+    targetFps: 60,
   );
 
   static const rawVector = QudsLineStyleSettings(
@@ -55,14 +60,21 @@ class QudsLineStyleSettings {
     smoothness: 0.0,
     glowIntensity: 0.0,
     antiAlias: true,
+    targetFps: 60,
   );
 
-  factory QudsLineStyleSettings.fromPreset(QudsLineRenderPreset preset) =>
+  factory QudsLineStyleSettings.fromPreset(
+    QudsLineRenderPreset preset, {
+    int targetFps = 60,
+  }) =>
       switch (preset) {
-        QudsLineRenderPreset.crisp => crisp,
-        QudsLineRenderPreset.balanced => balanced,
-        QudsLineRenderPreset.softGlow => softGlow,
-        QudsLineRenderPreset.rawVector => rawVector,
+        QudsLineRenderPreset.crisp => crisp.copyWith(targetFps: targetFps),
+        QudsLineRenderPreset.balanced =>
+          balanced.copyWith(targetFps: targetFps),
+        QudsLineRenderPreset.softGlow =>
+          softGlow.copyWith(targetFps: targetFps),
+        QudsLineRenderPreset.rawVector =>
+          rawVector.copyWith(targetFps: targetFps),
       };
 
   /// Multiplier applied to stroke widths (0.5 = razor-thin .. 1.8 = bold).
@@ -76,6 +88,9 @@ class QudsLineStyleSettings {
 
   /// Whether anti-aliasing is enabled on canvas strokes.
   final bool antiAlias;
+
+  /// VSync target animation frame rate (24, 30, 60, or 120 FPS).
+  final int targetFps;
 
   QudsLineRenderPreset? get matchingPreset {
     bool close(double a, double b) => (a - b).abs() < 0.03;
@@ -111,12 +126,14 @@ class QudsLineStyleSettings {
     double? smoothness,
     double? glowIntensity,
     bool? antiAlias,
+    int? targetFps,
   }) =>
       QudsLineStyleSettings(
         strokeScale: strokeScale ?? this.strokeScale,
         smoothness: smoothness ?? this.smoothness,
         glowIntensity: glowIntensity ?? this.glowIntensity,
         antiAlias: antiAlias ?? this.antiAlias,
+        targetFps: targetFps ?? this.targetFps,
       );
 
   @override
@@ -126,14 +143,16 @@ class QudsLineStyleSettings {
           other.strokeScale == strokeScale &&
           other.smoothness == smoothness &&
           other.glowIntensity == glowIntensity &&
-          other.antiAlias == antiAlias;
+          other.antiAlias == antiAlias &&
+          other.targetFps == targetFps;
 
   @override
   int get hashCode =>
-      Object.hash(strokeScale, smoothness, glowIntensity, antiAlias);
+      Object.hash(strokeScale, smoothness, glowIntensity, antiAlias, targetFps);
 }
 
-/// Compact live control card for adjusting line sharpness, smoothness, glow & AA.
+/// Compact live control card for adjusting animation smoothness (FPS),
+/// line sharpness, spline smoothness, glow & AA.
 class QudsLineQualityPanel extends StatelessWidget {
   const QudsLineQualityPanel({
     super.key,
@@ -141,12 +160,14 @@ class QudsLineQualityPanel extends StatelessWidget {
     required this.isArabic,
     required this.isDark,
     required this.onChanged,
+    this.measuredFps,
   });
 
   final QudsLineStyleSettings settings;
   final bool isArabic;
   final bool isDark;
   final ValueChanged<QudsLineStyleSettings> onChanged;
+  final double? measuredFps;
 
   @override
   Widget build(BuildContext context) {
@@ -173,14 +194,37 @@ class QudsLineQualityPanel extends StatelessWidget {
               Expanded(
                 child: Text(
                   isArabic
-                      ? 'جودة الخطوط: الحدة والنعومة والتوهج'
-                      : 'Line Quality: Sharpness, Smoothness & Glow',
+                      ? 'نعومة الحركة وجودة الخطوط'
+                      : 'Motion Smoothness & Line Quality',
                   style: const TextStyle(
                       fontSize: 11.5, fontWeight: FontWeight.w700),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (measuredFps != null && measuredFps! > 1) ...[
+                const SizedBox(width: 6),
+                Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF38BDF8).withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${measuredFps!.round()} FPS',
+                      style: const TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF38BDF8),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(width: 6),
               InkWell(
                 key: const Key('toggle_line_aa'),
@@ -218,6 +262,48 @@ class QudsLineQualityPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
+          // VSync target frame rate (Motion Smoothness)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                Text(
+                  isArabic ? 'نعومة الحركة (FPS): ' : 'Motion FPS: ',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: theme.hintColor,
+                  ),
+                ),
+                for (final fps in const [24, 30, 60, 120])
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 5),
+                    child: ChoiceChip(
+                      key: Key('fps_chip_$fps'),
+                      label: Directionality(
+                        textDirection: TextDirection.ltr,
+                        child: Text(
+                          fps == 120
+                              ? (isArabic ? '120 فائق' : '120 Ultra')
+                              : '$fps fps',
+                          style: const TextStyle(
+                              fontFamily: 'JetBrainsMono',
+                              fontFamilyFallback: ['IBMPlexSansArabic'],
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      selected: settings.targetFps == fps,
+                      onSelected: (_) =>
+                          onChanged(settings.copyWith(targetFps: fps)),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -249,7 +335,10 @@ class QudsLineQualityPanel extends StatelessWidget {
                               fontSize: 10.5, fontWeight: FontWeight.w600)),
                       selected: activePreset == entry.$1,
                       onSelected: (_) => onChanged(
-                        QudsLineStyleSettings.fromPreset(entry.$1),
+                        QudsLineStyleSettings.fromPreset(
+                          entry.$1,
+                          targetFps: settings.targetFps,
+                        ),
                       ),
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -828,74 +917,100 @@ class _GeometryScenePainter extends CustomPainter {
                 p.gradientColors.length >= 2 || p.pointColors.isNotEmpty;
 
             if (hasMultiColor) {
+              // Batch into at most 28 smooth Catmull-Rom chunks so mobile GPUs
+              // render silky 60-120fps with continuous color gradients and ZERO
+              // per-segment MaskFilter.blur overhead!
               final denom = math.max(1, p.points.length - 1);
-              final colors = <Color>[
-                for (var i = 0; i < screenPts.length; i++)
-                  _parseColor(p.colorAt(i, (i / denom).clamp(0.0, 1.0))),
-              ];
-              final segPaths = _buildCatmullRomSegmentPaths(
-                screenPts,
-                lineStyle.smoothness,
-              );
+              final n = screenPts.length;
+              final chunkStep = math.max(1, (n / 28).ceil());
+              final chunks =
+                  <(Path path, Offset a, Offset b, Color cA, Color cB)>[];
+              for (var start = 0; start < n - 1; start += chunkStep) {
+                final end = math.min(n - 1, start + chunkStep);
+                final chunkPath = _buildCatmullRomSubPath(
+                  screenPts,
+                  start,
+                  end,
+                  lineStyle.smoothness,
+                );
+                final tA = (start / denom).clamp(0.0, 1.0);
+                final tB = (end / denom).clamp(0.0, 1.0);
+                chunks.add((
+                  chunkPath,
+                  screenPts[start],
+                  screenPts[end],
+                  _parseColor(p.colorAt(start, tA)),
+                  _parseColor(p.colorAt(end, tB)),
+                ));
+              }
 
-              // Pass 1: clean optical glow strictly UNDERNEATH the entire curve.
+              // Pass 1: lightweight soft halo strictly underneath (NO blur shader in loop!)
               if (glowStrength > 0.01) {
-                final blurSigma = 1.6 + 3.2 * glowStrength;
-                final glowPaint = Paint()
+                final outerHalo = Paint()
                   ..isAntiAlias = lineStyle.antiAlias
                   ..style = PaintingStyle.stroke
-                  ..strokeWidth = effectiveWidth * (1.55 + 1.05 * glowStrength)
+                  ..strokeWidth = effectiveWidth * (2.3 + 1.1 * glowStrength)
                   ..strokeCap = StrokeCap.round
-                  ..strokeJoin = StrokeJoin.round
-                  ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma);
-                for (var i = 0; i < segPaths.length; i++) {
-                  glowPaint.color =
-                      colors[i].withValues(alpha: 0.34 * glowStrength);
-                  canvas.drawPath(segPaths[i], glowPaint);
+                  ..strokeJoin = StrokeJoin.round;
+                final innerHalo = Paint()
+                  ..isAntiAlias = lineStyle.antiAlias
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = effectiveWidth * (1.45 + 0.5 * glowStrength)
+                  ..strokeCap = StrokeCap.round
+                  ..strokeJoin = StrokeJoin.round;
+                for (final ch in chunks) {
+                  outerHalo.color =
+                      ch.$4.withValues(alpha: 0.13 * glowStrength);
+                  canvas.drawPath(ch.$1, outerHalo);
+                  innerHalo.color =
+                      ch.$4.withValues(alpha: 0.22 * glowStrength);
+                  canvas.drawPath(ch.$1, innerHalo);
                 }
               }
 
-              // Pass 2: razor-sharp 100% opaque core stroke cleanly ON TOP with
-              // continuous per-span linear gradients (no banding, no halo washout).
+              // Pass 2: razor-sharp 100% opaque smooth core stroke cleanly ON TOP
               final corePaint = Paint()
                 ..isAntiAlias = lineStyle.antiAlias
                 ..style = PaintingStyle.stroke
                 ..strokeWidth = effectiveWidth
                 ..strokeCap = StrokeCap.round
                 ..strokeJoin = StrokeJoin.round;
-              for (var i = 0; i < segPaths.length; i++) {
-                final a = screenPts[i];
-                final b = screenPts[i + 1];
-                final cA = colors[i];
-                final cB = colors[i + 1];
-                if ((b - a).distanceSquared > 1e-4 && cA != cB) {
+              for (final ch in chunks) {
+                if ((ch.$3 - ch.$2).distanceSquared > 1e-3 && ch.$4 != ch.$5) {
                   corePaint
-                    ..color = cA
-                    ..shader = ui.Gradient.linear(a, b, [cA, cB]);
+                    ..color = ch.$4
+                    ..shader = ui.Gradient.linear(ch.$2, ch.$3, [ch.$4, ch.$5]);
                 } else {
                   corePaint
                     ..shader = null
-                    ..color = cA;
+                    ..color = ch.$4;
                 }
-                canvas.drawPath(segPaths[i], corePaint);
+                canvas.drawPath(ch.$1, corePaint);
               }
             } else {
               final path = _buildSmoothPath(screenPts, lineStyle.smoothness);
               final baseColor = _parseColor(p.color);
-              // Pass 1: clean optical glow underneath (optional)
+              // Pass 1: fast 2-layer optical halo underneath (no expensive GPU blur stall)
               if (glowStrength > 0.01) {
-                final blurSigma = 1.6 + 3.2 * glowStrength;
                 canvas.drawPath(
                   path,
                   Paint()
                     ..isAntiAlias = lineStyle.antiAlias
-                    ..color = baseColor.withValues(alpha: 0.38 * glowStrength)
+                    ..color = baseColor.withValues(alpha: 0.14 * glowStrength)
                     ..style = PaintingStyle.stroke
-                    ..strokeWidth =
-                        effectiveWidth * (1.55 + 1.05 * glowStrength)
+                    ..strokeWidth = effectiveWidth * (2.3 + 1.1 * glowStrength)
                     ..strokeCap = StrokeCap.round
-                    ..strokeJoin = StrokeJoin.round
-                    ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma),
+                    ..strokeJoin = StrokeJoin.round,
+                );
+                canvas.drawPath(
+                  path,
+                  Paint()
+                    ..isAntiAlias = lineStyle.antiAlias
+                    ..color = baseColor.withValues(alpha: 0.24 * glowStrength)
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = effectiveWidth * (1.45 + 0.5 * glowStrength)
+                    ..strokeCap = StrokeCap.round
+                    ..strokeJoin = StrokeJoin.round,
                 );
               }
               // Pass 2: crisp solid vector core on top
@@ -1103,30 +1218,34 @@ Path _buildSmoothPath(List<Offset> pts, double smoothness) {
   return path;
 }
 
-/// Builds individual Catmull-Rom cubic Bezier span paths so multi-color curves
-/// can paint smooth continuous gradients without polygonal corners.
-List<Path> _buildCatmullRomSegmentPaths(List<Offset> pts, double smoothness) {
+/// Builds a smooth Catmull-Rom cubic Bezier sub-path spanning `[start..end]`
+/// using full neighboring context `(p0, p3)` so adjacent chunks join with C1 continuity.
+Path _buildCatmullRomSubPath(
+  List<Offset> pts,
+  int start,
+  int end,
+  double smoothness,
+) {
+  final path = Path()..moveTo(pts[start].dx, pts[start].dy);
   final n = pts.length;
-  if (n < 2) return const [];
   final s = smoothness.clamp(0.0, 1.0);
+  if (s <= 0.02 || n < 3) {
+    for (var i = start + 1; i <= end; i++) {
+      path.lineTo(pts[i].dx, pts[i].dy);
+    }
+    return path;
+  }
   final tension = s * 0.5;
-  final result = <Path>[];
-  for (var i = 0; i < n - 1; i++) {
+  for (var i = start; i < end; i++) {
+    final p0 = pts[i > 0 ? i - 1 : 0];
     final p1 = pts[i];
     final p2 = pts[i + 1];
-    final seg = Path()..moveTo(p1.dx, p1.dy);
-    if (s <= 0.02 || n < 3) {
-      seg.lineTo(p2.dx, p2.dy);
-    } else {
-      final p0 = pts[i > 0 ? i - 1 : 0];
-      final p3 = pts[i + 2 < n ? i + 2 : n - 1];
-      final c1 = p1 + (p2 - p0) * (tension / 3.0);
-      final c2 = p2 - (p3 - p1) * (tension / 3.0);
-      seg.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
-    }
-    result.add(seg);
+    final p3 = pts[i + 2 < n ? i + 2 : n - 1];
+    final c1 = p1 + (p2 - p0) * (tension / 3.0);
+    final c2 = p2 - (p3 - p1) * (tension / 3.0);
+    path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
   }
-  return result;
+  return path;
 }
 
 /// 2D Scientific Plot widget rendering [QudsPlot2DOutput].

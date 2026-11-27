@@ -1,10 +1,69 @@
-/// Curated Quds scientific & real-time motion presets for Quds Studio.
+/// Curated Quds scientific, real-world simulation, games & VM presets for Quds Studio.
 library;
 
 import 'presets_benchmarks.dart';
+import 'presets_cs_science.dart';
+import 'presets_domains.dart';
 import 'presets_extra.dart';
+import 'presets_games.dart';
+import 'presets_simulations.dart';
+
+/// Top-level thematic super-groups organizing all 16 Studio categories cleanly.
+enum StudioDomain {
+  gamesAndSims,
+  sciences,
+  mathAndCs,
+  languageAndVm,
+}
+
+extension StudioDomainLabels on StudioDomain {
+  String label(bool isArabic) => switch (this) {
+        StudioDomain.gamesAndSims => isArabic
+            ? '🎮 الألعاب والمحاكاة الواقعية'
+            : '🎮 Games & Real-World Sims',
+        StudioDomain.sciences =>
+          isArabic ? '🔬 العلوم والطبيعة والفضاء' : '🔬 Sciences & Nature',
+        StudioDomain.mathAndCs => isArabic
+            ? '📐 الرياضيات والذكاء والحوسبة'
+            : '📐 Math, AI & Computing',
+        StudioDomain.languageAndVm => isArabic
+            ? '⚡ لغة قدس والأداء الفائق VM'
+            : '⚡ Quds 1.2 & VM Performance',
+      };
+
+  List<StudioCategory> get categories => switch (this) {
+        StudioDomain.gamesAndSims => const [
+            StudioCategory.games,
+            StudioCategory.simulations,
+            StudioCategory.engineering,
+            StudioCategory.finance,
+          ],
+        StudioDomain.sciences => const [
+            StudioCategory.physics,
+            StudioCategory.chemistry,
+            StudioCategory.waves,
+            StudioCategory.astronomy,
+            StudioCategory.biology,
+          ],
+        StudioDomain.mathAndCs => const [
+            StudioCategory.mathematics,
+            StudioCategory.geometry,
+            StudioCategory.math3d,
+            StudioCategory.algorithms,
+          ],
+        StudioDomain.languageAndVm => const [
+            StudioCategory.language,
+            StudioCategory.benchmarks,
+            StudioCategory.tools,
+          ],
+      };
+}
 
 enum StudioCategory {
+  games,
+  simulations,
+  engineering,
+  finance,
   physics,
   chemistry,
   mathematics,
@@ -13,12 +72,45 @@ enum StudioCategory {
   astronomy,
   biology,
   math3d,
+  algorithms,
+  language,
   tools,
   benchmarks,
 }
 
 extension StudioCategoryLabels on StudioCategory {
+  StudioDomain get domain => switch (this) {
+        StudioCategory.games ||
+        StudioCategory.simulations ||
+        StudioCategory.engineering ||
+        StudioCategory.finance =>
+          StudioDomain.gamesAndSims,
+        StudioCategory.physics ||
+        StudioCategory.chemistry ||
+        StudioCategory.waves ||
+        StudioCategory.astronomy ||
+        StudioCategory.biology =>
+          StudioDomain.sciences,
+        StudioCategory.mathematics ||
+        StudioCategory.geometry ||
+        StudioCategory.math3d ||
+        StudioCategory.algorithms =>
+          StudioDomain.mathAndCs,
+        StudioCategory.language ||
+        StudioCategory.benchmarks ||
+        StudioCategory.tools =>
+          StudioDomain.languageAndVm,
+      };
+
   String label(bool isArabic) => switch (this) {
+        StudioCategory.games =>
+          isArabic ? 'الألعاب التفاعلية' : 'Interactive Games',
+        StudioCategory.simulations =>
+          isArabic ? 'محاكاة العالم الحقيقي' : 'Real-World Sims',
+        StudioCategory.engineering =>
+          isArabic ? 'الهندسة والإلكترونيات' : 'Engineering & Robotics',
+        StudioCategory.finance =>
+          isArabic ? 'المال والأعمال والاقتصاد' : 'Finance & Econ',
         StudioCategory.physics => isArabic ? 'الفيزياء والميكانيكا' : 'Physics',
         StudioCategory.chemistry =>
           isArabic ? 'الكيمياء والتفاعلات' : 'Chemistry',
@@ -29,39 +121,61 @@ extension StudioCategoryLabels on StudioCategory {
         StudioCategory.geometry =>
           isArabic ? 'الهندسة والفن الرياضي' : 'Geometry & Art',
         StudioCategory.astronomy =>
-          isArabic ? 'الفلك والرادار' : 'Space & Radar',
+          isArabic ? 'الفلك والفضاء والرادار' : 'Space & Radar',
         StudioCategory.biology =>
           isArabic ? 'الأحياء والطب والنظم' : 'Biology & Medicine',
         StudioCategory.math3d =>
           isArabic ? 'الذكاء الاصطناعي و3D' : 'AI, 3D & Data',
+        StudioCategory.algorithms =>
+          isArabic ? 'الخوارزميات وهياكل البيانات' : 'Algorithms & CS',
+        StudioCategory.language =>
+          isArabic ? 'ميزات لغة قدس 1.2' : 'Quds 1.2 Showcase',
         StudioCategory.tools => isArabic ? 'الأدوات والمصحح' : 'Tools & Apps',
         StudioCategory.benchmarks =>
-          isArabic ? 'اختبارات الأداء والسرعة' : 'Benchmarks',
+          isArabic ? 'اختبارات الأداء VM' : 'VM Benchmarks',
       };
 
   String shortLabel(bool isArabic) => switch (this) {
+        StudioCategory.games => isArabic ? '🎮 ألعاب' : '🎮 Games',
+        StudioCategory.simulations => isArabic ? '🏙️ محاكاة' : '🏙️ Sims',
+        StudioCategory.engineering => isArabic ? '⚙️ هندسة' : '⚙️ Eng',
+        StudioCategory.finance => isArabic ? '💹 مال' : '💹 Finance',
         StudioCategory.physics => isArabic ? 'فيزياء' : 'Physics',
         StudioCategory.chemistry => isArabic ? 'كيمياء' : 'Chemistry',
         StudioCategory.mathematics => isArabic ? 'رياضيات' : 'Math',
         StudioCategory.waves => isArabic ? 'موجات' : 'Waves',
-        StudioCategory.geometry => isArabic ? 'هندسة وفن' : 'Art',
-        StudioCategory.astronomy => isArabic ? 'فلك' : 'Space',
-        StudioCategory.biology => isArabic ? 'أحياء وطب' : 'Bio/Med',
+        StudioCategory.geometry => isArabic ? 'فن هندسي' : 'Art',
+        StudioCategory.astronomy => isArabic ? 'فضاء' : 'Space',
+        StudioCategory.biology => isArabic ? 'طب وبيئة' : 'Bio/Med',
         StudioCategory.math3d => isArabic ? 'AI و3D' : 'AI & 3D',
+        StudioCategory.algorithms => isArabic ? 'خوارزميات' : 'Algos',
+        StudioCategory.language => isArabic ? 'قدس 1.2' : 'Quds 1.2',
         StudioCategory.tools => isArabic ? 'أدوات' : 'Tools',
-        StudioCategory.benchmarks => isArabic ? '⚡ أداء' : '⚡ Bench',
+        StudioCategory.benchmarks => isArabic ? '⚡ أداء VM' : '⚡ Bench',
       };
 
   String description(bool isArabic) => switch (this) {
+        StudioCategory.games => isArabic
+            ? 'بونج، كسر الطوب، الأفعى، المدفع، النيازك، فلابي، الفقاعات، السباق، إكس-أو والمتاهة'
+            : 'Pong, Brick Breaker, Snake, Artillery, Asteroids, Flappy, Racer & Maze',
+        StudioCategory.simulations => isArabic
+            ? 'المرور، المصعد، الطاقة الشمسية، PID، التكييف، الطوارئ، السد، المسيّرة، الحرائق والطقس'
+            : 'Traffic, Elevator, Solar Grid, PID, HVAC, ER Queue, Dam, Drone & Storm',
+        StudioCategory.engineering => isArabic
+            ? 'ذراع روبوتية IK، محرك المكبس، التروس، العوارض، البوابات المنطقية، RC والجسور والطيران'
+            : 'Robot Arm IK, Piston, Gears, Beams, Logic Gates, RC Filter & Airfoil',
+        StudioCategory.finance => isArabic
+            ? 'البورصة SMA، الفائدة المركبة، القرض العقاري، العرض والطلب، التعادل، التضخم والزكاة'
+            : 'Stocks SMA, Compound Interest, Mortgage, Market Eq, Break-Even & Budget',
         StudioCategory.physics => isArabic
-            ? 'البندول، السيكلوترون، الكم، التصادمات، دوبلر، لورينز وRLC'
-            : 'Pendulums, cyclotron, quantum, collisions, Doppler & chaos',
+            ? 'البندول، الشق المزدوج، فضاء الطور، السيكلوترون، الكم، التصادمات، دوبلر ولورينز'
+            : 'Pendulums, double-slit, phase space, cyclotron, quantum & Doppler',
         StudioCategory.chemistry => isArabic
             ? 'الحركية، المعايرة pH، ذرة بور، ماكسويل، الاتزان والاضمحلال'
             : 'Kinetics, pH titration, Bohr spectra, equilibrium & decay',
         StudioCategory.mathematics => isArabic
-            ? 'تايلور، ريمان، نيوتن، بيزييه، السيكلويد، فيلوتاكسيس والمركّب'
-            : 'Taylor, Riemann, Newton, Bezier, cycloid & complex roots',
+            ? 'ماندلبروت، الحلزون الذهبي، تايلور، ريمان، نيوتن، بيزييه والسيكلويد'
+            : 'Mandelbrot, golden spiral, Taylor, Riemann, Newton & Bezier',
         StudioCategory.waves => isArabic
             ? 'فورييه، الموجات الموقوفة، التداخل، سنيل البصري وAM/FM'
             : 'Fourier epicycles, harmonics, optics & AM/FM modulation',
@@ -69,20 +183,26 @@ extension StudioCategoryLabels on StudioCategory {
             ? 'الفراشة، الوردة، نجمة مورير، هيبوتروكويد والهندسة التفاعلية'
             : 'Butterfly, spirograph, Maurer rose & interactive geometry',
         StudioCategory.astronomy => isArabic
-            ? 'مدارات كبلر، نظام الأرض والمريخ والقمر، والرادار الحي'
-            : 'Kepler orbits, Earth-Moon-Mars resonance & live radar',
+            ? 'مدار هوهمان للمريخ، كسوف الشمس، مدارات كبلر، الأرض والقمر والرادار'
+            : 'Mars Hohmann transfer, solar eclipse, Kepler orbits & live radar',
         StudioCategory.biology => isArabic
             ? 'لوتكا–فولتيرا البيئي، انتشار الأوبئة SIR وتخطيط القلب ECG'
             : 'Predator-prey ecology, SIR epidemic & live ECG monitor',
         StudioCategory.math3d => isArabic
-            ? 'النزول التدرجي AI، السطوح ثلاثية الأبعاد، الحقول والبيانات'
-            : 'Gradient descent AI, 3D surfaces, vector fields & FFT',
+            ? 'K-Means، الشبكات العصبية، النزول التدرجي، السطوح ثلاثية الأبعاد والحقول'
+            : 'K-Means, Neural Net, Gradient Descent, 3D surfaces & vector fields',
+        StudioCategory.algorithms => isArabic
+            ? 'الفرز الحي، البحث الثنائي، ديكسترا، لعبة الحياة، BST، التشفير، الضغط وKnapsack'
+            : 'Sorting, Binary Search, Dijkstra, Game of Life, BST, Cipher & DP',
+        StudioCategory.language => isArabic
+            ? 'تحميل المعاملات + augment، دمج النصوص، sealed/match، Result، sync* و with?'
+            : 'Operators + augment, String + any, sealed/match, Result & generators',
         StudioCategory.tools => isArabic
             ? 'المصحح، الجسر الآمن، Bytecode VM، النماذج والرسوم البيانية'
             : 'Debugger, sandbox bridge, Bytecode VM & micro-app forms',
         StudioCategory.benchmarks => isArabic
-            ? 'اختبارات ضغط ثقيلة للمفسّر مع قياس الزمن (Mandelbrot, Fib, Sieve, N-Body, MatMul)'
-            : 'Heavy CPU benchmarks with millisecond timing & VM vs AST comparison',
+            ? 'اختبارات ضغط ثقيلة لمحرك Register VM مع قياس الزمن (Mandelbrot, Fib, Sieve, N-Body, MatMul)'
+            : 'Heavy CPU benchmarks with millisecond timing on Register VM vs AST',
       };
 }
 
@@ -123,6 +243,10 @@ enum StudioPolicyMode {
 final List<StudioPreset> studioPresets = <StudioPreset>[
   ..._baseStudioPresets,
   ...extraAnimatedPresets,
+  ...gamePresets,
+  ...realWorldSimPresets,
+  ...financeAndEngineeringPresets,
+  ...csLanguageAndBonusPresets,
   ...benchmarkPresets,
 ];
 

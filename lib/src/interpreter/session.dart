@@ -240,6 +240,7 @@ class QudsSession {
   String? _cachedProgramSource;
   String? _cachedProgramFile;
   Program? _cachedProgram;
+  QudsUniversalChunk? _cachedUniversalChunk;
   QudsEvaluator? _activeEvaluator;
   List<String>? _activePrinted;
   List<Object>? _activeOutputs;
@@ -262,6 +263,7 @@ class QudsSession {
     if (_cachedProgramFile == path) {
       _cachedProgram = null;
       _cachedProgramSource = null;
+      _cachedUniversalChunk = null;
     }
   }
 
@@ -593,6 +595,7 @@ class QudsSession {
         _cachedProgramSource = source;
         _cachedProgramFile = file;
         _cachedProgram = program;
+        _cachedUniversalChunk = null;
       } catch (err) {
         stopwatch.stop();
         _events.add(QudsErrorEvent(err));
@@ -784,7 +787,8 @@ class QudsSession {
     try {
       final Object? value;
       if (useUniversalVm) {
-        final chunk = QudsUniversalCompiler.compile(program, name: file);
+        final chunk = _cachedUniversalChunk ??=
+            QudsUniversalCompiler.compile(program, name: file);
         value = await QudsUniversalVm.execute(
           chunk,
           evaluator,

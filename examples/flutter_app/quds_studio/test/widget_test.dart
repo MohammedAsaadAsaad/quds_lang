@@ -340,10 +340,10 @@ void main() {
   });
 
   test(
-      'All 45 real-time motion presets across 9 scientific folders execute cleanly across multiple time frames with live telemetry',
+      'All real-time motion presets across all scientific, simulation & game folders execute cleanly across multiple time frames with live telemetry',
       () async {
     final animated = studioPresets.where((p) => p.isAnimated).toList();
-    expect(animated, hasLength(45));
+    expect(animated.length, greaterThanOrEqualTo(65));
 
     for (final preset in animated) {
       final session = QudsSession(allowTopLevelRebind: true);
@@ -501,6 +501,17 @@ void main() {
         QudsLineStyleSettings.softGlow.glowIntensity);
 
     // 5. Filter by Chemistry and run Titration pH curve live via Gallery
+    final quickBarScroll = find.descendant(
+      of: find.byKey(const Key('preset_quick_bar')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('filter_chemistry')),
+      220,
+      scrollable: quickBarScroll,
+    );
+    await tester.ensureVisible(find.byKey(const Key('filter_chemistry')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('filter_chemistry')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
@@ -516,6 +527,13 @@ void main() {
     );
 
     // 6. Filter by Mathematics and run Riemann Integral live via Gallery
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('filter_mathematics')),
+      220,
+      scrollable: quickBarScroll,
+    );
+    await tester.ensureVisible(find.byKey(const Key('filter_mathematics')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('filter_mathematics')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
@@ -533,7 +551,7 @@ void main() {
   });
 
   testWidgets(
-      'Creative 2-level Folder -> Examples Hub drills into folders, navigates back, and live-searches across 54 presets',
+      'Creative 3-tier Domain -> Folder -> Examples Hub drills into folders, navigates back, and live-searches across 120 presets',
       (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -543,17 +561,24 @@ void main() {
         key: ValueKey('folder_hub_test'), autoRunInitial: false));
     await tester.pumpAndSettle();
 
-    // 1. Open Folder Hub from Quick Bar -> starts on visual Folders Grid
+    // 1. Open Folder Hub from Quick Bar -> starts on grouped Folders Grid
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('gallery_folders_grid')), findsOneWidget);
-    expect(find.byKey(const Key('folder_card_physics')), findsOneWidget);
-    expect(find.byKey(const Key('folder_card_chemistry')), findsOneWidget);
+    expect(find.byKey(const Key('folder_card_games')), findsOneWidget);
+    expect(find.byKey(const Key('folder_card_simulations')), findsOneWidget);
+    final hubScroll = find.descendant(
+      of: find.byKey(const Key('gallery_folders_grid')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('folder_card_biology')),
+      240,
+      scrollable: hubScroll,
+    );
     expect(find.byKey(const Key('folder_card_biology')), findsOneWidget);
 
     // 2. Drill into Biology & Medicine folder -> lists ECG, SIR, Lotka-Volterra
-    await tester.ensureVisible(find.byKey(const Key('folder_card_biology')));
-    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('folder_card_biology')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('gallery_examples_list')), findsOneWidget);

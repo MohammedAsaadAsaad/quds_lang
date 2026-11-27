@@ -12,6 +12,7 @@ import '../ast.dart';
 import '../lexer.dart';
 import '../parser.dart';
 import 'dart_stdlib_bridge.dart';
+import 'data_module.dart';
 import 'debugger.dart';
 import 'environment.dart';
 import 'evaluator.dart';
@@ -363,6 +364,9 @@ class QudsSession {
     );
     _hostModules[viz.uri] = viz;
     _moduleLoader.registerVirtualModule(viz.uri, viz.exports);
+    final dataMod = buildQudsDataModule();
+    _hostModules[dataMod.uri] = dataMod;
+    _moduleLoader.registerVirtualModule(dataMod.uri, dataMod.exports);
   }
 
   Future<void> _handleImport(

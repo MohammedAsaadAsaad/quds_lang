@@ -6,6 +6,7 @@
 library quds.interpreter;
 
 export 'src/source.dart' show CompilerException, SourceSpan;
+export 'src/interpreter/data_module.dart' show buildQudsDataModule;
 export 'src/interpreter/debugger.dart'
     show
         QudsBreakpoint,
@@ -88,6 +89,8 @@ export 'src/interpreter/policy.dart'
         QudsStatementInterceptEvent,
         QudsStatementInterceptor;
 export 'src/interpreter/session.dart' show QudsRunResult, QudsSession;
+export 'src/interpreter/stream_bridge.dart'
+    show QudsStreamBridge, QudsStreamSample;
 export 'src/interpreter/values.dart'
     show
         QudsCallContext,

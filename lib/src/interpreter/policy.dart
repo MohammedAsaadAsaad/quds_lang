@@ -286,6 +286,7 @@ class QudsExecutionPolicy {
       'quds:async',
       'quds:ext',
       'quds:viz',
+      'quds:data',
       'dart:math',
       'dart:convert',
     },

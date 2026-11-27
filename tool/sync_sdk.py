@@ -1,4 +1,4 @@
-"""Synchronize embedded SDK sources in lib/src/sdk.dart from lib/sdk/*.quds.
+"""Synchronize embedded SDK sources in lib/src/sdk_sources.dart from lib/sdk/*.quds.
 
 Usage:
   python3 tool/sync_sdk.py [--check] [core ext math text collection async json]
@@ -18,7 +18,7 @@ names = args or list(supported)
 if any(name not in supported for name in names):
     raise SystemExit(f'Expected one of: {", ".join(supported)}')
 
-path = Path('lib/src/sdk.dart')
+path = Path('lib/src/sdk_sources.dart')
 original_sdk = path.read_text()
 sdk = original_sdk
 out_of_sync = []
@@ -27,7 +27,7 @@ for name in names:
     pattern = re.compile(rf"const {name}SdkSource =\s*(r?)'''")
     match = pattern.search(sdk)
     if match is None:
-        raise SystemExit(f'Marker for {name}SdkSource not found in lib/src/sdk.dart')
+        raise SystemExit(f'Marker for {name}SdkSource not found in lib/src/sdk_sources.dart')
     is_raw = match.group(1) == 'r'
     start = match.end()
     end = sdk.index("\n''';", start)
@@ -49,10 +49,10 @@ for name in names:
 
 if check_only:
     if out_of_sync:
-        raise SystemExit(f'SDK out of sync in lib/src/sdk.dart: {", ".join(out_of_sync)}')
+        raise SystemExit(f'SDK out of sync in lib/src/sdk_sources.dart: {", ".join(out_of_sync)}')
     print(f'SDK synced: {", ".join(names)}')
 elif sdk != original_sdk:
     path.write_text(sdk)
-    print(f'Synced SDK in lib/src/sdk.dart: {", ".join(out_of_sync)}')
+    print(f'Synced SDK in lib/src/sdk_sources.dart: {", ".join(out_of_sync)}')
 else:
     print(f'SDK already up to date: {", ".join(names)}')

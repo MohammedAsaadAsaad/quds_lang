@@ -1,7 +1,7 @@
 """Synchronize the embedded math source. Run from the repository root."""
 from pathlib import Path
 
-path = Path('lib/src/sdk.dart')
+path = Path('lib/src/sdk_sources.dart')
 sdk = path.read_text()
 marker = "const mathSdkSource = '''"
 start = sdk.index(marker) + len(marker)

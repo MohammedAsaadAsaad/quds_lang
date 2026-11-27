@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'ast.dart';
-import 'libraries.dart';
+import 'library_uri.dart';
 import 'lexer.dart';
 
 class Parser {

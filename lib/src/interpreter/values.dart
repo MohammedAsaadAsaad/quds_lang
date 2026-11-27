@@ -136,6 +136,8 @@ class QudsLoopContext {
     this.count,
     required this.first,
     required this.last,
+    this.item,
+    this.hasItem = false,
     this.prev,
     this.next,
   });
@@ -144,9 +146,12 @@ class QudsLoopContext {
   final int? count;
   final bool first;
   final bool last;
+  final Object? item;
+  final bool hasItem;
   final Object? prev;
   final Object? next;
 
+  int get iteration => index + 1;
   int get number => index + 1;
   bool get isFirst => first;
   bool get isLast => last;
@@ -155,7 +160,13 @@ class QudsLoopContext {
 
   Object? getMember(String name, SourceSpan span) => switch (name) {
         'index' => index,
-        'number' => number,
+        'iteration' || 'number' => iteration,
+        'item' => hasItem
+            ? item
+            : throw QudsRuntimeException(
+                'Loop context `\$.item` is only available inside `for ... in` loops.',
+                span,
+              ),
         'count' => count,
         'first' || 'isFirst' => first,
         'last' || 'isLast' => last,

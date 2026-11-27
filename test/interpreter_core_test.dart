@@ -108,7 +108,12 @@ print total
       final res = await session.run('''
 var tags: List<String> = []
 for v in [10, 20, 30]:
-  tags.add("{\$.index}:{\$.first}:{\$.last}:{v}")
+  tags.add("{\$.index}:{\$.iteration}:{\$.item}:{\$.isFirst}:{\$.last}:{v}")
+
+fib(n: int) -> int = if n <= 2: n else: fib(n - 1) + fib(n - 2)
+var fibs: List<int> = []
+for _ in 1..6:
+  fibs.add(fib(\$.iteration))
 
 var evens: List<int> = []
 for i in 0..8 step 2:
@@ -121,12 +126,14 @@ else:
   -1
 
 print tags.join("|")
+print fibs
 print evens
 print found
 ''');
       expect(res.succeeded, isTrue, reason: '${res.error}');
       expect(res.printedLines, [
-        '0:true:false:10|1:false:false:20|2:false:true:30',
+        '0:1:10:true:false:10|1:2:20:false:false:20|2:3:30:false:true:30',
+        '[1, 2, 3, 5, 8, 13]',
         '[0, 2, 4, 6, 8]',
         '8',
       ]);

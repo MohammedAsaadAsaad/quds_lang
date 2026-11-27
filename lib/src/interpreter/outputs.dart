@@ -112,6 +112,7 @@ class QudsPlotSeries {
 class QudsPlot2DOutput extends QudsOutput {
   const QudsPlot2DOutput({
     required this.series,
+    this.interactiveInputs = const [],
     this.title,
     this.xLabel,
     this.yLabel,
@@ -120,6 +121,7 @@ class QudsPlot2DOutput extends QudsOutput {
   });
 
   final List<QudsPlotSeries> series;
+  final List<QudsInteractiveInput> interactiveInputs;
   final String? title;
   final String? xLabel;
   final String? yLabel;
@@ -137,6 +139,7 @@ class QudsPlot2DOutput extends QudsOutput {
         if (yLabel != null) 'yLabel': yLabel,
         'showGrid': showGrid,
         'showLegend': showLegend,
+        'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
         'series': [for (final s in series) s.toJson()],
       };
 

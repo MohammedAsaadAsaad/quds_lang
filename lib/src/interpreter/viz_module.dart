@@ -455,6 +455,7 @@ QudsHostModule buildQudsVizModule({
         );
       }
       final out = QudsPlot2DOutput(
+        interactiveInputs: List.unmodifiable(interactiveRegistry.values),
         title: named['title'] as String?,
         xLabel: named['xLabel'] as String?,
         yLabel: named['yLabel'] as String?,

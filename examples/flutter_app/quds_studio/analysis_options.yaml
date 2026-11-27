@@ -1,0 +1,13 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  errors:
+    # Keep standard package:flutter/material.dart for compatibility across
+    # stable Flutter 3.x releases (3.47+ prerelease emits a migration info).
+    deprecated_member_use: ignore
+  exclude:
+    - build/**
+    - web/**
+    - windows/**
+    - macos/**
+    - linux/**

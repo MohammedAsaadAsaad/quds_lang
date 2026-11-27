@@ -13,6 +13,7 @@ import 'package:quds/interpreter.dart';
 
 import 'editor_widget.dart';
 import 'notebook_panel.dart';
+import 'preset_gallery.dart';
 import 'presets.dart';
 import 'viz2_widgets.dart';
 import 'viz_widgets.dart';
@@ -44,6 +45,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   late bool _isDark;
   late StudioPreset _preset;
   late StudioPolicyMode _policyMode;
+  StudioFilterKind _activeFilter = StudioFilterKind.all;
 
   late QudsWorkspace _projectWorkspace;
   bool _workspaceMode = false;
@@ -480,6 +482,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   void _selectPreset(StudioPreset preset) {
     _stopAnimTimer();
     _session.stop();
+    _session.resetAnimation();
     _pendingInteractivePatch = null;
     setState(() {
       _workspaceMode = false;
@@ -495,6 +498,27 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _rebuildSessionKeepingCode(preset.code);
     if (_breakpoints.isEmpty) {
       _runCode();
+    }
+  }
+
+  void _stepPreset(int delta) {
+    final list = filterStudioPresets(_activeFilter);
+    if (list.isEmpty) return;
+    final idx = list.indexWhere((p) => p.id == _preset.id);
+    final nextIdx = idx < 0 ? 0 : (idx + delta + list.length) % list.length;
+    _selectPreset(list[nextIdx]);
+  }
+
+  Future<void> _openPresetGallery() async {
+    final picked = await showQudsPresetGalleryDialog(
+      context,
+      initialFilter: _activeFilter,
+      activePresetId: _preset.id,
+      isArabic: _isArabic,
+      isDark: _isDark,
+    );
+    if (picked != null && mounted) {
+      _selectPreset(picked);
     }
   }
 
@@ -903,6 +927,17 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 child: Column(
                   children: [
                     _buildToolbar(theme),
+                    QudsPresetQuickBar(
+                      activeFilter: _activeFilter,
+                      activePresetId: _preset.id,
+                      isArabic: _isArabic,
+                      isDark: _isDark,
+                      onFilterChanged: (kind) {
+                        setState(() => _activeFilter = kind);
+                      },
+                      onSelectPreset: _selectPreset,
+                      onOpenGallery: _openPresetGallery,
+                    ),
                     Expanded(
                       child: Padding(
                         padding: EdgeInsets.all(isCompact ? 8 : 12),
@@ -1027,42 +1062,62 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             ],
           ),
 
-          // Preset selector
-          DropdownButtonHideUnderline(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 260),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DropdownButton<String>(
-                  key: const Key('preset_dropdown'),
-                  value: _preset.id,
-                  isDense: true,
-                  isExpanded: true,
-                  items: [
-                    for (final p in studioPresets)
-                      DropdownMenuItem(
-                        value: p.id,
-                        child: Text(
-                          _isArabic ? p.titleAr : p.titleEn,
-                          style: const TextStyle(fontSize: 12.5),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  onChanged: (id) {
-                    if (id == null) return;
-                    final target = studioPresets.firstWhere((p) => p.id == id);
-                    _selectPreset(target);
-                  },
+          // Preset selector + 1-tap Prev/Next stepper
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                key: const Key('btn_prev_preset'),
+                tooltip: _isArabic ? 'المثال السابق' : 'Previous Example',
+                onPressed: () => _stepPreset(-1),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_left_rounded, size: 20),
+              ),
+              DropdownButtonHideUnderline(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 230),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: DropdownButton<String>(
+                      key: const Key('preset_dropdown'),
+                      value: _preset.id,
+                      isDense: true,
+                      isExpanded: true,
+                      items: [
+                        for (final p in studioPresets)
+                          DropdownMenuItem(
+                            value: p.id,
+                            child: Text(
+                              _isArabic ? p.titleAr : p.titleEn,
+                              style: const TextStyle(fontSize: 12.5),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (id) {
+                        if (id == null) return;
+                        final target =
+                            studioPresets.firstWhere((p) => p.id == id);
+                        _selectPreset(target);
+                      },
+                    ),
+                  ),
                 ),
               ),
-            ),
+              IconButton(
+                key: const Key('btn_next_preset'),
+                tooltip: _isArabic ? 'المثال التالي' : 'Next Example',
+                onPressed: () => _stepPreset(1),
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.chevron_right_rounded, size: 20),
+              ),
+            ],
           ),
 
           // Policy selector (example templates + full custom policy builder)

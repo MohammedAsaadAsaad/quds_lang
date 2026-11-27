@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:quds/interpreter.dart';
 import 'package:quds_studio/main.dart';
+import 'package:quds_studio/presets.dart';
 import 'package:quds_studio/viz_widgets.dart';
 
 void main() {
@@ -336,5 +338,78 @@ void main() {
     }
     expect(find.textContaining('0.0 %'), findsNothing);
     expect(find.textContaining('#4'), findsOneWidget);
+  });
+
+  test(
+      'All 12 real-time motion presets execute cleanly across multiple time frames with live telemetry',
+      () async {
+    final animated = studioPresets.where((p) => p.isAnimated).toList();
+    expect(animated, hasLength(12));
+
+    for (final preset in animated) {
+      final session = QudsSession(allowTopLevelRebind: true);
+      final frames = await session.runTimeline(
+        preset.code,
+        frames: 4,
+        dt: 0.25,
+        file: preset.fileName,
+      );
+      await session.dispose();
+
+      expect(frames, hasLength(4), reason: 'Preset ${preset.id} frame count');
+      for (var i = 0; i < frames.length; i++) {
+        final f = frames[i];
+        expect(f.succeeded, isTrue,
+            reason: 'Preset ${preset.id} failed on frame $i: ${f.error}');
+        final scene = f.lastGeometryScene;
+        expect(scene, isNotNull,
+            reason: 'Preset ${preset.id} missing geometry scene on frame $i');
+        expect(scene!.animation, isNotNull,
+            reason: 'Preset ${preset.id} missing animation spec on frame $i');
+        expect(scene.readings, isNotEmpty,
+            reason:
+                'Preset ${preset.id} missing telemetry readings on frame $i');
+      }
+    }
+  });
+
+  testWidgets(
+      'Quick-Switch category bar, Prev/Next stepper, and Examples Gallery switch motion presets seamlessly',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+        key: ValueKey('gallery_test'), autoRunInitial: false));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('preset_quick_bar')), findsOneWidget);
+
+    // Filter to live motion presets (`⚡ حركة حية (12)`)
+    await tester.tap(find.byKey(const Key('filter_animatedOnly')));
+    await tester.pumpAndSettle();
+
+    // Open full categorized Examples Gallery dialog and select Solar Orbit
+    await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('gallery_item_solar_orbit')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    // Verify Solar Orbit ran live with telemetry HUD
+    expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+    expect(find.byKey(const Key('quds_telemetry_hud')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('quds_telemetry_hud')),
+        matching: find.textContaining('AU'),
+      ),
+      findsOneWidget,
+    );
+
+    // Step to next motion preset via 1-tap Next button (`btn_next_preset`) -> Spirograph Rose
+    await tester.tap(find.byKey(const Key('btn_next_preset')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.textContaining('البتلات'), findsWidgets);
   });
 }

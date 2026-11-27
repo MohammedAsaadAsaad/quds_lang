@@ -1,5 +1,25 @@
-/// Curated Quds scientific presets for Quds Studio.
+/// Curated Quds scientific & real-time motion presets for Quds Studio.
 library;
+
+enum StudioCategory {
+  physics,
+  geometry,
+  waves,
+  astronomy,
+  math3d,
+  tools,
+}
+
+extension StudioCategoryLabels on StudioCategory {
+  String label(bool isArabic) => switch (this) {
+        StudioCategory.physics => isArabic ? 'فيزياء وميكانيكا' : 'Physics',
+        StudioCategory.geometry => isArabic ? 'هندسة وفن' : 'Geometry & Art',
+        StudioCategory.waves => isArabic ? 'موجات وفورييه' : 'Waves & Fourier',
+        StudioCategory.astronomy => isArabic ? 'فلك ورادار' : 'Space & Radar',
+        StudioCategory.math3d => isArabic ? '3D وبيانات' : '3D & Data',
+        StudioCategory.tools => isArabic ? 'أدوات ومصحح' : 'Tools & Apps',
+      };
+}
 
 class StudioPreset {
   const StudioPreset({
@@ -9,6 +29,8 @@ class StudioPreset {
     required this.subtitleAr,
     required this.fileName,
     required this.code,
+    this.category = StudioCategory.geometry,
+    this.isAnimated = false,
     this.defaultBreakpoints = const {},
     this.defaultPolicy = StudioPolicyMode.standard,
   });
@@ -19,6 +41,8 @@ class StudioPreset {
   final String subtitleAr;
   final String fileName;
   final String code;
+  final StudioCategory category;
+  final bool isAnimated;
   final Set<int> defaultBreakpoints;
   final StudioPolicyMode defaultPolicy;
 }
@@ -38,6 +62,7 @@ const studioPresets = <StudioPreset>[
     subtitleAr:
         'اسحب النقاط A, B, C وحرّك منزلق نصف القطر لإعادة الحساب لحظياً',
     fileName: 'triangle_lab.quds',
+    category: StudioCategory.geometry,
     code: '''use quds:math::vector show Vec2
 use quds:math::geometry show polygonCentroid, triangulatePolygon
 use quds:viz as viz
@@ -75,6 +100,7 @@ print "المركز G = ({center.x.toStringAsFixed(2)}, {center.y.toStringAsFixe
     titleEn: 'Wave Signal Plot & Statistics',
     subtitleAr: 'حساب sin(x) عبر quds:math مع رسم بياني وجدول بيانات',
     fileName: 'signal_lab.quds',
+    category: StudioCategory.waves,
     code: '''use quds:math
 use quds:viz as viz
 
@@ -101,6 +127,7 @@ print "تم رسم {xs.length} نقطة | المتوسط = {avg.toStringAsFixed(
     subtitleAr:
         'اضغط تشغيل للتوقف عند نقطة التوقف واستخدم Step Into / Over وفحص المتغيرات',
     fileName: 'debug_lab.quds',
+    category: StudioCategory.tools,
     defaultBreakpoints: {7},
     code: '''stepEnergy(n: int) -> int:
   squared = n * n
@@ -122,6 +149,7 @@ print "المجموع النهائي = {total}"
     subtitleAr:
         'جرّب التبديل بين وضع Sandbox المقيّد ووضع جسر النظام بصلاحيات محددة',
     fileName: 'policy_lab.quds',
+    category: StudioCategory.tools,
     defaultPolicy: StudioPolicyMode.systemBridge,
     code: '''use quds:math
 use host:sensors as sensors
@@ -139,6 +167,8 @@ print "قراءة الحساس = {tempC} °C ({tempK.toStringAsFixed(2)} K)"
     subtitleAr:
         'حركة زمنية مستمرة للبندول اللاخطي مع متجه السرعة ومسار متدرج وقراءات الزاوية والطاقة الحية',
     fileName: 'pendulum_60fps.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
     code: '''use dart:math as m
 use quds:viz as viz
 
@@ -201,6 +231,7 @@ print "t={clk.t.toStringAsFixed(2)}s | θ={(theta * 180.0 / m.pi).toStringAsFixe
     subtitleAr:
         'اسحب السطح ثلاثي الأبعاد لتدويره باللمس مع حقل دوّامي ثنائي الأبعاد',
     fileName: 'surface3d_lab.quds',
+    category: StudioCategory.math3d,
     code: '''use dart:math as m
 use quds:viz as viz
 
@@ -226,6 +257,7 @@ print "تم بناء سطح 17×17 ثلاثي الأبعاد + حقل متجها
     titleEn: 'Graph & Shortest Path Visualizer',
     subtitleAr: 'تمثيل شبكة موزونة وإبراز المسار الأقصر بين العقد تلقائياً',
     fileName: 'graph_lab.quds',
+    category: StudioCategory.math3d,
     code: '''use quds:viz as viz
 
 target = viz.select("target", ["D", "E", "F"], value: "E", label: "العقدة الهدف")
@@ -254,6 +286,7 @@ print "المسار الأقصر إلى {target}: {path}"
     subtitleAr:
         'استخدام quds:data لتحليل جدول CSV وانحدار خطي وتحليل ترددات FFT',
     fileName: 'data_fft_lab.quds',
+    category: StudioCategory.math3d,
     code: '''use dart:math as m
 use quds:data as data
 use quds:viz as viz
@@ -284,6 +317,7 @@ print "انحدار خطي: slope={reg['slope'].toStringAsFixed(1)}, R²={reg['r
     titleEn: 'Micro-App: Instant Quote Calculator',
     subtitleAr: 'حقول نص وأرقام وقائمة منسدلة وأزرار تتحول فوراً لتطبيق تفاعلي',
     fileName: 'quote_microapp.quds',
+    category: StudioCategory.tools,
     code: '''use quds:viz as viz
 
 client = viz.input("client", value: "شركة الأفق", label: "اسم العميل")
@@ -316,6 +350,7 @@ print "العرض لـ {client}: الإجمالي = {finalTotal.toStringAsFixed(
     subtitleAr:
         'استكشف شجرة fib العودية ومناطق السخونة وفعّل وضع Bytecode VM للسرعة الفائقة',
     fileName: 'perf_lab.quds',
+    category: StudioCategory.tools,
     code: '''fib(n: int) -> int:
   if n <= 2:
     return 1
@@ -337,6 +372,8 @@ print "المجموع = {acc}"
     subtitleAr:
         'رسم منحنى الفراشة بالكود نقطة بنقطة من البداية للنهاية مع تدرج ألوان وتوهّج وقراءات حية',
     fileName: 'butterfly_gradient.quds',
+    category: StudioCategory.geometry,
+    isAnimated: true,
     code: '''use dart:math as m
 use quds:viz as viz
 
@@ -374,6 +411,417 @@ scene.readout("y", curY, color: "#EC4899")
 scene.render()
 
 print "t={clk.t.toStringAsFixed(2)}s | الاكتمال={(p * 100.0).toStringAsFixed(1)}% | الرأس=({curX.toStringAsFixed(2)}, {curY.toStringAsFixed(2)})"
+''',
+  ),
+  // -------------------------------------------------------------------------
+  // 10 Diverse Minimal-Code Real-Time Motion Examples
+  // -------------------------------------------------------------------------
+  StudioPreset(
+    id: 'solar_orbit',
+    titleAr: 'فلك: مدار كوكب وقمر حول الشمس',
+    titleEn: 'Astronomy: Planet & Moon Elliptical Orbit',
+    subtitleAr:
+        'حركة كوكب في مدار إهليلجي مع قمر يدور حوله ومسار متدرج وقراءات المسافة والسرعة',
+    fileName: 'solar_orbit.quds',
+    category: StudioCategory.astronomy,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 12.0, loop: true)
+ecc = viz.slider("ecc", min: 0.0, max: 0.65, value: 0.35, step: 0.05, label: "اللامركزية e")
+a = 3.6
+b = a * m.sqrt(1.0 - ecc * ecc)
+ang = clk.progress * 2.0 * m.pi
+
+px = a * m.cos(ang) - a * ecc
+py = b * m.sin(ang)
+mx = px + 0.75 * m.cos(ang * 7.0)
+my = py + 0.75 * m.sin(ang * 7.0)
+dist = m.sqrt(px * px + py * py)
+
+var orbit = []
+var moonTrail = []
+for i in 0..80:
+  u = (i / 80.0) * 2.0 * m.pi
+  orbit.add([a * m.cos(u) - a * ecc, b * m.sin(u)])
+for i in 0..24:
+  u = ang - (24 - i) * 0.05
+  moonTrail.add([a * m.cos(u) - a * ecc + 0.75 * m.cos(u * 7.0), b * m.sin(u) + 0.75 * m.sin(u * 7.0)])
+
+s = viz.scene(title: "مدار كوكب وقمر حول الشمس", bounds: [-6.2, 4.8, -4.5, 4.5])
+s.curve("orbit", orbit, color: "#334155", strokeWidth: 1.4)
+s.trail("mtrail", moonTrail, gradient: viz.palette("ocean"), strokeWidth: 2.0)
+s.segment("radius", [0.0, 0.0], [px, py], color: "#F59E0B", dashed: true)
+s.point("sun", 0.0, 0.0, label: "الشمس", color: "#FACC15", radius: 11.0)
+s.point("planet", px, py, label: "كوكب", color: "#38BDF8", radius: 7.0)
+s.point("moon", mx, my, label: "قمر", color: "#E2E8F0", radius: 4.0)
+s.readout("المسافة r", dist, unit: "AU", color: "#38BDF8")
+s.readout("زاوية المدار", ang * 180.0 / m.pi, unit: "°", decimals: 0, color: "#FACC15")
+s.readout("e", ecc, color: "#A855F7")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'spirograph_rose',
+    titleAr: 'فن رياضي: الوردة والسبيروغراف المتدرج',
+    titleEn: 'Parametric Art: Animated Gradient Rose Curve',
+    subtitleAr:
+        'ارسم وردة رياضية r = 3.5·cos(k·u) بتدرج قوس قزح من أول نقطة لآخرها بـ 16 سطر كود',
+    fileName: 'rose_spirograph.quds',
+    category: StudioCategory.geometry,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+k = viz.slider("k", min: 2.0, max: 7.0, value: 5.0, step: 1.0, label: "عدد البتلات k")
+
+var pts = []
+for i in 0..240:
+  u = (i / 240.0) * 2.0 * m.pi
+  r = 3.5 * m.cos(k * u)
+  pts.add([r * m.cos(u), r * m.sin(u)])
+
+s = viz.scene(title: "الوردة الرياضية r = 3.5·cos({k.toInt()}u)", bounds: [-4.2, 4.2, -4.2, 4.2])
+s.curve("rose", pts, gradient: viz.palette("rainbow"), progress: clk.progress, strokeWidth: 3.0, glow: true, showHead: true)
+s.readout("البتلات k", k.toInt(), color: "#F43F5E")
+s.readout("الاكتمال", clk.progress * 100.0, unit: "%", decimals: 1, color: "#38BDF8")
+s.readout("t", clk.t, unit: "s", color: "#FFD60A")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'lissajous_oscilloscope',
+    titleAr: 'راسم إشارة حي: منحنيات ليساجو',
+    titleEn: 'Live Oscilloscope: Lissajous Figures',
+    subtitleAr:
+        'تراكب ترددين متعامدين مع انزياح طور حي بتدرج نيون متوهّج كجهاز أوسيلوسكوب',
+    fileName: 'lissajous_scope.quds',
+    category: StudioCategory.waves,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 12.0, loop: true)
+fx = viz.slider("fx", min: 1.0, max: 6.0, value: 3.0, step: 1.0, label: "تردد X")
+fy = viz.slider("fy", min: 1.0, max: 6.0, value: 4.0, step: 1.0, label: "تردد Y")
+phase = clk.t * 0.9
+
+var pts = []
+for i in 0..220:
+  u = (i / 220.0) * 2.0 * m.pi
+  pts.add([3.4 * m.sin(fx * u + phase), 3.4 * m.sin(fy * u)])
+
+s = viz.scene(title: "راسم إشارة ليساجو ({fx.toInt()}:{fy.toInt()})", bounds: [-4.2, 4.2, -4.2, 4.2])
+s.curve("scope", pts, gradient: viz.palette("neon"), strokeWidth: 2.6, glow: true, showHead: true)
+s.readout("النسبة", "{fx.toInt()}:{fy.toInt()}", color: "#00F5D4")
+s.readout("الطور φ", (phase * 180.0 / m.pi) % 360.0, unit: "°", decimals: 0, color: "#F15BB5")
+s.readout("t", clk.t, unit: "s", color: "#FEE440")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'fourier_epicycles',
+    titleAr: 'فورييه الحي: دوائر ترسم موجة مربعة',
+    titleEn: 'Fourier Epicycles Drawing a Square Wave',
+    subtitleAr:
+        'شاهد كيف تبني الدوائر الدوّارة موجة مربعة حيّة بزيادة عدد التوافقيات N',
+    fileName: 'fourier_circles.quds',
+    category: StudioCategory.waves,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 10.0, loop: true)
+harmonics = viz.slider("harm", min: 1.0, max: 6.0, value: 4.0, step: 1.0, label: "عدد الدوائر N")
+t = clk.t * 1.8
+
+s = viz.scene(title: "دوائر فورييه المتداخلة (موجة مربعة)", bounds: [-4.6, 5.2, -3.4, 3.4])
+var cx = -2.2
+var cy = 0.0
+for k in 0..<harmonics.toInt():
+  n = 2 * k + 1
+  r = 1.6 / n
+  nx = cx + r * m.cos(n * t)
+  ny = cy + r * m.sin(n * t)
+  s.circle("c{k}", [cx, cy], r, stroke: "#334155")
+  s.segment("r{k}", [cx, cy], [nx, ny], color: "#38BDF8", strokeWidth: 2.0)
+  cx = nx
+  cy = ny
+
+var wave = []
+for i in 0..90:
+  wx = 0.4 + i * 0.05
+  wt = t - i * 0.07
+  var wy = 0.0
+  for k in 0..<harmonics.toInt():
+    n = 2 * k + 1
+    wy = wy + (1.6 / n) * m.sin(n * wt)
+  wave.add([wx, wy])
+
+s.segment("link", [cx, cy], [0.4, cy], color: "#F59E0B", dashed: true)
+s.curve("wave", wave, gradient: viz.palette("aurora"), strokeWidth: 2.8, glow: true)
+s.point("tip", cx, cy, color: "#F43F5E", radius: 5.0)
+s.readout("التوافقيات N", harmonics.toInt(), color: "#38BDF8")
+s.readout("y(t)", cy, color: "#34D399")
+s.readout("t", clk.t, unit: "s", color: "#F59E0B")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'spring_mass_oscillator',
+    titleAr: 'فيزياء: نابض وكتلة متذبذبة مع القوة',
+    titleEn: 'Physics: Damped Spring-Mass Oscillator',
+    subtitleAr:
+        'زنبرك حلزوني متحرك مع متجه قوة الإرجاع F = -kx ومنحنى الحركة المخمّدة',
+    fileName: 'spring_mass.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 12.0, loop: true)
+k = viz.slider("k", min: 2.0, max: 16.0, value: 8.0, step: 0.5, label: "ثابت النابض k")
+b = viz.slider("b", min: 0.0, max: 0.8, value: 0.15, step: 0.05, label: "التخميد b")
+w = m.sqrt(k)
+y = -1.2 * m.exp(-0.5 * b * clk.t) * m.cos(w * clk.t)
+force = -k * y
+
+# رسم لفّات النابض من السقف (y=3.2) إلى الكتلة (y)
+var coils = [[0.0, 3.2]]
+for i in 1..11:
+  cy = 3.2 - (i / 12.0) * (3.2 - y)
+  cx = if i % 2 == 0: 0.35 else: -0.35
+  coils.add([cx, cy])
+coils.add([0.0, y])
+
+var history = []
+for i in 0..60:
+  ti = clk.t - i * 0.04
+  if ti >= 0.0:
+    hy = -1.2 * m.exp(-0.5 * b * ti) * m.cos(w * ti)
+    history.add([1.0 + i * 0.055, hy])
+
+s = viz.scene(title: "نابض وكتلة في حركة توافقية مخمّدة", bounds: [-2.0, 4.6, -2.8, 3.6])
+s.segment("roof", [-1.2, 3.2], [1.2, 3.2], color: "#94A3B8", strokeWidth: 3.5)
+s.curve("spring", coils, color: "#38BDF8", strokeWidth: 2.4)
+s.curve("trace", history, gradient: viz.palette("sunset"), strokeWidth: 2.4, glow: true)
+s.vector("force", [0.0, y], [0.0, y + force * 0.12], label: "F", color: "#10B981")
+s.point("mass", 0.0, y, label: "M", color: "#EF4444", radius: 11.0)
+s.readout("الإزاحة y", y, unit: "m", color: "#38BDF8")
+s.readout("القوة F", force, unit: "N", color: "#10B981")
+s.readout("التردد ω", w, unit: "rad/s", color: "#F59E0B")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'projectile_live',
+    titleAr: 'فيزياء: إطلاق مقذوف ومتجه السرعة الحي',
+    titleEn: 'Physics: Live Projectile Launch & Velocity Vector',
+    subtitleAr:
+        'مقذوف يطير بالزمن الحقيقي مع مسار ناري متدرج ومتجه سرعة حي وقراءات المدى والارتفاع',
+    fileName: 'projectile_live.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 5.0, loop: true)
+v0 = viz.slider("v0", min: 8.0, max: 18.0, value: 14.0, step: 0.5, label: "السرعة الابتدائية v₀")
+deg = viz.slider("deg", min: 20.0, max: 75.0, value: 50.0, step: 1.0, label: "زاوية الإطلاق °")
+g = 9.81
+rad = deg * m.pi / 180.0
+vx = v0 * m.cos(rad)
+vy0 = v0 * m.sin(rad)
+tFlight = 2.0 * vy0 / g
+t = clk.progress * tFlight
+
+x = vx * t
+y = vy0 * t - 0.5 * g * t * t
+vy = vy0 - g * t
+speed = m.sqrt(vx * vx + vy * vy)
+
+var arc = []
+for i in 0..80:
+  ti = (i / 80.0) * tFlight
+  arc.add([vx * ti, vy0 * ti - 0.5 * g * ti * ti])
+
+s = viz.scene(title: "إطلاق المقذوف بالزمن الحقيقي", bounds: [-1.0, 34.0, -2.0, 18.0])
+s.segment("ground", [-1.0, 0.0], [34.0, 0.0], color: "#475569", strokeWidth: 2.0)
+s.curve("arc", arc, gradient: viz.palette("fire"), progress: clk.progress, strokeWidth: 3.0, glow: true)
+s.vector("vel", [x, y], [x + vx * 0.28, y + vy * 0.28], label: "v", color: "#38BDF8")
+s.point("ball", x, y, color: "#FACC15", radius: 7.0)
+s.readout("x", x, unit: "m", color: "#38BDF8")
+s.readout("الارتفاع y", y, unit: "m", color: "#F97316")
+s.readout("السرعة v", speed, unit: "m/s", color: "#10B981")
+s.readout("المدى", vx * tFlight, unit: "m", color: "#FACC15")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'double_wave_interference',
+    titleAr: 'موجات: تداخل موجتين (النبضات Beats)',
+    titleEn: 'Waves: Superposition & Acoustic Beats',
+    subtitleAr:
+        'مراقبة تداخل موجتين متحركتين وتكوّن ظاهرة النبض الصوتي حيّاً بتدرج ألوان',
+    fileName: 'wave_beats.quds',
+    category: StudioCategory.waves,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 10.0, loop: true)
+df = viz.slider("df", min: 0.1, max: 1.5, value: 0.4, step: 0.1, label: "فرق التردد Δf")
+f1 = 2.5
+f2 = f1 + df
+
+var w1 = []
+var w2 = []
+var sumW = []
+for i in 0..140:
+  x = -5.0 + i * (10.0 / 140.0)
+  y1 = m.sin(f1 * x - 4.0 * clk.t)
+  y2 = m.sin(f2 * x - 4.0 * clk.t)
+  w1.add([x, y1 + 2.2])
+  w2.add([x, y2 - 2.2])
+  sumW.add([x, (y1 + y2) * 0.85])
+
+s = viz.scene(title: "تداخل موجتين وتكوّن النبضات (y₁ + y₂)", bounds: [-5.2, 5.2, -3.8, 3.8])
+s.curve("w1", w1, color: "#38BDF8", strokeWidth: 1.6)
+s.curve("w2", w2, color: "#A855F7", strokeWidth: 1.6)
+s.curve("sum", sumW, gradient: viz.palette("aurora"), strokeWidth: 3.0, glow: true)
+s.readout("f₁", f1, unit: "Hz", color: "#38BDF8")
+s.readout("f₂", f2, unit: "Hz", color: "#A855F7")
+s.readout("النبض Δf", df, unit: "Hz", color: "#34D399")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'heart_curve_glow',
+    titleAr: 'فن رياضي: القلب النابض بتدرج ألوان',
+    titleEn: 'Parametric Art: Pulsing Gradient Heart',
+    subtitleAr:
+        'رسم معادلة القلب الرياضية نقطة بنقطة مع نبض حي متدرج الألوان وتوهّج',
+    fileName: 'pulsing_heart.quds',
+    category: StudioCategory.geometry,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 6.0, loop: true)
+bpm = viz.slider("bpm", min: 45.0, max: 130.0, value: 72.0, step: 3.0, label: "النبض BPM")
+pulse = 1.0 + 0.08 * m.sin(clk.t * (bpm / 60.0) * 2.0 * m.pi)
+
+var pts = []
+for i in 0..180:
+  u = (i / 180.0) * 2.0 * m.pi
+  su = m.sin(u)
+  x = 0.22 * pulse * (16.0 * su * su * su)
+  y = 0.22 * pulse * (13.0 * m.cos(u) - 5.0 * m.cos(2.0 * u) - 2.0 * m.cos(3.0 * u) - m.cos(4.0 * u))
+  pts.add([x, y])
+
+s = viz.scene(title: "القلب الرياضي النابض بتدرج ألوان", bounds: [-4.5, 4.5, -4.5, 4.2])
+s.curve("heart", pts, gradient: viz.palette("sunset"), progress: clk.progress, strokeWidth: 3.4, glow: true, showHead: true)
+s.readout("النبض", bpm.toInt(), unit: "BPM", color: "#FF006E")
+s.readout("الاكتمال", clk.progress * 100.0, unit: "%", decimals: 1, color: "#FFBE0B")
+s.readout("التوسّع", pulse, color: "#8338EC")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'chaos_lorenz_2d',
+    titleAr: 'فوضى حتمية: جاذب لورينز (تأثير الفراشة)',
+    titleEn: 'Chaos Theory: Lorenz Strange Attractor',
+    subtitleAr:
+        'حل المعادلات التفاضلية الفوضوية للورينز ورسم جناحَي الفوضى تدريجياً بتدرج Plasma',
+    fileName: 'lorenz_chaos.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
+    code: '''use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 12.0, loop: true)
+rho = viz.slider("rho", min: 20.0, max: 32.0, value: 28.0, step: 0.5, label: "معامل الفوضى ρ")
+sigma = 10.0
+beta = 8.0 / 3.0
+
+var x = 0.1
+var y = 0.0
+var z = 0.0
+dt = 0.012
+var pts = []
+for i in 0..420:
+  dx = sigma * (y - x)
+  dy = x * (rho - z) - y
+  dz = x * y - beta * z
+  x = x + dx * dt
+  y = y + dy * dt
+  z = z + dz * dt
+  pts.add([x, z - 25.0])
+
+idx = (clk.progress * 420.0).round()
+cur = pts[idx]
+s = viz.scene(title: "جاذب لورينز الفوضوي (X-Z)", bounds: [-24.0, 24.0, -24.0, 26.0])
+s.curve("lorenz", pts, gradient: viz.palette("plasma"), progress: clk.progress, strokeWidth: 2.2, glow: true, showHead: true)
+s.readout("ρ", rho, color: "#F89540")
+s.readout("x", cur[0], color: "#CC4778")
+s.readout("z", cur[1] + 25.0, color: "#F0F921")
+s.readout("المسار", clk.progress * 100.0, unit: "%", decimals: 0, color: "#38BDF8")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'radar_sonar_sweep',
+    titleAr: 'رادار حي: مسح دائري وكشف الأهداف',
+    titleEn: 'Live Radar Sweep & Target Detection',
+    subtitleAr:
+        'شعاع رادار يدور 360° داخل دوائر المدى ويضيء الأهداف لحظة عبور الشعاع فوقها',
+    fileName: 'radar_sweep.quds',
+    category: StudioCategory.astronomy,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 6.0, loop: true)
+rpm = viz.slider("rpm", min: 0.5, max: 2.5, value: 1.0, step: 0.25, label: "سرعة المسح")
+ang = (clk.t * rpm * 2.0 * m.pi / 6.0) % (2.0 * m.pi)
+R = 4.0
+
+s = viz.scene(title: "رادار مسح دائري حي (360°)", grid: false, axes: false, bounds: [-4.6, 4.6, -4.6, 4.6])
+for ring in 1..4:
+  s.circle("r{ring}", [0.0, 0.0], ring * 1.0, stroke: "#1E3A5F", dashed: true)
+s.segment("ax", [-R, 0.0], [R, 0.0], color: "#1E293B")
+s.segment("ay", [0.0, -R], [0.0, R], color: "#1E293B")
+
+# ذيل الشعاع المضيء
+var sweep = [[0.0, 0.0]]
+for i in 0..10:
+  a = ang - i * 0.04
+  sweep.add([R * m.cos(a), R * m.sin(a)])
+s.polygon("fan", sweep, stroke: "#10B981", fill: "#10B98133")
+s.segment("beam", [0.0, 0.0], [R * m.cos(ang), R * m.sin(ang)], color: "#34D399", strokeWidth: 2.8)
+
+targets = [[2.1, 1.4], [-2.5, 1.8], [-1.3, -2.6], [2.4, -1.9]]
+var active = 0
+for i in 0..<targets.length:
+  tx = targets[i][0]
+  ty = targets[i][1]
+  var ta = m.atan2(ty, tx)
+  if ta < 0.0:
+    ta = ta + 2.0 * m.pi
+  diff = (ang - ta + 2.0 * m.pi) % (2.0 * m.pi)
+  lit = diff < 0.75
+  if lit:
+    active += 1
+  lbl = (if lit: "هدف {i + 1}" else: "")
+  col = (if lit: "#EF4444" else: "#334155")
+  rad = (if lit: 7.5 else: 4.0)
+  s.point("t{i}", tx, ty, label: lbl, color: col, radius: rad)
+
+s.readout("زاوية الشعاع", ang * 180.0 / m.pi, unit: "°", decimals: 0, color: "#34D399")
+s.readout("أهداف مرصودة", "{active}/4", color: "#EF4444")
+s.readout("المدى", "4.0 km", color: "#38BDF8")
+s.render()
 ''',
   ),
 ];

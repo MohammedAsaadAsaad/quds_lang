@@ -233,6 +233,7 @@ class QudsSession {
   final Set<String> _builtinNames = {};
   final Map<String, QudsHostModule> _hostModules = {};
   final Map<String, Object?> _interactiveInputs = {};
+  final Map<String, Object?> _simulationState = {};
   String? _lastInteractiveSource;
   String _lastInteractiveFile = '<session>';
   String? _cachedProgramSource;
@@ -343,6 +344,7 @@ class QudsSession {
     _globalEnv.clearAll();
     _builtinNames.clear();
     _interactiveInputs.clear();
+    _simulationState.clear();
     _lastInteractiveSource = null;
     _moduleLoader.clearSessionCache();
     _installCoreBuiltins(_globalEnv);
@@ -451,6 +453,7 @@ class QudsSession {
     final viz = buildQudsVizModule(
       maxPrimitives: policy.maxPrimitives,
       maxOutputs: policy.maxOutputCount,
+      persistentState: _simulationState,
     );
     _hostModules[viz.uri] = viz;
     _moduleLoader.registerVirtualModule(viz.uri, viz.exports);
@@ -832,8 +835,60 @@ class QudsSession {
     );
   }
 
-  /// Resets the animation clock back to `t = 0.0`, `frame = 0`.
+  /// Jumps the animation clock directly to [time] seconds (for timeline scrubbing).
+  Future<QudsRunResult> seekTime(
+    double time, {
+    double dt = 1.0 / 60.0,
+    int? frame,
+    String? source,
+    String? file,
+  }) {
+    final clampedT = time < 0.0 ? 0.0 : time;
+    final targetFrame = frame ?? (dt > 0 ? (clampedT / dt).round() : 0);
+    return updateInteractiveInputs(
+      {
+        '__quds_anim_t': clampedT,
+        '__quds_anim_dt': dt,
+        '__quds_anim_frame': targetFrame,
+      },
+      source: source,
+      file: file,
+    );
+  }
+
+  /// Deterministically executes a time-based Quds script across [frames] steps
+  /// separated by [dt] seconds, preserving persistent `viz.state(...)` across
+  /// frames and returning every frame's [QudsRunResult].
+  Future<List<QudsRunResult>> runTimeline(
+    String source, {
+    required int frames,
+    double dt = 1.0 / 60.0,
+    String file = '<timeline>',
+    void Function(int frame, QudsRunResult result)? onFrame,
+  }) async {
+    resetAnimation();
+    final results = <QudsRunResult>[];
+    for (var i = 0; i < frames; i++) {
+      final res = await updateInteractiveInputs(
+        {
+          '__quds_anim_t': i * dt,
+          '__quds_anim_dt': dt,
+          '__quds_anim_frame': i,
+        },
+        source: source,
+        file: file,
+      );
+      results.add(res);
+      onFrame?.call(i, res);
+      if (!res.succeeded) break;
+    }
+    return results;
+  }
+
+  /// Resets the animation clock back to `t = 0.0`, `frame = 0` and clears
+  /// persistent cross-frame simulation state (`viz.state(...)`).
   void resetAnimation() {
+    _simulationState.clear();
     _interactiveInputs['__quds_anim_t'] = 0.0;
     _interactiveInputs['__quds_anim_dt'] = 1.0 / 60.0;
     _interactiveInputs['__quds_anim_frame'] = 0;

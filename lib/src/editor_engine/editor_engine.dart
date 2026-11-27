@@ -1989,8 +1989,23 @@ class QudsEditorEngine {
     ),
     (
       'curve',
-      'curve(id: String, points: List, color: String?)',
-      'Adds a sampled smooth polyline/parametric curve.'
+      'curve(id: String, points: List, color: String?, gradient: List<String>?, progress: double = 1.0, glow: bool = false, showHead: bool = false)',
+      'Adds a smooth parametric curve with optional multi-stop color gradient, progressive drawing, glow, and live drawing head.'
+    ),
+    (
+      'trail',
+      'trail(id: String, points: List, color: String?, gradient: List<String>?, glow: bool = true)',
+      'Adds a luminous motion trail along recent positions.'
+    ),
+    (
+      'readout',
+      'readout(label: String, value: Object?, unit: String?, color: String?)',
+      'Attaches a live telemetry reading badge to the scene HUD.'
+    ),
+    (
+      'metrics',
+      'metrics(values: Map<String, Object?>)',
+      'Attaches multiple live telemetry readings from a map to the scene HUD.'
     ),
     (
       'label',

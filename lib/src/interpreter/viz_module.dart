@@ -19,8 +19,10 @@ import 'values.dart';
 QudsHostModule buildQudsVizModule({
   int? maxPrimitives,
   int? maxOutputs,
+  Map<String, Object?>? persistentState,
 }) {
   var outputCounter = 0;
+  final simState = persistentState ?? <String, Object?>{};
 
   void checkOutputQuota(SourceSpan span) {
     outputCounter++;
@@ -39,7 +41,7 @@ QudsHostModule buildQudsVizModule({
   final builder = QudsHostModule.builder(
     'quds:viz',
     description:
-        'Scientific plotting, 3D surfaces, vector fields, graphs, animations, micro-app controls, tables, matrices, LaTeX, and interactive 2D geometry scenes.',
+        'Scientific plotting, 3D surfaces, vector fields, graphs, time-based animations, color gradients, live telemetry readouts, micro-app controls, tables, matrices, LaTeX, and interactive 2D geometry scenes.',
   );
 
   // Interactive draggable point handle: viz.point("A", 0.0, 0.0, draggable: true)
@@ -280,7 +282,7 @@ QudsHostModule buildQudsVizModule({
         'Declares an interactive action button returning its tap count.',
   );
 
-  // Frame-stepped animation loop: viz.animate(fps: 60, duration: 10.0, loop: true)
+  // Frame-stepped animation loop: viz.animate(fps: 60, duration: 10.0, loop: true, autoPlay: true)
   builder.function(
     'animate',
     (pos, named, ctx) {
@@ -291,6 +293,7 @@ QudsHostModule buildQudsVizModule({
           ? _toDouble(named['duration'], ctx.span)
           : null;
       final loop = (named['loop'] as bool?) ?? true;
+      final autoPlay = (named['autoPlay'] as bool?) ?? true;
       var t =
           (ctx.interactiveInputs['__quds_anim_t'] as num?)?.toDouble() ?? 0.0;
       final dt =
@@ -299,14 +302,18 @@ QudsHostModule buildQudsVizModule({
       final frame =
           (ctx.interactiveInputs['__quds_anim_frame'] as num?)?.toInt() ?? 0;
       final playing =
-          (ctx.interactiveInputs['__quds_anim_playing'] as bool?) ?? true;
+          (ctx.interactiveInputs['__quds_anim_playing'] as bool?) ?? autoPlay;
       if (duration != null && duration > 0) {
         t = loop ? (t % duration) : t.clamp(0.0, duration);
       }
+      final progress = (duration != null && duration > 0)
+          ? (t / duration).clamp(0.0, 1.0)
+          : 0.0;
       activeAnimation = QudsAnimationSpec(
         fps: fps,
         duration: duration,
         loop: loop,
+        autoPlay: autoPlay,
         playing: playing,
         time: t,
         dt: dt,
@@ -318,13 +325,48 @@ QudsHostModule buildQudsVizModule({
         'dt': dt,
         'frame': frame,
         'fps': fps,
+        'duration': duration ?? 0.0,
+        'progress': progress,
         'playing': playing,
       });
     },
     signature:
-        'animate(fps: int = 60, duration: double?, loop: bool = true) -> AnimationClock',
+        'animate(fps: int = 60, duration: double?, loop: bool = true, autoPlay: bool = true) -> AnimationClock',
     documentation:
-        'Enables frame-stepped 60fps simulation/animation and returns {t, dt, frame, fps, playing}.',
+        'Enables frame-stepped real-time simulation/animation and returns {t, dt, frame, fps, duration, progress, playing}.',
+  );
+
+  // Persistent cross-frame simulation state: viz.state("theta", 0.9) & viz.setState("theta", nextTheta)
+  builder.function(
+    'state',
+    (pos, named, ctx) {
+      final key = '${pos[0]}';
+      final initial = pos.length > 1 ? pos[1] : named['initial'];
+      final frame =
+          (ctx.interactiveInputs['__quds_anim_frame'] as num?)?.toInt() ?? 0;
+      if (frame == 0 && !simState.containsKey(key)) {
+        simState[key] = initial;
+      } else if (!simState.containsKey(key)) {
+        simState[key] = initial;
+      }
+      return simState[key];
+    },
+    signature: 'state(key: String, initial: Object?) -> Object?',
+    documentation:
+        'Reads persistent simulation state across animation frames, initializing it on frame 0.',
+  );
+
+  builder.function(
+    'setState',
+    (pos, named, ctx) {
+      final key = '${pos[0]}';
+      final value = pos.length > 1 ? pos[1] : named['value'];
+      simState[key] = value;
+      return value;
+    },
+    signature: 'setState(key: String, value: Object?) -> Object?',
+    documentation:
+        'Updates persistent simulation state preserved into the next animation frame.',
   );
 
   builder.function(
@@ -352,7 +394,76 @@ QudsHostModule buildQudsVizModule({
     documentation: 'Returns the current 0-based animation frame index.',
   );
 
-  // Interactive 2D geometry scene builder: viz.scene(title: ..., grid: true)
+  // General-purpose Color & Gradient helpers for animated curves & visualizations
+  builder.function(
+    'hsl',
+    (pos, named, ctx) {
+      final h = _toDouble(pos[0], ctx.span);
+      final s = pos.length > 1
+          ? _toDouble(pos[1], ctx.span)
+          : (named['s'] != null ? _toDouble(named['s'], ctx.span) : 0.9);
+      final l = pos.length > 2
+          ? _toDouble(pos[2], ctx.span)
+          : (named['l'] != null ? _toDouble(named['l'], ctx.span) : 0.55);
+      return _hslToHex(h, s, l);
+    },
+    signature: 'hsl(h: double, s: double = 0.9, l: double = 0.55) -> String',
+    documentation:
+        'Converts HSL color (hue in degrees 0..360, saturation 0..1, lightness 0..1) to a #RRGGBB hex string.',
+  );
+
+  builder.function(
+    'rgb',
+    (pos, named, ctx) {
+      final r = _toDouble(pos[0], ctx.span).round().clamp(0, 255);
+      final g = _toDouble(pos[1], ctx.span).round().clamp(0, 255);
+      final b = _toDouble(pos[2], ctx.span).round().clamp(0, 255);
+      return '#${r.toRadixString(16).padLeft(2, '0').toUpperCase()}'
+          '${g.toRadixString(16).padLeft(2, '0').toUpperCase()}'
+          '${b.toRadixString(16).padLeft(2, '0').toUpperCase()}';
+    },
+    signature: 'rgb(r: int, g: int, b: int) -> String',
+    documentation: 'Converts 0..255 RGB channels to a #RRGGBB hex string.',
+  );
+
+  builder.function(
+    'lerpColor',
+    (pos, named, ctx) {
+      final c1 = '${pos[0]}';
+      final c2 = '${pos[1]}';
+      final t = _toDouble(pos[2], ctx.span);
+      return qudsLerpHexColor(c1, c2, t);
+    },
+    signature: 'lerpColor(c1: String, c2: String, t: double) -> String',
+    documentation:
+        'Smoothly interpolates between two hex colors at t in [0.0, 1.0].',
+  );
+
+  builder.function(
+    'gradient',
+    (pos, named, ctx) {
+      final colors = [for (final c in (pos[0] as Iterable)) '$c'];
+      final t = _toDouble(pos[1], ctx.span);
+      return qudsSampleGradientHex(colors, t);
+    },
+    signature: 'gradient(colors: List<String>, t: double) -> String',
+    documentation:
+        'Samples a multi-stop hex color gradient at t in [0.0, 1.0].',
+  );
+
+  builder.function(
+    'palette',
+    (pos, named, ctx) {
+      final name = (pos.isNotEmpty ? '${pos[0]}' : 'rainbow').toLowerCase();
+      return List<String>.from(
+          _namedPalettes[name] ?? _namedPalettes['rainbow']!);
+    },
+    signature: 'palette(name: String = "rainbow") -> List<String>',
+    documentation:
+        'Returns a curated multi-stop gradient palette ("rainbow", "butterfly", "sunset", "ocean", "aurora", "neon", "fire", "viridis", "plasma").',
+  );
+
+  // Interactive 2D geometry scene builder: viz.scene(title: ..., grid: true, bounds: [minX, maxX, minY, maxY])
   builder.function(
     'scene',
     (pos, named, ctx) {
@@ -361,7 +472,34 @@ QudsHostModule buildQudsVizModule({
       final showGrid = (named['grid'] as bool?) ?? true;
       final showAxes = (named['axes'] as bool?) ?? true;
       final interactive = (named['interactive'] as bool?) ?? true;
+
+      QudsGeoBounds? fixedBounds;
+      if (named['bounds'] is Iterable) {
+        final b = [
+          for (final v in (named['bounds'] as Iterable)) _toDouble(v, ctx.span)
+        ];
+        if (b.length >= 4) {
+          fixedBounds = QudsGeoBounds(
+            minX: b[0],
+            maxX: b[1],
+            minY: b[2],
+            maxY: b[3],
+          );
+        }
+      } else if (named['xMin'] != null &&
+          named['xMax'] != null &&
+          named['yMin'] != null &&
+          named['yMax'] != null) {
+        fixedBounds = QudsGeoBounds(
+          minX: _toDouble(named['xMin'], ctx.span),
+          maxX: _toDouble(named['xMax'], ctx.span),
+          minY: _toDouble(named['yMin'], ctx.span),
+          maxY: _toDouble(named['yMax'], ctx.span),
+        );
+      }
+
       final primitives = <QudsGeoPrimitive>[];
+      final readings = <QudsTelemetryReading>[];
 
       void addPrim(QudsGeoPrimitive prim, SourceSpan span) {
         if (maxPrimitives != null && primitives.length >= maxPrimitives) {
@@ -597,13 +735,30 @@ QudsHostModule buildQudsVizModule({
           final id = '${p[0]}';
           final rawPts = p[1] as Iterable;
           final pts = [for (final item in rawPts) _extractPoint(item, c.span)];
+          final rawGrad = n['gradient'] ?? n['gradientColors'];
+          final gradient = rawGrad is String
+              ? List<String>.from(
+                  _namedPalettes[rawGrad.toLowerCase()] ?? const <String>[])
+              : (rawGrad is Iterable
+                  ? [for (final col in rawGrad) '$col']
+                  : const <String>[]);
+          final rawColors = n['colors'] ?? n['pointColors'];
+          final pointColors = rawColors is Iterable
+              ? [for (final col in rawColors) '$col']
+              : const <String>[];
           addPrim(
             QudsGeoCurve(
               id: id,
               points: pts,
               label: n['label'] as String?,
               color: (n['color'] as String?) ?? '#8B5CF6',
-              strokeWidth: (n['strokeWidth'] as num?)?.toDouble() ?? 2.0,
+              strokeWidth: (n['strokeWidth'] as num?)?.toDouble() ?? 2.2,
+              gradientColors: gradient,
+              pointColors: pointColors,
+              progress:
+                  ((n['progress'] as num?)?.toDouble() ?? 1.0).clamp(0.0, 1.0),
+              glow: (n['glow'] as bool?) ?? false,
+              showHead: (n['showHead'] as bool?) ?? false,
             ),
             c.span,
           );
@@ -613,16 +768,64 @@ QudsHostModule buildQudsVizModule({
           final id = '${p[0]}';
           final rawPts = p[1] as Iterable;
           final pts = [for (final item in rawPts) _extractPoint(item, c.span)];
+          final rawGrad = n['gradient'] ?? n['gradientColors'];
+          final gradient = rawGrad is String
+              ? List<String>.from(
+                  _namedPalettes[rawGrad.toLowerCase()] ?? const <String>[])
+              : (rawGrad is Iterable
+                  ? [for (final col in rawGrad) '$col']
+                  : const <String>[]);
+          final rawColors = n['colors'] ?? n['pointColors'];
+          final pointColors = rawColors is Iterable
+              ? [for (final col in rawColors) '$col']
+              : const <String>[];
           addPrim(
             QudsGeoCurve(
               id: id,
               points: pts,
               label: n['label'] as String?,
               color: (n['color'] as String?) ?? '#38BDF8',
-              strokeWidth: (n['strokeWidth'] as num?)?.toDouble() ?? 1.8,
+              strokeWidth: (n['strokeWidth'] as num?)?.toDouble() ?? 2.0,
+              gradientColors: gradient,
+              pointColors: pointColors,
+              progress:
+                  ((n['progress'] as num?)?.toDouble() ?? 1.0).clamp(0.0, 1.0),
+              glow: (n['glow'] as bool?) ?? true,
+              showHead: (n['showHead'] as bool?) ?? false,
             ),
             c.span,
           );
+          return sceneObj;
+        }),
+        'readout': QudsNativeFunction('scene.readout', (p, n, c) {
+          final label = '${p[0]}';
+          final rawVal = p.length > 1 ? p[1] : n['value'];
+          final value = rawVal is double
+              ? rawVal.toStringAsFixed((n['decimals'] as num?)?.toInt() ?? 2)
+              : '$rawVal';
+          readings.add(
+            QudsTelemetryReading(
+              label: label,
+              value: value,
+              unit: n['unit'] as String?,
+              color: n['color'] as String?,
+            ),
+          );
+          return sceneObj;
+        }),
+        'metrics': QudsNativeFunction('scene.metrics', (p, n, c) {
+          final raw = p[0];
+          if (raw is Map) {
+            for (final entry in raw.entries) {
+              final v = entry.value;
+              readings.add(
+                QudsTelemetryReading(
+                  label: '${entry.key}',
+                  value: v is double ? v.toStringAsFixed(2) : '$v',
+                ),
+              );
+            }
+          }
           return sceneObj;
         }),
         'intersect': QudsNativeFunction('scene.intersect', (p, n, c) {
@@ -659,8 +862,9 @@ QudsHostModule buildQudsVizModule({
           checkOutputQuota(c.span);
           final output = QudsGeometrySceneOutput(
             primitives: List.unmodifiable(primitives),
-            bounds: _computeBounds(primitives),
+            bounds: fixedBounds ?? _computeBounds(primitives),
             interactiveInputs: List.unmodifiable(interactiveRegistry.values),
+            readings: List.unmodifiable(readings),
             animation: activeAnimation,
             title: title,
             showGrid: showGrid,
@@ -674,8 +878,9 @@ QudsHostModule buildQudsVizModule({
       return sceneObj;
     },
     signature:
-        'scene(title: String?, grid: bool = true, axes: bool = true, interactive: bool = true)',
-    documentation: 'Creates an interactive 2D geometry scene builder.',
+        'scene(title: String?, grid: bool = true, axes: bool = true, interactive: bool = true, bounds: List<double>?)',
+    documentation:
+        'Creates an interactive 2D geometry & animation scene builder with optional fixed world bounds and live telemetry readouts.',
   );
 
   // Quick 2D plot: viz.plot(xs, ys, title: ..., kind: "line")
@@ -1183,4 +1388,67 @@ QudsGeoBounds _computeBounds(List<QudsGeoPrimitive> primitives) {
     minY: minY - dy,
     maxY: maxY + dy,
   );
+}
+
+const Map<String, List<String>> _namedPalettes = {
+  'rainbow': [
+    '#FF2A6D',
+    '#FF8C00',
+    '#FFD60A',
+    '#10B981',
+    '#00E5FF',
+    '#6366F1',
+    '#D946EF',
+  ],
+  'butterfly': [
+    '#FF007F',
+    '#FF6B35',
+    '#FFD166',
+    '#06D6A0',
+    '#118AB2',
+    '#8338EC',
+    '#FF4D94',
+  ],
+  'sunset': ['#FF006E', '#FB5607', '#FFBE0B', '#F43F5E', '#8338EC'],
+  'ocean': ['#0EA5E9', '#06B6D4', '#10B981', '#3B82F6', '#6366F1'],
+  'aurora': ['#22D3EE', '#34D399', '#A855F7', '#EC4899', '#38BDF8'],
+  'neon': ['#00F5D4', '#00BBF9', '#9B5DE5', '#F15BB5', '#FEE440'],
+  'fire': ['#7F1D1D', '#EF4444', '#F97316', '#FACC15', '#FEF08A'],
+  'viridis': ['#440154', '#3B528B', '#21918C', '#5EC962', '#FDE725'],
+  'plasma': ['#0D0887', '#7E03A8', '#CC4778', '#F89540', '#F0F921'],
+};
+
+String _hslToHex(double hDeg, double s, double l) {
+  final h = ((hDeg % 360.0) + 360.0) % 360.0;
+  final sat = s.clamp(0.0, 1.0);
+  final lit = l.clamp(0.0, 1.0);
+  final c = (1.0 - (2.0 * lit - 1.0).abs()) * sat;
+  final x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+  final m = lit - c / 2.0;
+  double r = 0, g = 0, b = 0;
+  if (h < 60) {
+    r = c;
+    g = x;
+  } else if (h < 120) {
+    r = x;
+    g = c;
+  } else if (h < 180) {
+    g = c;
+    b = x;
+  } else if (h < 240) {
+    g = x;
+    b = c;
+  } else if (h < 300) {
+    r = x;
+    b = c;
+  } else {
+    r = c;
+    b = x;
+  }
+  final ri = ((r + m) * 255.0).round().clamp(0, 255);
+  final gi = ((g + m) * 255.0).round().clamp(0, 255);
+  final bi = ((b + m) * 255.0).round().clamp(0, 255);
+  return '#${ri.toRadixString(16).padLeft(2, '0').toUpperCase()}'
+      '${gi.toRadixString(16).padLeft(2, '0').toUpperCase()}'
+      '${bi.toRadixString(16).padLeft(2, '0').toUpperCase()}';
 }

@@ -82,9 +82,12 @@ export 'src/interpreter/outputs.dart'
         QudsPlotSeries,
         QudsSurface3DOutput,
         QudsTableOutput,
+        QudsTelemetryReading,
         QudsTextOutput,
         QudsVectorFieldArrow,
-        QudsVectorFieldOutput;
+        QudsVectorFieldOutput,
+        qudsLerpHexColor,
+        qudsSampleGradientHex;
 export 'src/interpreter/policy.dart'
     show
         QudsCallInterceptEvent,

@@ -439,6 +439,15 @@ sealed class QudsGeoPrimitive {
           label: json['label'] as String?,
           color: (json['color'] as String?) ?? '#8B5CF6',
           strokeWidth: (json['strokeWidth'] as num?)?.toDouble() ?? 2.0,
+          gradientColors: [
+            for (final c in (json['gradientColors'] as List? ?? const [])) '$c',
+          ],
+          pointColors: [
+            for (final c in (json['pointColors'] as List? ?? const [])) '$c',
+          ],
+          progress: (json['progress'] as num?)?.toDouble() ?? 1.0,
+          glow: (json['glow'] as bool?) ?? false,
+          showHead: (json['showHead'] as bool?) ?? false,
         ),
       'label' => QudsGeoLabel(
           id: json['id'] as String,
@@ -728,11 +737,64 @@ class QudsGeoCurve extends QudsGeoPrimitive {
     super.label,
     this.color = '#8B5CF6',
     this.strokeWidth = 2.0,
+    this.gradientColors = const [],
+    this.pointColors = const [],
+    this.progress = 1.0,
+    this.glow = false,
+    this.showHead = false,
   });
 
   final List<(double, double)> points;
   final String color;
   final double strokeWidth;
+
+  /// Optional multi-stop color gradient sampled smoothly along the curve
+  /// (from point 0 to the last point).
+  final List<String> gradientColors;
+
+  /// Optional explicit per-point hex colors (`pointColors.length == points.length`).
+  final List<String> pointColors;
+
+  /// Progressive drawing ratio in `[0.0, 1.0]` (`1.0` draws the full curve;
+  /// animating `0.0 -> 1.0` draws smoothly from the first point to the last).
+  final double progress;
+
+  /// Whether to render a luminous outer glow bloom along the curve.
+  final bool glow;
+
+  /// Whether to render a moving pen-head indicator dot at the live drawing tip.
+  final bool showHead;
+
+  /// Computes the active visible slice of [points] up to [progress] (with smooth
+  /// linear interpolation of the final tip point).
+  List<(double, double)> visiblePoints() {
+    if (points.isEmpty) return const [];
+    final p = progress.clamp(0.0, 1.0);
+    if (p <= 0.0) return [points.first];
+    if (p >= 1.0 || points.length == 1) return points;
+    final exactIdx = p * (points.length - 1);
+    final lastFull = exactIdx.floor();
+    final frac = exactIdx - lastFull;
+    final out = points.sublist(0, lastFull + 1);
+    if (frac > 1e-6 && lastFull + 1 < points.length) {
+      final a = points[lastFull];
+      final b = points[lastFull + 1];
+      out.add((a.$1 + (b.$1 - a.$1) * frac, a.$2 + (b.$2 - a.$2) * frac));
+    }
+    return out;
+  }
+
+  /// Resolves the hex color at normalized position [t] in `[0.0, 1.0]` or vertex [index].
+  String colorAt(int index, double t) {
+    if (pointColors.isNotEmpty) {
+      return pointColors[index.clamp(0, pointColors.length - 1)];
+    }
+    if (gradientColors.length >= 2) {
+      return qudsSampleGradientHex(gradientColors, t);
+    }
+    if (gradientColors.length == 1) return gradientColors.first;
+    return color;
+  }
 
   @override
   String get kind => 'curve';
@@ -747,6 +809,11 @@ class QudsGeoCurve extends QudsGeoPrimitive {
         if (label != null) 'label': label,
         'color': color,
         'strokeWidth': strokeWidth,
+        if (gradientColors.isNotEmpty) 'gradientColors': gradientColors,
+        if (pointColors.isNotEmpty) 'pointColors': pointColors,
+        if (progress != 1.0) 'progress': progress,
+        if (glow) 'glow': glow,
+        if (showHead) 'showHead': showHead,
       };
 }
 
@@ -777,13 +844,46 @@ class QudsGeoLabel extends QudsGeoPrimitive {
       };
 }
 
+/// Live key-value telemetry reading attached to a [QudsGeometrySceneOutput]
+/// (for monitoring physical measurements, coordinates, energy, or progress).
+class QudsTelemetryReading {
+  const QudsTelemetryReading({
+    required this.label,
+    required this.value,
+    this.unit,
+    this.color,
+  });
+
+  final String label;
+  final String value;
+  final String? unit;
+  final String? color;
+
+  Map<String, Object?> toJson() => {
+        'label': label,
+        'value': value,
+        if (unit != null) 'unit': unit,
+        if (color != null) 'color': color,
+      };
+
+  static QudsTelemetryReading fromJson(Map<String, Object?> json) =>
+      QudsTelemetryReading(
+        label: '${json['label'] ?? ''}',
+        value: '${json['value'] ?? ''}',
+        unit: json['unit'] as String?,
+        color: json['color'] as String?,
+      );
+}
+
 /// Interactive 2D geometry scene output supporting draggable points, parameter
-/// sliders, auto-fitted world bounds, full JSON round-trip, and SVG rendering.
+/// sliders, live telemetry readings, auto-fitted or fixed world bounds, full
+/// JSON round-trip, and SVG rendering.
 class QudsGeometrySceneOutput extends QudsOutput {
   const QudsGeometrySceneOutput({
     required this.primitives,
     required this.bounds,
     this.interactiveInputs = const [],
+    this.readings = const [],
     this.animation,
     this.title,
     this.showGrid = true,
@@ -794,6 +894,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
   final List<QudsGeoPrimitive> primitives;
   final QudsGeoBounds bounds;
   final List<QudsInteractiveInput> interactiveInputs;
+  final List<QudsTelemetryReading> readings;
   final QudsAnimationSpec? animation;
   final String? title;
   final bool showGrid;
@@ -827,6 +928,8 @@ class QudsGeometrySceneOutput extends QudsOutput {
         'bounds': bounds.toJson(),
         if (animation != null) 'animation': animation!.toJson(),
         'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
+        if (readings.isNotEmpty)
+          'readings': [for (final r in readings) r.toJson()],
         'primitives': [for (final p in primitives) p.toJson()],
       };
 
@@ -845,6 +948,10 @@ class QudsGeometrySceneOutput extends QudsOutput {
         interactiveInputs: [
           for (final raw in (json['interactiveInputs'] as List? ?? const []))
             QudsInteractiveInput.fromJson((raw as Map).cast<String, Object?>()),
+        ],
+        readings: [
+          for (final raw in (json['readings'] as List? ?? const []))
+            QudsTelemetryReading.fromJson((raw as Map).cast<String, Object?>()),
         ],
         primitives: [
           for (final raw in (json['primitives'] as List? ?? const []))
@@ -916,12 +1023,36 @@ class QudsGeometrySceneOutput extends QudsOutput {
           buf.writeln(
               '<line data-id="${_esc(p.id)}" x1="${sx(p.x1).toStringAsFixed(2)}" y1="${sy(p.y1).toStringAsFixed(2)}" x2="${sx(p.x2).toStringAsFixed(2)}" y2="${sy(p.y2).toStringAsFixed(2)}" stroke="${_esc(p.color)}" stroke-width="2.2"/>');
         case QudsGeoCurve():
-          final pts = [
-            for (final pt in p.points)
-              '${sx(pt.$1).toStringAsFixed(2)},${sy(pt.$2).toStringAsFixed(2)}'
-          ].join(' ');
-          buf.writeln(
-              '<polyline data-id="${_esc(p.id)}" fill="none" stroke="${_esc(p.color)}" stroke-width="${p.strokeWidth}" points="$pts"/>');
+          final visible = p.visiblePoints();
+          if (visible.length >= 2) {
+            final hasMultiColor =
+                p.gradientColors.length >= 2 || p.pointColors.isNotEmpty;
+            if (hasMultiColor) {
+              final denom = math.max(1, p.points.length - 1);
+              for (var i = 0; i < visible.length - 1; i++) {
+                final t = (i / denom).clamp(0.0, 1.0);
+                final segColor = p.colorAt(i, t);
+                final a = visible[i];
+                final b = visible[i + 1];
+                buf.writeln(
+                    '<line data-id="${_esc(p.id)}_$i" x1="${sx(a.$1).toStringAsFixed(2)}" y1="${sy(a.$2).toStringAsFixed(2)}" x2="${sx(b.$1).toStringAsFixed(2)}" y2="${sy(b.$2).toStringAsFixed(2)}" stroke="${_esc(segColor)}" stroke-width="${p.strokeWidth}" stroke-linecap="round"/>');
+              }
+            } else {
+              final pts = [
+                for (final pt in visible)
+                  '${sx(pt.$1).toStringAsFixed(2)},${sy(pt.$2).toStringAsFixed(2)}'
+              ].join(' ');
+              buf.writeln(
+                  '<polyline data-id="${_esc(p.id)}" fill="none" stroke="${_esc(p.color)}" stroke-width="${p.strokeWidth}" points="$pts"/>');
+            }
+            if (p.showHead) {
+              final tip = visible.last;
+              final headColor =
+                  p.colorAt(visible.length - 1, p.progress.clamp(0.0, 1.0));
+              buf.writeln(
+                  '<circle data-id="${_esc(p.id)}_head" cx="${sx(tip.$1).toStringAsFixed(2)}" cy="${sy(tip.$2).toStringAsFixed(2)}" r="5" fill="${_esc(headColor)}" stroke="#FFFFFF" stroke-width="1.5"/>');
+            }
+          }
         case QudsGeoArc():
           final x1 = sx(p.cx + p.radius * math.cos(p.startAngle));
           final y1 = sy(p.cy + p.radius * math.sin(p.startAngle));
@@ -957,17 +1088,54 @@ class QudsGeometrySceneOutput extends QudsOutput {
   }
 }
 
+/// Samples a multi-stop hex color gradient at [t] in `[0.0, 1.0]`.
+String qudsSampleGradientHex(List<String> colors, double t) {
+  if (colors.isEmpty) return '#8B5CF6';
+  if (colors.length == 1) return colors.first;
+  final clamped = t.clamp(0.0, 1.0);
+  final scaled = clamped * (colors.length - 1);
+  final idx = scaled.floor().clamp(0, colors.length - 2);
+  final frac = scaled - idx;
+  return qudsLerpHexColor(colors[idx], colors[idx + 1], frac);
+}
+
+/// Linearly interpolates two `#RRGGBB` hex colors at [t] in `[0.0, 1.0]`.
+String qudsLerpHexColor(String c1, String c2, double t) {
+  final a = _parseHexRgb(c1);
+  final b = _parseHexRgb(c2);
+  final clamped = t.clamp(0.0, 1.0);
+  final r = (a.$1 + (b.$1 - a.$1) * clamped).round().clamp(0, 255);
+  final g = (a.$2 + (b.$2 - a.$2) * clamped).round().clamp(0, 255);
+  final bl = (a.$3 + (b.$3 - a.$3) * clamped).round().clamp(0, 255);
+  return '#${r.toRadixString(16).padLeft(2, '0').toUpperCase()}'
+      '${g.toRadixString(16).padLeft(2, '0').toUpperCase()}'
+      '${bl.toRadixString(16).padLeft(2, '0').toUpperCase()}';
+}
+
+(int, int, int) _parseHexRgb(String raw) {
+  var hex = raw.trim().replaceFirst('#', '');
+  if (hex.length == 8) hex = hex.substring(2);
+  if (hex.length == 3) {
+    hex = '${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}';
+  }
+  if (hex.length != 6) return (139, 92, 246);
+  final v = int.tryParse(hex, radix: 16);
+  if (v == null) return (139, 92, 246);
+  return ((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+}
+
 // ---------------------------------------------------------------------------
 // Animation Loop, 3D Surface, Vector Field, Graph & Micro-App Form Outputs
 // ---------------------------------------------------------------------------
 
 /// Metadata declaring a live frame-stepped animation/simulation loop
-/// (driven by `QudsSession.stepFrame(dt)` in any Flutter/Web/CLI host).
+/// (driven by `QudsSession.stepFrame(dt)` or `QudsSession.runTimeline(...)`).
 class QudsAnimationSpec {
   const QudsAnimationSpec({
     this.fps = 60,
     this.duration,
     this.loop = true,
+    this.autoPlay = true,
     this.playing = true,
     this.time = 0.0,
     this.dt = 1.0 / 60.0,
@@ -977,15 +1145,22 @@ class QudsAnimationSpec {
   final int fps;
   final double? duration;
   final bool loop;
+  final bool autoPlay;
   final bool playing;
   final double time;
   final double dt;
   final int frame;
 
+  /// Normalized timeline progress in `[0.0, 1.0]` when [duration] is set.
+  double get progress => (duration != null && duration! > 0)
+      ? (time / duration!).clamp(0.0, 1.0)
+      : 0.0;
+
   Map<String, Object?> toJson() => {
         'fps': fps,
         if (duration != null) 'duration': duration,
         'loop': loop,
+        'autoPlay': autoPlay,
         'playing': playing,
         'time': time,
         'dt': dt,
@@ -997,6 +1172,7 @@ class QudsAnimationSpec {
         fps: (json['fps'] as num?)?.toInt() ?? 60,
         duration: (json['duration'] as num?)?.toDouble(),
         loop: (json['loop'] as bool?) ?? true,
+        autoPlay: (json['autoPlay'] as bool?) ?? true,
         playing: (json['playing'] as bool?) ?? true,
         time: (json['time'] as num?)?.toDouble() ?? 0.0,
         dt: (json['dt'] as num?)?.toDouble() ?? (1.0 / 60.0),

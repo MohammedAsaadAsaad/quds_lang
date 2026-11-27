@@ -5,6 +5,7 @@ import 'dart:isolate';
 import 'dart:typed_data';
 import 'package:yaml_edit/yaml_edit.dart';
 
+import 'package:quds/interpreter.dart';
 import 'package:quds/quds.dart';
 import 'package:quds/src/flutter_project.dart';
 import 'package:quds/src/flutter_live.dart';
@@ -126,6 +127,10 @@ Future<void> main(List<String> rawArguments) async {
       _serve(session);
     case 'debug':
       await _debug(arguments);
+    case 'eval':
+      await _eval(arguments.skip(1).toList());
+    case 'repl':
+      await _repl(arguments.skip(1).toList());
     default:
       _usage();
   }
@@ -4152,4 +4157,133 @@ Future<void> _docPreviewService() async {
   } finally {
     await termination?.cancel();
   }
+}
+
+Future<void> _eval(List<String> args) async {
+  var sandbox = false;
+  final rest = <String>[];
+  for (final arg in args) {
+    if (arg == '--sandbox') {
+      sandbox = true;
+    } else if (arg == '--scientific') {
+      sandbox = false;
+    } else {
+      rest.add(arg);
+    }
+  }
+  if (rest.isEmpty) {
+    stderr.writeln(
+        'Usage: quds eval [--sandbox|--scientific] <code-or-file.quds>');
+    exitCode = 64;
+    return;
+  }
+  final target = rest.join(' ');
+  final file = File(target);
+  final source = file.existsSync() ? file.readAsStringSync() : target;
+  final sourceName = file.existsSync() ? file.path : '<eval>';
+
+  final session = QudsSession(
+    policy: sandbox
+        ? QudsExecutionPolicy.strictSandbox()
+        : QudsExecutionPolicy.scientific(),
+    allowTopLevelRebind: true,
+  );
+  final sub = session.events.listen((event) {
+    if (event is QudsPrintEvent) {
+      stdout.writeln(event.text);
+    }
+  });
+  final result = await session.run(source, file: sourceName);
+  await Future<void>.delayed(Duration.zero);
+  await sub.cancel();
+  await session.dispose();
+
+  if (!result.succeeded) {
+    stderr.writeln('${result.error}');
+    exitCode = 1;
+    return;
+  }
+  if (result.printedLines.isEmpty && result.value != null) {
+    stdout.writeln(qudsFormatValue(result.value));
+  }
+}
+
+Future<void> _repl(List<String> args) async {
+  final sandbox = args.contains('--sandbox');
+  final session = QudsSession(
+    policy: sandbox
+        ? QudsExecutionPolicy.strictSandbox()
+        : QudsExecutionPolicy.scientific(),
+    allowTopLevelRebind: true,
+  );
+  final sub = session.events.listen((event) {
+    if (event is QudsPrintEvent) {
+      stdout.writeln(event.text);
+    }
+  });
+
+  stdout.writeln(
+      'Quds Interactive REPL (${sandbox ? 'strictSandbox' : 'scientific'} mode). '
+      'Type :vars, :clear, :quit.');
+
+  final buffer = StringBuffer();
+  var inBlock = false;
+  while (true) {
+    stdout.write(inBlock ? '... ' : 'quds> ');
+    final line = stdin.readLineSync();
+    if (line == null) break;
+    final trimmed = line.trim();
+
+    if (!inBlock && trimmed == ':quit') break;
+    if (!inBlock && trimmed == ':clear') {
+      session.clear();
+      stdout.writeln('Workspace cleared.');
+      continue;
+    }
+    if (!inBlock && trimmed == ':vars') {
+      final ws = session.workspace;
+      if (ws.isEmpty) {
+        stdout.writeln('(workspace empty)');
+      } else {
+        for (final entry in ws.values) {
+          stdout.writeln(
+              '  ${entry.mutable ? 'var ' : ''}${entry.name}: ${entry.typeName} = ${entry.summary}');
+        }
+      }
+      continue;
+    }
+
+    if (inBlock) {
+      if (trimmed.isEmpty) {
+        inBlock = false;
+        final res = await session.run(buffer.toString(), file: '<repl>');
+        buffer.clear();
+        if (!res.succeeded) {
+          stderr.writeln('${res.error}');
+        } else if (res.printedLines.isEmpty && res.value != null) {
+          stdout.writeln('=> ${qudsFormatValue(res.value)}');
+        }
+      } else {
+        buffer.writeln(line);
+      }
+      continue;
+    }
+
+    if (trimmed.isEmpty) continue;
+    if (trimmed.endsWith(':')) {
+      inBlock = true;
+      buffer.writeln(line);
+      continue;
+    }
+
+    final res = await session.run(line, file: '<repl>');
+    if (!res.succeeded) {
+      stderr.writeln('${res.error}');
+    } else if (res.printedLines.isEmpty && res.value != null) {
+      stdout.writeln('=> ${qudsFormatValue(res.value)}');
+    }
+  }
+
+  await sub.cancel();
+  await session.dispose();
 }

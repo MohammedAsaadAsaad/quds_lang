@@ -303,9 +303,22 @@ The [`editors/vscode`](editors/vscode) extension provides:
 
 ---
 
+## Embedded Scientific Interpreter & Code Editor Engine
+
+Embed Quds directly inside Flutter (Desktop, Android, iOS, Web) or Dart applications with **zero `dart:io` dependencies** and no Dart SDK required on end-user devices:
+
+- **`package:quds/interpreter.dart`** — AST interpreter with persistent MATLAB-like workspaces (`QudsSession`), configurable policy & capability sandboxing (`strictSandbox`, `scientific`, `systemBridge`, custom interceptors & `QudsHostModule`), native AST breakpoints/stepping/watch/live eval (`QudsDebugController`), full embedded `quds:*` SDK execution, and rich scientific / **interactive 2D geometry scenes** (`quds:viz` with draggable handles, sliders, JSON & SVG export).
+- **`package:quds/editor_engine.dart`** — Pure-Dart syntax & semantic highlighter, official formatting (`formatQuds`), live syntax + policy-aware diagnostics with quick fixes, context-aware autocomplete (live workspace, `quds:*` SDKs, `::sections`, `quds:viz`, host modules), hover docs, signature help, outline, folding, and smart indentation helpers.
+- **CLI quick execution**: `quds eval 'use quds:math; print mean([2.0, 4.0, 6.0])'` and interactive `quds repl`.
+
+See [docs/INTERPRETER_AND_EDITOR_GUIDE.md](docs/INTERPRETER_AND_EDITOR_GUIDE.md) and [example/scientific_interpreter_demo.dart](example/scientific_interpreter_demo.dart).
+
+---
+
 ## Documentation
 
 - [Language Specification 1.2](docs/QUDS_LANGUAGE_SPECIFICATION.md)
+- [Embedded Interpreter & Editor Engine Guide](docs/INTERPRETER_AND_EDITOR_GUIDE.md)
 - [Keyword Reference](docs/KEYWORD_REFERENCE.md)
 - [Project CLI](docs/PROJECT_CLI.md) & [Flutter Live Updates](docs/FLUTTER_LIVE_UPDATES.md)
 - [Math Accuracy & API Coverage](docs/MATH_ACCURACY.md) / [MATH_COVERAGE.md](docs/MATH_COVERAGE.md)

@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:quds/editor_engine.dart';
 import 'package:quds/interpreter.dart';
 
@@ -165,6 +166,74 @@ class _AcademySyntaxController extends TextEditingController {
   }
 }
 
+/// Smart IME & keyboard formatter for Quds: auto-indents after `:`,
+/// preserves block indent, exits blank indented lines, auto-dedents `else:` /
+/// `catch:` / `finally:`, and snaps Backspace on leading spaces (VS Code style).
+class _AcademySmartEditFormatter extends TextInputFormatter {
+  _AcademySmartEditFormatter(this.engine);
+
+  final QudsEditorEngine engine;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    final oldSel = oldValue.selection;
+    final newSel = newValue.selection;
+    if (!oldSel.isValid || !newSel.isValid) return newValue;
+
+    final start = oldSel.start.clamp(0, oldText.length);
+    final end = oldSel.end.clamp(start, oldText.length);
+    final prefix = oldText.substring(0, start);
+    final suffix = oldText.substring(end);
+
+    // 1. Enter / Newline (`\n` or `\r\n` from soft keyboard or hardware keyboard)
+    if (newSel.isCollapsed &&
+        (newText == '$prefix\n$suffix' || newText == '$prefix\r\n$suffix')) {
+      final base = '$prefix$suffix';
+      final res = engine.handleNewline(base, start);
+      return TextEditingValue(
+        text: res.text,
+        selection: TextSelection.collapsed(offset: res.selectionStart),
+      );
+    }
+
+    // 2. Smart Backspace inside leading indentation whitespace
+    if (oldSel.isCollapsed &&
+        newSel.isCollapsed &&
+        newText.length == oldText.length - 1 &&
+        newSel.baseOffset == start - 1 &&
+        start > 0 &&
+        oldText[start - 1] == ' ') {
+      final res = engine.handleBackspace(oldText, start);
+      if (res != null) {
+        return TextEditingValue(
+          text: res.text,
+          selection: TextSelection.collapsed(offset: res.selectionStart),
+        );
+      }
+    }
+
+    // 3. Auto-dedent `else:`, `elif ...:`, `catch ...:`, `finally:` on `:`
+    if (oldSel.isCollapsed &&
+        newSel.isCollapsed &&
+        newText == '$prefix:$suffix') {
+      final res = engine.handleTypedColon(newText, start + 1);
+      if (res != null) {
+        return TextEditingValue(
+          text: res.text,
+          selection: TextSelection.collapsed(offset: res.selectionStart),
+        );
+      }
+    }
+
+    return newValue;
+  }
+}
+
 /// Interactive Quds Playground widget embedded inside Quds Academy.
 class AcademyPlayground extends StatefulWidget {
   const AcademyPlayground({
@@ -204,7 +273,6 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
   QudsDebugPauseEvent? _activePause;
   QudsRunResult? _result;
   bool _running = false;
-  bool _strictSandbox = false;
 
   String tr(String en, String ar) => widget.arabic ? ar : en;
 
@@ -242,15 +310,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
     _resumeSub?.cancel();
     _debugger = QudsDebugController();
     _session = QudsSession(
-      policy: _strictSandbox
-          ? QudsExecutionPolicy.strictSandbox(
-              maxSteps: 40000,
-              timeout: const Duration(seconds: 2),
-            )
-          : QudsExecutionPolicy.scientific(
-              maxSteps: 120000,
-              timeout: const Duration(seconds: 5),
-            ),
+      policy: QudsExecutionPolicy.standard(
+        maxSteps: 150000,
+        timeout: const Duration(seconds: 6),
+      ),
       debugger: _debugger,
       allowTopLevelRebind: true,
     );
@@ -348,26 +411,52 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
     );
   }
 
-  void _toggleSandbox(bool strict) {
-    _session.stop();
-    final currentCode = _controller.text;
-    _session.dispose();
-    _debugger.dispose();
-    setState(() {
-      _strictSandbox = strict;
-      _running = false;
-      _activePause = null;
-    });
-    _initRuntime();
-    _controller.removeListener(_reanalyze);
-    _controller.dispose();
-    _controller = _AcademySyntaxController(
-      text: currentCode,
-      engine: _engine,
-      palette: _palette,
+  void _applyTab(bool outdent) {
+    final sel = _controller.selection;
+    final start = sel.isValid ? sel.start : _controller.text.length;
+    final end = sel.isValid ? sel.end : start;
+    final res = _engine.handleTab(_controller.text, start, end, outdent: outdent);
+    _controller.value = TextEditingValue(
+      text: res.text,
+      selection: TextSelection(
+        baseOffset: res.selectionStart,
+        extentOffset: res.selectionEnd,
+      ),
     );
-    _controller.addListener(_reanalyze);
-    _reanalyze();
+  }
+
+  void _toggleComment() {
+    final sel = _controller.selection;
+    final start = sel.isValid ? sel.start : _controller.text.length;
+    final end = sel.isValid ? sel.end : start;
+    final res = _engine.toggleLineComment(_controller.text, start, end);
+    _controller.value = TextEditingValue(
+      text: res.text,
+      selection: TextSelection(
+        baseOffset: res.selectionStart,
+        extentOffset: res.selectionEnd,
+      ),
+    );
+  }
+
+  void _insertToken(String token, {int cursorBack = 0}) {
+    final text = _controller.text;
+    final sel = _controller.selection;
+    final start = sel.isValid ? sel.start.clamp(0, text.length) : text.length;
+    final end = sel.isValid ? sel.end.clamp(start, text.length) : start;
+    var updated = text.replaceRange(start, end, token);
+    var nextOffset = start + token.length - cursorBack;
+    if (token == ':') {
+      final dedented = _engine.handleTypedColon(updated, nextOffset);
+      if (dedented != null) {
+        updated = dedented.text;
+        nextOffset = dedented.selectionStart;
+      }
+    }
+    _controller.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: nextOffset),
+    );
   }
 
   @override
@@ -509,17 +598,6 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                       icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
                       label: Text(tr('Format', 'تنسيق')),
                     ),
-                    FilterChip(
-                      selected: _strictSandbox,
-                      label: Text(
-                        _strictSandbox
-                            ? tr('Sandbox', 'وضع مقيّد')
-                            : tr('Scientific', 'وضع علمي'),
-                        style: const TextStyle(fontSize: 11.5),
-                      ),
-                      onSelected: _toggleSandbox,
-                      visualDensity: VisualDensity.compact,
-                    ),
                   ],
                 ),
               ),
@@ -528,7 +606,8 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
               Directionality(
                 textDirection: TextDirection.ltr,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 220, maxHeight: 340),
+                  constraints:
+                      const BoxConstraints(minHeight: 220, maxHeight: 340),
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Row(
@@ -595,30 +674,132 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                         Expanded(
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: TextField(
-                              key: const Key('academy_playground_editor'),
-                              controller: _controller,
-                              maxLines: null,
-                              keyboardType: TextInputType.multiline,
-                              autocorrect: false,
-                              enableSuggestions: false,
-                              style: const TextStyle(
-                                fontFamily: 'JetBrainsMono',
-                                fontFamilyFallback: ['Cairo'],
-                                fontSize: 13,
-                                height: 1.62,
-                                color: Color(0xFFD3EDDF),
-                              ),
-                              decoration: const InputDecoration(
-                                border: InputBorder.none,
-                                isDense: true,
-                                contentPadding: EdgeInsets.zero,
+                            child: CallbackShortcuts(
+                              bindings: {
+                                const SingleActivator(LogicalKeyboardKey.tab):
+                                    () => _applyTab(false),
+                                const SingleActivator(LogicalKeyboardKey.tab,
+                                    shift: true): () => _applyTab(true),
+                                const SingleActivator(
+                                    LogicalKeyboardKey.bracketRight,
+                                    control: true): () => _applyTab(false),
+                                const SingleActivator(
+                                    LogicalKeyboardKey.bracketLeft,
+                                    control: true): () => _applyTab(true),
+                                const SingleActivator(LogicalKeyboardKey.slash,
+                                    control: true): _toggleComment,
+                                const SingleActivator(LogicalKeyboardKey.keyF,
+                                    shift: true, alt: true): _format,
+                              },
+                              child: TextField(
+                                key: const Key('academy_playground_editor'),
+                                controller: _controller,
+                                maxLines: null,
+                                keyboardType: TextInputType.multiline,
+                                autocorrect: false,
+                                enableSuggestions: false,
+                                inputFormatters: [
+                                  _AcademySmartEditFormatter(_engine),
+                                ],
+                                style: const TextStyle(
+                                  fontFamily: 'JetBrainsMono',
+                                  fontFamilyFallback: ['Cairo'],
+                                  fontSize: 13,
+                                  height: 1.62,
+                                  color: Color(0xFFD3EDDF),
+                                ),
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ],
                     ),
+                  ),
+                ),
+              ),
+
+              // VS Code-style Quick-Keys & Indent Bar (works great on phones & tablets)
+              Container(
+                height: 40,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF0A1614),
+                  border: Border(
+                    top: BorderSide(color: Color(0xFF1F3831)),
+                  ),
+                ),
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      _QuickKeyButton(
+                        key: const Key('academy_btn_indent'),
+                        label: '⇥ Tab',
+                        tooltip: tr('Indent (Tab / Ctrl+])',
+                            'مسافة بادئة (Tab / Ctrl+])'),
+                        highlighted: true,
+                        onPressed: () => _applyTab(false),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        key: const Key('academy_btn_outdent'),
+                        label: '⇤',
+                        tooltip: tr('Outdent (Shift+Tab / Ctrl+[)',
+                            'تقليص المسافة (Shift+Tab)'),
+                        highlighted: true,
+                        onPressed: () => _applyTab(true),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        label: ':',
+                        onPressed: () => _insertToken(':'),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        label: '()',
+                        onPressed: () => _insertToken('()', cursorBack: 1),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        label: '[]',
+                        onPressed: () => _insertToken('[]', cursorBack: 1),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        label: '{}',
+                        onPressed: () => _insertToken('{}', cursorBack: 1),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        label: '""',
+                        onPressed: () => _insertToken('""', cursorBack: 1),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        label: '=',
+                        onPressed: () => _insertToken(' = '),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        label: '->',
+                        onPressed: () => _insertToken(' -> '),
+                      ),
+                      const SizedBox(width: 6),
+                      _QuickKeyButton(
+                        key: const Key('academy_btn_comment'),
+                        label: '#',
+                        tooltip: tr('Toggle Comment (Ctrl+/)',
+                            'تعليق/إلغاء تعليق (Ctrl+/)'),
+                        onPressed: _toggleComment,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1098,3 +1279,54 @@ Color _hex(String hex) {
   }
   return const Color(0xFF147D64);
 }
+
+class _QuickKeyButton extends StatelessWidget {
+  const _QuickKeyButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.tooltip,
+    this.highlighted = false,
+  });
+
+  final String label;
+  final VoidCallback onPressed;
+  final String? tooltip;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final btn = Material(
+      color: highlighted ? const Color(0xFF147D64) : const Color(0xFF162B27),
+      borderRadius: BorderRadius.circular(7),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(7),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(
+              color: highlighted
+                  ? const Color(0xFF2AA789)
+                  : const Color(0xFF2D443C),
+            ),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontFamily: 'JetBrainsMono',
+              fontFamilyFallback: ['Cairo'],
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFFEAF4EF),
+            ),
+          ),
+        ),
+      ),
+    );
+    return tooltip != null ? Tooltip(message: tooltip!, child: btn) : btn;
+  }
+}
+

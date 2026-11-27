@@ -168,7 +168,59 @@ class QudsExecutionPolicy {
     this.onStatementIntercept,
   });
 
-  /// Locked-down pure sandbox for untrusted formulas, quizzes, or strict calculators.
+  /// General-purpose default policy with safe runaway guards and no hardcoded
+  /// domain restrictions. Host applications can customize any limit, library
+  /// allow/deny list, capability, or dynamic interceptor via the constructor
+  /// or [copyWith].
+  factory QudsExecutionPolicy.standard({
+    String name = 'standard',
+    int? maxSteps = 500000,
+    Duration? timeout = const Duration(seconds: 15),
+    int maxCallDepth = 256,
+    int? maxCollectionLength = 250000,
+    int? maxStringLength = 2500000,
+    int? maxLoopIterations,
+    int? maxOutputCount = 256,
+    int? maxPrimitives = 50000,
+    bool allowMutation = true,
+    bool allowAsync = true,
+    bool allowClasses = true,
+    bool allowExceptions = true,
+    bool allowImports = true,
+    Set<String>? allowedLibraries,
+    Set<String> deniedLibraries = const {},
+    List<QudsCapability> capabilities = const [],
+    QudsImportResolver? importResolver,
+    QudsPermissionCallback? onPermissionCheck,
+    QudsCallInterceptor? onCallIntercept,
+    QudsStatementInterceptor? onStatementIntercept,
+  }) =>
+      QudsExecutionPolicy(
+        name: name,
+        maxSteps: maxSteps,
+        timeout: timeout,
+        maxCallDepth: maxCallDepth,
+        maxCollectionLength: maxCollectionLength,
+        maxStringLength: maxStringLength,
+        maxLoopIterations: maxLoopIterations,
+        maxOutputCount: maxOutputCount,
+        maxPrimitives: maxPrimitives,
+        allowMutation: allowMutation,
+        allowAsync: allowAsync,
+        allowClasses: allowClasses,
+        allowExceptions: allowExceptions,
+        allowImports: allowImports,
+        allowedLibraries: allowedLibraries,
+        deniedLibraries: deniedLibraries,
+        capabilities: capabilities,
+        importResolver: importResolver,
+        onPermissionCheck: onPermissionCheck,
+        onCallIntercept: onCallIntercept,
+        onStatementIntercept: onStatementIntercept,
+      );
+
+  /// Example preset: locked-down sandbox for untrusted formulas or strict calculators.
+  /// Any field can be customized or replaced using [QudsExecutionPolicy] / [copyWith].
   factory QudsExecutionPolicy.strictSandbox({
     int maxSteps = 50000,
     Duration timeout = const Duration(seconds: 2),
@@ -213,8 +265,9 @@ class QudsExecutionPolicy {
         onStatementIntercept: onStatementIntercept,
       );
 
-  /// MATLAB-like scientific notebook policy: full math/data/viz SDKs with safe
-  /// default resource guards so runaway user scripts never freeze the host app.
+  /// Example preset: MATLAB-like scientific notebook configuration (illustrative
+  /// starter preset, not a hardcoded mode — build any custom policy via
+  /// `QudsExecutionPolicy(...)`, `QudsExecutionPolicy.standard(...)`, or `copyWith`).
   factory QudsExecutionPolicy.scientific({
     int maxSteps = 500000,
     Duration timeout = const Duration(seconds: 15),

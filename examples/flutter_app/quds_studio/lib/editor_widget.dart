@@ -343,6 +343,16 @@ class QudsCodeEditorView extends StatelessWidget {
                                 onSmartTab(false),
                             const SingleActivator(LogicalKeyboardKey.tab,
                                 shift: true): () => onSmartTab(true),
+                            const SingleActivator(
+                                LogicalKeyboardKey.bracketRight,
+                                control: true): () => onSmartTab(false),
+                            const SingleActivator(
+                                LogicalKeyboardKey.bracketLeft,
+                                control: true): () => onSmartTab(true),
+                            const SingleActivator(LogicalKeyboardKey.slash,
+                                control: true): onToggleComment,
+                            const SingleActivator(LogicalKeyboardKey.keyF,
+                                shift: true, alt: true): onFormat,
                           },
                           child: TextField(
                             key: const Key('quds_code_textfield'),
@@ -352,6 +362,9 @@ class QudsCodeEditorView extends StatelessWidget {
                             keyboardType: TextInputType.multiline,
                             autocorrect: false,
                             enableSuggestions: false,
+                            inputFormatters: [
+                              QudsSmartEditFormatter(controller.engine),
+                            ],
                             style: TextStyle(
                               fontFamily: 'JetBrainsMono',
                               fontFamilyFallback: const ['IBMPlexSansArabic'],
@@ -370,6 +383,98 @@ class QudsCodeEditorView extends StatelessWidget {
                     ),
                   ],
                 ),
+              ),
+            ),
+          ),
+
+          // VS Code-style Quick-Keys & Indent Bar (essential for mobile phones!)
+          Container(
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: gutterBg,
+              border: Border(
+                top: BorderSide(color: gutterFg.withValues(alpha: 0.2)),
+              ),
+            ),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _StudioQuickKey(
+                    key: const Key('studio_btn_indent'),
+                    label: '⇥ Tab',
+                    tooltip: isArabic
+                        ? 'مسافة بادئة (Tab / Ctrl+])'
+                        : 'Indent (Tab / Ctrl+])',
+                    highlighted: true,
+                    palette: palette,
+                    onPressed: () => onSmartTab(false),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    key: const Key('studio_btn_outdent'),
+                    label: '⇤',
+                    tooltip: isArabic
+                        ? 'تقليص المسافة (Shift+Tab / Ctrl+[)'
+                        : 'Outdent (Shift+Tab / Ctrl+[)',
+                    highlighted: true,
+                    palette: palette,
+                    onPressed: () => onSmartTab(true),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: ':',
+                    palette: palette,
+                    onPressed: () => _insertToken(':'),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: '()',
+                    palette: palette,
+                    onPressed: () => _insertToken('()', cursorBack: 1),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: '[]',
+                    palette: palette,
+                    onPressed: () => _insertToken('[]', cursorBack: 1),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: '{}',
+                    palette: palette,
+                    onPressed: () => _insertToken('{}', cursorBack: 1),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: '""',
+                    palette: palette,
+                    onPressed: () => _insertToken('""', cursorBack: 1),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: '=',
+                    palette: palette,
+                    onPressed: () => _insertToken(' = '),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: '->',
+                    palette: palette,
+                    onPressed: () => _insertToken(' -> '),
+                  ),
+                  const SizedBox(width: 6),
+                  _StudioQuickKey(
+                    label: '#',
+                    tooltip: isArabic
+                        ? 'تعليق/إلغاء تعليق (Ctrl+/)'
+                        : 'Toggle Comment (Ctrl+/)',
+                    palette: palette,
+                    onPressed: onToggleComment,
+                  ),
+                ],
               ),
             ),
           ),
@@ -471,6 +576,147 @@ class QudsCodeEditorView extends StatelessWidget {
       ),
     );
   }
+
+  void _insertToken(String token, {int cursorBack = 0}) {
+    final text = controller.text;
+    final sel = controller.selection;
+    final start = sel.isValid ? sel.start.clamp(0, text.length) : text.length;
+    final end = sel.isValid ? sel.end.clamp(start, text.length) : start;
+    var updated = text.replaceRange(start, end, token);
+    var nextOffset = start + token.length - cursorBack;
+    if (token == ':') {
+      final dedented = controller.engine.handleTypedColon(updated, nextOffset);
+      if (dedented != null) {
+        updated = dedented.text;
+        nextOffset = dedented.selectionStart;
+      }
+    }
+    controller.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: nextOffset),
+    );
+  }
+}
+
+/// Smart IME & hardware-keyboard formatter for Quds: auto-indents after `:`,
+/// preserves block indent, exits blank indented lines, auto-dedents `else:` /
+/// `catch:` / `finally:`, and snaps Backspace on leading spaces (VS Code style).
+class QudsSmartEditFormatter extends TextInputFormatter {
+  QudsSmartEditFormatter(this.engine);
+
+  final QudsEditorEngine engine;
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final oldText = oldValue.text;
+    final newText = newValue.text;
+    final oldSel = oldValue.selection;
+    final newSel = newValue.selection;
+    if (!oldSel.isValid || !newSel.isValid) return newValue;
+
+    final start = oldSel.start.clamp(0, oldText.length);
+    final end = oldSel.end.clamp(start, oldText.length);
+    final prefix = oldText.substring(0, start);
+    final suffix = oldText.substring(end);
+
+    if (newSel.isCollapsed &&
+        (newText == '$prefix\n$suffix' || newText == '$prefix\r\n$suffix')) {
+      final base = '$prefix$suffix';
+      final res = engine.handleNewline(base, start);
+      return TextEditingValue(
+        text: res.text,
+        selection: TextSelection.collapsed(offset: res.selectionStart),
+      );
+    }
+
+    if (oldSel.isCollapsed &&
+        newSel.isCollapsed &&
+        newText.length == oldText.length - 1 &&
+        newSel.baseOffset == start - 1 &&
+        start > 0 &&
+        oldText[start - 1] == ' ') {
+      final res = engine.handleBackspace(oldText, start);
+      if (res != null) {
+        return TextEditingValue(
+          text: res.text,
+          selection: TextSelection.collapsed(offset: res.selectionStart),
+        );
+      }
+    }
+
+    if (oldSel.isCollapsed &&
+        newSel.isCollapsed &&
+        newText == '$prefix:$suffix') {
+      final res = engine.handleTypedColon(newText, start + 1);
+      if (res != null) {
+        return TextEditingValue(
+          text: res.text,
+          selection: TextSelection.collapsed(offset: res.selectionStart),
+        );
+      }
+    }
+
+    return newValue;
+  }
+}
+
+class _StudioQuickKey extends StatelessWidget {
+  const _StudioQuickKey({
+    super.key,
+    required this.label,
+    required this.palette,
+    required this.onPressed,
+    this.tooltip,
+    this.highlighted = false,
+  });
+
+  final String label;
+  final QudsEditorThemePalette palette;
+  final VoidCallback onPressed;
+  final String? tooltip;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = highlighted
+        ? const Color(0xFF2563EB)
+        : Color(palette.activeLineBackground);
+    final fg = highlighted ? Colors.white : Color(palette.foreground);
+    final btn = Material(
+      color: bg,
+      borderRadius: BorderRadius.circular(7),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(7),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(
+              color: highlighted
+                  ? const Color(0xFF60A5FA)
+                  : Color(palette.gutterForeground).withValues(alpha: 0.3),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: 'JetBrainsMono',
+              fontFamilyFallback: const ['IBMPlexSansArabic'],
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: fg,
+            ),
+          ),
+        ),
+      ),
+    );
+    return tooltip != null ? Tooltip(message: tooltip!, child: btn) : btn;
+  }
 }
 
 class _StatusPill extends StatelessWidget {
@@ -498,3 +744,4 @@ class _StatusPill extends StatelessWidget {
     );
   }
 }
+

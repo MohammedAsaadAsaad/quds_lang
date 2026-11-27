@@ -68,6 +68,27 @@ class _QudsStudioPageState extends State<QudsStudioPage>
 
   int _mobileTabIndex = 0;
 
+  // Fully customizable policy parameters (proving policies are host-defined,
+  // not hardcoded to any single domain like "scientific").
+  int _customMaxSteps = 150000;
+  int _customTimeoutSec = 6;
+  bool _customAllowMutation = true;
+  bool _customAllowClasses = true;
+  bool _customAllowAsync = true;
+  final Set<String> _customLibraries = {
+    'quds:math',
+    'quds:core',
+    'quds:collection',
+    'quds:text',
+    'quds:json',
+    'quds:async',
+    'quds:ext',
+    'quds:viz',
+    'dart:math',
+    'dart:convert',
+  };
+  bool _customAllowSensors = false;
+
   QudsEditorThemePalette get _palette =>
       _isDark ? QudsEditorThemePalette.dark() : QudsEditorThemePalette.light();
 
@@ -117,7 +138,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         .build();
 
     final policy = switch (_policyMode) {
-      StudioPolicyMode.scientific => QudsExecutionPolicy.scientific(
+      StudioPolicyMode.standard => QudsExecutionPolicy.standard(
           maxSteps: 150000,
           timeout: const Duration(seconds: 6),
         ),
@@ -129,6 +150,21 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           capabilities: [QudsCapability.custom('sensors.read')],
           maxSteps: 200000,
           timeout: const Duration(seconds: 8),
+        ),
+      StudioPolicyMode.custom => QudsExecutionPolicy(
+          name: 'custom',
+          maxSteps: _customMaxSteps,
+          timeout: Duration(seconds: _customTimeoutSec),
+          allowMutation: _customAllowMutation,
+          allowClasses: _customAllowClasses,
+          allowAsync: _customAllowAsync,
+          allowedLibraries: {
+            ..._customLibraries,
+            if (_customAllowSensors) 'host:sensors',
+          },
+          capabilities: [
+            if (_customAllowSensors) QudsCapability.custom('sensors.read'),
+          ],
         ),
     };
 
@@ -239,6 +275,178 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _activePause = null;
     });
     _rebuildSessionKeepingCode(_codeController.text);
+  }
+
+  Future<void> _openCustomPolicyDialog() async {
+    var steps = _customMaxSteps;
+    var timeoutSec = _customTimeoutSec;
+    var allowMutation = _customAllowMutation;
+    var allowClasses = _customAllowClasses;
+    var allowAsync = _customAllowAsync;
+    var allowSensors = _customAllowSensors;
+    final libs = Set<String>.from(_customLibraries);
+
+    final applied = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Directionality(
+          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+          child: AlertDialog(
+            title: Text(
+              _isArabic
+                  ? 'تخصيص سياسة وقيود المفسّر'
+                  : 'Customize Execution Policy',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _isArabic
+                        ? 'حد الخطوات (maxSteps): $steps'
+                        : 'Max steps: $steps',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  Slider(
+                    value: steps.toDouble().clamp(5000, 300000),
+                    min: 5000,
+                    max: 300000,
+                    divisions: 59,
+                    onChanged: (v) => setModalState(() => steps = v.round()),
+                  ),
+                  Text(
+                    _isArabic
+                        ? 'المهلة الزمنية (ثوانٍ): $timeoutSec'
+                        : 'Timeout (seconds): $timeoutSec',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  Slider(
+                    value: timeoutSec.toDouble().clamp(1, 30),
+                    min: 1,
+                    max: 30,
+                    divisions: 29,
+                    onChanged: (v) =>
+                        setModalState(() => timeoutSec = v.round()),
+                  ),
+                  SwitchListTile(
+                    key: const Key('switch_allow_mutation'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _isArabic
+                          ? 'السماح بالمتغيرات القابلة للتعديل (var)'
+                          : 'Allow mutable variables (var)',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    value: allowMutation,
+                    onChanged: (v) => setModalState(() => allowMutation = v),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _isArabic ? 'السماح بالأصناف (class)' : 'Allow classes',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    value: allowClasses,
+                    onChanged: (v) => setModalState(() => allowClasses = v),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _isArabic
+                          ? 'السماح بـ async / await'
+                          : 'Allow async / await',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    value: allowAsync,
+                    onChanged: (v) => setModalState(() => allowAsync = v),
+                  ),
+                  SwitchListTile(
+                    key: const Key('switch_allow_sensors'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _isArabic
+                          ? 'منح صلاحية host:sensors (sensors.read)'
+                          : 'Grant host:sensors (sensors.read)',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                    value: allowSensors,
+                    onChanged: (v) => setModalState(() => allowSensors = v),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _isArabic ? 'المكتبات المسموحة:' : 'Allowed libraries:',
+                    style: const TextStyle(
+                        fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final lib in const [
+                        'quds:math',
+                        'quds:viz',
+                        'quds:json',
+                        'quds:async',
+                        'quds:text',
+                      ])
+                        FilterChip(
+                          label: Text(lib, style: const TextStyle(fontSize: 11)),
+                          selected: libs.contains(lib),
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (selected) => setModalState(() {
+                            if (selected) {
+                              libs.add(lib);
+                            } else {
+                              libs.remove(lib);
+                            }
+                          }),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(_isArabic ? 'إلغاء' : 'Cancel'),
+              ),
+              FilledButton(
+                key: const Key('btn_apply_custom_policy'),
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(_isArabic ? 'تطبيق القيود' : 'Apply Policy'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (applied == true && mounted) {
+      setState(() {
+        _customMaxSteps = steps;
+        _customTimeoutSec = timeoutSec;
+        _customAllowMutation = allowMutation;
+        _customAllowClasses = allowClasses;
+        _customAllowAsync = allowAsync;
+        _customAllowSensors = allowSensors;
+        _customLibraries
+          ..clear()
+          ..addAll(libs);
+        _policyMode = StudioPolicyMode.custom;
+        _running = false;
+        _activePause = null;
+      });
+      _session.stop();
+      _rebuildSessionKeepingCode(_codeController.text);
+    }
   }
 
   void _rebuildSessionKeepingCode(String code) {
@@ -543,7 +751,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             ),
           ),
 
-          // Policy mode selector
+          // Policy selector (example templates + full custom policy builder)
           SegmentedButton<StudioPolicyMode>(
             key: const Key('policy_selector'),
             style: SegmentedButton.styleFrom(
@@ -556,8 +764,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             ),
             segments: [
               ButtonSegment(
-                value: StudioPolicyMode.scientific,
-                label: Text(_isArabic ? 'علمي' : 'Scientific'),
+                value: StudioPolicyMode.standard,
+                label: Text(_isArabic ? 'قياسي' : 'Standard'),
               ),
               ButtonSegment(
                 value: StudioPolicyMode.strictSandbox,
@@ -567,9 +775,28 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 value: StudioPolicyMode.systemBridge,
                 label: Text(_isArabic ? 'جسر النظام' : 'Bridge'),
               ),
+              if (_policyMode == StudioPolicyMode.custom)
+                ButtonSegment(
+                  value: StudioPolicyMode.custom,
+                  label: Text(_isArabic ? 'مخصّص' : 'Custom'),
+                ),
             ],
             selected: {_policyMode},
             onSelectionChanged: (set) => _switchPolicy(set.first),
+          ),
+
+          OutlinedButton.icon(
+            key: const Key('btn_custom_policy'),
+            onPressed: _openCustomPolicyDialog,
+            icon: const Icon(Icons.tune_rounded, size: 15),
+            label: Text(
+              _isArabic ? 'تخصيص القيود' : 'Custom Policy',
+              style: const TextStyle(fontSize: 11.5),
+            ),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            ),
           ),
 
           // Run & Debugger controls

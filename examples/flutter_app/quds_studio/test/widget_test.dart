@@ -109,7 +109,8 @@ void main() {
     expect(find.textContaining('P102'), findsOneWidget);
   });
 
-  testWidgets('Mobile phone viewport renders 3-tab bottom NavigationBar without overflow',
+  testWidgets(
+      'Mobile phone viewport renders 3-tab bottom NavigationBar without overflow',
       (tester) async {
     tester.view.physicalSize = const Size(412, 915);
     tester.view.devicePixelRatio = 1.0;
@@ -122,5 +123,56 @@ void main() {
     await tester.tap(find.text('اللوحة'));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Smart Enter auto-indents after colon, Tab/Outdent buttons work, and Custom Policy applies dynamically',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const QudsStudioApp(initialPresetIndex: 2, autoRunInitial: false),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Smart Enter after `repeat 10:` indents 2 spaces
+    final tfFinder = find.byKey(const Key('quds_code_textfield'));
+    final tf = tester.widget<TextField>(tfFinder);
+    final afterEnter = tf.inputFormatters!.first.formatEditUpdate(
+      const TextEditingValue(
+        text: 'repeat 10:',
+        selection: TextSelection.collapsed(offset: 10),
+      ),
+      const TextEditingValue(
+        text: 'repeat 10:\n',
+        selection: TextSelection.collapsed(offset: 11),
+      ),
+    );
+    expect(afterEnter.text, 'repeat 10:\n  ');
+    expect(afterEnter.selection.baseOffset, 13);
+
+    // 2. VS Code-style Tab & Outdent quick-key buttons
+    tf.controller!.value = const TextEditingValue(
+      text: 'print "hi"',
+      selection: TextSelection.collapsed(offset: 0),
+    );
+    await tester.tap(find.byKey(const Key('studio_btn_indent')));
+    await tester.pumpAndSettle();
+    expect(tf.controller!.text, '  print "hi"');
+
+    await tester.tap(find.byKey(const Key('studio_btn_outdent')));
+    await tester.pumpAndSettle();
+    expect(tf.controller!.text, 'print "hi"');
+
+    // 3. Open Custom Policy dialog and grant host:sensors dynamically
+    await tester.tap(find.byKey(const Key('btn_custom_policy')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('switch_allow_sensors')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('btn_apply_custom_policy')));
+    await tester.pumpAndSettle();
+    expect(find.text('مخصّص'), findsOneWidget);
   });
 }

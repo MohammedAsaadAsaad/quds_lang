@@ -235,17 +235,44 @@ compute(n: int) -> int:
       expect(sig!.functionName, 'point');
       expect(sig.activeParameter, 2);
 
-      // Smart Enter after `:` indents by 2 spaces
-      final nl = engine.handleNewline('if x > 0:', 9);
-      expect(nl.text, 'if x > 0:\n  ');
-      expect(nl.selectionStart, 12);
+      // Smart Enter after `:` indents by 2 spaces (including repeat + trailing comment)
+      final nl = engine.handleNewline('repeat 10:', 10);
+      expect(nl.text, 'repeat 10:\n  ');
+      expect(nl.selectionStart, 13);
+
+      final nlComment = engine.handleNewline('repeat 10: # loop', 17);
+      expect(nlComment.text, 'repeat 10: # loop\n  ');
+
+      // Smart Enter inside an indented block keeps the same indent
+      const inBlock = 'repeat 10:\n  print "hi"';
+      final keepIndent = engine.handleNewline(inBlock, inBlock.length);
+      expect(keepIndent.text, 'repeat 10:\n  print "hi"\n  ');
+
+      // Smart Enter on a blank indented line exits one indent level cleanly
+      const blankIndented = 'repeat 10:\n  print "hi"\n  ';
+      final exitBlock =
+          engine.handleNewline(blankIndented, blankIndented.length);
+      expect(exitBlock.text, 'repeat 10:\n  print "hi"\n\n');
 
       // Smart Enter after `return` dedents by 2 spaces
       const fnBody = 'f() -> int:\n  return 1';
       final dedent = engine.handleNewline(fnBody, fnBody.length);
       expect(dedent.text, 'f() -> int:\n  return 1\n');
 
-      // Block Tab indent & outdent
+      // Auto-dedent `else:` when typed inside an `if` block
+      const elseTyped = 'if x > 0:\n  print 1\n  else:';
+      final dedentedElse =
+          engine.handleTypedColon(elseTyped, elseTyped.length);
+      expect(dedentedElse, isNotNull);
+      expect(dedentedElse!.text, 'if x > 0:\n  print 1\nelse:');
+
+      // Smart Backspace snaps leading indentation to previous indent stop
+      const fourSpaces = 'if a:\n    ';
+      final bs = engine.handleBackspace(fourSpaces, fourSpaces.length);
+      expect(bs, isNotNull);
+      expect(bs!.text, 'if a:\n  ');
+
+      // Block Tab indent & outdent (VS Code style)
       const block = 'a = 1\nb = 2';
       final indented = engine.handleTab(block, 0, block.length);
       expect(indented.text, '  a = 1\n  b = 2');

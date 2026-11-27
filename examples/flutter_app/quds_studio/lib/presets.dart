@@ -10,7 +10,7 @@ class StudioPreset {
     required this.fileName,
     required this.code,
     this.defaultBreakpoints = const {},
-    this.defaultPolicy = StudioPolicyMode.scientific,
+    this.defaultPolicy = StudioPolicyMode.standard,
   });
 
   final String id;
@@ -24,9 +24,10 @@ class StudioPreset {
 }
 
 enum StudioPolicyMode {
-  scientific,
+  standard,
   strictSandbox,
   systemBridge,
+  custom,
 }
 
 const studioPresets = <StudioPreset>[

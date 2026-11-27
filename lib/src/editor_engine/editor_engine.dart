@@ -353,13 +353,31 @@ class QudsEditorEngine {
     int indent = 2,
   }) {
     final pos = cursorOffset.clamp(0, text.length);
-    final lineStart = text.lastIndexOf('\n', pos > 0 ? pos - 1 : 0) + 1;
-    final actualStart =
-        pos == 0 ? 0 : (text[pos - 1] == '\n' ? pos : lineStart);
-    final lineBeforeCursor = text.substring(actualStart, pos);
+    final lineStart = pos == 0
+        ? 0
+        : (text[pos - 1] == '\n' ? pos : text.lastIndexOf('\n', pos - 1) + 1);
+    final lineBeforeCursor = text.substring(lineStart, pos);
     final leadingSpaces =
         lineBeforeCursor.length - lineBeforeCursor.trimLeft().length;
-    final trimmed = lineBeforeCursor.trim();
+    final trimmedRaw = lineBeforeCursor.trim();
+    final trimmed = _stripLineComment(trimmedRaw).trim();
+
+    // Check remaining text on the same line after the cursor.
+    final nextNl = text.indexOf('\n', pos);
+    final lineEnd = nextNl < 0 ? text.length : nextNl;
+    final restOfLine = text.substring(pos, lineEnd);
+
+    // Pressing Enter on a whitespace-only indented line exits one indent level
+    // cleanly (and strips stray spaces from the blank line).
+    if (trimmedRaw.isEmpty && restOfLine.trim().isEmpty && leadingSpaces > 0) {
+      final nextIndent = (leadingSpaces - indent).clamp(0, leadingSpaces);
+      final replacement = '\n${' ' * nextIndent}';
+      final updated = text.replaceRange(lineStart, lineEnd, replacement);
+      return QudsEditResult(
+        text: updated,
+        selectionStart: lineStart + replacement.length,
+      );
+    }
 
     var nextIndent = leadingSpaces;
     if (trimmed.endsWith(':')) {
@@ -370,19 +388,118 @@ class QudsEditorEngine {
         trimmed.startsWith('break ') ||
         trimmed == 'continue' ||
         trimmed.startsWith('continue ') ||
+        trimmed == 'pass' ||
         trimmed.startsWith('throw ')) {
       nextIndent = (leadingSpaces - indent).clamp(0, leadingSpaces);
     }
 
     final insertion = '\n${' ' * nextIndent}';
-    final updated = text.replaceRange(pos, pos, insertion);
+    // If splitting mid-line, strip leading spaces from the moved remainder.
+    final leadingRestSpaces = restOfLine.length - restOfLine.trimLeft().length;
+    final updated =
+        text.replaceRange(pos, pos + leadingRestSpaces, insertion);
     return QudsEditResult(
       text: updated,
       selectionStart: pos + insertion.length,
     );
   }
 
-  /// Indents or outdents the selected line(s) by [indent] spaces.
+  /// Smart backspace: when the cursor is inside leading indentation whitespace,
+  /// deletes back to the previous indent stop (VS Code style). Returns `null`
+  /// when normal single-character backspace should occur.
+  QudsEditResult? handleBackspace(
+    String text,
+    int cursorOffset, {
+    int indent = 2,
+  }) {
+    final pos = cursorOffset.clamp(0, text.length);
+    if (pos == 0) return null;
+    final lineStart =
+        text[pos - 1] == '\n' ? pos : text.lastIndexOf('\n', pos - 1) + 1;
+    final before = text.substring(lineStart, pos);
+    if (before.isEmpty || before.trim().isNotEmpty) return null;
+
+    // Delete back to the previous indent stop (e.g. 4 -> 2, 3 -> 2, 2 -> 0).
+    final remainder = before.length % indent;
+    final removeCount = remainder == 0 ? indent : remainder;
+    final deleteStart = (pos - removeCount).clamp(lineStart, pos);
+    final updated = text.replaceRange(deleteStart, pos, '');
+    return QudsEditResult(
+      text: updated,
+      selectionStart: deleteStart,
+    );
+  }
+
+  /// Auto-dedents block continuation clauses (`else:`, `elif ...:`, `catch ...:`,
+  /// `finally:`) when the user types `:` at the end of an indented line.
+  /// Returns `null` if no dedent adjustment is needed.
+  QudsEditResult? handleTypedColon(
+    String text,
+    int cursorOffset, {
+    int indent = 2,
+  }) {
+    final pos = cursorOffset.clamp(0, text.length);
+    if (pos == 0 || text[pos - 1] != ':') return null;
+    final lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+    final lineBefore = text.substring(lineStart, pos);
+    final leadingSpaces = lineBefore.length - lineBefore.trimLeft().length;
+    if (leadingSpaces < indent) return null;
+
+    final trimmed = lineBefore.trim();
+    final isContinuation = trimmed == 'else:' ||
+        trimmed.startsWith('elif ') ||
+        trimmed.startsWith('else if ') ||
+        trimmed == 'catch:' ||
+        trimmed.startsWith('catch ') ||
+        trimmed == 'finally:';
+    if (!isContinuation) return null;
+
+    // Only dedent if the previous non-empty line is indented at least as deep.
+    final prevText = lineStart > 0 ? text.substring(0, lineStart - 1) : '';
+    final prevLines = prevText.split('\n');
+    int? prevIndent;
+    for (var i = prevLines.length - 1; i >= 0; i--) {
+      if (prevLines[i].trim().isNotEmpty) {
+        prevIndent = prevLines[i].length - prevLines[i].trimLeft().length;
+        break;
+      }
+    }
+    if (prevIndent == null || prevIndent < leadingSpaces) return null;
+
+    final remove = indent.clamp(0, leadingSpaces);
+    final updated = text.replaceRange(lineStart, lineStart + remove, '');
+    return QudsEditResult(
+      text: updated,
+      selectionStart: pos - remove,
+    );
+  }
+
+  static String _stripLineComment(String line) {
+    var inSingle = false;
+    var inDouble = false;
+    var escaped = false;
+    for (var i = 0; i < line.length; i++) {
+      final ch = line[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch == r'\' && (inSingle || inDouble)) {
+        escaped = true;
+        continue;
+      }
+      if (ch == "'" && !inDouble) {
+        inSingle = !inSingle;
+      } else if (ch == '"' && !inSingle) {
+        inDouble = !inDouble;
+      } else if (ch == '#' && !inSingle && !inDouble) {
+        return line.substring(0, i);
+      }
+    }
+    return line;
+  }
+
+  /// Indents or outdents the selected line(s) by [indent] spaces (VS Code style).
   QudsEditResult handleTab(
     String text,
     int selectionStart,
@@ -395,8 +512,17 @@ class QudsEditorEngine {
     final pad = ' ' * indent;
 
     if (s == e && !outdent) {
-      final updated = text.replaceRange(s, e, pad);
-      return QudsEditResult(text: updated, selectionStart: s + indent);
+      final lineStart = s == 0 ? 0 : text.lastIndexOf('\n', s - 1) + 1;
+      final before = text.substring(lineStart, s);
+      final spacesToInsert = before.trim().isEmpty
+          ? (indent - (before.length % indent))
+          : indent;
+      final insert = ' ' * spacesToInsert;
+      final updated = text.replaceRange(s, e, insert);
+      return QudsEditResult(
+        text: updated,
+        selectionStart: s + spacesToInsert,
+      );
     }
 
     final blockStart = s == 0 ? 0 : text.lastIndexOf('\n', s - 1) + 1;

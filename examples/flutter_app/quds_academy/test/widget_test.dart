@@ -169,9 +169,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('academy_playground_editor')), findsOneWidget);
 
+    // Academy Playground stays clean without policy/restriction chips
+    expect(find.text('وضع مقيّد'), findsNothing);
+    expect(find.text('وضع علمي'), findsNothing);
+
+    // Test VS Code-style Tab / Outdent buttons and smart Enter after `:`
+    final editorFinder = find.byKey(const Key('academy_playground_editor'));
+    await tester.enterText(editorFinder, 'repeat 10:');
+    await tester.pumpAndSettle();
+    final tf = tester.widget<TextField>(editorFinder);
+    // Simulate Android soft-keyboard inserting newline via TextInputFormatter
+    final formatted = tf.inputFormatters!.first.formatEditUpdate(
+      const TextEditingValue(
+        text: 'repeat 10:',
+        selection: TextSelection.collapsed(offset: 10),
+      ),
+      const TextEditingValue(
+        text: 'repeat 10:\n',
+        selection: TextSelection.collapsed(offset: 11),
+      ),
+    );
+    expect(formatted.text, 'repeat 10:\n  ');
+    expect(formatted.selection.baseOffset, 13);
+
+    // Tap Tab & Outdent quick-key buttons
+    tf.controller!.value = const TextEditingValue(
+      text: 'x = 1',
+      selection: TextSelection.collapsed(offset: 0),
+    );
+    await tester.tap(find.byKey(const Key('academy_btn_indent')));
+    await tester.pumpAndSettle();
+    expect(tf.controller!.text, '  x = 1');
+    await tester.tap(find.byKey(const Key('academy_btn_outdent')));
+    await tester.pumpAndSettle();
+    expect(tf.controller!.text, 'x = 1');
+
     // Enter custom Quds code using quds:math and execute via embedded interpreter
     await tester.enterText(
-      find.byKey(const Key('academy_playground_editor')),
+      editorFinder,
       'use quds:math\n'
       'vals = [10.0, 20.0, 30.0]\n'
       'print "avg={mean(vals)}"\n',

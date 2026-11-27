@@ -34,11 +34,12 @@ QudsHostModule buildQudsVizModule({
   }
 
   final interactiveRegistry = <String, QudsInteractiveInput>{};
+  QudsAnimationSpec? activeAnimation;
 
   final builder = QudsHostModule.builder(
     'quds:viz',
     description:
-        'Scientific plotting, tables, matrices, LaTeX, and interactive 2D geometry scenes.',
+        'Scientific plotting, 3D surfaces, vector fields, graphs, animations, micro-app controls, tables, matrices, LaTeX, and interactive 2D geometry scenes.',
   );
 
   // Interactive draggable point handle: viz.point("A", 0.0, 0.0, draggable: true)
@@ -143,6 +144,212 @@ QudsHostModule buildQudsVizModule({
     signature:
         'toggle(id: String, value: bool = false, label: String?) -> bool',
     documentation: 'Declares an interactive boolean toggle control.',
+  );
+
+  // Micro-App Form Controls: input, number, select, color, button
+  builder.function(
+    'input',
+    (pos, named, ctx) {
+      final id = '${pos[0]}';
+      final defaultVal =
+          (named['value'] ?? (pos.length > 1 ? pos[1] : '')).toString();
+      final label = (named['label'] as String?) ?? id;
+      final override = ctx.interactiveInputs[id];
+      final current = override != null ? '$override' : defaultVal;
+      interactiveRegistry[id] = QudsInteractiveInput(
+        id: id,
+        kind: 'textInput',
+        label: label,
+        value: current,
+      );
+      return current;
+    },
+    signature:
+        'input(id: String, value: String = "", label: String?) -> String',
+    documentation: 'Declares an interactive text input control for micro-apps.',
+  );
+
+  builder.function(
+    'number',
+    (pos, named, ctx) {
+      final id = '${pos[0]}';
+      final defaultVal = _toDouble(
+          named['value'] ?? (pos.length > 1 ? pos[1] : 0.0), ctx.span);
+      final minVal =
+          named['min'] != null ? _toDouble(named['min'], ctx.span) : null;
+      final maxVal =
+          named['max'] != null ? _toDouble(named['max'], ctx.span) : null;
+      final stepVal =
+          named['step'] != null ? _toDouble(named['step'], ctx.span) : null;
+      final label = (named['label'] as String?) ?? id;
+      final override = ctx.interactiveInputs[id];
+      var current = override is num
+          ? override.toDouble()
+          : (override is String
+              ? (double.tryParse(override) ?? defaultVal)
+              : defaultVal);
+      if (minVal != null && current < minVal) current = minVal;
+      if (maxVal != null && current > maxVal) current = maxVal;
+      interactiveRegistry[id] = QudsInteractiveInput(
+        id: id,
+        kind: 'numberInput',
+        label: label,
+        value: current,
+        min: minVal,
+        max: maxVal,
+        step: stepVal,
+      );
+      return current;
+    },
+    signature:
+        'number(id: String, value: double = 0.0, min: double?, max: double?, step: double?, label: String?) -> double',
+    documentation: 'Declares an interactive numeric field control.',
+  );
+
+  builder.function(
+    'select',
+    (pos, named, ctx) {
+      final id = '${pos[0]}';
+      final rawOptions = (named['options'] ??
+          (pos.length > 1 ? pos[1] : const [])) as Iterable;
+      final options = [for (final o in rawOptions) '$o'];
+      final defaultVal = named['value'] != null
+          ? '${named['value']}'
+          : (pos.length > 2
+              ? '${pos[2]}'
+              : (options.isNotEmpty ? options.first : ''));
+      final label = (named['label'] as String?) ?? id;
+      final override = ctx.interactiveInputs[id];
+      final current = (override != null && options.contains('$override'))
+          ? '$override'
+          : defaultVal;
+      interactiveRegistry[id] = QudsInteractiveInput(
+        id: id,
+        kind: 'select',
+        label: label,
+        value: current,
+        options: options,
+      );
+      return current;
+    },
+    signature:
+        'select(id: String, options: List<String>, value: String?, label: String?) -> String',
+    documentation:
+        'Declares an interactive dropdown / choice selector control.',
+  );
+
+  builder.function(
+    'color',
+    (pos, named, ctx) {
+      final id = '${pos[0]}';
+      final defaultVal = (named['value'] as String?) ??
+          (pos.length > 1 ? '${pos[1]}' : '#2563EB');
+      final label = (named['label'] as String?) ?? id;
+      final override = ctx.interactiveInputs[id];
+      final current = override is String ? override : defaultVal;
+      interactiveRegistry[id] = QudsInteractiveInput(
+        id: id,
+        kind: 'color',
+        label: label,
+        value: current,
+      );
+      return current;
+    },
+    signature:
+        'color(id: String, value: String = "#2563EB", label: String?) -> String',
+    documentation: 'Declares an interactive hex color picker control.',
+  );
+
+  builder.function(
+    'button',
+    (pos, named, ctx) {
+      final id = '${pos[0]}';
+      final label = (named['label'] as String?) ?? id;
+      final override = ctx.interactiveInputs[id];
+      final clicks = override is num ? override.toInt() : 0;
+      interactiveRegistry[id] = QudsInteractiveInput(
+        id: id,
+        kind: 'button',
+        label: label,
+        value: clicks,
+      );
+      return clicks;
+    },
+    signature: 'button(id: String, label: String?) -> int',
+    documentation:
+        'Declares an interactive action button returning its tap count.',
+  );
+
+  // Frame-stepped animation loop: viz.animate(fps: 60, duration: 10.0, loop: true)
+  builder.function(
+    'animate',
+    (pos, named, ctx) {
+      final fps = ((named['fps'] ?? (pos.isNotEmpty ? pos[0] : 60)) as num)
+          .toInt()
+          .clamp(1, 120);
+      final duration = named['duration'] != null
+          ? _toDouble(named['duration'], ctx.span)
+          : null;
+      final loop = (named['loop'] as bool?) ?? true;
+      var t =
+          (ctx.interactiveInputs['__quds_anim_t'] as num?)?.toDouble() ?? 0.0;
+      final dt =
+          (ctx.interactiveInputs['__quds_anim_dt'] as num?)?.toDouble() ??
+              (1.0 / fps);
+      final frame =
+          (ctx.interactiveInputs['__quds_anim_frame'] as num?)?.toInt() ?? 0;
+      final playing =
+          (ctx.interactiveInputs['__quds_anim_playing'] as bool?) ?? true;
+      if (duration != null && duration > 0) {
+        t = loop ? (t % duration) : t.clamp(0.0, duration);
+      }
+      activeAnimation = QudsAnimationSpec(
+        fps: fps,
+        duration: duration,
+        loop: loop,
+        playing: playing,
+        time: t,
+        dt: dt,
+        frame: frame,
+      );
+      return QudsNamespace('AnimationClock', {
+        't': t,
+        'time': t,
+        'dt': dt,
+        'frame': frame,
+        'fps': fps,
+        'playing': playing,
+      });
+    },
+    signature:
+        'animate(fps: int = 60, duration: double?, loop: bool = true) -> AnimationClock',
+    documentation:
+        'Enables frame-stepped 60fps simulation/animation and returns {t, dt, frame, fps, playing}.',
+  );
+
+  builder.function(
+    'time',
+    (pos, named, ctx) =>
+        (ctx.interactiveInputs['__quds_anim_t'] as num?)?.toDouble() ?? 0.0,
+    signature: 'time() -> double',
+    documentation: 'Returns the current animation clock time in seconds.',
+  );
+
+  builder.function(
+    'dt',
+    (pos, named, ctx) =>
+        (ctx.interactiveInputs['__quds_anim_dt'] as num?)?.toDouble() ??
+        (1.0 / 60.0),
+    signature: 'dt() -> double',
+    documentation: 'Returns the current animation delta time in seconds.',
+  );
+
+  builder.function(
+    'frame',
+    (pos, named, ctx) =>
+        (ctx.interactiveInputs['__quds_anim_frame'] as num?)?.toInt() ?? 0,
+    signature: 'frame() -> int',
+    documentation: 'Returns the current 0-based animation frame index.',
   );
 
   // Interactive 2D geometry scene builder: viz.scene(title: ..., grid: true)
@@ -402,6 +609,36 @@ QudsHostModule buildQudsVizModule({
           );
           return sceneObj;
         }),
+        'trail': QudsNativeFunction('scene.trail', (p, n, c) {
+          final id = '${p[0]}';
+          final rawPts = p[1] as Iterable;
+          final pts = [for (final item in rawPts) _extractPoint(item, c.span)];
+          addPrim(
+            QudsGeoCurve(
+              id: id,
+              points: pts,
+              label: n['label'] as String?,
+              color: (n['color'] as String?) ?? '#38BDF8',
+              strokeWidth: (n['strokeWidth'] as num?)?.toDouble() ?? 1.8,
+            ),
+            c.span,
+          );
+          return sceneObj;
+        }),
+        'intersect': QudsNativeFunction('scene.intersect', (p, n, c) {
+          final a1 = _extractPoint(p[0], c.span);
+          final a2 = _extractPoint(p[1], c.span);
+          final b1 = _extractPoint(p[2], c.span);
+          final b2 = _extractPoint(p[3], c.span);
+          final denom = (a1.$1 - a2.$1) * (b1.$2 - b2.$2) -
+              (a1.$2 - a2.$2) * (b1.$1 - b2.$1);
+          if (denom.abs() < 1e-12) return null;
+          final detA = a1.$1 * a2.$2 - a1.$2 * a2.$1;
+          final detB = b1.$1 * b2.$2 - b1.$2 * b2.$1;
+          final ix = (detA * (b1.$1 - b2.$1) - (a1.$1 - a2.$1) * detB) / denom;
+          final iy = (detA * (b1.$2 - b2.$2) - (a1.$2 - a2.$2) * detB) / denom;
+          return [ix, iy];
+        }),
         'label': QudsNativeFunction('scene.label', (p, n, c) {
           final id = '${p[0]}';
           final pt = _extractPoint(p[1], c.span);
@@ -424,6 +661,7 @@ QudsHostModule buildQudsVizModule({
             primitives: List.unmodifiable(primitives),
             bounds: _computeBounds(primitives),
             interactiveInputs: List.unmodifiable(interactiveRegistry.values),
+            animation: activeAnimation,
             title: title,
             showGrid: showGrid,
             showAxes: showAxes,
@@ -456,6 +694,7 @@ QudsHostModule buildQudsVizModule({
       }
       final out = QudsPlot2DOutput(
         interactiveInputs: List.unmodifiable(interactiveRegistry.values),
+        animation: activeAnimation,
         title: named['title'] as String?,
         xLabel: named['xLabel'] as String?,
         yLabel: named['yLabel'] as String?,
@@ -477,6 +716,298 @@ QudsHostModule buildQudsVizModule({
     signature:
         'plot(xs: List<num>, ys: List<num>, title: String?, xLabel: String?, yLabel: String?, kind: String = "line", color: String?)',
     documentation: 'Emits a structured 2D plot (line, scatter, bar, or area).',
+  );
+
+  // 3D Surface plot: viz.surface3d(fn_or_grid, xMin: -3, xMax: 3, yMin: -3, yMax: 3, steps: 20)
+  builder.function(
+    'surface3d',
+    (pos, named, ctx) async {
+      checkOutputQuota(ctx.span);
+      final source = pos[0];
+      final xMin = _toDouble(named['xMin'] ?? -3.0, ctx.span);
+      final xMax = _toDouble(named['xMax'] ?? 3.0, ctx.span);
+      final yMin = _toDouble(named['yMin'] ?? -3.0, ctx.span);
+      final yMax = _toDouble(named['yMax'] ?? 3.0, ctx.span);
+      final colorMap = (named['colorMap'] as String?) ?? 'viridis';
+      final wireframe = (named['wireframe'] as bool?) ?? true;
+      final yaw = _toDouble(named['yaw'] ?? 0.68, ctx.span);
+      final pitch = _toDouble(named['pitch'] ?? 0.54, ctx.span);
+      final title = named['title'] as String?;
+
+      late List<double> xs;
+      late List<double> ys;
+      late List<List<double>> zs;
+
+      if (source is QudsCallable) {
+        final steps = ((named['steps'] ?? 18) as num).toInt().clamp(2, 60);
+        if (maxPrimitives != null &&
+            (steps + 1) * (steps + 1) > maxPrimitives) {
+          throw QudsPolicyViolationException(
+            QudsPolicyViolationKind.primitiveLimit,
+            '3D surface resolution exceeded maximum primitive limit ($maxPrimitives).',
+            ctx.span,
+          );
+        }
+        xs = [
+          for (var i = 0; i <= steps; i++) xMin + (xMax - xMin) * (i / steps)
+        ];
+        ys = [
+          for (var j = 0; j <= steps; j++) yMin + (yMax - yMin) * (j / steps)
+        ];
+        zs = <List<double>>[];
+        for (final y in ys) {
+          final row = <double>[];
+          for (final x in xs) {
+            final res = await ctx.invokeCallable(source, [x, y], {}, ctx.span);
+            row.add(_toDouble(res, ctx.span));
+          }
+          zs.add(row);
+        }
+      } else if (source is Iterable) {
+        zs = [for (final row in source) _toDoubleList(row, ctx.span)];
+        final rows = zs.length;
+        final cols = rows == 0 ? 0 : zs.first.length;
+        xs = [
+          for (var i = 0; i < cols; i++)
+            cols <= 1 ? xMin : xMin + (xMax - xMin) * (i / (cols - 1))
+        ];
+        ys = [
+          for (var j = 0; j < rows; j++)
+            rows <= 1 ? yMin : yMin + (yMax - yMin) * (j / (rows - 1))
+        ];
+      } else {
+        throw QudsRuntimeException(
+          'viz.surface3d expects a function (x, y) -> num or a 2D numeric grid.',
+          ctx.span,
+        );
+      }
+
+      final out = QudsSurface3DOutput(
+        xs: xs,
+        ys: ys,
+        zs: zs,
+        title: title,
+        colorMap: colorMap,
+        wireframe: wireframe,
+        yaw: yaw,
+        pitch: pitch,
+        interactiveInputs: List.unmodifiable(interactiveRegistry.values),
+        animation: activeAnimation,
+      );
+      ctx.emitOutput(out);
+      return out;
+    },
+    signature:
+        'surface3d(fnOrGrid, xMin: double = -3.0, xMax: double = 3.0, yMin: double = -3.0, yMax: double = 3.0, steps: int = 18, title: String?, colorMap: String = "viridis", wireframe: bool = true)',
+    documentation:
+        'Emits an interactive 3D surface mesh z = f(x, y) supporting touch/mouse rotation and SVG export.',
+  );
+
+  // 2D Vector / Slope Field: viz.vectorField(fn, xMin: -4, xMax: 4, yMin: -4, yMax: 4, steps: 11)
+  builder.function(
+    'vectorField',
+    (pos, named, ctx) async {
+      checkOutputQuota(ctx.span);
+      final fn = pos[0];
+      if (fn is! QudsCallable) {
+        throw QudsRuntimeException(
+          'viz.vectorField expects a callable (x, y) -> [vx, vy].',
+          ctx.span,
+        );
+      }
+      final xMin = _toDouble(named['xMin'] ?? -4.0, ctx.span);
+      final xMax = _toDouble(named['xMax'] ?? 4.0, ctx.span);
+      final yMin = _toDouble(named['yMin'] ?? -4.0, ctx.span);
+      final yMax = _toDouble(named['yMax'] ?? 4.0, ctx.span);
+      final steps = ((named['steps'] ?? 11) as num).toInt().clamp(2, 40);
+      if (maxPrimitives != null && (steps + 1) * (steps + 1) > maxPrimitives) {
+        throw QudsPolicyViolationException(
+          QudsPolicyViolationKind.primitiveLimit,
+          'Vector field arrow count exceeded maximum primitive limit ($maxPrimitives).',
+          ctx.span,
+        );
+      }
+      final arrows = <QudsVectorFieldArrow>[];
+      for (var j = 0; j <= steps; j++) {
+        final y = yMin + (yMax - yMin) * (j / steps);
+        for (var i = 0; i <= steps; i++) {
+          final x = xMin + (xMax - xMin) * (i / steps);
+          final res = await ctx.invokeCallable(fn, [x, y], {}, ctx.span);
+          final vec = _extractPoint(res, ctx.span);
+          arrows.add(QudsVectorFieldArrow(x: x, y: y, vx: vec.$1, vy: vec.$2));
+        }
+      }
+      final out = QudsVectorFieldOutput(
+        arrows: arrows,
+        bounds: QudsGeoBounds(minX: xMin, maxX: xMax, minY: yMin, maxY: yMax),
+        title: named['title'] as String?,
+        color: (named['color'] as String?) ?? '#38BDF8',
+        interactiveInputs: List.unmodifiable(interactiveRegistry.values),
+        animation: activeAnimation,
+      );
+      ctx.emitOutput(out);
+      return out;
+    },
+    signature:
+        'vectorField(fn, xMin: double = -4.0, xMax: double = 4.0, yMin: double = -4.0, yMax: double = 4.0, steps: int = 11, title: String?)',
+    documentation:
+        'Evaluates a 2D vector/slope field (x, y) -> [vx, vy] and emits an interactive vector field.',
+  );
+
+  // Interactive Graph / Network builder: viz.graph(title: ..., directed: false)
+  builder.function(
+    'graph',
+    (pos, named, ctx) {
+      final title =
+          (named['title'] as String?) ?? (pos.isNotEmpty ? '${pos[0]}' : null);
+      final directed = (named['directed'] as bool?) ?? false;
+      final nodes = <QudsGraphNode>[];
+      final edges = <QudsGraphEdge>[];
+
+      late QudsNamespace graphObj;
+      graphObj = QudsNamespace('QudsGraph', {
+        'node': QudsNativeFunction('graph.node', (p, n, c) {
+          final id = '${p[0]}';
+          final x = p.length > 1 ? _toDouble(p[1], c.span) : 0.0;
+          final y = p.length > 2 ? _toDouble(p[2], c.span) : 0.0;
+          nodes.removeWhere((existing) => existing.id == id);
+          nodes.add(QudsGraphNode(
+            id: id,
+            x: x,
+            y: y,
+            label: (n['label'] as String?) ?? id,
+            color: (n['color'] as String?) ?? '#2563EB',
+            highlighted: (n['highlighted'] as bool?) ?? false,
+          ));
+          return graphObj;
+        }),
+        'circleLayout': QudsNativeFunction('graph.circleLayout', (p, n, c) {
+          final ids = [for (final item in (p[0] as Iterable)) '$item'];
+          final radius = _toDouble(n['radius'] ?? 4.0, c.span);
+          final color = (n['color'] as String?) ?? '#2563EB';
+          final count = ids.length;
+          for (var i = 0; i < count; i++) {
+            final angle = (2 * math.pi * i) / math.max(count, 1) - math.pi / 2;
+            final id = ids[i];
+            nodes.removeWhere((existing) => existing.id == id);
+            nodes.add(QudsGraphNode(
+              id: id,
+              x: radius * math.cos(angle),
+              y: radius * math.sin(angle),
+              label: id,
+              color: color,
+            ));
+          }
+          return graphObj;
+        }),
+        'edge': QudsNativeFunction('graph.edge', (p, n, c) {
+          final from = '${p[0]}';
+          final to = '${p[1]}';
+          final weight = n['weight'] != null
+              ? _toDouble(n['weight'], c.span)
+              : (p.length > 2 ? _toDouble(p[2], c.span) : null);
+          edges.add(QudsGraphEdge(
+            from: from,
+            to: to,
+            weight: weight,
+            directed: (n['directed'] as bool?) ?? directed,
+            color: (n['color'] as String?) ?? '#64748B',
+            highlighted: (n['highlighted'] as bool?) ?? false,
+          ));
+          return graphObj;
+        }),
+        'highlightPath': QudsNativeFunction('graph.highlightPath', (p, n, c) {
+          final path = [for (final item in (p[0] as Iterable)) '$item'];
+          final pathSet = path.toSet();
+          for (var i = 0; i < nodes.length; i++) {
+            if (pathSet.contains(nodes[i].id)) {
+              final cur = nodes[i];
+              nodes[i] = QudsGraphNode(
+                id: cur.id,
+                x: cur.x,
+                y: cur.y,
+                label: cur.label,
+                color: cur.color,
+                highlighted: true,
+              );
+            }
+          }
+          final edgePairs = <(String, String)>{};
+          for (var i = 0; i + 1 < path.length; i++) {
+            edgePairs.add((path[i], path[i + 1]));
+            if (!directed) edgePairs.add((path[i + 1], path[i]));
+          }
+          for (var i = 0; i < edges.length; i++) {
+            final cur = edges[i];
+            if (edgePairs.contains((cur.from, cur.to))) {
+              edges[i] = QudsGraphEdge(
+                from: cur.from,
+                to: cur.to,
+                weight: cur.weight,
+                directed: cur.directed,
+                color: cur.color,
+                highlighted: true,
+              );
+            }
+          }
+          return graphObj;
+        }),
+        'render': QudsNativeFunction('graph.render', (p, n, c) {
+          checkOutputQuota(c.span);
+          final out = QudsGraphOutput(
+            nodes: List.unmodifiable(nodes),
+            edges: List.unmodifiable(edges),
+            directed: directed,
+            title: title,
+            interactiveInputs: List.unmodifiable(interactiveRegistry.values),
+            animation: activeAnimation,
+          );
+          c.emitOutput(out);
+          return out;
+        }),
+      });
+      return graphObj;
+    },
+    signature: 'graph(title: String?, directed: bool = false)',
+    documentation:
+        'Creates an interactive graph/network builder with circleLayout, node, edge, highlightPath, and render.',
+  );
+
+  // Micro-App Form output card: viz.form(entries, title: ..., summary: ...)
+  builder.function(
+    'form',
+    (pos, named, ctx) {
+      checkOutputQuota(ctx.span);
+      final entries = <String, Object?>{};
+      if (pos.isNotEmpty) {
+        final raw = pos[0];
+        if (raw is Map) {
+          for (final e in raw.entries) {
+            entries['${e.key}'] = e.value;
+          }
+        } else if (raw is Iterable) {
+          for (final item in raw) {
+            if (item is List && item.length >= 2) {
+              entries['${item[0]}'] = item[1];
+            } else if (item is QudsRecord && item.positional.length >= 2) {
+              entries['${item.positional[0]}'] = item.positional[1];
+            }
+          }
+        }
+      }
+      final out = QudsFormOutput(
+        entries: entries,
+        title: named['title'] as String?,
+        summary: named['summary'] as String?,
+        interactiveInputs: List.unmodifiable(interactiveRegistry.values),
+      );
+      ctx.emitOutput(out);
+      return out;
+    },
+    signature:
+        'form(entries: Map<String, Object?>, title: String?, summary: String?)',
+    documentation:
+        'Emits an interactive Micro-App form card displaying declared controls and live computed results.',
   );
 
   // Structured table: viz.table(["x", "y"], [[1, 2], [3, 4]], title: ...)

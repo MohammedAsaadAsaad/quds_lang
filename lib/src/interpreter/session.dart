@@ -77,6 +77,65 @@ class QudsRunResult {
     }
     return null;
   }
+
+  /// Convenience getter for the last emitted [QudsSurface3DOutput], if any.
+  QudsSurface3DOutput? get lastSurface3D {
+    for (var i = outputs.length - 1; i >= 0; i--) {
+      final out = outputs[i];
+      if (out is QudsSurface3DOutput) return out;
+    }
+    return null;
+  }
+
+  /// Convenience getter for the last emitted [QudsVectorFieldOutput], if any.
+  QudsVectorFieldOutput? get lastVectorField {
+    for (var i = outputs.length - 1; i >= 0; i--) {
+      final out = outputs[i];
+      if (out is QudsVectorFieldOutput) return out;
+    }
+    return null;
+  }
+
+  /// Convenience getter for the last emitted [QudsGraphOutput], if any.
+  QudsGraphOutput? get lastGraph {
+    for (var i = outputs.length - 1; i >= 0; i--) {
+      final out = outputs[i];
+      if (out is QudsGraphOutput) return out;
+    }
+    return null;
+  }
+
+  /// Convenience getter for the last emitted [QudsFormOutput], if any.
+  QudsFormOutput? get lastForm {
+    for (var i = outputs.length - 1; i >= 0; i--) {
+      final out = outputs[i];
+      if (out is QudsFormOutput) return out;
+    }
+    return null;
+  }
+
+  /// Active animation specification attached to any output in this run, if any.
+  QudsAnimationSpec? get animationSpec {
+    for (var i = outputs.length - 1; i >= 0; i--) {
+      final out = outputs[i];
+      if (out is QudsGeometrySceneOutput && out.animation != null) {
+        return out.animation;
+      }
+      if (out is QudsPlot2DOutput && out.animation != null) {
+        return out.animation;
+      }
+      if (out is QudsSurface3DOutput && out.animation != null) {
+        return out.animation;
+      }
+      if (out is QudsVectorFieldOutput && out.animation != null) {
+        return out.animation;
+      }
+      if (out is QudsGraphOutput && out.animation != null) {
+        return out.animation;
+      }
+    }
+    return null;
+  }
 }
 
 /// Persistent interactive workspace for interpreting Quds code, similar to
@@ -521,6 +580,43 @@ class QudsSession {
       resetVizQuota: true,
     );
   }
+
+  /// Advances the animation clock by [dt] seconds and re-executes the active
+  /// interactive script for frame-stepped 60fps physics/visual simulations.
+  Future<QudsRunResult> stepFrame(
+    double dt, {
+    double? time,
+    int? frame,
+    String? source,
+    String? file,
+  }) {
+    final prevT =
+        (_interactiveInputs['__quds_anim_t'] as num?)?.toDouble() ?? 0.0;
+    final prevFrame =
+        (_interactiveInputs['__quds_anim_frame'] as num?)?.toInt() ?? 0;
+    final nextT = time ?? (prevT + dt);
+    final nextFrame = frame ?? (prevFrame + 1);
+    return updateInteractiveInputs(
+      {
+        '__quds_anim_t': nextT,
+        '__quds_anim_dt': dt,
+        '__quds_anim_frame': nextFrame,
+      },
+      source: source,
+      file: file,
+    );
+  }
+
+  /// Resets the animation clock back to `t = 0.0`, `frame = 0`.
+  void resetAnimation() {
+    _interactiveInputs['__quds_anim_t'] = 0.0;
+    _interactiveInputs['__quds_anim_dt'] = 1.0 / 60.0;
+    _interactiveInputs['__quds_anim_frame'] = 0;
+  }
+
+  /// Resolves an [ImportDeclaration] into [env] using this session's module loader.
+  Future<void> resolveImportInto(ImportDeclaration decl, QudsEnvironment env) =>
+      _handleImport(decl, env);
 
   /// Evaluates a single Quds expression string inside this session's workspace.
   Future<Object?> evaluateExpression(String source,

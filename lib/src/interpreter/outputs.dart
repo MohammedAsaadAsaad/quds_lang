@@ -113,6 +113,7 @@ class QudsPlot2DOutput extends QudsOutput {
   const QudsPlot2DOutput({
     required this.series,
     this.interactiveInputs = const [],
+    this.animation,
     this.title,
     this.xLabel,
     this.yLabel,
@@ -122,6 +123,7 @@ class QudsPlot2DOutput extends QudsOutput {
 
   final List<QudsPlotSeries> series;
   final List<QudsInteractiveInput> interactiveInputs;
+  final QudsAnimationSpec? animation;
   final String? title;
   final String? xLabel;
   final String? yLabel;
@@ -139,6 +141,7 @@ class QudsPlot2DOutput extends QudsOutput {
         if (yLabel != null) 'yLabel': yLabel,
         'showGrid': showGrid,
         'showLegend': showLegend,
+        if (animation != null) 'animation': animation!.toJson(),
         'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
         'series': [for (final s in series) s.toJson()],
       };
@@ -781,6 +784,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
     required this.primitives,
     required this.bounds,
     this.interactiveInputs = const [],
+    this.animation,
     this.title,
     this.showGrid = true,
     this.showAxes = true,
@@ -790,6 +794,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
   final List<QudsGeoPrimitive> primitives;
   final QudsGeoBounds bounds;
   final List<QudsInteractiveInput> interactiveInputs;
+  final QudsAnimationSpec? animation;
   final String? title;
   final bool showGrid;
   final bool showAxes;
@@ -820,6 +825,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
         'showAxes': showAxes,
         'interactive': interactive,
         'bounds': bounds.toJson(),
+        if (animation != null) 'animation': animation!.toJson(),
         'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
         'primitives': [for (final p in primitives) p.toJson()],
       };
@@ -832,6 +838,10 @@ class QudsGeometrySceneOutput extends QudsOutput {
         interactive: (json['interactive'] as bool?) ?? true,
         bounds: QudsGeoBounds.fromJson(
             (json['bounds'] as Map).cast<String, Object?>()),
+        animation: json['animation'] is Map
+            ? QudsAnimationSpec.fromJson(
+                (json['animation'] as Map).cast<String, Object?>())
+            : null,
         interactiveInputs: [
           for (final raw in (json['interactiveInputs'] as List? ?? const []))
             QudsInteractiveInput.fromJson((raw as Map).cast<String, Object?>()),
@@ -945,6 +955,588 @@ class QudsGeometrySceneOutput extends QudsOutput {
     buf.writeln('</svg>');
     return buf.toString();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Animation Loop, 3D Surface, Vector Field, Graph & Micro-App Form Outputs
+// ---------------------------------------------------------------------------
+
+/// Metadata declaring a live frame-stepped animation/simulation loop
+/// (driven by `QudsSession.stepFrame(dt)` in any Flutter/Web/CLI host).
+class QudsAnimationSpec {
+  const QudsAnimationSpec({
+    this.fps = 60,
+    this.duration,
+    this.loop = true,
+    this.playing = true,
+    this.time = 0.0,
+    this.dt = 1.0 / 60.0,
+    this.frame = 0,
+  });
+
+  final int fps;
+  final double? duration;
+  final bool loop;
+  final bool playing;
+  final double time;
+  final double dt;
+  final int frame;
+
+  Map<String, Object?> toJson() => {
+        'fps': fps,
+        if (duration != null) 'duration': duration,
+        'loop': loop,
+        'playing': playing,
+        'time': time,
+        'dt': dt,
+        'frame': frame,
+      };
+
+  static QudsAnimationSpec fromJson(Map<String, Object?> json) =>
+      QudsAnimationSpec(
+        fps: (json['fps'] as num?)?.toInt() ?? 60,
+        duration: (json['duration'] as num?)?.toDouble(),
+        loop: (json['loop'] as bool?) ?? true,
+        playing: (json['playing'] as bool?) ?? true,
+        time: (json['time'] as num?)?.toDouble() ?? 0.0,
+        dt: (json['dt'] as num?)?.toDouble() ?? (1.0 / 60.0),
+        frame: (json['frame'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// 3D surface grid output `z = f(x, y)` with camera angles, colormap, and SVG export.
+class QudsSurface3DOutput extends QudsOutput {
+  const QudsSurface3DOutput({
+    required this.xs,
+    required this.ys,
+    required this.zs,
+    this.title,
+    this.colorMap = 'viridis',
+    this.wireframe = true,
+    this.yaw = 0.68,
+    this.pitch = 0.54,
+    this.interactiveInputs = const [],
+    this.animation,
+  });
+
+  final List<double> xs;
+  final List<double> ys;
+  final List<List<double>> zs;
+  final String? title;
+  final String colorMap;
+  final bool wireframe;
+  final double yaw;
+  final double pitch;
+  final List<QudsInteractiveInput> interactiveInputs;
+  final QudsAnimationSpec? animation;
+
+  @override
+  String get kind => 'surface3d';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': kind,
+        if (title != null) 'title': title,
+        'colorMap': colorMap,
+        'wireframe': wireframe,
+        'yaw': yaw,
+        'pitch': pitch,
+        'xs': xs,
+        'ys': ys,
+        'zs': zs,
+        if (animation != null) 'animation': animation!.toJson(),
+        'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
+      };
+
+  static QudsSurface3DOutput fromJson(Map<String, Object?> json) =>
+      QudsSurface3DOutput(
+        title: json['title'] as String?,
+        colorMap: (json['colorMap'] as String?) ?? 'viridis',
+        wireframe: (json['wireframe'] as bool?) ?? true,
+        yaw: (json['yaw'] as num?)?.toDouble() ?? 0.68,
+        pitch: (json['pitch'] as num?)?.toDouble() ?? 0.54,
+        xs: [for (final v in (json['xs'] as List)) (v as num).toDouble()],
+        ys: [for (final v in (json['ys'] as List)) (v as num).toDouble()],
+        zs: [
+          for (final row in (json['zs'] as List))
+            [for (final v in (row as List)) (v as num).toDouble()]
+        ],
+        animation: json['animation'] is Map
+            ? QudsAnimationSpec.fromJson(
+                (json['animation'] as Map).cast<String, Object?>())
+            : null,
+        interactiveInputs: [
+          for (final raw in (json['interactiveInputs'] as List? ?? const []))
+            QudsInteractiveInput.fromJson((raw as Map).cast<String, Object?>()),
+        ],
+      );
+
+  /// Renders a clean isometric-projected 3D surface mesh as standalone SVG.
+  String toSvg({int width = 640, int height = 420}) {
+    final rows = zs.length;
+    final cols = rows == 0 ? 0 : zs.first.length;
+    final buf = StringBuffer()
+      ..writeln(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="$width" height="$height" viewBox="0 0 $width $height">')
+      ..writeln('<rect width="100%" height="100%" fill="#0F172A"/>');
+    if (title != null && title!.isNotEmpty) {
+      buf.writeln(
+          '<text x="${width / 2}" y="24" text-anchor="middle" fill="#F8FAFC" font-family="sans-serif" font-size="14" font-weight="600">${_esc(title!)}</text>');
+    }
+    if (rows < 2 || cols < 2) {
+      buf.writeln('</svg>');
+      return buf.toString();
+    }
+
+    var minZ = double.infinity;
+    var maxZ = double.negativeInfinity;
+    for (final row in zs) {
+      for (final z in row) {
+        if (z.isFinite) {
+          if (z < minZ) minZ = z;
+          if (z > maxZ) maxZ = z;
+        }
+      }
+    }
+    if (!minZ.isFinite || (maxZ - minZ).abs() < 1e-12) {
+      minZ = -1;
+      maxZ = 1;
+    }
+
+    final minX = xs.first;
+    final maxX = xs.last == minX ? minX + 1 : xs.last;
+    final minY = ys.first;
+    final maxY = ys.last == minY ? minY + 1 : ys.last;
+    final cosY = math.cos(yaw);
+    final sinY = math.sin(yaw);
+    final cosP = math.cos(pitch);
+    final sinP = math.sin(pitch);
+    final scale = math.min(width, height) * 0.32;
+
+    (double, double, double) project(int r, int c) {
+      final nx = ((xs[c] - minX) / (maxX - minX)) * 2 - 1;
+      final ny = ((ys[r] - minY) / (maxY - minY)) * 2 - 1;
+      final nz = ((zs[r][c] - minZ) / (maxZ - minZ)) * 1.4 - 0.7;
+      final rx = nx * cosY - ny * sinY;
+      final ry = nx * sinY + ny * cosY;
+      final py = ry * cosP - nz * sinP;
+      final pz = ry * sinP + nz * cosP;
+      return (width * 0.5 + rx * scale, height * 0.55 - py * scale, pz);
+    }
+
+    final quads = <(double depth, String pts, double normZ)>[];
+    for (var r = 0; r < rows - 1; r++) {
+      for (var c = 0; c < cols - 1; c++) {
+        final p0 = project(r, c);
+        final p1 = project(r, c + 1);
+        final p2 = project(r + 1, c + 1);
+        final p3 = project(r + 1, c);
+        final depth = (p0.$3 + p1.$3 + p2.$3 + p3.$3) / 4;
+        final avgZ =
+            (zs[r][c] + zs[r][c + 1] + zs[r + 1][c + 1] + zs[r + 1][c]) / 4;
+        final t = ((avgZ - minZ) / (maxZ - minZ)).clamp(0.0, 1.0);
+        final pts = '${p0.$1.toStringAsFixed(1)},${p0.$2.toStringAsFixed(1)} '
+            '${p1.$1.toStringAsFixed(1)},${p1.$2.toStringAsFixed(1)} '
+            '${p2.$1.toStringAsFixed(1)},${p2.$2.toStringAsFixed(1)} '
+            '${p3.$1.toStringAsFixed(1)},${p3.$2.toStringAsFixed(1)}';
+        quads.add((depth, pts, t));
+      }
+    }
+    quads.sort((a, b) => a.$1.compareTo(b.$1));
+    for (final q in quads) {
+      final fill = _colorMapHex(colorMap, q.$3);
+      final stroke = wireframe ? '#0F172A' : fill;
+      buf.writeln(
+          '<polygon points="${q.$2}" fill="$fill" fill-opacity="0.88" stroke="$stroke" stroke-width="0.7"/>');
+    }
+    buf.writeln('</svg>');
+    return buf.toString();
+  }
+}
+
+/// One vector arrow inside a [QudsVectorFieldOutput].
+class QudsVectorFieldArrow {
+  const QudsVectorFieldArrow({
+    required this.x,
+    required this.y,
+    required this.vx,
+    required this.vy,
+  });
+
+  final double x;
+  final double y;
+  final double vx;
+  final double vy;
+
+  double get magnitude => math.sqrt(vx * vx + vy * vy);
+
+  Map<String, Object?> toJson() => {'x': x, 'y': y, 'vx': vx, 'vy': vy};
+
+  static QudsVectorFieldArrow fromJson(Map<String, Object?> json) =>
+      QudsVectorFieldArrow(
+        x: (json['x'] as num).toDouble(),
+        y: (json['y'] as num).toDouble(),
+        vx: (json['vx'] as num).toDouble(),
+        vy: (json['vy'] as num).toDouble(),
+      );
+}
+
+/// 2D Vector / Slope field visualization output (`dx/dt, dy/dt`).
+class QudsVectorFieldOutput extends QudsOutput {
+  const QudsVectorFieldOutput({
+    required this.arrows,
+    required this.bounds,
+    this.title,
+    this.color = '#38BDF8',
+    this.interactiveInputs = const [],
+    this.animation,
+  });
+
+  final List<QudsVectorFieldArrow> arrows;
+  final QudsGeoBounds bounds;
+  final String? title;
+  final String color;
+  final List<QudsInteractiveInput> interactiveInputs;
+  final QudsAnimationSpec? animation;
+
+  @override
+  String get kind => 'vector_field';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': kind,
+        if (title != null) 'title': title,
+        'color': color,
+        'bounds': bounds.toJson(),
+        'arrows': [for (final a in arrows) a.toJson()],
+        if (animation != null) 'animation': animation!.toJson(),
+        'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
+      };
+
+  static QudsVectorFieldOutput fromJson(Map<String, Object?> json) =>
+      QudsVectorFieldOutput(
+        title: json['title'] as String?,
+        color: (json['color'] as String?) ?? '#38BDF8',
+        bounds: QudsGeoBounds.fromJson(
+            (json['bounds'] as Map).cast<String, Object?>()),
+        arrows: [
+          for (final a in (json['arrows'] as List? ?? const []))
+            QudsVectorFieldArrow.fromJson((a as Map).cast<String, Object?>()),
+        ],
+        animation: json['animation'] is Map
+            ? QudsAnimationSpec.fromJson(
+                (json['animation'] as Map).cast<String, Object?>())
+            : null,
+        interactiveInputs: [
+          for (final raw in (json['interactiveInputs'] as List? ?? const []))
+            QudsInteractiveInput.fromJson((raw as Map).cast<String, Object?>()),
+        ],
+      );
+
+  /// Renders the 2D vector field as a clean standalone SVG.
+  String toSvg({int width = 640, int height = 400}) {
+    const pad = 42.0;
+    final viewW = width - pad * 2;
+    final viewH = height - pad * 2;
+    double sx(double x) =>
+        pad + ((x - bounds.minX) / math.max(bounds.width, 1e-6)) * viewW;
+    double sy(double y) =>
+        pad +
+        viewH -
+        ((y - bounds.minY) / math.max(bounds.height, 1e-6)) * viewH;
+
+    var maxMag = 0.0;
+    for (final a in arrows) {
+      if (a.magnitude > maxMag) maxMag = a.magnitude;
+    }
+    if (maxMag < 1e-12) maxMag = 1.0;
+
+    final buf = StringBuffer()
+      ..writeln(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="$width" height="$height" viewBox="0 0 $width $height">')
+      ..writeln('<rect width="100%" height="100%" fill="#0F172A"/>');
+    if (title != null && title!.isNotEmpty) {
+      buf.writeln(
+          '<text x="${width / 2}" y="22" text-anchor="middle" fill="#F8FAFC" font-family="sans-serif" font-size="14" font-weight="600">${_esc(title!)}</text>');
+    }
+    final stepPx =
+        math.min(viewW, viewH) / math.max(math.sqrt(arrows.length), 4) * 0.72;
+    for (final a in arrows) {
+      final mag = a.magnitude;
+      if (mag < 1e-12) continue;
+      final t = (mag / maxMag).clamp(0.0, 1.0);
+      final len = stepPx * (0.35 + 0.65 * t);
+      final ux = a.vx / mag;
+      final uy = a.vy / mag;
+      final x1 = sx(a.x);
+      final y1 = sy(a.y);
+      final x2 = x1 + ux * len;
+      final y2 = y1 - uy * len;
+      final col = _colorMapHex('viridis', t);
+      buf.writeln(
+          '<line x1="${x1.toStringAsFixed(1)}" y1="${y1.toStringAsFixed(1)}" x2="${x2.toStringAsFixed(1)}" y2="${y2.toStringAsFixed(1)}" stroke="$col" stroke-width="1.6"/>');
+      buf.writeln(
+          '<circle cx="${x2.toStringAsFixed(1)}" cy="${y2.toStringAsFixed(1)}" r="2" fill="$col"/>');
+    }
+    buf.writeln('</svg>');
+    return buf.toString();
+  }
+}
+
+/// One node inside an interactive [QudsGraphOutput].
+class QudsGraphNode {
+  const QudsGraphNode({
+    required this.id,
+    required this.x,
+    required this.y,
+    this.label,
+    this.color = '#2563EB',
+    this.highlighted = false,
+  });
+
+  final String id;
+  final double x;
+  final double y;
+  final String? label;
+  final String color;
+  final bool highlighted;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'x': x,
+        'y': y,
+        if (label != null) 'label': label,
+        'color': color,
+        'highlighted': highlighted,
+      };
+
+  static QudsGraphNode fromJson(Map<String, Object?> json) => QudsGraphNode(
+        id: json['id'] as String,
+        x: (json['x'] as num).toDouble(),
+        y: (json['y'] as num).toDouble(),
+        label: json['label'] as String?,
+        color: (json['color'] as String?) ?? '#2563EB',
+        highlighted: (json['highlighted'] as bool?) ?? false,
+      );
+}
+
+/// One edge inside an interactive [QudsGraphOutput].
+class QudsGraphEdge {
+  const QudsGraphEdge({
+    required this.from,
+    required this.to,
+    this.weight,
+    this.directed = false,
+    this.color = '#64748B',
+    this.highlighted = false,
+  });
+
+  final String from;
+  final String to;
+  final double? weight;
+  final bool directed;
+  final String color;
+  final bool highlighted;
+
+  Map<String, Object?> toJson() => {
+        'from': from,
+        'to': to,
+        if (weight != null) 'weight': weight,
+        'directed': directed,
+        'color': color,
+        'highlighted': highlighted,
+      };
+
+  static QudsGraphEdge fromJson(Map<String, Object?> json) => QudsGraphEdge(
+        from: json['from'] as String,
+        to: json['to'] as String,
+        weight: (json['weight'] as num?)?.toDouble(),
+        directed: (json['directed'] as bool?) ?? false,
+        color: (json['color'] as String?) ?? '#64748B',
+        highlighted: (json['highlighted'] as bool?) ?? false,
+      );
+}
+
+/// Interactive network / graph visualization output (e.g. shortest paths, MST,
+/// dependency graphs) with SVG export.
+class QudsGraphOutput extends QudsOutput {
+  const QudsGraphOutput({
+    required this.nodes,
+    required this.edges,
+    this.directed = false,
+    this.title,
+    this.interactiveInputs = const [],
+    this.animation,
+  });
+
+  final List<QudsGraphNode> nodes;
+  final List<QudsGraphEdge> edges;
+  final bool directed;
+  final String? title;
+  final List<QudsInteractiveInput> interactiveInputs;
+  final QudsAnimationSpec? animation;
+
+  @override
+  String get kind => 'graph';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': kind,
+        if (title != null) 'title': title,
+        'directed': directed,
+        'nodes': [for (final n in nodes) n.toJson()],
+        'edges': [for (final e in edges) e.toJson()],
+        if (animation != null) 'animation': animation!.toJson(),
+        'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
+      };
+
+  static QudsGraphOutput fromJson(Map<String, Object?> json) => QudsGraphOutput(
+        title: json['title'] as String?,
+        directed: (json['directed'] as bool?) ?? false,
+        nodes: [
+          for (final n in (json['nodes'] as List? ?? const []))
+            QudsGraphNode.fromJson((n as Map).cast<String, Object?>()),
+        ],
+        edges: [
+          for (final e in (json['edges'] as List? ?? const []))
+            QudsGraphEdge.fromJson((e as Map).cast<String, Object?>()),
+        ],
+        animation: json['animation'] is Map
+            ? QudsAnimationSpec.fromJson(
+                (json['animation'] as Map).cast<String, Object?>())
+            : null,
+        interactiveInputs: [
+          for (final raw in (json['interactiveInputs'] as List? ?? const []))
+            QudsInteractiveInput.fromJson((raw as Map).cast<String, Object?>()),
+        ],
+      );
+
+  /// Renders this graph as a clean standalone SVG.
+  String toSvg({int width = 640, int height = 400}) {
+    final buf = StringBuffer()
+      ..writeln(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="$width" height="$height" viewBox="0 0 $width $height">')
+      ..writeln('<rect width="100%" height="100%" fill="#0F172A"/>');
+    if (title != null && title!.isNotEmpty) {
+      buf.writeln(
+          '<text x="${width / 2}" y="22" text-anchor="middle" fill="#F8FAFC" font-family="sans-serif" font-size="14" font-weight="600">${_esc(title!)}</text>');
+    }
+    if (nodes.isEmpty) {
+      buf.writeln('</svg>');
+      return buf.toString();
+    }
+    var minX = double.infinity, maxX = double.negativeInfinity;
+    var minY = double.infinity, maxY = double.negativeInfinity;
+    for (final n in nodes) {
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    }
+    if ((maxX - minX).abs() < 1e-6) {
+      minX -= 1;
+      maxX += 1;
+    }
+    if ((maxY - minY).abs() < 1e-6) {
+      minY -= 1;
+      maxY += 1;
+    }
+    const pad = 56.0;
+    final scale = math.min(
+        (width - pad * 2) / (maxX - minX), (height - pad * 2) / (maxY - minY));
+    final midX = (minX + maxX) / 2;
+    final midY = (minY + maxY) / 2;
+    double sx(double x) => width / 2 + (x - midX) * scale;
+    double sy(double y) => height / 2 - (y - midY) * scale;
+
+    final byId = {for (final n in nodes) n.id: n};
+    for (final e in edges) {
+      final a = byId[e.from];
+      final b = byId[e.to];
+      if (a == null || b == null) continue;
+      final x1 = sx(a.x), y1 = sy(a.y), x2 = sx(b.x), y2 = sy(b.y);
+      final stroke = e.highlighted ? '#F59E0B' : e.color;
+      final sw = e.highlighted ? 3.2 : 1.6;
+      buf.writeln(
+          '<line x1="${x1.toStringAsFixed(1)}" y1="${y1.toStringAsFixed(1)}" x2="${x2.toStringAsFixed(1)}" y2="${y2.toStringAsFixed(1)}" stroke="${_esc(stroke)}" stroke-width="$sw"/>');
+      if (e.weight != null) {
+        final mx = (x1 + x2) / 2;
+        final my = (y1 + y2) / 2 - 5;
+        buf.writeln(
+            '<text x="${mx.toStringAsFixed(1)}" y="${my.toStringAsFixed(1)}" text-anchor="middle" fill="#CBD5E1" font-family="sans-serif" font-size="11">${e.weight!.toStringAsFixed(e.weight! == e.weight!.roundToDouble() ? 0 : 1)}</text>');
+      }
+    }
+    for (final n in nodes) {
+      final cx = sx(n.x), cy = sy(n.y);
+      final fill = n.highlighted ? '#F59E0B' : n.color;
+      buf.writeln(
+          '<circle cx="${cx.toStringAsFixed(1)}" cy="${cy.toStringAsFixed(1)}" r="15" fill="${_esc(fill)}" stroke="#FFFFFF" stroke-width="${n.highlighted ? 2.5 : 1.4}"/>');
+      buf.writeln(
+          '<text x="${cx.toStringAsFixed(1)}" y="${(cy + 4).toStringAsFixed(1)}" text-anchor="middle" fill="#FFFFFF" font-family="sans-serif" font-size="11.5" font-weight="700">${_esc(n.label ?? n.id)}</text>');
+    }
+    buf.writeln('</svg>');
+    return buf.toString();
+  }
+}
+
+/// Interactive Micro-App / Form card output pairing declared controls
+/// (`viz.input`, `viz.number`, `viz.select`, `viz.color`, `viz.button`,
+/// `viz.slider`, `viz.toggle`) with live computed key-value outputs.
+class QudsFormOutput extends QudsOutput {
+  const QudsFormOutput({
+    required this.entries,
+    this.interactiveInputs = const [],
+    this.title,
+    this.summary,
+  });
+
+  final Map<String, Object?> entries;
+  final List<QudsInteractiveInput> interactiveInputs;
+  final String? title;
+  final String? summary;
+
+  @override
+  String get kind => 'form';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': kind,
+        if (title != null) 'title': title,
+        if (summary != null) 'summary': summary,
+        'entries': entries,
+        'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
+      };
+
+  static QudsFormOutput fromJson(Map<String, Object?> json) => QudsFormOutput(
+        title: json['title'] as String?,
+        summary: json['summary'] as String?,
+        entries: (json['entries'] as Map? ?? const {}).cast<String, Object?>(),
+        interactiveInputs: [
+          for (final raw in (json['interactiveInputs'] as List? ?? const []))
+            QudsInteractiveInput.fromJson((raw as Map).cast<String, Object?>()),
+        ],
+      );
+}
+
+String _colorMapHex(String mapName, double t) {
+  final v = t.clamp(0.0, 1.0);
+  int r, g, b;
+  if (mapName == 'plasma') {
+    r = (50 + 205 * v).round();
+    g = (20 + 180 * math.sin(v * math.pi * 0.85)).round();
+    b = (165 * (1 - v) + 40).round();
+  } else if (mapName == 'emerald') {
+    r = (16 + 110 * v).round();
+    g = (90 + 150 * v).round();
+    b = (95 + 75 * (1 - v)).round();
+  } else {
+    // viridis-inspired perceptually uniform gradient
+    r = (68 + 185 * math.pow(v, 1.6)).round();
+    g = (30 + 200 * math.pow(v, 0.75)).round();
+    b = (110 + 100 * math.sin(v * math.pi) - 65 * v).round();
+  }
+  String hex(int c) => c.clamp(0, 255).toRadixString(16).padLeft(2, '0');
+  return '#${hex(r)}${hex(g)}${hex(b)}';
 }
 
 String _esc(String raw) => raw

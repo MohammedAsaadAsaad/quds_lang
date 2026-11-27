@@ -26,6 +26,8 @@ export 'src/interpreter/exceptions.dart'
         QudsPolicyViolationKind,
         QudsRuntimeException,
         QudsStackFrame;
+export 'src/interpreter/formula_engine.dart'
+    show QudsFormulaEngine, QudsFormulaValidationResult;
 export 'src/interpreter/host_bridge.dart'
     show QudsHostModule, QudsHostModuleBuilder, QudsHostSymbolDoc;
 export 'src/interpreter/module_loader.dart'
@@ -37,8 +39,16 @@ export 'src/interpreter/module_loader.dart'
         QudsImportResolution,
         QudsImportResolver,
         QudsModuleLoader;
+export 'src/interpreter/notebook.dart'
+    show
+        QudsNotebook,
+        QudsNotebookCell,
+        QudsNotebookCellKind,
+        QudsNotebookRunSummary;
 export 'src/interpreter/outputs.dart'
     show
+        QudsAnimationSpec,
+        QudsFormOutput,
         QudsGeoAngle,
         QudsGeoArc,
         QudsGeoBounds,
@@ -52,13 +62,19 @@ export 'src/interpreter/outputs.dart'
         QudsGeoSegment,
         QudsGeoVector,
         QudsGeometrySceneOutput,
+        QudsGraphEdge,
+        QudsGraphNode,
+        QudsGraphOutput,
         QudsInteractiveInput,
         QudsMatrixOutput,
         QudsOutput,
         QudsPlot2DOutput,
         QudsPlotSeries,
+        QudsSurface3DOutput,
         QudsTableOutput,
-        QudsTextOutput;
+        QudsTextOutput,
+        QudsVectorFieldArrow,
+        QudsVectorFieldOutput;
 export 'src/interpreter/policy.dart'
     show
         QudsCallInterceptEvent,

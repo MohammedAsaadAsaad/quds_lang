@@ -541,7 +541,7 @@ class QudsWorkspaceEntry {
 }
 
 /// Structured events emitted live by `QudsSession` during execution.
-sealed class QudsRuntimeEvent {
+abstract class QudsRuntimeEvent {
   const QudsRuntimeEvent();
 }
 

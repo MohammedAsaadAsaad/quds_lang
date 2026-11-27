@@ -1,5 +1,8 @@
-/// Stateful scientific session (`QudsSession`) and run results for the
-/// embedded Quds interpreter (zero `dart:io` imports).
+/// Stateful scientific session (`QudsSession`) integrating execution policies,
+/// capability-gated host modules, native AST debugging, `quds:viz` interactive
+/// geometry/plotting, and persistent MATLAB-like workspace state.
+///
+/// 100% pure Dart (zero `dart:io` imports).
 library;
 
 import 'dart:async';
@@ -9,11 +12,16 @@ import '../ast.dart';
 import '../lexer.dart';
 import '../parser.dart';
 import 'dart_stdlib_bridge.dart';
+import 'debugger.dart';
 import 'environment.dart';
 import 'evaluator.dart';
 import 'exceptions.dart';
+import 'host_bridge.dart';
 import 'module_loader.dart';
+import 'outputs.dart';
+import 'policy.dart';
 import 'values.dart';
+import 'viz_module.dart';
 
 /// Result returned by executing a Quds script or notebook cell in [QudsSession].
 class QudsRunResult {
@@ -49,85 +57,95 @@ class QudsRunResult {
   /// `QudsRuntimeException`, or `QudsPolicyViolationException`).
   final Object? error;
 
+  /// Joined stdout lines.
   String get stdout => printedLines.join('\n');
+
+  /// Convenience getter for the last emitted [QudsGeometrySceneOutput], if any.
+  QudsGeometrySceneOutput? get lastGeometryScene {
+    for (var i = outputs.length - 1; i >= 0; i--) {
+      final out = outputs[i];
+      if (out is QudsGeometrySceneOutput) return out;
+    }
+    return null;
+  }
+
+  /// Convenience getter for the last emitted [QudsPlot2DOutput], if any.
+  QudsPlot2DOutput? get lastPlot {
+    for (var i = outputs.length - 1; i >= 0; i--) {
+      final out = outputs[i];
+      if (out is QudsPlot2DOutput) return out;
+    }
+    return null;
+  }
 }
 
 /// Persistent interactive workspace for interpreting Quds code, similar to
 /// a MATLAB / Jupyter scientific session.
 class QudsSession {
   QudsSession({
+    QudsExecutionPolicy? policy,
+    this.debugger,
     this.allowTopLevelRebind = false,
-    this.maxSteps,
-    this.timeout,
-    this.maxCallDepth = 256,
-    this.maxCollectionLength,
-    this.maxStringLength,
-    this.maxLoopIterations,
-    this.yieldEveryNSteps = 2000,
-    this.allowMutation = true,
-    this.allowAsync = true,
-    this.allowClasses = true,
-    this.allowExceptions = true,
-    this.allowImports = true,
-    this.allowedLibraries,
-    this.deniedLibraries = const {},
-    this.importResolver,
+    List<QudsHostModule> hostModules = const [],
+    int? maxSteps,
+    Duration? timeout,
+    int? maxCallDepth,
+    int? maxCollectionLength,
+    int? maxStringLength,
+    int? maxLoopIterations,
+    int? yieldEveryNSteps,
+    bool? allowMutation,
+    bool? allowAsync,
+    bool? allowClasses,
+    bool? allowExceptions,
+    bool? allowImports,
+    Set<String>? allowedLibraries,
+    Set<String>? deniedLibraries,
+    QudsImportResolver? importResolver,
     Map<String, Map<String, Object?>> virtualModules = const {},
     ImportHook? onImport,
     StatementHook? onBeforeStatement,
     CallHook? onBeforeCall,
   })  : _onImport = onImport,
         _onBeforeStatement = onBeforeStatement,
-        _onBeforeCall = onBeforeCall {
+        _onBeforeCall = onBeforeCall,
+        policy = (policy ?? const QudsExecutionPolicy()).copyWith(
+          maxSteps: maxSteps,
+          timeout: timeout,
+          maxCallDepth: maxCallDepth,
+          maxCollectionLength: maxCollectionLength,
+          maxStringLength: maxStringLength,
+          maxLoopIterations: maxLoopIterations,
+          yieldEveryNSteps: yieldEveryNSteps,
+          allowMutation: allowMutation,
+          allowAsync: allowAsync,
+          allowClasses: allowClasses,
+          allowExceptions: allowExceptions,
+          allowImports: allowImports,
+          allowedLibraries: allowedLibraries,
+          deniedLibraries: deniedLibraries,
+          importResolver: importResolver,
+        ) {
     _globalEnv = QudsEnvironment(
       isGlobal: true,
       allowTopLevelRebind: allowTopLevelRebind,
     );
     _installCoreBuiltins(_globalEnv);
-    _moduleLoader = QudsModuleLoader(
-      createBaseEnvironment: () {
-        final env = QudsEnvironment(isGlobal: true);
-        _installCoreBuiltins(env, recordAsBuiltins: false);
-        return env;
-      },
-      createModuleEvaluator: (modEnv, impHook) => QudsEvaluator(
-        globalEnv: modEnv,
-        onPrint: (text, span) => _events.add(QudsPrintEvent(text, span: span)),
-        onOutput: (out, span) => _events.add(QudsOutputEvent(out, span: span)),
-        onImport: impHook,
-        maxCallDepth: maxCallDepth,
-        maxCollectionLength: maxCollectionLength,
-        maxStringLength: maxStringLength,
-        yieldEveryNSteps: yieldEveryNSteps,
-        allowMutation: true,
-        allowAsync: allowAsync,
-        allowClasses: true,
-        allowExceptions: true,
-        allowImports: true,
-      ),
-      virtualModules: virtualModules,
-      allowedLibraries: allowedLibraries,
-      deniedLibraries: deniedLibraries,
-      importResolver: importResolver,
-    );
+    _initModuleLoader(virtualModules: virtualModules);
+    for (final mod in hostModules) {
+      registerHostModule(mod);
+    }
   }
 
+  /// Active execution policy governing resource budgets, libraries, and capabilities.
+  final QudsExecutionPolicy policy;
+
+  /// Optional native AST debugger attached to this session.
+  final QudsDebugController? debugger;
+
+  /// Whether top-level immutable bindings may be rebound across separate runs.
   final bool allowTopLevelRebind;
-  final int? maxSteps;
-  final Duration? timeout;
-  final int maxCallDepth;
-  final int? maxCollectionLength;
-  final int? maxStringLength;
-  final int? maxLoopIterations;
-  final int yieldEveryNSteps;
-  final bool allowMutation;
-  final bool allowAsync;
-  final bool allowClasses;
-  final bool allowExceptions;
-  final bool allowImports;
-  final Set<String>? allowedLibraries;
-  final Set<String> deniedLibraries;
-  final QudsImportResolver? importResolver;
+
   final ImportHook? _onImport;
   final StatementHook? _onBeforeStatement;
   final CallHook? _onBeforeCall;
@@ -137,13 +155,25 @@ class QudsSession {
   final StreamController<QudsRuntimeEvent> _events =
       StreamController<QudsRuntimeEvent>.broadcast();
   final Set<String> _builtinNames = {};
+  final Map<String, QudsHostModule> _hostModules = {};
+  final Map<String, Object?> _interactiveInputs = {};
+  String? _lastInteractiveSource;
+  String _lastInteractiveFile = '<session>';
   QudsEvaluator? _activeEvaluator;
 
-  /// Live broadcast stream of print lines, rich outputs, errors, and progress.
+  /// Live broadcast stream of print lines, rich outputs, debug pauses, errors, and progress.
   Stream<QudsRuntimeEvent> get events => _events.stream;
 
-  /// Underlying global environment (for advanced integrations & editor autocomplete).
+  /// Underlying global environment (also read by the embedded editor engine).
   QudsEnvironment get globalEnvironment => _globalEnv;
+
+  /// All registered host modules (including built-in `quds:viz`).
+  List<QudsHostModule> get hostModules =>
+      List.unmodifiable(_hostModules.values);
+
+  /// Current values of interactive controls (draggable points, sliders, toggles).
+  Map<String, Object?> get interactiveInputs =>
+      Map.unmodifiable(_interactiveInputs);
 
   /// Snapshot of user-defined variables in the current workspace (excluding builtins).
   Map<String, QudsWorkspaceEntry> get workspace {
@@ -194,21 +224,35 @@ class QudsSession {
     _builtinNames.add(name);
   }
 
-  /// Registers a virtual host module importable via `use <uri>`.
+  /// Registers a structured [QudsHostModule] importable via `use <mod.uri>`.
+  void registerHostModule(QudsHostModule module) {
+    _hostModules[module.uri] = module;
+    _moduleLoader.registerVirtualModule(module.uri, module.exports);
+  }
+
+  /// Registers raw virtual module symbols importable via `use <uri>`.
   void registerVirtualModule(String uri, Map<String, Object?> symbols) {
     _moduleLoader.registerVirtualModule(uri, symbols);
   }
 
-  /// Clears all user-defined variables and functions, restoring core builtins.
+  /// Clears all user-defined variables and functions, restoring core builtins
+  /// and registered host modules.
   void clear() {
     _globalEnv.clearAll();
     _builtinNames.clear();
+    _interactiveInputs.clear();
+    _lastInteractiveSource = null;
     _moduleLoader.clearSessionCache();
     _installCoreBuiltins(_globalEnv);
+    _installBuiltInVizModule();
+    for (final mod in _hostModules.values) {
+      _moduleLoader.registerVirtualModule(mod.uri, mod.exports);
+    }
   }
 
-  /// Requests immediate stop of any currently running execution.
+  /// Requests immediate cooperative stop of any currently running execution.
   void stop() {
+    debugger?.stop();
     _activeEvaluator?.stop();
   }
 
@@ -216,6 +260,47 @@ class QudsSession {
   Future<void> dispose() async {
     stop();
     await _events.close();
+  }
+
+  void _initModuleLoader({
+    Map<String, Map<String, Object?>> virtualModules = const {},
+  }) {
+    _moduleLoader = QudsModuleLoader(
+      createBaseEnvironment: () {
+        final env = QudsEnvironment(isGlobal: true);
+        _installCoreBuiltins(env, recordAsBuiltins: false);
+        return env;
+      },
+      createModuleEvaluator: (modEnv, impHook) => QudsEvaluator(
+        globalEnv: modEnv,
+        onPrint: (text, span) => _events.add(QudsPrintEvent(text, span: span)),
+        onOutput: (out, span) => _events.add(QudsOutputEvent(out, span: span)),
+        onImport: impHook,
+        maxCallDepth: policy.maxCallDepth,
+        maxCollectionLength: policy.maxCollectionLength,
+        maxStringLength: policy.maxStringLength,
+        yieldEveryNSteps: policy.yieldEveryNSteps,
+        allowMutation: true,
+        allowAsync: policy.allowAsync,
+        allowClasses: true,
+        allowExceptions: true,
+        allowImports: true,
+      ),
+      virtualModules: virtualModules,
+      allowedLibraries: policy.allowedLibraries,
+      deniedLibraries: policy.deniedLibraries,
+      importResolver: policy.importResolver,
+    );
+    _installBuiltInVizModule();
+  }
+
+  void _installBuiltInVizModule() {
+    final viz = buildQudsVizModule(
+      maxPrimitives: policy.maxPrimitives,
+      maxOutputs: policy.maxOutputCount,
+    );
+    _hostModules[viz.uri] = viz;
+    _moduleLoader.registerVirtualModule(viz.uri, viz.exports);
   }
 
   Future<void> _handleImport(
@@ -231,8 +316,18 @@ class QudsSession {
   Future<QudsRunResult> run(
     String source, {
     String file = '<session>',
-    Map<String, Object?> interactiveInputs = const {},
+    Map<String, Object?>? interactiveInputs,
+    bool resetVizQuota = true,
   }) async {
+    if (interactiveInputs != null) {
+      _interactiveInputs.addAll(interactiveInputs);
+    }
+    if (resetVizQuota) {
+      _installBuiltInVizModule();
+    }
+    _lastInteractiveSource = source;
+    _lastInteractiveFile = file;
+
     final stopwatch = Stopwatch()..start();
     final printed = <String>[];
     final outputs = <Object>[];
@@ -253,35 +348,75 @@ class QudsSession {
       );
     }
 
-    final evaluator = QudsEvaluator(
+    debugger?.resetForRun();
+
+    late QudsEvaluator evaluator;
+    evaluator = QudsEvaluator(
       globalEnv: _globalEnv,
       onPrint: (text, span) {
         printed.add(text);
         _events.add(QudsPrintEvent(text, span: span));
       },
       onOutput: (out, span) {
+        if (policy.maxOutputCount != null &&
+            outputs.length >= policy.maxOutputCount!) {
+          throw QudsPolicyViolationException(
+            QudsPolicyViolationKind.outputLimit,
+            'Exceeded maximum output limit (${policy.maxOutputCount}).',
+            span,
+          );
+        }
         outputs.add(out);
         _events.add(QudsOutputEvent(out, span: span));
       },
       onStepProgress: (steps, span) {
         _events.add(QudsStepProgressEvent(steps, span));
       },
-      onBeforeStatement: _onBeforeStatement,
-      onBeforeCall: _onBeforeCall,
+      onBeforeStatement: (stmt, env) async {
+        await policy.authorizeStatement(stmt);
+        if (_onBeforeStatement != null) {
+          await _onBeforeStatement(stmt, env);
+        }
+        if (debugger != null) {
+          await debugger!.beforeStatement(
+            statement: stmt,
+            env: env,
+            globalEnv: _globalEnv,
+            evaluator: evaluator,
+            emitPrint: (text, span) {
+              printed.add(text);
+              _events.add(QudsPrintEvent(text, span: span));
+            },
+            emitEvent: _events.add,
+          );
+        }
+      },
+      onBeforeCall: (name, pos, named, span, cap) async {
+        await policy.authorizeCall(
+          functionName: name,
+          positional: pos,
+          named: named,
+          span: span,
+          requiredCapability: cap,
+        );
+        if (_onBeforeCall != null) {
+          await _onBeforeCall(name, pos, named, span, cap);
+        }
+      },
       onImport: _handleImport,
-      maxSteps: maxSteps,
-      timeout: timeout,
-      maxCallDepth: maxCallDepth,
-      maxCollectionLength: maxCollectionLength,
-      maxStringLength: maxStringLength,
-      maxLoopIterations: maxLoopIterations,
-      yieldEveryNSteps: yieldEveryNSteps,
-      allowMutation: allowMutation,
-      allowAsync: allowAsync,
-      allowClasses: allowClasses,
-      allowExceptions: allowExceptions,
-      allowImports: allowImports,
-      interactiveInputs: interactiveInputs,
+      maxSteps: policy.maxSteps,
+      timeout: policy.timeout,
+      maxCallDepth: policy.maxCallDepth,
+      maxCollectionLength: policy.maxCollectionLength,
+      maxStringLength: policy.maxStringLength,
+      maxLoopIterations: policy.maxLoopIterations,
+      yieldEveryNSteps: policy.yieldEveryNSteps,
+      allowMutation: policy.allowMutation,
+      allowAsync: policy.allowAsync,
+      allowClasses: policy.allowClasses,
+      allowExceptions: policy.allowExceptions,
+      allowImports: policy.allowImports,
+      interactiveInputs: Map<String, Object?>.from(_interactiveInputs),
     );
 
     _activeEvaluator = evaluator;
@@ -314,6 +449,45 @@ class QudsSession {
     }
   }
 
+  /// Updates one or more interactive parameters (for example, a dragged geometry
+  /// handle `{'C': {'x': 4.5, 'y': 5.2}}` or slider `{'radius': 4.0}`) and
+  /// re-executes the last interactive script cleanly to produce updated scenes.
+  Future<QudsRunResult> updateInteractiveInputs(
+    Map<String, Object?> patch, {
+    String? source,
+    String? file,
+  }) async {
+    final targetSource = source ?? _lastInteractiveSource;
+    if (targetSource == null) {
+      throw StateError(
+          'No interactive script has been run in this session yet.');
+    }
+    _interactiveInputs.addAll(patch);
+    // Re-run in a clean rebind-enabled pass so immutable bindings like `A = viz.point(...)`
+    // recompute cleanly without QUDS-090 conflicts.
+    final prevSlots = Map<String, QudsSlot>.from(_globalEnv.localSlots);
+    _globalEnv = QudsEnvironment(
+      isGlobal: true,
+      allowTopLevelRebind: true,
+    );
+    for (final entry in prevSlots.entries) {
+      if (_builtinNames.contains(entry.key)) {
+        _globalEnv.define(
+          entry.key,
+          entry.value.value,
+          mutable: entry.value.mutable,
+          isConst: entry.value.isConst,
+          declaredType: entry.value.declaredType,
+        );
+      }
+    }
+    return run(
+      targetSource,
+      file: file ?? _lastInteractiveFile,
+      resetVizQuota: true,
+    );
+  }
+
   /// Evaluates a single Quds expression string inside this session's workspace.
   Future<Object?> evaluateExpression(String source,
       {String file = '<eval>'}) async {
@@ -325,19 +499,31 @@ class QudsSession {
       onPrint: (text, span) => _events.add(QudsPrintEvent(text, span: span)),
       onOutput: (out, span) => _events.add(QudsOutputEvent(out, span: span)),
       onImport: _handleImport,
-      onBeforeCall: _onBeforeCall,
-      maxSteps: maxSteps,
-      timeout: timeout,
-      maxCallDepth: maxCallDepth,
-      maxCollectionLength: maxCollectionLength,
-      maxStringLength: maxStringLength,
-      maxLoopIterations: maxLoopIterations,
-      yieldEveryNSteps: yieldEveryNSteps,
-      allowMutation: allowMutation,
-      allowAsync: allowAsync,
-      allowClasses: allowClasses,
-      allowExceptions: allowExceptions,
-      allowImports: allowImports,
+      onBeforeCall: (name, pos, named, span, cap) async {
+        await policy.authorizeCall(
+          functionName: name,
+          positional: pos,
+          named: named,
+          span: span,
+          requiredCapability: cap,
+        );
+        if (_onBeforeCall != null) {
+          await _onBeforeCall(name, pos, named, span, cap);
+        }
+      },
+      maxSteps: policy.maxSteps,
+      timeout: policy.timeout,
+      maxCallDepth: policy.maxCallDepth,
+      maxCollectionLength: policy.maxCollectionLength,
+      maxStringLength: policy.maxStringLength,
+      maxLoopIterations: policy.maxLoopIterations,
+      yieldEveryNSteps: policy.yieldEveryNSteps,
+      allowMutation: policy.allowMutation,
+      allowAsync: policy.allowAsync,
+      allowClasses: policy.allowClasses,
+      allowExceptions: policy.allowExceptions,
+      allowImports: policy.allowImports,
+      interactiveInputs: Map<String, Object?>.from(_interactiveInputs),
     );
     return evaluator.executeProgram(program);
   }
@@ -454,7 +640,6 @@ class QudsSession {
       ),
     );
 
-    // Common error constructors
     add(
       'Exception',
       QudsNativeFunction(
@@ -481,7 +666,6 @@ class QudsSession {
           (pos, n, c) => FormatException(pos.isEmpty ? '' : '${pos[0]}')),
     );
 
-    // Dart core type constructors/namespaces
     add(
       'StringBuffer',
       QudsNativeFunction('StringBuffer',
@@ -586,10 +770,11 @@ class QudsSession {
       QudsNamespace('List', {
         'filled': QudsNativeFunction('List.filled', (p, n, c) {
           final len = p[0] as int;
-          if (maxCollectionLength != null && len > maxCollectionLength!) {
+          if (policy.maxCollectionLength != null &&
+              len > policy.maxCollectionLength!) {
             throw QudsPolicyViolationException(
               QudsPolicyViolationKind.collectionLimit,
-              'List.filled size ($len) exceeded maximum limit ($maxCollectionLength).',
+              'List.filled size ($len) exceeded maximum limit (${policy.maxCollectionLength}).',
               c.span,
             );
           }
@@ -598,10 +783,11 @@ class QudsSession {
         }),
         'generate': QudsNativeFunction('List.generate', (p, n, c) async {
           final len = p[0] as int;
-          if (maxCollectionLength != null && len > maxCollectionLength!) {
+          if (policy.maxCollectionLength != null &&
+              len > policy.maxCollectionLength!) {
             throw QudsPolicyViolationException(
               QudsPolicyViolationKind.collectionLimit,
-              'List.generate size ($len) exceeded maximum limit ($maxCollectionLength).',
+              'List.generate size ($len) exceeded maximum limit (${policy.maxCollectionLength}).',
               c.span,
             );
           }

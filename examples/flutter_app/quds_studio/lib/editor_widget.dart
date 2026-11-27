@@ -5,6 +5,8 @@
 /// context-aware autocomplete, signature help, and smart indentation.
 library;
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:quds/editor_engine.dart';
@@ -98,7 +100,7 @@ class QudsSyntaxTextController extends TextEditingController {
 
 /// Interactive Quds code editor panel with clickable breakpoint gutter,
 /// autocomplete bar, signature hint, and diagnostics/quick-fix strip.
-class QudsCodeEditorView extends StatelessWidget {
+class QudsCodeEditorView extends StatefulWidget {
   const QudsCodeEditorView({
     super.key,
     required this.controller,
@@ -137,14 +139,105 @@ class QudsCodeEditorView extends StatelessWidget {
   final bool isArabic;
 
   @override
+  State<QudsCodeEditorView> createState() => _QudsCodeEditorViewState();
+}
+
+class _QudsCodeEditorViewState extends State<QudsCodeEditorView> {
+  bool _wordWrap = false;
+  final ScrollController _hScrollController = ScrollController();
+
+  void _toggleWordWrap() => setState(() => _wordWrap = !_wordWrap);
+
+  double _measureCanvasWidth(
+    String text,
+    TextStyle style,
+    double minWidth,
+    TextScaler textScaler,
+  ) {
+    var maxLineWidth = 0.0;
+    final measureStyle = style.copyWith(fontWeight: FontWeight.w600);
+    for (final line in text.split('\n')) {
+      if (line.isEmpty) continue;
+      final painter = TextPainter(
+        text: TextSpan(text: line, style: measureStyle),
+        textDirection: TextDirection.ltr,
+        textScaler: textScaler,
+        maxLines: 1,
+      )..layout();
+      if (painter.width > maxLineWidth) {
+        maxLineWidth = painter.width;
+      }
+      painter.dispose();
+    }
+    return math.max(minWidth, maxLineWidth + 96.0);
+  }
+
+  @override
+  void dispose() {
+    _hScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final lineCount = '\n'.allMatches(controller.text).length + 1;
+    final palette = widget.palette;
+    final analysis = widget.analysis;
+    final isArabic = widget.isArabic;
+    final lineCount = '\n'.allMatches(widget.controller.text).length + 1;
     final bg = Color(palette.background);
     final gutterBg = Color(palette.gutterBackground);
     final gutterFg = Color(palette.gutterForeground);
     const fontSize = 13.0;
     const lineHeight = 1.62;
-    const rowHeight = fontSize * lineHeight;
+    final textScaler = MediaQuery.textScalerOf(context);
+    final rowHeight = textScaler.scale(fontSize) * lineHeight;
+    final codeStyle = TextStyle(
+      fontFamily: 'JetBrainsMono',
+      fontFamilyFallback: const ['IBMPlexSansArabic'],
+      fontSize: fontSize,
+      height: lineHeight,
+      color: Color(palette.foreground),
+    );
+
+    final editorField = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.tab): () =>
+              widget.onSmartTab(false),
+          const SingleActivator(LogicalKeyboardKey.tab, shift: true): () =>
+              widget.onSmartTab(true),
+          const SingleActivator(LogicalKeyboardKey.bracketRight, control: true):
+              () => widget.onSmartTab(false),
+          const SingleActivator(LogicalKeyboardKey.bracketLeft, control: true):
+              () => widget.onSmartTab(true),
+          const SingleActivator(LogicalKeyboardKey.slash, control: true):
+              widget.onToggleComment,
+          const SingleActivator(LogicalKeyboardKey.keyF,
+              shift: true, alt: true): widget.onFormat,
+          const SingleActivator(LogicalKeyboardKey.keyZ, alt: true):
+              _toggleWordWrap,
+        },
+        child: TextField(
+          key: const Key('quds_code_textfield'),
+          controller: widget.controller,
+          focusNode: widget.focusNode,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          autocorrect: false,
+          enableSuggestions: false,
+          inputFormatters: [
+            QudsSmartEditFormatter(widget.controller.engine),
+          ],
+          style: codeStyle,
+          decoration: const InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -160,7 +253,7 @@ class QudsCodeEditorView extends StatelessWidget {
         children: [
           // Compact editor action bar
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: gutterBg,
               border: Border(
@@ -174,7 +267,7 @@ class QudsCodeEditorView extends StatelessWidget {
                 Icon(Icons.code_rounded,
                     size: 16,
                     color: Color(palette.colorFor(QudsTokenCategory.keyword))),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Flexible(
                   child: Text(
                     isArabic ? 'محرر كود Quds' : 'Quds Code Editor',
@@ -187,7 +280,7 @@ class QudsCodeEditorView extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 if (analysis.hasErrors)
                   _StatusPill(
                     color: const Color(0xFFEF4444),
@@ -202,14 +295,48 @@ class QudsCodeEditorView extends StatelessWidget {
                   ),
                 const Spacer(),
                 Tooltip(
+                  message: isArabic
+                      ? (_wordWrap
+                          ? 'التفاف الأسطر مفعّل — اضغط للتمرير الأفقي (Alt+Z)'
+                          : 'تمرير أفقي مفعّل — اضغط لتفعيل التفاف الأسطر (Alt+Z)')
+                      : (_wordWrap
+                          ? 'Word Wrap ON — switch to Horizontal Scroll (Alt+Z)'
+                          : 'Horizontal Scroll ON — toggle Word Wrap (Alt+Z)'),
+                  child: IconButton(
+                    key: const Key('btn_toggle_wrap'),
+                    onPressed: _toggleWordWrap,
+                    icon: Icon(
+                      Icons.wrap_text_rounded,
+                      size: 16,
+                      color: _wordWrap
+                          ? Color(palette.colorFor(QudsTokenCategory.keyword))
+                          : gutterFg,
+                    ),
+                    style: _wordWrap
+                        ? IconButton.styleFrom(
+                            backgroundColor: Color(
+                              palette.colorFor(QudsTokenCategory.keyword),
+                            ).withValues(alpha: 0.16),
+                          )
+                        : null,
+                    visualDensity: VisualDensity.compact,
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: const EdgeInsets.all(4),
+                  ),
+                ),
+                Tooltip(
                   message:
                       isArabic ? 'تعليق/إلغاء تعليق السطر' : 'Toggle Comment',
                   child: IconButton(
                     key: const Key('btn_toggle_comment'),
-                    onPressed: onToggleComment,
+                    onPressed: widget.onToggleComment,
                     icon:
                         Icon(Icons.comment_outlined, size: 16, color: gutterFg),
                     visualDensity: VisualDensity.compact,
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: const EdgeInsets.all(4),
                   ),
                 ),
                 Tooltip(
@@ -217,7 +344,7 @@ class QudsCodeEditorView extends StatelessWidget {
                       isArabic ? 'تنسيق الكود (quds format)' : 'Format Code',
                   child: TextButton.icon(
                     key: const Key('btn_format_code'),
-                    onPressed: onFormat,
+                    onPressed: widget.onFormat,
                     icon: const Icon(Icons.auto_fix_high_rounded, size: 15),
                     label: Text(
                       isArabic ? 'تنسيق' : 'Format',
@@ -234,14 +361,14 @@ class QudsCodeEditorView extends StatelessWidget {
           ),
 
           // Signature help bar when typing inside a call
-          if (signatureHelp != null)
+          if (widget.signatureHelp != null)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
               color: Color(palette.activeLineBackground),
               child: Directionality(
                 textDirection: TextDirection.ltr,
                 child: Text(
-                  signatureHelp!.label,
+                  widget.signatureHelp!.label,
                   style: TextStyle(
                     fontFamily: 'JetBrainsMono',
                     fontFamilyFallback: const ['IBMPlexSansArabic'],
@@ -274,11 +401,11 @@ class QudsCodeEditorView extends StatelessWidget {
                           for (var line = 1; line <= lineCount; line++)
                             InkWell(
                               key: Key('gutter_line_$line'),
-                              onTap: () => onToggleBreakpoint(line),
+                              onTap: () => widget.onToggleBreakpoint(line),
                               child: Container(
                                 height: rowHeight,
                                 alignment: Alignment.centerRight,
-                                decoration: pausedLine == line
+                                decoration: widget.pausedLine == line
                                     ? BoxDecoration(
                                         color:
                                             Color(palette.pausedLineBackground),
@@ -292,7 +419,7 @@ class QudsCodeEditorView extends StatelessWidget {
                                     SizedBox(
                                       width: 14,
                                       child: Center(
-                                        child: breakpoints.contains(line)
+                                        child: widget.breakpoints.contains(line)
                                             ? Container(
                                                 key: Key('bp_dot_$line'),
                                                 width: 9,
@@ -303,7 +430,7 @@ class QudsCodeEditorView extends StatelessWidget {
                                                   shape: BoxShape.circle,
                                                 ),
                                               )
-                                            : pausedLine == line
+                                            : widget.pausedLine == line
                                                 ? const Icon(
                                                     Icons.play_arrow_rounded,
                                                     size: 13,
@@ -320,7 +447,7 @@ class QudsCodeEditorView extends StatelessWidget {
                                           'IBMPlexSansArabic'
                                         ],
                                         fontSize: 11.5,
-                                        color: pausedLine == line
+                                        color: widget.pausedLine == line
                                             ? const Color(0xFFF59E0B)
                                             : gutterFg,
                                       ),
@@ -333,53 +460,29 @@ class QudsCodeEditorView extends StatelessWidget {
                       ),
                     ),
 
-                    // Syntax-highlighted editable text surface
+                    // Syntax-highlighted editable text surface (Horizontal Scroll default, or Word Wrap)
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        child: CallbackShortcuts(
-                          bindings: {
-                            const SingleActivator(LogicalKeyboardKey.tab): () =>
-                                onSmartTab(false),
-                            const SingleActivator(LogicalKeyboardKey.tab,
-                                shift: true): () => onSmartTab(true),
-                            const SingleActivator(
-                                LogicalKeyboardKey.bracketRight,
-                                control: true): () => onSmartTab(false),
-                            const SingleActivator(
-                                LogicalKeyboardKey.bracketLeft,
-                                control: true): () => onSmartTab(true),
-                            const SingleActivator(LogicalKeyboardKey.slash,
-                                control: true): onToggleComment,
-                            const SingleActivator(LogicalKeyboardKey.keyF,
-                                shift: true, alt: true): onFormat,
-                          },
-                          child: TextField(
-                            key: const Key('quds_code_textfield'),
-                            controller: controller,
-                            focusNode: focusNode,
-                            maxLines: null,
-                            keyboardType: TextInputType.multiline,
-                            autocorrect: false,
-                            enableSuggestions: false,
-                            inputFormatters: [
-                              QudsSmartEditFormatter(controller.engine),
-                            ],
-                            style: TextStyle(
-                              fontFamily: 'JetBrainsMono',
-                              fontFamilyFallback: const ['IBMPlexSansArabic'],
-                              fontSize: fontSize,
-                              height: lineHeight,
-                              color: Color(palette.foreground),
+                      child: _wordWrap
+                          ? editorField
+                          : LayoutBuilder(
+                              builder: (context, constraints) {
+                                final canvasWidth = _measureCanvasWidth(
+                                  widget.controller.text,
+                                  codeStyle,
+                                  constraints.maxWidth,
+                                  textScaler,
+                                );
+                                return SingleChildScrollView(
+                                  key: const Key('studio_editor_hscroll'),
+                                  controller: _hScrollController,
+                                  scrollDirection: Axis.horizontal,
+                                  child: SizedBox(
+                                    width: canvasWidth,
+                                    child: editorField,
+                                  ),
+                                );
+                              },
                             ),
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                            ),
-                          ),
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -410,7 +513,7 @@ class QudsCodeEditorView extends StatelessWidget {
                         : 'Indent (Tab / Ctrl+])',
                     highlighted: true,
                     palette: palette,
-                    onPressed: () => onSmartTab(false),
+                    onPressed: () => widget.onSmartTab(false),
                   ),
                   const SizedBox(width: 6),
                   _StudioQuickKey(
@@ -421,7 +524,7 @@ class QudsCodeEditorView extends StatelessWidget {
                         : 'Outdent (Shift+Tab / Ctrl+[)',
                     highlighted: true,
                     palette: palette,
-                    onPressed: () => onSmartTab(true),
+                    onPressed: () => widget.onSmartTab(true),
                   ),
                   const SizedBox(width: 6),
                   _StudioQuickKey(
@@ -472,7 +575,7 @@ class QudsCodeEditorView extends StatelessWidget {
                         ? 'تعليق/إلغاء تعليق (Ctrl+/)'
                         : 'Toggle Comment (Ctrl+/)',
                     palette: palette,
-                    onPressed: onToggleComment,
+                    onPressed: widget.onToggleComment,
                   ),
                 ],
               ),
@@ -480,7 +583,7 @@ class QudsCodeEditorView extends StatelessWidget {
           ),
 
           // Context-aware Autocomplete suggestion strip
-          if (completions.isNotEmpty)
+          if (widget.completions.isNotEmpty)
             Container(
               height: 40,
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -494,10 +597,10 @@ class QudsCodeEditorView extends StatelessWidget {
                 textDirection: TextDirection.ltr,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
-                  itemCount: completions.length.clamp(0, 10),
+                  itemCount: widget.completions.length.clamp(0, 10),
                   separatorBuilder: (_, __) => const SizedBox(width: 6),
                   itemBuilder: (context, index) {
-                    final item = completions[index];
+                    final item = widget.completions[index];
                     return ActionChip(
                       key: Key('completion_${item.label}'),
                       label: Text(
@@ -516,7 +619,7 @@ class QudsCodeEditorView extends StatelessWidget {
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                       visualDensity: VisualDensity.compact,
-                      onPressed: () => onApplyCompletion(item),
+                      onPressed: () => widget.onApplyCompletion(item),
                     );
                   },
                 ),
@@ -555,7 +658,7 @@ class QudsCodeEditorView extends StatelessWidget {
                     const SizedBox(width: 8),
                     FilledButton.tonal(
                       key: const Key('btn_quick_fix'),
-                      onPressed: () => onApplyQuickFix(
+                      onPressed: () => widget.onApplyQuickFix(
                         analysis.diagnostics.first.quickFixes.first,
                       ),
                       style: FilledButton.styleFrom(
@@ -578,20 +681,21 @@ class QudsCodeEditorView extends StatelessWidget {
   }
 
   void _insertToken(String token, {int cursorBack = 0}) {
-    final text = controller.text;
-    final sel = controller.selection;
+    final text = widget.controller.text;
+    final sel = widget.controller.selection;
     final start = sel.isValid ? sel.start.clamp(0, text.length) : text.length;
     final end = sel.isValid ? sel.end.clamp(start, text.length) : start;
     var updated = text.replaceRange(start, end, token);
     var nextOffset = start + token.length - cursorBack;
     if (token == ':') {
-      final dedented = controller.engine.handleTypedColon(updated, nextOffset);
+      final dedented =
+          widget.controller.engine.handleTypedColon(updated, nextOffset);
       if (dedented != null) {
         updated = dedented.text;
         nextOffset = dedented.selectionStart;
       }
     }
-    controller.value = TextEditingValue(
+    widget.controller.value = TextEditingValue(
       text: updated,
       selection: TextSelection.collapsed(offset: nextOffset),
     );
@@ -744,4 +848,3 @@ class _StatusPill extends StatelessWidget {
     );
   }
 }
-

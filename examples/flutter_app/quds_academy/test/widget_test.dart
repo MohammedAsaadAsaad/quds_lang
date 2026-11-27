@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -53,87 +54,104 @@ void main() {
   });
 
   testWidgets(
-      'desktop bilingual learning, execution, saved progress and reference',
-      (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1440, 1024));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final storage = TestStorage();
-    final boundary = GlobalKey();
-    await tester.pumpWidget(
-        RepaintBoundary(key: boundary, child: Academy(storage: storage)));
-    await tester.pumpAndSettle();
-    expect(find.text('ابدأ صغيرًا.\nوابنِ بلا حدود.'), findsOneWidget);
-    await capture(tester, boundary, 'desktop-ar');
-    await tester.tap(find.text('EN'));
-    await tester.pumpAndSettle();
-    expect(find.text('Small syntax.\nBig possibilities.'), findsOneWidget);
-    await capture(tester, boundary, 'desktop-en');
-    await tester.tap(find.text('Start learning'));
-    await tester.pumpAndSettle();
-    final run = find.text('Run lesson demo');
-    await tester.ensureVisible(run);
-    await tester.tap(run);
-    await tester.pumpAndSettle();
-    expect(find.text('Hello Quds'), findsOneWidget);
-    final correct = find.text('A colon :');
-    await tester.ensureVisible(correct);
-    await tester.tap(correct);
-    await tester.pumpAndSettle();
-    final finish = find.text('Complete lesson · +25 points');
-    await tester.ensureVisible(finish);
-    await tester.tap(finish);
-    await tester.pumpAndSettle();
-    expect(find.text('Lesson completed'), findsOneWidget);
-    expect(storage.bytes, isNotEmpty);
-    await capture(tester, boundary, 'lesson-en');
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-    await tester.pumpWidget(
-        RepaintBoundary(key: boundary, child: Academy(storage: storage)));
-    await tester.pumpAndSettle();
-    expect(find.text('Small syntax.\nBig possibilities.'), findsOneWidget);
-    await tester.tap(find.text('My progress'));
-    await tester.pumpAndSettle();
-    expect(find.text('1 of 12 lessons completed'), findsOneWidget);
-    await tester.tap(find.text('Reference'));
-    await tester.pumpAndSettle();
-    expect(find.text('Conversions & augmentation'), findsOneWidget);
-    await tester.ensureVisible(find.text('Conversions & augmentation'));
-    await tester.tap(find.text('Conversions & augmentation'));
-    await tester.pumpAndSettle();
-    expect(find.widgetWithText(ChoiceChip, 'augment'), findsOneWidget);
-    expect(find.widgetWithText(ChoiceChip, 'while'), findsNothing);
-    await tester.tap(find.widgetWithText(ChoiceChip, 'augment'));
-    await tester.pumpAndSettle();
-    final code =
-        tester.widget<SelectableText>(find.byType(SelectableText).first);
-    expect(code.textSpan, isNotNull);
-    expect(code.textSpan!.children!.length, greaterThan(1));
-    await tester.ensureVisible(find.text('All categories'));
-    await tester.tap(find.text('All categories'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'augment');
-    await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ChoiceChip, 'augment'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Adds declarations'), findsOneWidget);
-    await capture(tester, boundary, 'reference-en');
-    await tester.tap(find.byTooltip('Toggle appearance'));
-    await tester.pumpAndSettle();
-    expect(Theme.of(tester.element(find.byType(Scaffold))).brightness,
-        Brightness.dark);
-    expect(tester.takeException(), isNull);
-  });
+    'desktop bilingual learning, execution, saved progress and reference',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 1024));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final storage = TestStorage();
+      final boundary = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: Academy(storage: storage),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('ابدأ صغيرًا.\nوابنِ بلا حدود.'), findsOneWidget);
+      await capture(tester, boundary, 'desktop-ar');
+      await tester.tap(find.text('EN'));
+      await tester.pumpAndSettle();
+      expect(find.text('Small syntax.\nBig possibilities.'), findsOneWidget);
+      await capture(tester, boundary, 'desktop-en');
+      await tester.tap(find.text('Start learning'));
+      await tester.pumpAndSettle();
+      final run = find.text('Run lesson demo');
+      await tester.ensureVisible(run);
+      await tester.tap(run);
+      await tester.pumpAndSettle();
+      expect(find.text('Hello Quds'), findsOneWidget);
+      final correct = find.text('A colon :');
+      await tester.ensureVisible(correct);
+      await tester.tap(correct);
+      await tester.pumpAndSettle();
+      final finish = find.text('Complete lesson · +25 points');
+      await tester.ensureVisible(finish);
+      await tester.tap(finish);
+      await tester.pumpAndSettle();
+      expect(find.text('Lesson completed'), findsOneWidget);
+      expect(storage.bytes, isNotEmpty);
+      await capture(tester, boundary, 'lesson-en');
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: boundary,
+          child: Academy(storage: storage),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Small syntax.\nBig possibilities.'), findsOneWidget);
+      await tester.tap(find.text('My progress'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 12 lessons completed'), findsOneWidget);
+      await tester.tap(find.text('Reference'));
+      await tester.pumpAndSettle();
+      expect(find.text('Conversions & augmentation'), findsOneWidget);
+      await tester.ensureVisible(find.text('Conversions & augmentation'));
+      await tester.tap(find.text('Conversions & augmentation'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ChoiceChip, 'augment'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'while'), findsNothing);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'augment'));
+      await tester.pumpAndSettle();
+      final code = tester.widget<SelectableText>(
+        find.byType(SelectableText).first,
+      );
+      expect(code.textSpan, isNotNull);
+      expect(code.textSpan!.children!.length, greaterThan(1));
+      await tester.ensureVisible(find.text('All categories'));
+      await tester.tap(find.text('All categories'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'augment');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ChoiceChip, 'augment'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Adds declarations'), findsOneWidget);
+      await capture(tester, boundary, 'reference-en');
+      await tester.tap(find.byTooltip('Toggle appearance'));
+      await tester.pumpAndSettle();
+      expect(
+        Theme.of(tester.element(find.byType(Scaffold))).brightness,
+        Brightness.dark,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('phone RTL navigation and large text stay within bounds',
-      (tester) async {
+  testWidgets('phone RTL navigation and large text stay within bounds', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     tester.platformDispatcher.textScaleFactorTestValue = 1.4;
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final boundary = GlobalKey();
     await tester.pumpWidget(
-        RepaintBoundary(key: boundary, child: Academy(storage: TestStorage())));
+      RepaintBoundary(
+        key: boundary,
+        child: Academy(storage: TestStorage()),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
     await capture(tester, boundary, 'phone-ar');
@@ -157,76 +175,90 @@ void main() {
   });
 
   testWidgets(
-      'embedded playground executes custom Quds code, math SDK, and geometry',
-      (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1440, 1024));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(Academy(storage: TestStorage()));
-    await tester.pumpAndSettle();
+    'embedded playground executes custom Quds code, math SDK, and geometry',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 1024));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(Academy(storage: TestStorage()));
+      await tester.pumpAndSettle();
 
-    // Open Playground from sidebar
-    await tester.tap(find.text('المختبر').first);
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('academy_playground_editor')), findsOneWidget);
+      // Open Playground from sidebar
+      await tester.tap(find.text('المختبر').first);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('academy_playground_editor')),
+        findsOneWidget,
+      );
 
-    // Academy Playground stays clean without policy/restriction chips
-    expect(find.text('وضع مقيّد'), findsNothing);
-    expect(find.text('وضع علمي'), findsNothing);
+      // Academy Playground stays clean without policy/restriction chips
+      expect(find.text('وضع مقيّد'), findsNothing);
+      expect(find.text('وضع علمي'), findsNothing);
 
-    // Test VS Code-style Tab / Outdent buttons and smart Enter after `:`
-    final editorFinder = find.byKey(const Key('academy_playground_editor'));
-    await tester.enterText(editorFinder, 'repeat 10:');
-    await tester.pumpAndSettle();
-    final tf = tester.widget<TextField>(editorFinder);
-    // Simulate Android soft-keyboard inserting newline via TextInputFormatter
-    final formatted = tf.inputFormatters!.first.formatEditUpdate(
-      const TextEditingValue(
-        text: 'repeat 10:',
-        selection: TextSelection.collapsed(offset: 10),
-      ),
-      const TextEditingValue(
-        text: 'repeat 10:\n',
-        selection: TextSelection.collapsed(offset: 11),
-      ),
-    );
-    expect(formatted.text, 'repeat 10:\n  ');
-    expect(formatted.selection.baseOffset, 13);
+      // Horizontal scrolling is enabled by default and toggles cleanly with Wrap button
+      expect(find.byKey(const Key('academy_editor_hscroll')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('academy_btn_toggle_wrap')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('academy_editor_hscroll')), findsNothing);
+      await tester.tap(find.byKey(const Key('academy_btn_toggle_wrap')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('academy_editor_hscroll')), findsOneWidget);
 
-    // Tap Tab & Outdent quick-key buttons
-    tf.controller!.value = const TextEditingValue(
-      text: 'x = 1',
-      selection: TextSelection.collapsed(offset: 0),
-    );
-    await tester.tap(find.byKey(const Key('academy_btn_indent')));
-    await tester.pumpAndSettle();
-    expect(tf.controller!.text, '  x = 1');
-    await tester.tap(find.byKey(const Key('academy_btn_outdent')));
-    await tester.pumpAndSettle();
-    expect(tf.controller!.text, 'x = 1');
+      // Test VS Code-style Tab / Outdent buttons and smart Enter after `:`
+      final editorFinder = find.byKey(const Key('academy_playground_editor'));
+      await tester.enterText(editorFinder, 'repeat 10:');
+      await tester.pumpAndSettle();
+      final tf = tester.widget<TextField>(editorFinder);
+      // Simulate Android soft-keyboard inserting newline via TextInputFormatter
+      final formatted = tf.inputFormatters!.first.formatEditUpdate(
+        const TextEditingValue(
+          text: 'repeat 10:',
+          selection: TextSelection.collapsed(offset: 10),
+        ),
+        const TextEditingValue(
+          text: 'repeat 10:\n',
+          selection: TextSelection.collapsed(offset: 11),
+        ),
+      );
+      expect(formatted.text, 'repeat 10:\n  ');
+      expect(formatted.selection.baseOffset, 13);
 
-    // Enter custom Quds code using quds:math and execute via embedded interpreter
-    await tester.enterText(
-      editorFinder,
-      'use quds:math\n'
-      'vals = [10.0, 20.0, 30.0]\n'
-      'print "avg={mean(vals)}"\n',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('academy_playground_run')));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('avg=20.0'), findsOneWidget);
+      // Tap Tab & Outdent quick-key buttons
+      tf.controller!.value = const TextEditingValue(
+        text: 'x = 1',
+        selection: TextSelection.collapsed(offset: 0),
+      );
+      await tester.tap(find.byKey(const Key('academy_btn_indent')));
+      await tester.pumpAndSettle();
+      expect(tf.controller!.text, '  x = 1');
+      await tester.tap(find.byKey(const Key('academy_btn_outdent')));
+      await tester.pumpAndSettle();
+      expect(tf.controller!.text, 'x = 1');
 
-    // Switch to the Interactive Geometry starter snippet and run it
-    await tester.tap(find.text('هندسة تفاعلية'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('academy_playground_run')));
-    await tester.pumpAndSettle();
-    expect(find.byType(Slider), findsWidgets);
-    expect(tester.takeException(), isNull);
-  });
+      // Enter custom Quds code using quds:math and execute via embedded interpreter
+      await tester.enterText(
+        editorFinder,
+        'use quds:math\n'
+        'vals = [10.0, 20.0, 30.0]\n'
+        'print "avg={mean(vals)}"\n',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('academy_playground_run')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('avg=20.0'), findsOneWidget);
 
-  testWidgets('lesson code opens in Playground and executes via interpreter',
-      (tester) async {
+      // Switch to the Interactive Geometry starter snippet and run it
+      await tester.tap(find.text('هندسة تفاعلية'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('academy_playground_run')));
+      await tester.pumpAndSettle();
+      expect(find.byType(Slider), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('lesson code opens in Playground and executes via interpreter', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1440, 1024));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(Academy(storage: TestStorage()));
@@ -262,8 +294,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('storage errors offer retry without replacing saved data',
-      (tester) async {
+  testWidgets('storage errors offer retry without replacing saved data', (
+    tester,
+  ) async {
     final storage = TestStorage()..fail = true;
     await tester.pumpWidget(Academy(storage: storage));
     await tester.pumpAndSettle();

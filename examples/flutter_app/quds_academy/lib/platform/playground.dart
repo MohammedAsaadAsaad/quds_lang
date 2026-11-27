@@ -134,28 +134,33 @@ class _AcademySyntaxController extends TextEditingController {
     var cursor = 0;
     for (final s in spans) {
       if (s.startOffset > cursor) {
-        children.add(TextSpan(
-          text: source.substring(cursor, s.startOffset),
-          style: baseStyle,
-        ));
+        children.add(
+          TextSpan(
+            text: source.substring(cursor, s.startOffset),
+            style: baseStyle,
+          ),
+        );
       }
       final start = s.startOffset.clamp(cursor, source.length);
       final end = s.endOffset.clamp(start, source.length);
       if (end > start) {
         final err = inErr(start, end) || s.category == QudsTokenCategory.error;
-        children.add(TextSpan(
-          text: source.substring(start, end),
-          style: baseStyle.copyWith(
-            color: Color(palette.colorFor(s.category)),
-            fontWeight: s.category == QudsTokenCategory.controlKeyword ||
-                    s.category == QudsTokenCategory.declarationKeyword
-                ? FontWeight.w600
-                : FontWeight.w400,
-            decoration: err ? TextDecoration.underline : null,
-            decorationColor: err ? const Color(0xFFEF4444) : null,
-            decorationStyle: err ? TextDecorationStyle.wavy : null,
+        children.add(
+          TextSpan(
+            text: source.substring(start, end),
+            style: baseStyle.copyWith(
+              color: Color(palette.colorFor(s.category)),
+              fontWeight:
+                  s.category == QudsTokenCategory.controlKeyword ||
+                      s.category == QudsTokenCategory.declarationKeyword
+                  ? FontWeight.w600
+                  : FontWeight.w400,
+              decoration: err ? TextDecoration.underline : null,
+              decorationColor: err ? const Color(0xFFEF4444) : null,
+              decorationStyle: err ? TextDecorationStyle.wavy : null,
+            ),
           ),
-        ));
+        );
         cursor = end;
       }
     }
@@ -274,7 +279,35 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
   QudsRunResult? _result;
   bool _running = false;
   bool _updatingInteractive = false;
+  bool _wordWrap = false;
+  final ScrollController _hScrollController = ScrollController();
   Map<String, Object?>? _pendingInteractivePatch;
+
+  void _toggleWordWrap() => setState(() => _wordWrap = !_wordWrap);
+
+  double _measureCanvasWidth(
+    String text,
+    TextStyle style,
+    double minWidth,
+    TextScaler textScaler,
+  ) {
+    var maxLineWidth = 0.0;
+    final measureStyle = style.copyWith(fontWeight: FontWeight.w600);
+    for (final line in text.split('\n')) {
+      if (line.isEmpty) continue;
+      final painter = TextPainter(
+        text: TextSpan(text: line, style: measureStyle),
+        textDirection: TextDirection.ltr,
+        textScaler: textScaler,
+        maxLines: 1,
+      )..layout();
+      if (painter.width > maxLineWidth) {
+        maxLineWidth = painter.width;
+      }
+      painter.dispose();
+    }
+    return math.max(minWidth, maxLineWidth + 96.0);
+  }
 
   String tr(String en, String ar) => widget.arabic ? ar : en;
 
@@ -371,10 +404,7 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
 
   Future<void> _updateInteractive(Map<String, Object?> patch) async {
     if (_running) return;
-    _pendingInteractivePatch = {
-      ...?_pendingInteractivePatch,
-      ...patch,
-    };
+    _pendingInteractivePatch = {...?_pendingInteractivePatch, ...patch};
     if (_updatingInteractive) return;
     _updatingInteractive = true;
     _debugger.clearBreakpoints();
@@ -414,8 +444,9 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
     final updated = text.replaceRange(replaceStart, pos, item.insertText);
     _controller.value = TextEditingValue(
       text: updated,
-      selection:
-          TextSelection.collapsed(offset: replaceStart + item.insertText.length),
+      selection: TextSelection.collapsed(
+        offset: replaceStart + item.insertText.length,
+      ),
     );
   }
 
@@ -431,7 +462,12 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
     final sel = _controller.selection;
     final start = sel.isValid ? sel.start : _controller.text.length;
     final end = sel.isValid ? sel.end : start;
-    final res = _engine.handleTab(_controller.text, start, end, outdent: outdent);
+    final res = _engine.handleTab(
+      _controller.text,
+      start,
+      end,
+      outdent: outdent,
+    );
     _controller.value = TextEditingValue(
       text: res.text,
       selection: TextSelection(
@@ -479,6 +515,7 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
   void dispose() {
     _pauseSub?.cancel();
     _resumeSub?.cancel();
+    _hScrollController.dispose();
     _controller.dispose();
     _debugger.dispose();
     _session.dispose();
@@ -488,11 +525,71 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
   @override
   Widget build(BuildContext context) {
     final surface = widget.dark ? const Color(0xFF162B27) : Colors.white;
-    final border = widget.dark ? const Color(0xFF2D443C) : const Color(0xFFE5EBE6);
+    final border = widget.dark
+        ? const Color(0xFF2D443C)
+        : const Color(0xFFE5EBE6);
     final ink = widget.dark ? const Color(0xFFEAF4EF) : const Color(0xFF182D29);
-    final muted = widget.dark ? const Color(0xFFA4BBB1) : const Color(0xFF73817B);
+    final muted = widget.dark
+        ? const Color(0xFFA4BBB1)
+        : const Color(0xFF73817B);
     final lineCount = '\n'.allMatches(_controller.text).length + 1;
     final scene = _result?.lastGeometryScene;
+    const fontSize = 13.0;
+    const lineHeight = 1.62;
+    final textScaler = MediaQuery.textScalerOf(context);
+    final rowHeight = textScaler.scale(fontSize) * lineHeight;
+    const codeStyle = TextStyle(
+      fontFamily: 'JetBrainsMono',
+      fontFamilyFallback: ['Cairo'],
+      fontSize: fontSize,
+      height: lineHeight,
+      color: Color(0xFFD3EDDF),
+    );
+
+    final editorField = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.tab): () => _applyTab(false),
+          const SingleActivator(LogicalKeyboardKey.tab, shift: true): () =>
+              _applyTab(true),
+          const SingleActivator(
+            LogicalKeyboardKey.bracketRight,
+            control: true,
+          ): () =>
+              _applyTab(false),
+          const SingleActivator(
+            LogicalKeyboardKey.bracketLeft,
+            control: true,
+          ): () =>
+              _applyTab(true),
+          const SingleActivator(LogicalKeyboardKey.slash, control: true):
+              _toggleComment,
+          const SingleActivator(
+            LogicalKeyboardKey.keyF,
+            shift: true,
+            alt: true,
+          ): _format,
+          const SingleActivator(LogicalKeyboardKey.keyZ, alt: true):
+              _toggleWordWrap,
+        },
+        child: TextField(
+          key: const Key('academy_playground_editor'),
+          controller: _controller,
+          maxLines: null,
+          keyboardType: TextInputType.multiline,
+          autocorrect: false,
+          enableSuggestions: false,
+          inputFormatters: [_AcademySmartEditFormatter(_engine)],
+          style: codeStyle,
+          decoration: const InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -523,8 +620,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
           children: [
             for (final s in _starterSnippets)
               ActionChip(
-                label: Text(widget.arabic ? s.titleAr : s.titleEn,
-                    style: const TextStyle(fontSize: 12)),
+                label: Text(
+                  widget.arabic ? s.titleAr : s.titleEn,
+                  style: const TextStyle(fontSize: 12),
+                ),
                 avatar: const Icon(Icons.bolt_rounded, size: 16, color: _brand),
                 onPressed: () {
                   _controller.text = s.code;
@@ -550,8 +649,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
             children: [
               // Editor toolbar
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 color: const Color(0xFF0A1614),
                 child: Wrap(
                   spacing: 8,
@@ -590,8 +691,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                       ),
                       IconButton(
                         onPressed: _session.stop,
-                        icon: const Icon(Icons.stop_circle_outlined,
-                            color: Color(0xFFEF4444)),
+                        icon: const Icon(
+                          Icons.stop_circle_outlined,
+                          color: Color(0xFFEF4444),
+                        ),
                         visualDensity: VisualDensity.compact,
                       ),
                     ] else
@@ -614,6 +717,35 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                       icon: const Icon(Icons.auto_fix_high_rounded, size: 16),
                       label: Text(tr('Format', 'تنسيق')),
                     ),
+                    Tooltip(
+                      message: tr(
+                        _wordWrap
+                            ? 'Word Wrap ON — switch to Horizontal Scroll (Alt+Z)'
+                            : 'Horizontal Scroll ON — toggle Word Wrap (Alt+Z)',
+                        _wordWrap
+                            ? 'التفاف الأسطر مفعّل — اضغط للتمرير الأفقي (Alt+Z)'
+                            : 'تمرير أفقي مفعّل — اضغط لتفعيل التفاف الأسطر (Alt+Z)',
+                      ),
+                      child: TextButton.icon(
+                        key: const Key('academy_btn_toggle_wrap'),
+                        onPressed: _toggleWordWrap,
+                        style: TextButton.styleFrom(
+                          foregroundColor: _wordWrap
+                              ? const Color(0xFF34D399)
+                              : const Color(0xFF9BCAB3),
+                          backgroundColor: _wordWrap
+                              ? const Color(0xFF147D64).withValues(alpha: 0.28)
+                              : null,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        icon: const Icon(Icons.wrap_text_rounded, size: 16),
+                        label: Text(
+                          _wordWrap
+                              ? tr('Wrap', 'التفاف')
+                              : tr('H-Scroll', 'تمرير أفقي'),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -622,8 +754,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
               Directionality(
                 textDirection: TextDirection.ltr,
                 child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(minHeight: 220, maxHeight: 340),
+                  constraints: const BoxConstraints(
+                    minHeight: 220,
+                    maxHeight: 340,
+                  ),
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Row(
@@ -643,15 +777,18 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                                       }
                                     });
                                     _debugger.setLineBreakpoints(
-                                        'playground.quds', _breakpoints);
+                                      'playground.quds',
+                                      _breakpoints,
+                                    );
                                   },
                                   child: Container(
-                                    height: 21.0,
+                                    height: rowHeight,
                                     decoration: _activePause?.span.line == line
                                         ? BoxDecoration(
                                             color: const Color(0x44F59E0B),
-                                            borderRadius:
-                                                BorderRadius.circular(4),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
                                           )
                                         : null,
                                     child: Row(
@@ -666,9 +803,11 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                                                   height: 8,
                                                   decoration:
                                                       const BoxDecoration(
-                                                    color: Color(0xFFEF4444),
-                                                    shape: BoxShape.circle,
-                                                  ),
+                                                        color: Color(
+                                                          0xFFEF4444,
+                                                        ),
+                                                        shape: BoxShape.circle,
+                                                      ),
                                                 )
                                               : null,
                                         ),
@@ -688,50 +827,27 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                           ),
                         ),
                         Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: CallbackShortcuts(
-                              bindings: {
-                                const SingleActivator(LogicalKeyboardKey.tab):
-                                    () => _applyTab(false),
-                                const SingleActivator(LogicalKeyboardKey.tab,
-                                    shift: true): () => _applyTab(true),
-                                const SingleActivator(
-                                    LogicalKeyboardKey.bracketRight,
-                                    control: true): () => _applyTab(false),
-                                const SingleActivator(
-                                    LogicalKeyboardKey.bracketLeft,
-                                    control: true): () => _applyTab(true),
-                                const SingleActivator(LogicalKeyboardKey.slash,
-                                    control: true): _toggleComment,
-                                const SingleActivator(LogicalKeyboardKey.keyF,
-                                    shift: true, alt: true): _format,
-                              },
-                              child: TextField(
-                                key: const Key('academy_playground_editor'),
-                                controller: _controller,
-                                maxLines: null,
-                                keyboardType: TextInputType.multiline,
-                                autocorrect: false,
-                                enableSuggestions: false,
-                                inputFormatters: [
-                                  _AcademySmartEditFormatter(_engine),
-                                ],
-                                style: const TextStyle(
-                                  fontFamily: 'JetBrainsMono',
-                                  fontFamilyFallback: ['Cairo'],
-                                  fontSize: 13,
-                                  height: 1.62,
-                                  color: Color(0xFFD3EDDF),
+                          child: _wordWrap
+                              ? editorField
+                              : LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final canvasWidth = _measureCanvasWidth(
+                                      _controller.text,
+                                      codeStyle,
+                                      constraints.maxWidth,
+                                      textScaler,
+                                    );
+                                    return SingleChildScrollView(
+                                      key: const Key('academy_editor_hscroll'),
+                                      controller: _hScrollController,
+                                      scrollDirection: Axis.horizontal,
+                                      child: SizedBox(
+                                        width: canvasWidth,
+                                        child: editorField,
+                                      ),
+                                    );
+                                  },
                                 ),
-                                decoration: const InputDecoration(
-                                  border: InputBorder.none,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              ),
-                            ),
-                          ),
                         ),
                       ],
                     ),
@@ -742,13 +858,13 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
               // VS Code-style Quick-Keys & Indent Bar (works great on phones & tablets)
               Container(
                 height: 40,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: const BoxDecoration(
                   color: Color(0xFF0A1614),
-                  border: Border(
-                    top: BorderSide(color: Color(0xFF1F3831)),
-                  ),
+                  border: Border(top: BorderSide(color: Color(0xFF1F3831))),
                 ),
                 child: Directionality(
                   textDirection: TextDirection.ltr,
@@ -758,8 +874,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                       _QuickKeyButton(
                         key: const Key('academy_btn_indent'),
                         label: '⇥ Tab',
-                        tooltip: tr('Indent (Tab / Ctrl+])',
-                            'مسافة بادئة (Tab / Ctrl+])'),
+                        tooltip: tr(
+                          'Indent (Tab / Ctrl+])',
+                          'مسافة بادئة (Tab / Ctrl+])',
+                        ),
                         highlighted: true,
                         onPressed: () => _applyTab(false),
                       ),
@@ -767,8 +885,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                       _QuickKeyButton(
                         key: const Key('academy_btn_outdent'),
                         label: '⇤',
-                        tooltip: tr('Outdent (Shift+Tab / Ctrl+[)',
-                            'تقليص المسافة (Shift+Tab)'),
+                        tooltip: tr(
+                          'Outdent (Shift+Tab / Ctrl+[)',
+                          'تقليص المسافة (Shift+Tab)',
+                        ),
                         highlighted: true,
                         onPressed: () => _applyTab(true),
                       ),
@@ -811,8 +931,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                       _QuickKeyButton(
                         key: const Key('academy_btn_comment'),
                         label: '#',
-                        tooltip: tr('Toggle Comment (Ctrl+/)',
-                            'تعليق/إلغاء تعليق (Ctrl+/)'),
+                        tooltip: tr(
+                          'Toggle Comment (Ctrl+/)',
+                          'تعليق/إلغاء تعليق (Ctrl+/)',
+                        ),
                         onPressed: _toggleComment,
                       ),
                     ],
@@ -824,8 +946,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
               if (_completions.isNotEmpty)
                 Container(
                   height: 38,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   color: const Color(0xFF0A1614),
                   child: Directionality(
                     textDirection: TextDirection.ltr,
@@ -856,13 +980,18 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
               // Diagnostics + Quick Fix
               if (_analysis.diagnostics.isNotEmpty)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   color: const Color(0x28EF4444),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded,
-                          size: 16, color: Color(0xFFF87171)),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 16,
+                        color: Color(0xFFF87171),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -870,13 +999,16 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                           '${_analysis.diagnostics.first.code} — '
                           '${_analysis.diagnostics.first.message}',
                           style: const TextStyle(
-                              fontSize: 12, color: Color(0xFFFEE2E2)),
+                            fontSize: 12,
+                            color: Color(0xFFFEE2E2),
+                          ),
                         ),
                       ),
                       if (_analysis.diagnostics.first.quickFixes.isNotEmpty)
                         TextButton(
                           onPressed: () => _applyQuickFix(
-                              _analysis.diagnostics.first.quickFixes.first),
+                            _analysis.diagnostics.first.quickFixes.first,
+                          ),
                           child: Text(tr('Quick Fix', 'إصلاح سريع')),
                         ),
                     ],
@@ -947,17 +1079,21 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                     }),
                   ),
                 ),
-                for (final input
-                    in scene.interactiveInputs.where((i) => i.kind == 'slider'))
+                for (final input in scene.interactiveInputs.where(
+                  (i) => i.kind == 'slider',
+                ))
                   Row(
                     children: [
-                      Text(input.label ?? input.id,
-                          style: TextStyle(fontSize: 12, color: ink)),
+                      Text(
+                        input.label ?? input.id,
+                        style: TextStyle(fontSize: 12, color: ink),
+                      ),
                       Expanded(
                         child: Slider(
-                          value: (input.value as num)
-                              .toDouble()
-                              .clamp(input.min ?? 0.0, input.max ?? 10.0),
+                          value: (input.value as num).toDouble().clamp(
+                            input.min ?? 0.0,
+                            input.max ?? 10.0,
+                          ),
                           min: input.min ?? 0.0,
                           max: input.max ?? 10.0,
                           activeColor: _brand,
@@ -967,9 +1103,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                       Text(
                         (input.value as num).toStringAsFixed(2),
                         style: TextStyle(
-                            fontFamily: 'JetBrainsMono',
-                            fontSize: 11.5,
-                            color: muted),
+                          fontFamily: 'JetBrainsMono',
+                          fontSize: 11.5,
+                          color: muted,
+                        ),
                       ),
                     ],
                   ),
@@ -1003,8 +1140,9 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                           ? Icons.check_circle_outline_rounded
                           : Icons.error_outline_rounded,
                       size: 16,
-                      color:
-                          _result!.succeeded ? _brand : const Color(0xFFEF4444),
+                      color: _result!.succeeded
+                          ? _brand
+                          : const Color(0xFFEF4444),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -1063,8 +1201,10 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                   )
                 else
                   Text(
-                    tr('(Completed with no printed output)',
-                        '(تم التنفيذ بنجاح بدون مخرجات نصية)'),
+                    tr(
+                      '(Completed with no printed output)',
+                      '(تم التنفيذ بنجاح بدون مخرجات نصية)',
+                    ),
                     style: TextStyle(fontSize: 12, color: muted),
                   ),
               ],
@@ -1110,13 +1250,13 @@ class _AcademyGeoCanvasState extends State<_AcademyGeoCanvas> {
         final midX = (bounds.minX + bounds.maxX) / 2;
         final midY = (bounds.minY + bounds.maxY) / 2;
         Offset toScreen(double x, double y) => Offset(
-              size.width / 2 + (x - midX) * scale,
-              size.height / 2 - (y - midY) * scale,
-            );
+          size.width / 2 + (x - midX) * scale,
+          size.height / 2 - (y - midY) * scale,
+        );
         Offset toWorld(Offset p) => Offset(
-              midX + (p.dx - size.width / 2) / scale,
-              midY - (p.dy - size.height / 2) / scale,
-            );
+          midX + (p.dx - size.width / 2) / scale,
+          midY - (p.dy - size.height / 2) / scale,
+        );
 
         return GestureDetector(
           onPanStart: (d) {
@@ -1187,17 +1327,22 @@ class _AcademyGeoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(12)),
-      Paint()
-        ..color = dark ? const Color(0xFF0A1614) : const Color(0xFFF3F7F4),
+      Paint()..color = dark ? const Color(0xFF0A1614) : const Color(0xFFF3F7F4),
     );
     final origin = toScreen(0, 0);
     final axisPaint = Paint()
       ..color = dark ? const Color(0xFF2D443C) : const Color(0xFFCBD5E1)
       ..strokeWidth = 1.2;
     canvas.drawLine(
-        Offset(0, origin.dy), Offset(size.width, origin.dy), axisPaint);
+      Offset(0, origin.dy),
+      Offset(size.width, origin.dy),
+      axisPaint,
+    );
     canvas.drawLine(
-        Offset(origin.dx, 0), Offset(origin.dx, size.height), axisPaint);
+      Offset(origin.dx, 0),
+      Offset(origin.dx, size.height),
+      axisPaint,
+    );
 
     for (final p in scene.primitives) {
       switch (p) {
@@ -1243,7 +1388,11 @@ class _AcademyGeoPainter extends CustomPainter {
           final c = toScreen(p.x, p.y);
           final color = _hex(p.color);
           if (p.draggable) {
-            canvas.drawCircle(c, 12, Paint()..color = color.withValues(alpha: 0.22));
+            canvas.drawCircle(
+              c,
+              12,
+              Paint()..color = color.withValues(alpha: 0.22),
+            );
           }
           canvas.drawCircle(c, p.draggable ? 6 : 4.5, Paint()..color = color);
           canvas.drawCircle(
@@ -1257,7 +1406,8 @@ class _AcademyGeoPainter extends CustomPainter {
           if (p.label != null) {
             final tp = TextPainter(
               text: TextSpan(
-                text: '${p.label} (${p.x.toStringAsFixed(1)}, ${p.y.toStringAsFixed(1)})',
+                text:
+                    '${p.label} (${p.x.toStringAsFixed(1)}, ${p.y.toStringAsFixed(1)})',
                 style: TextStyle(
                   color: dark ? Colors.white : const Color(0xFF182D29),
                   fontSize: 11,
@@ -1297,7 +1447,9 @@ Color _hex(String hex) {
   final c = hex.replaceFirst('#', '').trim();
   if (c.length == 6) return Color(int.parse('FF$c', radix: 16));
   if (c.length == 8) {
-    return Color(int.parse('${c.substring(6, 8)}${c.substring(0, 6)}', radix: 16));
+    return Color(
+      int.parse('${c.substring(6, 8)}${c.substring(0, 6)}', radix: 16),
+    );
   }
   return const Color(0xFF147D64);
 }
@@ -1351,4 +1503,3 @@ class _QuickKeyButton extends StatelessWidget {
     return tooltip != null ? Tooltip(message: tooltip!, child: btn) : btn;
   }
 }
-

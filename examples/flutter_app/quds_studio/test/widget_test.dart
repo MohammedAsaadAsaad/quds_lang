@@ -166,7 +166,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(tf.controller!.text, 'print "hi"');
 
-    // 3. Open Custom Policy dialog and grant host:sensors dynamically
+    // 3. Horizontal scrolling is enabled by default and toggles cleanly with Wrap button
+    expect(find.byKey(const Key('studio_editor_hscroll')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('btn_toggle_wrap')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('studio_editor_hscroll')), findsNothing);
+    await tester.tap(find.byKey(const Key('btn_toggle_wrap')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('studio_editor_hscroll')), findsOneWidget);
+
+    // 4. Open Custom Policy dialog and grant host:sensors dynamically
     await tester.tap(find.byKey(const Key('btn_custom_policy')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('switch_allow_sensors')));

@@ -13,6 +13,7 @@ import 'presets.dart';
 enum StudioFilterKind {
   all,
   animatedOnly,
+  benchmarks,
   physics,
   chemistry,
   mathematics,
@@ -28,6 +29,8 @@ extension StudioFilterExt on StudioFilterKind {
   String label(bool isArabic) => switch (this) {
         StudioFilterKind.all => isArabic ? 'الكل' : 'All',
         StudioFilterKind.animatedOnly => isArabic ? '⚡ حركة حية' : '⚡ Motion',
+        StudioFilterKind.benchmarks =>
+          StudioCategory.benchmarks.shortLabel(isArabic),
         StudioFilterKind.physics => StudioCategory.physics.shortLabel(isArabic),
         StudioFilterKind.chemistry =>
           StudioCategory.chemistry.shortLabel(isArabic),
@@ -44,6 +47,7 @@ extension StudioFilterExt on StudioFilterKind {
       };
 
   StudioCategory? get category => switch (this) {
+        StudioFilterKind.benchmarks => StudioCategory.benchmarks,
         StudioFilterKind.physics => StudioCategory.physics,
         StudioFilterKind.chemistry => StudioCategory.chemistry,
         StudioFilterKind.mathematics => StudioCategory.mathematics,
@@ -59,6 +63,7 @@ extension StudioFilterExt on StudioFilterKind {
   bool matches(StudioPreset p) => switch (this) {
         StudioFilterKind.all => true,
         StudioFilterKind.animatedOnly => p.isAnimated,
+        StudioFilterKind.benchmarks => p.category == StudioCategory.benchmarks,
         StudioFilterKind.physics => p.category == StudioCategory.physics,
         StudioFilterKind.chemistry => p.category == StudioCategory.chemistry,
         StudioFilterKind.mathematics =>
@@ -73,6 +78,7 @@ extension StudioFilterExt on StudioFilterKind {
 }
 
 StudioFilterKind filterForCategory(StudioCategory c) => switch (c) {
+      StudioCategory.benchmarks => StudioFilterKind.benchmarks,
       StudioCategory.physics => StudioFilterKind.physics,
       StudioCategory.chemistry => StudioFilterKind.chemistry,
       StudioCategory.mathematics => StudioFilterKind.mathematics,
@@ -810,6 +816,7 @@ Color _categoryColor(StudioCategory c) => switch (c) {
       StudioCategory.biology => const Color(0xFF10B981),
       StudioCategory.math3d => const Color(0xFF8B5CF6),
       StudioCategory.tools => const Color(0xFF64748B),
+      StudioCategory.benchmarks => const Color(0xFFF97316),
     };
 
 IconData _categoryIcon(StudioCategory c) => switch (c) {
@@ -822,4 +829,5 @@ IconData _categoryIcon(StudioCategory c) => switch (c) {
       StudioCategory.biology => Icons.monitor_heart_rounded,
       StudioCategory.math3d => Icons.view_in_ar_rounded,
       StudioCategory.tools => Icons.build_circle_outlined,
+      StudioCategory.benchmarks => Icons.speed_rounded,
     };

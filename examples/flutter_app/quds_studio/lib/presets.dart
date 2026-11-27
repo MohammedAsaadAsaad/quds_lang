@@ -1,6 +1,7 @@
 /// Curated Quds scientific & real-time motion presets for Quds Studio.
 library;
 
+import 'presets_benchmarks.dart';
 import 'presets_extra.dart';
 
 enum StudioCategory {
@@ -13,6 +14,7 @@ enum StudioCategory {
   biology,
   math3d,
   tools,
+  benchmarks,
 }
 
 extension StudioCategoryLabels on StudioCategory {
@@ -33,6 +35,8 @@ extension StudioCategoryLabels on StudioCategory {
         StudioCategory.math3d =>
           isArabic ? 'الذكاء الاصطناعي و3D' : 'AI, 3D & Data',
         StudioCategory.tools => isArabic ? 'الأدوات والمصحح' : 'Tools & Apps',
+        StudioCategory.benchmarks =>
+          isArabic ? 'اختبارات الأداء والسرعة' : 'Benchmarks',
       };
 
   String shortLabel(bool isArabic) => switch (this) {
@@ -45,6 +49,7 @@ extension StudioCategoryLabels on StudioCategory {
         StudioCategory.biology => isArabic ? 'أحياء وطب' : 'Bio/Med',
         StudioCategory.math3d => isArabic ? 'AI و3D' : 'AI & 3D',
         StudioCategory.tools => isArabic ? 'أدوات' : 'Tools',
+        StudioCategory.benchmarks => isArabic ? '⚡ أداء' : '⚡ Bench',
       };
 
   String description(bool isArabic) => switch (this) {
@@ -75,6 +80,9 @@ extension StudioCategoryLabels on StudioCategory {
         StudioCategory.tools => isArabic
             ? 'المصحح، الجسر الآمن، Bytecode VM، النماذج والرسوم البيانية'
             : 'Debugger, sandbox bridge, Bytecode VM & micro-app forms',
+        StudioCategory.benchmarks => isArabic
+            ? 'اختبارات ضغط ثقيلة للمفسّر مع قياس الزمن (Mandelbrot, Fib, Sieve, N-Body, MatMul)'
+            : 'Heavy CPU benchmarks with millisecond timing & VM vs AST comparison',
       };
 }
 
@@ -108,12 +116,14 @@ enum StudioPolicyMode {
   standard,
   strictSandbox,
   systemBridge,
+  benchmark,
   custom,
 }
 
 final List<StudioPreset> studioPresets = <StudioPreset>[
   ..._baseStudioPresets,
   ...extraAnimatedPresets,
+  ...benchmarkPresets,
 ];
 
 const _baseStudioPresets = <StudioPreset>[

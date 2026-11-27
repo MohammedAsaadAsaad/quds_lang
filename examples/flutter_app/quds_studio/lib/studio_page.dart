@@ -12,6 +12,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:quds/editor_engine.dart';
 import 'package:quds/interpreter.dart';
 
+import 'benchmark_card.dart';
 import 'editor_widget.dart';
 import 'notebook_panel.dart';
 import 'preset_gallery.dart';
@@ -86,6 +87,9 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   // Bytecode VM, Time-Travel + Profiler, and VSync 60/120fps Animation state
   bool _preferBytecode = false;
   bool _enableProfiling = false;
+  final Map<String, List<BenchmarkRunRecord>> _benchHistory = {};
+  final Map<String, double> _benchVmMs = {};
+  final Map<String, double> _benchAstMs = {};
   Ticker? _animTicker;
   Duration? _lastTickElapsed;
   double _measuredFps = 0.0;
@@ -132,6 +136,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _preset = studioPresets[widget.initialPresetIndex];
     _policyMode = _preset.defaultPolicy;
     _breakpoints = Set<int>.from(_preset.defaultBreakpoints);
+    _preferBytecode = _preset.category == StudioCategory.benchmarks;
     _enableProfiling = _preset.id == 'profiler_bytecode_lab';
     _projectWorkspace = QudsWorkspace.scientificProjectTemplate();
     _activeWorkspaceFile = _projectWorkspace.entryPoint;
@@ -186,6 +191,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           capabilities: [QudsCapability.custom('sensors.read')],
           maxSteps: 200000,
           timeout: const Duration(seconds: 8),
+        ),
+      StudioPolicyMode.benchmark => QudsExecutionPolicy.standard(
+          maxSteps: 120000000,
+          maxCallDepth: 256,
+          timeout: const Duration(seconds: 20),
         ),
       StudioPolicyMode.custom => QudsExecutionPolicy(
           name: 'custom',
@@ -275,6 +285,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _running = true;
       _liveEvalOutput = null;
     });
+    if (_preset.category == StudioCategory.benchmarks) {
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+      if (!mounted) return;
+    }
     final res = _workspaceMode
         ? await _session.runProject(preferBytecode: _preferBytecode)
         : await _session.run(
@@ -283,7 +297,12 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             preferBytecode: _preferBytecode,
           );
     if (!mounted) return;
-    final hasVisual = res.lastGeometryScene != null ||
+    final isBench = _preset.category == StudioCategory.benchmarks;
+    if (isBench) {
+      _recordBenchmarkRun(res);
+    }
+    final hasVisual = isBench ||
+        res.lastGeometryScene != null ||
         res.lastPlot != null ||
         res.lastSurface3D != null ||
         res.lastVectorField != null ||
@@ -312,6 +331,116 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         (anim?.autoPlay ?? false)) {
       _startAnimTimer();
     }
+  }
+
+  void _recordBenchmarkRun(
+    QudsRunResult res, {
+    double? overrideMs,
+    bool isMedianOf3 = false,
+    double? minMs,
+    double? avgMs,
+  }) {
+    final ms = overrideMs ?? (res.elapsed.inMicroseconds / 1000.0);
+    final summary = res.stdout.trim().isNotEmpty
+        ? res.stdout.trim()
+        : (res.value != null ? 'result = ${res.value}' : 'OK');
+    final rec = BenchmarkRunRecord(
+      elapsedMs: ms,
+      steps: res.stepsExecuted,
+      usedVm: res.usedBytecodeVm,
+      succeeded: res.succeeded,
+      outputSummary: summary,
+      isMedianOf3: isMedianOf3,
+      minMs: minMs,
+      avgMs: avgMs,
+    );
+    final list = _benchHistory.putIfAbsent(_preset.id, () => []);
+    list.insert(0, rec);
+    if (list.length > 10) list.removeLast();
+    if (res.succeeded) {
+      if (res.usedBytecodeVm) {
+        _benchVmMs[_preset.id] = ms;
+      } else {
+        _benchAstMs[_preset.id] = ms;
+      }
+    }
+  }
+
+  Future<void> _runBenchmarkSingle({required bool useVm}) async {
+    if (_running) return;
+    setState(() {
+      _preferBytecode = useVm;
+      _enableProfiling = false;
+      _running = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    if (!mounted) return;
+    final res = await _session.run(
+      _codeController.text,
+      file: _preset.fileName,
+      preferBytecode: useVm,
+    );
+    if (!mounted) return;
+    _recordBenchmarkRun(res);
+    setState(() {
+      _running = false;
+      _lastResult = res;
+    });
+    _visualResult.value = res;
+  }
+
+  Future<void> _runBenchmarkMedian3() async {
+    if (_running) return;
+    setState(() {
+      _preferBytecode = true;
+      _enableProfiling = false;
+      _running = true;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 16));
+    if (!mounted) return;
+    final src = _codeController.text;
+    // 1 warm-up run + 3 timed runs -> median
+    final warm = await _session.run(
+      src,
+      file: _preset.fileName,
+      preferBytecode: true,
+    );
+    if (!mounted) return;
+    if (!warm.succeeded) {
+      _recordBenchmarkRun(warm);
+      setState(() {
+        _running = false;
+        _lastResult = warm;
+      });
+      _visualResult.value = warm;
+      return;
+    }
+    final times = <double>[];
+    var last = warm;
+    for (var i = 0; i < 3; i++) {
+      last = await _session.run(
+        src,
+        file: _preset.fileName,
+        preferBytecode: true,
+      );
+      times.add(last.elapsed.inMicroseconds / 1000.0);
+    }
+    if (!mounted) return;
+    times.sort();
+    final median = times[1];
+    final avg = (times[0] + times[1] + times[2]) / 3.0;
+    _recordBenchmarkRun(
+      last,
+      overrideMs: median,
+      isMedianOf3: true,
+      minMs: times[0],
+      avgMs: avg,
+    );
+    setState(() {
+      _running = false;
+      _lastResult = last;
+    });
+    _visualResult.value = last;
   }
 
   void _openWorkspaceFile(String path, {bool switchToEditorOnMobile = true}) {
@@ -513,6 +642,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _preset = preset;
       _policyMode = preset.defaultPolicy;
       _breakpoints = Set<int>.from(preset.defaultBreakpoints);
+      _preferBytecode = preset.category == StudioCategory.benchmarks;
       _enableProfiling = preset.id == 'profiler_bytecode_lab';
       _lastResult = null;
       _activePause = null;
@@ -1107,6 +1237,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                         value: StudioPolicyMode.systemBridge,
                         label: Text(_isArabic ? 'جسر النظام' : 'Bridge'),
                       ),
+                      if (_policyMode == StudioPolicyMode.benchmark)
+                        ButtonSegment(
+                          value: StudioPolicyMode.benchmark,
+                          label: Text(_isArabic ? 'أداء فائق' : 'Bench'),
+                        ),
                       if (_policyMode == StudioPolicyMode.custom)
                         ButtonSegment(
                           value: StudioPolicyMode.custom,
@@ -1489,6 +1624,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 value: StudioPolicyMode.systemBridge,
                 label: Text(_isArabic ? 'جسر النظام' : 'Bridge'),
               ),
+              if (_policyMode == StudioPolicyMode.benchmark)
+                ButtonSegment(
+                  value: StudioPolicyMode.benchmark,
+                  label: Text(_isArabic ? 'أداء فائق' : 'Bench'),
+                ),
               if (_policyMode == StudioPolicyMode.custom)
                 ButtonSegment(
                   value: StudioPolicyMode.custom,
@@ -1713,6 +1853,22 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               : SingleChildScrollView(
                   child: QudsTableCard(table: tables.first),
                 );
+        } else if (_preset.category == StudioCategory.benchmarks) {
+          final benchCard = QudsBenchmarkStageCard(
+            preset: _preset,
+            result: res,
+            history: _benchHistory[_preset.id] ?? const [],
+            lastVmMs: _benchVmMs[_preset.id],
+            lastAstMs: _benchAstMs[_preset.id],
+            running: _running,
+            isArabic: _isArabic,
+            isDark: _isDark,
+            onRunVm: () => _runBenchmarkSingle(useVm: true),
+            onRunMedian3: _runBenchmarkMedian3,
+            onRunAst: () => _runBenchmarkSingle(useVm: false),
+          );
+          stageBody =
+              isCompact ? benchCard : SingleChildScrollView(child: benchCard);
         } else {
           stageBody = Center(
             child: Column(
@@ -1860,7 +2016,9 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               surface3d == null &&
               vectorField == null &&
               graph == null &&
-              (form != null || tables.isNotEmpty);
+              (form != null ||
+                  tables.isNotEmpty ||
+                  _preset.category == StudioCategory.benchmarks);
           final double canvasHeight = isCompact
               ? ((surface3d != null && vectorField != null) ? 420.0 : 320.0)
               : ((surface3d != null && vectorField != null) ? 340.0 : 240.0);

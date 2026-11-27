@@ -581,4 +581,60 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets(
+      'Benchmarks category compiles all 6 heavy presets to Register VM and displays live timing & 3-run median UI',
+      (tester) async {
+    // 1. Verify all 6 benchmark presets compile cleanly to QudsBytecodeVm (zero AST fallback!)
+    final benches = studioPresets
+        .where((p) => p.category == StudioCategory.benchmarks)
+        .toList();
+    expect(benches, hasLength(6));
+    for (final b in benches) {
+      final compiled =
+          QudsBytecodeCompiler.tryCompileSource(b.code, file: b.fileName);
+      expect(compiled, isNotNull,
+          reason: 'Benchmark ${b.id} must compile to Register Bytecode VM');
+    }
+
+    // 2. Open Quds Studio on phone viewport, select Benchmarks folder, launch Fib(30)
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('bench_ui_test'),
+      autoRunInitial: false,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('folder_card_benchmarks')),
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const Key('gallery_folders_grid')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('folder_card_benchmarks')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('folder_card_benchmarks')));
+    await tester.pumpAndSettle();
+
+    // Launch Recursive fib(30) benchmark -> runs automatically on Register VM!
+    await tester.tap(find.byKey(const Key('gallery_item_bench_fib_30')));
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+
+    expect(find.byKey(const Key('quds_benchmark_card')), findsOneWidget);
+    expect(find.byKey(const Key('bench_elapsed_readout')), findsOneWidget);
+    expect(find.textContaining('832040'), findsWidgets);
+    expect(find.textContaining('Quds Register VM'), findsOneWidget);
+
+    // Run 3-run median benchmark directly from UI button
+    await tester.tap(find.byKey(const Key('btn_bench_run_3x')));
+    await tester.pumpAndSettle(const Duration(seconds: 8));
+    expect(find.textContaining('Median of 3 runs'), findsOneWidget);
+  });
 }

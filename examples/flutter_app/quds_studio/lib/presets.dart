@@ -3,6 +3,8 @@ library;
 
 enum StudioCategory {
   physics,
+  chemistry,
+  mathematics,
   geometry,
   waves,
   astronomy,
@@ -13,6 +15,9 @@ enum StudioCategory {
 extension StudioCategoryLabels on StudioCategory {
   String label(bool isArabic) => switch (this) {
         StudioCategory.physics => isArabic ? 'فيزياء وميكانيكا' : 'Physics',
+        StudioCategory.chemistry => isArabic ? 'كيمياء وتفاعلات' : 'Chemistry',
+        StudioCategory.mathematics =>
+          isArabic ? 'رياضيات وتحليل' : 'Mathematics',
         StudioCategory.geometry => isArabic ? 'هندسة وفن' : 'Geometry & Art',
         StudioCategory.waves => isArabic ? 'موجات وفورييه' : 'Waves & Fourier',
         StudioCategory.astronomy => isArabic ? 'فلك ورادار' : 'Space & Radar',
@@ -821,6 +826,637 @@ for i in 0..<targets.length:
 s.readout("زاوية الشعاع", ang * 180.0 / m.pi, unit: "°", decimals: 0, color: "#34D399")
 s.readout("أهداف مرصودة", "{active}/4", color: "#EF4444")
 s.readout("المدى", "4.0 km", color: "#38BDF8")
+s.render()
+''',
+  ),
+  // ── 4 New Physics & Electromagnetism / Quantum Motion Presets ──────────────
+  StudioPreset(
+    id: 'lorentz_cyclotron',
+    titleAr: 'فيزياء: حركة شحنة في مجال مغناطيسي (سيكلوترون)',
+    titleEn: 'Physics: Charged Particle Cyclotron & Lorentz Force',
+    subtitleAr:
+        'مسار شحنة متسارعة تحت قوة لورنتز F = q(v×B) مع نصف قطر لارمور ومتجهات السرعة والقوة',
+    fileName: 'lorentz_cyclotron.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+B = viz.slider("B", min: 0.6, max: 3.0, value: 1.5, step: 0.1, label: "شدة المجال B (T)")
+accel = viz.slider("accel", min: 0.0, max: 0.45, value: 0.22, step: 0.03, label: "تسارع الفجوة E")
+
+q = 1.0
+mass = 1.0
+wc = q * B / mass
+var pts = []
+var vx = 0.0
+var vy = 0.0
+var px = 0.0
+var py = 0.0
+steps = 220
+for i in 0..steps:
+  tau = (i / steps) * clk.t * 2.2
+  r = 0.55 + accel * tau
+  ang = wc * tau
+  x = r * m.cos(ang)
+  y = r * m.sin(ang)
+  pts.add([x, y])
+  if i == steps:
+    px = x
+    py = y
+    vx = accel * m.cos(ang) - r * wc * m.sin(ang)
+    vy = accel * m.sin(ang) + r * wc * m.cos(ang)
+
+speed = m.sqrt(vx * vx + vy * vy)
+rLarmor = mass * speed / (q * B)
+fx = q * vy * B
+fy = -q * vx * B
+fMag = m.sqrt(fx * fx + fy * fy)
+
+s = viz.scene(title: "سيكلوترون وقوة لورنتز F = q(v × B)", bounds: [-5.2, 5.2, -5.2, 5.2])
+s.circle("dee", [0.0, 0.0], 4.5, stroke: "#1E3A5F", dashed: true)
+s.segment("gap", [0.0, -4.5], [0.0, 4.5], color: "#334155", dashed: true)
+s.curve("orbit", pts, gradient: viz.palette("plasma"), strokeWidth: 2.4, glow: true, showHead: true)
+s.vector("v", [px, py], [px + vx * 0.28, py + vy * 0.28], label: "v", color: "#38BDF8")
+s.vector("F", [px, py], [px + fx * 0.16, py + fy * 0.16], label: "F", color: "#F43F5E")
+s.point("q", px, py, color: "#FACC15", radius: 6.0)
+s.readout("نصف قطر لارمور rL", rLarmor, unit: "m", color: "#F59E0B")
+s.readout("التردد ωc", wc, unit: "rad/s", color: "#38BDF8")
+s.readout("السرعة |v|", speed, unit: "m/s", color: "#10B981")
+s.readout("قوة لورنتز |F|", fMag, unit: "N", color: "#F43F5E")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'quantum_wavepacket',
+    titleAr: 'ميكانيكا الكم: حزمة موجية غاوسية |ψ(x,t)|²',
+    titleEn: 'Quantum Mechanics: Spreading Gaussian Wavepacket',
+    subtitleAr:
+        'انتشار وتشتت حزمة موجية كمّية مع دالة الاحتمال |ψ|² والجزء الحقيقي Re(ψ) وعرض عدم اليقين σ(t)',
+    fileName: 'quantum_wavepacket.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+k0 = viz.slider("k0", min: 2.0, max: 10.0, value: 5.5, step: 0.5, label: "متجه الموجة k₀")
+sigma0 = viz.slider("s0", min: 0.35, max: 1.2, value: 0.65, step: 0.05, label: "العرض الابتدائي σ₀")
+
+t = clk.t
+xc = -4.2 + 1.05 * t
+# انتشار الحزمة الكمّية: σ(t) = σ₀ * sqrt(1 + (t / (2 σ₀²))²)
+spread = m.sqrt(1.0 + m.pow(t * 0.35 / (sigma0 * sigma0), 2.0))
+sig = sigma0 * spread
+amp = 2.4 / m.sqrt(spread)
+
+var prob = []
+var realPsi = []
+for i in 0..180:
+  x = -6.0 + i * (12.0 / 180.0)
+  dx = x - xc
+  env = m.exp(-(dx * dx) / (2.0 * sig * sig))
+  pDens = amp * env * env
+  re = amp * env * m.cos(k0 * dx - 0.5 * k0 * t)
+  prob.add([x, pDens])
+  realPsi.add([x, re])
+
+s = viz.scene(title: "الحزمة الموجية الكمّية ψ(x,t) وكثافة الاحتمال |ψ|²", bounds: [-6.2, 6.2, -3.0, 3.4])
+s.curve("re", realPsi, color: "#38BDF8", strokeWidth: 1.8)
+s.curve("prob", prob, gradient: viz.palette("viridis"), strokeWidth: 2.8, glow: true)
+s.segment("mean", [xc, 0.0], [xc, amp], color: "#F59E0B", dashed: true)
+s.readout("⟨x⟩", xc, unit: "nm", color: "#F59E0B")
+s.readout("عدم اليقين σ(t)", sig, unit: "nm", color: "#34D399")
+s.readout("الزخم k₀", k0, unit: "ħ/nm", color: "#38BDF8")
+s.readout("الذروة |ψ|²", amp, color: "#A78BFA")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'double_pendulum_chaos',
+    titleAr: 'ميكانيكا لاغرانج: البندول المزدوج الفوضوي',
+    titleEn: 'Lagrangian Mechanics: Chaotic Double Pendulum',
+    subtitleAr:
+        'تكامل حركي حقيقي لبندول مزدوج مترابط مع ذيل فوضوي متدرج وطاقة ميكانيكية لحظية',
+    fileName: 'double_pendulum.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 16.0, loop: false)
+g = viz.slider("g", min: 3.0, max: 18.0, value: 9.8, step: 0.4, label: "الجاذبية g")
+m2 = viz.slider("m2", min: 0.5, max: 3.0, value: 1.2, step: 0.1, label: "الكتلة الثانية m₂")
+
+L1 = 2.0
+L2 = 2.0
+m1 = 1.0
+var st = viz.state("dp", [2.15, 2.55, 0.0, 0.0, []])
+if clk.frame == 0:
+  st = [2.15, 2.55, 0.0, 0.0, []]
+
+var th1 = st[0]
+var th2 = st[1]
+var w1 = st[2]
+var w2 = st[3]
+var trail = st[4]
+
+dt = 0.012
+for sub in 0..3:
+  d = th1 - th2
+  den = 2.0 * m1 + m2 - m2 * m.cos(2.0 * d)
+  a1 = (-g * (2.0 * m1 + m2) * m.sin(th1) - m2 * g * m.sin(th1 - 2.0 * th2) - 2.0 * m.sin(d) * m2 * (w2 * w2 * L2 + w1 * w1 * L1 * m.cos(d))) / (L1 * den)
+  a2 = (2.0 * m.sin(d) * (w1 * w1 * L1 * (m1 + m2) + g * (m1 + m2) * m.cos(th1) + w2 * w2 * L2 * m2 * m.cos(d))) / (L2 * den)
+  w1 = w1 + a1 * dt
+  w2 = w2 + a2 * dt
+  th1 = th1 + w1 * dt
+  th2 = th2 + w2 * dt
+
+x1 = L1 * m.sin(th1)
+y1 = -L1 * m.cos(th1)
+x2 = x1 + L2 * m.sin(th2)
+y2 = y1 - L2 * m.cos(th2)
+trail.add([x2, y2])
+if trail.length > 140:
+  trail.removeAt(0)
+viz.setState("dp", [th1, th2, w1, w2, trail])
+
+s = viz.scene(title: "البندول المزدوج الفوضوي (لاغرانج)", bounds: [-4.6, 4.6, -4.6, 4.6])
+if trail.length >= 2:
+  s.curve("trail", trail, gradient: viz.palette("fire"), strokeWidth: 2.4, glow: true)
+s.segment("rod1", [0.0, 0.0], [x1, y1], color: "#94A3B8", strokeWidth: 2.4)
+s.segment("rod2", [x1, y1], [x2, y2], color: "#E2E8F0", strokeWidth: 2.4)
+s.point("piv", 0.0, 0.0, color: "#64748B", radius: 4.5)
+s.point("b1", x1, y1, color: "#38BDF8", radius: 7.5)
+s.point("b2", x2, y2, color: "#F43F5E", radius: 8.5)
+s.readout("θ₁", th1 * 180.0 / m.pi, unit: "°", decimals: 1, color: "#38BDF8")
+s.readout("θ₂", th2 * 180.0 / m.pi, unit: "°", decimals: 1, color: "#F43F5E")
+s.readout("ω₂", w2, unit: "rad/s", color: "#F59E0B")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'rlc_phase_portrait',
+    titleAr: 'كهرومغناطيسية: دائرة RLC ومخطط الطور (Vc, I)',
+    titleEn: 'Electromagnetism: RLC Resonance & Phase Portrait',
+    subtitleAr:
+        'مسار التخميد الرنيني لدائرة RLC في فضاء الطور (الجهد مقابل التيار) مع عامل الجودة Q',
+    fileName: 'rlc_phase.quds',
+    category: StudioCategory.physics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+R = viz.slider("R", min: 0.1, max: 2.5, value: 0.45, step: 0.05, label: "المقاومة R (Ω)")
+w0 = viz.slider("w0", min: 1.5, max: 5.0, value: 3.0, step: 0.25, label: "تردد الرنين ω₀")
+
+alpha = R * 0.5
+wd = m.sqrt(m.max(0.05, w0 * w0 - alpha * alpha))
+Q = w0 / (2.0 * alpha)
+V0 = 4.2
+
+var pts = []
+for i in 0..220:
+  tau = i * 0.045
+  env = V0 * m.exp(-alpha * tau)
+  vc = env * m.cos(wd * tau)
+  curI = -env * (alpha * m.cos(wd * tau) + wd * m.sin(wd * tau)) / w0
+  pts.add([vc, curI])
+
+idx = (clk.progress * 220.0).round()
+pt = pts[idx]
+s = viz.scene(title: "مخطط الطور لدائرة RLC: التيار I مقابل الجهد Vc", bounds: [-4.8, 4.8, -4.8, 4.8])
+s.curve("phase", pts, gradient: viz.palette("neon"), progress: clk.progress, strokeWidth: 2.5, glow: true, showHead: true)
+s.vector("state", [0.0, 0.0], pt, color: "#38BDF8")
+s.readout("جهد المكثف Vc", pt[0], unit: "V", color: "#38BDF8")
+s.readout("التيار I", pt[1], unit: "A", color: "#EC4899")
+s.readout("عامل الجودة Q", Q, color: "#10B981")
+s.readout("نسبة التخميد ζ", alpha / w0, color: "#F59E0B")
+s.render()
+''',
+  ),
+  // ── 4 Brand-New Chemistry Animated Presets ──────────────────────────────────
+  StudioPreset(
+    id: 'chem_consecutive_kinetics',
+    titleAr: 'كيمياء حركية: تفاعل متسلسل A → B → C',
+    titleEn: 'Chemical Kinetics: Consecutive Reaction A → B → C',
+    subtitleAr:
+        'تتبع تراكيز المتفاعل A والوسيط B والناتج C لحظياً مع تحديد زمن ذروة الوسيط [B]max',
+    fileName: 'chem_kinetics.quds',
+    category: StudioCategory.chemistry,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+k1 = viz.slider("k1", min: 0.2, max: 2.5, value: 1.1, step: 0.1, label: "ثابت السرعة k₁ (A→B)")
+k2 = viz.slider("k2", min: 0.15, max: 2.0, value: 0.45, step: 0.05, label: "ثابت السرعة k₂ (B→C)")
+
+tMaxWindow = 8.0
+var cA = []
+var cB = []
+var cC = []
+for i in 0..160:
+  tau = i * (tMaxWindow / 160.0)
+  a = m.exp(-k1 * tau)
+  var b = 0.0
+  if (k1 - k2).abs() < 0.02:
+    b = k1 * tau * m.exp(-k1 * tau)
+  else:
+    b = (k1 / (k1 - k2)) * (m.exp(-k2 * tau) - m.exp(-k1 * tau))
+  c = 1.0 - a - b
+  cA.add([tau, a * 4.0])
+  cB.add([tau, b * 4.0])
+  cC.add([tau, c * 4.0])
+
+tNow = clk.progress * tMaxWindow
+aNow = m.exp(-k1 * tNow)
+var bNow = 0.0
+if (k1 - k2).abs() < 0.02:
+  bNow = k1 * tNow * m.exp(-k1 * tNow)
+else:
+  bNow = (k1 / (k1 - k2)) * (m.exp(-k2 * tNow) - m.exp(-k1 * tNow))
+cNow = 1.0 - aNow - bNow
+
+var tPeak = 1.0 / k1
+if (k1 - k2).abs() >= 0.02:
+  tPeak = m.log(k1 / k2) / (k1 - k2)
+
+s = viz.scene(title: "حركية التفاعل المتسلسل: A → B → C", bounds: [-0.4, 8.4, -0.4, 4.6])
+s.curve("A", cA, color: "#38BDF8", progress: clk.progress, strokeWidth: 2.6, showHead: true)
+s.curve("B", cB, color: "#F59E0B", progress: clk.progress, strokeWidth: 2.8, glow: true, showHead: true)
+s.curve("C", cC, color: "#10B981", progress: clk.progress, strokeWidth: 2.6, showHead: true)
+if tPeak > 0.0 and tPeak < tMaxWindow:
+  s.segment("peak", [tPeak, 0.0], [tPeak, 4.2], color: "#F59E0B", dashed: true)
+s.readout("[A] المتفاعل", aNow, unit: "M", color: "#38BDF8")
+s.readout("[B] الوسيط", bNow, unit: "M", color: "#F59E0B")
+s.readout("[C] الناتج", cNow, unit: "M", color: "#10B981")
+s.readout("ذروة B عند", tPeak, unit: "s", color: "#A78BFA")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'chem_titration_ph',
+    titleAr: 'كيمياء تحليلية: معايرة حمض ضعيف بقاعدة قوية (pH)',
+    titleEn: 'Analytical Chemistry: Weak Acid Titration Curve (pH)',
+    subtitleAr:
+        'رسم منحنى pH حياً مع منطقة المحلول المنظم pH=pKa وقفزة نقطة التكافؤ ومؤشر لوني متغيّر',
+    fileName: 'chem_titration.quds',
+    category: StudioCategory.chemistry,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+pKa = viz.slider("pKa", min: 2.5, max: 6.5, value: 4.76, step: 0.1, label: "ثابت الحمض pKa")
+vEq = viz.slider("vEq", min: 15.0, max: 35.0, value: 25.0, step: 1.0, label: "حجم التكافؤ (mL)")
+
+var pts = []
+var cols = []
+var curPh = pKa
+var curV = 0.0
+steps = 160
+for i in 0..steps:
+  v = i * (50.0 / steps)
+  var ph = 7.0
+  if v < 0.2:
+    ph = 0.5 * (pKa + 1.0)
+  else:
+    if v < vEq - 0.35:
+      ph = pKa + m.log(v / (vEq - v)) / m.ln10
+    else:
+      if v <= vEq + 0.35:
+        frac = (v - (vEq - 0.35)) / 0.7
+        ph = (pKa + 2.0) + frac * (11.2 - (pKa + 2.0))
+      else:
+        excess = (v - vEq) / (50.0 + v) * 0.1
+        pOH = -m.log(m.max(excess, 1e-7)) / m.ln10
+        ph = 14.0 - pOH
+  if ph < 0.5:
+    ph = 0.5
+  if ph > 13.8:
+    ph = 13.8
+  pts.add([v * 0.2, ph])
+  # لون الكاشف الشامل من الأحمر (حمضي) للأخضر (متعادل) للبنفسجي (قاعدي)
+  hue = (ph / 14.0) * 280.0
+  cols.add(viz.hsl(hue, 0.9, 0.56))
+  if i == (clk.progress * steps).round():
+    curPh = ph
+    curV = v
+
+indColor = viz.hsl((curPh / 14.0) * 280.0, 0.92, 0.58)
+s = viz.scene(title: "منحنى المعايرة pH(V) — المحلول المنظم والتكافؤ", bounds: [-0.5, 10.6, 0.0, 14.5])
+s.segment("neutral", [0.0, 7.0], [10.0, 7.0], color: "#334155", dashed: true)
+s.segment("eqLine", [vEq * 0.2, 0.0], [vEq * 0.2, 14.0], color: "#F43F5E", dashed: true)
+s.point("halfEq", vEq * 0.1, pKa, label: "pH=pKa", color: "#38BDF8", radius: 4.5)
+s.curve("phCurve", pts, pointColors: cols, progress: clk.progress, strokeWidth: 2.8, glow: true, showHead: true)
+s.point("indicator", 9.2, 12.6, label: "الكاشف", color: indColor, radius: 10.0)
+s.readout("الحجم NaOH", curV, unit: "mL", decimals: 1, color: "#38BDF8")
+s.readout("pH اللحظي", curPh, decimals: 2, color: indColor)
+s.readout("نقطة التكافؤ", vEq, unit: "mL", decimals: 0, color: "#F43F5E")
+s.readout("pKa", pKa, decimals: 2, color: "#A78BFA")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'chem_bohr_transitions',
+    titleAr: 'كيمياء كمّية: ذرة بور وطيف بالمر للهيدروجين',
+    titleEn: 'Quantum Chemistry: Bohr Hydrogen & Balmer Photon Emission',
+    subtitleAr:
+        'مدارات الهيدروجين الكمّية n=1..5 وقفزات الإلكترون مع انبعاث موجة الفوتون بطول موجي λ حقيقي',
+    fileName: 'bohr_hydrogen.quds',
+    category: StudioCategory.chemistry,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+nUpper = viz.slider("nUp", min: 3.0, max: 5.0, value: 3.0, step: 1.0, label: "المستوى الابتدائي nᵢ")
+
+n1 = nUpper.round()
+n2 = 2
+# طاقة الفوتون بوحدة eV (معادلة ريدبرغ)
+dE = 13.6 * (1.0 / (n2 * n2) - 1.0 / (n1 * n1))
+lambdaNm = 1239.84 / dE
+
+var photonCol = "#EF4444"
+if n1 == 4:
+  photonCol = "#06B6D4"
+if n1 == 5:
+  photonCol = "#6366F1"
+
+p = clk.progress
+var rOrb = n1 * 0.85
+var emitting = false
+if p > 0.45:
+  emitting = true
+  jumpFrac = m.min(1.0, (p - 0.45) / 0.12)
+  rOrb = (n1 * (1.0 - jumpFrac) + n2 * jumpFrac) * 0.85
+
+ang = clk.t * (4.5 / rOrb)
+ex = rOrb * m.cos(ang)
+ey = rOrb * m.sin(ang)
+
+s = viz.scene(title: "ذرة بور للهيدروجين: انتقال بالمر n={n1} → n=2", grid: false, axes: false, bounds: [-5.2, 5.2, -5.0, 5.0])
+for n in 1..5:
+  col = (if n == n1 or n == n2: "#475569" else: "#1E293B")
+  s.circle("n{n}", [0.0, 0.0], n * 0.85, stroke: col, dashed: true)
+s.point("nuc", 0.0, 0.0, label: "H⁺", color: "#F59E0B", radius: 8.5)
+s.point("e", ex, ey, label: "e⁻", color: "#38BDF8", radius: 5.5)
+
+if emitting:
+  travel = (p - 0.45) * 6.5
+  var wave = []
+  for i in 0..48:
+    u = i / 48.0
+    wx = 1.7 + travel + u * 2.0
+    wy = 0.25 * m.sin(u * 20.0 * (450.0 / lambdaNm))
+    wave.add([wx, wy])
+  s.curve("photon", wave, color: photonCol, strokeWidth: 2.6, glow: true, showHead: true)
+
+s.readout("الانتقال", "n={n1} → n=2", color: "#38BDF8")
+s.readout("طاقة الفوتون ΔE", dE, unit: "eV", decimals: 2, color: "#F59E0B")
+s.readout("الطول الموجي λ", lambdaNm, unit: "nm", decimals: 1, color: photonCol)
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'chem_maxwell_boltzmann',
+    titleAr: 'كيمياء فيزيائية: توزيع ماكسويل–بولتزمان للغازات',
+    titleEn: 'Physical Chemistry: Maxwell-Boltzmann Speed Distribution',
+    subtitleAr:
+        'تغيّر توزيع سرعات الجزيئات ديناميكياً مع درجة الحرارة T والكتلة المولية M وإبراز vp و vrms',
+    fileName: 'maxwell_boltzmann.quds',
+    category: StudioCategory.chemistry,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+molar = viz.slider("M", min: 4.0, max: 44.0, value: 28.0, step: 2.0, label: "الكتلة المولية M (g/mol)")
+baseT = viz.slider("T", min: 150.0, max: 900.0, value: 300.0, step: 25.0, label: "متوسط الحرارة T (K)")
+
+# تذبذب حراري حي لاستعراض توسّع المنحنى مع التسخين والتبريد
+temp = baseT + 140.0 * m.sin(clk.progress * 2.0 * m.pi)
+if temp < 80.0:
+  temp = 80.0
+
+R = 8.314
+massKg = molar / 1000.0
+vp = m.sqrt(2.0 * R * temp / massKg)
+vAvg = m.sqrt(8.0 * R * temp / (m.pi * massKg))
+vRms = m.sqrt(3.0 * R * temp / massKg)
+
+var pts = []
+var cols = []
+aCoef = massKg / (2.0 * R * temp)
+norm = 4.0 * m.pi * m.pow(aCoef / m.pi, 1.5)
+for i in 0..160:
+  v = i * 10.0
+  fv = norm * v * v * m.exp(-aCoef * v * v) * 2600.0
+  pts.add([v / 200.0, fv])
+  hue = 220.0 - (i / 160.0) * 210.0
+  cols.add(viz.hsl(hue, 0.9, 0.56))
+
+s = viz.scene(title: "توزيع ماكسويل–بولتزمان لسرعات الغاز f(v)", bounds: [-0.3, 8.4, -0.3, 5.2])
+s.curve("mb", pts, pointColors: cols, strokeWidth: 2.6, glow: true)
+s.segment("vpLine", [vp / 200.0, 0.0], [vp / 200.0, 4.4], color: "#38BDF8", dashed: true)
+s.segment("rmsLine", [vRms / 200.0, 0.0], [vRms / 200.0, 3.6], color: "#F43F5E", dashed: true)
+s.readout("الحرارة T", temp, unit: "K", decimals: 0, color: "#F59E0B")
+s.readout("vp (الأكثر احتمالاً)", vp, unit: "m/s", decimals: 0, color: "#38BDF8")
+s.readout("v_avg", vAvg, unit: "m/s", decimals: 0, color: "#10B981")
+s.readout("v_rms", vRms, unit: "m/s", decimals: 0, color: "#F43F5E")
+s.render()
+''',
+  ),
+  // ── 4 Brand-New Mathematics & Analysis Animated Presets ─────────────────────
+  StudioPreset(
+    id: 'math_taylor_series',
+    titleAr: 'رياضيات: تقارب متسلسلة تايلور للدالة sin(x) حياً',
+    titleEn: 'Mathematics: Live Taylor Series Convergence for sin(x)',
+    subtitleAr:
+        'شاهد متعدد الحدود لتايلور ينطبق تدريجياً على sin(x) مع ازدياد الرتبة N وهبوط الخطأ الأقصى',
+    fileName: 'taylor_series.quds',
+    category: StudioCategory.mathematics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+maxTerms = viz.slider("maxN", min: 3.0, max: 9.0, value: 7.0, step: 1.0, label: "أقصى عدد حدود")
+
+nTerms = 1 + (clk.progress * (maxTerms - 1.0)).round()
+degree = 2 * nTerms - 1
+
+var exactPts = []
+var taylorPts = []
+var maxErr = 0.0
+for i in 0..160:
+  x = -5.5 + i * (11.0 / 160.0)
+  yExact = m.sin(x)
+  var sum = 0.0
+  var term = x
+  for k in 0..<nTerms:
+    if k > 0:
+      term = -term * x * x / ((2 * k) * (2 * k + 1))
+    sum = sum + term
+  if x >= -m.pi and x <= m.pi:
+    err = (sum - yExact).abs()
+    if err > maxErr:
+      maxErr = err
+  yClamp = m.max(-3.8, m.min(3.8, sum))
+  exactPts.add([x, yExact])
+  taylorPts.add([x, yClamp])
+
+s = viz.scene(title: "تقارب متسلسلة تايلور P_{degree}(x) نحو sin(x)", bounds: [-5.8, 5.8, -4.0, 4.0])
+s.curve("exact", exactPts, color: "#475569", strokeWidth: 2.0)
+s.curve("taylor", taylorPts, gradient: viz.palette("neon"), strokeWidth: 2.6, glow: true)
+s.segment("piL", [-m.pi, -3.5], [-m.pi, 3.5], color: "#1E3A5F", dashed: true)
+s.segment("piR", [m.pi, -3.5], [m.pi, 3.5], color: "#1E3A5F", dashed: true)
+s.readout("عدد الحدود", "{nTerms}", color: "#38BDF8")
+s.readout("درجة كثير الحدود", "P{degree}(x)", color: "#EC4899")
+s.readout("الخطأ على [-π,π]", maxErr, decimals: 4, color: "#10B981")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'math_riemann_integral',
+    titleAr: 'تفاضل وتكامل: مجاميع ريمان وتقارب التكامل المحدد',
+    titleEn: 'Calculus: Animated Riemann Sums Converging to Integral',
+    subtitleAr:
+        'تجزئة المساحة تحت المنحنى من 3 إلى 36 مستطيلاً ومقارنة المجموع العددي بالتكامل التحليلي الدقيق',
+    fileName: 'riemann_integral.quds',
+    category: StudioCategory.mathematics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+maxN = viz.slider("maxN", min: 8.0, max: 36.0, value: 28.0, step: 2.0, label: "أقصى عدد مستطيلات")
+
+a = 0.0
+b = 6.0
+nRect = 3 + (clk.progress * (maxN - 3.0)).round()
+dx = (b - a) / nRect
+
+# f(x) = sin(x) + 0.35*x + 1.4  =>  F(x) = -cos(x) + 0.175*x^2 + 1.4*x
+exact = (-m.cos(b) + 0.175 * b * b + 1.4 * b) - (-m.cos(a))
+
+s = viz.scene(title: "مجاميع ريمان الوسطية وتقارب ∫ f(x) dx", bounds: [-0.6, 6.6, -0.5, 4.6])
+var rSum = 0.0
+for i in 0..<nRect:
+  x0 = a + i * dx
+  x1 = x0 + dx
+  xm = 0.5 * (x0 + x1)
+  ym = m.sin(xm) + 0.35 * xm + 1.4
+  rSum = rSum + ym * dx
+  s.polygon("r{i}", [[x0, 0.0], [x1, 0.0], [x1, ym], [x0, ym]], stroke: "#38BDF8", fill: "#38BDF824")
+
+var curvePts = []
+for i in 0..140:
+  x = a + i * ((b - a) / 140.0)
+  y = m.sin(x) + 0.35 * x + 1.4
+  curvePts.add([x, y])
+
+s.curve("fx", curvePts, gradient: viz.palette("viridis"), strokeWidth: 2.8, glow: true)
+s.readout("عدد الفترات n", "{nRect}", color: "#38BDF8")
+s.readout("مجموع ريمان", rSum, decimals: 4, color: "#10B981")
+s.readout("التكامل الدقيق", exact, decimals: 4, color: "#F59E0B")
+s.readout("الخطأ المطلق", (rSum - exact).abs(), decimals: 4, color: "#F43F5E")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'math_cycloid_brachistochrone',
+    titleAr: 'هندسة تفاضلية: الدحروج (السيكلويد) ومقارنة أسرع مسار',
+    titleEn: 'Differential Geometry: Rolling Cycloid & Brachistochrone',
+    subtitleAr:
+        'عجلة تتدحرج لترسم السيكلويد x=R(θ-sinθ), y=R(1-cosθ) مع طول القوس ومتجه السرعة المماسي',
+    fileName: 'cycloid_curve.quds',
+    category: StudioCategory.mathematics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 7.0, loop: true)
+R = viz.slider("R", min: 0.7, max: 1.6, value: 1.15, step: 0.05, label: "نصف قطر العجلة R")
+
+thetaMax = 4.0 * m.pi
+theta = clk.progress * thetaMax
+var pts = []
+for i in 0..200:
+  u = i * (thetaMax / 200.0)
+  pts.add([R * (u - m.sin(u)), R * (1.0 - m.cos(u))])
+
+cx = R * theta
+cy = R
+px = R * (theta - m.sin(theta))
+py = R * (1.0 - m.cos(theta))
+# متجه السرعة المماسي dx/dθ, dy/dθ
+vx = R * (1.0 - m.cos(theta))
+vy = R * m.sin(theta)
+# طول القوس في القوس الأول 4R(1 - cos(θ/2))
+arcLen = 8.0 * R * (theta / (2.0 * m.pi))
+
+s = viz.scene(title: "منحنى الدحروج (السيكلويد): عجلة متدحرجة وطول القوس", bounds: [-0.8, 16.0, -0.6, 4.4])
+s.segment("ground", [-0.5, 0.0], [15.5, 0.0], color: "#475569", strokeWidth: 2.0)
+s.circle("wheel", [cx, cy], R, stroke: "#64748B", fill: "#38BDF814")
+s.segment("spoke", [cx, cy], [px, py], color: "#94A3B8", strokeWidth: 1.8)
+s.curve("cycloid", pts, gradient: viz.palette("rainbow"), progress: clk.progress, strokeWidth: 2.6, glow: true, showHead: true)
+s.vector("tangent", [px, py], [px + vx * 0.5, py + vy * 0.5], label: "v", color: "#F59E0B")
+s.point("center", cx, cy, color: "#38BDF8", radius: 4.0)
+s.readout("الزاوية θ", theta / m.pi, unit: "π rad", color: "#38BDF8")
+s.readout("طول القوس ≈", arcLen, color: "#10B981")
+s.readout("الارتفاع y", py, color: "#F59E0B")
+s.render()
+''',
+  ),
+  StudioPreset(
+    id: 'math_complex_roots',
+    titleAr: 'تحليل مركّب: جذور الوحدة zⁿ = eⁱʷᵗ والمضلع النجمي',
+    titleEn: 'Complex Analysis: Rotating Roots of Unity & Star Polygon',
+    subtitleAr:
+        'تدوير الجذور النونية في المستوى المركّب ℂ مع أوتار المضلع المنتظم وأقطار النجمة المتدرجة',
+    fileName: 'complex_roots.quds',
+    category: StudioCategory.mathematics,
+    isAnimated: true,
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 8.0, loop: true)
+nRoots = viz.slider("n", min: 3.0, max: 11.0, value: 7.0, step: 1.0, label: "رتبة الجذر n")
+stepStar = viz.slider("step", min: 1.0, max: 4.0, value: 3.0, step: 1.0, label: "قفزة النجمة k")
+
+n = nRoots.round()
+k = stepStar.round()
+phi = clk.progress * 2.0 * m.pi
+R = 3.2
+
+s = viz.scene(title: "المستوى المركّب ℂ: جذور الوحدة z^{n} = eⁱᵠ", bounds: [-4.2, 4.2, -4.2, 4.2])
+s.circle("unit", [0.0, 0.0], R, stroke: "#334155", dashed: true)
+
+var verts = []
+for j in 0..<n:
+  a = (phi + 2.0 * m.pi * j) / n
+  verts.add([R * m.cos(a), R * m.sin(a)])
+
+# المضلع المنتظم والأوتار النجمية
+for j in 0..<n:
+  nxt = (j + 1) % n
+  star = (j + k) % n
+  col = viz.hsl((j / n) * 360.0, 0.88, 0.58)
+  s.segment("edge{j}", verts[j], verts[nxt], color: "#38BDF8", strokeWidth: 1.6)
+  s.segment("star{j}", verts[j], verts[star], color: col, strokeWidth: 2.2)
+  s.vector("vec{j}", [0.0, 0.0], verts[j], color: "#475569")
+  s.point("z{j}", verts[j][0], verts[j][1], label: "z{j}", color: col, radius: 5.5)
+
+a0 = phi / n
+s.readout("الجذور n", "{n}", color: "#38BDF8")
+s.readout("Re(z₀)", m.cos(a0), decimals: 3, color: "#10B981")
+s.readout("Im(z₀)", m.sin(a0), decimals: 3, color: "#EC4899")
+s.readout("الطور φ", phi * 180.0 / m.pi, unit: "°", decimals: 0, color: "#F59E0B")
 s.render()
 ''',
   ),

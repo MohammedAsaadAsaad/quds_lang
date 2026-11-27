@@ -13,6 +13,8 @@ enum StudioFilterKind {
   all,
   animatedOnly,
   physics,
+  chemistry,
+  mathematics,
   geometry,
   waves,
   astronomy,
@@ -25,6 +27,8 @@ extension StudioFilterExt on StudioFilterKind {
         StudioFilterKind.all => isArabic ? 'الكل' : 'All',
         StudioFilterKind.animatedOnly => isArabic ? '⚡ حركة حية' : '⚡ Motion',
         StudioFilterKind.physics => isArabic ? 'فيزياء' : 'Physics',
+        StudioFilterKind.chemistry => isArabic ? 'كيمياء' : 'Chemistry',
+        StudioFilterKind.mathematics => isArabic ? 'رياضيات' : 'Math',
         StudioFilterKind.geometry => isArabic ? 'هندسة وفن' : 'Geometry',
         StudioFilterKind.waves => isArabic ? 'موجات' : 'Waves',
         StudioFilterKind.astronomy => isArabic ? 'فلك ورادار' : 'Space',
@@ -36,6 +40,9 @@ extension StudioFilterExt on StudioFilterKind {
         StudioFilterKind.all => true,
         StudioFilterKind.animatedOnly => p.isAnimated,
         StudioFilterKind.physics => p.category == StudioCategory.physics,
+        StudioFilterKind.chemistry => p.category == StudioCategory.chemistry,
+        StudioFilterKind.mathematics =>
+          p.category == StudioCategory.mathematics,
         StudioFilterKind.geometry => p.category == StudioCategory.geometry,
         StudioFilterKind.waves => p.category == StudioCategory.waves,
         StudioFilterKind.astronomy => p.category == StudioCategory.astronomy,
@@ -364,6 +371,8 @@ Future<StudioPreset?> showQudsPresetGalleryDialog(
 
 Color _categoryColor(StudioCategory c) => switch (c) {
       StudioCategory.physics => const Color(0xFFEF4444),
+      StudioCategory.chemistry => const Color(0xFF14B8A6),
+      StudioCategory.mathematics => const Color(0xFF6366F1),
       StudioCategory.geometry => const Color(0xFFEC4899),
       StudioCategory.waves => const Color(0xFF06B6D4),
       StudioCategory.astronomy => const Color(0xFFF59E0B),
@@ -373,6 +382,8 @@ Color _categoryColor(StudioCategory c) => switch (c) {
 
 IconData _categoryIcon(StudioCategory c) => switch (c) {
       StudioCategory.physics => Icons.science_rounded,
+      StudioCategory.chemistry => Icons.biotech_rounded,
+      StudioCategory.mathematics => Icons.functions_rounded,
       StudioCategory.geometry => Icons.auto_awesome_rounded,
       StudioCategory.waves => Icons.waves_rounded,
       StudioCategory.astronomy => Icons.public_rounded,

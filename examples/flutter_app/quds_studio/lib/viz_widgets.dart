@@ -7,9 +7,371 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:quds/interpreter.dart';
+
+/// Quick rendering quality presets for curves, plots, and geometry strokes.
+enum QudsLineRenderPreset {
+  crisp,
+  balanced,
+  softGlow,
+  rawVector,
+}
+
+/// User-controllable line sharpness, spline smoothness, glow, and anti-aliasing.
+class QudsLineStyleSettings {
+  const QudsLineStyleSettings({
+    this.strokeScale = 0.92,
+    this.smoothness = 0.85,
+    this.glowIntensity = 0.20,
+    this.antiAlias = true,
+  });
+
+  static const crisp = QudsLineStyleSettings(
+    strokeScale: 0.78,
+    smoothness: 0.80,
+    glowIntensity: 0.0,
+    antiAlias: true,
+  );
+
+  static const balanced = QudsLineStyleSettings(
+    strokeScale: 0.92,
+    smoothness: 0.85,
+    glowIntensity: 0.20,
+    antiAlias: true,
+  );
+
+  static const softGlow = QudsLineStyleSettings(
+    strokeScale: 1.15,
+    smoothness: 1.0,
+    glowIntensity: 0.85,
+    antiAlias: true,
+  );
+
+  static const rawVector = QudsLineStyleSettings(
+    strokeScale: 0.85,
+    smoothness: 0.0,
+    glowIntensity: 0.0,
+    antiAlias: true,
+  );
+
+  factory QudsLineStyleSettings.fromPreset(QudsLineRenderPreset preset) =>
+      switch (preset) {
+        QudsLineRenderPreset.crisp => crisp,
+        QudsLineRenderPreset.balanced => balanced,
+        QudsLineRenderPreset.softGlow => softGlow,
+        QudsLineRenderPreset.rawVector => rawVector,
+      };
+
+  /// Multiplier applied to stroke widths (0.5 = razor-thin .. 1.8 = bold).
+  final double strokeScale;
+
+  /// Catmull-Rom cubic spline smoothing factor (0.0 = raw polyline .. 1.0 = ultra smooth).
+  final double smoothness;
+
+  /// Optical glow halo intensity (0.0 = razor-sharp no bloom .. 1.0 = neon glow).
+  final double glowIntensity;
+
+  /// Whether anti-aliasing is enabled on canvas strokes.
+  final bool antiAlias;
+
+  QudsLineRenderPreset? get matchingPreset {
+    bool close(double a, double b) => (a - b).abs() < 0.03;
+    if (antiAlias &&
+        close(strokeScale, crisp.strokeScale) &&
+        close(smoothness, crisp.smoothness) &&
+        close(glowIntensity, crisp.glowIntensity)) {
+      return QudsLineRenderPreset.crisp;
+    }
+    if (antiAlias &&
+        close(strokeScale, balanced.strokeScale) &&
+        close(smoothness, balanced.smoothness) &&
+        close(glowIntensity, balanced.glowIntensity)) {
+      return QudsLineRenderPreset.balanced;
+    }
+    if (antiAlias &&
+        close(strokeScale, softGlow.strokeScale) &&
+        close(smoothness, softGlow.smoothness) &&
+        close(glowIntensity, softGlow.glowIntensity)) {
+      return QudsLineRenderPreset.softGlow;
+    }
+    if (antiAlias &&
+        close(strokeScale, rawVector.strokeScale) &&
+        close(smoothness, rawVector.smoothness) &&
+        close(glowIntensity, rawVector.glowIntensity)) {
+      return QudsLineRenderPreset.rawVector;
+    }
+    return null;
+  }
+
+  QudsLineStyleSettings copyWith({
+    double? strokeScale,
+    double? smoothness,
+    double? glowIntensity,
+    bool? antiAlias,
+  }) =>
+      QudsLineStyleSettings(
+        strokeScale: strokeScale ?? this.strokeScale,
+        smoothness: smoothness ?? this.smoothness,
+        glowIntensity: glowIntensity ?? this.glowIntensity,
+        antiAlias: antiAlias ?? this.antiAlias,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is QudsLineStyleSettings &&
+          other.strokeScale == strokeScale &&
+          other.smoothness == smoothness &&
+          other.glowIntensity == glowIntensity &&
+          other.antiAlias == antiAlias;
+
+  @override
+  int get hashCode =>
+      Object.hash(strokeScale, smoothness, glowIntensity, antiAlias);
+}
+
+/// Compact live control card for adjusting line sharpness, smoothness, glow & AA.
+class QudsLineQualityPanel extends StatelessWidget {
+  const QudsLineQualityPanel({
+    super.key,
+    required this.settings,
+    required this.isArabic,
+    required this.isDark,
+    required this.onChanged,
+  });
+
+  final QudsLineStyleSettings settings;
+  final bool isArabic;
+  final bool isDark;
+  final ValueChanged<QudsLineStyleSettings> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final activePreset = settings.matchingPreset;
+    return Container(
+      key: const Key('quds_line_quality_panel'),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: const Color(0xFF38BDF8).withValues(alpha: 0.35),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_fix_high_rounded,
+                  size: 14, color: Color(0xFF38BDF8)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isArabic
+                      ? 'جودة الخطوط: الحدة والنعومة والتوهج'
+                      : 'Line Quality: Sharpness, Smoothness & Glow',
+                  style: const TextStyle(
+                      fontSize: 11.5, fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                key: const Key('toggle_line_aa'),
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => onChanged(
+                  settings.copyWith(antiAlias: !settings.antiAlias),
+                ),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: settings.antiAlias
+                        ? const Color(0xFF10B981).withValues(alpha: 0.16)
+                        : theme.dividerColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: settings.antiAlias
+                          ? const Color(0xFF10B981).withValues(alpha: 0.5)
+                          : theme.dividerColor.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    settings.antiAlias ? 'AA ON' : 'AA OFF',
+                    style: TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: settings.antiAlias
+                          ? const Color(0xFF10B981)
+                          : theme.hintColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final entry in [
+                  (
+                    QudsLineRenderPreset.crisp,
+                    isArabic ? 'حاد جداً' : 'Razor Crisp',
+                  ),
+                  (
+                    QudsLineRenderPreset.balanced,
+                    isArabic ? 'متوازن' : 'Balanced',
+                  ),
+                  (
+                    QudsLineRenderPreset.softGlow,
+                    isArabic ? 'ناعم متوهج' : 'Soft Glow',
+                  ),
+                  (
+                    QudsLineRenderPreset.rawVector,
+                    isArabic ? 'هندسي خام' : 'Raw Polyline',
+                  ),
+                ])
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 6),
+                    child: ChoiceChip(
+                      key: Key('line_preset_${entry.$1.name}'),
+                      label: Text(entry.$2,
+                          style: const TextStyle(
+                              fontSize: 10.5, fontWeight: FontWeight.w600)),
+                      selected: activePreset == entry.$1,
+                      onSelected: (_) => onChanged(
+                        QudsLineStyleSettings.fromPreset(entry.$1),
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 12,
+            runSpacing: 2,
+            children: [
+              _MiniQualitySlider(
+                sliderKey: const Key('slider_line_stroke'),
+                label: isArabic ? 'سُمك / حدة الخط' : 'Stroke Width',
+                valueText: '${settings.strokeScale.toStringAsFixed(2)}x',
+                value: settings.strokeScale,
+                min: 0.5,
+                max: 1.8,
+                onChanged: (v) => onChanged(settings.copyWith(strokeScale: v)),
+              ),
+              _MiniQualitySlider(
+                sliderKey: const Key('slider_line_smooth'),
+                label: isArabic ? 'نعومة المنحنى' : 'Smoothness',
+                valueText: '${(settings.smoothness * 100).round()}%',
+                value: settings.smoothness,
+                min: 0.0,
+                max: 1.0,
+                onChanged: (v) => onChanged(settings.copyWith(smoothness: v)),
+              ),
+              _MiniQualitySlider(
+                sliderKey: const Key('slider_line_glow'),
+                label: isArabic ? 'شدة التوهج' : 'Glow',
+                valueText: '${(settings.glowIntensity * 100).round()}%',
+                value: settings.glowIntensity,
+                min: 0.0,
+                max: 1.0,
+                onChanged: (v) =>
+                    onChanged(settings.copyWith(glowIntensity: v)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniQualitySlider extends StatelessWidget {
+  const _MiniQualitySlider({
+    required this.sliderKey,
+    required this.label,
+    required this.valueText,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  final Key sliderKey;
+  final String label;
+  final String valueText;
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 190,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                      fontSize: 10.5, fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Text(
+                  valueText,
+                  style: const TextStyle(
+                    fontFamily: 'JetBrainsMono',
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF38BDF8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 2.5,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+            ),
+            child: SizedBox(
+              height: 24,
+              child: Slider(
+                key: sliderKey,
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// Interactive 2D Geometry Canvas rendering [QudsGeometrySceneOutput] with
 /// pointer hit-testing and real-time drag-and-drop for draggable handles.
@@ -19,11 +381,13 @@ class QudsGeometryCanvas extends StatefulWidget {
     required this.scene,
     required this.onDragPoint,
     required this.isDark,
+    this.lineStyle = const QudsLineStyleSettings(),
   });
 
   final QudsGeometrySceneOutput scene;
   final void Function(String id, double x, double y) onDragPoint;
   final bool isDark;
+  final QudsLineStyleSettings lineStyle;
 
   @override
   State<QudsGeometryCanvas> createState() => _QudsGeometryCanvasState();
@@ -126,6 +490,7 @@ class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
                   viewport: vp,
                   draggingId: _draggingId,
                   isDark: widget.isDark,
+                  lineStyle: widget.lineStyle,
                 ),
               ),
             ),
@@ -262,12 +627,14 @@ class _GeometryScenePainter extends CustomPainter {
     required this.viewport,
     required this.draggingId,
     required this.isDark,
+    required this.lineStyle,
   });
 
   final QudsGeometrySceneOutput scene;
   final _GeoViewport viewport;
   final String? draggingId;
   final bool isDark;
+  final QudsLineStyleSettings lineStyle;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -340,35 +707,52 @@ class _GeometryScenePainter extends CustomPainter {
           }
           if (p.closed) path.close();
           if (p.fill != null) {
-            canvas.drawPath(path, Paint()..color = _parseColor(p.fill!));
+            canvas.drawPath(
+              path,
+              Paint()
+                ..isAntiAlias = lineStyle.antiAlias
+                ..color = _parseColor(p.fill!),
+            );
           }
           canvas.drawPath(
             path,
             Paint()
+              ..isAntiAlias = lineStyle.antiAlias
               ..color = _parseColor(p.stroke)
               ..style = PaintingStyle.stroke
-              ..strokeWidth = 2,
+              ..strokeWidth = (1.9 * lineStyle.strokeScale).clamp(0.7, 6.0)
+              ..strokeJoin = StrokeJoin.round,
           );
         case QudsGeoCircle():
           final c = viewport.toScreen(p.cx, p.cy);
           final r = p.radius * viewport.scale;
           if (p.fill != null) {
-            canvas.drawCircle(c, r, Paint()..color = _parseColor(p.fill!));
+            canvas.drawCircle(
+              c,
+              r,
+              Paint()
+                ..isAntiAlias = lineStyle.antiAlias
+                ..color = _parseColor(p.fill!),
+            );
           }
           canvas.drawCircle(
             c,
             r,
             Paint()
+              ..isAntiAlias = lineStyle.antiAlias
               ..color = _parseColor(p.stroke)
               ..style = PaintingStyle.stroke
-              ..strokeWidth = 2,
+              ..strokeWidth = (1.8 * lineStyle.strokeScale).clamp(0.7, 6.0),
           );
         case QudsGeoSegment():
           final a = viewport.toScreen(p.x1, p.y1);
           final b = viewport.toScreen(p.x2, p.y2);
           final paint = Paint()
+            ..isAntiAlias = lineStyle.antiAlias
             ..color = _parseColor(p.color)
-            ..strokeWidth = p.strokeWidth;
+            ..strokeCap = StrokeCap.round
+            ..strokeWidth =
+                (p.strokeWidth * lineStyle.strokeScale).clamp(0.7, 8.0);
           if (p.dashed) {
             _drawDashedLine(canvas, a, b, paint);
           } else {
@@ -384,8 +768,9 @@ class _GeometryScenePainter extends CustomPainter {
               a - u * 2000,
               a + u * 2000,
               Paint()
+                ..isAntiAlias = lineStyle.antiAlias
                 ..color = _parseColor(p.color)
-                ..strokeWidth = 1.5,
+                ..strokeWidth = (1.4 * lineStyle.strokeScale).clamp(0.6, 5.0),
             );
           }
         case QudsGeoVector():
@@ -396,8 +781,9 @@ class _GeometryScenePainter extends CustomPainter {
             a,
             b,
             Paint()
+              ..isAntiAlias = lineStyle.antiAlias
               ..color = vecColor
-              ..strokeWidth = 2.4
+              ..strokeWidth = (2.2 * lineStyle.strokeScale).clamp(0.8, 6.0)
               ..strokeCap = StrokeCap.round,
           );
           final delta = b - a;
@@ -418,7 +804,12 @@ class _GeometryScenePainter extends CustomPainter {
               ..lineTo(left.dx, left.dy)
               ..lineTo(right.dx, right.dy)
               ..close();
-            canvas.drawPath(arrow, Paint()..color = vecColor);
+            canvas.drawPath(
+              arrow,
+              Paint()
+                ..isAntiAlias = lineStyle.antiAlias
+                ..color = vecColor,
+            );
           }
           if (p.label != null && p.label!.isNotEmpty) {
             _drawLabel(canvas, p.label!, b + const Offset(8, -10), vecColor);
@@ -426,60 +817,95 @@ class _GeometryScenePainter extends CustomPainter {
         case QudsGeoCurve():
           final visible = p.visiblePoints();
           if (visible.length >= 2) {
+            final screenPts = <Offset>[
+              for (final pt in visible) viewport.toScreen(pt.$1, pt.$2),
+            ];
+            final effectiveWidth =
+                (p.strokeWidth * lineStyle.strokeScale).clamp(0.7, 10.0);
+            final glowStrength =
+                p.glow ? lineStyle.glowIntensity.clamp(0.0, 1.0) : 0.0;
             final hasMultiColor =
                 p.gradientColors.length >= 2 || p.pointColors.isNotEmpty;
+
             if (hasMultiColor) {
               final denom = math.max(1, p.points.length - 1);
-              final corePaint = Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = p.strokeWidth
-                ..strokeCap = StrokeCap.round;
-              final glowPaint = p.glow
-                  ? (Paint()
-                    ..style = PaintingStyle.stroke
-                    ..strokeWidth = p.strokeWidth * 2.8
-                    ..strokeCap = StrokeCap.round)
-                  : null;
-              for (var i = 0; i < visible.length - 1; i++) {
-                final t = (i / denom).clamp(0.0, 1.0);
-                final segColor = _parseColor(p.colorAt(i, t));
-                final pa = viewport.toScreen(visible[i].$1, visible[i].$2);
-                final pb =
-                    viewport.toScreen(visible[i + 1].$1, visible[i + 1].$2);
-                if (glowPaint != null) {
-                  glowPaint.color = segColor.withValues(alpha: 0.22);
-                  canvas.drawLine(pa, pb, glowPaint);
+              final colors = <Color>[
+                for (var i = 0; i < screenPts.length; i++)
+                  _parseColor(p.colorAt(i, (i / denom).clamp(0.0, 1.0))),
+              ];
+              final segPaths = _buildCatmullRomSegmentPaths(
+                screenPts,
+                lineStyle.smoothness,
+              );
+
+              // Pass 1: clean optical glow strictly UNDERNEATH the entire curve.
+              if (glowStrength > 0.01) {
+                final blurSigma = 1.6 + 3.2 * glowStrength;
+                final glowPaint = Paint()
+                  ..isAntiAlias = lineStyle.antiAlias
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = effectiveWidth * (1.55 + 1.05 * glowStrength)
+                  ..strokeCap = StrokeCap.round
+                  ..strokeJoin = StrokeJoin.round
+                  ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma);
+                for (var i = 0; i < segPaths.length; i++) {
+                  glowPaint.color =
+                      colors[i].withValues(alpha: 0.34 * glowStrength);
+                  canvas.drawPath(segPaths[i], glowPaint);
                 }
-                corePaint.color = segColor;
-                canvas.drawLine(pa, pb, corePaint);
+              }
+
+              // Pass 2: razor-sharp 100% opaque core stroke cleanly ON TOP with
+              // continuous per-span linear gradients (no banding, no halo washout).
+              final corePaint = Paint()
+                ..isAntiAlias = lineStyle.antiAlias
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = effectiveWidth
+                ..strokeCap = StrokeCap.round
+                ..strokeJoin = StrokeJoin.round;
+              for (var i = 0; i < segPaths.length; i++) {
+                final a = screenPts[i];
+                final b = screenPts[i + 1];
+                final cA = colors[i];
+                final cB = colors[i + 1];
+                if ((b - a).distanceSquared > 1e-4 && cA != cB) {
+                  corePaint
+                    ..color = cA
+                    ..shader = ui.Gradient.linear(a, b, [cA, cB]);
+                } else {
+                  corePaint
+                    ..shader = null
+                    ..color = cA;
+                }
+                canvas.drawPath(segPaths[i], corePaint);
               }
             } else {
-              final path = Path();
-              final first =
-                  viewport.toScreen(visible.first.$1, visible.first.$2);
-              path.moveTo(first.dx, first.dy);
-              for (var i = 1; i < visible.length; i++) {
-                final pt = viewport.toScreen(visible[i].$1, visible[i].$2);
-                path.lineTo(pt.dx, pt.dy);
-              }
+              final path = _buildSmoothPath(screenPts, lineStyle.smoothness);
               final baseColor = _parseColor(p.color);
-              if (p.glow) {
+              // Pass 1: clean optical glow underneath (optional)
+              if (glowStrength > 0.01) {
+                final blurSigma = 1.6 + 3.2 * glowStrength;
                 canvas.drawPath(
                   path,
                   Paint()
-                    ..color = baseColor.withValues(alpha: 0.24)
+                    ..isAntiAlias = lineStyle.antiAlias
+                    ..color = baseColor.withValues(alpha: 0.38 * glowStrength)
                     ..style = PaintingStyle.stroke
-                    ..strokeWidth = p.strokeWidth * 2.8
+                    ..strokeWidth =
+                        effectiveWidth * (1.55 + 1.05 * glowStrength)
                     ..strokeCap = StrokeCap.round
-                    ..strokeJoin = StrokeJoin.round,
+                    ..strokeJoin = StrokeJoin.round
+                    ..maskFilter = MaskFilter.blur(BlurStyle.normal, blurSigma),
                 );
               }
+              // Pass 2: crisp solid vector core on top
               canvas.drawPath(
                 path,
                 Paint()
+                  ..isAntiAlias = lineStyle.antiAlias
                   ..color = baseColor
                   ..style = PaintingStyle.stroke
-                  ..strokeWidth = p.strokeWidth
+                  ..strokeWidth = effectiveWidth
                   ..strokeCap = StrokeCap.round
                   ..strokeJoin = StrokeJoin.round,
               );
@@ -490,13 +916,30 @@ class _GeometryScenePainter extends CustomPainter {
             final tipColor = _parseColor(
               p.colorAt(visible.length - 1, p.progress.clamp(0.0, 1.0)),
             );
+            if (lineStyle.glowIntensity > 0.05) {
+              canvas.drawCircle(
+                tip,
+                9.5,
+                Paint()
+                  ..isAntiAlias = lineStyle.antiAlias
+                  ..color = tipColor.withValues(
+                      alpha: 0.28 * lineStyle.glowIntensity.clamp(0.2, 1.0)),
+              );
+            }
             canvas.drawCircle(
               tip,
-              11,
-              Paint()..color = tipColor.withValues(alpha: 0.28),
+              4.8,
+              Paint()
+                ..isAntiAlias = lineStyle.antiAlias
+                ..color = tipColor,
             );
-            canvas.drawCircle(tip, 5.5, Paint()..color = tipColor);
-            canvas.drawCircle(tip, 2.3, Paint()..color = Colors.white);
+            canvas.drawCircle(
+              tip,
+              2.0,
+              Paint()
+                ..isAntiAlias = lineStyle.antiAlias
+                ..color = Colors.white,
+            );
           }
         case QudsGeoArc():
           final c = viewport.toScreen(p.cx, p.cy);
@@ -627,7 +1070,63 @@ class _GeometryScenePainter extends CustomPainter {
   bool shouldRepaint(covariant _GeometryScenePainter old) =>
       old.scene != scene ||
       old.draggingId != draggingId ||
-      old.isDark != isDark;
+      old.isDark != isDark ||
+      old.lineStyle != lineStyle;
+}
+
+/// Builds a smooth Catmull-Rom -> Cubic Bezier [Path] passing strictly through
+/// all screen points [pts], blended cleanly from raw polyline (`smoothness = 0`)
+/// to full C1 Catmull-Rom spline (`smoothness = 1`).
+Path _buildSmoothPath(List<Offset> pts, double smoothness) {
+  final path = Path();
+  if (pts.isEmpty) return path;
+  path.moveTo(pts.first.dx, pts.first.dy);
+  if (pts.length == 1) return path;
+  final s = smoothness.clamp(0.0, 1.0);
+  if (s <= 0.02 || pts.length < 3) {
+    for (var i = 1; i < pts.length; i++) {
+      path.lineTo(pts[i].dx, pts[i].dy);
+    }
+    return path;
+  }
+  final tension = s * 0.5;
+  final n = pts.length;
+  for (var i = 0; i < n - 1; i++) {
+    final p0 = pts[i > 0 ? i - 1 : 0];
+    final p1 = pts[i];
+    final p2 = pts[i + 1];
+    final p3 = pts[i + 2 < n ? i + 2 : n - 1];
+    final c1 = p1 + (p2 - p0) * (tension / 3.0);
+    final c2 = p2 - (p3 - p1) * (tension / 3.0);
+    path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
+  }
+  return path;
+}
+
+/// Builds individual Catmull-Rom cubic Bezier span paths so multi-color curves
+/// can paint smooth continuous gradients without polygonal corners.
+List<Path> _buildCatmullRomSegmentPaths(List<Offset> pts, double smoothness) {
+  final n = pts.length;
+  if (n < 2) return const [];
+  final s = smoothness.clamp(0.0, 1.0);
+  final tension = s * 0.5;
+  final result = <Path>[];
+  for (var i = 0; i < n - 1; i++) {
+    final p1 = pts[i];
+    final p2 = pts[i + 1];
+    final seg = Path()..moveTo(p1.dx, p1.dy);
+    if (s <= 0.02 || n < 3) {
+      seg.lineTo(p2.dx, p2.dy);
+    } else {
+      final p0 = pts[i > 0 ? i - 1 : 0];
+      final p3 = pts[i + 2 < n ? i + 2 : n - 1];
+      final c1 = p1 + (p2 - p0) * (tension / 3.0);
+      final c2 = p2 - (p3 - p1) * (tension / 3.0);
+      seg.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
+    }
+    result.add(seg);
+  }
+  return result;
 }
 
 /// 2D Scientific Plot widget rendering [QudsPlot2DOutput].
@@ -636,25 +1135,32 @@ class QudsPlotCanvas extends StatelessWidget {
     super.key,
     required this.plot,
     required this.isDark,
+    this.lineStyle = const QudsLineStyleSettings(),
   });
 
   final QudsPlot2DOutput plot;
   final bool isDark;
+  final QudsLineStyleSettings lineStyle;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
       key: const Key('quds_plot_canvas'),
-      painter: _PlotPainter(plot: plot, isDark: isDark),
+      painter: _PlotPainter(plot: plot, isDark: isDark, lineStyle: lineStyle),
       child: const SizedBox.expand(),
     );
   }
 }
 
 class _PlotPainter extends CustomPainter {
-  const _PlotPainter({required this.plot, required this.isDark});
+  const _PlotPainter({
+    required this.plot,
+    required this.isDark,
+    required this.lineStyle,
+  });
   final QudsPlot2DOutput plot;
   final bool isDark;
+  final QudsLineStyleSettings lineStyle;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -713,19 +1219,41 @@ class _PlotPainter extends CustomPainter {
         ..style = PaintingStyle.stroke,
     );
 
+    final strokeW = (2.2 * lineStyle.strokeScale).clamp(0.8, 6.0);
     for (final s in plot.series) {
       final n = math.min(s.xs.length, s.ys.length);
       if (n < 2) continue;
-      final path = Path()..moveTo(sx(s.xs[0]), sy(s.ys[0]));
-      for (var i = 1; i < n; i++) {
-        path.lineTo(sx(s.xs[i]), sy(s.ys[i]));
+      final pts = <Offset>[
+        for (var i = 0; i < n; i++) Offset(sx(s.xs[i]), sy(s.ys[i])),
+      ];
+      final path = _buildSmoothPath(pts, lineStyle.smoothness);
+      final baseColor = _parseColor(s.color);
+      if (lineStyle.glowIntensity > 0.05) {
+        canvas.drawPath(
+          path,
+          Paint()
+            ..isAntiAlias = lineStyle.antiAlias
+            ..color =
+                baseColor.withValues(alpha: 0.25 * lineStyle.glowIntensity)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = strokeW * (1.5 + 0.8 * lineStyle.glowIntensity)
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..maskFilter = MaskFilter.blur(
+              BlurStyle.normal,
+              1.4 + 2.4 * lineStyle.glowIntensity,
+            ),
+        );
       }
       canvas.drawPath(
         path,
         Paint()
-          ..color = _parseColor(s.color)
+          ..isAntiAlias = lineStyle.antiAlias
+          ..color = baseColor
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4,
+          ..strokeWidth = strokeW
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round,
       );
     }
 
@@ -748,7 +1276,7 @@ class _PlotPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PlotPainter old) =>
-      old.plot != plot || old.isDark != isDark;
+      old.plot != plot || old.isDark != isDark || old.lineStyle != lineStyle;
 }
 
 /// Interactive controls bar auto-generated from `viz.slider`, `viz.toggle`,

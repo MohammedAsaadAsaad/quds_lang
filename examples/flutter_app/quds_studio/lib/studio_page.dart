@@ -88,6 +88,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   Timer? _animTimer;
   bool _animPlaying = false;
   double _animSpeed = 1.0;
+  QudsLineStyleSettings _lineStyle = QudsLineStyleSettings.balanced;
+  bool _showLineQualityPanel = false;
 
   int _mobileTabIndex = 0;
 
@@ -1128,6 +1130,16 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                     },
                   ),
                   const Divider(height: 16),
+                  QudsLineQualityPanel(
+                    settings: _lineStyle,
+                    isArabic: _isArabic,
+                    isDark: _isDark,
+                    onChanged: (next) {
+                      setState(() => _lineStyle = next);
+                      setSheetState(() {});
+                    },
+                  ),
+                  const Divider(height: 16),
                   Row(
                     children: [
                       Expanded(
@@ -1620,6 +1632,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           stageBody = QudsGeometryCanvas(
             scene: scene,
             isDark: _isDark,
+            lineStyle: _lineStyle,
             onDragPoint: (id, x, y) => _updateInteractive({
               id: {'x': x, 'y': y},
             }),
@@ -1655,7 +1668,13 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         } else if (plot != null) {
           stageBody = Column(
             children: [
-              Expanded(child: QudsPlotCanvas(plot: plot, isDark: _isDark)),
+              Expanded(
+                child: QudsPlotCanvas(
+                  plot: plot,
+                  isDark: _isDark,
+                  lineStyle: _lineStyle,
+                ),
+              ),
               if (tables.isNotEmpty) QudsTableCard(table: tables.first),
             ],
           );
@@ -1715,7 +1734,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            if (res != null) ...[
+            if (res != null && !isCompact) ...[
               const SizedBox(width: 6),
               Directionality(
                 textDirection: TextDirection.ltr,
@@ -1732,8 +1751,64 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 ),
               ),
             ],
+            const SizedBox(width: 6),
+            InkWell(
+              key: const Key('btn_line_quality'),
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(
+                () => _showLineQualityPanel = !_showLineQualityPanel,
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _showLineQualityPanel
+                      ? const Color(0xFF38BDF8).withValues(alpha: 0.2)
+                      : (_isDark
+                          ? const Color(0xFF1E293B)
+                          : const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _showLineQualityPanel
+                        ? const Color(0xFF38BDF8)
+                        : theme.dividerColor.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.auto_fix_high_rounded,
+                      size: 13,
+                      color: _showLineQualityPanel
+                          ? const Color(0xFF38BDF8)
+                          : theme.hintColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _isArabic ? 'حدة الخط' : 'Lines',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: _showLineQualityPanel
+                            ? const Color(0xFF38BDF8)
+                            : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         );
+
+        final lineQualityPanel = _showLineQualityPanel
+            ? QudsLineQualityPanel(
+                settings: _lineStyle,
+                isArabic: _isArabic,
+                isDark: _isDark,
+                onChanged: (next) => setState(() => _lineStyle = next),
+              )
+            : null;
 
         final animBar = animSpec == null
             ? null
@@ -1749,18 +1824,19 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 onSeekTime: _seekAnimTime,
               );
 
-        if (isCompact) {
+        if (isCompact || _showLineQualityPanel) {
           final isAutoHeightCard = scene == null &&
               plot == null &&
               surface3d == null &&
               vectorField == null &&
               graph == null &&
               (form != null || tables.isNotEmpty);
-          final double canvasHeight =
-              (surface3d != null && vectorField != null) ? 420.0 : 320.0;
+          final double canvasHeight = isCompact
+              ? ((surface3d != null && vectorField != null) ? 420.0 : 320.0)
+              : ((surface3d != null && vectorField != null) ? 340.0 : 240.0);
 
           return Container(
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(isCompact ? 10 : 12),
             decoration: BoxDecoration(
               color: surface,
               borderRadius: BorderRadius.circular(12),
@@ -1774,11 +1850,19 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   headerRow,
+                  if (lineQualityPanel != null && !isCompact) ...[
+                    const SizedBox(height: 8),
+                    lineQualityPanel,
+                  ],
                   const SizedBox(height: 8),
                   if (isAutoHeightCard)
                     stageBody
                   else
                     SizedBox(height: canvasHeight, child: stageBody),
+                  if (lineQualityPanel != null && isCompact) ...[
+                    const SizedBox(height: 8),
+                    lineQualityPanel,
+                  ],
                   if (readings.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     QudsTelemetryHudBar(readings: readings, isDark: _isDark),

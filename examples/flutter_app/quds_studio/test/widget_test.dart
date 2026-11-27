@@ -341,10 +341,10 @@ void main() {
   });
 
   test(
-      'All 12 real-time motion presets execute cleanly across multiple time frames with live telemetry',
+      'All 24 real-time motion presets (Physics, Chemistry, Mathematics, Geometry, Waves, Space) execute cleanly across multiple time frames with live telemetry',
       () async {
     final animated = studioPresets.where((p) => p.isAnimated).toList();
-    expect(animated, hasLength(12));
+    expect(animated, hasLength(24));
 
     for (final preset in animated) {
       final session = QudsSession(allowTopLevelRebind: true);
@@ -456,5 +456,76 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('policy_selector')), findsOneWidget);
     expect(find.byKey(const Key('btn_custom_policy')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Line Quality panel controls sharpness, smoothness, glow, and anti-aliasing live, and Chemistry/Math categories run smoothly',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const QudsStudioApp(
+          key: ValueKey('line_quality_test'), initialPresetIndex: 12),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    // 1. Open inline Line Quality panel from Visual Stage header
+    await tester.tap(find.byKey(const Key('btn_line_quality')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('quds_line_quality_panel')), findsOneWidget);
+
+    // 2. Switch to Razor Crisp preset -> verify glow drops to 0.0 and strokeScale updates
+    await tester.tap(find.byKey(const Key('line_preset_crisp')));
+    await tester.pumpAndSettle();
+    var geoCanvas =
+        tester.widget<QudsGeometryCanvas>(find.byType(QudsGeometryCanvas));
+    expect(geoCanvas.lineStyle, QudsLineStyleSettings.crisp);
+
+    // 3. Toggle Anti-Aliasing -> AA OFF
+    await tester.tap(find.byKey(const Key('toggle_line_aa')));
+    await tester.pumpAndSettle();
+    geoCanvas =
+        tester.widget<QudsGeometryCanvas>(find.byType(QudsGeometryCanvas));
+    expect(geoCanvas.lineStyle.antiAlias, isFalse);
+
+    // 4. Switch to Soft Glow preset -> full smoothness + glow
+    await tester.tap(find.byKey(const Key('line_preset_softGlow')));
+    await tester.pumpAndSettle();
+    geoCanvas =
+        tester.widget<QudsGeometryCanvas>(find.byType(QudsGeometryCanvas));
+    expect(geoCanvas.lineStyle, QudsLineStyleSettings.softGlow);
+
+    // 5. Filter by Chemistry and run Titration pH curve live via Gallery
+    await tester.tap(find.byKey(const Key('filter_chemistry')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('gallery_item_chem_titration_ph')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('quds_telemetry_hud')),
+        matching: find.textContaining('pH اللحظي'),
+      ),
+      findsOneWidget,
+    );
+
+    // 6. Filter by Mathematics and run Riemann Integral live via Gallery
+    await tester.tap(find.byKey(const Key('filter_mathematics')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.byKey(const Key('gallery_item_math_riemann_integral')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('quds_telemetry_hud')),
+        matching: find.textContaining('مجموع ريمان'),
+      ),
+      findsOneWidget,
+    );
   });
 }

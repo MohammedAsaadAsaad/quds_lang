@@ -10,7 +10,7 @@ Future<QudsRunResult> _run(String source) async {
     allowTopLevelRebind: true,
   );
   try {
-    return await session.run(source, preferBytecode: false);
+    return await session.run(source);
   } finally {
     await session.dispose();
   }

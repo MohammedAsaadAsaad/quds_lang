@@ -246,9 +246,8 @@ void main() {
     expect(find.byKey(const Key('quds_profiler_tab')), findsOneWidget);
     expect(find.textContaining('fib(1) => 1'), findsWidgets);
 
-    // Disable Trace and enable Bytecode VM -> verify ⚡ VM execution badge!
+    // Disable Trace -> Bytecode VM is active by default, verify ⚡ VM badge!
     await tester.tap(find.byKey(const Key('chip_profiler_timetravel')));
-    await tester.tap(find.byKey(const Key('chip_bytecode_vm')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('btn_run')));
     await tester.pumpAndSettle();

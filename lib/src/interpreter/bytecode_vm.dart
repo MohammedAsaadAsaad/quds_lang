@@ -433,12 +433,16 @@ class QudsBytecodeProgram {
     required this.mainIndex,
     required this.globalNames,
     required this.file,
+    this.globalMutable = const {},
+    this.functionDecls = const [],
   });
 
   final List<QudsBytecodeFunction> functions;
   final int mainIndex;
   final List<String> globalNames;
   final String file;
+  final Map<String, bool> globalMutable;
+  final List<FunctionDeclaration> functionDecls;
 
   String disassemble() =>
       [for (final f in functions) f.disassemble()].join('\n');
@@ -521,6 +525,81 @@ class QudsBytecodeCompiler {
     }
   }
 
+  /// Compiles the maximal subset of pure-compute functions from [allFns] into a
+  /// Tier-1 unboxed register [QudsBytecodeProgram] so Universal VM scripts (such
+  /// as `quds:viz` animations or multi-file projects) can execute hot numeric
+  /// kernels at full 90M+ ops/sec speed.
+  static QudsBytecodeProgram? tryCompilePureFunctions(
+    List<FunctionDeclaration> allFns, {
+    String file = '<bytecode>',
+    Set<String> mathPrefixes = const {},
+  }) {
+    if (allFns.isEmpty) return null;
+    final nameCounts = <String, int>{};
+    for (final fn in allFns) {
+      nameCounts[fn.name] = (nameCounts[fn.name] ?? 0) + 1;
+    }
+    final candidates = <FunctionDeclaration>[];
+    for (final fn in allFns) {
+      if ((nameCounts[fn.name] ?? 0) > 1)
+        continue; // Overloads use Universal VM
+      if (fn.isAsync ||
+          fn.generator.isNotEmpty ||
+          fn.typeParameters.isNotEmpty ||
+          fn.parameters.any(
+            (p) => p.isNamed || p.variadic || p.defaultValue != null,
+          )) {
+        continue;
+      }
+      candidates.add(fn);
+    }
+    if (candidates.isEmpty) return null;
+
+    // First try compiling all candidates together (supports mutual calls).
+    final synthetic = <Statement>[
+      for (final p in mathPrefixes)
+        ImportDeclaration('quds:math', p, candidates.first.span),
+      if (mathPrefixes.isEmpty)
+        ImportDeclaration('quds:math', null, candidates.first.span),
+      ...candidates,
+    ];
+    final combined = tryCompile(
+      Program(synthetic, candidates.first.span),
+      file: file,
+    );
+    if (combined != null) return combined;
+
+    // Otherwise greedily compile individual self-contained pure functions.
+    final accepted = <FunctionDeclaration>[];
+    for (final fn in candidates) {
+      final probe = tryCompile(
+        Program([
+          for (final p in mathPrefixes)
+            ImportDeclaration('quds:math', p, fn.span),
+          if (mathPrefixes.isEmpty)
+            ImportDeclaration('quds:math', null, fn.span),
+          ...accepted,
+          fn,
+        ], fn.span),
+        file: file,
+      );
+      if (probe != null) {
+        accepted.add(fn);
+      }
+    }
+    if (accepted.isEmpty) return null;
+    return tryCompile(
+      Program([
+        for (final p in mathPrefixes)
+          ImportDeclaration('quds:math', p, accepted.first.span),
+        if (mathPrefixes.isEmpty)
+          ImportDeclaration('quds:math', null, accepted.first.span),
+        ...accepted,
+      ], accepted.first.span),
+      file: file,
+    );
+  }
+
   static QudsBytecodeProgram? tryCompileSource(
     String source, {
     String file = '<bytecode>',
@@ -539,6 +618,79 @@ class QudsBytecodeCompiler {
     return slot;
   }
 
+  /// Ensures Tier-1 never silently bypasses QUDS-090 immutability (`E202`),
+  /// accidental shadowing (`E203`), or reactive/late/shadow bindings.
+  static void _validateBindingSemantics(
+    List<Statement> stmts,
+    Map<String, bool> outerMutable,
+  ) {
+    final localMutable = <String, bool>{};
+    for (final stmt in stmts) {
+      switch (stmt) {
+        case Binding():
+          if (stmt.mode == BindingMode.shadow ||
+              stmt.mode == BindingMode.shadowMutable ||
+              stmt.mode == BindingMode.lateFinal ||
+              stmt.mode == BindingMode.lateMutable ||
+              stmt.mode == BindingMode.state ||
+              stmt.mode == BindingMode.computed ||
+              stmt.open) {
+            throw const _UnsupportedBytecode();
+          }
+          final isExplicitDecl = stmt.mode == BindingMode.mutable ||
+              stmt.mode == BindingMode.constant ||
+              stmt.type != null;
+          if (stmt.operator != '=') {
+            final isMut = localMutable[stmt.name] ?? outerMutable[stmt.name];
+            if (isMut != true) throw const _UnsupportedBytecode();
+          } else if (isExplicitDecl) {
+            if (localMutable.containsKey(stmt.name) ||
+                outerMutable.containsKey(stmt.name)) {
+              throw const _UnsupportedBytecode();
+            }
+            localMutable[stmt.name] = stmt.mode == BindingMode.mutable;
+          } else {
+            // Inferred `name = value`
+            if (localMutable.containsKey(stmt.name)) {
+              if (!localMutable[stmt.name]!) {
+                throw const _UnsupportedBytecode();
+              }
+            } else if (outerMutable.containsKey(stmt.name)) {
+              if (!outerMutable[stmt.name]!) {
+                throw const _UnsupportedBytecode();
+              }
+            } else {
+              localMutable[stmt.name] = false;
+            }
+          }
+        case IfStatement(:final thenBody, :final elseBody):
+          final merged = {...outerMutable, ...localMutable};
+          _validateBindingSemantics(thenBody, merged);
+          if (elseBody.isNotEmpty) _validateBindingSemantics(elseBody, merged);
+        case WhileStatement(:final body, :final elseBody):
+          final merged = {...outerMutable, ...localMutable};
+          _validateBindingSemantics(body, merged);
+          if (elseBody.isNotEmpty) _validateBindingSemantics(elseBody, merged);
+        case ForStatement(
+            :final name,
+            :final index,
+            :final body,
+            :final elseBody
+          ):
+          final merged = {
+            ...outerMutable,
+            ...localMutable,
+            name: false,
+            if (index != null) index: false,
+          };
+          _validateBindingSemantics(body, merged);
+          if (elseBody.isNotEmpty) _validateBindingSemantics(elseBody, merged);
+        default:
+          break;
+      }
+    }
+  }
+
   QudsBytecodeProgram _compileProgram(Program program) {
     final topStmts = <Statement>[];
     final fnList = <FunctionDeclaration>[];
@@ -546,6 +698,9 @@ class QudsBytecodeCompiler {
     for (final stmt in program.statements) {
       if (stmt is ImportDeclaration) {
         if (stmt.uri == 'dart:math' || stmt.uri == 'quds:math') {
+          if (stmt.deferred || stmt.show.isNotEmpty || stmt.hide.isNotEmpty) {
+            throw const _UnsupportedBytecode();
+          }
           if (stmt.prefix != null) _mathPrefixes.add(stmt.prefix!);
           continue;
         }
@@ -553,6 +708,7 @@ class QudsBytecodeCompiler {
       }
       if (stmt is FunctionDeclaration) {
         if (stmt.isAsync ||
+            stmt.generator.isNotEmpty ||
             stmt.typeParameters.isNotEmpty ||
             _fnIndices.containsKey(stmt.name) ||
             stmt.parameters.any(
@@ -568,14 +724,26 @@ class QudsBytecodeCompiler {
       }
     }
 
+    _validateBindingSemantics(topStmts, const {});
+    for (final fn in fnList) {
+      if (fn.body != null) {
+        final params = {for (final p in fn.parameters) p.name: p.mutable};
+        _validateBindingSemantics(fn.body!, params);
+      }
+    }
+
     final topLevelVars = <String>{};
+    final globalMutable = <String, bool>{};
     for (final stmt in topStmts) {
       if (stmt is Binding) {
         topLevelVars.add(stmt.name);
         _ensureGlobal(stmt.name);
+        globalMutable.putIfAbsent(
+            stmt.name, () => stmt.mode == BindingMode.mutable);
       } else if (stmt is ForStatement) {
         topLevelVars.add(stmt.name);
         _ensureGlobal(stmt.name);
+        globalMutable.putIfAbsent(stmt.name, () => false);
       }
     }
 
@@ -640,6 +808,8 @@ class QudsBytecodeCompiler {
       mainIndex: mainIndex,
       globalNames: List.unmodifiable(_globalNames),
       file: _file,
+      globalMutable: Map.unmodifiable(globalMutable),
+      functionDecls: List.unmodifiable(fnList),
     );
   }
 
@@ -3292,6 +3462,7 @@ class QudsBytecodeVm {
     QudsBytecodeProgram program, {
     int? maxSteps,
     int maxCallDepth = 256,
+    int? maxCollectionLength,
     Duration? timeout,
     void Function(String line)? onPrint,
   }) {
@@ -3357,6 +3528,7 @@ class QudsBytecodeVm {
     var flBp = 0;
 
     final int stepLimit = maxSteps ?? 0x3FFFFFFFFFFFFFFF;
+    final int collLimit = maxCollectionLength ?? 0x3FFFFFFFFFFFFFFF;
     final int timeoutMicros = timeout?.inMicroseconds ?? 0x3FFFFFFFFFFFFFFF;
     var steps = 0;
     var timeoutTicks = 4096;
@@ -3493,6 +3665,14 @@ class QudsBytecodeVm {
             final slot = ilBp + a;
             final lst = ilReg[slot]!;
             final len = lst.length;
+            if (len >= collLimit) {
+              throw QudsPolicyViolationException(
+                QudsPolicyViolationKind.collectionLimit,
+                'Collection size (${len + 1}) exceeded maximum limit ($maxCollectionLength).',
+                SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                    file: program.file),
+              );
+            }
             var data = ilData[slot];
             if (len == data.length) {
               data = lst.grow();
@@ -3512,6 +3692,14 @@ class QudsBytecodeVm {
             final slot = flBp + a;
             final lst = flReg[slot]!;
             final len = lst.length;
+            if (len >= collLimit) {
+              throw QudsPolicyViolationException(
+                QudsPolicyViolationKind.collectionLimit,
+                'Collection size (${len + 1}) exceeded maximum limit ($maxCollectionLength).',
+                SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                    file: program.file),
+              );
+            }
             var data = flData[slot];
             if (len == data.length) {
               data = lst.grow();
@@ -3526,7 +3714,16 @@ class QudsBytecodeVm {
           case QudsOp.floatListLen:
             iReg[iBp + a] = flReg[flBp + b]!.length;
           case QudsOp.objListAdd:
-            (oReg[oBp + a]! as List<Object?>).add(oReg[oBp + b]);
+            final list = oReg[oBp + a]! as List<Object?>;
+            if (list.length >= collLimit) {
+              throw QudsPolicyViolationException(
+                QudsPolicyViolationKind.collectionLimit,
+                'Collection size (${list.length + 1}) exceeded maximum limit ($maxCollectionLength).',
+                SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                    file: program.file),
+              );
+            }
+            list.add(oReg[oBp + b]);
           case QudsOp.objListGet:
             final obj = oReg[oBp + b];
             final idx = iReg[iBp + c];
@@ -4121,5 +4318,141 @@ class QudsBytecodeVm {
         ),
       );
     }
+  }
+
+  /// Invokes a single compiled Tier-1 function [fnIndex] inside [program] with
+  /// [args], executing at full unboxed 3-address register speed with zero
+  /// overhead on the main dispatch loop.
+  static QudsBytecodeRunResult invokeFunction(
+    QudsBytecodeProgram program,
+    int fnIndex,
+    List<Object?> args, {
+    int? maxSteps,
+    int maxCallDepth = 256,
+    int? maxCollectionLength,
+    Duration? timeout,
+    void Function(String line)? onPrint,
+  }) {
+    final target = program.functions[fnIndex];
+    if (args.length != target.arity) {
+      return QudsBytecodeRunResult(
+        succeeded: false,
+        error: QudsRuntimeException(
+          'Function `${target.name}` expects ${target.arity} arguments, got ${args.length}.',
+          SourceSpan(1, 1, 1, file: program.file),
+          code: 'E500',
+        ),
+      );
+    }
+
+    final code = <int>[];
+    final lines = <int>[];
+    final iConsts = <int>[];
+    final fConsts = <double>[];
+    final oConsts = <Object?>[];
+    final srcBanks = Int32List(args.length);
+    final srcRegs = Int32List(args.length);
+    var nextI = 1; // reg 0 reserved for return value
+    var nextF = 1;
+    var nextO = 1;
+
+    void emit(int op, int a, int b, int c) {
+      code.add((op & 0xFF) | ((a & 0x3FF) << 8) | ((b & 0x3FF) << 18));
+      code.add(c);
+      lines.add(1);
+    }
+
+    for (var i = 0; i < args.length; i++) {
+      final arg = args[i];
+      final expectedBank = target.paramBanks[i];
+      if (expectedBank == _Bank.i) {
+        if (arg is! int) {
+          return QudsBytecodeRunResult(
+            succeeded: false,
+            error: QudsRuntimeException(
+              'Expected `int` for argument ${i + 1} of `${target.name}`.',
+              SourceSpan(1, 1, 1, file: program.file),
+            ),
+          );
+        }
+        final reg = nextI++;
+        final kIdx = iConsts.length;
+        iConsts.add(arg);
+        emit(QudsOp.iLoadK, reg, kIdx, 0);
+        srcBanks[i] = _Bank.i;
+        srcRegs[i] = reg;
+      } else if (expectedBank == _Bank.f) {
+        if (arg is! num) {
+          return QudsBytecodeRunResult(
+            succeeded: false,
+            error: QudsRuntimeException(
+              'Expected `double` for argument ${i + 1} of `${target.name}`.',
+              SourceSpan(1, 1, 1, file: program.file),
+            ),
+          );
+        }
+        final reg = nextF++;
+        final kIdx = fConsts.length;
+        fConsts.add(arg.toDouble());
+        emit(QudsOp.fLoadK, reg, kIdx, 0);
+        srcBanks[i] = _Bank.f;
+        srcRegs[i] = reg;
+      } else {
+        final reg = nextO++;
+        final kIdx = oConsts.length;
+        oConsts.add(arg);
+        emit(QudsOp.oLoadK, reg, kIdx, 0);
+        srcBanks[i] = _Bank.o;
+        srcRegs[i] = reg;
+      }
+    }
+
+    final site = _CallSite(
+      srcBanks: srcBanks,
+      srcRegs: srcRegs,
+      dstBanks: target.paramBanks,
+      dstRegs: target.paramRegs,
+      retBank: target.returnBank,
+    );
+    emit(QudsOp.callFn, 0, 0, fnIndex);
+    emit(QudsOp.halt, 0, 0, 0);
+
+    final trampoline = QudsBytecodeFunction(
+      name: '<invoke:${target.name}>',
+      arity: 0,
+      iSize: nextI + 1,
+      fSize: nextF + 1,
+      oSize: nextO + 1,
+      ilSize: 1,
+      flSize: 1,
+      paramBanks: Int32List(0),
+      paramRegs: Int32List(0),
+      returnBank: target.returnBank,
+      code: Int32List.fromList(code),
+      lines: Int32List.fromList(lines),
+      iConsts: Int64List.fromList(iConsts),
+      fConsts: Float64List.fromList(fConsts),
+      oConsts: oConsts,
+      callSites: [site],
+      resultBank: target.returnBank,
+      resultReg: 0,
+    );
+
+    final wrapperFns = [...program.functions, trampoline];
+    final wrapper = QudsBytecodeProgram(
+      functions: wrapperFns,
+      mainIndex: wrapperFns.length - 1,
+      globalNames: program.globalNames,
+      file: program.file,
+      globalMutable: program.globalMutable,
+    );
+    return run(
+      wrapper,
+      maxSteps: maxSteps,
+      maxCallDepth: maxCallDepth,
+      maxCollectionLength: maxCollectionLength,
+      timeout: timeout,
+      onPrint: onPrint,
+    );
   }
 }

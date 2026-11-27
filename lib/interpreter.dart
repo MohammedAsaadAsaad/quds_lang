@@ -14,6 +14,12 @@ export 'src/interpreter/bytecode_vm.dart'
         QudsBytecodeRunResult,
         QudsBytecodeVm,
         QudsOp;
+export 'src/interpreter/universal_vm.dart'
+    show
+        QudsUniversalChunk,
+        QudsUniversalCompiler,
+        QudsUniversalOp,
+        QudsUniversalVm;
 export 'src/interpreter/data_module.dart' show buildQudsDataModule;
 export 'src/interpreter/debugger.dart'
     show

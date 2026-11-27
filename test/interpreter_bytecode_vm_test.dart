@@ -53,7 +53,7 @@ f12
     });
 
     test(
-        'enforces maxSteps and maxCallDepth in Bytecode VM and transparently falls back to AST for viz scripts',
+        'enforces maxSteps in Bytecode VM and executes quds:viz + promoted compute kernels on Universal Register VM by default',
         () async {
       final limited = QudsSession(
         policy: QudsExecutionPolicy.standard(maxSteps: 500),
@@ -69,17 +69,26 @@ while true:
       expect(res.succeeded, isFalse);
       expect(res.error, isA<QudsPolicyViolationException>());
 
-      // Script using quds:viz transparently falls back to full AST evaluator!
+      // Script using quds:viz + pure compute kernel runs directly on Universal
+      // Register VM (by default!) and promotes `squareSum` to Tier-1 unboxed registers!
       final vizSession = QudsSession(policy: QudsExecutionPolicy.standard());
       final vizRes = await vizSession.run(
         '''
 use quds:viz as viz
-viz.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0], title: "Fallback OK")
+squareSum(n: int) -> int:
+  var acc = 0
+  for i in 1..n:
+    acc += i * i
+  return acc
+
+total = squareSum(10)
+print "total={total}"
+viz.plot([0.0, 1.0, 2.0], [0.0, 1.0, 4.0], title: "Universal VM OK")
 ''',
-        preferBytecode: true,
       );
       expect(vizRes.succeeded, isTrue, reason: '${vizRes.error}');
-      expect(vizRes.usedBytecodeVm, isFalse);
+      expect(vizRes.usedBytecodeVm, isTrue);
+      expect(vizRes.printedLines, ['total=385']);
       expect(vizRes.lastPlot, isNotNull);
 
       await limited.dispose();

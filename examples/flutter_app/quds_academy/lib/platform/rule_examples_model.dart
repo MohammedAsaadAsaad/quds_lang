@@ -55,7 +55,7 @@ Future<QudsRunResult> runAcademyExampleCode(
     allowTopLevelRebind: true,
   );
   try {
-    return await session.run(code, file: file, preferBytecode: false);
+    return await session.run(code, file: file);
   } finally {
     await session.dispose();
   }

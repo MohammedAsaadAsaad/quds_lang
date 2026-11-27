@@ -5880,6 +5880,321 @@ class QudsEvaluator {
     }
     return instance;
   }
+
+  // -------------------------------------------------------------------------
+  // Universal Register VM Runtime Bridge
+  // -------------------------------------------------------------------------
+
+  /// Starts budget accounting for a Universal Register VM execution.
+  void vmBeginRun({bool resetBudget = true}) {
+    if (resetBudget) {
+      _steps = 0;
+      _stopped = false;
+      _stopwatch = Stopwatch()..start();
+    }
+  }
+
+  /// Stops budget stopwatch at the end of a Universal Register VM execution.
+  void vmEndRun({bool resetBudget = true}) {
+    if (resetBudget) {
+      _stopwatch?.stop();
+    }
+  }
+
+  /// Advances step counter and yields cooperatively when required.
+  Future<void>? vmTick(SourceSpan span) => _tick(span);
+
+  /// Enforces collection size policy.
+  void vmCheckCollectionSize(int size, SourceSpan span) =>
+      _checkCollectionSize(size, span);
+
+  /// Enforces string length policy.
+  void vmCheckStringLength(int length, SourceSpan span) =>
+      _checkStringLength(length, span);
+
+  /// Whether any reactive `computed` cells or `watch` blocks are registered.
+  bool get vmHasReactiveState =>
+      _computedCells.isNotEmpty || _watchers.isNotEmpty;
+
+  /// Flushes reactive `computed` cells and `watch` listeners.
+  Future<void> vmNotifyStateChanged() => _notifyStateChanged();
+
+  /// Hoists a list of function declarations into [env].
+  void vmHoistFunctions(List<Statement> statements, QudsEnvironment env) =>
+      _hoistFunctions(statements, env);
+
+  /// Executes a single AST statement in [env].
+  Future<Object?> vmExecStatement(
+    Statement stmt,
+    QudsEnvironment env, {
+    bool alreadyHoisted = true,
+  }) =>
+      _execStatement(stmt, env, alreadyHoisted: alreadyHoisted);
+
+  /// Evaluates a single AST expression in [env].
+  FutureOr<Object?> vmEvalExpr(Expression expr, QudsEnvironment env) =>
+      _evalExprFast(expr, env);
+
+  /// Reads a member on any Quds or Dart runtime value.
+  FutureOr<Object?> vmEvalMemberRead(
+    Object? receiver,
+    String name,
+    bool nullAware,
+    SourceSpan span,
+  ) =>
+      _evalMemberReadFast(receiver, name, nullAware, span);
+
+  /// Assigns a member on any Quds runtime object/class with full semantics.
+  Future<void> vmExecMemberAssign(
+    Object? receiver,
+    String name,
+    String operator,
+    Object? rhsValue,
+    QudsEnvironment env,
+    SourceSpan span,
+  ) async {
+    if (!allowMutation) {
+      throw QudsPolicyViolationException(
+        QudsPolicyViolationKind.featureDisabled,
+        'Member mutation (`.$name`) is disabled by the active execution policy.',
+        span,
+        stackFrames: stackFrames,
+      );
+    }
+    Object? newValue;
+    if (operator == '=') {
+      newValue = rhsValue;
+    } else {
+      final current = await _evalMemberRead(receiver, name, false, span);
+      if (operator == '??=' && current != null) return;
+      if (operator == '??=') {
+        newValue = rhsValue;
+      } else {
+        final baseOp = operator.substring(0, operator.length - 1);
+        newValue = await _applyBinaryOp(current, baseOp, rhsValue, span);
+      }
+    }
+    if (receiver is QudsInstance) {
+      final prop = receiver.qudsClass.lookupProperty(name);
+      if (prop != null && prop.setter != null && prop.setterBody != null) {
+        final setterEnv =
+            receiver.qudsClass.definingEnv.child(isFunctionBoundary: true)
+              ..define('this', receiver)
+              ..define(prop.setter!, newValue);
+        _exposeInstanceFields(receiver, setterEnv);
+        await executeBlock(prop.setterBody!, setterEnv);
+        _syncInstanceFieldsBack(receiver, setterEnv);
+        await _notifyStateChanged();
+        return;
+      }
+      final fieldDecl = _findFieldDecl(receiver.qudsClass, name);
+      if (fieldDecl != null &&
+          !fieldDecl.mutable &&
+          !_initializingInstances.contains(receiver)) {
+        throw QudsRuntimeException(
+          'Cannot assign to immutable field `${receiver.qudsClass.name}.$name`.',
+          span,
+          code: 'E202',
+        );
+      }
+      receiver.fields[name] = newValue;
+      if (identical(env.resolveSlot('this')?.value, receiver)) {
+        final fieldSlot = env.resolveSlot(name);
+        if (fieldSlot != null) {
+          fieldSlot.value = newValue;
+        }
+      }
+      await _notifyStateChanged();
+      return;
+    }
+    if (receiver is QudsClass) {
+      receiver.staticFields[name] = newValue;
+      await _notifyStateChanged();
+      return;
+    }
+    throw QudsRuntimeException(
+      'Cannot assign member `$name` on `${qudsTypeName(receiver)}`.',
+      span,
+    );
+  }
+
+  /// Reads an index on List/Map/String/QudsInstance.
+  FutureOr<Object?> vmEvalIndexRead(
+    Object? container,
+    Object? index,
+    SourceSpan span,
+  ) =>
+      _evalIndexReadFast(container, index, span);
+
+  /// Assigns an index on List/Map/QudsInstance with policy & operator checks.
+  Future<void> vmExecIndexAssign(
+    Object? container,
+    Object? index,
+    String operator,
+    Object? rhsValue,
+    SourceSpan span,
+  ) async {
+    if (!allowMutation) {
+      throw QudsPolicyViolationException(
+        QudsPolicyViolationKind.featureDisabled,
+        'Index mutation is disabled by the active execution policy.',
+        span,
+        stackFrames: stackFrames,
+      );
+    }
+    Object? newValue;
+    if (operator == '=') {
+      newValue = rhsValue;
+    } else {
+      final current = await _evalIndexRead(container, index, span);
+      if (operator == '??=' && current != null) return;
+      if (operator == '??=') {
+        newValue = rhsValue;
+      } else {
+        final baseOp = operator.substring(0, operator.length - 1);
+        newValue = await _applyBinaryOp(current, baseOp, rhsValue, span);
+      }
+    }
+    if (container is List) {
+      final idx = _expectInt(index, span);
+      final resolved = idx < 0 ? container.length + idx : idx;
+      if (resolved < 0 || resolved >= container.length) {
+        throw QudsRuntimeException(
+          'List index $idx out of range (length ${container.length}).',
+          span,
+          code: 'R302',
+        );
+      }
+      container[resolved] = newValue;
+      return;
+    }
+    if (container is Map) {
+      container[index] = newValue;
+      _checkCollectionSize(container.length, span);
+      return;
+    }
+    if (container is QudsInstance) {
+      final op = container.qudsClass.lookupMethod('[]=');
+      if (op != null) {
+        await invokeCallable(
+            op.bind(container), [index, newValue], const {}, span);
+        return;
+      }
+    }
+    throw QudsRuntimeException(
+      'Cannot index-assign on `${qudsTypeName(container)}`.',
+      span,
+    );
+  }
+
+  /// Applies a binary operator (with operator overloading on QudsInstance).
+  FutureOr<Object?> vmApplyBinary(
+    Object? left,
+    String op,
+    Object? right,
+    SourceSpan span,
+  ) =>
+      _applyBinaryFast(left, op, right, span);
+
+  /// Applies a unary operator.
+  Object? vmApplyUnary(String op, Object? value, SourceSpan span) =>
+      _applyUnaryOp(op, value, span);
+
+  /// Validates boolean condition value.
+  bool vmExpectBool(Object? value, SourceSpan span) => _expectBool(value, span);
+
+  /// Invokes a callable using the fast synchronous path when possible.
+  FutureOr<Object?> vmInvokeCallable(
+    Object? callee,
+    List<Object?> positional,
+    Map<String, Object?> named,
+    SourceSpan span,
+  ) =>
+      _invokeCallableFast(callee, positional, named, span);
+
+  /// Invokes a named constructor or method on a receiver cleanly.
+  FutureOr<Object?> vmInvokeMemberCall(
+    Object? receiver,
+    String name,
+    bool nullAware,
+    List<Object?> positional,
+    Map<String, Object?> named,
+    SourceSpan span,
+  ) {
+    if (receiver == null && nullAware) return null;
+    if (named.isEmpty) {
+      if (receiver is num) {
+        if (positional.isEmpty) {
+          switch (name) {
+            case 'abs':
+              return receiver.abs();
+            case 'truncateToDouble':
+              return receiver.truncateToDouble();
+            case 'floorToDouble':
+              return receiver.floorToDouble();
+            case 'ceilToDouble':
+              return receiver.ceilToDouble();
+            case 'roundToDouble':
+              return receiver.roundToDouble();
+            case 'truncate':
+              return receiver.truncate();
+            case 'floor':
+              return receiver.floor();
+            case 'ceil':
+              return receiver.ceil();
+            case 'round':
+              return receiver.round();
+            case 'toDouble':
+              return receiver.toDouble();
+            case 'toInt':
+              return receiver.toInt();
+          }
+        }
+        if (name == 'toStringAsFixed' && positional.length == 1) {
+          return receiver.toStringAsFixed(_expectInt(positional[0], span));
+        }
+      }
+      if (receiver is BigInt) {
+        if (positional.isEmpty) {
+          switch (name) {
+            case 'abs':
+              return receiver.abs();
+            case 'toDouble':
+              return receiver.toDouble();
+            case 'toInt':
+              return receiver.toInt();
+          }
+        }
+        if (name == 'gcd' && positional.length == 1) {
+          return receiver.gcd(positional[0] as BigInt);
+        }
+        if (name == 'pow' && positional.length == 1) {
+          return receiver.pow(_expectInt(positional[0], span));
+        }
+      }
+    }
+    if (receiver is QudsClass) {
+      final namedCtor = receiver.constructors[name];
+      if (namedCtor != null) {
+        return _instantiateClass(receiver, positional, named, span,
+            ctor: namedCtor);
+      }
+      final staticMethod = receiver.staticMethods[name];
+      if (staticMethod != null) {
+        return _invokeCallableFast(staticMethod, positional, named, span);
+      }
+    }
+    final member = _evalMemberReadFast(receiver, name, nullAware, span);
+    if (member is Future<Object?>) {
+      return member
+          .then((m) => _invokeCallableFast(m, positional, named, span));
+    }
+    return _invokeCallableFast(member, positional, named, span);
+  }
+
+  /// Registers an extension/augment declaration.
+  void vmRegisterExtension(ExtensionDeclaration ext, QudsEnvironment env) =>
+      registerExtension(ext, env);
 }
 
 class _QudsComputedEntry {

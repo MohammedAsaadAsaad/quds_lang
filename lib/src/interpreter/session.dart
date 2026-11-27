@@ -12,6 +12,7 @@ import '../ast.dart';
 import '../lexer.dart';
 import '../parser.dart';
 import 'bytecode_vm.dart';
+import 'universal_vm.dart';
 import 'dart_stdlib_bridge.dart';
 import 'data_module.dart';
 import 'debugger.dart';
@@ -479,7 +480,7 @@ class QudsSession {
     bool resetGlobalScope = true,
     bool resetWorkspaceModules = false,
     bool resetVizQuota = true,
-    bool preferBytecode = false,
+    bool preferBytecode = true,
   }) async {
     final ws = _projectWorkspace;
     if (ws == null) {
@@ -523,7 +524,7 @@ class QudsSession {
     bool resetGlobalScope = true,
     bool resetWorkspaceModules = false,
     bool resetVizQuota = true,
-    bool preferBytecode = false,
+    bool preferBytecode = true,
   }) {
     final ws = _projectWorkspace;
     if (ws == null) {
@@ -565,7 +566,7 @@ class QudsSession {
     String file = '<session>',
     Map<String, Object?>? interactiveInputs,
     bool resetVizQuota = true,
-    bool preferBytecode = false,
+    bool preferBytecode = true,
   }) async {
     if (interactiveInputs != null) {
       _interactiveInputs.addAll(interactiveInputs);
@@ -617,18 +618,28 @@ class QudsSession {
         _onBeforeCall != null ||
         policy.onPermissionCheck != null;
 
-    if (preferBytecode && !needsStatementHook && !needsCallHook) {
+    final canUseTier1FastPath = preferBytecode &&
+        !needsStatementHook &&
+        !needsCallHook &&
+        policy.maxLoopIterations == null &&
+        policy.allowMutation;
+
+    if (canUseTier1FastPath) {
+      final hasPriorUserBindings =
+          _globalEnv.localSlots.keys.any((k) => !_builtinNames.contains(k));
       final importsAllowed = program.statements
           .whereType<ImportDeclaration>()
           .every(
               (imp) => policy.allowImports && policy.isLibraryAllowed(imp.uri));
-      if (importsAllowed) {
+      if (importsAllowed &&
+          (!hasPriorUserBindings || _globalEnv.allowTopLevelRebind)) {
         final compiled = QudsBytecodeCompiler.tryCompile(program, file: file);
         if (compiled != null) {
           final vmRes = QudsBytecodeVm.run(
             compiled,
             maxSteps: policy.maxSteps,
             maxCallDepth: policy.maxCallDepth,
+            maxCollectionLength: policy.maxCollectionLength,
             timeout: policy.timeout,
             onPrint: (line) {
               printed.add(line);
@@ -636,7 +647,27 @@ class QudsSession {
             },
           );
           for (final entry in vmRes.globals.entries) {
-            _globalEnv.define(entry.key, entry.value, mutable: true);
+            _globalEnv.define(
+              entry.key,
+              entry.value,
+              mutable: compiled.globalMutable[entry.key] ?? false,
+            );
+          }
+          for (var i = 0; i < compiled.functionDecls.length; i++) {
+            final decl = compiled.functionDecls[i];
+            final userFn = QudsUserFunction(
+              name: decl.name,
+              parameters: decl.parameters,
+              body: decl.body,
+              expressionBody: decl.expressionBody,
+              isAsync: decl.isAsync,
+              generator: decl.generator,
+              returnType: decl.returnType ?? '',
+              closure: _globalEnv,
+              span: decl.span,
+            );
+            _globalEnv.defineFunction(userFn,
+                allowReplace: _globalEnv.allowTopLevelRebind);
           }
           stopwatch.stop();
           if (!vmRes.succeeded && vmRes.error != null) {
@@ -748,8 +779,22 @@ class QudsSession {
     );
 
     _activeEvaluator = evaluator;
+    final useUniversalVm =
+        preferBytecode && !needsStatementHook && !needsCallHook;
     try {
-      final value = await evaluator.executeProgram(program);
+      final Object? value;
+      if (useUniversalVm) {
+        final chunk = QudsUniversalCompiler.compile(program, name: file);
+        value = await QudsUniversalVm.execute(
+          chunk,
+          evaluator,
+          _globalEnv,
+          enableTier1Promotion:
+              policy.maxLoopIterations == null && policy.allowMutation,
+        );
+      } else {
+        value = await evaluator.executeProgram(program);
+      }
       stopwatch.stop();
       return QudsRunResult(
         succeeded: true,
@@ -758,6 +803,7 @@ class QudsSession {
         outputs: List.unmodifiable(outputs),
         stepsExecuted: evaluator.stepsExecuted,
         elapsed: stopwatch.elapsed,
+        usedBytecodeVm: useUniversalVm,
       );
     } catch (err) {
       stopwatch.stop();
@@ -769,6 +815,7 @@ class QudsSession {
         stepsExecuted: evaluator.stepsExecuted,
         elapsed: stopwatch.elapsed,
         error: err,
+        usedBytecodeVm: useUniversalVm,
       );
     } finally {
       if (identical(_activeEvaluator, evaluator)) {

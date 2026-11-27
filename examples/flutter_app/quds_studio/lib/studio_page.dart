@@ -85,7 +85,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   String? _liveEvalOutput;
 
   // Bytecode VM, Time-Travel + Profiler, and VSync 60/120fps Animation state
-  bool _preferBytecode = false;
+  bool _preferBytecode = true;
   bool _enableProfiling = false;
   final Map<String, List<BenchmarkRunRecord>> _benchHistory = {};
   final Map<String, double> _benchVmMs = {};
@@ -136,7 +136,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _preset = studioPresets[widget.initialPresetIndex];
     _policyMode = _preset.defaultPolicy;
     _breakpoints = Set<int>.from(_preset.defaultBreakpoints);
-    _preferBytecode = _preset.category == StudioCategory.benchmarks;
+    _preferBytecode = true;
     _enableProfiling = _preset.id == 'profiler_bytecode_lab';
     _projectWorkspace = QudsWorkspace.scientificProjectTemplate();
     _activeWorkspaceFile = _projectWorkspace.entryPoint;
@@ -642,7 +642,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _preset = preset;
       _policyMode = preset.defaultPolicy;
       _breakpoints = Set<int>.from(preset.defaultBreakpoints);
-      _preferBytecode = preset.category == StudioCategory.benchmarks;
+      _preferBytecode = true;
       _enableProfiling = preset.id == 'profiler_bytecode_lab';
       _lastResult = null;
       _activePause = null;

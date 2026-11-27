@@ -201,7 +201,13 @@ void main() {
     expect(find.byKey(const Key('quds_animation_bar')), findsOneWidget);
     await tester.tap(find.byKey(const Key('btn_anim_step')));
     await tester.pumpAndSettle();
-    expect(find.textContaining('#1'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('quds_animation_bar')),
+        matching: find.textContaining('#1'),
+      ),
+      findsOneWidget,
+    );
 
     // 2. Preset 5: 3D Surface + Vector Field
     await tester.pumpWidget(
@@ -291,5 +297,44 @@ void main() {
     expect(find.byType(QudsPlotCanvas), findsOneWidget);
     expect(find.text('ملخص المحاكاة'), findsOneWidget);
     expect(find.textContaining('السرعة الابتدائية'), findsOneWidget);
+  });
+
+  testWidgets(
+      'Quds Studio renders live telemetry HUD for Pendulum and progressive gradient Butterfly with timeline scrubber',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    // 1. Pendulum preset (index 4): live telemetry HUD + timeline scrubber
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('pendulum_hud'),
+      initialPresetIndex: 4,
+    ));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+    expect(find.byKey(const Key('quds_telemetry_hud')), findsOneWidget);
+    expect(find.byKey(const Key('anim_timeline_scrubber')), findsOneWidget);
+    expect(find.textContaining('KE:'), findsOneWidget);
+    expect(find.textContaining('PE:'), findsOneWidget);
+
+    // 2. Temple Fay Butterfly preset (index 10): progressive gradient drawing + live progress HUD
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('butterfly_hud'),
+      initialPresetIndex: 10,
+    ));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+    expect(find.byKey(const Key('quds_telemetry_hud')), findsOneWidget);
+    expect(find.textContaining('0.0 %'), findsOneWidget);
+    expect(find.textContaining('0/320'), findsOneWidget);
+
+    // Step forward several frames -> percentage and drawn points advance from first point!
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(find.byKey(const Key('btn_anim_step')));
+      await tester.pumpAndSettle();
+    }
+    expect(find.textContaining('0.0 %'), findsNothing);
+    expect(find.textContaining('#4'), findsOneWidget);
   });
 }

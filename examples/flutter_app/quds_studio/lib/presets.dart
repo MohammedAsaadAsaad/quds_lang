@@ -134,37 +134,64 @@ print "قراءة الحساس = {tempC} °C ({tempK.toStringAsFixed(2)} K)"
   ),
   StudioPreset(
     id: 'physics_pendulum',
-    titleAr: 'محاكاة 60fps: البندول الفيزيائي',
-    titleEn: '60fps Physics: Harmonic Pendulum',
+    titleAr: 'محاكاة زمنية: البندول الفيزيائي مع القراءات',
+    titleEn: 'Time-Based Physics: Live Pendulum & Telemetry',
     subtitleAr:
-        'تشغيل مستمر بـ 60 إطار/ثانية مع مسار الحركة Trail ومنزلقات حية',
+        'حركة زمنية مستمرة للبندول اللاخطي مع متجه السرعة ومسار متدرج وقراءات الزاوية والطاقة الحية',
     fileName: 'pendulum_60fps.quds',
     code: '''use dart:math as m
 use quds:viz as viz
 
 clk = viz.animate(fps: 60, duration: 20.0, loop: true)
-len = viz.slider("len", min: 1.5, max: 4.5, value: 3.0, step: 0.1, label: "طول الخيط")
-amp = viz.slider("amp", min: 0.2, max: 1.3, value: 0.85, step: 0.05, label: "السعة الزاوية")
-omega = m.sqrt(9.81 / len)
-theta = amp * m.cos(omega * clk.t)
+len = viz.slider("len", min: 1.5, max: 4.0, value: 2.8, step: 0.1, label: "طول الخيط L (م)")
+amp = viz.slider("amp", min: 0.2, max: 1.4, value: 0.95, step: 0.05, label: "الزاوية الابتدائية θ₀")
+damp = viz.slider("damp", min: 0.0, max: 0.4, value: 0.06, step: 0.02, label: "التخميد b")
+g = 9.81
+mass = 1.0
+
+# تكامل عددي حي للبندول اللاخطي θ'' = -(g/L)sin(θ) - b·ω مع دعم التحريك الزمني
+omega0 = m.sqrt(g / len)
+decay = m.exp(-0.5 * damp * clk.t)
+omegaD = m.sqrt((omega0 * omega0 - 0.25 * damp * damp).abs())
+theta = amp * decay * m.cos(omegaD * clk.t)
+omega = -amp * decay * (omegaD * m.sin(omegaD * clk.t) + 0.5 * damp * m.cos(omegaD * clk.t))
 
 bobX = len * m.sin(theta)
 bobY = -len * m.cos(theta)
+vx = len * omega * m.cos(theta)
+vy = len * omega * m.sin(theta)
+speed = m.sqrt(vx * vx + vy * vy)
+ke = 0.5 * mass * speed * speed
+pe = mass * g * len * (1.0 - m.cos(theta))
+period = 2.0 * m.pi / omega0
 
 var trailPts = []
-for i in 0..24:
-  ti = clk.t - (24 - i) * 0.04
-  th = amp * m.cos(omega * ti)
-  trailPts.add([len * m.sin(th), -len * m.cos(th)])
+for i in 0..32:
+  ti = clk.t - (32 - i) * 0.035
+  if ti >= 0.0:
+    di = m.exp(-0.5 * damp * ti)
+    thi = amp * di * m.cos(omegaD * ti)
+    trailPts.add([len * m.sin(thi), -len * m.cos(thi)])
 
-scene = viz.scene(title: "محاكاة البندول التفاعلي (60fps)", grid: true)
-scene.trail("path", trailPts, color: "#38BDF8")
-scene.segment("rod", [0.0, 0.0], [bobX, bobY], color: "#94A3B8")
-scene.point("pivot", 0.0, 0.0, label: "O", color: "#F59E0B")
-scene.point("bob", bobX, bobY, label: "m", color: "#EF4444", radius: 8.0)
+scene = viz.scene(title: "محاكاة البندول الفيزيائي الحية", grid: true, axes: true, bounds: [-4.4, 4.4, -4.6, 1.0])
+scene.segment("ref", [0.0, 0.0], [0.0, -len - 0.3], color: "#475569", dashed: true, strokeWidth: 1.4)
+scene.trail("path", trailPts, gradient: viz.palette("ocean"), strokeWidth: 2.6, glow: true)
+scene.angle("ang", [0.0, -len], [0.0, 0.0], [bobX, bobY], color: "#F59E0B", showDegrees: true)
+scene.segment("rod", [0.0, 0.0], [bobX, bobY], color: "#CBD5E1", strokeWidth: 2.6)
+scene.vector("vel", [bobX, bobY], [bobX + vx * 0.35, bobY + vy * 0.35], label: "v", color: "#10B981")
+scene.point("pivot", 0.0, 0.0, label: "O", color: "#F59E0B", radius: 5.5)
+scene.point("bob", bobX, bobY, label: "m", color: "#EF4444", radius: 9.0)
+
+scene.readout("t", clk.t, unit: "s", color: "#38BDF8")
+scene.readout("θ", theta * 180.0 / m.pi, unit: "°", decimals: 1, color: "#F59E0B")
+scene.readout("ω", omega, unit: "rad/s", color: "#A855F7")
+scene.readout("v", speed, unit: "m/s", color: "#10B981")
+scene.readout("KE", ke, unit: "J", color: "#F43F5E")
+scene.readout("PE", pe, unit: "J", color: "#60A5FA")
+scene.readout("T", period, unit: "s", color: "#FACC15")
 scene.render()
 
-print "t={clk.t.toStringAsFixed(2)}s | θ={(theta * 180.0 / m.pi).toStringAsFixed(1)}° | ω={omega.toStringAsFixed(2)}"
+print "t={clk.t.toStringAsFixed(2)}s | θ={(theta * 180.0 / m.pi).toStringAsFixed(1)}° | v={speed.toStringAsFixed(2)} m/s | E={(ke + pe).toStringAsFixed(2)} J"
 ''',
   ),
   StudioPreset(
@@ -301,6 +328,52 @@ for i in 1..6:
   print "fib({i}) = {v}"
 
 print "المجموع = {acc}"
+''',
+  ),
+  StudioPreset(
+    id: 'animated_butterfly',
+    titleAr: 'رسم حركي متدرج: فراشة تيمبل فاي',
+    titleEn: 'Animated Gradient Curve: Temple Fay Butterfly',
+    subtitleAr:
+        'رسم منحنى الفراشة بالكود نقطة بنقطة من البداية للنهاية مع تدرج ألوان وتوهّج وقراءات حية',
+    fileName: 'butterfly_gradient.quds',
+    code: '''use dart:math as m
+use quds:viz as viz
+
+clk = viz.animate(fps: 60, duration: 10.0, loop: true)
+paletteName = viz.select("palette", ["butterfly", "rainbow", "aurora", "sunset", "neon", "ocean"], value: "butterfly", label: "تدرج الألوان")
+scale = viz.slider("scale", min: 0.6, max: 1.35, value: 1.0, step: 0.05, label: "حجم الفراشة")
+strokeW = viz.slider("stroke", min: 1.5, max: 4.5, value: 2.8, step: 0.1, label: "سمك الخط")
+
+# منحنى فراشة تيمبل فاي: r(u) = e^cos(u) - 2cos(4u) - sin^5(u/12)
+totalPts = 320
+maxU = 12.0 * m.pi
+var pts = []
+for i in 0..totalPts:
+  u = (i / totalPts) * maxU
+  s = m.sin(u / 12.0)
+  r = m.exp(m.cos(u)) - 2.0 * m.cos(4.0 * u) - s * s * s * s * s
+  pts.add([scale * r * m.sin(u), scale * r * m.cos(u)])
+
+p = clk.progress
+curU = p * maxU
+curS = m.sin(curU / 12.0)
+curR = m.exp(m.cos(curU)) - 2.0 * m.cos(4.0 * curU) - curS * curS * curS * curS * curS
+curX = scale * curR * m.sin(curU)
+curY = scale * curR * m.cos(curU)
+drawn = (p * totalPts).round()
+
+scene = viz.scene(title: "فراشة تيمبل فاي (رسم حركي بتدرج ألوان)", grid: true, axes: true, bounds: [-4.6, 4.6, -4.0, 4.6])
+scene.curve("butterfly", pts, gradient: viz.palette(paletteName), progress: p, strokeWidth: strokeW, glow: true, showHead: true)
+scene.readout("الزمن", clk.t, unit: "s", color: "#38BDF8")
+scene.readout("الاكتمال", p * 100.0, unit: "%", decimals: 1, color: "#FF007F")
+scene.readout("النقاط", "{drawn}/{totalPts}", color: "#FFD166")
+scene.readout("r(u)", curR, color: "#06D6A0")
+scene.readout("x", curX, color: "#A855F7")
+scene.readout("y", curY, color: "#EC4899")
+scene.render()
+
+print "t={clk.t.toStringAsFixed(2)}s | الاكتمال={(p * 100.0).toStringAsFixed(1)}% | الرأس=({curX.toStringAsFixed(2)}, {curY.toStringAsFixed(2)})"
 ''',
   ),
 ];

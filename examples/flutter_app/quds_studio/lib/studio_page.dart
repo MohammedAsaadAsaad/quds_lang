@@ -25,12 +25,14 @@ class QudsStudioPage extends StatefulWidget {
     this.initialArabic = true,
     this.initialDark = true,
     this.autoRunInitial = true,
+    this.autoPlayAnimations = false,
   });
 
   final int initialPresetIndex;
   final bool initialArabic;
   final bool initialDark;
   final bool autoRunInitial;
+  final bool autoPlayAnimations;
 
   @override
   State<QudsStudioPage> createState() => _QudsStudioPageState();
@@ -294,6 +296,15 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     });
     _visualResult.value = res;
     _reanalyze();
+    final anim = res.lastGeometryScene?.animation ??
+        res.lastPlot?.animation ??
+        res.lastSurface3D?.animation ??
+        res.lastVectorField?.animation;
+    if (widget.autoPlayAnimations &&
+        res.succeeded &&
+        (anim?.autoPlay ?? false)) {
+      _startAnimTimer();
+    }
   }
 
   void _openWorkspaceFile(String path, {bool switchToEditorOnMobile = true}) {
@@ -364,16 +375,21 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _animPlaying = false;
   }
 
-  void _toggleAnimPlay() {
-    if (_animPlaying) {
-      setState(_stopAnimTimer);
-      return;
-    }
+  void _startAnimTimer() {
+    _animTimer?.cancel();
     setState(() => _animPlaying = true);
     _animTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
       if (!mounted || !_animPlaying) return;
       _stepAnimFrame();
     });
+  }
+
+  void _toggleAnimPlay() {
+    if (_animPlaying) {
+      setState(_stopAnimTimer);
+      return;
+    }
+    _startAnimTimer();
   }
 
   String _activeExecutionSource() => _workspaceMode
@@ -390,6 +406,23 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     try {
       final res = await _session.stepFrame(
         0.033 * _animSpeed,
+        source: _activeExecutionSource(),
+        file: _activeExecutionFile(),
+      );
+      if (!mounted) return;
+      _lastResult = res;
+      _visualResult.value = res;
+    } finally {
+      _updatingInteractive = false;
+    }
+  }
+
+  Future<void> _seekAnimTime(double targetTime) async {
+    if (_updatingInteractive || _running) return;
+    _updatingInteractive = true;
+    try {
+      final res = await _session.seekTime(
+        targetTime,
         source: _activeExecutionSource(),
         file: _activeExecutionFile(),
       );
@@ -1357,6 +1390,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                   onStepFrame: _stepAnimFrame,
                   onReset: _resetAnim,
                   onSpeedChanged: (s) => setState(() => _animSpeed = s),
+                  onSeekTime: _seekAnimTime,
                 ),
               ],
               const SizedBox(height: 8),

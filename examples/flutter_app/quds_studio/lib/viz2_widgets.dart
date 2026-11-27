@@ -638,6 +638,7 @@ class QudsAnimationControlsBar extends StatelessWidget {
     required this.onStepFrame,
     required this.onReset,
     required this.onSpeedChanged,
+    this.onSeekTime,
   });
 
   final QudsAnimationSpec spec;
@@ -648,9 +649,11 @@ class QudsAnimationControlsBar extends StatelessWidget {
   final VoidCallback onStepFrame;
   final VoidCallback onReset;
   final ValueChanged<double> onSpeedChanged;
+  final ValueChanged<double>? onSeekTime;
 
   @override
   Widget build(BuildContext context) {
+    final duration = spec.duration;
     return Container(
       key: const Key('quds_animation_bar'),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -660,59 +663,87 @@ class QudsAnimationControlsBar extends StatelessWidget {
         border:
             Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
       ),
-      child: Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          FilledButton.icon(
-            key: const Key('btn_anim_play_pause'),
-            onPressed: onTogglePlay,
-            icon: Icon(
-              playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-              size: 16,
-            ),
-            label: Text(
-              playing
-                  ? (isArabic ? 'إيقاف مؤقت' : 'Pause')
-                  : (isArabic ? 'تشغيل 60fps' : 'Play'),
-              style: const TextStyle(fontSize: 11.5),
-            ),
-            style: FilledButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-            ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              FilledButton.icon(
+                key: const Key('btn_anim_play_pause'),
+                onPressed: onTogglePlay,
+                icon: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  size: 16,
+                ),
+                label: Text(
+                  playing
+                      ? (isArabic ? 'إيقاف مؤقت' : 'Pause')
+                      : (isArabic ? 'تشغيل حي' : 'Play'),
+                  style: const TextStyle(fontSize: 11.5),
+                ),
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
+              ),
+              IconButton(
+                key: const Key('btn_anim_step'),
+                onPressed: onStepFrame,
+                tooltip: isArabic ? 'إطار واحد (+1)' : 'Step +1 Frame',
+                icon: const Icon(Icons.skip_next_rounded, size: 18),
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                key: const Key('btn_anim_reset'),
+                onPressed: onReset,
+                tooltip: isArabic ? 'إعادة الزمن t=0' : 'Reset t=0',
+                icon: const Icon(Icons.replay_rounded, size: 16),
+                visualDensity: VisualDensity.compact,
+              ),
+              for (final s in [0.5, 1.0, 2.0])
+                ChoiceChip(
+                  label: Text('${s}x', style: const TextStyle(fontSize: 10.5)),
+                  selected: (speed - s).abs() < 0.05,
+                  onSelected: (_) => onSpeedChanged(s),
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+              Text(
+                duration != null && duration > 0
+                    ? 't=${spec.time.toStringAsFixed(2)}/${duration.toStringAsFixed(1)}s · #${spec.frame}'
+                    : 't=${spec.time.toStringAsFixed(2)}s · #${spec.frame}',
+                style: const TextStyle(
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: 11,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+            ],
           ),
-          IconButton(
-            key: const Key('btn_anim_step'),
-            onPressed: onStepFrame,
-            tooltip: isArabic ? 'إطار واحد (+1)' : 'Step +1 Frame',
-            icon: const Icon(Icons.skip_next_rounded, size: 18),
-            visualDensity: VisualDensity.compact,
-          ),
-          IconButton(
-            key: const Key('btn_anim_reset'),
-            onPressed: onReset,
-            tooltip: isArabic ? 'إعادة الزمن t=0' : 'Reset t=0',
-            icon: const Icon(Icons.replay_rounded, size: 16),
-            visualDensity: VisualDensity.compact,
-          ),
-          for (final s in [0.5, 1.0, 2.0])
-            ChoiceChip(
-              label: Text('${s}x', style: const TextStyle(fontSize: 10.5)),
-              selected: (speed - s).abs() < 0.05,
-              onSelected: (_) => onSpeedChanged(s),
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
+          if (duration != null && duration > 0 && onSeekTime != null)
+            SizedBox(
+              height: 24,
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 3,
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 12),
+                ),
+                child: Slider(
+                  key: const Key('anim_timeline_scrubber'),
+                  value: spec.time.clamp(0.0, duration),
+                  min: 0.0,
+                  max: duration,
+                  onChanged: onSeekTime,
+                ),
+              ),
             ),
-          Text(
-            't=${spec.time.toStringAsFixed(2)}s · #${spec.frame}',
-            style: const TextStyle(
-              fontFamily: 'JetBrainsMono',
-              fontSize: 11,
-              color: Color(0xFF94A3B8),
-            ),
-          ),
         ],
       ),
     );

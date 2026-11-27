@@ -107,16 +107,95 @@ class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
                 _lockedBounds = null;
               });
             },
-            child: RepaintBoundary(
-              child: CustomPaint(
-                size: size,
-                painter: _GeometryScenePainter(
-                  scene: widget.scene,
-                  viewport: vp,
-                  draggingId: _draggingId,
-                  isDark: widget.isDark,
+            child: Stack(
+              children: [
+                RepaintBoundary(
+                  child: CustomPaint(
+                    size: size,
+                    painter: _GeometryScenePainter(
+                      scene: widget.scene,
+                      viewport: vp,
+                      draggingId: _draggingId,
+                      isDark: widget.isDark,
+                    ),
+                  ),
                 ),
-              ),
+                if (widget.scene.readings.isNotEmpty)
+                  Positioned(
+                    left: 8,
+                    right: 8,
+                    bottom: 8,
+                    child: IgnorePointer(
+                      child: Container(
+                        key: const Key('quds_telemetry_hud'),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: (widget.isDark
+                                  ? const Color(0xFF0F172A)
+                                  : Colors.white)
+                              .withValues(alpha: 0.86),
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(
+                            color:
+                                const Color(0xFF38BDF8).withValues(alpha: 0.28),
+                          ),
+                        ),
+                        child: Wrap(
+                          spacing: 10,
+                          runSpacing: 4,
+                          children: [
+                            for (final r in widget.scene.readings)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 7,
+                                    height: 7,
+                                    decoration: BoxDecoration(
+                                      color: r.color != null
+                                          ? _parseColor(r.color!)
+                                          : const Color(0xFF38BDF8),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${r.label}: ',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: widget.isDark
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                  Text(
+                                    r.unit != null
+                                        ? '${r.value} ${r.unit}'
+                                        : r.value,
+                                    style: TextStyle(
+                                      fontFamily: 'JetBrainsMono',
+                                      fontFamilyFallback: const [
+                                        'IBMPlexSansArabic'
+                                      ],
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: r.color != null
+                                          ? _parseColor(r.color!)
+                                          : (widget.isDark
+                                              ? const Color(0xFFF8FAFC)
+                                              : const Color(0xFF0F172A)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         );
@@ -284,29 +363,113 @@ class _GeometryScenePainter extends CustomPainter {
         case QudsGeoVector():
           final a = viewport.toScreen(p.x1, p.y1);
           final b = viewport.toScreen(p.x2, p.y2);
+          final vecColor = _parseColor(p.color);
           canvas.drawLine(
             a,
             b,
             Paint()
-              ..color = _parseColor(p.color)
-              ..strokeWidth = 2.4,
+              ..color = vecColor
+              ..strokeWidth = 2.4
+              ..strokeCap = StrokeCap.round,
           );
-        case QudsGeoCurve():
-          if (p.points.length < 2) break;
-          final path = Path();
-          final first = viewport.toScreen(p.points.first.$1, p.points.first.$2);
-          path.moveTo(first.dx, first.dy);
-          for (var i = 1; i < p.points.length; i++) {
-            final pt = viewport.toScreen(p.points[i].$1, p.points[i].$2);
-            path.lineTo(pt.dx, pt.dy);
+          final delta = b - a;
+          if (delta.distance > 6.0) {
+            final ang = math.atan2(delta.dy, delta.dx);
+            const headLen = 9.0;
+            const spread = 0.48;
+            final left = Offset(
+              b.dx - headLen * math.cos(ang - spread),
+              b.dy - headLen * math.sin(ang - spread),
+            );
+            final right = Offset(
+              b.dx - headLen * math.cos(ang + spread),
+              b.dy - headLen * math.sin(ang + spread),
+            );
+            final arrow = Path()
+              ..moveTo(b.dx, b.dy)
+              ..lineTo(left.dx, left.dy)
+              ..lineTo(right.dx, right.dy)
+              ..close();
+            canvas.drawPath(arrow, Paint()..color = vecColor);
           }
-          canvas.drawPath(
-            path,
-            Paint()
-              ..color = _parseColor(p.color)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = p.strokeWidth,
-          );
+          if (p.label != null && p.label!.isNotEmpty) {
+            _drawLabel(canvas, p.label!, b + const Offset(8, -10), vecColor);
+          }
+        case QudsGeoCurve():
+          final visible = p.visiblePoints();
+          if (visible.length >= 2) {
+            final hasMultiColor =
+                p.gradientColors.length >= 2 || p.pointColors.isNotEmpty;
+            if (hasMultiColor) {
+              final denom = math.max(1, p.points.length - 1);
+              final corePaint = Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = p.strokeWidth
+                ..strokeCap = StrokeCap.round;
+              final glowPaint = p.glow
+                  ? (Paint()
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = p.strokeWidth * 2.8
+                    ..strokeCap = StrokeCap.round)
+                  : null;
+              for (var i = 0; i < visible.length - 1; i++) {
+                final t = (i / denom).clamp(0.0, 1.0);
+                final segColor = _parseColor(p.colorAt(i, t));
+                final pa = viewport.toScreen(visible[i].$1, visible[i].$2);
+                final pb =
+                    viewport.toScreen(visible[i + 1].$1, visible[i + 1].$2);
+                if (glowPaint != null) {
+                  glowPaint.color = segColor.withValues(alpha: 0.22);
+                  canvas.drawLine(pa, pb, glowPaint);
+                }
+                corePaint.color = segColor;
+                canvas.drawLine(pa, pb, corePaint);
+              }
+            } else {
+              final path = Path();
+              final first =
+                  viewport.toScreen(visible.first.$1, visible.first.$2);
+              path.moveTo(first.dx, first.dy);
+              for (var i = 1; i < visible.length; i++) {
+                final pt = viewport.toScreen(visible[i].$1, visible[i].$2);
+                path.lineTo(pt.dx, pt.dy);
+              }
+              final baseColor = _parseColor(p.color);
+              if (p.glow) {
+                canvas.drawPath(
+                  path,
+                  Paint()
+                    ..color = baseColor.withValues(alpha: 0.24)
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = p.strokeWidth * 2.8
+                    ..strokeCap = StrokeCap.round
+                    ..strokeJoin = StrokeJoin.round,
+                );
+              }
+              canvas.drawPath(
+                path,
+                Paint()
+                  ..color = baseColor
+                  ..style = PaintingStyle.stroke
+                  ..strokeWidth = p.strokeWidth
+                  ..strokeCap = StrokeCap.round
+                  ..strokeJoin = StrokeJoin.round,
+              );
+            }
+          }
+          if (p.showHead && visible.isNotEmpty) {
+            final tip = viewport.toScreen(visible.last.$1, visible.last.$2);
+            final tipColor = _parseColor(
+              p.colorAt(visible.length - 1, p.progress.clamp(0.0, 1.0)),
+            );
+            canvas.drawCircle(
+              tip,
+              11,
+              Paint()..color = tipColor.withValues(alpha: 0.28),
+            );
+            canvas.drawCircle(tip, 5.5, Paint()..color = tipColor);
+            canvas.drawCircle(tip, 2.3, Paint()..color = Colors.white);
+          }
         case QudsGeoArc():
           final c = viewport.toScreen(p.cx, p.cy);
           final r = p.radius * viewport.scale;

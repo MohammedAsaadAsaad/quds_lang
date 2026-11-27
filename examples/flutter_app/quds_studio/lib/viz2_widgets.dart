@@ -656,7 +656,7 @@ class QudsAnimationControlsBar extends StatelessWidget {
     final duration = spec.duration;
     return Container(
       key: const Key('quds_animation_bar'),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B).withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(10),
@@ -667,73 +667,94 @@ class QudsAnimationControlsBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              FilledButton.icon(
-                key: const Key('btn_anim_play_pause'),
-                onPressed: onTogglePlay,
-                icon: Icon(
-                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                  size: 16,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                FilledButton.icon(
+                  key: const Key('btn_anim_play_pause'),
+                  onPressed: onTogglePlay,
+                  icon: Icon(
+                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    size: 15,
+                  ),
+                  label: Text(
+                    playing
+                        ? (isArabic ? 'إيقاف' : 'Pause')
+                        : (isArabic ? 'تشغيل' : 'Play'),
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
                 ),
-                label: Text(
-                  playing
-                      ? (isArabic ? 'إيقاف مؤقت' : 'Pause')
-                      : (isArabic ? 'تشغيل حي' : 'Play'),
-                  style: const TextStyle(fontSize: 11.5),
-                ),
-                style: FilledButton.styleFrom(
+                const SizedBox(width: 4),
+                IconButton(
+                  key: const Key('btn_anim_step'),
+                  onPressed: onStepFrame,
+                  tooltip: isArabic ? 'إطار واحد (+1)' : 'Step +1 Frame',
+                  icon: const Icon(Icons.skip_next_rounded, size: 17),
                   visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  constraints:
+                      const BoxConstraints(minWidth: 30, minHeight: 30),
+                  padding: EdgeInsets.zero,
                 ),
-              ),
-              IconButton(
-                key: const Key('btn_anim_step'),
-                onPressed: onStepFrame,
-                tooltip: isArabic ? 'إطار واحد (+1)' : 'Step +1 Frame',
-                icon: const Icon(Icons.skip_next_rounded, size: 18),
-                visualDensity: VisualDensity.compact,
-              ),
-              IconButton(
-                key: const Key('btn_anim_reset'),
-                onPressed: onReset,
-                tooltip: isArabic ? 'إعادة الزمن t=0' : 'Reset t=0',
-                icon: const Icon(Icons.replay_rounded, size: 16),
-                visualDensity: VisualDensity.compact,
-              ),
-              for (final s in [0.5, 1.0, 2.0])
-                ChoiceChip(
-                  label: Text('${s}x', style: const TextStyle(fontSize: 10.5)),
-                  selected: (speed - s).abs() < 0.05,
-                  onSelected: (_) => onSpeedChanged(s),
+                IconButton(
+                  key: const Key('btn_anim_reset'),
+                  onPressed: onReset,
+                  tooltip: isArabic ? 'إعادة الزمن t=0' : 'Reset t=0',
+                  icon: const Icon(Icons.replay_rounded, size: 15),
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 30, minHeight: 30),
+                  padding: EdgeInsets.zero,
+                ),
+                const SizedBox(width: 4),
+                ActionChip(
+                  label: Text(
+                    '${speed}x',
+                    style: const TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                   visualDensity: VisualDensity.compact,
                   padding: const EdgeInsets.symmetric(horizontal: 4),
+                  onPressed: () {
+                    final next = speed < 0.9 ? 1.0 : (speed < 1.5 ? 2.0 : 0.5);
+                    onSpeedChanged(next);
+                  },
                 ),
-              Text(
-                duration != null && duration > 0
-                    ? 't=${spec.time.toStringAsFixed(2)}/${duration.toStringAsFixed(1)}s · #${spec.frame}'
-                    : 't=${spec.time.toStringAsFixed(2)}s · #${spec.frame}',
-                style: const TextStyle(
-                  fontFamily: 'JetBrainsMono',
-                  fontSize: 11,
-                  color: Color(0xFF94A3B8),
+                const SizedBox(width: 8),
+                Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Text(
+                    duration != null && duration > 0
+                        ? 't=${spec.time.toStringAsFixed(2)}/${duration.toStringAsFixed(1)}s · #${spec.frame}'
+                        : 't=${spec.time.toStringAsFixed(2)}s · #${spec.frame}',
+                    style: const TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 10.5,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           if (duration != null && duration > 0 && onSeekTime != null)
             SizedBox(
-              height: 24,
+              height: 22,
               child: SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   trackHeight: 3,
                   thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      const RoundSliderThumbShape(enabledThumbRadius: 5.5),
                   overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 12),
+                      const RoundSliderOverlayShape(overlayRadius: 11),
                 ),
                 child: Slider(
                   key: const Key('anim_timeline_scrubber'),

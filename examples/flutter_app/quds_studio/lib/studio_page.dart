@@ -926,7 +926,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               body: SafeArea(
                 child: Column(
                   children: [
-                    _buildToolbar(theme),
+                    _buildToolbar(theme, isCompact: isCompact),
                     QudsPresetQuickBar(
                       activeFilter: _activeFilter,
                       activePresetId: _preset.id,
@@ -946,7 +946,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                                 index: _mobileTabIndex,
                                 children: [
                                   editorView,
-                                  _buildVisualStage(theme),
+                                  _buildVisualStage(theme, isCompact: true),
                                   _buildInspectorPanel(theme, workspacePanel),
                                   QudsNotebookPanel(
                                     isArabic: _isArabic,
@@ -965,7 +965,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                                       children: [
                                         Expanded(
                                             flex: 6,
-                                            child: _buildVisualStage(theme)),
+                                            child: _buildVisualStage(theme,
+                                                isCompact: false)),
                                         const SizedBox(height: 12),
                                         Expanded(
                                             flex: 4,
@@ -1021,8 +1022,311 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     );
   }
 
-  Widget _buildToolbar(ThemeData theme) {
+  Future<void> _openMobileSettingsSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Directionality(
+          textDirection: _isArabic ? TextDirection.rtl : TextDirection.ltr,
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    _isArabic
+                        ? 'إعدادات المحرك والسياسة والمظهر'
+                        : 'Engine, Policy & Display Settings',
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    _isArabic ? 'سياسة التنفيذ' : 'Execution Policy',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(ctx).hintColor),
+                  ),
+                  const SizedBox(height: 6),
+                  SegmentedButton<StudioPolicyMode>(
+                    key: const Key('policy_selector'),
+                    style: SegmentedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      textStyle: const TextStyle(
+                        fontFamily: 'IBMPlexSansArabic',
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    segments: [
+                      ButtonSegment(
+                        value: StudioPolicyMode.standard,
+                        label: Text(_isArabic ? 'قياسي' : 'Standard'),
+                      ),
+                      ButtonSegment(
+                        value: StudioPolicyMode.strictSandbox,
+                        label: Text(_isArabic ? 'مقيّد' : 'Sandbox'),
+                      ),
+                      ButtonSegment(
+                        value: StudioPolicyMode.systemBridge,
+                        label: Text(_isArabic ? 'جسر النظام' : 'Bridge'),
+                      ),
+                      if (_policyMode == StudioPolicyMode.custom)
+                        ButtonSegment(
+                          value: StudioPolicyMode.custom,
+                          label: Text(_isArabic ? 'مخصّص' : 'Custom'),
+                        ),
+                    ],
+                    selected: {_policyMode},
+                    onSelectionChanged: (set) {
+                      _switchPolicy(set.first);
+                      setSheetState(() {});
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    key: const Key('btn_custom_policy'),
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      _openCustomPolicyDialog();
+                    },
+                    icon: const Icon(Icons.tune_rounded, size: 16),
+                    label: Text(_isArabic ? 'تخصيص القيود' : 'Custom Policy'),
+                  ),
+                  const Divider(height: 20),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(_isArabic
+                        ? 'وضع Bytecode VM (السرعة الفائقة)'
+                        : 'Bytecode VM Mode'),
+                    value: _preferBytecode,
+                    onChanged: (v) {
+                      setState(() => _preferBytecode = v);
+                      setSheetState(() {});
+                    },
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(_isArabic
+                        ? 'تتبع الأداء وTime-Travel'
+                        : 'Profiler & Time-Travel Trace'),
+                    value: _enableProfiling,
+                    onChanged: (v) {
+                      setState(() {
+                        _enableProfiling = v;
+                        _debugger.recordHistory = v;
+                        _profiler.enabled = v;
+                      });
+                      setSheetState(() {});
+                    },
+                  ),
+                  const Divider(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() => _isArabic = !_isArabic);
+                            setSheetState(() {});
+                          },
+                          icon: const Icon(Icons.translate_rounded, size: 16),
+                          label: Text(_isArabic ? 'English' : 'العربية'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() => _isDark = !_isDark);
+                            _reanalyze();
+                            setSheetState(() {});
+                          },
+                          icon: Icon(
+                            _isDark
+                                ? Icons.light_mode_outlined
+                                : Icons.dark_mode_outlined,
+                            size: 16,
+                          ),
+                          label: Text(_isDark
+                              ? (_isArabic ? 'مظهر فاتح' : 'Light Mode')
+                              : (_isArabic ? 'مظهر داكن' : 'Dark Mode')),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolbar(ThemeData theme, {required bool isCompact}) {
     final surface = _isDark ? const Color(0xFF0F172A) : Colors.white;
+    if (isCompact) {
+      return Container(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+        decoration: BoxDecoration(
+          color: surface,
+          border: Border(
+            bottom: BorderSide(
+              color: theme.dividerColor.withValues(alpha: 0.25),
+            ),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2563EB), Color(0xFF0EA5E9)],
+                    ),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: const Icon(Icons.functions_rounded,
+                      color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _isArabic ? 'استوديو قُدس' : 'Quds Studio',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (!_running)
+                  FilledButton.icon(
+                    key: const Key('btn_run'),
+                    onPressed: _runCode,
+                    icon: const Icon(Icons.play_arrow_rounded, size: 16),
+                    label: Text(_isArabic ? 'تشغيل' : 'Run',
+                        style: const TextStyle(fontSize: 12)),
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                    ),
+                  )
+                else if (_activePause != null) ...[
+                  FilledButton.icon(
+                    key: const Key('btn_continue'),
+                    onPressed: _debugger.continueRun,
+                    icon: const Icon(Icons.play_arrow_rounded, size: 15),
+                    label: Text(_isArabic ? 'متابعة' : 'Go',
+                        style: const TextStyle(fontSize: 11.5)),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                  IconButton(
+                    key: const Key('btn_stop'),
+                    onPressed: _session.stop,
+                    icon: const Icon(Icons.stop_circle_outlined,
+                        color: Color(0xFFEF4444), size: 20),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ] else
+                  IconButton(
+                    key: const Key('btn_stop_running'),
+                    onPressed: _session.stop,
+                    icon: const Icon(Icons.stop_circle_outlined,
+                        color: Color(0xFFEF4444), size: 20),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                const SizedBox(width: 4),
+                IconButton(
+                  key: const Key('btn_mobile_settings'),
+                  tooltip: _isArabic ? 'إعدادات المحرك والقيود' : 'Settings',
+                  onPressed: _openMobileSettingsSheet,
+                  icon: const Icon(Icons.tune_rounded, size: 20),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Row(
+              children: [
+                IconButton(
+                  key: const Key('btn_prev_preset'),
+                  tooltip: _isArabic ? 'المثال السابق' : 'Previous',
+                  onPressed: () => _stepPreset(-1),
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                ),
+                Expanded(
+                  child: DropdownButtonHideUnderline(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surfaceContainerHighest
+                            .withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButton<String>(
+                        key: const Key('preset_dropdown'),
+                        value: _preset.id,
+                        isDense: true,
+                        isExpanded: true,
+                        items: [
+                          for (final p in studioPresets)
+                            DropdownMenuItem(
+                              value: p.id,
+                              child: Text(
+                                _isArabic ? p.titleAr : p.titleEn,
+                                style: const TextStyle(fontSize: 12),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: (id) {
+                          if (id == null) return;
+                          final target =
+                              studioPresets.firstWhere((p) => p.id == id);
+                          _selectPreset(target);
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  key: const Key('btn_next_preset'),
+                  tooltip: _isArabic ? 'المثال التالي' : 'Next',
+                  onPressed: () => _stepPreset(1),
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
@@ -1280,7 +1584,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     );
   }
 
-  Widget _buildVisualStage(ThemeData theme) {
+  Widget _buildVisualStage(ThemeData theme, {required bool isCompact}) {
     final surface = _isDark ? const Color(0xFF0F172A) : Colors.white;
     return ValueListenableBuilder<QudsRunResult?>(
       valueListenable: _visualResult,
@@ -1294,6 +1598,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         final animSpec = res?.animationSpec;
         final tables =
             res?.outputs.whereType<QudsTableOutput>().toList() ?? const [];
+        final readings = scene?.readings ?? const <QudsTelemetryReading>[];
         final interactiveInputs = scene?.interactiveInputs ??
             surface3d?.interactiveInputs ??
             vectorField?.interactiveInputs ??
@@ -1342,9 +1647,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         } else if (graph != null) {
           stageBody = QudsGraphCanvas(graph: graph, isDark: _isDark);
         } else if (form != null) {
-          stageBody = SingleChildScrollView(
-            child: QudsFormOutputCard(form: form, isDark: _isDark),
-          );
+          stageBody = isCompact
+              ? QudsFormOutputCard(form: form, isDark: _isDark)
+              : SingleChildScrollView(
+                  child: QudsFormOutputCard(form: form, isDark: _isDark),
+                );
         } else if (plot != null) {
           stageBody = Column(
             children: [
@@ -1353,9 +1660,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             ],
           );
         } else if (tables.isNotEmpty) {
-          stageBody = SingleChildScrollView(
-            child: QudsTableCard(table: tables.first),
-          );
+          stageBody = isCompact
+              ? QudsTableCard(table: tables.first)
+              : SingleChildScrollView(
+                  child: QudsTableCard(table: tables.first),
+                );
         } else {
           stageBody = Center(
             child: Column(
@@ -1390,6 +1699,120 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           );
         }
 
+        final headerRow = Row(
+          children: [
+            const Icon(Icons.auto_graph_rounded,
+                size: 16, color: Color(0xFF38BDF8)),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                _isArabic
+                    ? 'اللوحة التفاعلية والنتائج البصرية'
+                    : 'Interactive Visual & Geometry Stage',
+                style: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w600),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (res != null) ...[
+              const SizedBox(width: 6),
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Text(
+                  '$engineBadge${res.stepsExecuted} steps · $elapsedText',
+                  style: TextStyle(
+                    fontFamily: 'JetBrainsMono',
+                    fontFamilyFallback: const ['IBMPlexSansArabic'],
+                    fontSize: 10.5,
+                    color: res.usedBytecodeVm
+                        ? const Color(0xFF10B981)
+                        : theme.hintColor,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+
+        final animBar = animSpec == null
+            ? null
+            : QudsAnimationControlsBar(
+                spec: animSpec,
+                playing: _animPlaying,
+                speed: _animSpeed,
+                isArabic: _isArabic,
+                onTogglePlay: _toggleAnimPlay,
+                onStepFrame: _stepAnimFrame,
+                onReset: _resetAnim,
+                onSpeedChanged: (s) => setState(() => _animSpeed = s),
+                onSeekTime: _seekAnimTime,
+              );
+
+        if (isCompact) {
+          final isAutoHeightCard = scene == null &&
+              plot == null &&
+              surface3d == null &&
+              vectorField == null &&
+              graph == null &&
+              (form != null || tables.isNotEmpty);
+          final double canvasHeight =
+              (surface3d != null && vectorField != null) ? 420.0 : 320.0;
+
+          return Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: theme.dividerColor.withValues(alpha: 0.25),
+              ),
+            ),
+            child: SingleChildScrollView(
+              key: const Key('visual_stage_scroll'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  headerRow,
+                  const SizedBox(height: 8),
+                  if (isAutoHeightCard)
+                    stageBody
+                  else
+                    SizedBox(height: canvasHeight, child: stageBody),
+                  if (readings.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    QudsTelemetryHudBar(readings: readings, isDark: _isDark),
+                  ],
+                  if (animBar != null) ...[
+                    const SizedBox(height: 8),
+                    animBar,
+                  ],
+                  if (interactiveInputs.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _isDark
+                            ? const Color(0xFF0B1120)
+                            : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: theme.dividerColor.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: QudsInteractiveControlsBar(
+                        inputs: interactiveInputs,
+                        onChanged: (id, val) => _updateInteractive({id: val}),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        }
+
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -1402,59 +1825,27 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.auto_graph_rounded,
-                      size: 16, color: Color(0xFF38BDF8)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _isArabic
-                          ? 'اللوحة التفاعلية والنتائج البصرية'
-                          : 'Interactive Visual & Geometry Stage',
-                      style: const TextStyle(
-                          fontSize: 12.5, fontWeight: FontWeight.w600),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (res != null) ...[
-                    const SizedBox(width: 8),
-                    Text(
-                      '$engineBadge${res.stepsExecuted} steps · $elapsedText',
-                      style: TextStyle(
-                        fontFamily: 'JetBrainsMono',
-                        fontFamilyFallback: const ['IBMPlexSansArabic'],
-                        fontSize: 11,
-                        color: res.usedBytecodeVm
-                            ? const Color(0xFF10B981)
-                            : theme.hintColor,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              if (animSpec != null) ...[
-                const SizedBox(height: 8),
-                QudsAnimationControlsBar(
-                  spec: animSpec,
-                  playing: _animPlaying,
-                  speed: _animSpeed,
-                  isArabic: _isArabic,
-                  onTogglePlay: _toggleAnimPlay,
-                  onStepFrame: _stepAnimFrame,
-                  onReset: _resetAnim,
-                  onSpeedChanged: (s) => setState(() => _animSpeed = s),
-                  onSeekTime: _seekAnimTime,
-                ),
+              headerRow,
+              if (animBar != null) ...[
+                const SizedBox(height: 6),
+                animBar,
               ],
               const SizedBox(height: 8),
               Expanded(child: stageBody),
+              if (readings.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                QudsTelemetryHudBar(readings: readings, isDark: _isDark),
+              ],
               if (interactiveInputs.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                QudsInteractiveControlsBar(
-                  inputs: interactiveInputs,
-                  onChanged: (id, val) => _updateInteractive({id: val}),
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 110),
+                  child: SingleChildScrollView(
+                    child: QudsInteractiveControlsBar(
+                      inputs: interactiveInputs,
+                      onChanged: (id, val) => _updateInteractive({id: val}),
+                    ),
+                  ),
                 ),
               ],
             ],

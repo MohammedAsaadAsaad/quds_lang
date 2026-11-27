@@ -412,4 +412,49 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(find.textContaining('البتلات'), findsWidgets);
   });
+
+  testWidgets(
+      'Mobile phone layout keeps compact header, scrollable visual stage with >=300px unobstructed canvas, standalone telemetry HUD, and settings sheet',
+      (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    // Preset 16: projectile_live (animation + telemetry HUD + multiple sliders)
+    await tester.pumpWidget(
+      const QudsStudioApp(
+          key: ValueKey('mobile_scroll'), initialPresetIndex: 16),
+    );
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    // Switch to Canvas tab on mobile bottom NavigationBar
+    await tester.tap(find.text('اللوحة'));
+    await tester.pumpAndSettle();
+
+    // 1. Visual stage is vertically scrollable and canvas is guaranteed >= 300px tall
+    expect(find.byKey(const Key('visual_stage_scroll')), findsOneWidget);
+    final canvasSize =
+        tester.getSize(find.byKey(const Key('quds_geometry_canvas')));
+    expect(canvasSize.height, greaterThanOrEqualTo(300.0));
+
+    // 2. Standalone telemetry HUD renders cleanly below canvas (never overlapping it)
+    final canvasRect =
+        tester.getRect(find.byKey(const Key('quds_geometry_canvas')));
+    final hudRect = tester.getRect(find.byKey(const Key('quds_telemetry_hud')));
+    expect(hudRect.top, greaterThanOrEqualTo(canvasRect.bottom));
+
+    // 3. Scroll down inside visual_stage_scroll to verify sliders are smoothly reachable
+    await tester.drag(
+      find.byKey(const Key('visual_stage_scroll')),
+      const Offset(0, -250),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('slider_v0')), findsOneWidget);
+
+    // 4. Compact mobile settings button opens BottomSheet with Policy & Engine toggles
+    await tester.tap(find.byKey(const Key('btn_mobile_settings')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('policy_selector')), findsOneWidget);
+    expect(find.byKey(const Key('btn_custom_policy')), findsOneWidget);
+  });
 }

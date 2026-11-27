@@ -61,145 +61,173 @@ class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
           constraints.maxHeight.isFinite ? constraints.maxHeight : 320,
         );
         final vp = _viewportFor(size);
+        final hasDraggable = widget.scene.draggablePoints.isNotEmpty;
         return MouseRegion(
-          cursor: _draggingId != null
-              ? SystemMouseCursors.grabbing
-              : SystemMouseCursors.grab,
+          cursor: !hasDraggable
+              ? MouseCursor.defer
+              : _draggingId != null
+                  ? SystemMouseCursors.grabbing
+                  : SystemMouseCursors.grab,
           child: GestureDetector(
             key: const Key('quds_geometry_canvas'),
-            onPanStart: (details) {
-              final local = details.localPosition;
-              String? hitId;
-              var bestDist = 38.0;
-              for (final p in widget.scene.draggablePoints) {
-                final pos = vp.toScreen(p.x, p.y);
-                final d = (pos - local).distance;
-                if (d < bestDist) {
-                  bestDist = d;
-                  hitId = p.id;
-                }
-              }
-              if (hitId != null) {
-                setState(() {
-                  _draggingId = hitId;
-                  _lockedBounds = widget.scene.bounds;
-                });
-              }
-            },
-            onPanUpdate: (details) {
-              if (_draggingId == null) return;
-              final world = vp.toWorld(details.localPosition);
-              widget.onDragPoint(
-                _draggingId!,
-                double.parse(world.dx.toStringAsFixed(2)),
-                double.parse(world.dy.toStringAsFixed(2)),
-              );
-            },
-            onPanEnd: (_) {
-              setState(() {
-                _draggingId = null;
-                _lockedBounds = null;
-              });
-            },
-            onPanCancel: () {
-              setState(() {
-                _draggingId = null;
-                _lockedBounds = null;
-              });
-            },
-            child: Stack(
-              children: [
-                RepaintBoundary(
-                  child: CustomPaint(
-                    size: size,
-                    painter: _GeometryScenePainter(
-                      scene: widget.scene,
-                      viewport: vp,
-                      draggingId: _draggingId,
-                      isDark: widget.isDark,
-                    ),
-                  ),
+            onPanStart: !hasDraggable
+                ? null
+                : (details) {
+                    final local = details.localPosition;
+                    String? hitId;
+                    var bestDist = 38.0;
+                    for (final p in widget.scene.draggablePoints) {
+                      final pos = vp.toScreen(p.x, p.y);
+                      final d = (pos - local).distance;
+                      if (d < bestDist) {
+                        bestDist = d;
+                        hitId = p.id;
+                      }
+                    }
+                    if (hitId != null) {
+                      setState(() {
+                        _draggingId = hitId;
+                        _lockedBounds = widget.scene.bounds;
+                      });
+                    }
+                  },
+            onPanUpdate: !hasDraggable
+                ? null
+                : (details) {
+                    if (_draggingId == null) return;
+                    final world = vp.toWorld(details.localPosition);
+                    widget.onDragPoint(
+                      _draggingId!,
+                      double.parse(world.dx.toStringAsFixed(2)),
+                      double.parse(world.dy.toStringAsFixed(2)),
+                    );
+                  },
+            onPanEnd: !hasDraggable
+                ? null
+                : (_) {
+                    setState(() {
+                      _draggingId = null;
+                      _lockedBounds = null;
+                    });
+                  },
+            onPanCancel: !hasDraggable
+                ? null
+                : () {
+                    setState(() {
+                      _draggingId = null;
+                      _lockedBounds = null;
+                    });
+                  },
+            child: RepaintBoundary(
+              child: CustomPaint(
+                size: size,
+                painter: _GeometryScenePainter(
+                  scene: widget.scene,
+                  viewport: vp,
+                  draggingId: _draggingId,
+                  isDark: widget.isDark,
                 ),
-                if (widget.scene.readings.isNotEmpty)
-                  Positioned(
-                    left: 8,
-                    right: 8,
-                    bottom: 8,
-                    child: IgnorePointer(
-                      child: Container(
-                        key: const Key('quds_telemetry_hud'),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: (widget.isDark
-                                  ? const Color(0xFF0F172A)
-                                  : Colors.white)
-                              .withValues(alpha: 0.86),
-                          borderRadius: BorderRadius.circular(9),
-                          border: Border.all(
-                            color:
-                                const Color(0xFF38BDF8).withValues(alpha: 0.28),
-                          ),
-                        ),
-                        child: Wrap(
-                          spacing: 10,
-                          runSpacing: 4,
-                          children: [
-                            for (final r in widget.scene.readings)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: BoxDecoration(
-                                      color: r.color != null
-                                          ? _parseColor(r.color!)
-                                          : const Color(0xFF38BDF8),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${r.label}: ',
-                                    style: TextStyle(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: widget.isDark
-                                          ? const Color(0xFF94A3B8)
-                                          : const Color(0xFF475569),
-                                    ),
-                                  ),
-                                  Text(
-                                    r.unit != null
-                                        ? '${r.value} ${r.unit}'
-                                        : r.value,
-                                    style: TextStyle(
-                                      fontFamily: 'JetBrainsMono',
-                                      fontFamilyFallback: const [
-                                        'IBMPlexSansArabic'
-                                      ],
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: r.color != null
-                                          ? _parseColor(r.color!)
-                                          : (widget.isDark
-                                              ? const Color(0xFFF8FAFC)
-                                              : const Color(0xFF0F172A)),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// Clean standalone live telemetry strip displayed directly below the canvas
+/// (never covering the drawing), with proper LTR formatting for numeric values + units.
+class QudsTelemetryHudBar extends StatelessWidget {
+  const QudsTelemetryHudBar({
+    super.key,
+    required this.readings,
+    required this.isDark,
+  });
+
+  final List<QudsTelemetryReading> readings;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    if (readings.isEmpty) return const SizedBox.shrink();
+    return Container(
+      key: const Key('quds_telemetry_hud'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: const Color(0xFF38BDF8).withValues(alpha: 0.25),
+        ),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          for (final r in readings)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: (r.color != null
+                        ? _parseColor(r.color!)
+                        : const Color(0xFF38BDF8))
+                    .withValues(alpha: isDark ? 0.12 : 0.09),
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(
+                  color: (r.color != null
+                          ? _parseColor(r.color!)
+                          : const Color(0xFF38BDF8))
+                      .withValues(alpha: 0.28),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: r.color != null
+                          ? _parseColor(r.color!)
+                          : const Color(0xFF38BDF8),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${r.label}: ',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : const Color(0xFF475569),
+                    ),
+                  ),
+                  Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: Text(
+                      r.unit != null ? '${r.value} ${r.unit}' : r.value,
+                      style: TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontFamilyFallback: const ['IBMPlexSansArabic'],
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: r.color != null
+                            ? _parseColor(r.color!)
+                            : (isDark
+                                ? const Color(0xFFF8FAFC)
+                                : const Color(0xFF0F172A)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -741,14 +769,14 @@ class QudsInteractiveControlsBar extends StatelessWidget {
     if (visible.isEmpty) return const SizedBox.shrink();
 
     return Wrap(
-      spacing: 14,
-      runSpacing: 8,
+      spacing: 12,
+      runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         for (final input in visible)
           switch (input.kind) {
             'slider' => SizedBox(
-                width: 220,
+                width: 210,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -760,7 +788,7 @@ class QudsInteractiveControlsBar extends StatelessWidget {
                           child: Text(
                             input.label ?? input.id,
                             style: const TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w600),
+                                fontSize: 11.5, fontWeight: FontWeight.w600),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -769,19 +797,33 @@ class QudsInteractiveControlsBar extends StatelessWidget {
                           style: const TextStyle(
                             fontFamily: 'JetBrainsMono',
                             fontFamilyFallback: ['IBMPlexSansArabic'],
-                            fontSize: 11.5,
+                            fontSize: 11,
+                            color: Color(0xFF38BDF8),
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
                     ),
-                    Slider(
-                      key: Key('slider_${input.id}'),
-                      value: (input.value as num)
-                          .toDouble()
-                          .clamp(input.min ?? 0.0, input.max ?? 10.0),
-                      min: input.min ?? 0.0,
-                      max: input.max ?? 10.0,
-                      onChanged: (v) => onChanged(input.id, v),
+                    SizedBox(
+                      height: 26,
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 6.5),
+                          overlayShape:
+                              const RoundSliderOverlayShape(overlayRadius: 12),
+                        ),
+                        child: Slider(
+                          key: Key('slider_${input.id}'),
+                          value: (input.value as num)
+                              .toDouble()
+                              .clamp(input.min ?? 0.0, input.max ?? 10.0),
+                          min: input.min ?? 0.0,
+                          max: input.max ?? 10.0,
+                          onChanged: (v) => onChanged(input.id, v),
+                        ),
+                      ),
                     ),
                   ],
                 ),

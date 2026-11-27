@@ -333,7 +333,16 @@ void main() {
       );
       expect(find.textContaining('شهر 4 -> ربيع'), findsOneWidget);
 
-      // 2. Open Learn -> run first extra lesson example live
+      // 2. Open complete runnable example #0 of `match` in Playground and run it live
+      final openInPg = find.byKey(const Key('btn_open_example_kw_match_0'));
+      await tester.ensureVisible(openInPg);
+      await tester.tap(openInPg);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('academy_playground_run')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('شهر 4 -> ربيع'), findsWidgets);
+
+      // 3. Open Learn -> run first extra lesson example live
       await tester.tap(find.text('تعلّم').first);
       await tester.pumpAndSettle();
       final runLessonEx0 = find.byKey(

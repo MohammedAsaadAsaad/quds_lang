@@ -210,9 +210,9 @@ class _AcademyRuleExamplesSectionState
 
     final heading = ar
         ? (widget.headingAr ??
-              'أمثلة عملية قابلة للتشغيل بالمفسّر (${widget.examples.length})')
+              'أمثلة كاملة جاهزة للتشغيل بالمفسّر (${widget.examples.length})')
         : (widget.headingEn ??
-              'Live Executable Examples (${widget.examples.length})');
+              'Complete Runnable Examples (${widget.examples.length})');
 
     return SelectionArea(
       child: Column(
@@ -274,6 +274,13 @@ class _AcademyRuleExamplesSectionState
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            ar
+                ? 'كل مثال هنا مكتمل بجميع تعريفاته واستيراداته وجاهز للتشغيل الفوري أو التعديل في المختبر.'
+                : 'Every example below is 100% self-contained with all declarations — run live here or open in Playground.',
+            style: TextStyle(fontSize: 12.5, height: 1.7, color: muted),
           ),
           const SizedBox(height: 12),
           for (var i = 0; i < widget.examples.length; i++)
@@ -396,7 +403,7 @@ class _AcademyRuleExamplesSectionState
                 onPressed: () => widget.onOpenPlayground(example.code),
                 icon: const Icon(Icons.terminal_rounded, size: 15),
                 label: Text(
-                  ar ? 'عدّل في المختبر' : 'Playground',
+                  ar ? 'افتح في المختبر' : 'Open in Playground',
                   style: const TextStyle(fontSize: 11.5),
                 ),
                 style: OutlinedButton.styleFrom(

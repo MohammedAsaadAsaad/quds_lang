@@ -1159,6 +1159,7 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                     const Spacer(),
                     Text(
                       '${_result!.stepsExecuted} steps · ${_result!.elapsed.inMilliseconds}ms',
+                      textDirection: TextDirection.ltr,
                       style: TextStyle(
                         fontFamily: 'JetBrainsMono',
                         fontSize: 10.5,
@@ -1182,6 +1183,7 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                 else if (_result!.succeeded && _result!.value != null)
                   SelectableText(
                     qudsFormatValue(_result!.value),
+                    textDirection: TextDirection.ltr,
                     style: TextStyle(
                       fontFamily: 'JetBrainsMono',
                       fontFamilyFallback: const ['Cairo'],
@@ -1192,6 +1194,7 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
                 else if (!_result!.succeeded && _result!.error != null)
                   SelectableText(
                     '${_result!.error}',
+                    textDirection: TextDirection.ltr,
                     style: const TextStyle(
                       fontFamily: 'JetBrainsMono',
                       fontFamilyFallback: ['Cairo'],

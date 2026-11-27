@@ -12,7 +12,9 @@ import 'package:quds/editor_engine.dart';
 import 'package:quds/interpreter.dart';
 
 import 'editor_widget.dart';
+import 'notebook_panel.dart';
 import 'presets.dart';
+import 'viz2_widgets.dart';
 import 'viz_widgets.dart';
 
 class QudsStudioPage extends StatefulWidget {
@@ -41,6 +43,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   late StudioPolicyMode _policyMode;
 
   late QudsDebugController _debugger;
+  late QudsProfiler _profiler;
   late QudsSession _session;
   late QudsEditorEngine _engine;
   late QudsSyntaxTextController _codeController;
@@ -70,6 +73,13 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   Map<String, Object?>? _pendingInteractivePatch;
   String? _liveEvalOutput;
 
+  // Bytecode VM, Time-Travel + Profiler, and 60fps Animation state
+  bool _preferBytecode = false;
+  bool _enableProfiling = false;
+  Timer? _animTimer;
+  bool _animPlaying = false;
+  double _animSpeed = 1.0;
+
   int _mobileTabIndex = 0;
 
   // Fully customizable policy parameters (proving policies are host-defined,
@@ -88,6 +98,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     'quds:async',
     'quds:ext',
     'quds:viz',
+    'quds:data',
     'dart:math',
     'dart:convert',
   };
@@ -104,7 +115,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _preset = studioPresets[widget.initialPresetIndex];
     _policyMode = _preset.defaultPolicy;
     _breakpoints = Set<int>.from(_preset.defaultBreakpoints);
-    _inspectorTabs = TabController(length: 3, vsync: this);
+    _enableProfiling = _preset.id == 'profiler_bytecode_lab';
+    _inspectorTabs = TabController(length: 5, vsync: this);
 
     _buildRuntime();
     _codeController = QudsSyntaxTextController(
@@ -126,7 +138,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _pauseSub?.cancel();
     _resumeSub?.cancel();
 
-    _debugger = QudsDebugController();
+    _debugger = QudsDebugController(recordHistory: _enableProfiling);
+    _profiler = QudsProfiler(enabled: _enableProfiling);
     final sensorsMod = QudsHostModule.builder(
       'host:sensors',
       description: 'Simulated laboratory hardware sensor bridge.',
@@ -175,6 +188,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _session = QudsSession(
       policy: policy,
       debugger: _debugger,
+      profiler: _profiler,
       allowTopLevelRebind: true,
       hostModules: [sensorsMod],
     );
@@ -223,25 +237,88 @@ class _QudsStudioPageState extends State<QudsStudioPage>
 
   Future<void> _runCode({bool switchMobileTab = true}) async {
     if (_running) return;
+    _stopAnimTimer();
     _debugger.setLineBreakpoints(_preset.fileName, _breakpoints);
+    _debugger.recordHistory = _enableProfiling;
+    _profiler.enabled = _enableProfiling;
     setState(() {
       _running = true;
       _liveEvalOutput = null;
     });
-    final res =
-        await _session.run(_codeController.text, file: _preset.fileName);
+    final res = await _session.run(
+      _codeController.text,
+      file: _preset.fileName,
+      preferBytecode: _preferBytecode,
+    );
     if (!mounted) return;
+    final hasVisual = res.lastGeometryScene != null ||
+        res.lastPlot != null ||
+        res.lastSurface3D != null ||
+        res.lastVectorField != null ||
+        res.lastGraph != null ||
+        res.lastForm != null ||
+        res.outputs.whereType<QudsTableOutput>().isNotEmpty;
     setState(() {
       _running = false;
       _activePause = null;
       _lastResult = res;
       if (switchMobileTab) {
-        _mobileTabIndex =
-            (res.lastGeometryScene != null || res.lastPlot != null) ? 1 : 2;
+        _mobileTabIndex = hasVisual ? 1 : 2;
+      }
+      if (_enableProfiling && _profiler.totalCalls > 0 && !hasVisual) {
+        _inspectorTabs.index = 3; // Jump to Profiler / Call Tree tab
       }
     });
     _visualResult.value = res;
     _reanalyze();
+  }
+
+  void _stopAnimTimer() {
+    _animTimer?.cancel();
+    _animTimer = null;
+    _animPlaying = false;
+  }
+
+  void _toggleAnimPlay() {
+    if (_animPlaying) {
+      setState(_stopAnimTimer);
+      return;
+    }
+    setState(() => _animPlaying = true);
+    _animTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+      if (!mounted || !_animPlaying) return;
+      _stepAnimFrame();
+    });
+  }
+
+  Future<void> _stepAnimFrame() async {
+    if (_updatingInteractive || _running) return;
+    _updatingInteractive = true;
+    try {
+      final res = await _session.stepFrame(
+        0.033 * _animSpeed,
+        source: _codeController.text,
+        file: _preset.fileName,
+      );
+      if (!mounted) return;
+      _lastResult = res;
+      _visualResult.value = res;
+    } finally {
+      _updatingInteractive = false;
+    }
+  }
+
+  Future<void> _resetAnim() async {
+    _stopAnimTimer();
+    _session.resetAnimation();
+    final res = await _session.updateInteractiveInputs(
+      {},
+      source: _codeController.text,
+      file: _preset.fileName,
+    );
+    if (!mounted) return;
+    setState(() => _lastResult = res);
+    _visualResult.value = res;
   }
 
   Future<void> _updateInteractive(Map<String, Object?> patch) async {
@@ -275,12 +352,14 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   }
 
   void _selectPreset(StudioPreset preset) {
+    _stopAnimTimer();
     _session.stop();
     _pendingInteractivePatch = null;
     setState(() {
       _preset = preset;
       _policyMode = preset.defaultPolicy;
       _breakpoints = Set<int>.from(preset.defaultBreakpoints);
+      _enableProfiling = preset.id == 'profiler_bytecode_lab';
       _lastResult = null;
       _activePause = null;
       _running = false;
@@ -422,7 +501,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                         'quds:text',
                       ])
                         FilterChip(
-                          label: Text(lib, style: const TextStyle(fontSize: 11)),
+                          label:
+                              Text(lib, style: const TextStyle(fontSize: 11)),
                           selected: libs.contains(lib),
                           visualDensity: VisualDensity.compact,
                           onSelected: (selected) => setModalState(() {
@@ -568,6 +648,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
 
   @override
   void dispose() {
+    _stopAnimTimer();
     _pauseSub?.cancel();
     _resumeSub?.cancel();
     _visualResult.dispose();
@@ -639,6 +720,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                                   editorView,
                                   _buildVisualStage(theme),
                                   _buildInspectorPanel(theme),
+                                  QudsNotebookPanel(
+                                    isArabic: _isArabic,
+                                    isDark: _isDark,
+                                  ),
                                 ],
                               )
                             : Row(
@@ -687,6 +772,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                               ? Icons.bug_report_rounded
                               : Icons.terminal_rounded),
                           label: _isArabic ? 'المصحح' : 'Console',
+                        ),
+                        NavigationDestination(
+                          icon: const Icon(Icons.menu_book_rounded),
+                          label: _isArabic ? 'الدفتر' : 'Notebook',
                         ),
                       ],
                     )
@@ -889,6 +978,30 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                   visualDensity: VisualDensity.compact),
             ),
 
+          // Bytecode VM & Profiler/Time-Travel mode chips
+          FilterChip(
+            key: const Key('chip_bytecode_vm'),
+            selected: _preferBytecode,
+            onSelected: (v) => setState(() => _preferBytecode = v),
+            label: Text(
+              _isArabic ? '⚡ Bytecode' : '⚡ Bytecode',
+              style: const TextStyle(fontSize: 11),
+            ),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+          ),
+          FilterChip(
+            key: const Key('chip_profiler_timetravel'),
+            selected: _enableProfiling,
+            onSelected: (v) => setState(() => _enableProfiling = v),
+            label: Text(
+              _isArabic ? 'تتبع / Time-Travel' : 'Trace / Time-Travel',
+              style: const TextStyle(fontSize: 11),
+            ),
+            visualDensity: VisualDensity.compact,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+          ),
+
           // Language & Theme toggles
           IconButton(
             tooltip: _isArabic ? 'English' : 'العربية',
@@ -919,17 +1032,109 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       valueListenable: _visualResult,
       builder: (context, res, _) {
         final scene = res?.lastGeometryScene;
+        final surface3d = res?.lastSurface3D;
+        final vectorField = res?.lastVectorField;
+        final graph = res?.lastGraph;
+        final form = res?.lastForm;
         final plot = res?.lastPlot;
+        final animSpec = res?.animationSpec;
         final tables =
             res?.outputs.whereType<QudsTableOutput>().toList() ?? const [];
-        final interactiveInputs =
-            scene?.interactiveInputs ?? plot?.interactiveInputs ?? const [];
+        final interactiveInputs = scene?.interactiveInputs ??
+            surface3d?.interactiveInputs ??
+            vectorField?.interactiveInputs ??
+            graph?.interactiveInputs ??
+            form?.interactiveInputs ??
+            plot?.interactiveInputs ??
+            const <QudsInteractiveInput>[];
 
         final elapsedText = res == null
             ? ''
             : res.elapsed.inMilliseconds >= 10
                 ? '${res.elapsed.inMilliseconds}ms'
                 : '${(res.elapsed.inMicroseconds / 1000).toStringAsFixed(1)}ms';
+        final engineBadge =
+            res == null ? '' : (res.usedBytecodeVm ? '⚡ VM · ' : '');
+
+        Widget stageBody;
+        if (scene != null) {
+          stageBody = QudsGeometryCanvas(
+            scene: scene,
+            isDark: _isDark,
+            onDragPoint: (id, x, y) => _updateInteractive({
+              id: {'x': x, 'y': y},
+            }),
+          );
+        } else if (surface3d != null && vectorField != null) {
+          stageBody = Column(
+            children: [
+              Expanded(
+                flex: 6,
+                child: QudsSurface3DCanvas(surface: surface3d, isDark: _isDark),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                flex: 4,
+                child:
+                    QudsVectorFieldCanvas(field: vectorField, isDark: _isDark),
+              ),
+            ],
+          );
+        } else if (surface3d != null) {
+          stageBody = QudsSurface3DCanvas(surface: surface3d, isDark: _isDark);
+        } else if (vectorField != null) {
+          stageBody =
+              QudsVectorFieldCanvas(field: vectorField, isDark: _isDark);
+        } else if (graph != null) {
+          stageBody = QudsGraphCanvas(graph: graph, isDark: _isDark);
+        } else if (form != null) {
+          stageBody = SingleChildScrollView(
+            child: QudsFormOutputCard(form: form, isDark: _isDark),
+          );
+        } else if (plot != null) {
+          stageBody = Column(
+            children: [
+              Expanded(child: QudsPlotCanvas(plot: plot, isDark: _isDark)),
+              if (tables.isNotEmpty) QudsTableCard(table: tables.first),
+            ],
+          );
+        } else if (tables.isNotEmpty) {
+          stageBody = SingleChildScrollView(
+            child: QudsTableCard(table: tables.first),
+          );
+        } else {
+          stageBody = Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  res != null && !res.succeeded
+                      ? Icons.shield_outlined
+                      : Icons.science_outlined,
+                  size: 36,
+                  color: res != null && !res.succeeded
+                      ? const Color(0xFFEF4444)
+                      : theme.hintColor,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  res != null && !res.succeeded
+                      ? '${res.error}'
+                      : (_isArabic
+                          ? _preset.subtitleAr
+                          : 'Press Run to execute Quds code and visualize results.'),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: res != null && !res.succeeded
+                        ? const Color(0xFFEF4444)
+                        : theme.hintColor,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
 
         return Container(
           padding: const EdgeInsets.all(12),
@@ -962,69 +1167,34 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                   if (res != null) ...[
                     const SizedBox(width: 8),
                     Text(
-                      '${res.stepsExecuted} steps · $elapsedText',
+                      '$engineBadge${res.stepsExecuted} steps · $elapsedText',
                       style: TextStyle(
                         fontFamily: 'JetBrainsMono',
                         fontFamilyFallback: const ['IBMPlexSansArabic'],
                         fontSize: 11,
-                        color: theme.hintColor,
+                        color: res.usedBytecodeVm
+                            ? const Color(0xFF10B981)
+                            : theme.hintColor,
                       ),
                     ),
                   ],
                 ],
               ),
+              if (animSpec != null) ...[
+                const SizedBox(height: 8),
+                QudsAnimationControlsBar(
+                  spec: animSpec,
+                  playing: _animPlaying,
+                  speed: _animSpeed,
+                  isArabic: _isArabic,
+                  onTogglePlay: _toggleAnimPlay,
+                  onStepFrame: _stepAnimFrame,
+                  onReset: _resetAnim,
+                  onSpeedChanged: (s) => setState(() => _animSpeed = s),
+                ),
+              ],
               const SizedBox(height: 8),
-              Expanded(
-                child: scene != null
-                    ? QudsGeometryCanvas(
-                        scene: scene,
-                        isDark: _isDark,
-                        onDragPoint: (id, x, y) => _updateInteractive({
-                          id: {'x': x, 'y': y},
-                        }),
-                      )
-                    : plot != null
-                        ? Column(
-                            children: [
-                              Expanded(
-                                  child: QudsPlotCanvas(
-                                      plot: plot, isDark: _isDark)),
-                              if (tables.isNotEmpty)
-                                QudsTableCard(table: tables.first),
-                            ],
-                          )
-                        : Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  res != null && !res.succeeded
-                                      ? Icons.shield_outlined
-                                      : Icons.science_outlined,
-                                  size: 36,
-                                  color: res != null && !res.succeeded
-                                      ? const Color(0xFFEF4444)
-                                      : theme.hintColor,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  res != null && !res.succeeded
-                                      ? '${res.error}'
-                                      : (_isArabic
-                                          ? _preset.subtitleAr
-                                          : 'Press Run to execute Quds code and visualize results.'),
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    color: res != null && !res.succeeded
-                                        ? const Color(0xFFEF4444)
-                                        : theme.hintColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-              ),
+              Expanded(child: stageBody),
               if (interactiveInputs.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 QudsInteractiveControlsBar(
@@ -1069,8 +1239,14 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                     ? (_isArabic
                         ? 'المصحح (متوقف L${_activePause!.span.line})'
                         : 'Debugger (Paused L${_activePause!.span.line})')
-                    : (_isArabic ? 'المصحح (Debugger)' : 'Debugger'),
+                    : (_isArabic ? 'المصحح / Time-Travel' : 'Debugger'),
               ),
+              Tab(
+                text: _isArabic
+                    ? 'التحليل (${_profiler.totalCalls})'
+                    : 'Profiler (${_profiler.totalCalls})',
+              ),
+              Tab(text: _isArabic ? 'الدفتر التفاعلي' : 'Notebook'),
             ],
           ),
           Expanded(
@@ -1080,6 +1256,14 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                 _buildConsoleTab(theme),
                 _buildWorkspaceTab(theme),
                 _buildDebuggerTab(theme),
+                _buildProfilerTab(theme),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: QudsNotebookPanel(
+                    isArabic: _isArabic,
+                    isDark: _isDark,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1194,11 +1378,92 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   Widget _buildDebuggerTab(ThemeData theme) {
     final pause = _activePause;
     if (pause == null) {
+      final hist = _debugger.history;
+      if (hist.isNotEmpty) {
+        final cur = _debugger.currentHistoryEntry ?? hist.last;
+        return Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.history_rounded,
+                      size: 16, color: Color(0xFF38BDF8)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _isArabic
+                          ? 'Time-Travel: خطوة ${_debugger.historyIndex + 1}/${hist.length} (سطر L${cur.span.line})'
+                          : 'Time-Travel: step ${_debugger.historyIndex + 1}/${hist.length} (L${cur.span.line})',
+                      style: const TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF38BDF8),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const Key('btn_timetravel_back'),
+                    onPressed: _debugger.canStepBack
+                        ? () => setState(() => _debugger.stepBack())
+                        : null,
+                    icon: const Icon(Icons.skip_previous_rounded, size: 18),
+                    tooltip: _isArabic ? 'خطوة للخلف (Step Back)' : 'Step Back',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  IconButton(
+                    key: const Key('btn_timetravel_forward'),
+                    onPressed: _debugger.canStepForward
+                        ? () => setState(() => _debugger.stepForward())
+                        : null,
+                    icon: const Icon(Icons.skip_next_rounded, size: 18),
+                    tooltip: _isArabic
+                        ? 'خطوة للأمام (Step Forward)'
+                        : 'Step Forward',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+              if (hist.length > 1)
+                Slider(
+                  value: _debugger.historyIndex
+                      .toDouble()
+                      .clamp(0, (hist.length - 1).toDouble()),
+                  min: 0,
+                  max: (hist.length - 1).toDouble(),
+                  divisions: hist.length - 1,
+                  onChanged: (v) =>
+                      setState(() => _debugger.jumpToHistory(v.round())),
+                ),
+              Expanded(
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: ListView(
+                    children: [
+                      for (final e in cur.locals.entries)
+                        Text(
+                          '${e.key} = ${qudsSummarizeValue(e.value)}',
+                          style: const TextStyle(
+                            fontFamily: 'JetBrainsMono',
+                            fontFamilyFallback: ['IBMPlexSansArabic'],
+                            fontSize: 11.5,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
       return Center(
         child: Text(
           _isArabic
-              ? 'اضغط على رقم أي سطر في المحرر لوضع نقطة توقف (Breakpoint) ثم شغّل الكود.'
-              : 'Click any line number in the editor gutter to set a breakpoint, then press Run.',
+              ? 'اضغط على رقم أي سطر لوضع نقطة توقف (Breakpoint) أو فعّل «تتبع / Time-Travel» للتنقل للخلف والأمام.'
+              : 'Click any line number for a breakpoint, or enable Trace / Time-Travel to scrub execution history.',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, color: theme.hintColor),
         ),
@@ -1295,6 +1560,95 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProfilerTab(ThemeData theme) {
+    final spots = _profiler.hotspots(top: 8);
+    final trees = _profiler.callTrees;
+    if (spots.isEmpty && trees.isEmpty) {
+      return Center(
+        child: Text(
+          _isArabic
+              ? 'فعّل خيار «تتبع / Time-Travel» من الشريط العلوي ثم شغّل الكود لعرض شجرة الاستدعاءات ومناطق السخونة.'
+              : 'Enable "Trace / Time-Travel" in the toolbar and press Run to view hotspots & recursive Call Tree.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12, color: theme.hintColor),
+        ),
+      );
+    }
+
+    final flattenedCalls = <QudsCallNode>[];
+    void visit(QudsCallNode n) {
+      if (flattenedCalls.length >= 60) return;
+      flattenedCalls.add(n);
+      for (final c in n.children) {
+        visit(c);
+      }
+    }
+
+    for (final root in trees) {
+      visit(root);
+    }
+
+    return Padding(
+      key: const Key('quds_profiler_tab'),
+      padding: const EdgeInsets.all(10),
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: ListView(
+          children: [
+            if (spots.isNotEmpty) ...[
+              Text(
+                _isArabic
+                    ? 'أكثر الأسطر تنفيذاً (Hotspots):'
+                    : 'Line Hotspots:',
+                style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFF59E0B)),
+              ),
+              const SizedBox(height: 4),
+              for (final s in spots)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    'L${s.line.toString().padLeft(2)} · ${s.hits} hits · ${(s.totalMicros / 1000).toStringAsFixed(2)}ms',
+                    style: const TextStyle(
+                        fontFamily: 'JetBrainsMono', fontSize: 11),
+                  ),
+                ),
+              const Divider(height: 16),
+            ],
+            if (flattenedCalls.isNotEmpty) ...[
+              Text(
+                _isArabic
+                    ? 'شجرة الاستدعاءات (Call Tree — ${_profiler.totalCalls} استدعاء):'
+                    : 'Call Tree (${_profiler.totalCalls} calls):',
+                style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF38BDF8)),
+              ),
+              const SizedBox(height: 4),
+              for (final node in flattenedCalls)
+                Padding(
+                  padding: EdgeInsets.only(
+                      left: (node.depth * 14.0).clamp(0, 120),
+                      top: 1.5,
+                      bottom: 1.5),
+                  child: Text(
+                    '${node.depth > 0 ? '└─ ' : ''}${node.name}(${node.argsSummary}) => ${node.returnSummary}',
+                    style: const TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -560,7 +560,8 @@ class _PlotPainter extends CustomPainter {
       old.plot != plot || old.isDark != isDark;
 }
 
-/// Interactive controls bar auto-generated from `viz.slider(...)` / `viz.toggle(...)`.
+/// Interactive controls bar auto-generated from `viz.slider`, `viz.toggle`,
+/// `viz.select`, `viz.input`, `viz.number`, `viz.color`, and `viz.button`.
 class QudsInteractiveControlsBar extends StatelessWidget {
   const QudsInteractiveControlsBar({
     super.key,
@@ -573,64 +574,168 @@ class QudsInteractiveControlsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sliders = inputs.where((i) => i.kind == 'slider').toList();
-    final toggles = inputs.where((i) => i.kind == 'toggle').toList();
-    if (sliders.isEmpty && toggles.isEmpty) return const SizedBox.shrink();
+    final visible = inputs.where((i) => i.kind != 'draggablePoint').toList();
+    if (visible.isEmpty) return const SizedBox.shrink();
 
     return Wrap(
-      spacing: 16,
+      spacing: 14,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        for (final s in sliders)
-          SizedBox(
-            width: 240,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        for (final input in visible)
+          switch (input.kind) {
+            'slider' => SizedBox(
+                width: 220,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      s.label ?? s.id,
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            input.label ?? input.id,
+                            style: const TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          (input.value as num).toStringAsFixed(2),
+                          style: const TextStyle(
+                            fontFamily: 'JetBrainsMono',
+                            fontFamilyFallback: ['IBMPlexSansArabic'],
+                            fontSize: 11.5,
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      (s.value as num).toStringAsFixed(2),
-                      style: const TextStyle(
-                        fontFamily: 'JetBrainsMono',
-                        fontFamilyFallback: ['IBMPlexSansArabic'],
-                        fontSize: 11.5,
-                      ),
+                    Slider(
+                      key: Key('slider_${input.id}'),
+                      value: (input.value as num)
+                          .toDouble()
+                          .clamp(input.min ?? 0.0, input.max ?? 10.0),
+                      min: input.min ?? 0.0,
+                      max: input.max ?? 10.0,
+                      onChanged: (v) => onChanged(input.id, v),
                     ),
                   ],
                 ),
-                Slider(
-                  key: Key('slider_${s.id}'),
-                  value: (s.value as num)
-                      .toDouble()
-                      .clamp(s.min ?? 0.0, s.max ?? 10.0),
-                  min: s.min ?? 0.0,
-                  max: s.max ?? 10.0,
-                  onChanged: (v) => onChanged(s.id, v),
-                ),
-              ],
-            ),
-          ),
-        for (final t in toggles)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Switch(
-                key: Key('toggle_${t.id}'),
-                value: t.value == true,
-                onChanged: (v) => onChanged(t.id, v),
               ),
-              Text(t.label ?? t.id, style: const TextStyle(fontSize: 12)),
-            ],
-          ),
+            'toggle' => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Switch(
+                    key: Key('toggle_${input.id}'),
+                    value: input.value == true,
+                    onChanged: (v) => onChanged(input.id, v),
+                  ),
+                  Text(input.label ?? input.id,
+                      style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            'select' => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${input.label ?? input.id}: ',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w600)),
+                  DropdownButton<String>(
+                    key: Key('select_${input.id}'),
+                    value: '${input.value}',
+                    isDense: true,
+                    items: [
+                      for (final opt in input.options)
+                        DropdownMenuItem(
+                          value: '$opt',
+                          child: Text('$opt',
+                              style: const TextStyle(fontSize: 12)),
+                        ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) onChanged(input.id, v);
+                    },
+                  ),
+                ],
+              ),
+            'textInput' || 'numberInput' => SizedBox(
+                width: 165,
+                child: TextFormField(
+                  key: Key('input_${input.id}_${input.value}'),
+                  initialValue: '${input.value ?? ''}',
+                  keyboardType: input.kind == 'numberInput'
+                      ? const TextInputType.numberWithOptions(decimal: true)
+                      : TextInputType.text,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    labelText: input.label ?? input.id,
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                  onFieldSubmitted: (v) {
+                    if (input.kind == 'numberInput') {
+                      final parsed = double.tryParse(v);
+                      if (parsed != null) onChanged(input.id, parsed);
+                    } else {
+                      onChanged(input.id, v);
+                    }
+                  },
+                ),
+              ),
+            'color' => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('${input.label ?? input.id}: ',
+                      style: const TextStyle(fontSize: 12)),
+                  for (final hex in const [
+                    '#2563EB',
+                    '#10B981',
+                    '#F59E0B',
+                    '#EF4444',
+                    '#8B5CF6',
+                  ])
+                    GestureDetector(
+                      onTap: () => onChanged(input.id, hex),
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        decoration: BoxDecoration(
+                          color: Color(
+                              int.parse('FF${hex.substring(1)}', radix: 16)),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: '${input.value}' == hex
+                                ? Colors.white
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            'button' => FilledButton.tonal(
+                key: Key('btn_input_${input.id}'),
+                onPressed: () {
+                  final next =
+                      (input.value is num ? (input.value as num).toInt() : 0) +
+                          1;
+                  onChanged(input.id, next);
+                },
+                style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                ),
+                child: Text(
+                  '${input.label ?? input.id} (${input.value ?? 0})',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            _ => const SizedBox.shrink(),
+          },
       ],
     );
   }

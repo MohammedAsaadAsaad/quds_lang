@@ -184,4 +184,70 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('مخصّص'), findsOneWidget);
   });
+
+  testWidgets(
+      'Quds Studio showcases 60fps animation, 3D Surface + Vector Field, Graph, Data/FFT, Micro-App Form, Call Tree, Time-Travel, Bytecode VM, and Reactive Notebook',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    // 1. Preset 4: 60fps Physics Pendulum + Animation Controls Bar
+    await tester.pumpWidget(
+        const QudsStudioApp(key: ValueKey(4), initialPresetIndex: 4));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+    expect(find.byKey(const Key('quds_animation_bar')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('btn_anim_step')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('#1'), findsOneWidget);
+
+    // 2. Preset 5: 3D Surface + Vector Field
+    await tester.pumpWidget(
+        const QudsStudioApp(key: ValueKey(5), initialPresetIndex: 5));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_surface3d_canvas')), findsOneWidget);
+    expect(find.byKey(const Key('quds_vector_field_canvas')), findsOneWidget);
+
+    // 3. Preset 6: Interactive Graph
+    await tester.pumpWidget(
+        const QudsStudioApp(key: ValueKey(6), initialPresetIndex: 6));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_graph_canvas')), findsOneWidget);
+
+    // 4. Preset 7: DataTable CSV + FFT Spectrum
+    await tester.pumpWidget(
+        const QudsStudioApp(key: ValueKey(7), initialPresetIndex: 7));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.text('متوسط المبيعات حسب المدينة'), findsOneWidget);
+
+    // 5. Preset 8: Micro-App Form Controls
+    await tester.pumpWidget(
+        const QudsStudioApp(key: ValueKey(8), initialPresetIndex: 8));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_form_output_card')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('btn_input_recalc')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('(1)'), findsOneWidget);
+
+    // 6. Preset 9: Call Tree Profiler + Time-Travel + Bytecode VM + Notebook tab
+    await tester.pumpWidget(
+        const QudsStudioApp(key: ValueKey(9), initialPresetIndex: 9));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_profiler_tab')), findsOneWidget);
+    expect(find.textContaining('fib(1) => 1'), findsWidgets);
+
+    // Disable Trace and enable Bytecode VM -> verify ⚡ VM execution badge!
+    await tester.tap(find.byKey(const Key('chip_profiler_timetravel')));
+    await tester.tap(find.byKey(const Key('chip_bytecode_vm')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('btn_run')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('⚡ VM ·'), findsOneWidget);
+
+    // Switch to Notebook tab inside Inspector
+    await tester.tap(find.text('الدفتر التفاعلي'));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_notebook_panel')), findsOneWidget);
+  });
 }

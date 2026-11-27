@@ -11,6 +11,7 @@ export 'src/interpreter/debugger.dart'
     show
         QudsBreakpoint,
         QudsDebugController,
+        QudsDebugHistoryEntry,
         QudsDebugPauseEvent,
         QudsDebugPausedRuntimeEvent,
         QudsDebugResumedRuntimeEvent,
@@ -88,6 +89,8 @@ export 'src/interpreter/policy.dart'
         QudsPermissionRequest,
         QudsStatementInterceptEvent,
         QudsStatementInterceptor;
+export 'src/interpreter/profiler.dart'
+    show QudsCallNode, QudsLineProfile, QudsProfiler;
 export 'src/interpreter/session.dart' show QudsRunResult, QudsSession;
 export 'src/interpreter/stream_bridge.dart'
     show QudsStreamBridge, QudsStreamSample;

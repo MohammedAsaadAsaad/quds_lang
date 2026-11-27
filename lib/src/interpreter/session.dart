@@ -21,6 +21,7 @@ import 'host_bridge.dart';
 import 'module_loader.dart';
 import 'outputs.dart';
 import 'policy.dart';
+import 'profiler.dart';
 import 'values.dart';
 import 'viz_module.dart';
 
@@ -145,6 +146,7 @@ class QudsSession {
   QudsSession({
     QudsExecutionPolicy? policy,
     this.debugger,
+    this.profiler,
     this.allowTopLevelRebind = false,
     List<QudsHostModule> hostModules = const [],
     int? maxSteps,
@@ -202,6 +204,9 @@ class QudsSession {
 
   /// Optional native AST debugger attached to this session.
   final QudsDebugController? debugger;
+
+  /// Optional execution profiler & recursive call-tree tracer.
+  final QudsProfiler? profiler;
 
   /// Whether top-level immutable bindings may be rebound across separate runs.
   final bool allowTopLevelRebind;
@@ -424,10 +429,13 @@ class QudsSession {
     }
 
     debugger?.resetForRun();
+    profiler?.resetForRun();
     final debugActive = debugger != null && debugger!.hasActiveHooks;
+    final profilerActive = profiler != null && profiler!.enabled;
     final needsStatementHook = policy.onStatementIntercept != null ||
         _onBeforeStatement != null ||
-        debugActive;
+        debugActive ||
+        profilerActive;
     final needsCallHook = policy.onCallIntercept != null ||
         _onBeforeCall != null ||
         policy.onPermissionCheck != null;
@@ -456,6 +464,9 @@ class QudsSession {
       },
       onBeforeStatement: needsStatementHook
           ? (stmt, env) async {
+              if (profilerActive) {
+                profiler!.recordStatement(stmt.span);
+              }
               await policy.authorizeStatement(stmt);
               if (_onBeforeStatement != null) {
                 await _onBeforeStatement(stmt, env);
@@ -514,6 +525,7 @@ class QudsSession {
       allowExceptions: policy.allowExceptions,
       allowImports: policy.allowImports,
       interactiveInputs: Map<String, Object?>.from(_interactiveInputs),
+      profiler: profilerActive ? profiler : null,
     );
 
     _activeEvaluator = evaluator;

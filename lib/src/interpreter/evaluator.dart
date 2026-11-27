@@ -15,6 +15,7 @@ import '../source.dart';
 import 'dart_stdlib_bridge.dart';
 import 'environment.dart';
 import 'exceptions.dart';
+import 'profiler.dart';
 import 'values.dart';
 
 /// Hook invoked before executing a statement (used by debugger & policy).
@@ -63,6 +64,7 @@ class QudsEvaluator {
     this.allowExceptions = true,
     this.allowImports = true,
     this.interactiveInputs = const {},
+    this.profiler,
   });
 
   final QudsEnvironment globalEnv;
@@ -75,6 +77,7 @@ class QudsEvaluator {
       checkCapabilitySync;
   final bool trackFrameLocals;
   final ImportHook? onImport;
+  final QudsProfiler? profiler;
 
   final int? maxSteps;
   final Duration? timeout;
@@ -2308,29 +2311,36 @@ class QudsEvaluator {
 
     await _bindParameters(fn.parameters, positional, named, callEnv, span);
 
+    final frameName = fn.definingClass != null
+        ? '${fn.definingClass!.name}.${fn.name}'
+        : fn.name;
     final frame = QudsStackFrame(
-      functionName: fn.definingClass != null
-          ? '${fn.definingClass!.name}.${fn.name}'
-          : fn.name,
+      functionName: frameName,
       span: span,
       locals: trackFrameLocals ? callEnv.snapshotLocals() : const {},
     );
 
+    final callNode = profiler?.enterCall(frameName, positional, named, span);
+    Object? returnVal;
     _callDepth++;
     _callStack.add(frame);
     try {
       if (fn.expressionBody != null) {
-        return await _evalExpr(fn.expressionBody!, callEnv);
+        returnVal = await _evalExpr(fn.expressionBody!, callEnv);
+        return returnVal;
       }
       if (fn.body != null) {
         await executeBlock(fn.body!, callEnv, hoistDeclarations: true);
       }
       return null;
     } on ReturnSignal catch (ret) {
-      return ret.value;
+      returnVal = ret.value;
+      return returnVal;
     } on PropagateErrorSignal catch (prop) {
-      return prop.errorResult;
+      returnVal = prop.errorResult;
+      return returnVal;
     } finally {
+      profiler?.exitCall(callNode, returnVal);
       _callStack.removeLast();
       _callDepth--;
       // Sync back any field assignments made directly to bare field names.

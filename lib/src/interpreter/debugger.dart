@@ -130,15 +130,48 @@ class QudsDebugResumedRuntimeEvent extends QudsRuntimeEvent {
   const QudsDebugResumedRuntimeEvent();
 }
 
+/// Immutable snapshot recorded on each executed statement when Time-Travel
+/// debugging (`recordHistory: true`) is enabled on [QudsDebugController].
+class QudsDebugHistoryEntry {
+  const QudsDebugHistoryEntry({
+    required this.stepIndex,
+    required this.span,
+    required this.stackFrames,
+    required this.locals,
+    required this.globals,
+    required this.timestampMicros,
+  });
+
+  final int stepIndex;
+  final SourceSpan span;
+  final List<QudsStackFrame> stackFrames;
+  final Map<String, Object?> locals;
+  final Map<String, Object?> globals;
+  final int timestampMicros;
+}
+
 /// Interactive debugger controller attachable to any [QudsSession].
 class QudsDebugController {
-  QudsDebugController({this.stopOnEntry = false});
+  QudsDebugController({
+    this.stopOnEntry = false,
+    this.recordHistory = false,
+    this.maxHistorySnapshots = 500,
+  });
 
   bool stopOnEntry;
+
+  /// When true, records per-statement variable/stack snapshots so the host UI
+  /// can step backward (`stepBack`) and scrub across the entire execution timeline.
+  bool recordHistory;
+
+  /// Maximum number of time-travel snapshots retained per run.
+  final int maxHistorySnapshots;
 
   final Map<String, Map<int, QudsBreakpoint>> _breakpoints = {};
   final Map<String, int> _hitCounts = {};
   final List<String> _watchExpressions = [];
+  final List<QudsDebugHistoryEntry> _history = [];
+  int _historyCursor = -1;
 
   final StreamController<QudsDebugPauseEvent> _pausedController =
       StreamController<QudsDebugPauseEvent>.broadcast();
@@ -163,13 +196,56 @@ class QudsDebugController {
   bool get isPaused =>
       _resumeCompleter != null && !_resumeCompleter!.isCompleted;
 
-  /// True when at least one breakpoint, entry stop, or step mode is active.
+  /// True when at least one breakpoint, entry stop, step mode, or time-travel
+  /// recording is active.
   bool get hasActiveHooks {
-    if (stopOnEntry || _mode != _DebugStepMode.running) return true;
+    if (stopOnEntry || recordHistory || _mode != _DebugStepMode.running) {
+      return true;
+    }
     for (final map in _breakpoints.values) {
       if (map.isNotEmpty) return true;
     }
     return false;
+  }
+
+  /// Recorded time-travel timeline entries from the current/last run.
+  List<QudsDebugHistoryEntry> get history => List.unmodifiable(_history);
+
+  /// Current active index inside [history] (`-1` when empty).
+  int get historyIndex => _historyCursor;
+
+  /// Whether [stepBack] can move to an earlier recorded snapshot.
+  bool get canStepBack => _historyCursor > 0;
+
+  /// Whether [stepForward] can move to a later recorded snapshot.
+  bool get canStepForward =>
+      _historyCursor >= 0 && _historyCursor + 1 < _history.length;
+
+  /// Current selected time-travel entry, if any.
+  QudsDebugHistoryEntry? get currentHistoryEntry =>
+      (_historyCursor >= 0 && _historyCursor < _history.length)
+          ? _history[_historyCursor]
+          : null;
+
+  /// Steps one snapshot backward in the recorded time-travel history.
+  QudsDebugHistoryEntry? stepBack() {
+    if (!canStepBack) return currentHistoryEntry;
+    _historyCursor--;
+    return _history[_historyCursor];
+  }
+
+  /// Steps one snapshot forward in the recorded time-travel history.
+  QudsDebugHistoryEntry? stepForward() {
+    if (!canStepForward) return currentHistoryEntry;
+    _historyCursor++;
+    return _history[_historyCursor];
+  }
+
+  /// Jumps directly to a specific recorded snapshot [index] in [history].
+  QudsDebugHistoryEntry? jumpToHistory(int index) {
+    if (_history.isEmpty) return null;
+    _historyCursor = index.clamp(0, _history.length - 1);
+    return _history[_historyCursor];
   }
 
   /// The active pause snapshot when [isPaused] is true.
@@ -212,12 +288,14 @@ class QudsDebugController {
     }
   }
 
-  /// Resets per-run transient stepping state before a new `QudsSession.run`.
+  /// Resets per-run transient stepping state and time-travel history before a new `QudsSession.run`.
   void resetForRun() {
     _stopRequested = false;
     _lastPausedLine = null;
     _lastPausedFile = null;
     _currentPause = null;
+    _history.clear();
+    _historyCursor = -1;
     _mode = stopOnEntry ? _DebugStepMode.pauseNext : _DebugStepMode.running;
   }
 
@@ -283,6 +361,28 @@ class QudsDebugController {
 
     final span = statement.span;
     final depth = evaluator.stackFrames.length;
+    if (recordHistory) {
+      final entry = QudsDebugHistoryEntry(
+        stepIndex: _history.length,
+        span: span,
+        stackFrames: List.unmodifiable([
+          ...evaluator.stackFrames.reversed,
+          QudsStackFrame(
+            functionName: '<main>',
+            span: span,
+            locals: const {},
+          ),
+        ]),
+        locals: Map.unmodifiable(env.snapshotLocals()),
+        globals: Map.unmodifiable(globalEnv.snapshotLocals()),
+        timestampMicros: DateTime.now().microsecondsSinceEpoch,
+      );
+      _history.add(entry);
+      if (_history.length > maxHistorySnapshots) {
+        _history.removeAt(0);
+      }
+      _historyCursor = _history.length - 1;
+    }
     QudsPauseReason? pauseReason;
     QudsBreakpoint? matchedBp;
 

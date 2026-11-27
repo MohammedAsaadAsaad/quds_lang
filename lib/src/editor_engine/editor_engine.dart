@@ -12,6 +12,7 @@ library;
 
 import '../ast.dart';
 import '../format.dart';
+import '../interpreter/environment.dart';
 import '../interpreter/host_bridge.dart';
 import '../interpreter/policy.dart';
 import '../interpreter/session.dart';
@@ -396,8 +397,7 @@ class QudsEditorEngine {
     final insertion = '\n${' ' * nextIndent}';
     // If splitting mid-line, strip leading spaces from the moved remainder.
     final leadingRestSpaces = restOfLine.length - restOfLine.trimLeft().length;
-    final updated =
-        text.replaceRange(pos, pos + leadingRestSpaces, insertion);
+    final updated = text.replaceRange(pos, pos + leadingRestSpaces, insertion);
     return QudsEditResult(
       text: updated,
       selectionStart: pos + insertion.length,
@@ -514,9 +514,8 @@ class QudsEditorEngine {
     if (s == e && !outdent) {
       final lineStart = s == 0 ? 0 : text.lastIndexOf('\n', s - 1) + 1;
       final before = text.substring(lineStart, s);
-      final spacesToInsert = before.trim().isEmpty
-          ? (indent - (before.length % indent))
-          : indent;
+      final spacesToInsert =
+          before.trim().isEmpty ? (indent - (before.length % indent)) : indent;
       final insert = ' ' * spacesToInsert;
       final updated = text.replaceRange(s, e, insert);
       return QudsEditResult(
@@ -829,7 +828,7 @@ class QudsEditorEngine {
           }
         }
 
-        // Recurse into nested bodies for policy checks
+        // Recurse into nested bodies for policy and duplicate-declaration checks
         if (stmt is IfStatement) {
           checkStatements(stmt.thenBody, isTopLevel: false);
           checkStatements(stmt.elseBody, isTopLevel: false);
@@ -839,6 +838,60 @@ class QudsEditorEngine {
           checkStatements(stmt.body, isTopLevel: false);
         } else if (stmt is FunctionDeclaration && stmt.body != null) {
           checkStatements(stmt.body!, isTopLevel: false);
+        }
+      }
+
+      // Check duplicate function signatures (QUDS-085 / E201) & duplicate classes in this scope
+      final scopeFunctions = <String, List<FunctionDeclaration>>{};
+      final scopeClasses = <String, ClassDeclaration>{};
+      for (final stmt in stmts) {
+        if (stmt is FunctionDeclaration) {
+          final prior = scopeFunctions.putIfAbsent(stmt.name, () => []);
+          FunctionDeclaration? duplicateOf;
+          for (final prev in prior) {
+            if (QudsEnvironment.sameParameterShape(
+                prev.parameters, stmt.parameters)) {
+              duplicateOf = prev;
+              break;
+            }
+          }
+          if (duplicateOf != null) {
+            final start = _offsetFromLineStarts(
+                lineStarts, stmt.span.line, stmt.span.column, source.length);
+            diagnostics.add(QudsEditorDiagnostic(
+              code: 'E201',
+              message:
+                  'Duplicate function or unsupported overload: `${stmt.name}` '
+                  '(already defined on line ${duplicateOf.span.line}).',
+              severity: QudsDiagnosticSeverity.error,
+              line: stmt.span.line,
+              column: stmt.span.column,
+              startOffset: start,
+              endOffset: (start + stmt.name.length).clamp(start, source.length),
+              help:
+                  'Rename one declaration or change its parameter count/types to create a valid overload (QUDS-085).',
+            ));
+          } else {
+            prior.add(stmt);
+          }
+        } else if (stmt is ClassDeclaration) {
+          final prev = scopeClasses[stmt.name];
+          if (prev != null) {
+            final start = _offsetFromLineStarts(
+                lineStarts, stmt.span.line, stmt.span.column, source.length);
+            diagnostics.add(QudsEditorDiagnostic(
+              code: 'E201',
+              message:
+                  'Duplicate class `${stmt.name}` (already defined on line ${prev.span.line}).',
+              severity: QudsDiagnosticSeverity.error,
+              line: stmt.span.line,
+              column: stmt.span.column,
+              startOffset: start,
+              endOffset: (start + stmt.name.length).clamp(start, source.length),
+            ));
+          } else {
+            scopeClasses[stmt.name] = stmt;
+          }
         }
       }
     }
@@ -1157,7 +1210,7 @@ class QudsEditorEngine {
 
     void add(QudsCompletionItem item) {
       if (!item.label.toLowerCase().startsWith(lower)) return;
-      if (seen.add('${item.kind.name}:${item.label}')) {
+      if (seen.add(item.label)) {
         items.add(item);
       }
     }
@@ -1167,16 +1220,22 @@ class QudsEditorEngine {
       add(local);
     }
 
-    // 2. Live session workspace variables
+    // 2. Live session workspace variables & functions
     if (session != null) {
       for (final ws in session!.workspace.values) {
+        final kind = ws.value is QudsUserFunction ||
+                ws.value is QudsOverloadSet ||
+                ws.value is QudsNativeFunction
+            ? QudsCompletionKind.function
+            : ws.value is QudsClass
+                ? QudsCompletionKind.classType
+                : QudsCompletionKind.variable;
         add(QudsCompletionItem(
           label: ws.name,
           insertText: ws.name,
-          kind: QudsCompletionKind.variable,
+          kind: kind,
           detail: '${ws.typeName} = ${ws.summary}',
-          documentation:
-              'Workspace variable (`${ws.typeName}`): `${ws.summary}`',
+          documentation: 'Workspace symbol (`${ws.typeName}`): `${ws.summary}`',
           sortPriority: 12,
         ));
       }

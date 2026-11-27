@@ -267,5 +267,47 @@ main():
       expect(runRes.succeeded, isTrue, reason: '${runRes.error}');
       expect(runRes.stdout, vmOut);
     });
+
+    test(
+        'rejects duplicate function signatures in the same scope with E201 while allowing QUDS-085 overloads and cross-run rebinding',
+        () async {
+      final session = QudsSession(allowTopLevelRebind: true);
+
+      // 1. Same name + same parameter signature in one script -> E201
+      final dup = await session.run('''
+fib(n: int) -> int:
+  return (if n <= 2: n else: fib(n - 1) + fib(n - 2))
+
+fib(n: int) -> int:
+  if n <= 2: return n
+  return fib(n - 1) + fib(n - 2)
+
+print fib(5)
+''');
+      expect(dup.succeeded, isFalse);
+      expect(dup.error, isA<QudsRuntimeException>());
+      final err = dup.error! as QudsRuntimeException;
+      expect(err.code, 'E201');
+      expect(err.message, contains('fib'));
+
+      // 2. Valid QUDS-085 overloading (distinct signatures) -> succeeds
+      final overload = await session.run('''
+calc(n: int) -> int = n * 2
+calc(n: int, factor: int) -> int = n * factor
+print "{calc(4)},{calc(4, 3)}"
+''');
+      expect(overload.succeeded, isTrue, reason: '${overload.error}');
+      expect(overload.printedLines, ['8,12']);
+
+      // 3. Re-running a valid script in an interactive session replaces previous run cleanly
+      final redef = await session.run('''
+calc(n: int) -> int = n * 10
+print calc(4)
+''');
+      expect(redef.succeeded, isTrue, reason: '${redef.error}');
+      expect(redef.printedLines, ['40']);
+
+      await session.dispose();
+    });
   });
 }

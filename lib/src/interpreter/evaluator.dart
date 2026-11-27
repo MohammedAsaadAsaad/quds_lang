@@ -205,11 +205,7 @@ class QudsEvaluator {
     }
 
     if (hoistDeclarations) {
-      for (final stmt in statements) {
-        if (stmt is FunctionDeclaration) {
-          _registerFunctionDeclaration(stmt, env);
-        }
-      }
+      _hoistFunctions(statements, env);
     }
 
     final deferred = <Expression>[];
@@ -309,8 +305,39 @@ class QudsEvaluator {
     }
   }
 
+  void _hoistFunctions(List<Statement> statements, QudsEnvironment env) {
+    final seenInBlock = <String, List<FunctionDeclaration>>{};
+    final allowCrossRunReplace = env.isGlobal && env.allowTopLevelRebind;
+    for (final stmt in statements) {
+      if (stmt is FunctionDeclaration) {
+        final prior = seenInBlock.putIfAbsent(stmt.name, () => []);
+        for (final prev in prior) {
+          if (QudsEnvironment.sameParameterShape(
+              prev.parameters, stmt.parameters)) {
+            throw QudsRuntimeException(
+              'Duplicate function or unsupported overload: `${stmt.name}` '
+              '(already defined on line ${prev.span.line}).',
+              stmt.span,
+              code: 'E201',
+              stackFrames: stackFrames,
+            );
+          }
+        }
+        prior.add(stmt);
+        _registerFunctionDeclaration(
+          stmt,
+          env,
+          allowReplace: allowCrossRunReplace,
+        );
+      }
+    }
+  }
+
   void _registerFunctionDeclaration(
-      FunctionDeclaration decl, QudsEnvironment env) {
+    FunctionDeclaration decl,
+    QudsEnvironment env, {
+    bool allowReplace = false,
+  }) {
     if (decl.isAsync && !allowAsync) {
       throw QudsPolicyViolationException(
         QudsPolicyViolationKind.featureDisabled,
@@ -329,7 +356,7 @@ class QudsEvaluator {
       closure: env,
       span: decl.span,
     );
-    env.defineFunction(fn);
+    env.defineFunction(fn, allowReplace: allowReplace);
   }
 
   // -------------------------------------------------------------------------
@@ -3838,11 +3865,7 @@ class QudsEvaluator {
       }
     }
     if (hoistDeclarations) {
-      for (final stmt in statements) {
-        if (stmt is FunctionDeclaration) {
-          _registerFunctionDeclaration(stmt, env);
-        }
-      }
+      _hoistFunctions(statements, env);
     }
     Object? lastValue;
     for (var i = 0; i < statements.length; i++) {
@@ -4044,7 +4067,8 @@ class QudsEvaluator {
         }
         final res = _evalExprFast(value, env);
         if (res is Future<Object?>) {
-          return res.then((v) => throw QudsThrownValue(v, stmt.span, stackFrames));
+          return res
+              .then((v) => throw QudsThrownValue(v, stmt.span, stackFrames));
         }
         throw QudsThrownValue(res, stmt.span, stackFrames);
       case IfStatement(:final condition, :final thenBody, :final elseBody):
@@ -4178,7 +4202,8 @@ class QudsEvaluator {
       final iterEnv = env.child()
         ..define(
           r'$',
-          QudsLoopContext(index: index, count: -1, first: index == 0, last: false),
+          QudsLoopContext(
+              index: index, count: -1, first: index == 0, last: false),
         );
       try {
         final bodyRes =
@@ -4195,7 +4220,8 @@ class QudsEvaluator {
       index++;
     }
     if (stmt.elseBody.isNotEmpty) {
-      return _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+      return _execBlockFast(stmt.elseBody, env.child(),
+          hoistDeclarations: true);
     }
     return null;
   }
@@ -4216,7 +4242,8 @@ class QudsEvaluator {
     final iterEnv = env.child()
       ..define(
         r'$',
-        QudsLoopContext(index: index, count: -1, first: index == 0, last: false),
+        QudsLoopContext(
+            index: index, count: -1, first: index == 0, last: false),
       );
     try {
       await executeBlock(stmt.body, iterEnv, hoistDeclarations: true);
@@ -4274,7 +4301,8 @@ class QudsEvaluator {
       final iterEnv = env.child()
         ..define(
           r'$',
-          QudsLoopContext(index: index, count: -1, first: index == 0, last: false),
+          QudsLoopContext(
+              index: index, count: -1, first: index == 0, last: false),
         );
       try {
         final r = _execBlockFast(stmt.body, iterEnv, hoistDeclarations: true);
@@ -4288,7 +4316,8 @@ class QudsEvaluator {
       index++;
     }
     if (stmt.elseBody.isNotEmpty) {
-      final r = _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+      final r =
+          _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
       if (r is Future<Object?>) await r;
     }
     return null;
@@ -4298,9 +4327,8 @@ class QudsEvaluator {
     final iterVal = _evalExprFast(stmt.iterable, env);
     if (iterVal is Future<Object?>) {
       return iterVal.then((v) async {
-        final stepVal = stmt.step != null
-            ? await _evalExprFast(stmt.step!, env)
-            : null;
+        final stepVal =
+            stmt.step != null ? await _evalExprFast(stmt.step!, env) : null;
         final material = _materializeForIterable(v, stepVal, stmt);
         return _execForAsyncTail(stmt, env, material, 0, yieldFirst: false);
       });
@@ -4344,7 +4372,8 @@ class QudsEvaluator {
       }
     }
     if (stmt.elseBody.isNotEmpty) {
-      return _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+      return _execBlockFast(stmt.elseBody, env.child(),
+          hoistDeclarations: true);
     }
     return null;
   }
@@ -4470,7 +4499,8 @@ class QudsEvaluator {
       }
     }
     if (stmt.elseBody.isNotEmpty) {
-      final r = _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+      final r =
+          _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
       if (r is Future<Object?>) await r;
     }
     return null;
@@ -4525,8 +4555,9 @@ class QudsEvaluator {
         if (operator == '??') {
           final l = _evalExprFast(left, env);
           if (l is Future<Object?>) {
-            return l.then((lv) =>
-                (lv != null && lv is! QudsMissing) ? lv : _evalExprFast(right, env));
+            return l.then((lv) => (lv != null && lv is! QudsMissing)
+                ? lv
+                : _evalExprFast(right, env));
           }
           if (l != null && l is! QudsMissing) return l;
           return _evalExprFast(right, env);
@@ -4638,7 +4669,8 @@ class QudsEvaluator {
       case TypeTestExpression(:final operand, :final operator, :final type):
         final v = _evalExprFast(operand, env);
         if (v is Future<Object?>) {
-          return v.then((val) => _applyTypeTestSync(val, operator, type, expr.span));
+          return v.then(
+              (val) => _applyTypeTestSync(val, operator, type, expr.span));
         }
         return _applyTypeTestSync(v, operator, type, expr.span);
       case ConversionExpression(:final operand, :final type, :final safe):
@@ -4723,7 +4755,8 @@ class QudsEvaluator {
     if (left is QudsInstance) {
       final method = left.qudsClass.lookupMethod(op);
       if (method != null) {
-        return _invokeUserFunctionFast(method.bind(left), [right], const {}, span);
+        return _invokeUserFunctionFast(
+            method.bind(left), [right], const {}, span);
       }
     }
     switch (op) {
@@ -4913,20 +4946,24 @@ class QudsEvaluator {
     QudsEnvironment env,
     SourceSpan span,
   ) {
-    if (onBeforeCall != null) return _evalCall(calleeExpr, arguments, env, span);
+    if (onBeforeCall != null) {
+      return _evalCall(calleeExpr, arguments, env, span);
+    }
 
     if (calleeExpr is MemberAccess) {
       final recv = _evalExprFast(calleeExpr.object, env);
       if (recv is Future<Object?>) {
-        return recv.then(
-            (r) => _evalMemberCallWithRecvFast(r, calleeExpr, arguments, env, span));
+        return recv.then((r) =>
+            _evalMemberCallWithRecvFast(r, calleeExpr, arguments, env, span));
       }
-      return _evalMemberCallWithRecvFast(recv, calleeExpr, arguments, env, span);
+      return _evalMemberCallWithRecvFast(
+          recv, calleeExpr, arguments, env, span);
     }
 
     final callee = _evalExprFast(calleeExpr, env);
     if (callee is Future<Object?>) {
-      return callee.then((c) => _evalArgsAndInvokeFast(c, arguments, env, span));
+      return callee
+          .then((c) => _evalArgsAndInvokeFast(c, arguments, env, span));
     }
     return _evalArgsAndInvokeFast(callee, arguments, env, span);
   }
@@ -4996,8 +5033,8 @@ class QudsEvaluator {
           return _evalArgsThen(
             arguments,
             env,
-            (pos, _) =>
-                recv.toStringAsFixed(_expectInt(pos[0], arguments[0].value.span)),
+            (pos, _) => recv
+                .toStringAsFixed(_expectInt(pos[0], arguments[0].value.span)),
           );
         }
       }
@@ -5054,7 +5091,8 @@ class QudsEvaluator {
       if (recv is String && arguments.length == 1) {
         switch (calleeExpr.name) {
           case 'split':
-            return _evalArgsThen(arguments, env, (pos, _) => recv.split('${pos[0]}'));
+            return _evalArgsThen(
+                arguments, env, (pos, _) => recv.split('${pos[0]}'));
           case 'startsWith':
             return _evalArgsThen(
                 arguments, env, (pos, _) => recv.startsWith('${pos[0]}'));
@@ -5074,7 +5112,8 @@ class QudsEvaluator {
     final member =
         _evalMemberReadFast(recv, calleeExpr.name, false, calleeExpr.span);
     if (member is Future<Object?>) {
-      return member.then((m) => _evalArgsAndInvokeFast(m, arguments, env, span));
+      return member
+          .then((m) => _evalArgsAndInvokeFast(m, arguments, env, span));
     }
     return _evalArgsAndInvokeFast(member, arguments, env, span);
   }
@@ -5172,7 +5211,8 @@ class QudsEvaluator {
     }
     if (callee is QudsNativeFunction && callee.isSync) {
       if (callee.requiredCapability != null) {
-        checkCapabilitySync?.call(callee.name, callee.requiredCapability!, span);
+        checkCapabilitySync?.call(
+            callee.name, callee.requiredCapability!, span);
       }
       final ctx = QudsCallContext(
         span: span,

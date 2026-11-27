@@ -261,8 +261,7 @@ compute(n: int) -> int:
 
       // Auto-dedent `else:` when typed inside an `if` block
       const elseTyped = 'if x > 0:\n  print 1\n  else:';
-      final dedentedElse =
-          engine.handleTypedColon(elseTyped, elseTyped.length);
+      final dedentedElse = engine.handleTypedColon(elseTyped, elseTyped.length);
       expect(dedentedElse, isNotNull);
       expect(dedentedElse!.text, 'if x > 0:\n  print 1\nelse:');
 
@@ -286,6 +285,41 @@ compute(n: int) -> int:
       final uncommented =
           engine.toggleLineComment(commented.text, 0, commented.text.length);
       expect(uncommented.text, block);
+
+      await session.dispose();
+    });
+
+    test(
+        'flags duplicate function signatures with E201, allows valid overloads, and deduplicates workspace completions',
+        () async {
+      final session = QudsSession(allowTopLevelRebind: true);
+      await session.run('fib(n: int) -> int = n');
+      final engine = QudsEditorEngine(session: session);
+
+      const dupSrc = '''
+fib(n: int) -> int:
+  return n
+
+fib(n: int) -> int:
+  return n + 1
+''';
+      final dupAnalysis = engine.analyze(dupSrc);
+      expect(dupAnalysis.hasErrors, isTrue);
+      expect(dupAnalysis.diagnostics.any((d) => d.code == 'E201'), isTrue);
+
+      // Autocomplete must not show `fib` twice even when present in buffer AND workspace
+      final completions =
+          engine.completeAt('$dupSrc\nfi', '$dupSrc\nfi'.length);
+      final fibMatches = completions.where((c) => c.label == 'fib').toList();
+      expect(fibMatches, hasLength(1));
+
+      // Valid QUDS-085 overloads produce zero errors
+      const overloadSrc = '''
+fib(n: int) -> int = n
+fib(n: int, scale: int) -> int = n * scale
+''';
+      final okAnalysis = engine.analyze(overloadSrc);
+      expect(okAnalysis.hasErrors, isFalse);
 
       await session.dispose();
     });

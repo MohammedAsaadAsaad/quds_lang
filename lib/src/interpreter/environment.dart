@@ -105,8 +105,11 @@ class QudsEnvironment {
   }
 
   /// Registers a function declaration, supporting QUDS-085 overloads when
-  /// multiple functions share the same name in the same scope.
-  void defineFunction(QudsUserFunction fn) {
+  /// multiple functions share the same name with distinct parameter signatures.
+  ///
+  /// Throws `E201` when a duplicate signature is declared in the same scope
+  /// unless [allowReplace] is explicitly enabled (for cross-run REPL rebinding).
+  void defineFunction(QudsUserFunction fn, {bool allowReplace = false}) {
     final existing = _slots[fn.name];
     if (existing == null) {
       define(fn.name, fn);
@@ -114,9 +117,17 @@ class QudsEnvironment {
     }
     final current = existing.value;
     if (current is QudsUserFunction) {
-      if (_sameParameterShape(current.parameters, fn.parameters)) {
-        // Re-defining the same function in an interactive session replaces it.
-        existing.value = fn;
+      if (sameParameterShape(current.parameters, fn.parameters)) {
+        if (allowReplace) {
+          existing.value = fn;
+        } else {
+          throw QudsRuntimeException(
+            'Duplicate function or unsupported overload: `${fn.name}` '
+            '(already defined on line ${current.span.line}).',
+            fn.span,
+            code: 'E201',
+          );
+        }
       } else {
         existing.value = QudsOverloadSet(fn.name, [current, fn]);
       }
@@ -124,13 +135,29 @@ class QudsEnvironment {
     }
     if (current is QudsOverloadSet) {
       final idx = current.overloads
-          .indexWhere((o) => _sameParameterShape(o.parameters, fn.parameters));
+          .indexWhere((o) => sameParameterShape(o.parameters, fn.parameters));
       if (idx >= 0) {
-        current.overloads[idx] = fn;
+        if (allowReplace) {
+          current.overloads[idx] = fn;
+        } else {
+          throw QudsRuntimeException(
+            'Duplicate function or unsupported overload: `${fn.name}` '
+            '(already defined on line ${current.overloads[idx].span.line}).',
+            fn.span,
+            code: 'E201',
+          );
+        }
       } else {
         current.overloads.add(fn);
       }
       return;
+    }
+    if (!allowReplace && !_isBuiltinSlot(fn.name, existing)) {
+      throw QudsRuntimeException(
+        'Duplicate name: `${fn.name}` is already defined in this scope.',
+        fn.span,
+        code: 'E201',
+      );
     }
     define(fn.name, fn);
   }
@@ -325,14 +352,17 @@ class QudsEnvironment {
       slot.value is QudsNamespace ||
       name == 'missing';
 
-  bool _sameParameterShape(List<Parameter> a, List<Parameter> b) {
+  /// Returns true when two function parameter lists have the same overload
+  /// signature according to QUDS-085 (matching `semantics.dart:sameSignature`).
+  static bool sameParameterShape(List<Parameter> a, List<Parameter> b) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
-      if (a[i].type != b[i].type ||
-          a[i].isNamed != b[i].isNamed ||
+      if (a[i].kind != b[i].kind ||
+          (a[i].isNamed && a[i].name != b[i].name) ||
           a[i].variadic != b[i].variadic) {
         return false;
       }
+      if (a[i].type != b[i].type) return false;
     }
     return true;
   }

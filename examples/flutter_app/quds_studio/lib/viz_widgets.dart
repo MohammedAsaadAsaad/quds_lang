@@ -70,7 +70,7 @@ class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
             onPanStart: (details) {
               final local = details.localPosition;
               String? hitId;
-              var bestDist = 26.0;
+              var bestDist = 38.0;
               for (final p in widget.scene.draggablePoints) {
                 final pos = vp.toScreen(p.x, p.y);
                 final d = (pos - local).distance;
@@ -101,13 +101,21 @@ class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
                 _lockedBounds = null;
               });
             },
-            child: CustomPaint(
-              size: size,
-              painter: _GeometryScenePainter(
-                scene: widget.scene,
-                viewport: vp,
-                draggingId: _draggingId,
-                isDark: widget.isDark,
+            onPanCancel: () {
+              setState(() {
+                _draggingId = null;
+                _lockedBounds = null;
+              });
+            },
+            child: RepaintBoundary(
+              child: CustomPaint(
+                size: size,
+                painter: _GeometryScenePainter(
+                  scene: widget.scene,
+                  viewport: vp,
+                  draggingId: _draggingId,
+                  isDark: widget.isDark,
+                ),
               ),
             ),
           ),

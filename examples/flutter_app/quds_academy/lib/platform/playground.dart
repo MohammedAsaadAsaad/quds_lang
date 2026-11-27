@@ -273,6 +273,8 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
   QudsDebugPauseEvent? _activePause;
   QudsRunResult? _result;
   bool _running = false;
+  bool _updatingInteractive = false;
+  Map<String, Object?>? _pendingInteractivePatch;
 
   String tr(String en, String ar) => widget.arabic ? ar : en;
 
@@ -369,14 +371,28 @@ class _AcademyPlaygroundState extends State<AcademyPlayground> {
 
   Future<void> _updateInteractive(Map<String, Object?> patch) async {
     if (_running) return;
+    _pendingInteractivePatch = {
+      ...?_pendingInteractivePatch,
+      ...patch,
+    };
+    if (_updatingInteractive) return;
+    _updatingInteractive = true;
     _debugger.clearBreakpoints();
-    final res = await _session.updateInteractiveInputs(
-      patch,
-      source: _controller.text,
-      file: 'playground.quds',
-    );
-    if (!mounted) return;
-    setState(() => _result = res);
+    try {
+      while (_pendingInteractivePatch != null && mounted && !_running) {
+        final nextPatch = _pendingInteractivePatch!;
+        _pendingInteractivePatch = null;
+        final res = await _session.updateInteractiveInputs(
+          nextPatch,
+          source: _controller.text,
+          file: 'playground.quds',
+        );
+        if (!mounted) return;
+        setState(() => _result = res);
+      }
+    } finally {
+      _updatingInteractive = false;
+    }
   }
 
   void _format() {
@@ -1105,7 +1121,7 @@ class _AcademyGeoCanvasState extends State<_AcademyGeoCanvas> {
         return GestureDetector(
           onPanStart: (d) {
             String? hit;
-            var best = 28.0;
+            var best = 38.0;
             for (final pt in widget.scene.draggablePoints) {
               final dist = (toScreen(pt.x, pt.y) - d.localPosition).distance;
               if (dist < best) {
@@ -1133,13 +1149,19 @@ class _AcademyGeoCanvasState extends State<_AcademyGeoCanvas> {
             _draggingId = null;
             _lockedBounds = null;
           }),
-          child: CustomPaint(
-            size: size,
-            painter: _AcademyGeoPainter(
-              scene: widget.scene,
-              dark: widget.dark,
-              toScreen: toScreen,
-              scale: scale,
+          onPanCancel: () => setState(() {
+            _draggingId = null;
+            _lockedBounds = null;
+          }),
+          child: RepaintBoundary(
+            child: CustomPaint(
+              size: size,
+              painter: _AcademyGeoPainter(
+                scene: widget.scene,
+                dark: widget.dark,
+                toScreen: toScreen,
+                scale: scale,
+              ),
             ),
           ),
         );

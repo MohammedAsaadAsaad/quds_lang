@@ -163,6 +163,15 @@ class QudsDebugController {
   bool get isPaused =>
       _resumeCompleter != null && !_resumeCompleter!.isCompleted;
 
+  /// True when at least one breakpoint, entry stop, or step mode is active.
+  bool get hasActiveHooks {
+    if (stopOnEntry || _mode != _DebugStepMode.running) return true;
+    for (final map in _breakpoints.values) {
+      if (map.isNotEmpty) return true;
+    }
+    return false;
+  }
+
   /// The active pause snapshot when [isPaused] is true.
   QudsDebugPauseEvent? get currentPause => _currentPause;
 

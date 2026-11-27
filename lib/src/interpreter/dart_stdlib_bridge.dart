@@ -134,37 +134,53 @@ Map<String, Object?> _dartMath() => {
       'log10e': math.log10e,
       'sqrt2': math.sqrt2,
       'sqrt1_2': math.sqrt1_2,
-      'sin': QudsNativeFunction('sin', (p, n, c) => math.sin(p[0] as num)),
-      'cos': QudsNativeFunction('cos', (p, n, c) => math.cos(p[0] as num)),
-      'tan': QudsNativeFunction('tan', (p, n, c) => math.tan(p[0] as num)),
-      'asin': QudsNativeFunction('asin', (p, n, c) => math.asin(p[0] as num)),
-      'acos': QudsNativeFunction('acos', (p, n, c) => math.acos(p[0] as num)),
-      'atan': QudsNativeFunction('atan', (p, n, c) => math.atan(p[0] as num)),
+      'sin': QudsNativeFunction('sin', (p, n, c) => math.sin(p[0] as num),
+          isSync: true),
+      'cos': QudsNativeFunction('cos', (p, n, c) => math.cos(p[0] as num),
+          isSync: true),
+      'tan': QudsNativeFunction('tan', (p, n, c) => math.tan(p[0] as num),
+          isSync: true),
+      'asin': QudsNativeFunction('asin', (p, n, c) => math.asin(p[0] as num),
+          isSync: true),
+      'acos': QudsNativeFunction('acos', (p, n, c) => math.acos(p[0] as num),
+          isSync: true),
+      'atan': QudsNativeFunction('atan', (p, n, c) => math.atan(p[0] as num),
+          isSync: true),
       'atan2': QudsNativeFunction(
-          'atan2', (p, n, c) => math.atan2(p[0] as num, p[1] as num)),
-      'sqrt': QudsNativeFunction('sqrt', (p, n, c) => math.sqrt(p[0] as num)),
-      'exp': QudsNativeFunction('exp', (p, n, c) => math.exp(p[0] as num)),
-      'log': QudsNativeFunction('log', (p, n, c) => math.log(p[0] as num)),
+          'atan2', (p, n, c) => math.atan2(p[0] as num, p[1] as num),
+          isSync: true),
+      'sqrt': QudsNativeFunction('sqrt', (p, n, c) => math.sqrt(p[0] as num),
+          isSync: true),
+      'exp': QudsNativeFunction('exp', (p, n, c) => math.exp(p[0] as num),
+          isSync: true),
+      'log': QudsNativeFunction('log', (p, n, c) => math.log(p[0] as num),
+          isSync: true),
       'pow': QudsNativeFunction(
-          'pow', (p, n, c) => math.pow(p[0] as num, p[1] as num)),
+          'pow', (p, n, c) => math.pow(p[0] as num, p[1] as num),
+          isSync: true),
       'min': QudsNativeFunction(
-          'min', (p, n, c) => math.min(p[0] as num, p[1] as num)),
+          'min', (p, n, c) => math.min(p[0] as num, p[1] as num),
+          isSync: true),
       'max': QudsNativeFunction(
-          'max', (p, n, c) => math.max(p[0] as num, p[1] as num)),
+          'max', (p, n, c) => math.max(p[0] as num, p[1] as num),
+          isSync: true),
       'Random': _callableNamespace(
         'Random',
         (p, n, c) => math.Random(p.isEmpty ? null : p[0] as int?),
         {
           'secure': QudsNativeFunction(
-              'Random.secure', (p, n, c) => math.Random.secure()),
+              'Random.secure', (p, n, c) => math.Random.secure(),
+              isSync: true),
         },
       ),
       'Point': QudsNativeFunction(
-          'Point', (p, n, c) => math.Point<num>(p[0] as num, p[1] as num)),
+          'Point', (p, n, c) => math.Point<num>(p[0] as num, p[1] as num),
+          isSync: true),
       'Rectangle': QudsNativeFunction(
           'Rectangle',
           (p, n, c) => math.Rectangle<num>(
-              p[0] as num, p[1] as num, p[2] as num, p[3] as num)),
+              p[0] as num, p[1] as num, p[2] as num, p[3] as num),
+          isSync: true),
     };
 
 Map<String, Object?> _dartConvert() => {
@@ -338,11 +354,14 @@ Map<String, Object?> _dartCore() => {
         'one': BigInt.one,
         'two': BigInt.two,
         'from': QudsNativeFunction(
-            'BigInt.from', (p, n, c) => BigInt.from(p[0] as num)),
+            'BigInt.from', (p, n, c) => BigInt.from(p[0] as num),
+            isSync: true),
         'parse': QudsNativeFunction('BigInt.parse',
-            (p, n, c) => BigInt.parse('${p[0]}', radix: n['radix'] as int?)),
+            (p, n, c) => BigInt.parse('${p[0]}', radix: n['radix'] as int?),
+            isSync: true),
         'tryParse': QudsNativeFunction('BigInt.tryParse',
-            (p, n, c) => BigInt.tryParse('${p[0]}', radix: n['radix'] as int?)),
+            (p, n, c) => BigInt.tryParse('${p[0]}', radix: n['radix'] as int?),
+            isSync: true),
       }),
     };
 

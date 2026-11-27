@@ -361,6 +361,7 @@ class QudsNativeFunction extends QudsCallable {
     this.requiredCapability,
     this.signature,
     this.documentation,
+    this.isSync = false,
   });
 
   @override
@@ -369,6 +370,7 @@ class QudsNativeFunction extends QudsCallable {
   final String? requiredCapability;
   final String? signature;
   final String? documentation;
+  final bool isSync;
 
   @override
   String toString() => '<native fn $name>';

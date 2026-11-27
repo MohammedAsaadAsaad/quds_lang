@@ -159,6 +159,9 @@ class QudsSession {
   final Map<String, Object?> _interactiveInputs = {};
   String? _lastInteractiveSource;
   String _lastInteractiveFile = '<session>';
+  String? _cachedProgramSource;
+  String? _cachedProgramFile;
+  Program? _cachedProgram;
   QudsEvaluator? _activeEvaluator;
 
   /// Live broadcast stream of print lines, rich outputs, debug pauses, errors, and progress.
@@ -333,22 +336,38 @@ class QudsSession {
     final outputs = <Object>[];
 
     Program program;
-    try {
-      final tokens = Lexer().tokenize(source, file: file);
-      program = Parser(tokens).parse();
-    } catch (err) {
-      stopwatch.stop();
-      _events.add(QudsErrorEvent(err));
-      return QudsRunResult(
-        succeeded: false,
-        printedLines: printed,
-        outputs: outputs,
-        elapsed: stopwatch.elapsed,
-        error: err,
-      );
+    if (_cachedProgram != null &&
+        _cachedProgramSource == source &&
+        _cachedProgramFile == file) {
+      program = _cachedProgram!;
+    } else {
+      try {
+        final tokens = Lexer().tokenize(source, file: file);
+        program = Parser(tokens).parse();
+        _cachedProgramSource = source;
+        _cachedProgramFile = file;
+        _cachedProgram = program;
+      } catch (err) {
+        stopwatch.stop();
+        _events.add(QudsErrorEvent(err));
+        return QudsRunResult(
+          succeeded: false,
+          printedLines: printed,
+          outputs: outputs,
+          elapsed: stopwatch.elapsed,
+          error: err,
+        );
+      }
     }
 
     debugger?.resetForRun();
+    final debugActive = debugger != null && debugger!.hasActiveHooks;
+    final needsStatementHook = policy.onStatementIntercept != null ||
+        _onBeforeStatement != null ||
+        debugActive;
+    final needsCallHook = policy.onCallIntercept != null ||
+        _onBeforeCall != null ||
+        policy.onPermissionCheck != null;
 
     late QudsEvaluator evaluator;
     evaluator = QudsEvaluator(
@@ -372,37 +391,52 @@ class QudsSession {
       onStepProgress: (steps, span) {
         _events.add(QudsStepProgressEvent(steps, span));
       },
-      onBeforeStatement: (stmt, env) async {
-        await policy.authorizeStatement(stmt);
-        if (_onBeforeStatement != null) {
-          await _onBeforeStatement(stmt, env);
-        }
-        if (debugger != null) {
-          await debugger!.beforeStatement(
-            statement: stmt,
-            env: env,
-            globalEnv: _globalEnv,
-            evaluator: evaluator,
-            emitPrint: (text, span) {
-              printed.add(text);
-              _events.add(QudsPrintEvent(text, span: span));
-            },
-            emitEvent: _events.add,
+      onBeforeStatement: needsStatementHook
+          ? (stmt, env) async {
+              await policy.authorizeStatement(stmt);
+              if (_onBeforeStatement != null) {
+                await _onBeforeStatement(stmt, env);
+              }
+              if (debugger != null) {
+                await debugger!.beforeStatement(
+                  statement: stmt,
+                  env: env,
+                  globalEnv: _globalEnv,
+                  evaluator: evaluator,
+                  emitPrint: (text, span) {
+                    printed.add(text);
+                    _events.add(QudsPrintEvent(text, span: span));
+                  },
+                  emitEvent: _events.add,
+                );
+              }
+            }
+          : null,
+      onBeforeCall: needsCallHook
+          ? (name, pos, named, span, cap) async {
+              await policy.authorizeCall(
+                functionName: name,
+                positional: pos,
+                named: named,
+                span: span,
+                requiredCapability: cap,
+              );
+              if (_onBeforeCall != null) {
+                await _onBeforeCall(name, pos, named, span, cap);
+              }
+            }
+          : null,
+      checkCapabilitySync: (name, cap, span) {
+        if (policy.findCapability(cap) == null) {
+          throw QudsPolicyViolationException(
+            QudsPolicyViolationKind.permissionDenied,
+            'Function `$name` requires capability `$cap`, which is not granted by policy `${policy.name}`.',
+            span,
+            capability: cap,
           );
         }
       },
-      onBeforeCall: (name, pos, named, span, cap) async {
-        await policy.authorizeCall(
-          functionName: name,
-          positional: pos,
-          named: named,
-          span: span,
-          requiredCapability: cap,
-        );
-        if (_onBeforeCall != null) {
-          await _onBeforeCall(name, pos, named, span, cap);
-        }
-      },
+      trackFrameLocals: debugActive,
       onImport: _handleImport,
       maxSteps: policy.maxSteps,
       timeout: policy.timeout,

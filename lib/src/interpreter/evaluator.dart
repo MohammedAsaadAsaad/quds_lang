@@ -47,6 +47,8 @@ class QudsEvaluator {
     this.onStepProgress,
     this.onBeforeStatement,
     this.onBeforeCall,
+    this.checkCapabilitySync,
+    this.trackFrameLocals = true,
     this.onImport,
     this.maxSteps,
     this.timeout,
@@ -69,6 +71,9 @@ class QudsEvaluator {
   final void Function(int steps, SourceSpan span)? onStepProgress;
   final StatementHook? onBeforeStatement;
   final CallHook? onBeforeCall;
+  final void Function(String name, String capability, SourceSpan span)?
+      checkCapabilitySync;
+  final bool trackFrameLocals;
   final ImportHook? onImport;
 
   final int? maxSteps;
@@ -171,7 +176,8 @@ class QudsEvaluator {
       _stopwatch = Stopwatch()..start();
     }
     try {
-      return await _evalExpr(expr, env);
+      final res = _evalExprFast(expr, env);
+      return res is Future<Object?> ? await res : res;
     } finally {
       if (resetBudget) {
         _stopwatch?.stop();
@@ -186,9 +192,19 @@ class QudsEvaluator {
     bool returnLastExpression = false,
     bool hoistDeclarations = false,
   }) async {
+    if (onBeforeStatement == null &&
+        onBeforeCall == null &&
+        !statements.any((s) => s is DeferStatement)) {
+      final res = _execBlockFast(
+        statements,
+        env,
+        returnLastExpression: returnLastExpression,
+        hoistDeclarations: hoistDeclarations,
+      );
+      return res is Future<Object?> ? await res : res;
+    }
+
     if (hoistDeclarations) {
-      // Pre-register top-level/block function declarations so mutually
-      // recursive and forward-referenced functions work just like compiled Quds.
       for (final stmt in statements) {
         if (stmt is FunctionDeclaration) {
           _registerFunctionDeclaration(stmt, env);
@@ -200,8 +216,10 @@ class QudsEvaluator {
     Object? lastValue;
 
     try {
-      for (final stmt in statements) {
-        await _tick(stmt.span);
+      for (var i = 0; i < statements.length; i++) {
+        final stmt = statements[i];
+        final tickFut = _tick(stmt.span);
+        if (tickFut != null) await tickFut;
         if (onBeforeStatement != null &&
             stmt is! FunctionDeclaration &&
             stmt is! SectionDeclaration) {
@@ -227,7 +245,9 @@ class QudsEvaluator {
     }
   }
 
-  Future<void> _tick(SourceSpan span) async {
+  /// Synchronous step/budget check. Returns `true` ONLY when a cooperative
+  /// microtask yield is required (`yieldEveryNSteps`).
+  bool _tickNeedsYield(SourceSpan span) {
     if (_stopped) {
       throw QudsPolicyViolationException(
         QudsPolicyViolationKind.stopped,
@@ -246,6 +266,7 @@ class QudsEvaluator {
       );
     }
     if (timeout != null &&
+        (_steps & 63) == 0 &&
         _stopwatch != null &&
         _stopwatch!.elapsed > timeout!) {
       throw QudsPolicyViolationException(
@@ -255,10 +276,15 @@ class QudsEvaluator {
         stackFrames: stackFrames,
       );
     }
-    if (yieldEveryNSteps > 0 && _steps % yieldEveryNSteps == 0) {
+    return yieldEveryNSteps > 0 && _steps % yieldEveryNSteps == 0;
+  }
+
+  Future<void>? _tick(SourceSpan span) {
+    if (_tickNeedsYield(span)) {
       onStepProgress?.call(_steps, span);
-      await Future<void>.delayed(Duration.zero);
+      return Future<void>.delayed(Duration.zero);
     }
+    return null;
   }
 
   void _checkCollectionSize(int size, SourceSpan span) {
@@ -2109,6 +2135,12 @@ class QudsEvaluator {
           span,
           callee.requiredCapability,
         );
+      } else if (callee.requiredCapability != null) {
+        checkCapabilitySync?.call(
+          callee.name,
+          callee.requiredCapability!,
+          span,
+        );
       }
       final ctx = QudsCallContext(
         span: span,
@@ -2252,7 +2284,7 @@ class QudsEvaluator {
           ? '${fn.definingClass!.name}.${fn.name}'
           : fn.name,
       span: span,
-      locals: callEnv.snapshotLocals(),
+      locals: trackFrameLocals ? callEnv.snapshotLocals() : const {},
     );
 
     _callDepth++;
@@ -2629,7 +2661,9 @@ class QudsEvaluator {
     }
 
     if (receiver is QudsInstance) {
-      // Lazy field evaluation on first access
+      if (receiver.fields.containsKey(name)) return receiver.fields[name];
+
+      // Lazy field evaluation on first access (uncomputed lazy fields are absent from `fields`)
       final fieldDecl = _findFieldDecl(receiver.qudsClass, name);
       if (fieldDecl != null && fieldDecl.lazyBody != null) {
         if (!receiver.isLazyComputed(name)) {
@@ -2649,8 +2683,6 @@ class QudsEvaluator {
         }
         return receiver.fields[name];
       }
-
-      if (receiver.fields.containsKey(name)) return receiver.fields[name];
 
       final prop = receiver.qudsClass.lookupProperty(name);
       if (prop != null) {
@@ -3780,5 +3812,1585 @@ class QudsEvaluator {
     }
     final lt = cleaned.indexOf('<');
     return lt < 0 ? cleaned : cleaned.substring(0, lt).trim();
+  }
+
+  // -------------------------------------------------------------------------
+  // Sound FutureOr<Object?> synchronous fast-path (zero Future allocations
+  // when synchronous; exact-once async continuation on first Future or yield)
+  // -------------------------------------------------------------------------
+
+  FutureOr<Object?> _execBlockFast(
+    List<Statement> statements,
+    QudsEnvironment env, {
+    bool returnLastExpression = false,
+    bool hoistDeclarations = false,
+  }) {
+    for (final s in statements) {
+      if (s is DeferStatement) {
+        return executeBlock(
+          statements,
+          env,
+          returnLastExpression: returnLastExpression,
+          hoistDeclarations: hoistDeclarations,
+        );
+      }
+    }
+    if (hoistDeclarations) {
+      for (final stmt in statements) {
+        if (stmt is FunctionDeclaration) {
+          _registerFunctionDeclaration(stmt, env);
+        }
+      }
+    }
+    Object? lastValue;
+    for (var i = 0; i < statements.length; i++) {
+      final stmt = statements[i];
+      if (_tickNeedsYield(stmt.span)) {
+        onStepProgress?.call(_steps, stmt.span);
+        return _execBlockAsyncTail(
+          statements,
+          i,
+          env,
+          returnLastExpression: returnLastExpression,
+          hoistDeclarations: hoistDeclarations,
+          lastValue: lastValue,
+          yieldFirst: true,
+        );
+      }
+      final res =
+          _execStatementFast(stmt, env, alreadyHoisted: hoistDeclarations);
+      if (res is Future<Object?>) {
+        return _execBlockAsyncAfterStmt(
+          res,
+          stmt,
+          statements,
+          i,
+          env,
+          returnLastExpression: returnLastExpression,
+          hoistDeclarations: hoistDeclarations,
+          lastValue: lastValue,
+        );
+      }
+      if (returnLastExpression && stmt is ExpressionStatement) {
+        lastValue = res;
+      }
+    }
+    return lastValue;
+  }
+
+  Future<Object?> _execBlockAsyncAfterStmt(
+    Future<Object?> pending,
+    Statement stmt,
+    List<Statement> statements,
+    int index,
+    QudsEnvironment env, {
+    required bool returnLastExpression,
+    required bool hoistDeclarations,
+    required Object? lastValue,
+  }) async {
+    final val = await pending;
+    var nextLast = lastValue;
+    if (returnLastExpression && stmt is ExpressionStatement) {
+      nextLast = val;
+    }
+    return _execBlockAsyncTail(
+      statements,
+      index + 1,
+      env,
+      returnLastExpression: returnLastExpression,
+      hoistDeclarations: hoistDeclarations,
+      lastValue: nextLast,
+      yieldFirst: false,
+    );
+  }
+
+  Future<Object?> _execBlockAsyncTail(
+    List<Statement> statements,
+    int startIndex,
+    QudsEnvironment env, {
+    required bool returnLastExpression,
+    required bool hoistDeclarations,
+    required Object? lastValue,
+    required bool yieldFirst,
+  }) async {
+    if (yieldFirst) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    var currentLast = lastValue;
+    for (var i = startIndex; i < statements.length; i++) {
+      final stmt = statements[i];
+      if (i > startIndex || !yieldFirst) {
+        final tickFut = _tick(stmt.span);
+        if (tickFut != null) await tickFut;
+      }
+      final res =
+          _execStatementFast(stmt, env, alreadyHoisted: hoistDeclarations);
+      final val = res is Future<Object?> ? await res : res;
+      if (returnLastExpression && stmt is ExpressionStatement) {
+        currentLast = val;
+      }
+    }
+    return currentLast;
+  }
+
+  FutureOr<Object?> _execStatementFast(
+    Statement stmt,
+    QudsEnvironment env, {
+    bool alreadyHoisted = false,
+  }) {
+    switch (stmt) {
+      case FunctionDeclaration():
+        if (!alreadyHoisted) _registerFunctionDeclaration(stmt, env);
+        return null;
+      case SectionDeclaration():
+      case AliasDeclaration():
+      case PartDirective():
+      case AnnotationDeclaration():
+        return null;
+      case ExpressionStatement(:final expression):
+        return _evalExprFast(expression, env);
+      case Binding():
+        if (stmt.operator == '=') {
+          if (stmt.open) {
+            env.bind(
+              stmt.name,
+              stmt.mode,
+              null,
+              stmt.span,
+              declaredType: stmt.type,
+              open: true,
+              allowMutation: allowMutation,
+            );
+            return null;
+          }
+          final val = _evalExprFast(stmt.value, env);
+          if (val is Future<Object?>) {
+            return val.then((v) {
+              env.bind(
+                stmt.name,
+                stmt.mode,
+                v,
+                stmt.span,
+                declaredType: stmt.type,
+                open: false,
+                allowMutation: allowMutation,
+              );
+              return null;
+            });
+          }
+          env.bind(
+            stmt.name,
+            stmt.mode,
+            val,
+            stmt.span,
+            declaredType: stmt.type,
+            open: false,
+            allowMutation: allowMutation,
+          );
+          return null;
+        }
+        if (stmt.operator == '??=') return _execBinding(stmt, env);
+        final current = env.get(stmt.name, stmt.span);
+        final rhs = _evalExprFast(stmt.value, env);
+        final baseOp = stmt.operator.substring(0, stmt.operator.length - 1);
+        if (rhs is Future<Object?>) {
+          return rhs.then((r) async {
+            final updated = await _applyBinaryOp(current, baseOp, r, stmt.span);
+            env.assignExisting(stmt.name, updated, stmt.span,
+                allowMutation: allowMutation);
+            return null;
+          });
+        }
+        final updated = _applyBinaryFast(current, baseOp, rhs, stmt.span);
+        if (updated is Future<Object?>) {
+          return updated.then((u) {
+            env.assignExisting(stmt.name, u, stmt.span,
+                allowMutation: allowMutation);
+            return null;
+          });
+        }
+        env.assignExisting(stmt.name, updated, stmt.span,
+            allowMutation: allowMutation);
+        return null;
+      case ReturnStatement(:final value):
+        if (value == null) throw const ReturnSignal(null);
+        final res = _evalExprFast(value, env);
+        if (res is Future<Object?>) {
+          return res.then((v) => throw ReturnSignal(v));
+        }
+        throw ReturnSignal(res);
+      case BreakStatement(:final label, :final value):
+        if (value == null) {
+          throw BreakSignal(label: label, value: null, hasValue: false);
+        }
+        final res = _evalExprFast(value, env);
+        if (res is Future<Object?>) {
+          return res.then(
+              (v) => throw BreakSignal(label: label, value: v, hasValue: true));
+        }
+        throw BreakSignal(label: label, value: res, hasValue: true);
+      case ContinueStatement(:final label):
+        throw ContinueSignal(label: label);
+      case ThrowStatement(:final value):
+        if (!allowExceptions) {
+          throw QudsPolicyViolationException(
+            QudsPolicyViolationKind.featureDisabled,
+            'Throwing exceptions is disabled by the active execution policy.',
+            stmt.span,
+            stackFrames: stackFrames,
+          );
+        }
+        final res = _evalExprFast(value, env);
+        if (res is Future<Object?>) {
+          return res.then((v) => throw QudsThrownValue(v, stmt.span, stackFrames));
+        }
+        throw QudsThrownValue(res, stmt.span, stackFrames);
+      case IfStatement(:final condition, :final thenBody, :final elseBody):
+        final cond = _evalExprFast(condition, env);
+        if (cond is Future<Object?>) {
+          return cond.then((c) {
+            if (_expectBool(c, condition.span)) {
+              return _execBlockFast(thenBody, env.child(),
+                  hoistDeclarations: true);
+            } else if (elseBody.isNotEmpty) {
+              return _execBlockFast(elseBody, env.child(),
+                  hoistDeclarations: true);
+            }
+            return null;
+          });
+        }
+        if (_expectBool(cond, condition.span)) {
+          return _execBlockFast(thenBody, env.child(), hoistDeclarations: true);
+        } else if (elseBody.isNotEmpty) {
+          return _execBlockFast(elseBody, env.child(), hoistDeclarations: true);
+        }
+        return null;
+      case WhenStatement(:final condition, :final body):
+        final cond = _evalExprFast(condition, env);
+        if (cond is Future<Object?>) {
+          return cond.then((c) => _expectBool(c, condition.span)
+              ? _execBlockFast(body, env.child(), hoistDeclarations: true)
+              : null);
+        }
+        if (_expectBool(cond, condition.span)) {
+          return _execBlockFast(body, env.child(), hoistDeclarations: true);
+        }
+        return null;
+      case GuardStatement(:final condition, :final elseBody):
+        final cond = _evalExprFast(condition, env);
+        if (cond is Future<Object?>) {
+          return cond.then((c) => !_expectBool(c, condition.span)
+              ? _execBlockFast(elseBody, env.child(), hoistDeclarations: true)
+              : null);
+        }
+        if (!_expectBool(cond, condition.span)) {
+          return _execBlockFast(elseBody, env.child(), hoistDeclarations: true);
+        }
+        return null;
+      case WhileStatement():
+        return _execWhileFast(stmt, env);
+      case ForStatement():
+        return _execForFast(stmt, env);
+      case IndexAssignment(:final target, :final operator, :final value):
+        if (operator != '=') {
+          return _execIndexAssignment(target, operator, value, env, stmt.span);
+        }
+        final container = _evalExprFast(target.object, env);
+        if (container is Future<Object?>) {
+          return container.then((c) async {
+            final idx = await _evalExprFast(target.index, env);
+            final rhs = await _evalExprFast(value, env);
+            _assignIndexSync(c, idx, rhs, stmt.span);
+            return null;
+          });
+        }
+        final idx = _evalExprFast(target.index, env);
+        if (idx is Future<Object?>) {
+          return idx.then((i) async {
+            final rhs = await _evalExprFast(value, env);
+            _assignIndexSync(container, i, rhs, stmt.span);
+            return null;
+          });
+        }
+        final rhs = _evalExprFast(value, env);
+        if (rhs is Future<Object?>) {
+          return rhs.then((v) {
+            _assignIndexSync(container, idx, v, stmt.span);
+            return null;
+          });
+        }
+        if (container is List || container is Map) {
+          _assignIndexSync(container, idx, rhs, stmt.span);
+          return null;
+        }
+        return _execStatement(stmt, env, alreadyHoisted: alreadyHoisted);
+      default:
+        return _execStatement(stmt, env, alreadyHoisted: alreadyHoisted);
+    }
+  }
+
+  void _assignIndexSync(
+      Object? container, Object? idx, Object? rhs, SourceSpan span) {
+    if (container is List && idx is int) {
+      if (idx < 0 || idx >= container.length) {
+        throw QudsRuntimeException(
+          'Index $idx out of bounds for List of length ${container.length}.',
+          span,
+          code: 'R302',
+        );
+      }
+      container[idx] = rhs;
+      return;
+    }
+    if (container is Map) {
+      container[idx] = rhs;
+      return;
+    }
+    throw QudsRuntimeException(
+      'Cannot index-assign on `${qudsTypeName(container)}`.',
+      span,
+    );
+  }
+
+  FutureOr<Object?> _execWhileFast(WhileStatement stmt, QudsEnvironment env) {
+    var index = 0;
+    while (true) {
+      if (_tickNeedsYield(stmt.span)) {
+        onStepProgress?.call(_steps, stmt.span);
+        return _execWhileAsyncTail(stmt, env, index, yieldFirst: true);
+      }
+      if (maxLoopIterations != null && index >= maxLoopIterations!) {
+        throw QudsPolicyViolationException(
+          QudsPolicyViolationKind.loopLimit,
+          'Loop exceeded maximum iteration limit ($maxLoopIterations).',
+          stmt.span,
+          stackFrames: stackFrames,
+        );
+      }
+      final cond = _evalExprFast(stmt.condition, env);
+      if (cond is Future<Object?>) {
+        return _execWhileAsyncAfterCond(stmt, env, index, cond);
+      }
+      if (!_expectBool(cond, stmt.condition.span)) break;
+
+      final iterEnv = env.child()
+        ..define(
+          r'$',
+          QudsLoopContext(index: index, count: -1, first: index == 0, last: false),
+        );
+      try {
+        final bodyRes =
+            _execBlockFast(stmt.body, iterEnv, hoistDeclarations: true);
+        if (bodyRes is Future<Object?>) {
+          return _execWhileAsyncAfterBody(stmt, env, index, bodyRes);
+        }
+      } on ContinueSignal catch (sig) {
+        if (sig.label != null) rethrow;
+      } on BreakSignal catch (sig) {
+        if (sig.label != null) rethrow;
+        return sig.value;
+      }
+      index++;
+    }
+    if (stmt.elseBody.isNotEmpty) {
+      return _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+    }
+    return null;
+  }
+
+  Future<Object?> _execWhileAsyncAfterCond(
+    WhileStatement stmt,
+    QudsEnvironment env,
+    int index,
+    Future<Object?> condFuture,
+  ) async {
+    final c = await condFuture;
+    if (!_expectBool(c, stmt.condition.span)) {
+      if (stmt.elseBody.isNotEmpty) {
+        await executeBlock(stmt.elseBody, env.child(), hoistDeclarations: true);
+      }
+      return null;
+    }
+    final iterEnv = env.child()
+      ..define(
+        r'$',
+        QudsLoopContext(index: index, count: -1, first: index == 0, last: false),
+      );
+    try {
+      await executeBlock(stmt.body, iterEnv, hoistDeclarations: true);
+    } on ContinueSignal catch (sig) {
+      if (sig.label != null) rethrow;
+    } on BreakSignal catch (sig) {
+      if (sig.label != null) rethrow;
+      return sig.value;
+    }
+    return _execWhileAsyncTail(stmt, env, index + 1, yieldFirst: false);
+  }
+
+  Future<Object?> _execWhileAsyncAfterBody(
+    WhileStatement stmt,
+    QudsEnvironment env,
+    int index,
+    Future<Object?> bodyFuture,
+  ) async {
+    try {
+      await bodyFuture;
+    } on ContinueSignal catch (sig) {
+      if (sig.label != null) rethrow;
+    } on BreakSignal catch (sig) {
+      if (sig.label != null) rethrow;
+      return sig.value;
+    }
+    return _execWhileAsyncTail(stmt, env, index + 1, yieldFirst: false);
+  }
+
+  Future<Object?> _execWhileAsyncTail(
+    WhileStatement stmt,
+    QudsEnvironment env,
+    int startIndex, {
+    required bool yieldFirst,
+  }) async {
+    if (yieldFirst) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    var index = startIndex;
+    while (true) {
+      if (index > startIndex || !yieldFirst) {
+        final t = _tick(stmt.span);
+        if (t != null) await t;
+      }
+      if (maxLoopIterations != null && index >= maxLoopIterations!) {
+        throw QudsPolicyViolationException(
+          QudsPolicyViolationKind.loopLimit,
+          'Loop exceeded maximum iteration limit ($maxLoopIterations).',
+          stmt.span,
+          stackFrames: stackFrames,
+        );
+      }
+      final cond = await _evalExprFast(stmt.condition, env);
+      if (!_expectBool(cond, stmt.condition.span)) break;
+      final iterEnv = env.child()
+        ..define(
+          r'$',
+          QudsLoopContext(index: index, count: -1, first: index == 0, last: false),
+        );
+      try {
+        final r = _execBlockFast(stmt.body, iterEnv, hoistDeclarations: true);
+        if (r is Future<Object?>) await r;
+      } on ContinueSignal catch (sig) {
+        if (sig.label != null) rethrow;
+      } on BreakSignal catch (sig) {
+        if (sig.label != null) rethrow;
+        return sig.value;
+      }
+      index++;
+    }
+    if (stmt.elseBody.isNotEmpty) {
+      final r = _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+      if (r is Future<Object?>) await r;
+    }
+    return null;
+  }
+
+  FutureOr<Object?> _execForFast(ForStatement stmt, QudsEnvironment env) {
+    final iterVal = _evalExprFast(stmt.iterable, env);
+    if (iterVal is Future<Object?>) {
+      return iterVal.then((v) async {
+        final stepVal = stmt.step != null
+            ? await _evalExprFast(stmt.step!, env)
+            : null;
+        final material = _materializeForIterable(v, stepVal, stmt);
+        return _execForAsyncTail(stmt, env, material, 0, yieldFirst: false);
+      });
+    }
+    Object? stepVal;
+    if (stmt.step != null) {
+      final sv = _evalExprFast(stmt.step!, env);
+      if (sv is Future<Object?>) {
+        return sv.then((s) {
+          final material = _materializeForIterable(iterVal, s, stmt);
+          return _execForAsyncTail(stmt, env, material, 0, yieldFirst: false);
+        });
+      }
+      stepVal = sv;
+    }
+    final material = _materializeForIterable(iterVal, stepVal, stmt);
+    for (var i = 0; i < material.length; i++) {
+      if (_tickNeedsYield(stmt.span)) {
+        onStepProgress?.call(_steps, stmt.span);
+        return _execForAsyncTail(stmt, env, material, i, yieldFirst: true);
+      }
+      if (maxLoopIterations != null && i >= maxLoopIterations!) {
+        throw QudsPolicyViolationException(
+          QudsPolicyViolationKind.loopLimit,
+          'Loop exceeded maximum iteration limit ($maxLoopIterations).',
+          stmt.span,
+          stackFrames: stackFrames,
+        );
+      }
+      final iterEnv = _buildForIterEnv(stmt, env, material, i);
+      try {
+        final r = _execBlockFast(stmt.body, iterEnv, hoistDeclarations: true);
+        if (r is Future<Object?>) {
+          return _execForAsyncAfterBody(stmt, env, material, i, r);
+        }
+      } on ContinueSignal catch (sig) {
+        if (sig.label != null) rethrow;
+      } on BreakSignal catch (sig) {
+        if (sig.label != null) rethrow;
+        return sig.value;
+      }
+    }
+    if (stmt.elseBody.isNotEmpty) {
+      return _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+    }
+    return null;
+  }
+
+  List<Object?> _materializeForIterable(
+      Object? iterableVal, Object? stepVal, ForStatement stmt) {
+    List<Object?> material;
+    if (iterableVal is QudsRange) {
+      if (stmt.step != null) {
+        final stepInt = _expectInt(stepVal, stmt.step!.span);
+        if (stepInt == 0) {
+          throw QudsRuntimeException(
+              'For-loop step cannot be 0.', stmt.step!.span);
+        }
+        material = iterableVal.withStep(stepInt).toList();
+      } else {
+        material = iterableVal.toList();
+      }
+    } else if (iterableVal is List) {
+      material = List<Object?>.from(iterableVal);
+    } else if (iterableVal is Iterable) {
+      material = iterableVal.toList();
+    } else if (iterableVal is String) {
+      material = iterableVal.split('');
+    } else {
+      throw QudsRuntimeException(
+        'Cannot iterate over value of type `${qudsTypeName(iterableVal)}`.',
+        stmt.iterable.span,
+      );
+    }
+    _checkCollectionSize(material.length, stmt.iterable.span);
+    return material;
+  }
+
+  QudsEnvironment _buildForIterEnv(
+    ForStatement stmt,
+    QudsEnvironment env,
+    List<Object?> material,
+    int i,
+  ) {
+    final item = material[i];
+    final iterEnv = env.child();
+    if (stmt.index != null) {
+      if (item is QudsRecord && item.positional.length >= 2) {
+        iterEnv.define(stmt.index!, item.positional[0]);
+        iterEnv.define(stmt.name, item.positional[1]);
+      } else if (item is MapEntry) {
+        iterEnv.define(stmt.index!, item.key);
+        iterEnv.define(stmt.name, item.value);
+      } else {
+        iterEnv.define(stmt.index!, i);
+        iterEnv.define(stmt.name, item);
+      }
+    } else {
+      iterEnv.define(stmt.name, item);
+    }
+    iterEnv.define(
+      r'$',
+      QudsLoopContext(
+        index: i,
+        count: material.length,
+        first: i == 0,
+        last: i == material.length - 1,
+        prev: i > 0 ? material[i - 1] : null,
+        next: i + 1 < material.length ? material[i + 1] : null,
+      ),
+    );
+    return iterEnv;
+  }
+
+  Future<Object?> _execForAsyncAfterBody(
+    ForStatement stmt,
+    QudsEnvironment env,
+    List<Object?> material,
+    int index,
+    Future<Object?> bodyFuture,
+  ) async {
+    try {
+      await bodyFuture;
+    } on ContinueSignal catch (sig) {
+      if (sig.label != null) rethrow;
+    } on BreakSignal catch (sig) {
+      if (sig.label != null) rethrow;
+      return sig.value;
+    }
+    return _execForAsyncTail(stmt, env, material, index + 1, yieldFirst: false);
+  }
+
+  Future<Object?> _execForAsyncTail(
+    ForStatement stmt,
+    QudsEnvironment env,
+    List<Object?> material,
+    int startIndex, {
+    required bool yieldFirst,
+  }) async {
+    if (yieldFirst) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    for (var i = startIndex; i < material.length; i++) {
+      if (i > startIndex || !yieldFirst) {
+        final t = _tick(stmt.span);
+        if (t != null) await t;
+      }
+      if (maxLoopIterations != null && i >= maxLoopIterations!) {
+        throw QudsPolicyViolationException(
+          QudsPolicyViolationKind.loopLimit,
+          'Loop exceeded maximum iteration limit ($maxLoopIterations).',
+          stmt.span,
+          stackFrames: stackFrames,
+        );
+      }
+      final iterEnv = _buildForIterEnv(stmt, env, material, i);
+      try {
+        final r = _execBlockFast(stmt.body, iterEnv, hoistDeclarations: true);
+        if (r is Future<Object?>) await r;
+      } on ContinueSignal catch (sig) {
+        if (sig.label != null) rethrow;
+      } on BreakSignal catch (sig) {
+        if (sig.label != null) rethrow;
+        return sig.value;
+      }
+    }
+    if (stmt.elseBody.isNotEmpty) {
+      final r = _execBlockFast(stmt.elseBody, env.child(), hoistDeclarations: true);
+      if (r is Future<Object?>) await r;
+    }
+    return null;
+  }
+
+  FutureOr<Object?> _evalExprFast(Expression expr, QudsEnvironment env) {
+    switch (expr) {
+      case Literal(:final value):
+        return value;
+      case DurationLiteral(:final microseconds):
+        return Duration(microseconds: microseconds);
+      case Identifier(:final name):
+        if (name == 'missing') return QudsMissing.instance;
+        return env.get(name, expr.span);
+      case ThisExpression():
+        return env.get('this', expr.span);
+      case UnaryExpression(:final operator, :final operand):
+        final v = _evalExprFast(operand, env);
+        if (v is Future<Object?>) {
+          return v.then((val) => _applyUnaryOp(operator, val, expr.span));
+        }
+        return _applyUnaryOp(operator, v, expr.span);
+      case BinaryExpression(:final left, :final operator, :final right):
+        if (operator == '&&' || operator == 'and') {
+          final l = _evalExprFast(left, env);
+          if (l is Future<Object?>) {
+            return l.then((lv) async => _expectBool(lv, left.span)
+                ? _expectBool(await _evalExprFast(right, env), right.span)
+                : false);
+          }
+          if (!_expectBool(l, left.span)) return false;
+          final r = _evalExprFast(right, env);
+          if (r is Future<Object?>) {
+            return r.then((rv) => _expectBool(rv, right.span));
+          }
+          return _expectBool(r, right.span);
+        }
+        if (operator == '||' || operator == 'or') {
+          final l = _evalExprFast(left, env);
+          if (l is Future<Object?>) {
+            return l.then((lv) async => _expectBool(lv, left.span)
+                ? true
+                : _expectBool(await _evalExprFast(right, env), right.span));
+          }
+          if (_expectBool(l, left.span)) return true;
+          final r = _evalExprFast(right, env);
+          if (r is Future<Object?>) {
+            return r.then((rv) => _expectBool(rv, right.span));
+          }
+          return _expectBool(r, right.span);
+        }
+        if (operator == '??') {
+          final l = _evalExprFast(left, env);
+          if (l is Future<Object?>) {
+            return l.then((lv) =>
+                (lv != null && lv is! QudsMissing) ? lv : _evalExprFast(right, env));
+          }
+          if (l != null && l is! QudsMissing) return l;
+          return _evalExprFast(right, env);
+        }
+        final l = _evalExprFast(left, env);
+        if (l is Future<Object?>) {
+          return l.then((lv) async {
+            final rv = await _evalExprFast(right, env);
+            return _applyBinaryFast(lv, operator, rv, expr.span);
+          });
+        }
+        final r = _evalExprFast(right, env);
+        if (r is Future<Object?>) {
+          return r.then((rv) => _applyBinaryFast(l, operator, rv, expr.span));
+        }
+        return _applyBinaryFast(l, operator, r, expr.span);
+      case IfExpression(:final condition, :final thenValue, :final elseValue):
+        final cond = _evalExprFast(condition, env);
+        if (cond is Future<Object?>) {
+          return cond.then((c) => _expectBool(c, condition.span)
+              ? _evalExprFast(thenValue, env)
+              : _evalExprFast(elseValue, env));
+        }
+        return _expectBool(cond, condition.span)
+            ? _evalExprFast(thenValue, env)
+            : _evalExprFast(elseValue, env);
+      case RangeExpression(:final start, :final end, :final inclusive):
+        final s = _evalExprFast(start, env);
+        if (s is Future<Object?>) {
+          return s.then((sv) async {
+            final ev = await _evalExprFast(end, env);
+            return QudsRange(
+                _expectInt(sv, start.span), _expectInt(ev, end.span),
+                inclusive: inclusive);
+          });
+        }
+        final e = _evalExprFast(end, env);
+        if (e is Future<Object?>) {
+          return e.then((ev) => QudsRange(
+              _expectInt(s, start.span), _expectInt(ev, end.span),
+              inclusive: inclusive));
+        }
+        return QudsRange(_expectInt(s, start.span), _expectInt(e, end.span),
+            inclusive: inclusive);
+      case IndexExpression(:final object, :final index):
+        final container = _evalExprFast(object, env);
+        if (container is Future<Object?>) {
+          return container.then((c) async {
+            final i = await _evalExprFast(index, env);
+            return _evalIndexReadFast(c, i, expr.span);
+          });
+        }
+        final idx = _evalExprFast(index, env);
+        if (idx is Future<Object?>) {
+          return idx.then((i) => _evalIndexReadFast(container, i, expr.span));
+        }
+        return _evalIndexReadFast(container, idx, expr.span);
+      case MemberAccess(:final object, :final name, :final nullAware):
+        final recv = _evalExprFast(object, env);
+        if (recv is Future<Object?>) {
+          return recv
+              .then((r) => _evalMemberReadFast(r, name, nullAware, expr.span));
+        }
+        return _evalMemberReadFast(recv, name, nullAware, expr.span);
+      case ListExpression(:final elements, :final nullAware):
+        if (nullAware.any((e) => e)) return _evalExpr(expr, env);
+        final out = <Object?>[];
+        for (var i = 0; i < elements.length; i++) {
+          final el = elements[i];
+          if (el is SpreadElement ||
+              el is NullAwareElement ||
+              el is CollectionIf ||
+              el is CollectionFor) {
+            return _evalListTailAsync(out, elements, i, env, expr.span);
+          }
+          final v = _evalExprFast(el, env);
+          if (v is Future<Object?>) {
+            return v.then((val) {
+              out.add(val);
+              _checkCollectionSize(out.length, expr.span);
+              return _evalListTailAsync(out, elements, i + 1, env, expr.span);
+            });
+          }
+          out.add(v);
+        }
+        _checkCollectionSize(out.length, expr.span);
+        return out;
+      case InterpolatedString(:final parts):
+        final buf = StringBuffer();
+        for (var i = 0; i < parts.length; i++) {
+          final v = _evalExprFast(parts[i], env);
+          if (v is Future<Object?>) {
+            return v.then((val) async {
+              buf.write(qudsFormatValue(val));
+              _checkStringLength(buf.length, expr.span);
+              for (var j = i + 1; j < parts.length; j++) {
+                buf.write(qudsFormatValue(await _evalExprFast(parts[j], env)));
+                _checkStringLength(buf.length, expr.span);
+              }
+              return buf.toString();
+            });
+          }
+          buf.write(qudsFormatValue(v));
+          _checkStringLength(buf.length, expr.span);
+        }
+        return buf.toString();
+      case TypeApplication(:final callee):
+        return _evalExprFast(callee, env);
+      case TypeTestExpression(:final operand, :final operator, :final type):
+        final v = _evalExprFast(operand, env);
+        if (v is Future<Object?>) {
+          return v.then((val) => _applyTypeTestSync(val, operator, type, expr.span));
+        }
+        return _applyTypeTestSync(v, operator, type, expr.span);
+      case ConversionExpression(:final operand, :final type, :final safe):
+        final v = _evalExprFast(operand, env);
+        if (v is Future<Object?>) {
+          return v.then((val) => _applyConversion(val, type, safe, expr.span));
+        }
+        return _applyConversion(v, type, safe, expr.span);
+      case CallExpression(:final callee, :final arguments):
+        return _evalCallFast(callee, arguments, env, expr.span);
+      default:
+        return _evalExpr(expr, env);
+    }
+  }
+
+  Future<List<Object?>> _evalListTailAsync(
+    List<Object?> out,
+    List<Expression> elements,
+    int startIndex,
+    QudsEnvironment env,
+    SourceSpan span,
+  ) async {
+    for (var i = startIndex; i < elements.length; i++) {
+      await _collectElement(elements[i], out, env);
+      _checkCollectionSize(out.length, span);
+    }
+    return out;
+  }
+
+  Object? _applyTypeTestSync(
+      Object? v, String operator, String type, SourceSpan span) {
+    final matched = _matchesType(v, type);
+    if (operator == 'is') return matched;
+    if (operator == 'is!') return !matched;
+    if (operator == 'as') {
+      if (!matched) {
+        throw QudsRuntimeException(
+          'Type cast failed: `${qudsTypeName(v)}` is not `$type`.',
+          span,
+          code: 'R300',
+        );
+      }
+      return v;
+    }
+    throw QudsRuntimeException('Unknown type operator `$operator`.', span);
+  }
+
+  FutureOr<Object?> _evalIndexReadFast(
+      Object? container, Object? idx, SourceSpan span) {
+    if (container is List && idx is int) {
+      final realIdx = idx < 0 ? container.length + idx : idx;
+      if (realIdx < 0 || realIdx >= container.length) {
+        throw QudsRuntimeException(
+          'Index $idx out of bounds for List of length ${container.length}.',
+          span,
+          code: 'R302',
+        );
+      }
+      return container[realIdx];
+    }
+    if (container is Map) return container[idx];
+    if (container is String && idx is int) {
+      final realIdx = idx < 0 ? container.length + idx : idx;
+      if (realIdx < 0 || realIdx >= container.length) {
+        throw QudsRuntimeException(
+          'Index $idx out of bounds for String of length ${container.length}.',
+          span,
+          code: 'R302',
+        );
+      }
+      return container[realIdx];
+    }
+    return _evalIndexRead(container, idx, span);
+  }
+
+  FutureOr<Object?> _applyBinaryFast(
+    Object? left,
+    String op,
+    Object? right,
+    SourceSpan span,
+  ) {
+    if (left is QudsInstance) {
+      final method = left.qudsClass.lookupMethod(op);
+      if (method != null) {
+        return _invokeUserFunctionFast(method.bind(left), [right], const {}, span);
+      }
+    }
+    switch (op) {
+      case '==':
+        return qudsEquals(left, right);
+      case '!=':
+        return !qudsEquals(left, right);
+      case '+':
+        if (left is num && right is num) return left + right;
+        if (left is BigInt && right is BigInt) return left + right;
+        if (left is String && right is String) {
+          final out = left + right;
+          _checkStringLength(out.length, span);
+          return out;
+        }
+        return _applyBinaryOp(left, op, right, span);
+      case '-':
+        if (left is num && right is num) return left - right;
+        if (left is BigInt && right is BigInt) return left - right;
+        return _applyBinaryOp(left, op, right, span);
+      case '*':
+        if (left is num && right is num) return left * right;
+        if (left is BigInt && right is BigInt) return left * right;
+        return _applyBinaryOp(left, op, right, span);
+      case '/':
+        if (left is num && right is num) return left / right;
+        if (left is BigInt && right is BigInt) return left / right;
+        return _applyBinaryOp(left, op, right, span);
+      case '~/':
+        if (left is num && right is num) {
+          if (right == 0) {
+            throw QudsRuntimeException('Integer division by zero.', span);
+          }
+          return left ~/ right;
+        }
+        if (left is BigInt && right is BigInt) {
+          if (right == BigInt.zero) {
+            throw QudsRuntimeException('Integer division by zero.', span);
+          }
+          return left ~/ right;
+        }
+        return _applyBinaryOp(left, op, right, span);
+      case '%':
+        if (left is num && right is num) {
+          if (right == 0) {
+            throw QudsRuntimeException('Remainder by zero.', span);
+          }
+          return left % right;
+        }
+        if (left is BigInt && right is BigInt) {
+          if (right == BigInt.zero) {
+            throw QudsRuntimeException('Remainder by zero.', span);
+          }
+          return left % right;
+        }
+        return _applyBinaryOp(left, op, right, span);
+      case '**':
+        if (left is num && right is num) return math.pow(left, right);
+        return _applyBinaryOp(left, op, right, span);
+      case '<':
+        if (left is num && right is num) return left < right;
+        if (left is BigInt && right is BigInt) return left < right;
+        return _compare(left, right, span) < 0;
+      case '<=':
+        if (left is num && right is num) return left <= right;
+        if (left is BigInt && right is BigInt) return left <= right;
+        return _compare(left, right, span) <= 0;
+      case '>':
+        if (left is num && right is num) return left > right;
+        if (left is BigInt && right is BigInt) return left > right;
+        return _compare(left, right, span) > 0;
+      case '>=':
+        if (left is num && right is num) return left >= right;
+        if (left is BigInt && right is BigInt) return left >= right;
+        return _compare(left, right, span) >= 0;
+      case '&':
+        if (left is int && right is int) return left & right;
+        if (left is BigInt && right is BigInt) return left & right;
+        return _applyBinaryOp(left, op, right, span);
+      case '|':
+        if (left is int && right is int) return left | right;
+        if (left is BigInt && right is BigInt) return left | right;
+        return _applyBinaryOp(left, op, right, span);
+      case '^':
+        if (left is int && right is int) return left ^ right;
+        if (left is BigInt && right is BigInt) return left ^ right;
+        return _applyBinaryOp(left, op, right, span);
+      case '<<':
+        if (left is int && right is int) return left << right;
+        if (left is BigInt && right is int) return left << right;
+        return _applyBinaryOp(left, op, right, span);
+      case '>>':
+        if (left is int && right is int) return left >> right;
+        if (left is BigInt && right is int) return left >> right;
+        return _applyBinaryOp(left, op, right, span);
+      default:
+        return _applyBinaryOp(left, op, right, span);
+    }
+  }
+
+  FutureOr<Object?> _evalMemberReadFast(
+    Object? receiver,
+    String name,
+    bool nullAware,
+    SourceSpan span,
+  ) {
+    if (receiver == null) {
+      if (nullAware) return null;
+      throw QudsRuntimeException('Cannot access `.$name` on `null`.', span,
+          code: 'R301');
+    }
+    if (receiver is QudsInstance) {
+      if (receiver.fields.containsKey(name)) return receiver.fields[name];
+      final prop = receiver.qudsClass.lookupProperty(name);
+      if (prop == null && _findFieldDecl(receiver.qudsClass, name) == null) {
+        final method = receiver.qudsClass.lookupMethod(name);
+        if (method != null) return method.bind(receiver);
+      }
+      return _evalMemberRead(receiver, name, nullAware, span);
+    }
+    if (receiver is QudsNamespace) return receiver.getMember(name, span);
+    if (receiver is QudsCallableNamespace) {
+      return receiver.getMember(name, span);
+    }
+    if (receiver is QudsLoopContext) return receiver.getMember(name, span);
+    if (receiver is List) {
+      return switch (name) {
+        'length' => receiver.length,
+        'isEmpty' => receiver.isEmpty,
+        'isNotEmpty' => receiver.isNotEmpty,
+        'first' => receiver.first,
+        'last' => receiver.last,
+        _ => _evalMemberRead(receiver, name, nullAware, span),
+      };
+    }
+    if (receiver is String) {
+      return switch (name) {
+        'length' => receiver.length,
+        'isEmpty' => receiver.isEmpty,
+        'isNotEmpty' => receiver.isNotEmpty,
+        _ => _evalMemberRead(receiver, name, nullAware, span),
+      };
+    }
+    if (receiver is Map) {
+      return switch (name) {
+        'length' => receiver.length,
+        'isEmpty' => receiver.isEmpty,
+        'isNotEmpty' => receiver.isNotEmpty,
+        _ => _evalMemberRead(receiver, name, nullAware, span),
+      };
+    }
+    if (receiver is num) {
+      return switch (name) {
+        'abs' => receiver.abs(),
+        'isNaN' => receiver.isNaN,
+        'isFinite' => receiver.isFinite,
+        'isInfinite' => receiver.isInfinite,
+        'isNegative' => receiver.isNegative,
+        'sign' => receiver.sign,
+        'floor' => receiver.floor(),
+        'ceil' => receiver.ceil(),
+        'round' => receiver.round(),
+        'truncate' => receiver.truncate(),
+        'toDouble' => receiver.toDouble(),
+        'toInt' => receiver.toInt(),
+        _ => _evalMemberRead(receiver, name, nullAware, span),
+      };
+    }
+    if (receiver is BigInt) {
+      return switch (name) {
+        'sign' => receiver.sign,
+        'isNegative' => receiver.isNegative,
+        'isEven' => receiver.isEven,
+        'isOdd' => receiver.isOdd,
+        'bitLength' => receiver.bitLength,
+        'toDouble' => receiver.toDouble(),
+        'toInt' => receiver.toInt(),
+        _ => _evalMemberRead(receiver, name, nullAware, span),
+      };
+    }
+    return _evalMemberRead(receiver, name, nullAware, span);
+  }
+
+  FutureOr<Object?> _evalCallFast(
+    Expression calleeExpr,
+    List<Argument> arguments,
+    QudsEnvironment env,
+    SourceSpan span,
+  ) {
+    if (onBeforeCall != null) return _evalCall(calleeExpr, arguments, env, span);
+
+    if (calleeExpr is MemberAccess) {
+      final recv = _evalExprFast(calleeExpr.object, env);
+      if (recv is Future<Object?>) {
+        return recv.then(
+            (r) => _evalMemberCallWithRecvFast(r, calleeExpr, arguments, env, span));
+      }
+      return _evalMemberCallWithRecvFast(recv, calleeExpr, arguments, env, span);
+    }
+
+    final callee = _evalExprFast(calleeExpr, env);
+    if (callee is Future<Object?>) {
+      return callee.then((c) => _evalArgsAndInvokeFast(c, arguments, env, span));
+    }
+    return _evalArgsAndInvokeFast(callee, arguments, env, span);
+  }
+
+  FutureOr<Object?> _evalMemberCallWithRecvFast(
+    Object? recv,
+    MemberAccess calleeExpr,
+    List<Argument> arguments,
+    QudsEnvironment env,
+    SourceSpan span,
+  ) {
+    if (recv == null && calleeExpr.nullAware) return null;
+
+    if (recv is QudsClass) {
+      final namedCtor = recv.constructors[calleeExpr.name];
+      if (namedCtor != null) {
+        return _evalArgsThen(
+          arguments,
+          env,
+          (pos, named) =>
+              _instantiateClass(recv, pos, named, span, ctor: namedCtor),
+        );
+      }
+      final staticMethod = recv.staticMethods[calleeExpr.name];
+      if (staticMethod != null) {
+        return _evalArgsAndInvokeFast(staticMethod, arguments, env, span);
+      }
+    }
+
+    if (recv is QudsNamespace || recv is QudsCallableNamespace) {
+      final member = recv is QudsNamespace
+          ? recv.getMember(calleeExpr.name, calleeExpr.span)
+          : (recv as QudsCallableNamespace)
+              .getMember(calleeExpr.name, calleeExpr.span);
+      return _evalArgsAndInvokeFast(member, arguments, env, span);
+    }
+
+    if (arguments.every((a) => a.name == null && a.value is! SpreadElement)) {
+      if (recv is num) {
+        if (arguments.isEmpty) {
+          switch (calleeExpr.name) {
+            case 'abs':
+              return recv.abs();
+            case 'truncateToDouble':
+              return recv.truncateToDouble();
+            case 'floorToDouble':
+              return recv.floorToDouble();
+            case 'ceilToDouble':
+              return recv.ceilToDouble();
+            case 'roundToDouble':
+              return recv.roundToDouble();
+            case 'truncate':
+              return recv.truncate();
+            case 'floor':
+              return recv.floor();
+            case 'ceil':
+              return recv.ceil();
+            case 'round':
+              return recv.round();
+            case 'toDouble':
+              return recv.toDouble();
+            case 'toInt':
+              return recv.toInt();
+          }
+        }
+        if (calleeExpr.name == 'toStringAsFixed' && arguments.length == 1) {
+          return _evalArgsThen(
+            arguments,
+            env,
+            (pos, _) =>
+                recv.toStringAsFixed(_expectInt(pos[0], arguments[0].value.span)),
+          );
+        }
+      }
+
+      if (recv is BigInt) {
+        if (arguments.isEmpty) {
+          switch (calleeExpr.name) {
+            case 'abs':
+              return recv.abs();
+            case 'toDouble':
+              return recv.toDouble();
+            case 'toInt':
+              return recv.toInt();
+          }
+        }
+        if (calleeExpr.name == 'gcd' && arguments.length == 1) {
+          return _evalArgsThen(
+              arguments, env, (pos, _) => recv.gcd(pos[0] as BigInt));
+        }
+        if (calleeExpr.name == 'pow' && arguments.length == 1) {
+          return _evalArgsThen(
+            arguments,
+            env,
+            (pos, _) => recv.pow(_expectInt(pos[0], arguments[0].value.span)),
+          );
+        }
+      }
+
+      if (recv is List) {
+        if (calleeExpr.name == 'add' && arguments.length == 1) {
+          return _evalArgsThen(arguments, env, (pos, _) {
+            recv.add(pos[0]);
+            _checkCollectionSize(recv.length, span);
+            return null;
+          });
+        }
+        if (calleeExpr.name == 'removeAt' && arguments.length == 1) {
+          return _evalArgsThen(
+            arguments,
+            env,
+            (pos, _) =>
+                recv.removeAt(_expectInt(pos[0], arguments[0].value.span)),
+          );
+        }
+        if (calleeExpr.name == 'contains' && arguments.length == 1) {
+          return _evalArgsThen(
+            arguments,
+            env,
+            (pos, _) => recv.any((e) => qudsEquals(e, pos[0])),
+          );
+        }
+      }
+
+      if (recv is String && arguments.length == 1) {
+        switch (calleeExpr.name) {
+          case 'split':
+            return _evalArgsThen(arguments, env, (pos, _) => recv.split('${pos[0]}'));
+          case 'startsWith':
+            return _evalArgsThen(
+                arguments, env, (pos, _) => recv.startsWith('${pos[0]}'));
+          case 'endsWith':
+            return _evalArgsThen(
+                arguments, env, (pos, _) => recv.endsWith('${pos[0]}'));
+          case 'contains':
+            return _evalArgsThen(
+                arguments, env, (pos, _) => recv.contains('${pos[0]}'));
+          case 'indexOf':
+            return _evalArgsThen(
+                arguments, env, (pos, _) => recv.indexOf('${pos[0]}'));
+        }
+      }
+    }
+
+    final member =
+        _evalMemberReadFast(recv, calleeExpr.name, false, calleeExpr.span);
+    if (member is Future<Object?>) {
+      return member.then((m) => _evalArgsAndInvokeFast(m, arguments, env, span));
+    }
+    return _evalArgsAndInvokeFast(member, arguments, env, span);
+  }
+
+  FutureOr<Object?> _evalArgsThen(
+    List<Argument> arguments,
+    QudsEnvironment env,
+    FutureOr<Object?> Function(List<Object?> pos, Map<String, Object?> named)
+        action,
+  ) {
+    final pos = <Object?>[];
+    final named = <String, Object?>{};
+    for (var i = 0; i < arguments.length; i++) {
+      final arg = arguments[i];
+      if (arg.value is SpreadElement) {
+        return _evalArgsTailAsync(pos, named, arguments, i, env, action);
+      }
+      final v = _evalExprFast(arg.value, env);
+      if (v is Future<Object?>) {
+        return v.then((val) {
+          if (arg.name != null) {
+            named[arg.name!] = val;
+          } else {
+            pos.add(val);
+          }
+          return _evalArgsTailAsync(pos, named, arguments, i + 1, env, action);
+        });
+      }
+      if (arg.name != null) {
+        named[arg.name!] = v;
+      } else {
+        pos.add(v);
+      }
+    }
+    return action(pos, named);
+  }
+
+  Future<Object?> _evalArgsTailAsync(
+    List<Object?> pos,
+    Map<String, Object?> named,
+    List<Argument> arguments,
+    int startIndex,
+    QudsEnvironment env,
+    FutureOr<Object?> Function(List<Object?> pos, Map<String, Object?> named)
+        action,
+  ) async {
+    for (var i = startIndex; i < arguments.length; i++) {
+      final arg = arguments[i];
+      if (arg.name != null) {
+        named[arg.name!] = await _evalExprFast(arg.value, env);
+      } else if (arg.value is SpreadElement) {
+        final spread = arg.value as SpreadElement;
+        final seq = await _evalExprFast(spread.operand, env);
+        if (seq is Iterable) {
+          pos.addAll(seq);
+        } else if (seq == null && spread.nullAware) {
+          continue;
+        } else {
+          throw QudsRuntimeException(
+              'Spread argument must be Iterable.', spread.span);
+        }
+      } else {
+        pos.add(await _evalExprFast(arg.value, env));
+      }
+    }
+    final res = action(pos, named);
+    return res is Future<Object?> ? await res : res;
+  }
+
+  FutureOr<Object?> _evalArgsAndInvokeFast(
+    Object? callee,
+    List<Argument> arguments,
+    QudsEnvironment env,
+    SourceSpan span,
+  ) =>
+      _evalArgsThen(
+        arguments,
+        env,
+        (pos, named) => _invokeCallableFast(callee, pos, named, span),
+      );
+
+  FutureOr<Object?> _invokeCallableFast(
+    Object? callee,
+    List<Object?> positional,
+    Map<String, Object?> named,
+    SourceSpan span,
+  ) {
+    if (_callDepth >= maxCallDepth) {
+      throw QudsPolicyViolationException(
+        QudsPolicyViolationKind.callDepth,
+        'Maximum call depth ($maxCallDepth) exceeded.',
+        span,
+        stackFrames: stackFrames,
+      );
+    }
+    if (callee is QudsNativeFunction && callee.isSync) {
+      if (callee.requiredCapability != null) {
+        checkCapabilitySync?.call(callee.name, callee.requiredCapability!, span);
+      }
+      final ctx = QudsCallContext(
+        span: span,
+        functionName: callee.name,
+        emitOutput: (out) => onOutput(out, span),
+        emitPrint: (line) => onPrint(line, span),
+        invokeCallable: invokeCallable,
+        interactiveInputs: interactiveInputs,
+      );
+      _callDepth++;
+      try {
+        final result = callee.callback(positional, named, ctx);
+        return result is Future ? result : result;
+      } on QudsRuntimeException {
+        rethrow;
+      } on QudsThrownValue {
+        rethrow;
+      } catch (err) {
+        throw QudsThrownValue(err, span, stackFrames);
+      } finally {
+        _callDepth--;
+      }
+    }
+    if (callee is QudsUserFunction && !callee.isAsync) {
+      return _invokeUserFunctionFast(callee, positional, named, span);
+    }
+    if (callee is QudsOverloadSet) {
+      final selected = _selectOverload(callee, positional, named, span);
+      if (!selected.isAsync) {
+        return _invokeUserFunctionFast(selected, positional, named, span);
+      }
+    }
+    if (callee is QudsClass && callee.constructors[''] == null) {
+      return _instantiateClassFast(callee, positional, named, span);
+    }
+    return invokeCallable(callee, positional, named, span);
+  }
+
+  FutureOr<Object?> _invokeUserFunctionFast(
+    QudsUserFunction fn,
+    List<Object?> positional,
+    Map<String, Object?> named,
+    SourceSpan span,
+  ) {
+    final callEnv = fn.closure.child(isFunctionBoundary: true);
+    if (fn.receiver != null) {
+      callEnv.define('this', fn.receiver);
+      _exposeInstanceFields(fn.receiver!, callEnv);
+    }
+
+    // Bind parameters; fall back seamlessly to async helper only if a default value is async.
+    var posIdx = 0;
+    final usedNamed = <String>{};
+    for (var i = 0; i < fn.parameters.length; i++) {
+      final param = fn.parameters[i];
+      if (param.variadic) {
+        final rest = posIdx < positional.length
+            ? positional.sublist(posIdx)
+            : <Object?>[];
+        posIdx = positional.length;
+        callEnv.define(param.name, rest, mutable: param.mutable);
+        continue;
+      }
+      if (named.containsKey(param.name)) {
+        usedNamed.add(param.name);
+        final val = named[param.name];
+        callEnv.define(
+          param.name,
+          param.type.startsWith('Optional') &&
+                  val is! QudsOptional &&
+                  val is! QudsMissing
+              ? QudsOptional.present(val)
+              : val,
+          mutable: param.mutable,
+          declaredType: param.type,
+        );
+      } else if (!param.isNamed && posIdx < positional.length) {
+        final val = positional[posIdx++];
+        callEnv.define(
+          param.name,
+          param.type.startsWith('Optional') &&
+                  val is! QudsOptional &&
+                  val is! QudsMissing
+              ? QudsOptional.present(val)
+              : val,
+          mutable: param.mutable,
+          declaredType: param.type,
+        );
+      } else if (param.kind == ParameterKind.optionalNamed &&
+          posIdx < positional.length) {
+        callEnv.define(param.name, positional[posIdx++],
+            mutable: param.mutable, declaredType: param.type);
+      } else if (param.defaultValue != null) {
+        final defVal = _evalExprFast(param.defaultValue!, callEnv);
+        if (defVal is Future<Object?>) {
+          return _invokeUserFunction(fn, positional, named, span);
+        }
+        callEnv.define(param.name, defVal,
+            mutable: param.mutable, declaredType: param.type);
+      } else if (param.type.startsWith('Optional')) {
+        callEnv.define(param.name, const QudsOptional.missing(),
+            mutable: param.mutable, declaredType: param.type);
+      } else {
+        throw QudsRuntimeException(
+          'Missing required argument `${param.name}`.',
+          span,
+          code: 'E500',
+        );
+      }
+    }
+    if (posIdx < positional.length) {
+      throw QudsRuntimeException(
+        'Too many positional arguments: expected at most $posIdx, got ${positional.length}.',
+        span,
+        code: 'E500',
+      );
+    }
+    for (final key in named.keys) {
+      if (!usedNamed.contains(key)) {
+        throw QudsRuntimeException(
+          'Unknown named argument `$key`.',
+          span,
+          code: 'E500',
+        );
+      }
+    }
+
+    _callDepth++;
+    try {
+      FutureOr<Object?> res;
+      if (fn.expressionBody != null) {
+        res = _evalExprFast(fn.expressionBody!, callEnv);
+      } else if (fn.body != null) {
+        res = _execBlockFast(fn.body!, callEnv, hoistDeclarations: true);
+      } else {
+        res = null;
+      }
+      if (res is Future<Object?>) {
+        return _finishUserFnAsync(res, fn, callEnv);
+      }
+      _callDepth--;
+      if (fn.receiver != null) {
+        _syncInstanceFieldsBack(fn.receiver!, callEnv);
+      }
+      return fn.expressionBody != null ? res : null;
+    } on ReturnSignal catch (ret) {
+      _callDepth--;
+      if (fn.receiver != null) {
+        _syncInstanceFieldsBack(fn.receiver!, callEnv);
+      }
+      return ret.value;
+    } on PropagateErrorSignal catch (prop) {
+      _callDepth--;
+      if (fn.receiver != null) {
+        _syncInstanceFieldsBack(fn.receiver!, callEnv);
+      }
+      return prop.errorResult;
+    } catch (_) {
+      _callDepth--;
+      if (fn.receiver != null) {
+        _syncInstanceFieldsBack(fn.receiver!, callEnv);
+      }
+      rethrow;
+    }
+  }
+
+  Future<Object?> _finishUserFnAsync(
+    Future<Object?> pending,
+    QudsUserFunction fn,
+    QudsEnvironment callEnv,
+  ) async {
+    try {
+      final res = await pending;
+      return fn.expressionBody != null ? res : null;
+    } on ReturnSignal catch (ret) {
+      return ret.value;
+    } on PropagateErrorSignal catch (prop) {
+      return prop.errorResult;
+    } finally {
+      _callDepth--;
+      if (fn.receiver != null) {
+        _syncInstanceFieldsBack(fn.receiver!, callEnv);
+      }
+    }
+  }
+
+  FutureOr<QudsInstance> _instantiateClassFast(
+    QudsClass klass,
+    List<Object?> positional,
+    Map<String, Object?> named,
+    SourceSpan span,
+  ) {
+    final allFields = _collectAllInstanceFields(klass);
+    final fields = <String, Object?>{};
+    for (final f in allFields) {
+      if (f.initializer != null) {
+        final v = _evalExprFast(f.initializer!, klass.definingEnv);
+        if (v is Future<Object?>) {
+          return _instantiateClass(klass, positional, named, span);
+        }
+        fields[f.name] = v;
+      } else if (!f.requiredField && f.lazyBody == null) {
+        fields[f.name] = null;
+      }
+    }
+    final instance = QudsInstance(klass, fields);
+    var posIdx = 0;
+    for (final f in allFields) {
+      if (f.isStatic || f.lazyBody != null || f.isConst) continue;
+      if (named.containsKey(f.name)) {
+        instance.fields[f.name] = named[f.name];
+      } else if (posIdx < positional.length &&
+          (f.requiredField || f.initializer == null || named.isEmpty)) {
+        instance.fields[f.name] = positional[posIdx++];
+      } else if (f.requiredField && !instance.fields.containsKey(f.name)) {
+        throw QudsRuntimeException(
+          'Missing required field `${f.name}` for `${klass.name}`.',
+          span,
+          code: 'E500',
+        );
+      }
+    }
+    return instance;
   }
 }

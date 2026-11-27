@@ -63,7 +63,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   Set<int> _breakpoints = {};
   QudsDebugPauseEvent? _activePause;
   QudsRunResult? _lastResult;
+  final ValueNotifier<QudsRunResult?> _visualResult =
+      ValueNotifier<QudsRunResult?>(null);
   bool _running = false;
+  bool _updatingInteractive = false;
+  Map<String, Object?>? _pendingInteractivePatch;
   String? _liveEvalOutput;
 
   int _mobileTabIndex = 0;
@@ -236,23 +240,43 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             (res.lastGeometryScene != null || res.lastPlot != null) ? 1 : 2;
       }
     });
+    _visualResult.value = res;
     _reanalyze();
   }
 
   Future<void> _updateInteractive(Map<String, Object?> patch) async {
     if (_running) return;
+    // Coalesce rapid 60Hz–120Hz touch/slider events into a single-flight loop
+    // so interpreter frames never pile up on mobile devices.
+    _pendingInteractivePatch = {
+      ...?_pendingInteractivePatch,
+      ...patch,
+    };
+    if (_updatingInteractive) return;
+    _updatingInteractive = true;
     _debugger.clearBreakpoints();
-    final res = await _session.updateInteractiveInputs(
-      patch,
-      source: _codeController.text,
-      file: _preset.fileName,
-    );
-    if (!mounted) return;
-    setState(() => _lastResult = res);
+    try {
+      while (_pendingInteractivePatch != null && mounted && !_running) {
+        final nextPatch = _pendingInteractivePatch!;
+        _pendingInteractivePatch = null;
+        final res = await _session.updateInteractiveInputs(
+          nextPatch,
+          source: _codeController.text,
+          file: _preset.fileName,
+        );
+        if (!mounted) return;
+        _lastResult = res;
+        // Update ONLY the visual canvas & sliders via ValueNotifier (no editor rebuild!)
+        _visualResult.value = res;
+      }
+    } finally {
+      _updatingInteractive = false;
+    }
   }
 
   void _selectPreset(StudioPreset preset) {
     _session.stop();
+    _pendingInteractivePatch = null;
     setState(() {
       _preset = preset;
       _policyMode = preset.defaultPolicy;
@@ -261,6 +285,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _activePause = null;
       _running = false;
     });
+    _visualResult.value = null;
     _rebuildSessionKeepingCode(preset.code);
     if (_breakpoints.isEmpty) {
       _runCode();
@@ -545,6 +570,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   void dispose() {
     _pauseSub?.cancel();
     _resumeSub?.cancel();
+    _visualResult.dispose();
     _codeController.dispose();
     _editorFocus.dispose();
     _evalController.dispose();
@@ -889,118 +915,127 @@ class _QudsStudioPageState extends State<QudsStudioPage>
 
   Widget _buildVisualStage(ThemeData theme) {
     final surface = _isDark ? const Color(0xFF0F172A) : Colors.white;
-    final res = _lastResult;
-    final scene = res?.lastGeometryScene;
-    final plot = res?.lastPlot;
-    final tables =
-        res?.outputs.whereType<QudsTableOutput>().toList() ?? const [];
+    return ValueListenableBuilder<QudsRunResult?>(
+      valueListenable: _visualResult,
+      builder: (context, res, _) {
+        final scene = res?.lastGeometryScene;
+        final plot = res?.lastPlot;
+        final tables =
+            res?.outputs.whereType<QudsTableOutput>().toList() ?? const [];
+        final interactiveInputs =
+            scene?.interactiveInputs ?? plot?.interactiveInputs ?? const [];
 
-    final interactiveInputs =
-        scene?.interactiveInputs ?? plot?.interactiveInputs ?? const [];
+        final elapsedText = res == null
+            ? ''
+            : res.elapsed.inMilliseconds >= 10
+                ? '${res.elapsed.inMilliseconds}ms'
+                : '${(res.elapsed.inMicroseconds / 1000).toStringAsFixed(1)}ms';
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.dividerColor.withValues(alpha: 0.25),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: theme.dividerColor.withValues(alpha: 0.25),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Icon(Icons.auto_graph_rounded,
-                  size: 16, color: Color(0xFF38BDF8)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _isArabic
-                      ? 'اللوحة التفاعلية والنتائج البصرية'
-                      : 'Interactive Visual & Geometry Stage',
-                  style: const TextStyle(
-                      fontSize: 12.5, fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              if (res != null) ...[
-                const SizedBox(width: 8),
-                Text(
-                  '${res.stepsExecuted} steps · ${res.elapsed.inMilliseconds}ms',
-                  style: TextStyle(
-                    fontFamily: 'JetBrainsMono',
-                    fontFamilyFallback: const ['IBMPlexSansArabic'],
-                    fontSize: 11,
-                    color: theme.hintColor,
+              Row(
+                children: [
+                  const Icon(Icons.auto_graph_rounded,
+                      size: 16, color: Color(0xFF38BDF8)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _isArabic
+                          ? 'اللوحة التفاعلية والنتائج البصرية'
+                          : 'Interactive Visual & Geometry Stage',
+                      style: const TextStyle(
+                          fontSize: 12.5, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
+                  if (res != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${res.stepsExecuted} steps · $elapsedText',
+                      style: TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontFamilyFallback: const ['IBMPlexSansArabic'],
+                        fontSize: 11,
+                        color: theme.hintColor,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: scene != null
+                    ? QudsGeometryCanvas(
+                        scene: scene,
+                        isDark: _isDark,
+                        onDragPoint: (id, x, y) => _updateInteractive({
+                          id: {'x': x, 'y': y},
+                        }),
+                      )
+                    : plot != null
+                        ? Column(
+                            children: [
+                              Expanded(
+                                  child: QudsPlotCanvas(
+                                      plot: plot, isDark: _isDark)),
+                              if (tables.isNotEmpty)
+                                QudsTableCard(table: tables.first),
+                            ],
+                          )
+                        : Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  res != null && !res.succeeded
+                                      ? Icons.shield_outlined
+                                      : Icons.science_outlined,
+                                  size: 36,
+                                  color: res != null && !res.succeeded
+                                      ? const Color(0xFFEF4444)
+                                      : theme.hintColor,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  res != null && !res.succeeded
+                                      ? '${res.error}'
+                                      : (_isArabic
+                                          ? _preset.subtitleAr
+                                          : 'Press Run to execute Quds code and visualize results.'),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: res != null && !res.succeeded
+                                        ? const Color(0xFFEF4444)
+                                        : theme.hintColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+              ),
+              if (interactiveInputs.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                QudsInteractiveControlsBar(
+                  inputs: interactiveInputs,
+                  onChanged: (id, val) => _updateInteractive({id: val}),
                 ),
               ],
             ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: scene != null
-                ? QudsGeometryCanvas(
-                    scene: scene,
-                    isDark: _isDark,
-                    onDragPoint: (id, x, y) => _updateInteractive({
-                      id: {'x': x, 'y': y},
-                    }),
-                  )
-                : plot != null
-                    ? Column(
-                        children: [
-                          Expanded(
-                              child:
-                                  QudsPlotCanvas(plot: plot, isDark: _isDark)),
-                          if (tables.isNotEmpty)
-                            QudsTableCard(table: tables.first),
-                        ],
-                      )
-                    : Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              res != null && !res.succeeded
-                                  ? Icons.shield_outlined
-                                  : Icons.science_outlined,
-                              size: 36,
-                              color: res != null && !res.succeeded
-                                  ? const Color(0xFFEF4444)
-                                  : theme.hintColor,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              res != null && !res.succeeded
-                                  ? '${res.error}'
-                                  : (_isArabic
-                                      ? _preset.subtitleAr
-                                      : 'Press Run to execute Quds code and visualize results.'),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                color: res != null && !res.succeeded
-                                    ? const Color(0xFFEF4444)
-                                    : theme.hintColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-          ),
-          if (interactiveInputs.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            QudsInteractiveControlsBar(
-              inputs: interactiveInputs,
-              onChanged: (id, val) => _updateInteractive({id: val}),
-            ),
-          ],
-        ],
-      ),
+        );
+      },
     );
   }
 

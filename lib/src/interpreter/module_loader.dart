@@ -15,13 +15,15 @@ import 'environment.dart';
 import 'evaluator.dart';
 import 'exceptions.dart';
 import 'values.dart';
+import 'workspace.dart';
 
 /// Decision returned by a custom import resolver / policy check.
 sealed class QudsImportResolution {
   const QudsImportResolution();
 }
 
-/// Allow default resolution (embedded `quds:*`, safe `dart:*`, or registered host module).
+/// Allow default resolution (embedded `quds:*`, safe `dart:*`, workspace files,
+/// or registered host module).
 class QudsImportAllow extends QudsImportResolution {
   const QudsImportAllow();
 }
@@ -107,8 +109,9 @@ class _LoadedModule {
   }
 }
 
-/// Loads `quds:*`, pure `dart:*`, and virtual host modules into an interpreter
-/// session with AST caching and section filtering.
+/// Loads `quds:*`, pure `dart:*`, nested [QudsWorkspace] project files, and
+/// virtual host modules into an interpreter session with AST caching,
+/// singleton diamond resolution, cycle detection, and section filtering.
 class QudsModuleLoader {
   QudsModuleLoader({
     required this.createBaseEnvironment,
@@ -117,20 +120,26 @@ class QudsModuleLoader {
     this.allowedLibraries,
     this.deniedLibraries = const {},
     this.importResolver,
+    this.workspace,
   });
 
   /// Shared parsed-AST cache across sessions for embedded SDK libraries.
   static final Map<String, Program> _parsedSdkCache = {};
 
   final QudsEnvironment Function() createBaseEnvironment;
-  final QudsEvaluator Function(QudsEnvironment env, ImportHook onImport)
-      createModuleEvaluator;
+  final QudsEvaluator Function(
+    QudsEnvironment env,
+    ImportHook onImport, {
+    required bool isSdk,
+  }) createModuleEvaluator;
   final Map<String, Map<String, Object?>> virtualModules;
   final Set<String>? allowedLibraries;
   final Set<String> deniedLibraries;
   final QudsImportResolver? importResolver;
+  QudsWorkspace? workspace;
 
   final Map<String, _LoadedModule> _sessionCache = {};
+  final List<String> _loadingStack = [];
 
   /// Registers or updates a virtual host module (e.g. `quds:viz` or `host:sensors`).
   void registerVirtualModule(String uri, Map<String, Object?> symbols) {
@@ -139,6 +148,42 @@ class QudsModuleLoader {
       publicExports: Map<String, Object?>.from(symbols),
       sectionExports: const {},
     );
+  }
+
+  /// Invalidates a cached workspace module and its transitive dependents.
+  void invalidateWorkspaceFile(String path) {
+    final norm = QudsWorkspace.normalizePath(path);
+    _sessionCache.remove('workspace:$norm');
+    if (workspace != null) {
+      for (final dep in workspace!.transitiveDependentsOf(norm)) {
+        _sessionCache.remove('workspace:$dep');
+      }
+    }
+  }
+
+  /// Clears all cached workspace modules (preserving built-in host modules).
+  void clearWorkspaceCache() {
+    _sessionCache.removeWhere((key, _) => key.startsWith('workspace:'));
+  }
+
+  /// Runs [action] with [workspacePath] recorded on the active loading stack so
+  /// cycles back to the entry-point file (`main.quds -> a.quds -> main.quds`)
+  /// are caught immediately with `E210`.
+  Future<T> runWithEntryFile<T>(
+    String workspacePath,
+    Future<T> Function() action,
+  ) async {
+    final norm = QudsWorkspace.normalizePath(workspacePath);
+    _loadingStack.add(norm);
+    try {
+      return await action();
+    } finally {
+      if (_loadingStack.isNotEmpty && _loadingStack.last == norm) {
+        _loadingStack.removeLast();
+      } else {
+        _loadingStack.remove(norm);
+      }
+    }
   }
 
   /// Clears per-session loaded module instances (keeps static parsed AST cache).
@@ -151,15 +196,27 @@ class QudsModuleLoader {
     ImportDeclaration decl,
     QudsEnvironment targetEnv, {
     bool isInternalSdk = false,
+    String? fromFile,
   }) async {
     final fullUri = decl.uri;
     final targetUri = libraryTarget(fullUri);
     final section = librarySection(fullUri);
+    final effectiveFrom = fromFile ?? decl.span.file;
 
-    // Check policy allow/deny lists for user imports (SDK internal `use dart:math`
-    // is permitted when the SDK itself was allowed!).
+    // Check if this URI resolves to a file inside the attached QudsWorkspace.
+    final workspacePath = (!isInternalSdk && workspace != null)
+        ? workspace!.resolveImportPath(fullUri, fromFile: effectiveFrom)
+        : null;
+
+    // Check policy allow/deny lists for user imports (workspace project files
+    // are allowed unless explicitly denied in `deniedLibraries`).
     if (!isInternalSdk) {
-      _checkImportPolicy(fullUri, targetUri, decl.span);
+      _checkImportPolicy(
+        fullUri,
+        targetUri,
+        decl.span,
+        workspacePath: workspacePath,
+      );
     }
 
     QudsImportResolution resolution = const QudsImportAllow();
@@ -189,7 +246,11 @@ class QudsModuleLoader {
           cacheable: false,
         );
       case QudsImportAllow():
-        module = await _loadDefault(targetUri, decl.span);
+        if (workspacePath != null) {
+          module = await _loadWorkspaceModule(workspacePath, decl.span);
+        } else {
+          module = await _loadDefault(targetUri, decl.span);
+        }
     }
 
     final selected = module.select(
@@ -211,14 +272,31 @@ class QudsModuleLoader {
     return selected;
   }
 
-  void _checkImportPolicy(String fullUri, String targetUri, SourceSpan span) {
+  void _checkImportPolicy(
+    String fullUri,
+    String targetUri,
+    SourceSpan span, {
+    String? workspacePath,
+  }) {
+    final workspaceDot = workspacePath == null
+        ? null
+        : (workspacePath.endsWith('.quds')
+                ? workspacePath.substring(0, workspacePath.length - 5)
+                : workspacePath)
+            .replaceAll('/', '.');
     if (deniedLibraries.contains(fullUri) ||
-        deniedLibraries.contains(targetUri)) {
+        deniedLibraries.contains(targetUri) ||
+        (workspacePath != null && deniedLibraries.contains(workspacePath)) ||
+        (workspaceDot != null && deniedLibraries.contains(workspaceDot))) {
       throw QudsPolicyViolationException(
         QudsPolicyViolationKind.libraryDenied,
         'Library `$fullUri` is denied by the active execution policy.',
         span,
       );
+    }
+    if (workspacePath != null) {
+      // Attached project workspace files are trusted local project modules.
+      return;
     }
     if (allowedLibraries != null) {
       final allowed = allowedLibraries!.contains(fullUri) ||
@@ -231,6 +309,49 @@ class QudsModuleLoader {
           span,
         );
       }
+    }
+  }
+
+  Future<_LoadedModule> _loadWorkspaceModule(
+    String workspacePath,
+    SourceSpan span,
+  ) async {
+    final cacheKey = 'workspace:$workspacePath';
+    final cached = _sessionCache[cacheKey];
+    if (cached != null) return cached;
+
+    if (_loadingStack.contains(workspacePath)) {
+      final startIdx = _loadingStack.indexOf(workspacePath);
+      final chain = [..._loadingStack.sublist(startIdx), workspacePath];
+      throw QudsRuntimeException(
+        'Circular import detected: ${chain.join(' -> ')}.',
+        span,
+        code: 'E210',
+      );
+    }
+
+    final source = workspace?.readFile(workspacePath);
+    if (source == null) {
+      throw QudsRuntimeException(
+        'Workspace file `$workspacePath` not found.',
+        span,
+        code: 'E900',
+      );
+    }
+
+    _loadingStack.add(workspacePath);
+    try {
+      final mod = await _loadFromSource(
+        workspacePath,
+        source,
+        fileName: workspacePath,
+        cacheable: false,
+        isSdk: false,
+      );
+      _sessionCache[cacheKey] = mod;
+      return mod;
+    } finally {
+      _loadingStack.removeLast();
     }
   }
 
@@ -297,12 +418,19 @@ class QudsModuleLoader {
     final reExports = <String, Object?>{};
     final sectionSymbolNames = <String, Set<String>>{};
     final declaredPublicNames = <String>{};
+    final exportSectionByDecl = <ImportDeclaration, String>{};
 
-    // Track which top-level declarations live under each `:: section`.
+    // Track which top-level declarations and re-exports live under each `:: section`.
     var currentSection = '';
     for (final stmt in program.statements) {
       if (stmt is SectionDeclaration) {
         currentSection = stmt.path;
+        continue;
+      }
+      if (stmt is ImportDeclaration && stmt.export) {
+        if (currentSection.isNotEmpty) {
+          exportSectionByDecl[stmt] = currentSection;
+        }
         continue;
       }
       String? declName;
@@ -330,11 +458,17 @@ class QudsModuleLoader {
           imp,
           env,
           isInternalSdk: isSdk,
+          fromFile: fileName,
         );
         if (imp.export) {
           reExports.addAll(exported);
+          final sec = exportSectionByDecl[imp];
+          if (sec != null && sec.isNotEmpty) {
+            sectionSymbolNames.putIfAbsent(sec, () => {}).addAll(exported.keys);
+          }
         }
       },
+      isSdk: isSdk,
     );
 
     await evaluator.executeProgram(program, env: modEnv, resetBudget: false);

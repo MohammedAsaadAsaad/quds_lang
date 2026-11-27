@@ -147,6 +147,26 @@ class Parser {
     if (start >= tokens.length || tokens[start].kind != TokenKind.identifier) {
       return false;
     }
+    const nonFunctionKeywords = {
+      'return',
+      'throw',
+      'yield',
+      'result',
+      'if',
+      'while',
+      'for',
+      'when',
+      'require',
+      'check',
+      'assert',
+      'defer',
+      'print',
+      'match',
+      'switch',
+    };
+    if (nonFunctionKeywords.contains(tokens[start].lexeme)) {
+      return false;
+    }
     var open = start + 1;
     if (open < tokens.length && tokens[open].kind == TokenKind.less) {
       final after = _skipAngles(open);

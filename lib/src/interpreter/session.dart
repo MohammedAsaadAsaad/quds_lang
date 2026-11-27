@@ -25,6 +25,7 @@ import 'policy.dart';
 import 'profiler.dart';
 import 'values.dart';
 import 'viz_module.dart';
+import 'workspace.dart';
 
 /// Result returned by executing a Quds script or notebook cell in [QudsSession].
 class QudsRunResult {
@@ -152,6 +153,7 @@ class QudsSession {
     QudsExecutionPolicy? policy,
     this.debugger,
     this.profiler,
+    QudsWorkspace? projectWorkspace,
     this.allowTopLevelRebind = false,
     List<QudsHostModule> hostModules = const [],
     int? maxSteps,
@@ -199,6 +201,9 @@ class QudsSession {
     );
     _installCoreBuiltins(_globalEnv);
     _initModuleLoader(virtualModules: virtualModules);
+    if (projectWorkspace != null) {
+      attachWorkspace(projectWorkspace);
+    }
     for (final mod in hostModules) {
       registerHostModule(mod);
     }
@@ -222,6 +227,7 @@ class QudsSession {
 
   late QudsEnvironment _globalEnv;
   late QudsModuleLoader _moduleLoader;
+  QudsWorkspace? _projectWorkspace;
   final StreamController<QudsRuntimeEvent> _events =
       StreamController<QudsRuntimeEvent>.broadcast();
   final Set<String> _builtinNames = {};
@@ -233,6 +239,29 @@ class QudsSession {
   String? _cachedProgramFile;
   Program? _cachedProgram;
   QudsEvaluator? _activeEvaluator;
+  List<String>? _activePrinted;
+  List<Object>? _activeOutputs;
+
+  /// Attached multi-file [QudsWorkspace] project, if any.
+  QudsWorkspace? get projectWorkspace => _projectWorkspace;
+
+  /// Attaches (or detaches when `null`) a multi-file [QudsWorkspace] to this
+  /// session with automatic transitive cache invalidation on file edits.
+  void attachWorkspace(QudsWorkspace? workspace) {
+    _projectWorkspace?.removeChangeListener(_onWorkspaceFileChanged);
+    _projectWorkspace = workspace;
+    _moduleLoader.workspace = workspace;
+    _moduleLoader.clearWorkspaceCache();
+    workspace?.addChangeListener(_onWorkspaceFileChanged);
+  }
+
+  void _onWorkspaceFileChanged(String path) {
+    _moduleLoader.invalidateWorkspaceFile(path);
+    if (_cachedProgramFile == path) {
+      _cachedProgram = null;
+      _cachedProgramSource = null;
+    }
+  }
 
   /// Live broadcast stream of print lines, rich outputs, debug pauses, errors, and progress.
   Stream<QudsRuntimeEvent> get events => _events.stream;
@@ -329,9 +358,10 @@ class QudsSession {
     _activeEvaluator?.stop();
   }
 
-  /// Releases the event stream controller.
+  /// Releases the event stream controller and detaches any workspace listener.
   Future<void> dispose() async {
     stop();
+    _projectWorkspace?.removeChangeListener(_onWorkspaceFileChanged);
     await _events.close();
   }
 
@@ -344,25 +374,75 @@ class QudsSession {
         _installCoreBuiltins(env, recordAsBuiltins: false);
         return env;
       },
-      createModuleEvaluator: (modEnv, impHook) => QudsEvaluator(
-        globalEnv: modEnv,
-        onPrint: (text, span) => _events.add(QudsPrintEvent(text, span: span)),
-        onOutput: (out, span) => _events.add(QudsOutputEvent(out, span: span)),
-        onImport: impHook,
-        maxCallDepth: policy.maxCallDepth,
-        maxCollectionLength: policy.maxCollectionLength,
-        maxStringLength: policy.maxStringLength,
-        yieldEveryNSteps: policy.yieldEveryNSteps,
-        allowMutation: true,
-        allowAsync: policy.allowAsync,
-        allowClasses: true,
-        allowExceptions: true,
-        allowImports: true,
-      ),
+      createModuleEvaluator: (modEnv, impHook, {required bool isSdk}) {
+        final debugActive =
+            !isSdk && debugger != null && debugger!.hasActiveHooks;
+        final profilerActive = !isSdk && profiler != null && profiler!.enabled;
+        late QudsEvaluator modEval;
+        modEval = QudsEvaluator(
+          globalEnv: modEnv,
+          onPrint: (text, span) {
+            if (!isSdk) _activePrinted?.add(text);
+            _events.add(QudsPrintEvent(text, span: span));
+          },
+          onOutput: (out, span) {
+            if (!isSdk) {
+              if (policy.maxOutputCount != null &&
+                  _activeOutputs != null &&
+                  _activeOutputs!.length >= policy.maxOutputCount!) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.outputLimit,
+                  'Exceeded maximum output limit (${policy.maxOutputCount}).',
+                  span,
+                );
+              }
+              _activeOutputs?.add(out);
+            }
+            _events.add(QudsOutputEvent(out, span: span));
+          },
+          onBeforeStatement: (!isSdk && (debugActive || profilerActive))
+              ? (stmt, env) async {
+                  if (profilerActive) {
+                    profiler!.recordStatement(stmt.span);
+                  }
+                  if (debugActive) {
+                    await debugger!.beforeStatement(
+                      statement: stmt,
+                      env: env,
+                      globalEnv: modEnv,
+                      evaluator: modEval,
+                      emitPrint: (text, span) {
+                        _activePrinted?.add(text);
+                        _events.add(QudsPrintEvent(text, span: span));
+                      },
+                      emitEvent: _events.add,
+                    );
+                  }
+                }
+              : null,
+          onImport: impHook,
+          maxSteps: isSdk ? null : policy.maxSteps,
+          timeout: isSdk ? null : policy.timeout,
+          maxCallDepth: policy.maxCallDepth,
+          maxCollectionLength: policy.maxCollectionLength,
+          maxStringLength: policy.maxStringLength,
+          maxLoopIterations: isSdk ? null : policy.maxLoopIterations,
+          yieldEveryNSteps: policy.yieldEveryNSteps,
+          allowMutation: isSdk ? true : policy.allowMutation,
+          allowAsync: policy.allowAsync,
+          allowClasses: isSdk ? true : policy.allowClasses,
+          allowExceptions: isSdk ? true : policy.allowExceptions,
+          allowImports: true,
+          interactiveInputs: Map<String, Object?>.from(_interactiveInputs),
+          profiler: profilerActive ? profiler : null,
+        );
+        return modEval;
+      },
       virtualModules: virtualModules,
       allowedLibraries: policy.allowedLibraries,
       deniedLibraries: policy.deniedLibraries,
       importResolver: policy.importResolver,
+      workspace: _projectWorkspace,
     );
     _installBuiltInVizModule();
   }
@@ -385,7 +465,95 @@ class QudsSession {
       await _onImport(decl, env);
       return;
     }
-    await _moduleLoader.resolveImport(decl, env);
+    await _moduleLoader.resolveImport(decl, env, fromFile: decl.span.file);
+  }
+
+  /// Executes a specific file inside the attached [projectWorkspace] (resolving
+  /// all relative, parent `^.`, barrel `export`, and `package:` imports cleanly).
+  Future<QudsRunResult> runFile(
+    String filePath, {
+    Map<String, Object?>? interactiveInputs,
+    bool resetGlobalScope = true,
+    bool resetWorkspaceModules = false,
+    bool resetVizQuota = true,
+    bool preferBytecode = false,
+  }) async {
+    final ws = _projectWorkspace;
+    if (ws == null) {
+      throw StateError(
+          'No QudsWorkspace is attached to this session. Call attachWorkspace() first.');
+    }
+    final norm = QudsWorkspace.normalizePath(filePath);
+    final source = ws.readFile(norm);
+    if (source == null) {
+      return QudsRunResult(
+        succeeded: false,
+        error: QudsRuntimeException(
+          'Workspace file `$norm` not found.',
+          SourceSpan(1, 1, 1, file: norm),
+          code: 'E900',
+        ),
+      );
+    }
+    if (resetGlobalScope) {
+      _resetUserGlobals(allowTopLevelRebind: true);
+    }
+    if (resetWorkspaceModules) {
+      _moduleLoader.clearWorkspaceCache();
+    }
+    return _moduleLoader.runWithEntryFile(
+      norm,
+      () => run(
+        source,
+        file: norm,
+        interactiveInputs: interactiveInputs,
+        resetVizQuota: resetVizQuota,
+        preferBytecode: preferBytecode,
+      ),
+    );
+  }
+
+  /// Executes the entry-point file (`projectWorkspace.entryPoint`) of the
+  /// attached multi-file [QudsWorkspace].
+  Future<QudsRunResult> runProject({
+    Map<String, Object?>? interactiveInputs,
+    bool resetGlobalScope = true,
+    bool resetWorkspaceModules = false,
+    bool resetVizQuota = true,
+    bool preferBytecode = false,
+  }) {
+    final ws = _projectWorkspace;
+    if (ws == null) {
+      throw StateError(
+          'No QudsWorkspace is attached to this session. Call attachWorkspace() first.');
+    }
+    return runFile(
+      ws.entryPoint,
+      interactiveInputs: interactiveInputs,
+      resetGlobalScope: resetGlobalScope,
+      resetWorkspaceModules: resetWorkspaceModules,
+      resetVizQuota: resetVizQuota,
+      preferBytecode: preferBytecode,
+    );
+  }
+
+  void _resetUserGlobals({bool allowTopLevelRebind = false}) {
+    final prevSlots = Map<String, QudsSlot>.from(_globalEnv.localSlots);
+    _globalEnv = QudsEnvironment(
+      isGlobal: true,
+      allowTopLevelRebind: allowTopLevelRebind,
+    );
+    for (final entry in prevSlots.entries) {
+      if (_builtinNames.contains(entry.key)) {
+        _globalEnv.define(
+          entry.key,
+          entry.value.value,
+          mutable: entry.value.mutable,
+          isConst: entry.value.isConst,
+          declaredType: entry.value.declaredType,
+        );
+      }
+    }
   }
 
   /// Parses and executes Quds [source] inside this session's persistent workspace.
@@ -484,6 +652,9 @@ class QudsSession {
         }
       }
     }
+
+    _activePrinted = printed;
+    _activeOutputs = outputs;
 
     late QudsEvaluator evaluator;
     evaluator = QudsEvaluator(
@@ -600,6 +771,12 @@ class QudsSession {
       if (identical(_activeEvaluator, evaluator)) {
         _activeEvaluator = null;
       }
+      if (identical(_activePrinted, printed)) {
+        _activePrinted = null;
+      }
+      if (identical(_activeOutputs, outputs)) {
+        _activeOutputs = null;
+      }
     }
   }
 
@@ -618,23 +795,10 @@ class QudsSession {
     }
     _interactiveInputs.addAll(patch);
     // Re-run in a clean rebind-enabled pass so immutable bindings like `A = viz.point(...)`
-    // recompute cleanly without QUDS-090 conflicts.
-    final prevSlots = Map<String, QudsSlot>.from(_globalEnv.localSlots);
-    _globalEnv = QudsEnvironment(
-      isGlobal: true,
-      allowTopLevelRebind: true,
-    );
-    for (final entry in prevSlots.entries) {
-      if (_builtinNames.contains(entry.key)) {
-        _globalEnv.define(
-          entry.key,
-          entry.value.value,
-          mutable: entry.value.mutable,
-          isConst: entry.value.isConst,
-          declaredType: entry.value.declaredType,
-        );
-      }
-    }
+    // recompute cleanly without QUDS-090 conflicts, and imported workspace modules
+    // observe the latest interactive inputs.
+    _resetUserGlobals(allowTopLevelRebind: true);
+    _moduleLoader.clearWorkspaceCache();
     return run(
       targetSource,
       file: file ?? _lastInteractiveFile,

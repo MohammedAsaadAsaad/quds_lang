@@ -131,3 +131,9 @@ export 'src/interpreter/values.dart'
         qudsSummarizeValue,
         qudsTypeName;
 export 'src/interpreter/viz_module.dart' show buildQudsVizModule;
+export 'src/interpreter/workspace.dart'
+    show
+        QudsWorkspace,
+        QudsWorkspaceChangeListener,
+        QudsWorkspaceDependencyReport,
+        QudsWorkspaceNode;

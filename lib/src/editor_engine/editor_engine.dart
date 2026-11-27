@@ -18,6 +18,7 @@ import '../interpreter/policy.dart';
 import '../interpreter/session.dart';
 import '../interpreter/values.dart';
 import '../interpreter/viz_module.dart';
+import '../interpreter/workspace.dart';
 import '../keyword_docs_data.dart';
 import '../lexer.dart';
 import '../library_uri.dart';
@@ -34,16 +35,22 @@ class QudsEditorEngine {
     this.session,
     QudsExecutionPolicy? policy,
     List<QudsHostModule> hostModules = const [],
+    QudsWorkspace? workspace,
   })  : _explicitPolicy = policy,
-        _explicitHostModules = List<QudsHostModule>.from(hostModules);
+        _explicitHostModules = List<QudsHostModule>.from(hostModules),
+        _explicitWorkspace = workspace;
 
   /// Optional live session for workspace autocomplete, active policy, and host modules.
   final QudsSession? session;
   final QudsExecutionPolicy? _explicitPolicy;
   final List<QudsHostModule> _explicitHostModules;
+  final QudsWorkspace? _explicitWorkspace;
 
   QudsExecutionPolicy? get _effectivePolicy =>
       _explicitPolicy ?? session?.policy;
+
+  QudsWorkspace? get _effectiveWorkspace =>
+      _explicitWorkspace ?? session?.projectWorkspace;
 
   List<QudsHostModule> get _effectiveHostModules {
     final byUri = <String, QudsHostModule>{};
@@ -112,6 +119,7 @@ class QudsEditorEngine {
         source,
         lineStarts,
         diagnostics,
+        file: file,
       );
     }
 
@@ -126,17 +134,21 @@ class QudsEditorEngine {
   }
 
   /// Context-aware autocomplete at a 0-based UTF-16 [offset] in [source].
-  List<QudsCompletionItem> completeAt(String source, int offset) {
+  List<QudsCompletionItem> completeAt(
+    String source,
+    int offset, {
+    String? file,
+  }) {
     final clamped = offset.clamp(0, source.length);
     final before = source.substring(0, clamped);
     final lineStart = before.lastIndexOf('\n') + 1;
     final currentLine = before.substring(lineStart);
 
-    // 1. `use <uri>` import & `::section` completion
-    final useMatch = RegExp(r'^\s*(?:use|export)\s+([A-Za-z0-9_:/.-]*)$')
+    // 1. `use <uri>` import & `::section` completion (including `^.` parent paths)
+    final useMatch = RegExp(r'^\s*(?:use|export)\s+([A-Za-z0-9_:/.\^-]*)$')
         .firstMatch(currentLine);
     if (useMatch != null) {
-      return _completeImport(useMatch.group(1)!);
+      return _completeImport(useMatch.group(1)!, file: file);
     }
 
     // 2. Member completion after `.` or `?.`
@@ -146,26 +158,28 @@ class QudsEditorEngine {
     if (memberMatch != null) {
       final receiver = memberMatch.group(1)!;
       final prefix = memberMatch.group(2)!;
-      return _completeMember(source, receiver, prefix);
+      return _completeMember(source, receiver, prefix, file: file);
     }
 
     // 3. General identifier / keyword / workspace / imported symbol completion
     final wordMatch =
         RegExp(r'([A-Za-z_][A-Za-z0-9_]*)$').firstMatch(currentLine);
     final prefix = wordMatch?.group(1) ?? '';
-    return _completeGeneral(source, prefix);
+    return _completeGeneral(source, prefix, file: file);
   }
 
   /// Convenience wrapper accepting 1-based [line] and [column].
   List<QudsCompletionItem> completeAtLineColumn(
     String source,
     int line,
-    int column,
-  ) =>
-      completeAt(source, _offsetForLineColumn(source, line, column));
+    int column, {
+    String? file,
+  }) =>
+      completeAt(source, _offsetForLineColumn(source, line, column),
+          file: file);
 
   /// Returns hover documentation for the symbol at UTF-16 [offset], if any.
-  QudsHoverInfo? hoverAt(String source, int offset) {
+  QudsHoverInfo? hoverAt(String source, int offset, {String? file}) {
     if (source.isEmpty) return null;
     final clamped = offset.clamp(0, source.length);
     final bounds = _wordRangeAt(source, clamped);
@@ -191,7 +205,7 @@ class QudsEditorEngine {
       final recvBounds = _wordRangeAt(source, bounds.$1 - 2);
       if (recvBounds != null) {
         final recv = source.substring(recvBounds.$1, recvBounds.$2);
-        final memberItems = _completeMember(source, recv, '');
+        final memberItems = _completeMember(source, recv, '', file: file);
         for (final item in memberItems) {
           if (item.label == word) {
             return QudsHoverInfo(
@@ -230,8 +244,8 @@ class QudsEditorEngine {
       );
     }
 
-    // Check imported SDK / host module symbols
-    final imported = _importedSymbolsForSource(source);
+    // Check imported SDK / host / workspace module symbols
+    final imported = _importedSymbolsForSource(source, file: file);
     for (final item in imported) {
       if (item.label == word) {
         return QudsHoverInfo(
@@ -260,7 +274,11 @@ class QudsEditorEngine {
   }
 
   /// Returns active function call signature help at UTF-16 [offset], if inside `fn(...)`.
-  QudsSignatureHelp? signatureHelpAt(String source, int offset) {
+  QudsSignatureHelp? signatureHelpAt(
+    String source,
+    int offset, {
+    String? file,
+  }) {
     final clamped = offset.clamp(0, source.length);
     var depth = 0;
     var commas = 0;
@@ -294,7 +312,7 @@ class QudsEditorEngine {
       final recvRange = _wordRangeAt(source, calleeRange.$1 - 2);
       if (recvRange != null) {
         final recv = source.substring(recvRange.$1, recvRange.$2);
-        for (final item in _completeMember(source, recv, '')) {
+        for (final item in _completeMember(source, recv, '', file: file)) {
           if (item.label == fnName) {
             match = item;
             break;
@@ -304,7 +322,7 @@ class QudsEditorEngine {
     }
     match ??= _findLocalSymbol(source, fnName);
     if (match == null) {
-      for (final item in _importedSymbolsForSource(source)) {
+      for (final item in _importedSymbolsForSource(source, file: file)) {
         if (item.label == fnName) {
           match = item;
           break;
@@ -650,9 +668,11 @@ class QudsEditorEngine {
     List<Statement> statements,
     String source,
     List<int> lineStarts,
-    List<QudsEditorDiagnostic> diagnostics,
-  ) {
+    List<QudsEditorDiagnostic> diagnostics, {
+    String file = '<editor>',
+  }) {
     final policy = _effectivePolicy;
+    final workspace = _effectiveWorkspace;
     final knownHostUris = {for (final m in _effectiveHostModules) m.uri};
     final topBindings = <String, Binding>{};
 
@@ -664,6 +684,11 @@ class QudsEditorEngine {
           final start = _offsetFromLineStarts(
               lineStarts, stmt.span.line, stmt.span.column, source.length);
           final end = (start + stmt.span.length).clamp(start, source.length);
+
+          final wsPath = workspace?.resolveImportPath(
+            stmt.uri,
+            fromFile: file,
+          );
 
           if (policy != null) {
             if (!policy.allowImports) {
@@ -678,22 +703,91 @@ class QudsEditorEngine {
               ));
               continue;
             }
-            if (!policy.isLibraryAllowed(stmt.uri)) {
-              diagnostics.add(QudsEditorDiagnostic(
-                code: 'P102',
-                message:
-                    'Library `${stmt.uri}` is not allowed by active policy `${policy.name}`.',
-                severity: QudsDiagnosticSeverity.error,
-                line: stmt.span.line,
-                column: stmt.span.column,
-                startOffset: start,
-                endOffset: end,
-                help: policy.allowedLibraries == null
-                    ? null
-                    : 'Allowed libraries: ${policy.allowedLibraries!.join(', ')}',
-              ));
-              continue;
+            if (wsPath != null) {
+              final wsDot = (wsPath.endsWith('.quds')
+                      ? wsPath.substring(0, wsPath.length - 5)
+                      : wsPath)
+                  .replaceAll('/', '.');
+              if (policy.deniedLibraries.contains(stmt.uri) ||
+                  policy.deniedLibraries.contains(target) ||
+                  policy.deniedLibraries.contains(wsPath) ||
+                  policy.deniedLibraries.contains(wsDot)) {
+                diagnostics.add(QudsEditorDiagnostic(
+                  code: 'P102',
+                  message:
+                      'Workspace library `${stmt.uri}` is denied by active policy `${policy.name}`.',
+                  severity: QudsDiagnosticSeverity.error,
+                  line: stmt.span.line,
+                  column: stmt.span.column,
+                  startOffset: start,
+                  endOffset: end,
+                ));
+                continue;
+              }
+            } else {
+              final isExternalScheme = target.startsWith('quds:') ||
+                  target.startsWith('dart:') ||
+                  target.startsWith('host:') ||
+                  knownHostUris.contains(target);
+              if (isExternalScheme && !policy.isLibraryAllowed(stmt.uri)) {
+                diagnostics.add(QudsEditorDiagnostic(
+                  code: 'P102',
+                  message:
+                      'Library `${stmt.uri}` is not allowed by active policy `${policy.name}`.',
+                  severity: QudsDiagnosticSeverity.error,
+                  line: stmt.span.line,
+                  column: stmt.span.column,
+                  startOffset: start,
+                  endOffset: end,
+                  help: policy.allowedLibraries == null
+                      ? null
+                      : 'Allowed libraries: ${policy.allowedLibraries!.join(', ')}',
+                ));
+                continue;
+              } else if (!isExternalScheme &&
+                  workspace == null &&
+                  !policy.isLibraryAllowed(stmt.uri)) {
+                diagnostics.add(QudsEditorDiagnostic(
+                  code: 'P102',
+                  message:
+                      'Library `${stmt.uri}` is not allowed by active policy `${policy.name}`.',
+                  severity: QudsDiagnosticSeverity.error,
+                  line: stmt.span.line,
+                  column: stmt.span.column,
+                  startOffset: start,
+                  endOffset: end,
+                  help: policy.allowedLibraries == null
+                      ? null
+                      : 'Allowed libraries: ${policy.allowedLibraries!.join(', ')}',
+                ));
+                continue;
+              }
             }
+          }
+
+          // Validate resolved workspace module & optional `::section`
+          if (wsPath != null && workspace != null) {
+            if (section != null) {
+              final validSections = _workspaceSectionsOf(workspace, wsPath);
+              final ok = validSections
+                  .any((s) => s == section || s.startsWith('$section::'));
+              if (!ok) {
+                diagnostics.add(QudsEditorDiagnostic(
+                  code: 'E900',
+                  message:
+                      'Workspace file `$wsPath` has no section `::$section`.',
+                  severity: QudsDiagnosticSeverity.error,
+                  line: stmt.span.line,
+                  column: stmt.span.column,
+                  startOffset: start,
+                  endOffset: end,
+                  help: validSections.isEmpty
+                      ? null
+                      : 'Available sections: ${validSections.join(', ')}',
+                ));
+              }
+            }
+            continue;
           }
 
           // Validate `quds:*` library & section existence
@@ -732,6 +826,22 @@ class QudsEditorEngine {
                 ));
               }
             }
+          } else if (workspace != null &&
+              !target.startsWith('dart:') &&
+              !knownHostUris.contains(target)) {
+            diagnostics.add(QudsEditorDiagnostic(
+              code: 'E900',
+              message:
+                  'Workspace module `${stmt.uri}` was not found in project `${workspace.name}`.',
+              severity: QudsDiagnosticSeverity.error,
+              line: stmt.span.line,
+              column: stmt.span.column,
+              startOffset: start,
+              endOffset: end,
+              help: workspace.listFiles().isEmpty
+                  ? null
+                  : 'Project files: ${workspace.listFiles().take(8).join(', ')}',
+            ));
           }
           continue;
         }
@@ -965,11 +1075,12 @@ class QudsEditorEngine {
     }
   }
 
-  List<QudsCompletionItem> _completeImport(String typed) {
+  List<QudsCompletionItem> _completeImport(String typed, {String? file}) {
     final policy = _effectivePolicy;
+    final workspace = _effectiveWorkspace;
     final items = <QudsCompletionItem>[];
 
-    // Section completion (`quds:math::...`)
+    // Section completion (`quds:math::...` or workspace `math.toolbox::...`)
     if (typed.contains('::')) {
       final idx = typed.indexOf('::');
       final libUri = typed.substring(0, idx);
@@ -987,11 +1098,55 @@ class QudsEditorEngine {
             ));
           }
         }
+      } else if (workspace != null) {
+        final wsPath = workspace.resolveImportPath(libUri, fromFile: file);
+        if (wsPath != null) {
+          for (final sec in _workspaceSectionsOf(workspace, wsPath)) {
+            if (sec.toLowerCase().startsWith(secPrefix)) {
+              items.add(QudsCompletionItem(
+                label: sec,
+                insertText: sec,
+                kind: QudsCompletionKind.section,
+                detail: '$wsPath::$sec',
+                sortPriority: 10,
+              ));
+            }
+          }
+        }
       }
       return items;
     }
 
     final lower = typed.toLowerCase();
+    final seenUris = <String>{};
+
+    // Project workspace modules (highest priority in a multi-file project!)
+    if (workspace != null) {
+      final normSelf = (file != null && !file.startsWith('<'))
+          ? QudsWorkspace.normalizePath(file)
+          : null;
+      for (final filePath in workspace.listFiles()) {
+        if (normSelf != null && filePath == normSelf) continue;
+        final uri = workspace.importUriFor(filePath, fromFile: file);
+        if (policy != null &&
+            (policy.deniedLibraries.contains(uri) ||
+                policy.deniedLibraries.contains(filePath))) {
+          continue;
+        }
+        if (uri.toLowerCase().startsWith(lower) && seenUris.add(uri)) {
+          items.add(QudsCompletionItem(
+            label: uri,
+            insertText: uri,
+            kind: QudsCompletionKind.module,
+            detail: 'project module ($filePath)',
+            documentation:
+                'Quds workspace file `$filePath` in `${workspace.name}`.',
+            sortPriority: 5,
+          ));
+        }
+      }
+    }
+
     final candidates = <(String, String)>[
       (
         'quds:math',
@@ -1000,6 +1155,10 @@ class QudsEditorEngine {
       (
         'quds:viz',
         'Interactive 2D geometry scenes, plots, tables, matrices, and LaTeX'
+      ),
+      (
+        'quds:data',
+        'Tabular DataFrames, CSV/JSON parsing, filtering, and aggregation'
       ),
       ('quds:core', 'Core data structures (Stack, Queue, Result, typed views)'),
       (
@@ -1025,7 +1184,7 @@ class QudsEditorEngine {
 
     for (final (uri, desc) in candidates) {
       if (policy != null && !policy.isLibraryAllowed(uri)) continue;
-      if (uri.toLowerCase().startsWith(lower)) {
+      if (uri.toLowerCase().startsWith(lower) && seenUris.add(uri)) {
         items.add(QudsCompletionItem(
           label: uri,
           insertText: uri,
@@ -1042,8 +1201,9 @@ class QudsEditorEngine {
   List<QudsCompletionItem> _completeMember(
     String source,
     String receiver,
-    String prefix,
-  ) {
+    String prefix, {
+    String? file,
+  }) {
     final lower = prefix.toLowerCase();
     final items = <QudsCompletionItem>[];
 
@@ -1075,12 +1235,32 @@ class QudsEditorEngine {
       return items;
     }
 
-    // 2. Check prefixed imports (`use quds:viz as viz`, `use quds:math as m`, `use host:fs as fs`)
+    // 2. Check prefixed imports (`use quds:viz as viz`, `use quds:math as m`, `use physics.integrator as phys`)
+    final workspace = _effectiveWorkspace;
     final imports = _parseImportsFromSource(source);
     for (final imp in imports) {
       if (imp.prefix != receiver) continue;
       final target = libraryTarget(imp.uri);
       final section = librarySection(imp.uri);
+
+      // Workspace module
+      if (workspace != null) {
+        final wsPath = workspace.resolveImportPath(imp.uri, fromFile: file);
+        if (wsPath != null) {
+          for (final sym in _workspaceSymbolsOf(
+            workspace,
+            wsPath,
+            section: section,
+          )) {
+            if (imp.show.isNotEmpty && !imp.show.contains(sym.label)) continue;
+            if (imp.hide.contains(sym.label)) continue;
+            if (sym.label.toLowerCase().startsWith(lower)) {
+              items.add(sym);
+            }
+          }
+          return items;
+        }
+      }
 
       // Host module (including `quds:viz`)
       for (final mod in _effectiveHostModules) {
@@ -1203,7 +1383,11 @@ class QudsEditorEngine {
     return items;
   }
 
-  List<QudsCompletionItem> _completeGeneral(String source, String prefix) {
+  List<QudsCompletionItem> _completeGeneral(
+    String source,
+    String prefix, {
+    String? file,
+  }) {
     final lower = prefix.toLowerCase();
     final items = <QudsCompletionItem>[];
     final seen = <String>{};
@@ -1242,7 +1426,7 @@ class QudsEditorEngine {
     }
 
     // 3. Imported symbols from `use ...` directives in this buffer
-    for (final imp in _importedSymbolsForSource(source)) {
+    for (final imp in _importedSymbolsForSource(source, file: file)) {
       add(imp);
     }
 
@@ -1285,7 +1469,7 @@ class QudsEditorEngine {
       // Fallback regex scan for broken buffers so autocomplete still works while typing!
       final out = <ImportDeclaration>[];
       final re = RegExp(
-          r'^\s*use\s+([A-Za-z0-9_:/.-]+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?',
+          r'^\s*use\s+([A-Za-z0-9_:/.\^-]+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?',
           multiLine: true);
       for (final m in re.allMatches(source)) {
         out.add(ImportDeclaration(
@@ -1295,8 +1479,12 @@ class QudsEditorEngine {
     }
   }
 
-  List<QudsCompletionItem> _importedSymbolsForSource(String source) {
+  List<QudsCompletionItem> _importedSymbolsForSource(
+    String source, {
+    String? file,
+  }) {
     final items = <QudsCompletionItem>[];
+    final workspace = _effectiveWorkspace;
     final imports = _parseImportsFromSource(source);
     for (final imp in imports) {
       if (imp.prefix != null) {
@@ -1311,6 +1499,19 @@ class QudsEditorEngine {
       }
       final target = libraryTarget(imp.uri);
       final section = librarySection(imp.uri);
+
+      if (workspace != null) {
+        final wsPath = workspace.resolveImportPath(imp.uri, fromFile: file);
+        if (wsPath != null) {
+          for (final sym
+              in _workspaceSymbolsOf(workspace, wsPath, section: section)) {
+            if (imp.show.isNotEmpty && !imp.show.contains(sym.label)) continue;
+            if (imp.hide.contains(sym.label)) continue;
+            items.add(sym);
+          }
+          continue;
+        }
+      }
 
       for (final mod in _effectiveHostModules) {
         if (mod.uri == target) {
@@ -1346,6 +1547,122 @@ class QudsEditorEngine {
           ));
         }
       }
+    }
+    return items;
+  }
+
+  List<String> _workspaceSectionsOf(QudsWorkspace workspace, String wsPath) {
+    final source = workspace.readFile(wsPath);
+    if (source == null) return const [];
+    try {
+      final tokens = const Lexer().tokenize(source, file: wsPath);
+      final program = Parser(tokens).parse(partial: true);
+      return [
+        for (final stmt in program.statements)
+          if (stmt is SectionDeclaration && stmt.path.isNotEmpty) stmt.path,
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  List<QudsCompletionItem> _workspaceSymbolsOf(
+    QudsWorkspace workspace,
+    String wsPath, {
+    String? section,
+    Set<String>? visited,
+  }) {
+    final seenFiles = visited ?? <String>{};
+    if (!seenFiles.add(wsPath)) return const [];
+    final source = workspace.readFile(wsPath);
+    if (source == null) return const [];
+
+    final items = <QudsCompletionItem>[];
+    final seenNames = <String>{};
+    void addUnique(QudsCompletionItem item) {
+      if (seenNames.add(item.label)) items.add(item);
+    }
+
+    try {
+      final tokens = const Lexer().tokenize(source, file: wsPath);
+      final program = Parser(tokens).parse(partial: true);
+      var currentSection = '';
+      for (final stmt in program.statements) {
+        if (stmt is SectionDeclaration) {
+          currentSection = stmt.path;
+          continue;
+        }
+        final matchesSection = section == null ||
+            currentSection == section ||
+            currentSection.startsWith('$section::');
+
+        if (stmt is ImportDeclaration && stmt.export) {
+          if (!matchesSection) continue;
+          final reExportPath =
+              workspace.resolveImportPath(stmt.uri, fromFile: wsPath);
+          if (reExportPath != null) {
+            final nested = _workspaceSymbolsOf(
+              workspace,
+              reExportPath,
+              section: librarySection(stmt.uri),
+              visited: seenFiles,
+            );
+            for (final sym in nested) {
+              if (stmt.show.isNotEmpty && !stmt.show.contains(sym.label)) {
+                continue;
+              }
+              if (stmt.hide.contains(sym.label)) continue;
+              addUnique(sym);
+            }
+          }
+          continue;
+        }
+
+        if (!matchesSection) continue;
+        if (stmt is FunctionDeclaration &&
+            stmt.visibility != 'internal' &&
+            !stmt.name.startsWith('_')) {
+          final params = stmt.parameters
+              .map((p) => p.type == '<infer>' ? p.name : '${p.name}: ${p.type}')
+              .join(', ');
+          final ret = stmt.returnType != null && stmt.returnType!.isNotEmpty
+              ? ' -> ${stmt.returnType}'
+              : '';
+          addUnique(QudsCompletionItem(
+            label: stmt.name,
+            insertText: '${stmt.name}(',
+            kind: QudsCompletionKind.function,
+            detail: '${stmt.name}($params)$ret',
+            documentation: stmt.documentation ?? 'Exported from `$wsPath`.',
+            sortPriority: 14,
+          ));
+        } else if (stmt is ClassDeclaration &&
+            stmt.visibility != 'internal' &&
+            !stmt.name.startsWith('_')) {
+          addUnique(QudsCompletionItem(
+            label: stmt.name,
+            insertText: stmt.name,
+            kind: QudsCompletionKind.classType,
+            detail: '${stmt.kind} ${stmt.name}',
+            documentation: stmt.documentation ?? 'Exported from `$wsPath`.',
+            sortPriority: 15,
+          ));
+        } else if (stmt is Binding && !stmt.name.startsWith('_')) {
+          addUnique(QudsCompletionItem(
+            label: stmt.name,
+            insertText: stmt.name,
+            kind: stmt.mode == BindingMode.constant
+                ? QudsCompletionKind.constant
+                : QudsCompletionKind.variable,
+            detail: stmt.type != null
+                ? '${stmt.name}: ${stmt.type} ($wsPath)'
+                : 'binding ($wsPath)',
+            sortPriority: 16,
+          ));
+        }
+      }
+    } catch (_) {
+      // Ignore parse errors in incomplete sibling files.
     }
     return items;
   }

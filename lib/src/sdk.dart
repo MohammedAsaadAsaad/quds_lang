@@ -17613,9 +17613,9 @@ extend Set<T> SetCollectionExtensions:
 ''';
 
 const asyncSdkSource =
-    r'''# Structured concurrency primitives for Quds: Semaphore, Channel, and Cancellation.
+    r'''# Structured concurrency primitives for Quds: Cancellation, Semaphore, Channel, BroadcastChannel, AsyncGate, timeouts, bounded concurrency, retry, and Debouncer/Throttler.
 
-use dart:async show Completer
+use dart:async show Completer, Timer
 
 # Thrown when a cooperative async operation observes cancellation.
 # Example:
@@ -17963,6 +17963,343 @@ drainChannel<T>(channel: Channel<T>) async -> List<T>:
     else if next != null:
       out.add(next)
   return out
+
+class _AsyncBox<T>:
+  value: T required
+
+# Thrown when [withTimeout] expires before the wrapped async task completes.
+class AsyncTimeoutException:
+  duration: Duration required
+  message: String = "Operation timed out"
+
+  toString() -> String = "AsyncTimeoutException({duration.inMilliseconds}ms): {message}"
+
+# Runs [task] with a deadline of [duration], throwing [AsyncTimeoutException] if it expires first.
+# Example:
+#   value = await withTimeout<int>(50ms, () -> fetchValue())
+withTimeout<T>(duration: Duration, task: () -> Future<T>, message: String = "Operation timed out") async -> T:
+  if duration.inMicroseconds < 0:
+    throw ArgumentError("Timeout duration cannot be negative")
+  done = Completer<_AsyncBox<T>>()
+  timer = Timer(duration, () -> _completeTimeout<T>(done, duration, message))
+  _runTaskInto<T>(task, done, timer)
+  box = await done.future
+  return box.value
+
+_completeTimeout<T>(done: Completer<_AsyncBox<T>>, duration: Duration, message: String) -> void:
+  if not done.isCompleted:
+    done.completeError(AsyncTimeoutException(duration: duration, message: message))
+
+_runTaskInto<T>(task: () -> Future<T>, done: Completer<_AsyncBox<T>>, timer: Timer) async -> void:
+  try:
+    value = await task()
+    timer.cancel()
+    if not done.isCompleted:
+      done.complete(_AsyncBox<T>(value: value))
+  catch e:
+    timer.cancel()
+    if not done.isCompleted:
+      done.completeError(e)
+
+# Runs [task] with a deadline of [duration], returning null if the timeout expires first.
+# Example:
+#   maybe = await withTimeoutOrNull<int>(20ms, slowWork)
+withTimeoutOrNull<T>(duration: Duration, task: () -> Future<T>) async -> T?:
+  try:
+    return await withTimeout<T>(duration, task)
+  catch e: AsyncTimeoutException:
+    return null
+
+# Runs [task] and fails immediately with [CancelledException] if [token] is or becomes cancelled.
+# Example:
+#   value = await withCancellation<String>(token, fetchWork)
+withCancellation<T>(token: CancellationToken, task: () -> Future<T>) async -> T:
+  token.throwIfCancelled()
+  done = Completer<_AsyncBox<T>>()
+  _watchTokenCancel<T>(token, done)
+  _runCancellableTask<T>(task, done)
+  box = await done.future
+  return box.value
+
+_watchTokenCancel<T>(token: CancellationToken, done: Completer<_AsyncBox<T>>) async -> void:
+  reason = await token.whenCancelled()
+  if not done.isCompleted:
+    done.completeError(CancelledException(reason: reason))
+
+_runCancellableTask<T>(task: () -> Future<T>, done: Completer<_AsyncBox<T>>) async -> void:
+  try:
+    value = await task()
+    if not done.isCompleted:
+      done.complete(_AsyncBox<T>(value: value))
+  catch e:
+    if not done.isCompleted:
+      done.completeError(e)
+
+# Awaits all [tasks] concurrently and returns their results in the original order.
+# Example:
+#   results = await waitAll<int>([f1, f2])
+waitAll<T>(tasks: List<Future<T>>) async -> List<T>:
+  return await Future.wait(tasks)
+
+# Returns the result (or error) of whichever future in [tasks] settles first.
+# Throws [ArgumentError] when [tasks] is empty.
+# Example:
+#   fastest = await race<String>([f1, f2])
+race<T>(tasks: List<Future<T>>) async -> T:
+  if tasks.isEmpty:
+    throw ArgumentError("race requires at least one task")
+  done = Completer<_AsyncBox<T>>()
+  for fut in tasks:
+    _pipeFuture<T>(fut, done)
+  box = await done.future
+  return box.value
+
+_pipeFuture<T>(fut: Future<T>, done: Completer<_AsyncBox<T>>) async -> void:
+  try:
+    value = await fut
+    if not done.isCompleted:
+      done.complete(_AsyncBox<T>(value: value))
+  catch e:
+    if not done.isCompleted:
+      done.completeError(e)
+
+_runMappedItem<T, R>(sem: Semaphore, item: T, worker: (T) -> Future<R>) async -> R:
+  lock sem
+  return await worker(item)
+
+# Runs [worker] over [items] with at most [concurrency] active invocations, preserving input order.
+# Example:
+#   doubled = await mapConcurrent<int, int>([1, 2, 3], 2, (n) -> doubleAsync(n))
+mapConcurrent<T, R>(items: List<T>, concurrency: int, worker: (T) -> Future<R>) async -> List<R>:
+  if concurrency < 1:
+    throw ArgumentError("mapConcurrent concurrency must be at least 1")
+  if items.isEmpty:
+    empty: List<R> = []
+    return empty
+  sem = Semaphore(permits: concurrency)
+  futures: List<Future<R>> = []
+  for item in items:
+    futures.add(_runMappedItem<T, R>(sem, item, worker))
+  return await Future.wait(futures)
+
+# Retries [task] up to [maxAttempts] times (1-indexed attempt passed to [task]) with optional
+# exponential backoff ([backoffFactor]) and cooperative [CancellationToken].
+# Example:
+#   val = await retryAsync<String>(3, 10ms, (attempt) -> fetch(attempt), backoffFactor: 2.0)
+retryAsync<T>(maxAttempts: int, delay: Duration, task: (int) -> Future<T>, backoffFactor: double = 1.0, token: CancellationToken? = null) async -> T:
+  if maxAttempts < 1:
+    throw ArgumentError("maxAttempts must be at least 1")
+  if delay.inMicroseconds < 0:
+    throw ArgumentError("delay cannot be negative")
+  if backoffFactor < 1.0:
+    throw ArgumentError("backoffFactor must be at least 1.0")
+  var attempt = 1
+  var currentMicros = delay.inMicroseconds.toDouble()
+  while attempt < maxAttempts:
+    if token != null:
+      token.throwIfCancelled()
+    try:
+      return await task(attempt)
+    catch e:
+      if e is CancelledException:
+        rethrow
+      attempt += 1
+      waitMicros = currentMicros.round()
+      if waitMicros > 0:
+        waitDur = Duration(microseconds: waitMicros)
+        if token != null:
+          await withCancellation<void>(token, () -> sleep(waitDur))
+        else:
+          await sleep(waitDur)
+      currentMicros = currentMicros * backoffFactor
+  if token != null:
+    token.throwIfCancelled()
+  return await task(maxAttempts)
+
+# Manual-reset asynchronous gate (barrier). Waiters suspend while closed and resume
+# together when [open] is called.
+# Example:
+#   gate = AsyncGate()
+#   gate.open()
+#   await gate.wait()
+class AsyncGate:
+  initialOpen: bool = false
+  private var initialized: bool = false
+  private var opened: bool = false
+  private var waiters: List<Completer<bool>>? = null
+
+  private _ensureInit() -> void:
+    if not initialized:
+      opened = initialOpen
+      initialized = true
+
+  # True when the gate currently allows waiters to pass without suspending.
+  isOpen() -> bool:
+    _ensureInit()
+    return opened
+
+  # Opens the gate and wakes every queued waiter.
+  open() -> void:
+    _ensureInit()
+    opened = true
+    local = waiters
+    waiters = null
+    if local != null:
+      for w in local:
+        if not w.isCompleted:
+          w.complete(true)
+
+  # Closes the gate so future [wait] calls suspend until [open] is called again.
+  close() -> void:
+    _ensureInit()
+    opened = false
+
+  # Suspends until the gate is open, or returns immediately if already open.
+  wait() async -> void:
+    _ensureInit()
+    if opened:
+      return
+    waiter = Completer<bool>()
+    local = waiters
+    if local == null:
+      waiters = [waiter]
+    else:
+      local.add(waiter)
+    await waiter.future
+
+# Multi-subscriber asynchronous broadcast channel (fan-out pub/sub).
+# Each [subscribe] call returns an independent [Channel<T>]. Implements [dispose] for `using`.
+# Example:
+#   bus = BroadcastChannel<String>()
+#   sub = bus.subscribe()
+#   bus.publish("ready")
+class BroadcastChannel<T>:
+  subscriberCapacity: int = 0
+  private var closed: bool = false
+  private var subscribers: List<Channel<T>>? = null
+
+  # True after [close] has been called.
+  isClosed() -> bool = closed
+
+  # Number of currently active subscribers.
+  subscriberCount() -> int:
+    guard let local = subscribers else:
+      return 0
+    return local.length
+
+  # Registers a new subscriber and returns its dedicated [Channel<T>].
+  subscribe() -> Channel<T>:
+    ch = Channel<T>(capacity: subscriberCapacity)
+    if closed:
+      ch.close()
+      return ch
+    local = subscribers
+    if local == null:
+      subscribers = [ch]
+    else:
+      local.add(ch)
+    return ch
+
+  # Removes and closes [channel] from the subscriber list.
+  unsubscribe(channel: Channel<T>) -> bool:
+    channel.close()
+    guard let local = subscribers else:
+      return false
+    return local.remove(channel)
+
+  # Publishes [value] to every active subscriber and returns how many accepted it.
+  publish(value: T) -> int:
+    if closed:
+      return 0
+    guard let local = subscribers else:
+      return 0
+    var delivered = 0
+    active: List<Channel<T>> = []
+    for sub in local:
+      if not sub.isClosed():
+        active.add(sub)
+        if sub.trySend(value):
+          delivered += 1
+    subscribers = active
+    return delivered
+
+  # Closes the broadcast channel and every subscribed [Channel<T>].
+  close() -> void:
+    if closed:
+      return
+    closed = true
+    local = subscribers
+    subscribers = null
+    if local != null:
+      for sub in local:
+        sub.close()
+
+  # Closes this broadcast channel when exited via `using`.
+  dispose() -> void:
+    close()
+
+# Delays invoking an action until [delay] elapses with no newer calls.
+# Implements [dispose] so `using d = Debouncer(delay: 50ms)` cancels pending timers.
+# Example:
+#   d = Debouncer(delay: 30ms)
+#   d.call(() -> save())
+class Debouncer:
+  delay: Duration required
+  private var pendingTimer: Timer? = null
+
+  # True if an action is currently scheduled and has not fired yet.
+  isPending() -> bool:
+    t = pendingTimer
+    return t != null and t.isActive
+
+  # Cancels any pending action and schedules [action] to run after [delay].
+  call(action: () -> void) -> void:
+    if delay.inMicroseconds < 0:
+      throw ArgumentError("Debouncer delay cannot be negative")
+    cancel()
+    pendingTimer = Timer(delay, () -> _fire(action))
+
+  private _fire(action: () -> void) -> void:
+    pendingTimer = null
+    action()
+
+  # Cancels any scheduled action.
+  cancel() -> void:
+    t = pendingTimer
+    if t != null:
+      t.cancel()
+      pendingTimer = null
+
+  # Cancels pending timers on `using` scope exit.
+  dispose() -> void:
+    cancel()
+
+# Leading-edge rate throttler that allows at most one execution per [interval].
+# Example:
+#   th = Throttler(interval: 100ms)
+#   if th.tryRun(() -> refresh()):
+#     print "ran"
+class Throttler:
+  interval: Duration required
+  private var lastRunAt: DateTime? = null
+
+  # Runs [action] immediately and returns true if [interval] has elapsed since the previous run.
+  tryRun(action: () -> void) -> bool:
+    if interval.inMicroseconds < 0:
+      throw ArgumentError("Throttler interval cannot be negative")
+    now = DateTime.now()
+    prev = lastRunAt
+    if prev != null:
+      elapsed = now.difference(prev)
+      if elapsed < interval:
+        return false
+    lastRunAt = now
+    action()
+    return true
+
+  # Resets the cooldown so the next [tryRun] executes immediately.
+  reset() -> void:
+    lastRunAt = null
 ''';
 
 const jsonSdkSource =

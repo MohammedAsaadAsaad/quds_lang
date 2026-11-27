@@ -146,3 +146,163 @@ test "CancellationSource and CancellationToken notify callbacks, waiters, cancel
   using cts = scopedSrc:
     expect(cts.isCancelled(), isFalse)
   expect(scopedSrc.isCancelled(), isTrue)
+
+_delayedValue<T>(delay: Duration, value: T) async -> T:
+  await sleep(delay)
+  return value
+
+_waitOnGate(gate: AsyncGate, log: List<String>, name: String) async -> void:
+  await gate.wait()
+  log.add(name)
+
+_mappedWorker(tracker: _ConcurrencyTracker, n: int) async -> int:
+  tracker.active += 1
+  if tracker.active > tracker.peak:
+    tracker.peak = tracker.active
+  await sleep(10ms)
+  tracker.active -= 1
+  return n * 10
+
+_flakyTask(attempts: List<int>, succeedOn: int, attempt: int) async -> String:
+  attempts.add(attempt)
+  if attempt < succeedOn:
+    throw StateError("fail-{attempt}")
+  return "ok-{attempt}"
+
+test "withTimeout, withTimeoutOrNull, and withCancellation enforce deadlines and cancellation" async:
+  fast = await withTimeout<int>(200ms, () -> _delayedValue<int>(5ms, 42))
+  expect(fast, equals(42))
+
+  var timedOut = false
+  try:
+    await withTimeout<int>(15ms, () -> _delayedValue<int>(150ms, 9), message: "too slow")
+  catch e: AsyncTimeoutException:
+    timedOut = e.toString().contains("too slow")
+  expect(timedOut, isTrue)
+
+  maybeNull = await withTimeoutOrNull<int>(15ms, () -> _delayedValue<int>(150ms, 9))
+  expect(maybeNull, equals(null))
+  maybeOk = await withTimeoutOrNull<int>(200ms, () -> _delayedValue<int>(5ms, 7))
+  expect(maybeOk, equals(7))
+
+  src = CancellationSource()
+  src.cancelAfter(15ms, reason: "abort")
+  var cancelledMsg = ""
+  try:
+    await withCancellation<int>(src.token(), () -> _delayedValue<int>(200ms, 1))
+  catch e: CancelledException:
+    cancelledMsg = e.reason
+  expect(cancelledMsg, equals("abort"))
+
+test "waitAll, race, mapConcurrent, and retryAsync work with bounded concurrency and backoff" async:
+  allRes = await waitAll<int>([
+    _delayedValue<int>(15ms, 1),
+    _delayedValue<int>(5ms, 2),
+    _delayedValue<int>(10ms, 3),
+  ])
+  expect(allRes, equals([1, 2, 3]))
+
+  winner = await race<String>([
+    _delayedValue<String>(80ms, "slow"),
+    _delayedValue<String>(5ms, "fast"),
+    _delayedValue<String>(50ms, "mid"),
+  ])
+  expect(winner, equals("fast"))
+
+  var emptyRaceErr = false
+  try:
+    emptyFuts: List<Future<int>> = []
+    await race<int>(emptyFuts)
+  catch e: ArgumentError:
+    emptyRaceErr = true
+  expect(emptyRaceErr, isTrue)
+
+  tracker = _ConcurrencyTracker()
+  mapped = await mapConcurrent<int, int>([1, 2, 3, 4, 5], 2, (n) -> _mappedWorker(tracker, n))
+  expect(mapped, equals([10, 20, 30, 40, 50]))
+  expect(tracker.peak, equals(2))
+  expect(tracker.active, equals(0))
+
+  attempts: List<int> = []
+  recovered = await retryAsync<String>(4, 5ms, (a) -> _flakyTask(attempts, 3, a), backoffFactor: 1.5)
+  expect(recovered, equals("ok-3"))
+  expect(attempts, equals([1, 2, 3]))
+
+  failAttempts: List<int> = []
+  var finalFailed = false
+  try:
+    await retryAsync<String>(2, 5ms, (a) -> _flakyTask(failAttempts, 5, a))
+  catch e: StateError:
+    finalFailed = true
+  expect(finalFailed, isTrue)
+  expect(failAttempts, equals([1, 2]))
+
+  cts = CancellationSource()
+  cts.cancelAfter(12ms, reason: "stop-retry")
+  cancelAttempts: List<int> = []
+  var retryCancelled = false
+  try:
+    await retryAsync<String>(5, 80ms, (a) -> _flakyTask(cancelAttempts, 9, a), token: cts.token())
+  catch e: CancelledException:
+    retryCancelled = e.reason == "stop-retry"
+  expect(retryCancelled, isTrue)
+  expect(cancelAttempts, equals([1]))
+
+test "AsyncGate, BroadcastChannel, Debouncer, and Throttler coordinate events cleanly" async:
+  gate = AsyncGate()
+  expect(gate.isOpen(), isFalse)
+  woken: List<String> = []
+  w1 = _waitOnGate(gate, woken, "w1")
+  w2 = _waitOnGate(gate, woken, "w2")
+  await sleep(5ms)
+  expect(woken.isEmpty, isTrue)
+  gate.open()
+  expect(gate.isOpen(), isTrue)
+  await waitAll<void>([w1, w2])
+  expect(woken, equals(["w1", "w2"]))
+  gate.close()
+  expect(gate.isOpen(), isFalse)
+
+  bus = BroadcastChannel<String>()
+  sub1 = bus.subscribe()
+  sub2 = bus.subscribe()
+  expect(bus.subscriberCount(), equals(2))
+  expect(bus.publish("hello"), equals(2))
+  expect(bus.unsubscribe(sub2), isTrue)
+  expect(bus.publish("world"), equals(1))
+  bus.close()
+  expect(bus.isClosed(), isTrue)
+  expect(await drainChannel<String>(sub1), equals(["hello", "world"]))
+  expect(await drainChannel<String>(sub2), equals(["hello"]))
+
+  scopedBus = BroadcastChannel<int>()
+  using b = scopedBus:
+    s = b.subscribe()
+    expect(b.publish(5), equals(1))
+    expect(await s.receive(), equals(5))
+  expect(scopedBus.isClosed(), isTrue)
+
+  fired: List<String> = []
+  deb = Debouncer(delay: 25ms)
+  deb.call(() -> fired.add("first"))
+  expect(deb.isPending(), isTrue)
+  deb.call(() -> fired.add("second"))
+  await sleep(50ms)
+  expect(deb.isPending(), isFalse)
+  expect(fired, equals(["second"]))
+
+  cancelledDeb = Debouncer(delay: 30ms)
+  using d = cancelledDeb:
+    d.call(() -> fired.add("should-not-run"))
+  await sleep(50ms)
+  expect(fired, equals(["second"]))
+
+  throttled: List<int> = []
+  th = Throttler(interval: 40ms)
+  expect(th.tryRun(() -> throttled.add(1)), isTrue)
+  expect(th.tryRun(() -> throttled.add(2)), isFalse)
+  await sleep(55ms)
+  expect(th.tryRun(() -> throttled.add(3)), isTrue)
+  th.reset()
+  expect(th.tryRun(() -> throttled.add(4)), isTrue)
+  expect(throttled, equals([1, 3, 4]))

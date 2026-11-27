@@ -21,6 +21,9 @@ void main() {
     expect(result.stdout, contains('ok Channel supports unbounded'));
     expect(
         result.stdout, contains('ok CancellationSource and CancellationToken'));
+    expect(result.stdout, contains('ok withTimeout, withTimeoutOrNull'));
+    expect(result.stdout, contains('ok waitAll, race, mapConcurrent'));
+    expect(result.stdout, contains('ok AsyncGate, BroadcastChannel'));
   }, timeout: const Timeout.factor(4));
 
   test('quds:async strict analyze and VM / JS parity pass', () async {
@@ -29,21 +32,22 @@ void main() {
     final entry = File('${sandbox.path}/app.quds')..writeAsStringSync('''
 use quds:async
 
-sendAll(ch: Channel<int>) async -> void:
-  for n in [10, 20, 30]:
-    await ch.send(n)
-  ch.close()
+doubleAsync(n: int) async -> int:
+  await sleep(2ms)
+  return n * 2
 
 main() async:
-  sem = Semaphore(permits: 1)
-  lock sem:
-    ch = Channel<int>(capacity: 2)
-    p = sendAll(ch)
-    items = await drainChannel<int>(ch)
-    await p
-    cts = CancellationSource()
-    cts.cancel("ok")
-    print "{items}|{cts.token().reason()}"
+  mapped = await mapConcurrent<int, int>([1, 2, 3], 2, (n) -> doubleAsync(n))
+  bus = BroadcastChannel<String>()
+  sub = bus.subscribe()
+  bus.publish("hi")
+  bus.close()
+  msgs = await drainChannel<String>(sub)
+  okVal = await withTimeout<int>(200ms, () -> doubleAsync(5))
+  gate = AsyncGate()
+  gate.open()
+  await gate.wait()
+  print "{mapped}|{msgs}|{okVal}"
 ''');
 
     final analyze = await Process.run(
@@ -59,7 +63,7 @@ main() async:
       workingDirectory: sandbox.path,
     );
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-    expect(run.stdout, '[10, 20, 30]|ok\n');
+    expect(run.stdout, '[2, 4, 6]|[hi]|10\n');
 
     final jsOut = '${sandbox.path}/app.js';
     final jsBuild = await Process.run(
@@ -77,6 +81,6 @@ main() async:
       ],
     );
     expect(nodeRun.exitCode, 0, reason: '${nodeRun.stdout}\n${nodeRun.stderr}');
-    expect(nodeRun.stdout, '[10, 20, 30]|ok\n');
+    expect(nodeRun.stdout, '[2, 4, 6]|[hi]|10\n');
   }, timeout: const Timeout.factor(4));
 }

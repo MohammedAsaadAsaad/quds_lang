@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quds_studio/main.dart';
+import 'package:quds_studio/viz_widgets.dart';
 
 void main() {
   testWidgets(
@@ -249,5 +250,46 @@ void main() {
     await tester.tap(find.text('الدفتر التفاعلي'));
     await tester.pumpAndSettle(const Duration(seconds: 2));
     expect(find.byKey(const Key('quds_notebook_panel')), findsOneWidget);
+  });
+
+  testWidgets(
+      'Quds Studio Multi-File Project Workspace browses nested folders, edits modules, and executes project',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+        key: ValueKey('workspace_test'), autoRunInitial: false));
+    await tester.pumpAndSettle();
+
+    // Open the 6th Inspector tab: Project Workspace (scroll TabBar into view first)
+    final projTab = find.byKey(const Key('inspector_project_tab'));
+    await tester.ensureVisible(projTab);
+    await tester.pumpAndSettle();
+    await tester.tap(projTab);
+    await tester.pumpAndSettle();
+
+    // Verify nested files & folders from orbital_lab template are listed
+    expect(find.text('orbital_lab'), findsOneWidget);
+    expect(
+        find.byKey(const Key('ws_file_core/constants.quds')), findsOneWidget);
+    expect(find.byKey(const Key('ws_file_math/vec.quds')), findsOneWidget);
+
+    // Open nested file `core/constants.quds` into editor
+    await tester.tap(find.byKey(const Key('ws_file_core/constants.quds')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('workspace_active_file_bar')), findsOneWidget);
+    expect(find.textContaining('orbital_lab / core/constants.quds'),
+        findsOneWidget);
+
+    // Run full multi-file project (executes `main.quds` importing physics/index -> integrator -> core/constants + math/vec!)
+    await tester.tap(find.byKey(const Key('workspace_run_project_btn')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    // Verify live Plot Canvas, Summary Table, and Interactive Sliders rendered from multi-file execution!
+    expect(find.byType(QudsPlotCanvas), findsOneWidget);
+    expect(find.text('ملخص المحاكاة'), findsOneWidget);
+    expect(find.textContaining('السرعة الابتدائية'), findsOneWidget);
   });
 }

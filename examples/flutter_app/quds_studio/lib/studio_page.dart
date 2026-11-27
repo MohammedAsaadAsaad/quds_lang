@@ -16,6 +16,7 @@ import 'notebook_panel.dart';
 import 'presets.dart';
 import 'viz2_widgets.dart';
 import 'viz_widgets.dart';
+import 'workspace_panel.dart';
 
 class QudsStudioPage extends StatefulWidget {
   const QudsStudioPage({
@@ -41,6 +42,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   late bool _isDark;
   late StudioPreset _preset;
   late StudioPolicyMode _policyMode;
+
+  late QudsWorkspace _projectWorkspace;
+  bool _workspaceMode = false;
+  String _activeWorkspaceFile = 'main.quds';
 
   late QudsDebugController _debugger;
   late QudsProfiler _profiler;
@@ -104,6 +109,9 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   };
   bool _customAllowSensors = false;
 
+  String get _activeFileName =>
+      _workspaceMode ? _activeWorkspaceFile : _preset.fileName;
+
   QudsEditorThemePalette get _palette =>
       _isDark ? QudsEditorThemePalette.dark() : QudsEditorThemePalette.light();
 
@@ -116,7 +124,9 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _policyMode = _preset.defaultPolicy;
     _breakpoints = Set<int>.from(_preset.defaultBreakpoints);
     _enableProfiling = _preset.id == 'profiler_bytecode_lab';
-    _inspectorTabs = TabController(length: 5, vsync: this);
+    _projectWorkspace = QudsWorkspace.scientificProjectTemplate();
+    _activeWorkspaceFile = _projectWorkspace.entryPoint;
+    _inspectorTabs = TabController(length: 6, vsync: this);
 
     _buildRuntime();
     _codeController = QudsSyntaxTextController(
@@ -191,6 +201,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       profiler: _profiler,
       allowTopLevelRebind: true,
       hostModules: [sensorsMod],
+      projectWorkspace: _projectWorkspace,
     );
     _engine = QudsEditorEngine(session: _session);
 
@@ -209,16 +220,23 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   }
 
   void _onEditorChanged() {
+    if (_workspaceMode) {
+      final current = _projectWorkspace.readFile(_activeWorkspaceFile);
+      if (current != _codeController.text) {
+        _projectWorkspace.writeFile(_activeWorkspaceFile, _codeController.text);
+      }
+    }
     _reanalyze();
   }
 
   void _reanalyze() {
     final text = _codeController.text;
-    final analysis = _engine.analyze(text, file: _preset.fileName);
+    final fileName = _activeFileName;
+    final analysis = _engine.analyze(text, file: fileName);
     final sel = _codeController.selection;
     final offset = sel.isValid ? sel.baseOffset : text.length;
-    final completions = _engine.completeAt(text, offset);
-    final sig = _engine.signatureHelpAt(text, offset);
+    final completions = _engine.completeAt(text, offset, file: fileName);
+    final sig = _engine.signatureHelpAt(text, offset, file: fileName);
     _codeController.diagnostics = analysis.diagnostics;
     _codeController.palette = _palette;
 
@@ -238,18 +256,23 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   Future<void> _runCode({bool switchMobileTab = true}) async {
     if (_running) return;
     _stopAnimTimer();
-    _debugger.setLineBreakpoints(_preset.fileName, _breakpoints);
+    if (_workspaceMode) {
+      _projectWorkspace.writeFile(_activeWorkspaceFile, _codeController.text);
+    }
+    _debugger.setLineBreakpoints(_activeFileName, _breakpoints);
     _debugger.recordHistory = _enableProfiling;
     _profiler.enabled = _enableProfiling;
     setState(() {
       _running = true;
       _liveEvalOutput = null;
     });
-    final res = await _session.run(
-      _codeController.text,
-      file: _preset.fileName,
-      preferBytecode: _preferBytecode,
-    );
+    final res = _workspaceMode
+        ? await _session.runProject(preferBytecode: _preferBytecode)
+        : await _session.run(
+            _codeController.text,
+            file: _preset.fileName,
+            preferBytecode: _preferBytecode,
+          );
     if (!mounted) return;
     final hasVisual = res.lastGeometryScene != null ||
         res.lastPlot != null ||
@@ -273,6 +296,68 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _reanalyze();
   }
 
+  void _openWorkspaceFile(String path, {bool switchToEditorOnMobile = true}) {
+    final content = _projectWorkspace.readFile(path);
+    if (content == null) return;
+    if (_workspaceMode) {
+      _projectWorkspace.writeFile(_activeWorkspaceFile, _codeController.text);
+    }
+    _stopAnimTimer();
+    _session.stop();
+    setState(() {
+      _workspaceMode = true;
+      _activeWorkspaceFile = path;
+      _breakpoints = {};
+      if (switchToEditorOnMobile) {
+        _mobileTabIndex = 0;
+      }
+    });
+    _codeController.removeListener(_onEditorChanged);
+    _codeController.text = content;
+    _codeController.addListener(_onEditorChanged);
+    _reanalyze();
+  }
+
+  Future<void> _runWorkspaceProject() async {
+    if (!_workspaceMode) {
+      _openWorkspaceFile(
+        _projectWorkspace.entryPoint,
+        switchToEditorOnMobile: false,
+      );
+    }
+    await _runCode(switchMobileTab: true);
+  }
+
+  void _createWorkspaceFile(String path, String initialContent) {
+    final norm = QudsWorkspace.normalizePath(path);
+    _projectWorkspace.writeFile(norm, initialContent);
+    _openWorkspaceFile(norm);
+  }
+
+  void _createWorkspaceFolder(String folderPath) {
+    _projectWorkspace.createFolder(folderPath);
+    setState(() {});
+  }
+
+  void _deleteWorkspaceFile(String path) {
+    _projectWorkspace.deleteFile(path);
+    if (_workspaceMode && _activeWorkspaceFile == path) {
+      _openWorkspaceFile(_projectWorkspace.entryPoint,
+          switchToEditorOnMobile: false);
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _resetWorkspaceTemplate() {
+    _projectWorkspace = QudsWorkspace.scientificProjectTemplate();
+    _session.attachWorkspace(_projectWorkspace);
+    _openWorkspaceFile(
+      _projectWorkspace.entryPoint,
+      switchToEditorOnMobile: false,
+    );
+  }
+
   void _stopAnimTimer() {
     _animTimer?.cancel();
     _animTimer = null;
@@ -291,14 +376,22 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     });
   }
 
+  String _activeExecutionSource() => _workspaceMode
+      ? (_projectWorkspace.readFile(_projectWorkspace.entryPoint) ??
+          _codeController.text)
+      : _codeController.text;
+
+  String _activeExecutionFile() =>
+      _workspaceMode ? _projectWorkspace.entryPoint : _preset.fileName;
+
   Future<void> _stepAnimFrame() async {
     if (_updatingInteractive || _running) return;
     _updatingInteractive = true;
     try {
       final res = await _session.stepFrame(
         0.033 * _animSpeed,
-        source: _codeController.text,
-        file: _preset.fileName,
+        source: _activeExecutionSource(),
+        file: _activeExecutionFile(),
       );
       if (!mounted) return;
       _lastResult = res;
@@ -313,8 +406,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _session.resetAnimation();
     final res = await _session.updateInteractiveInputs(
       {},
-      source: _codeController.text,
-      file: _preset.fileName,
+      source: _activeExecutionSource(),
+      file: _activeExecutionFile(),
     );
     if (!mounted) return;
     setState(() => _lastResult = res);
@@ -338,8 +431,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         _pendingInteractivePatch = null;
         final res = await _session.updateInteractiveInputs(
           nextPatch,
-          source: _codeController.text,
-          file: _preset.fileName,
+          source: _activeExecutionSource(),
+          file: _activeExecutionFile(),
         );
         if (!mounted) return;
         _lastResult = res;
@@ -356,6 +449,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _session.stop();
     _pendingInteractivePatch = null;
     setState(() {
+      _workspaceMode = false;
       _preset = preset;
       _policyMode = preset.defaultPolicy;
       _breakpoints = Set<int>.from(preset.defaultBreakpoints);
@@ -679,30 +773,96 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         child: LayoutBuilder(
           builder: (context, constraints) {
             final isCompact = constraints.maxWidth < 840;
-            final editorView = QudsCodeEditorView(
-              controller: _codeController,
-              focusNode: _editorFocus,
-              palette: _palette,
-              analysis: _analysis,
-              breakpoints: _breakpoints,
-              pausedLine: _activePause?.span.line,
-              completions: _completions,
-              signatureHelp: _signatureHelp,
-              onToggleBreakpoint: (line) {
-                setState(() {
-                  if (!_breakpoints.remove(line)) {
-                    _breakpoints.add(line);
-                  }
-                });
-                _debugger.setLineBreakpoints(_preset.fileName, _breakpoints);
-              },
-              onApplyCompletion: _applyCompletion,
-              onApplyQuickFix: _applyQuickFix,
-              onSmartEnter: () {},
-              onSmartTab: _smartTab,
-              onFormat: _formatCode,
-              onToggleComment: _toggleComment,
+            final workspacePanel = QudsWorkspacePanel(
+              workspace: _projectWorkspace,
+              activeFile: _activeWorkspaceFile,
+              workspaceMode: _workspaceMode,
               isArabic: _isArabic,
+              isDark: _isDark,
+              running: _running,
+              onOpenFile: (path) => _openWorkspaceFile(path),
+              onRunProject: _runWorkspaceProject,
+              onCreateFile: _createWorkspaceFile,
+              onCreateFolder: _createWorkspaceFolder,
+              onDeleteFile: _deleteWorkspaceFile,
+              onResetTemplate: _resetWorkspaceTemplate,
+            );
+
+            final editorView = Column(
+              children: [
+                if (_workspaceMode)
+                  Container(
+                    key: const Key('workspace_active_file_bar'),
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0EA5E9).withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF38BDF8).withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.folder_open_rounded,
+                            size: 14, color: Color(0xFF38BDF8)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            '${_projectWorkspace.name} / $_activeWorkspaceFile',
+                            style: const TextStyle(
+                              fontFamily: 'JetBrainsMono',
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF38BDF8),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          _isArabic
+                              ? 'تشغيل: ${_projectWorkspace.entryPoint}'
+                              : 'Entry: ${_projectWorkspace.entryPoint}',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: theme.hintColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: QudsCodeEditorView(
+                    controller: _codeController,
+                    focusNode: _editorFocus,
+                    palette: _palette,
+                    analysis: _analysis,
+                    breakpoints: _breakpoints,
+                    pausedLine: _activePause?.span.file == _activeFileName
+                        ? _activePause?.span.line
+                        : null,
+                    completions: _completions,
+                    signatureHelp: _signatureHelp,
+                    onToggleBreakpoint: (line) {
+                      setState(() {
+                        if (!_breakpoints.remove(line)) {
+                          _breakpoints.add(line);
+                        }
+                      });
+                      _debugger.setLineBreakpoints(
+                          _activeFileName, _breakpoints);
+                    },
+                    onApplyCompletion: _applyCompletion,
+                    onApplyQuickFix: _applyQuickFix,
+                    onSmartEnter: () {},
+                    onSmartTab: _smartTab,
+                    onFormat: _formatCode,
+                    onToggleComment: _toggleComment,
+                    isArabic: _isArabic,
+                  ),
+                ),
+              ],
             );
 
             return Scaffold(
@@ -719,11 +879,12 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                                 children: [
                                   editorView,
                                   _buildVisualStage(theme),
-                                  _buildInspectorPanel(theme),
+                                  _buildInspectorPanel(theme, workspacePanel),
                                   QudsNotebookPanel(
                                     isArabic: _isArabic,
                                     isDark: _isDark,
                                   ),
+                                  workspacePanel,
                                 ],
                               )
                             : Row(
@@ -740,7 +901,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                                         const SizedBox(height: 12),
                                         Expanded(
                                             flex: 4,
-                                            child: _buildInspectorPanel(theme)),
+                                            child: _buildInspectorPanel(
+                                                theme, workspacePanel)),
                                       ],
                                     ),
                                   ),
@@ -776,6 +938,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                         NavigationDestination(
                           icon: const Icon(Icons.menu_book_rounded),
                           label: _isArabic ? 'الدفتر' : 'Notebook',
+                        ),
+                        NavigationDestination(
+                          icon: const Icon(Icons.folder_copy_rounded),
+                          label: _isArabic ? 'المشروع' : 'Project',
                         ),
                       ],
                     )
@@ -1209,7 +1375,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     );
   }
 
-  Widget _buildInspectorPanel(ThemeData theme) {
+  Widget _buildInspectorPanel(ThemeData theme, Widget workspacePanel) {
     final surface = _isDark ? const Color(0xFF0F172A) : Colors.white;
     return Container(
       decoration: BoxDecoration(
@@ -1247,6 +1413,12 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                     : 'Profiler (${_profiler.totalCalls})',
               ),
               Tab(text: _isArabic ? 'الدفتر التفاعلي' : 'Notebook'),
+              Tab(
+                key: const Key('inspector_project_tab'),
+                text: _isArabic
+                    ? 'المشروع (${_projectWorkspace.listFiles().length})'
+                    : 'Project (${_projectWorkspace.listFiles().length})',
+              ),
             ],
           ),
           Expanded(
@@ -1264,6 +1436,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                     isDark: _isDark,
                   ),
                 ),
+                workspacePanel,
               ],
             ),
           ),

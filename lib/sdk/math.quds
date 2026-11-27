@@ -823,6 +823,81 @@ extend int Factors:
   #   print 7.prime()
   prime() -> bool = isPrime(this)
 
+# Returns the next lexicographical permutation of [values] as a fresh list,
+# or null if [values] is already in non-increasing order. Handles duplicates.
+# Example:
+#   print nextPermutation([1, 2, 3])
+nextPermutation(values: List<int>) -> List<int>?:
+  n = values.length
+  if n < 2: return null
+  out = values.toList()
+  var pivot = n - 2
+  while pivot >= 0 and out[pivot] >= out[pivot + 1]:
+    pivot -= 1
+  if pivot < 0: return null
+  var swapIdx = n - 1
+  while out[swapIdx] <= out[pivot]:
+    swapIdx -= 1
+  tmp = out[pivot]
+  out[pivot] = out[swapIdx]
+  out[swapIdx] = tmp
+  var left = pivot + 1
+  var right = n - 1
+  while left < right:
+    t = out[left]
+    out[left] = out[right]
+    out[right] = t
+    left += 1
+    right -= 1
+  return out
+
+# Generates all k-element combinations of 0..<n in lexicographical order.
+# Enforces a safety limit of 10000 output combinations.
+# Example:
+#   print combinationsOf(4, 2)
+combinationsOf(n: int, k: int) -> List<List<int>>:
+  if n < 0 or k < 0 or k > n: throw "combinationsOf needs 0 <= k <= n"
+  if combinations(n, k) > 10000: throw "combinationsOf exceeds the 10000 output limit"
+  output: List<List<int>> = []
+  if k == 0:
+    empty: List<int> = []
+    output.add(empty)
+    return output
+  current: List<int> = []
+  var i = 0
+  while i < k:
+    current.add(i)
+    i += 1
+  while true:
+    output.add(current.toList())
+    var pos = k - 1
+    while pos >= 0 and current[pos] == n - k + pos:
+      pos -= 1
+    if pos < 0: break
+    current[pos] = current[pos] + 1
+    var nextPos = pos + 1
+    while nextPos < k:
+      current[nextPos] = current[nextPos - 1] + 1
+      nextPos += 1
+  return output
+
+# Generates all n! permutations of 0..<n in lexicographical order (n <= 8).
+# Example:
+#   print permutationsOf(3)
+permutationsOf(n: int) -> List<List<int>>:
+  if n < 0 or n > 8: throw "permutationsOf needs n in 0 through 8"
+  output: List<List<int>> = []
+  seed: List<int> = []
+  var i = 0
+  while i < n:
+    seed.add(i)
+    i += 1
+  var cur: List<int>? = seed
+  while cur != null:
+    output.add(cur)
+    cur = nextPermutation(cur)
+  return output
+
 :: complex
 
 # A complex number. Addition, subtraction, multiplication, and division use
@@ -2095,6 +2170,151 @@ bootstrapMean(values: List<double>, replicates: int, seed: int, level: double) -
   lowIndex = (span * (1.0 - level) / 2.0).floor
   highIndex = (span * (1.0 + level) / 2.0).floor
   return BootstrapInterval(low: means[lowIndex], high: means[highIndex], seed: seed, replicates: replicates, level: level)
+
+# Cohen's d standardized effect size between two independent samples using the
+# pooled unbiased standard deviation: (mean(left) - mean(right)) / s_pooled.
+# Example:
+#   print cohenD([4.0, 5.0, 6.0], [1.0, 2.0, 3.0])
+cohenD(left: List<double>, right: List<double>) -> double:
+  if left.length < 2 or right.length < 2:
+    throw "cohenD needs at least 2 observations in each sample"
+  for v in left:
+    if not _finite(v): throw "cohenD values must be finite"
+  for v in right:
+    if not _finite(v): throw "cohenD values must be finite"
+  m1 = mean(left)
+  m2 = mean(right)
+  var ss1 = 0.0
+  for v in left:
+    d = v - m1
+    ss1 += d * d
+  var ss2 = 0.0
+  for v in right:
+    d = v - m2
+    ss2 += d * d
+  df = (left.length + right.length - 2) to double
+  pooledVar = (ss1 + ss2) / df
+  if pooledVar <= 0.0: throw "cohenD needs positive pooled variance"
+  return (m1 - m2) / sqrt(pooledVar)
+
+# Binary logistic regression (binomial GLM with logit link) solved by
+# L2-regularized Newton-Raphson (IRLS). Labels must be 0 or 1.
+# Returns fitted coefficient vector w such that P(y=1|x) = 1 / (1 + exp(-x·w)).
+# Example:
+#   w = logisticRegression([[1.0, -2.0], [1.0, -1.0], [1.0, 1.0], [1.0, 2.0]], [0, 0, 1, 1], lambda: 0.1)
+logisticRegression(design: List<List<double>>, labels: List<int>, lambda: double = 0.01, maxIterations: int = 50) -> List<double>:
+  n = design.length
+  if n == 0 or labels.length != n:
+    throw "logisticRegression needs matching nonempty design matrix and labels"
+  p = design[0].length
+  if p == 0 or p > 32: throw "logisticRegression feature count must be in 1..32"
+  if not _finite(lambda) or lambda < 0.0: throw "logisticRegression lambda must be finite and nonnegative"
+  if maxIterations < 1 or maxIterations > 500: throw "logisticRegression maxIterations must be in 1..500"
+  for row in design:
+    if row.length != p: throw "logisticRegression design rows must have equal length"
+    for v in row:
+      if not _finite(v): throw "logisticRegression design values must be finite"
+  for y in labels:
+    if y != 0 and y != 1: throw "logisticRegression labels must be 0 or 1"
+  w: List<double> = []
+  var j = 0
+  while j < p:
+    w.add(0.0)
+    j += 1
+  var iter = 0
+  while iter < maxIterations:
+    probs: List<double> = []
+    var i = 0
+    while i < n:
+      var eta = 0.0
+      j = 0
+      while j < p:
+        eta += design[i][j] * w[j]
+        j += 1
+      if eta > 35.0: eta = 35.0
+      if eta < -35.0: eta = -35.0
+      probs.add(1.0 / (1.0 + exp(0.0 - eta)))
+      i += 1
+    hess: List<List<double>> = []
+    grad: List<double> = []
+    var r = 0
+    while r < p:
+      hRow: List<double> = []
+      var c = 0
+      while c < p:
+        var acc = 0.0
+        i = 0
+        while i < n:
+          wt = probs[i] * (1.0 - probs[i])
+          acc += design[i][r] * design[i][c] * wt
+          i += 1
+        if r == c:
+          acc += lambda + 1.0e-10
+        hRow.add(acc)
+        c += 1
+      hess.add(hRow)
+      var gAcc = 0.0 - lambda * w[r]
+      i = 0
+      while i < n:
+        gAcc += design[i][r] * ((labels[i] to double) - probs[i])
+        i += 1
+      grad.add(gAcc)
+      r += 1
+    step = solveLinear(hess, grad)
+    var maxDelta = 0.0
+    j = 0
+    while j < p:
+      w[j] = w[j] + step[j]
+      d = step[j] if step[j] >= 0.0 else 0.0 - step[j]
+      if d > maxDelta: maxDelta = d
+      j += 1
+    if maxDelta < 1.0e-9:
+      break
+    iter += 1
+  return w
+
+# L2-regularized linear regression solving (X^T X + lambda * I) w = X^T y.
+# [lambda] must be nonnegative. Reduces to ordinary least squares at lambda = 0.0.
+# Example:
+#   w = ridgeRegression([[1.0, 1.0], [1.0, 2.0], [1.0, 3.0]], [3.0, 5.0, 7.0], 0.0)
+ridgeRegression(design: List<List<double>>, targets: List<double>, lambda: double) -> List<double>:
+  n = design.length
+  if n == 0 or targets.length != n:
+    throw "ridgeRegression needs matching nonempty design matrix and targets"
+  p = design[0].length
+  if p == 0 or p > 64: throw "ridgeRegression feature count must be in 1..64"
+  if not _finite(lambda) or lambda < 0.0: throw "ridgeRegression lambda must be finite and nonnegative"
+  for row in design:
+    if row.length != p: throw "ridgeRegression design rows must have equal length"
+    for v in row:
+      if not _finite(v): throw "ridgeRegression design values must be finite"
+  for y in targets:
+    if not _finite(y): throw "ridgeRegression targets must be finite"
+  xtx: List<List<double>> = []
+  xty: List<double> = []
+  var i = 0
+  while i < p:
+    row: List<double> = []
+    var j = 0
+    while j < p:
+      var acc = 0.0
+      var r = 0
+      while r < n:
+        acc += design[r][i] * design[r][j]
+        r += 1
+      if i == j:
+        acc += lambda
+      row.add(acc)
+      j += 1
+    xtx.add(row)
+    var rhs = 0.0
+    var r = 0
+    while r < n:
+      rhs += design[r][i] * targets[r]
+      r += 1
+    xty.add(rhs)
+    i += 1
+  return solveLinear(xtx, xty)
 
 :: distribution
 
@@ -7894,6 +8114,188 @@ _graphColorNeighbor(states: List<_GraphState>, queue: List<int>, vertex: int, ne
     if states[neighbor].mark == states[vertex].mark:
       throw "bipartiteColoring needs a bipartite graph"
 
+class _UndirEdge:
+  to: int required
+  id: int required
+
+_buildUndirectedEdges(graph: List<List<int>>) -> List<List<_UndirEdge>>:
+  _validateGraph(graph)
+  n = graph.length
+  adj: List<List<_UndirEdge>> = []
+  var i = 0
+  while i < n:
+    empty: List<_UndirEdge> = []
+    adj.add(empty)
+    i += 1
+  # Build canonical undirected edge instances preserving parallel edges.
+  # Each input pair u->v and v->u (if symmetric) pairs into one undirected edge;
+  # asymmetric directed edges are also treated as undirected edges.
+  counts: List<Map<int, int>> = []
+  i = 0
+  while i < n:
+    m: Map<int, int> = map:
+    counts.add(m)
+    i += 1
+  var u = 0
+  while u < n:
+    for v in graph[u]:
+      if u != v:
+        prev = counts[u][v] ?? 0
+        counts[u][v] = prev + 1
+    u += 1
+  var edgeId = 0
+  u = 0
+  while u < n:
+    for entry in counts[u].entries:
+      v = entry.key
+      if u < v:
+        cUV = entry.value
+        cVU = counts[v][u] ?? 0
+        mult = cUV if cUV >= cVU else cVU
+        var copy = 0
+        while copy < mult:
+          adj[u].add(_UndirEdge(to: v, id: edgeId))
+          adj[v].add(_UndirEdge(to: u, id: edgeId))
+          edgeId += 1
+          copy += 1
+      else if v < u and not counts[v].containsKey(u):
+        var copy = 0
+        while copy < entry.value:
+          adj[u].add(_UndirEdge(to: v, id: edgeId))
+          adj[v].add(_UndirEdge(to: u, id: edgeId))
+          edgeId += 1
+          copy += 1
+    u += 1
+  return adj
+
+class _TarjanCutState:
+  disc: List<int> required
+  low: List<int> required
+  isCut: List<bool> required
+  bridges: List<List<int>> required
+  edgeStackU: List<int> required
+  edgeStackV: List<int> required
+  blocks: List<List<int>> required
+  var timer: int = 0
+
+_tarjanCutDfs(u: int, parentEdgeId: int, adj: List<List<_UndirEdge>>, st: _TarjanCutState) -> void:
+  st.timer += 1
+  st.disc[u] = st.timer
+  st.low[u] = st.timer
+  var childCount = 0
+  for edge in adj[u]:
+    if edge.id == parentEdgeId:
+      continue
+    v = edge.to
+    if st.disc[v] == 0:
+      childCount += 1
+      st.edgeStackU.add(u)
+      st.edgeStackV.add(v)
+      _tarjanCutDfs(v, edge.id, adj, st)
+      if st.low[v] < st.low[u]:
+        st.low[u] = st.low[v]
+      if st.low[v] > st.disc[u]:
+        lo = u if u < v else v
+        hi = v if u < v else u
+        st.bridges.add([lo, hi])
+      if parentEdgeId != -1 and st.low[v] >= st.disc[u]:
+        st.isCut[u] = true
+      if st.low[v] >= st.disc[u]:
+        blockVerts: List<int> = []
+        while st.edgeStackU.isNotEmpty:
+          eu = st.edgeStackU.removeLast()
+          ev = st.edgeStackV.removeLast()
+          if not blockVerts.contains(eu): blockVerts.add(eu)
+          if not blockVerts.contains(ev): blockVerts.add(ev)
+          if (eu == u and ev == v) or (eu == v and ev == u):
+            break
+        blockVerts.sort()
+        st.blocks.add(blockVerts)
+    else if st.disc[v] < st.disc[u]:
+      st.edgeStackU.add(u)
+      st.edgeStackV.add(v)
+      if st.disc[v] < st.low[u]:
+        st.low[u] = st.disc[v]
+  if parentEdgeId == -1 and childCount > 1:
+    st.isCut[u] = true
+
+_runTarjanCut(graph: List<List<int>>) -> _TarjanCutState:
+  adj = _buildUndirectedEdges(graph)
+  n = graph.length
+  disc: List<int> = []
+  low: List<int> = []
+  isCut: List<bool> = []
+  var i = 0
+  while i < n:
+    disc.add(0)
+    low.add(0)
+    isCut.add(false)
+    i += 1
+  bridges: List<List<int>> = []
+  stackU: List<int> = []
+  stackV: List<int> = []
+  blocks: List<List<int>> = []
+  st = _TarjanCutState(disc: disc, low: low, isCut: isCut, bridges: bridges, edgeStackU: stackU, edgeStackV: stackV, blocks: blocks)
+  var v = 0
+  while v < n:
+    if st.disc[v] == 0:
+      _tarjanCutDfs(v, -1, adj, st)
+      if st.edgeStackU.isNotEmpty:
+        rem: List<int> = []
+        while st.edgeStackU.isNotEmpty:
+          eu = st.edgeStackU.removeLast()
+          ev = st.edgeStackV.removeLast()
+          if not rem.contains(eu): rem.add(eu)
+          if not rem.contains(ev): rem.add(ev)
+        rem.sort()
+        st.blocks.add(rem)
+    v += 1
+  return st
+
+_sortEdgePairs(edges: List<List<int>>) -> List<List<int>>:
+  out = edges.toList()
+  var i = 1
+  while i < out.length:
+    key = out[i]
+    var j = i - 1
+    while j >= 0 and (out[j][0] > key[0] or (out[j][0] == key[0] and out[j][1] > key[1])):
+      out[j + 1] = out[j]
+      j -= 1
+    out[j + 1] = key
+    i += 1
+  return out
+
+# All bridges (cut-edges) of an undirected graph in O(V+E) time using Tarjan's algorithm.
+# Parallel edges between the same endpoints are not bridges.
+# Returns canonical pairs [u, v] with u < v sorted lexicographically.
+# Example:
+#   print graphBridges([[1], [0, 2], [1]])
+graphBridges(graph: List<List<int>>) -> List<List<int>>:
+  st = _runTarjanCut(graph)
+  return _sortEdgePairs(st.bridges)
+
+# All articulation points (cut-vertices) of an undirected graph in O(V+E) time.
+# Returns sorted unique vertex indices whose removal increases connected components.
+# Example:
+#   print articulationPoints([[1], [0, 2], [1]])
+articulationPoints(graph: List<List<int>>) -> List<int>:
+  st = _runTarjanCut(graph)
+  out: List<int> = []
+  var i = 0
+  while i < st.isCut.length:
+    if st.isCut[i]:
+      out.add(i)
+    i += 1
+  return out
+
+# Vertex sets of all biconnected components (blocks) of an undirected graph in O(V+E) time.
+# Each block is a sorted list of vertices; blocks are ordered deterministically.
+# Example:
+#   print biconnectedComponents([[1, 2], [0, 2], [0, 1, 3], [2]])
+biconnectedComponents(graph: List<List<int>>) -> List<List<int>>:
+  st = _runTarjanCut(graph)
+  return st.blocks
+
 :: graph::weighted
 
 # One finite-weight edge. Shortest-path APIs interpret it as source -> target;
@@ -9291,6 +9693,130 @@ _appendHullPoint(hull: List<Vec2>, point: Vec2):
     hull.removeLast()
   hull.add(point)
 
+# Euclidean distance from [point] to the closed line segment [a, b].
+# Handles zero-length segments (a == b). All coordinates must be finite.
+# Example:
+#   print pointToSegmentDistance(Vec2(x: 1.0, y: 2.0), Vec2(x: 0.0, y: 0.0), Vec2(x: 2.0, y: 0.0))
+pointToSegmentDistance(point: Vec2, a: Vec2, b: Vec2) -> double:
+  _checkGeometryPoint(point)
+  _checkGeometryPoint(a)
+  _checkGeometryPoint(b)
+  dx = b.x - a.x
+  dy = b.y - a.y
+  lenSq = dx * dx + dy * dy
+  if lenSq == 0.0:
+    return hypot(point.x - a.x, point.y - a.y)
+  var t = ((point.x - a.x) * dx + (point.y - a.y) * dy) / lenSq
+  if t < 0.0: t = 0.0
+  if t > 1.0: t = 1.0
+  projX = a.x + t * dx
+  projY = a.y + t * dy
+  return hypot(point.x - projX, point.y - projY)
+
+# Geometric centroid (center of mass) of a non-degenerate simple polygon.
+# Throws when the polygon has fewer than 3 vertices or zero signed area.
+# Example:
+#   print polygonCentroid([Vec2(x: 0.0, y: 0.0), Vec2(x: 2.0, y: 0.0), Vec2(x: 2.0, y: 2.0), Vec2(x: 0.0, y: 2.0)])
+polygonCentroid(polygon: List<Vec2>) -> Vec2:
+  if polygon.length < 3: throw "polygonCentroid needs at least 3 vertices"
+  for pt in polygon:
+    _checkGeometryPoint(pt)
+  var twiceArea = 0.0
+  var cx = 0.0
+  var cy = 0.0
+  var i = 0
+  while i < polygon.length:
+    a = polygon[i]
+    b = polygon[(i + 1) % polygon.length]
+    cross = a.x * b.y - b.x * a.y
+    twiceArea += cross
+    cx += (a.x + b.x) * cross
+    cy += (a.y + b.y) * cross
+    i += 1
+  if twiceArea == 0.0 or not _finite(twiceArea):
+    throw "polygonCentroid needs non-zero polygon area"
+  factor = 1.0 / (3.0 * twiceArea)
+  return Vec2(x: cx * factor, y: cy * factor)
+
+_pointInTriangleClosed(p: Vec2, a: Vec2, b: Vec2, c: Vec2) -> bool:
+  o1 = _orientationExact(a, b, p)
+  o2 = _orientationExact(b, c, p)
+  o3 = _orientationExact(c, a, p)
+  return o1 >= 0 and o2 >= 0 and o3 >= 0
+
+# Ear-clipping triangulation of a simple 2D polygon (convex or concave, CCW or CW).
+# Returns n - 2 triangles as vertex index triples [i, j, k] referencing [polygon],
+# each oriented CCW. Uses exact BigInt orientation predicates for robustness.
+# Example:
+#   print triangulatePolygon([Vec2(x: 0.0, y: 0.0), Vec2(x: 2.0, y: 0.0), Vec2(x: 2.0, y: 2.0), Vec2(x: 0.0, y: 2.0)])
+triangulatePolygon(polygon: List<Vec2>) -> List<List<int>>:
+  if polygon.length < 3 or polygon.length > 512:
+    throw "triangulatePolygon needs between 3 and 512 vertices"
+  for pt in polygon:
+    _checkGeometryPoint(pt)
+  area = polygonSignedAreaExact(polygon)
+  if area.numerator == BigInt.zero:
+    throw "triangulatePolygon needs a non-degenerate polygon with non-zero area"
+  remaining: List<int> = []
+  if area.numerator > BigInt.zero:
+    var i = 0
+    while i < polygon.length:
+      remaining.add(i)
+      i += 1
+  else:
+    var i = polygon.length - 1
+    while i >= 0:
+      remaining.add(i)
+      i -= 1
+  triangles: List<List<int>> = []
+  var guardLimit = polygon.length * polygon.length + 4
+  while remaining.length > 3:
+    guardLimit -= 1
+    if guardLimit < 0: throw "triangulatePolygon failed: polygon may be self-intersecting"
+    var clipped = false
+    var pos = 0
+    while pos < remaining.length:
+      prevIdx = remaining[(pos - 1 + remaining.length) % remaining.length]
+      currIdx = remaining[pos]
+      nextIdx = remaining[(pos + 1) % remaining.length]
+      a = polygon[prevIdx]
+      b = polygon[currIdx]
+      c = polygon[nextIdx]
+      if _orientationExact(a, b, c) > 0:
+        var containsOther = false
+        var k = 0
+        while k < remaining.length:
+          cand = remaining[k]
+          if cand != prevIdx and cand != currIdx and cand != nextIdx:
+            if _pointInTriangleClosed(polygon[cand], a, b, c):
+              containsOther = true
+              break
+          k += 1
+        if not containsOther:
+          triangles.add([prevIdx, currIdx, nextIdx])
+          remaining.removeAt(pos)
+          clipped = true
+          break
+      pos += 1
+    if not clipped:
+      # Handle collinear boundary vertex by dropping degenerate angle if present
+      var dropped = false
+      var dpos = 0
+      while dpos < remaining.length:
+        pIdx = remaining[(dpos - 1 + remaining.length) % remaining.length]
+        cIdx = remaining[dpos]
+        nIdx = remaining[(dpos + 1) % remaining.length]
+        if _orientationExact(polygon[pIdx], polygon[cIdx], polygon[nIdx]) == 0:
+          remaining.removeAt(dpos)
+          dropped = true
+          break
+        dpos += 1
+      if not dropped:
+        throw "triangulatePolygon could not find an ear: polygon may be self-intersecting"
+  if remaining.length == 3 and _orientationExact(polygon[remaining[0]], polygon[remaining[1]], polygon[remaining[2]]) > 0:
+    triangles.add([remaining[0], remaining[1], remaining[2]])
+  return triangles
+
 :: symbolic
 
 # Mathematical expression tree. It is not the language parser: kinds are data,
@@ -9784,6 +10310,147 @@ kalmanScalar(priorMean: double, varianceValue: double, observation: double, proc
   varianceOutput = complement * complement * predicted + gainValue * gainValue * measurementVariance
   if not _seriesFinite(updated) or not _seriesFinite(varianceOutput): throw "Kalman update is not finite"
   return KalmanEstimate(meanValue: updated, variance: varianceOutput, gain: gainValue)
+
+# Partial autocorrelation function (PACF) for lags 0 through [maxLag] using
+# Levinson-Durbin recursion on the population autocovariance sequence.
+# pacf[0] is 1.0 and pacf[1] equals seriesAutocorrelation(samples, 1).
+# Example:
+#   print seriesPacf([1.0, 2.0, 1.5, 2.5, 2.0, 3.0], 2)
+seriesPacf(samples: List<double>, maxLag: int) -> List<double>:
+  if samples.length < 2 or maxLag < 0 or maxLag >= samples.length or maxLag > 64:
+    throw "PACF lag must be within 0 through min(64, n - 1)"
+  _seriesFiniteList(samples)
+  r0 = seriesAutocovariance(samples, 0)
+  if r0 <= 0.0: throw "PACF needs positive sample variance"
+  acf: List<double> = [1.0]
+  var lag = 1
+  while lag <= maxLag:
+    acf.add(seriesAutocovariance(samples, lag) / r0)
+    lag += 1
+  output: List<double> = [1.0]
+  if maxLag == 0: return output
+  var phiPrev: List<double> = []
+  var v = 1.0
+  var k = 1
+  while k <= maxLag:
+    var num = acf[k]
+    var j = 1
+    while j < k:
+      num -= phiPrev[j - 1] * acf[k - j]
+      j += 1
+    if v <= 1.0e-15: throw "PACF recursion encountered singular Toeplitz system"
+    kappa = num / v
+    if not _seriesFinite(kappa): throw "PACF value is not finite"
+    phiCurr: List<double> = []
+    j = 1
+    while j < k:
+      phiCurr.add(phiPrev[j - 1] - kappa * phiPrev[k - j - 1])
+      j += 1
+    phiCurr.add(kappa)
+    output.add(kappa)
+    v = v * (1.0 - kappa * kappa)
+    phiPrev = phiCurr
+    k += 1
+  return output
+
+class ArModel:
+  coefficients: List<double> required
+  intercept: double required
+  residualVariance: double required
+
+# Fits an AR([order]) model via Yule-Walker equations solved with Levinson-Durbin
+# recursion. Coefficients are ordered from lag 1 to lag [order] and can be passed
+# directly to [arForecast].
+# Example:
+#   model = arFit([1.0, 2.0, 1.5, 2.5, 2.0, 3.0], 1)
+arFit(samples: List<double>, order: int) -> ArModel:
+  if order < 1 or order > 32 or samples.length <= order + 1:
+    throw "AR fit needs order in 1..32 and samples.length > order + 1"
+  _seriesFiniteList(samples)
+  mu = mean(samples)
+  r0 = seriesAutocovariance(samples, 0)
+  if r0 <= 0.0: throw "AR fit needs positive sample variance"
+  acf: List<double> = [1.0]
+  var lag = 1
+  while lag <= order:
+    acf.add(seriesAutocovariance(samples, lag) / r0)
+    lag += 1
+  var arPhi: List<double> = []
+  var v = r0
+  var k = 1
+  while k <= order:
+    var num = acf[k]
+    var j = 1
+    while j < k:
+      num -= arPhi[j - 1] * acf[k - j]
+      j += 1
+    denom = v / r0
+    if denom <= 1.0e-15: throw "AR fit encountered singular Yule-Walker matrix"
+    kappa = num / denom
+    nextPhi: List<double> = []
+    j = 1
+    while j < k:
+      nextPhi.add(arPhi[j - 1] - kappa * arPhi[k - j - 1])
+      j += 1
+    nextPhi.add(kappa)
+    v = v * (1.0 - kappa * kappa)
+    if v < 0.0: v = 0.0
+    arPhi = nextPhi
+    k += 1
+  var phiSum = 0.0
+  for c in arPhi:
+    phiSum += c
+  interceptVal = mu * (1.0 - phiSum)
+  if not _seriesFinite(interceptVal) or not _seriesFinite(v):
+    throw "AR fit produced non-finite parameters"
+  return ArModel(coefficients: arPhi, intercept: interceptVal, residualVariance: v)
+
+# Simple exponential smoothing with smoothing factor 0 < [alpha] <= 1.
+# Returns a smoothed series of the same length as [samples], initialized at samples[0].
+# Example:
+#   print exponentialSmoothing([10.0, 12.0, 14.0], 0.5)
+exponentialSmoothing(samples: List<double>, alpha: double) -> List<double>:
+  if samples.isEmpty: throw "exponentialSmoothing needs a nonempty series"
+  if not _seriesFinite(alpha) or alpha <= 0.0 or alpha > 1.0:
+    throw "exponentialSmoothing alpha must be in (0, 1]"
+  _seriesFiniteList(samples)
+  output: List<double> = [samples[0]]
+  var level = samples[0]
+  var index = 1
+  while index < samples.length:
+    level = alpha * samples[index] + (1.0 - alpha) * level
+    output.add(level)
+    index += 1
+  return output
+
+# Holt's linear trend double exponential smoothing forecast for [steps] ahead.
+# Initialized with level = samples[0] and trend = samples[1] - samples[0].
+# Example:
+#   print holtForecast([1.0, 2.0, 3.0, 4.0], 0.5, 0.5, 2)
+holtForecast(samples: List<double>, alpha: double, trendAlpha: double, steps: int) -> List<double>:
+  if samples.length < 2: throw "holtForecast needs at least 2 observations"
+  if steps < 0 or steps > 10000: throw "holtForecast steps must be in 0..10000"
+  if not _seriesFinite(alpha) or alpha <= 0.0 or alpha > 1.0:
+    throw "holtForecast alpha must be in (0, 1]"
+  if not _seriesFinite(trendAlpha) or trendAlpha < 0.0 or trendAlpha > 1.0:
+    throw "holtForecast trendAlpha must be in [0, 1]"
+  _seriesFiniteList(samples)
+  var level = samples[0]
+  var trend = samples[1] - samples[0]
+  var index = 1
+  while index < samples.length:
+    prevLevel = level
+    level = alpha * samples[index] + (1.0 - alpha) * (level + trend)
+    trend = trendAlpha * (level - prevLevel) + (1.0 - trendAlpha) * trend
+    index += 1
+  output: List<double> = []
+  var h = 1
+  while h <= steps:
+    val = level + (h to double) * trend
+    if not _seriesFinite(val): throw "holtForecast produced non-finite value"
+    output.add(val)
+    h += 1
+  return output
 
 _seriesFinite(value: double) -> bool = value == value and value != 1.0 / 0.0 and value != 0.0 - 1.0 / 0.0
 _seriesFiniteList(values: List<double>):

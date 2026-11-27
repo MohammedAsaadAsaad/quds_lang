@@ -1,0 +1,234 @@
+use quds:math as m
+
+_approx(actual: double, expected: double, tol: double) -> bool:
+  diff = actual - expected
+  absDiff = diff if diff >= 0.0 else 0.0 - diff
+  return absDiff <= tol
+
+_countUndirectedComponents(n: int, adj: List<List<int>>, skipVertex: int, skipU: int, skipV: int) -> int:
+  visited: List<bool> = []
+  var i = 0
+  while i < n:
+    visited.add(false)
+    i += 1
+  var comps = 0
+  var start = 0
+  while start < n:
+    if start != skipVertex and not visited[start]:
+      comps += 1
+      queue: List<int> = [start]
+      visited[start] = true
+      var head = 0
+      while head < queue.length:
+        u = queue[head]
+        head += 1
+        for v in adj[u]:
+          if v == skipVertex: continue
+          if (u == skipU and v == skipV) or (u == skipV and v == skipU): continue
+          if not visited[v]:
+            visited[v] = true
+            queue.add(v)
+    start += 1
+  return comps
+
+_oracleArticulationPoints(graph: List<List<int>>) -> List<int>:
+  n = graph.length
+  base = _countUndirectedComponents(n, graph, -1, -1, -1)
+  out: List<int> = []
+  var v = 0
+  while v < n:
+    after = _countUndirectedComponents(n, graph, v, -1, -1)
+    if after > base:
+      out.add(v)
+    v += 1
+  return out
+
+test "graphBridges, articulationPoints, and biconnectedComponents match independent oracle":
+  # Path 0-1-2-3: every edge is a bridge, cut vertices are [1, 2]
+  pathG = [[1], [0, 2], [1, 3], [2]]
+  expect(m.graphBridges(pathG), equals([[0, 1], [1, 2], [2, 3]]))
+  expect(m.articulationPoints(pathG), equals([1, 2]))
+  expect(m.articulationPoints(pathG), equals(_oracleArticulationPoints(pathG)))
+  expect(m.biconnectedComponents(pathG).length, equals(3))
+
+  # 4-cycle: zero bridges, zero articulation points, 1 biconnected component
+  cycleG = [[1, 3], [0, 2], [1, 3], [0, 2]]
+  emptyPairs: List<List<int>> = []
+  emptyInts: List<int> = []
+  expect(m.graphBridges(cycleG), equals(emptyPairs))
+  expect(m.articulationPoints(cycleG), equals(emptyInts))
+  expect(m.biconnectedComponents(cycleG), equals([[0, 1, 2, 3]]))
+
+  # Barbell: triangle (0,1,2) joined by bridge (2,3) to triangle (3,4,5)
+  barbell = [
+    [1, 2],
+    [0, 2],
+    [0, 1, 3],
+    [2, 4, 5],
+    [3, 5],
+    [3, 4],
+  ]
+  expect(m.graphBridges(barbell), equals([[2, 3]]))
+  expect(m.articulationPoints(barbell), equals([2, 3]))
+  expect(m.articulationPoints(barbell), equals(_oracleArticulationPoints(barbell)))
+  expect(m.biconnectedComponents(barbell).length, equals(3))
+
+  # Parallel multi-edge between 0 and 1 is NOT a bridge, while (1, 2) IS a bridge
+  multiEdge = [[1, 1], [0, 0, 2], [1]]
+  expect(m.graphBridges(multiEdge), equals([[1, 2]]))
+  expect(m.articulationPoints(multiEdge), equals([1]))
+
+test "triangulatePolygon preserves exact rational area on convex, CW, and concave polygons":
+  # Convex unit square (CCW)
+  square = [
+    m.Vec2(x: 0.0, y: 0.0),
+    m.Vec2(x: 2.0, y: 0.0),
+    m.Vec2(x: 2.0, y: 2.0),
+    m.Vec2(x: 0.0, y: 2.0),
+  ]
+  sqTris = m.triangulatePolygon(square)
+  expect(sqTris.length, equals(2))
+  var sqSum = m.bigFraction(BigInt.zero, BigInt.one)
+  for tri in sqTris:
+    a = square[tri[0]]
+    b = square[tri[1]]
+    c = square[tri[2]]
+    expect(m.orientation2D(a, b, c), equals(1))
+    sqSum = sqSum + m.polygonSignedAreaExact([a, b, c])
+  expect(sqSum == m.polygonSignedAreaExact(square), isTrue)
+
+  # Clockwise square should still produce CCW triangles with matching positive area
+  cwSquare = [
+    m.Vec2(x: 0.0, y: 0.0),
+    m.Vec2(x: 0.0, y: 2.0),
+    m.Vec2(x: 2.0, y: 2.0),
+    m.Vec2(x: 2.0, y: 0.0),
+  ]
+  cwTris = m.triangulatePolygon(cwSquare)
+  expect(cwTris.length, equals(2))
+  var cwSum = m.bigFraction(BigInt.zero, BigInt.one)
+  for tri in cwTris:
+    cwSum = cwSum + m.polygonSignedAreaExact([cwSquare[tri[0]], cwSquare[tri[1]], cwSquare[tri[2]]])
+  expect(cwSum == m.bigFraction(BigInt.from(4), BigInt.one), isTrue)
+
+  # Concave L-shape polygon (6 vertices -> 4 triangles, exact area = 3)
+  lShape = [
+    m.Vec2(x: 0.0, y: 0.0),
+    m.Vec2(x: 2.0, y: 0.0),
+    m.Vec2(x: 2.0, y: 1.0),
+    m.Vec2(x: 1.0, y: 1.0),
+    m.Vec2(x: 1.0, y: 2.0),
+    m.Vec2(x: 0.0, y: 2.0),
+  ]
+  lTris = m.triangulatePolygon(lShape)
+  expect(lTris.length, equals(4))
+  var lSum = m.bigFraction(BigInt.zero, BigInt.one)
+  for tri in lTris:
+    expect(m.orientation2D(lShape[tri[0]], lShape[tri[1]], lShape[tri[2]]), equals(1))
+    lSum = lSum + m.polygonSignedAreaExact([lShape[tri[0]], lShape[tri[1]], lShape[tri[2]]])
+  expect(lSum == m.polygonSignedAreaExact(lShape), isTrue)
+  expect(lSum == m.bigFraction(BigInt.from(3), BigInt.one), isTrue)
+
+  # Centroid & pointToSegmentDistance
+  c = m.polygonCentroid(square)
+  expect(_approx(c.x, 1.0, 1.0e-12), isTrue)
+  expect(_approx(c.y, 1.0, 1.0e-12), isTrue)
+  expect(_approx(m.pointToSegmentDistance(m.Vec2(x: 1.0, y: 3.0), m.Vec2(x: 0.0, y: 0.0), m.Vec2(x: 2.0, y: 0.0)), 3.0, 1.0e-12), isTrue)
+  expect(_approx(m.pointToSegmentDistance(m.Vec2(x: 5.0, y: 4.0), m.Vec2(x: 0.0, y: 0.0), m.Vec2(x: 2.0, y: 0.0)), 5.0, 1.0e-12), isTrue)
+  expect(_approx(m.pointToSegmentDistance(m.Vec2(x: 3.0, y: 4.0), m.Vec2(x: 0.0, y: 0.0), m.Vec2(x: 0.0, y: 0.0)), 5.0, 1.0e-12), isTrue)
+
+test "timeseries PACF, AR(p) fitting, exponentialSmoothing, and holtForecast verify mathematical contracts":
+  # Periodic AR-like series for PACF & Yule-Walker AR fit
+  series = [1.0, 2.0, 1.5, 2.8, 2.1, 3.2, 2.4, 3.5, 2.7, 3.8, 3.0, 4.1]
+  pacf = m.seriesPacf(series, 3)
+  expect(pacf.length, equals(4))
+  expect(_approx(pacf[0], 1.0, 1.0e-12), isTrue)
+  expect(_approx(pacf[1], m.seriesAutocorrelation(series, 1), 1.0e-12), isTrue)
+
+  model1 = m.arFit(series, 1)
+  expect(model1.coefficients.length, equals(1))
+  expect(_approx(model1.coefficients[0], m.seriesAutocorrelation(series, 1), 1.0e-12), isTrue)
+  expect(model1.residualVariance >= 0.0, isTrue)
+
+  # AR(2) satisfies Yule-Walker equations: r1 = phi1*r0 + phi2*r1 and r2 = phi1*r1 + phi2*r0
+  model2 = m.arFit(series, 2)
+  r0 = m.seriesAutocovariance(series, 0)
+  r1 = m.seriesAutocovariance(series, 1)
+  r2 = m.seriesAutocovariance(series, 2)
+  phi1 = model2.coefficients[0]
+  phi2 = model2.coefficients[1]
+  expect(_approx(phi1 * r0 + phi2 * r1, r1, 1.0e-9), isTrue)
+  expect(_approx(phi1 * r1 + phi2 * r0, r2, 1.0e-9), isTrue)
+
+  # Model feeds directly into arForecast
+  fc = m.arForecast(series, model2.coefficients, model2.intercept, 3)
+  expect(fc.length, equals(3))
+
+  # Simple exponential smoothing exact recurrence
+  smoothed = m.exponentialSmoothing([10.0, 14.0, 18.0], 0.5)
+  expect(_approx(smoothed[0], 10.0, 1.0e-12), isTrue)
+  expect(_approx(smoothed[1], 12.0, 1.0e-12), isTrue)
+  expect(_approx(smoothed[2], 15.0, 1.0e-12), isTrue)
+
+  # Holt linear trend forecast reproduces exact linear sequence y_t = 5 + 2*t
+  linear = [5.0, 7.0, 9.0, 11.0, 13.0]
+  holt = m.holtForecast(linear, 0.6, 0.4, 3)
+  expect(_approx(holt[0], 15.0, 1.0e-10), isTrue)
+  expect(_approx(holt[1], 17.0, 1.0e-10), isTrue)
+  expect(_approx(holt[2], 19.0, 1.0e-10), isTrue)
+
+test "combinatorics generators nextPermutation, combinationsOf, and permutationsOf match exact counts":
+  # nextPermutation with duplicates: 3 distinct permutations of [1, 1, 2]
+  p1 = m.nextPermutation([1, 1, 2])
+  expect(p1, equals([1, 2, 1]))
+  p2 = m.nextPermutation([1, 2, 1])
+  expect(p2, equals([2, 1, 1]))
+  p3 = m.nextPermutation([2, 1, 1])
+  expect(p3, equals(null))
+
+  # combinationsOf(5, 3) -> C(5, 3) = 10 sorted subsets
+  combs = m.combinationsOf(5, 3)
+  expect(combs.length, equals(m.combinations(5, 3)))
+  expect(combs[0], equals([0, 1, 2]))
+  expect(combs[9], equals([2, 3, 4]))
+  expect(m.combinationsOf(4, 0).length, equals(1))
+
+  # permutationsOf(4) -> 4! = 24 permutations
+  perms = m.permutationsOf(4)
+  expect(perms.length, equals(m.factorial(4)))
+  expect(perms[0], equals([0, 1, 2, 3]))
+  expect(perms[23], equals([3, 2, 1, 0]))
+
+test "stats cohenD, logisticRegression, and ridgeRegression satisfy exact mathematical properties":
+  # Cohen's d: left=[4,5,6] (mean 5, s^2=1), right=[1,2,3] (mean 2, s^2=1) -> d = (5-2)/1 = 3.0
+  expect(_approx(m.cohenD([4.0, 5.0, 6.0], [1.0, 2.0, 3.0]), 3.0, 1.0e-12), isTrue)
+  expect(_approx(m.cohenD([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]), 0.0, 1.0e-12), isTrue)
+
+  # Binary logistic regression (GLM) on symmetric separable data:
+  # intercept ~ 0.0 and positive slope classifying x < 0 as 0, x > 0 as 1
+  logX = [[1.0, -3.0], [1.0, -2.0], [1.0, -1.0], [1.0, 1.0], [1.0, 2.0], [1.0, 3.0]]
+  logY = [0, 0, 0, 1, 1, 1]
+  logW = m.logisticRegression(logX, logY, lambda: 0.1)
+  expect(_approx(logW[0], 0.0, 1.0e-6), isTrue)
+  expect(logW[1] > 1.0, isTrue)
+  pPos = 1.0 / (1.0 + m.exp(0.0 - (logW[0] + logW[1] * 2.0)))
+  pNeg = 1.0 / (1.0 + m.exp(0.0 - (logW[0] + logW[1] * -2.0)))
+  expect(pPos > 0.9, isTrue)
+  expect(pNeg < 0.1, isTrue)
+
+  # Ridge regression at lambda = 0 recovers exact linear model y = 1 + 2*x
+  design = [[1.0, 1.0], [1.0, 2.0], [1.0, 3.0], [1.0, 4.0]]
+  targets = [3.0, 5.0, 7.0, 9.0]
+  ols = m.ridgeRegression(design, targets, 0.0)
+  expect(_approx(ols[0], 1.0, 1.0e-10), isTrue)
+  expect(_approx(ols[1], 2.0, 1.0e-10), isTrue)
+
+  # Collinear design [x, x] is regularized cleanly for lambda > 0 and shrinks weight norm
+  collinear = [[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]]
+  colTargets = [2.0, 4.0, 6.0]
+  wSmall = m.ridgeRegression(collinear, colTargets, 0.1)
+  wLarge = m.ridgeRegression(collinear, colTargets, 10.0)
+  expect(_approx(wSmall[0], wSmall[1], 1.0e-10), isTrue)
+  normSmall = wSmall[0] * wSmall[0] + wSmall[1] * wSmall[1]
+  normLarge = wLarge[0] * wLarge[0] + wLarge[1] * wLarge[1]
+  expect(normLarge < normSmall, isTrue)

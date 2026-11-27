@@ -100,6 +100,8 @@ class QudsEvaluator {
   final List<QudsStackFrame> _callStack = [];
   final List<Object?> _thrownStack = [];
   final Map<String, Map<String, QudsUserFunction>> _extensions = {};
+  final Map<String, Map<String, List<QudsUserFunction>>> _extensionOperators =
+      {};
   final List<QudsUserFunction> _customConversions = [];
   final Set<int> _executedOnceSites = {};
   final List<List<Object?>> _yieldStack = [];
@@ -120,10 +122,11 @@ class QudsEvaluator {
     _stopped = true;
   }
 
-  /// Registers extension methods (from `extend Target:` or `augment Target:`).
+  /// Registers extension methods & operator overloads (from `extend Target:` or `augment Target:`).
   void registerExtension(ExtensionDeclaration ext, QudsEnvironment env) {
     final targetKey = _baseTypeName(ext.target);
     final bucket = _extensions.putIfAbsent(targetKey, () => {});
+    final opBucket = _extensionOperators.putIfAbsent(targetKey, () => {});
     for (final method in ext.methods) {
       final fn = QudsUserFunction(
         name: method.name,
@@ -138,6 +141,8 @@ class QudsEvaluator {
       );
       if (method.conversionKind.isNotEmpty) {
         _customConversions.add(fn);
+      } else if (method.isOperator) {
+        opBucket.putIfAbsent(method.name, () => []).add(fn);
       } else {
         bucket[method.name] = fn;
       }
@@ -1232,11 +1237,18 @@ class QudsEvaluator {
       _checkCollectionSize(container.length, span);
       return;
     }
-    if (container is QudsInstance) {
-      final opMethod = container.qudsClass.lookupMethod('[]=');
-      if (opMethod != null) {
-        await invokeCallable(
-            opMethod.bind(container), [index, newValue], const {}, span);
+    if (container is QudsInstance || _extensionOperators.isNotEmpty) {
+      final overload =
+          _resolveOperatorOverload(container, '[]=', [index, newValue]);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          await _invokeExtension(
+              fn, container, [index, newValue], const {}, span);
+        } else {
+          await invokeCallable(fn.bind(container as QudsInstance),
+              [index, newValue], const {}, span);
+        }
         return;
       }
     }
@@ -1452,12 +1464,41 @@ class QudsEvaluator {
             _customConversions.add(fn);
           } else if (m.isStatic) {
             existing.staticMethods[m.name] = fn;
+          } else if (m.isOperator) {
+            existing.operators.putIfAbsent(m.name, () => []).add(fn);
+            existing.methods[m.name] ??= fn;
           } else {
             existing.methods[m.name] = fn;
           }
         }
         return;
       }
+
+      // Augmenting a built-in or external type (e.g., `augment String:`, `augment int:`)
+      final targetKey = _baseTypeName(decl.name);
+      final bucket = _extensions.putIfAbsent(targetKey, () => {});
+      final opBucket = _extensionOperators.putIfAbsent(targetKey, () => {});
+      for (final m in decl.methods) {
+        final fn = QudsUserFunction(
+          name: m.name,
+          parameters: m.parameters,
+          body: m.body,
+          expressionBody: m.expressionBody,
+          isAsync: m.isAsync,
+          generator: m.generator,
+          returnType: m.returnType ?? '',
+          closure: env,
+          span: m.span,
+        );
+        if (m.conversionKind.isNotEmpty) {
+          _customConversions.add(fn);
+        } else if (m.isOperator) {
+          opBucket.putIfAbsent(m.name, () => []).add(fn);
+        } else {
+          bucket[m.name] = fn;
+        }
+      }
+      return;
     }
 
     QudsClass? superclass;
@@ -1473,6 +1514,7 @@ class QudsEvaluator {
     }
 
     final methods = <String, QudsUserFunction>{};
+    final operators = <String, List<QudsUserFunction>>{};
     final staticMethods = <String, QudsUserFunction>{};
     final staticFields = <String, Object?>{};
     final constructors = <String, ConstructorDeclaration>{};
@@ -1488,6 +1530,7 @@ class QudsEvaluator {
       superclass: superclass,
       mixins: mixins,
       methods: methods,
+      operators: operators,
       staticMethods: staticMethods,
       staticFields: staticFields,
       constructors: constructors,
@@ -1531,6 +1574,9 @@ class QudsEvaluator {
         _customConversions.add(fn);
       } else if (m.isStatic) {
         staticMethods[m.name] = fn;
+      } else if (m.isOperator) {
+        operators.putIfAbsent(m.name, () => []).add(fn);
+        methods[m.name] ??= fn;
       } else {
         methods[m.name] = fn;
       }
@@ -1594,7 +1640,9 @@ class QudsEvaluator {
         final buffer = StringBuffer();
         for (final part in parts) {
           final v = await _evalExpr(part, env);
-          buffer.write(qudsFormatValue(v));
+          final formatted = formatValueForOutput(v, expr.span);
+          buffer
+              .write(formatted is Future<String> ? await formatted : formatted);
           _checkStringLength(buffer.length, expr.span);
         }
         return buffer.toString();
@@ -2133,7 +2181,118 @@ class QudsEvaluator {
   // Operators
   // -------------------------------------------------------------------------
 
-  Object? _applyUnaryOp(String op, Object? v, SourceSpan span) {
+  List<String> _operatorReceiverKeys(Object? value) {
+    if (value is QudsInstance) {
+      final keys = <String>[];
+      QudsClass? cursor = value.qudsClass;
+      while (cursor != null) {
+        keys.add(cursor.name);
+        for (final m in cursor.mixins.reversed) {
+          keys.add(m.name);
+        }
+        cursor = cursor.superclass;
+      }
+      keys.add('Object');
+      return keys;
+    }
+    if (value is String) return const ['String', 'Object'];
+    if (value is int) return const ['int', 'num', 'Object'];
+    if (value is double) return const ['double', 'num', 'Object'];
+    if (value is bool) return const ['bool', 'Object'];
+    if (value is List) return const ['List', 'Iterable', 'Object'];
+    if (value is Map) return const ['Map', 'Object'];
+    if (value is Set) return const ['Set', 'Iterable', 'Object'];
+    if (value is BigInt) return const ['BigInt', 'Object'];
+    if (value is Duration) return const ['Duration', 'Object'];
+    return const ['Object'];
+  }
+
+  int _operatorArgSpecificity(Object? arg, String rawType) {
+    final trimmed = rawType.trim();
+    if (trimmed.isEmpty || trimmed == 'dynamic') return 10;
+    if (!_matchesType(arg, trimmed)) return -1;
+    final nonNull = trimmed.endsWith('?')
+        ? trimmed.substring(0, trimmed.length - 1).trim()
+        : trimmed;
+    final base = _baseTypeName(nonNull);
+    if (base == 'Object' || base == 'dynamic') return 10;
+    if (arg == null) return 20;
+    if (arg is QudsInstance) {
+      return arg.qudsClass.name == base ? 100 : 60;
+    }
+    if ((arg is int && base == 'int') ||
+        (arg is double && base == 'double') ||
+        (arg is String && base == 'String') ||
+        (arg is bool && base == 'bool') ||
+        (arg is List && base == 'List') ||
+        (arg is Map && base == 'Map') ||
+        (arg is Set && base == 'Set') ||
+        (arg is BigInt && base == 'BigInt') ||
+        (arg is Duration && base == 'Duration')) {
+      return 100;
+    }
+    return 50;
+  }
+
+  (QudsUserFunction, bool)? _resolveOperatorOverload(
+    Object? receiver,
+    String op,
+    List<Object?> args,
+  ) {
+    QudsUserFunction? bestFn;
+    var bestIsExt = false;
+    var bestScore = -1;
+
+    void consider(QudsUserFunction fn, bool isExt, int receiverBonus) {
+      if (fn.parameters.length != args.length) return;
+      var score = receiverBonus;
+      for (var i = 0; i < args.length; i++) {
+        final s = _operatorArgSpecificity(args[i], fn.parameters[i].type);
+        if (s < 0) return;
+        score += s;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestFn = fn;
+        bestIsExt = isExt;
+      }
+    }
+
+    if (receiver is QudsInstance) {
+      for (final fn in receiver.qudsClass.lookupOperators(op)) {
+        consider(fn, false, 1000);
+      }
+    }
+
+    if (_extensionOperators.isNotEmpty) {
+      final keys = _operatorReceiverKeys(receiver);
+      for (var i = 0; i < keys.length; i++) {
+        final ops = _extensionOperators[keys[i]]?[op];
+        if (ops == null) continue;
+        final bonus = (keys.length - i) * 10;
+        for (final fn in ops) {
+          consider(fn, true, bonus);
+        }
+      }
+    }
+
+    if (bestFn == null) return null;
+    return (bestFn!, bestIsExt);
+  }
+
+  FutureOr<Object?> _applyUnaryOp(String op, Object? v, SourceSpan span) {
+    if ((op == '-' || op == '~') &&
+        (v is QudsInstance || _extensionOperators.isNotEmpty)) {
+      final overload = _resolveOperatorOverload(v, op, const []);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          return _invokeExtension(fn, v, const [], const {}, span);
+        }
+        return _invokeUserFunctionFast(
+            fn.bind(v as QudsInstance), const [], const {}, span);
+      }
+    }
     switch (op) {
       case '-':
         if (v is num) return -v;
@@ -2188,17 +2347,42 @@ class QudsEvaluator {
     return _applyBinaryOp(left, op, right, span);
   }
 
+  bool get hasExtensionOperators => _extensionOperators.isNotEmpty;
+
+  /// Formats [value] for string output, invoking user-defined `toString()` on
+  /// [QudsInstance] when present to match compiled Dart VM behavior.
+  FutureOr<String> formatValueForOutput(Object? value, SourceSpan span) {
+    if (value is String) return value;
+    if (value is QudsInstance) {
+      final toStr = value.qudsClass.lookupMethod('toString');
+      if (toStr != null && toStr.parameters.isEmpty) {
+        final res = _invokeUserFunctionFast(
+            toStr.bind(value), const [], const {}, span);
+        if (res is Future<Object?>) {
+          return res.then(qudsFormatValue);
+        }
+        return qudsFormatValue(res);
+      }
+    }
+    return qudsFormatValue(value);
+  }
+
   Future<Object?> _applyBinaryOp(
     Object? left,
     String op,
     Object? right,
     SourceSpan span,
   ) async {
-    // Operator overloading on user-defined QudsInstance
-    if (left is QudsInstance) {
-      final method = left.qudsClass.lookupMethod(op);
-      if (method != null) {
-        return invokeCallable(method.bind(left), [right], const {}, span);
+    // Operator overloading on user-defined classes, augments, and extensions
+    if (left is QudsInstance || _extensionOperators.isNotEmpty) {
+      final overload = _resolveOperatorOverload(left, op, [right]);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          return _invokeExtension(fn, left, [right], const {}, span);
+        }
+        return invokeCallable(
+            fn.bind(left as QudsInstance), [right], const {}, span);
       }
     }
 
@@ -2210,8 +2394,10 @@ class QudsEvaluator {
       case '+':
         if (left is num && right is num) return left + right;
         if (left is BigInt && right is BigInt) return left + right;
-        if (left is String && right is String) {
-          final out = left + right;
+        if (left is String) {
+          final rhs =
+              right is String ? right : formatValueForOutput(right, span);
+          final out = left + (rhs is Future<String> ? await rhs : rhs);
           _checkStringLength(out.length, span);
           return out;
         }
@@ -2906,6 +3092,17 @@ class QudsEvaluator {
     Object? index,
     SourceSpan span,
   ) async {
+    if (_extensionOperators.isNotEmpty) {
+      final overload = _resolveOperatorOverload(container, '[]', [index]);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          return _invokeExtension(fn, container, [index], const {}, span);
+        }
+        return invokeCallable(
+            fn.bind(container as QudsInstance), [index], const {}, span);
+      }
+    }
     if (container is List) {
       final idx = _expectInt(index, span);
       final resolved = idx < 0 ? container.length + idx : idx;
@@ -2929,9 +3126,13 @@ class QudsEvaluator {
       return container[resolved];
     }
     if (container is QudsInstance) {
-      final op = container.qudsClass.lookupMethod('[]');
-      if (op != null) {
-        return invokeCallable(op.bind(container), [index], const {}, span);
+      final overload = _resolveOperatorOverload(container, '[]', [index]);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          return _invokeExtension(fn, container, [index], const {}, span);
+        }
+        return invokeCallable(fn.bind(container), [index], const {}, span);
       }
     }
     throw QudsRuntimeException(
@@ -5082,16 +5283,33 @@ class QudsEvaluator {
           final v = _evalExprFast(parts[i], env);
           if (v is Future<Object?>) {
             return v.then((val) async {
-              buf.write(qudsFormatValue(val));
+              final f = formatValueForOutput(val, expr.span);
+              buf.write(f is Future<String> ? await f : f);
               _checkStringLength(buf.length, expr.span);
               for (var j = i + 1; j < parts.length; j++) {
-                buf.write(qudsFormatValue(await _evalExprFast(parts[j], env)));
+                final fj = formatValueForOutput(
+                    await _evalExprFast(parts[j], env), expr.span);
+                buf.write(fj is Future<String> ? await fj : fj);
                 _checkStringLength(buf.length, expr.span);
               }
               return buf.toString();
             });
           }
-          buf.write(qudsFormatValue(v));
+          final f = formatValueForOutput(v, expr.span);
+          if (f is Future<String>) {
+            return f.then((str) async {
+              buf.write(str);
+              _checkStringLength(buf.length, expr.span);
+              for (var j = i + 1; j < parts.length; j++) {
+                final fj = formatValueForOutput(
+                    await _evalExprFast(parts[j], env), expr.span);
+                buf.write(fj is Future<String> ? await fj : fj);
+                _checkStringLength(buf.length, expr.span);
+              }
+              return buf.toString();
+            });
+          }
+          buf.write(f);
           _checkStringLength(buf.length, expr.span);
         }
         return buf.toString();
@@ -5151,6 +5369,17 @@ class QudsEvaluator {
 
   FutureOr<Object?> _evalIndexReadFast(
       Object? container, Object? idx, SourceSpan span) {
+    if (_extensionOperators.isNotEmpty) {
+      final overload = _resolveOperatorOverload(container, '[]', [idx]);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          return _invokeExtension(fn, container, [idx], const {}, span);
+        }
+        return _invokeUserFunctionFast(
+            fn.bind(container as QudsInstance), [idx], const {}, span);
+      }
+    }
     if (container is List && idx is int) {
       final realIdx = idx < 0 ? container.length + idx : idx;
       if (realIdx < 0 || realIdx >= container.length) {
@@ -5183,11 +5412,15 @@ class QudsEvaluator {
     Object? right,
     SourceSpan span,
   ) {
-    if (left is QudsInstance) {
-      final method = left.qudsClass.lookupMethod(op);
-      if (method != null) {
+    if (left is QudsInstance || _extensionOperators.isNotEmpty) {
+      final overload = _resolveOperatorOverload(left, op, [right]);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          return _invokeExtension(fn, left, [right], const {}, span);
+        }
         return _invokeUserFunctionFast(
-            method.bind(left), [right], const {}, span);
+            fn.bind(left as QudsInstance), [right], const {}, span);
       }
     }
     switch (op) {
@@ -5198,8 +5431,21 @@ class QudsEvaluator {
       case '+':
         if (left is num && right is num) return left + right;
         if (left is BigInt && right is BigInt) return left + right;
-        if (left is String && right is String) {
-          final out = left + right;
+        if (left is String) {
+          if (right is String) {
+            final out = left + right;
+            _checkStringLength(out.length, span);
+            return out;
+          }
+          final rhs = formatValueForOutput(right, span);
+          if (rhs is Future<String>) {
+            return rhs.then((s) {
+              final out = left + s;
+              _checkStringLength(out.length, span);
+              return out;
+            });
+          }
+          final out = left + rhs;
           _checkStringLength(out.length, span);
           return out;
         }
@@ -6073,11 +6319,18 @@ class QudsEvaluator {
       _checkCollectionSize(container.length, span);
       return;
     }
-    if (container is QudsInstance) {
-      final op = container.qudsClass.lookupMethod('[]=');
-      if (op != null) {
-        await invokeCallable(
-            op.bind(container), [index, newValue], const {}, span);
+    if (container is QudsInstance || _extensionOperators.isNotEmpty) {
+      final overload =
+          _resolveOperatorOverload(container, '[]=', [index, newValue]);
+      if (overload != null) {
+        final (fn, isExt) = overload;
+        if (isExt) {
+          await _invokeExtension(
+              fn, container, [index, newValue], const {}, span);
+        } else {
+          await invokeCallable(fn.bind(container as QudsInstance),
+              [index, newValue], const {}, span);
+        }
         return;
       }
     }
@@ -6097,7 +6350,7 @@ class QudsEvaluator {
       _applyBinaryFast(left, op, right, span);
 
   /// Applies a unary operator.
-  Object? vmApplyUnary(String op, Object? value, SourceSpan span) =>
+  FutureOr<Object?> vmApplyUnary(String op, Object? value, SourceSpan span) =>
       _applyUnaryOp(op, value, span);
 
   /// Validates boolean condition value.

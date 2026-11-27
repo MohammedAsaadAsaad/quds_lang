@@ -636,8 +636,9 @@ class QudsUniversalVm {
                 final promoted = QudsNativeFunction(
                   decl.name,
                   (pos, named, ctx) {
-                    // Unified call syntax (named args) delegates seamlessly to fallback.
-                    if (named.isNotEmpty) {
+                    // Unified call syntax (named args) or active extension operators
+                    // delegate seamlessly to Tier-2 fallback.
+                    if (named.isNotEmpty || runtime.hasExtensionOperators) {
                       return runtime.invokeCallable(
                         fallbackFn,
                         pos,
@@ -739,7 +740,8 @@ class QudsUniversalVm {
 
           case QudsUniversalOp.unaryOp:
             final operator = constants[b] as String;
-            regs[dst] = runtime.vmApplyUnary(operator, regs[a], span);
+            final uRes = runtime.vmApplyUnary(operator, regs[a], span);
+            regs[dst] = uRes is Future ? await uRes : uRes;
 
           case QudsUniversalOp.expectBool:
             runtime.vmExpectBool(regs[dst], span);
@@ -838,7 +840,9 @@ class QudsUniversalVm {
           case QudsUniversalOp.makeString:
             final buf = StringBuffer();
             for (var i = 0; i < b; i++) {
-              buf.write(qudsFormatValue(regs[a + i]));
+              final formatted = runtime.formatValueForOutput(regs[a + i], span);
+              buf.write(
+                  formatted is Future<String> ? await formatted : formatted);
               runtime.vmCheckStringLength(buf.length, span);
             }
             regs[dst] = buf.toString();

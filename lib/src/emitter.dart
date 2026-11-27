@@ -1661,7 +1661,9 @@ class DartEmitter {
       _emitMetadata(note);
     }
     _markProtected(node.visibility);
-    final title = node.isOperator ? 'operator ${node.name}' : symbol.dartName;
+    final title = node.isOperator && symbol.dartName == node.name
+        ? 'operator ${node.name}'
+        : symbol.dartName;
     final staticPrefix = node.isStatic ? 'static ' : '';
     final checks = _intersectionChecks(node);
     final views = _readonlyParameters(node);
@@ -2343,8 +2345,9 @@ class DartEmitter {
           for (final p in method.parameters)
             '${_dartType(model.declarations[p]!.type)} ${model.declarations[p]!.dartName}'
         ].join(', ');
-        final title =
-            method.isOperator ? 'operator ${method.name}' : symbol.dartName;
+        final title = method.isOperator && symbol.dartName == method.name
+            ? 'operator ${method.name}'
+            : symbol.dartName;
         line(
             "${_dartType(symbol.type)} $title${_typeParameters(method.typeParameters)}($parameters) => throw UnsupportedError('readonly method');");
         _emitDefaultBridge(method);
@@ -4086,7 +4089,21 @@ class DartEmitter {
           final symbol = model.references[node]!;
           final target =
               symbol.field ? 'this.${symbol.dartName}' : _cell(symbol);
-          line('$target ${node.operator} ${expression(node.value)};');
+          final customOp = model.operatorCalls[node];
+          final customSym =
+              customOp == null ? null : model.declarations[customOp];
+          if (customOp != null &&
+              customSym != null &&
+              customSym.dartName != customOp.name) {
+            line(
+                '$target = ($target).${customSym.dartName}(${expression(node.value)});');
+          } else if (node.operator == '+=' &&
+              symbol.type == 'String' &&
+              model.types[node.value] != 'String') {
+            line("$target += '\${${expression(node.value)}}';");
+          } else {
+            line('$target ${node.operator} ${expression(node.value)};');
+          }
         } else {
           final symbol = model.declarations[node]!;
           if (symbol.reactive == 'state' || symbol.reactive == 'computed') {
@@ -5061,17 +5078,28 @@ class DartEmitter {
           DurationLiteral() => formatDartDuration(node.microseconds),
           Identifier() => _identifier(node),
           // Dart has no prefix +. Quds unary + is numeric identity.
-          UnaryExpression() => switch (node.operator) {
-              'not' =>
-                '(!${expression(node.operand, constantContext: constantContext, opaqueBool: childOpaque)})',
-              '+' => expression(node.operand, constantContext: constantContext),
-              '!' =>
-                '(${expression(node.operand, constantContext: constantContext)}!)',
-              '-' when node.operand is DurationLiteral => formatDartDuration(
-                  -(node.operand as DurationLiteral).microseconds),
-              _ =>
-                '(${node.operator}${expression(node.operand, constantContext: constantContext)})',
-            },
+          UnaryExpression() => () {
+              final customOp = model.operatorCalls[node];
+              final customSym =
+                  customOp == null ? null : model.declarations[customOp];
+              if (customOp != null &&
+                  customSym != null &&
+                  customSym.dartName != customOp.name) {
+                return '(${expression(node.operand, constantContext: constantContext)}).${customSym.dartName}()';
+              }
+              return switch (node.operator) {
+                'not' =>
+                  '(!${expression(node.operand, constantContext: constantContext, opaqueBool: childOpaque)})',
+                '+' =>
+                  expression(node.operand, constantContext: constantContext),
+                '!' =>
+                  '(${expression(node.operand, constantContext: constantContext)}!)',
+                '-' when node.operand is DurationLiteral => formatDartDuration(
+                    -(node.operand as DurationLiteral).microseconds),
+                _ =>
+                  '(${node.operator}${expression(node.operand, constantContext: constantContext)})',
+              };
+            }(),
           BinaryExpression() => _binary(node,
               constantContext: constantContext, childOpaque: childOpaque),
           ChainComparison() => _chain(node),
@@ -5162,6 +5190,16 @@ class DartEmitter {
       {required bool constantContext, required bool childOpaque}) {
     final leftType = model.types[node.left];
     final rightType = model.types[node.right];
+    final customOp = model.operatorCalls[node];
+    final customSym = customOp == null ? null : model.declarations[customOp];
+    if (customOp != null &&
+        customSym != null &&
+        customSym.dartName != customOp.name) {
+      final leftCode = expression(node.left, constantContext: constantContext);
+      final rightCode =
+          expression(node.right, constantContext: constantContext);
+      return '($leftCode).${customSym.dartName}($rightCode)';
+    }
     if (!constantContext &&
         (node.operator == '==' || node.operator == '!=') &&
         ((leftType?.startsWith('readonly ') ?? false) ||
@@ -5172,6 +5210,16 @@ class DartEmitter {
       return node.operator == '!=' ? '(!$code)' : code;
     }
     if (node.operator == '+') {
+      if (leftType == 'String' && rightType != 'String') {
+        if (constantContext && model.constants[node] is ConstString) {
+          return model.constants[node]!.dartSource;
+        }
+        final leftCode =
+            expression(node.left, constantContext: constantContext);
+        final rightCode =
+            expression(node.right, constantContext: constantContext);
+        return "'\${$leftCode}\${$rightCode}'";
+      }
       final result = model.types[node];
       if (result != null &&
           (result.startsWith('List<') || result.startsWith('Map<'))) {
@@ -6178,13 +6226,37 @@ class DartEmitter {
     if (list) line('final $at = $key < 0 ? $receiver.length + $key : $key;');
     final slot = '$receiver[${list ? at : key}]';
     final targetType = model.types[node.target]!;
-    if (node.operator == '+=' && targetType.startsWith('Map<')) {
+    final customSet = model.operatorCalls[node];
+    final customSetSym =
+        customSet == null ? null : model.declarations[customSet];
+    if (customSet != null &&
+        customSetSym != null &&
+        customSetSym.dartName != customSet.name) {
+      if (node.operator == '=') {
+        line(
+            '$receiver.${customSetSym.dartName}($key, ${expression(node.value)});');
+      } else {
+        final readOp = model.operatorCalls[node.target];
+        final readSym = readOp == null ? null : model.declarations[readOp];
+        final readExpr =
+            readOp != null && readSym != null && readSym.dartName != readOp.name
+                ? '$receiver.${readSym.dartName}($key)'
+                : '$receiver[$key]';
+        final op = node.operator.substring(0, node.operator.length - 1);
+        line(
+            '$receiver.${customSetSym.dartName}($key, ($readExpr) $op (${expression(node.value)}));');
+      }
+    } else if (node.operator == '+=' && targetType.startsWith('Map<')) {
       final old = '_qv${_temps++}';
       final added = '_qv${_temps++}';
       line('final $old = $slot;');
       line('final $added = ${expression(node.value)};');
       line(
           '$slot = <${_dartType(targetType.substring(4, targetType.length - 1))}>{...$old, ...$added};');
+    } else if (node.operator == '+=' &&
+        targetType == 'String' &&
+        model.types[node.value] != 'String') {
+      line("$slot += '\${${expression(node.value)}}';");
     } else {
       line('$slot ${node.operator} ${expression(node.value)};');
     }
@@ -6195,6 +6267,13 @@ class DartEmitter {
   String _index(IndexExpression node, {bool constantContext = false}) {
     final object = expression(node.object, constantContext: constantContext);
     final index = expression(node.index, constantContext: constantContext);
+    final customOp = model.operatorCalls[node];
+    final customSym = customOp == null ? null : model.declarations[customOp];
+    if (customOp != null &&
+        customSym != null &&
+        customSym.dartName != customOp.name) {
+      return '($object).${customSym.dartName}($index)';
+    }
     final bare = _bareType(model.types[node.object]);
     if (bare == 'String') {
       _useAt = true;

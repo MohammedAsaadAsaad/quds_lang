@@ -411,6 +411,7 @@ class SemanticModel {
   final assignments = <Binding>{};
   final rebinding = <Pattern>{};
   final types = <Expression, String>{};
+  final operatorCalls = <Node, FunctionDeclaration>{};
 
   /// Stable field views specialized in each declaring class’s formal parameters.
   final classFields = <ClassDeclaration, List<FieldDeclaration>>{};
@@ -1567,6 +1568,8 @@ class Analyzer {
       if (field.lazyBody != null) continue;
       analyzeStaticField(field);
     }
+    final seenOperatorArities = <String, int>{};
+    final seenOperatorSigs = <String>{};
     for (final method in statement.methods) {
       _methodOwners[method] = statement;
       _checkBoundCycles(method.typeParameters, method);
@@ -1614,11 +1617,25 @@ class Analyzer {
         ..clear()
         ..addAll(savedMethodBounds);
       _typeNames.removeAll(added);
-      final dartName = method.isOperator
-          ? method.name
-          : method.visibility == 'private' && !method.name.startsWith('_')
-              ? '_${method.name}'
-              : method.name;
+      late final String dartName;
+      if (method.isOperator) {
+        final sigKey =
+            '${method.name}(${method.parameters.map((p) => p.type.trim()).join(",")})';
+        if (!seenOperatorSigs.add(sigKey)) {
+          error('E201', 'Duplicate operator overload: ${method.name}', method);
+        }
+        final arityKey = '${method.name}/${method.parameters.length}';
+        final idx = seenOperatorArities[arityKey] ?? 0;
+        seenOperatorArities[arityKey] = idx + 1;
+        dartName = idx == 0 && method.name != '**'
+            ? method.name
+            : _mangledOperatorName(method.name, idx);
+      } else {
+        dartName =
+            method.visibility == 'private' && !method.name.startsWith('_')
+                ? '_${method.name}'
+                : method.name;
+      }
       final symbol = Symbol(method.name, dartName, effective, function: method)
           .withFunction(method);
       model.declarations[method] = symbol;
@@ -1631,6 +1648,36 @@ class Analyzer {
       ..addAll(savedBounds);
   }
 
+  int _extOpCounter = 0;
+
+  String _mangledOperatorName(String op, int index) {
+    final tag = switch (op) {
+      '+' => 'add',
+      '-' => 'sub',
+      '*' => 'mul',
+      '/' => 'div',
+      '~/' => 'idiv',
+      '%' => 'mod',
+      '**' => 'pow',
+      '==' => 'eq',
+      '<' => 'lt',
+      '<=' => 'lte',
+      '>' => 'gt',
+      '>=' => 'gte',
+      '&' => 'band',
+      '|' => 'bor',
+      '^' => 'bxor',
+      '~' => 'bnot',
+      '<<' => 'shl',
+      '>>' => 'shr',
+      '>>>' => 'ushr',
+      '[]' => 'idxGet',
+      '[]=' => 'idxSet',
+      _ => 'op',
+    };
+    return '\$qudsOp_${tag}_$index';
+  }
+
   void registerExtension(ExtensionDeclaration statement,
       {String library = ''}) {
     model.extensions.add(statement);
@@ -1639,8 +1686,15 @@ class Analyzer {
     for (final method in statement.methods) {
       final added = method.typeParameters.map((item) => item.name).toList();
       _typeNames.addAll(added);
-      final type = method.returnType ??
-          (method.expressionBody == null ? 'void' : '<infer>');
+      final declared = method.isOperator &&
+              method.returnType == null &&
+              method.expressionBody == null
+          ? (const {'==', '<', '<=', '>', '>='}.contains(method.name)
+              ? 'bool'
+              : statement.target)
+          : method.returnType;
+      final type =
+          declared ?? (method.expressionBody == null ? 'void' : '<infer>');
       if (type != '<infer>') validateType(type, method);
       for (final parameter in method.parameters) {
         validateType(
@@ -1649,7 +1703,10 @@ class Analyzer {
             allowVoid: false);
       }
       _typeNames.removeAll(added);
-      final symbol = Symbol(method.name, method.name, type,
+      final dartName = method.isOperator
+          ? _mangledOperatorName(method.name, _extOpCounter++)
+          : method.name;
+      final symbol = Symbol(method.name, dartName, type,
               function: method,
               library: library,
               documentation: method.documentation)
@@ -6303,6 +6360,29 @@ class Analyzer {
     }
     final isMap = raw.startsWith('Map<');
     if (!isMap && _listElement(raw) == null) {
+      final indexType = model.types[node.target.index]!;
+      final value = expression(node.value);
+      final written = node.operator == '='
+          ? value
+          : binaryType(
+              readType,
+              node.operator.substring(0, node.operator.length - 1),
+              value,
+              node);
+      final owner = _typeSymbol(_genericHead(unwrap(raw)))?.classDeclaration;
+      if (owner != null) {
+        final classOp =
+            _selectClassOperator(owner, raw, '[]=', [indexType, written]);
+        if (classOp != null) {
+          model.operatorCalls[node] = classOp;
+          return;
+        }
+      }
+      final extOp = _selectExtensionOperator(raw, '[]=', [indexType, written]);
+      if (extOp != null) {
+        model.operatorCalls[node] = extOp.$1;
+        return;
+      }
       error('E300', 'Indexed assignment needs a List or Map', node.target);
     }
     final target = isMap
@@ -8758,6 +8838,133 @@ class Analyzer {
     return _methods(type, name, visited: visited).firstOrNull;
   }
 
+  List<FunctionDeclaration> _operatorMethods(
+    ClassDeclaration type,
+    String name, {
+    int? arity,
+    Set<ClassDeclaration> visited = const {},
+  }) {
+    if (visited.contains(type)) return const [];
+    final nextVisited = {...visited, type};
+    final found = <FunctionDeclaration>[
+      for (final method in type.methods)
+        if (method.isOperator &&
+            method.name == name &&
+            (arity == null || method.parameters.length == arity))
+          method,
+    ];
+    for (final mixin in type.mixins.reversed) {
+      final declaration =
+          _typeSymbol(_genericHead(_classMemberType(mixin, type)))
+              ?.classDeclaration;
+      if (declaration == null) continue;
+      found.addAll(_operatorMethods(declaration, name,
+          arity: arity, visited: nextVisited));
+    }
+    final parent = type.superclass == null
+        ? null
+        : _typeSymbol(_genericHead(_classMemberType(type.superclass!, type)))
+            ?.classDeclaration;
+    if (parent != null) {
+      found.addAll(
+          _operatorMethods(parent, name, arity: arity, visited: nextVisited));
+    }
+    return found;
+  }
+
+  FunctionDeclaration? _selectClassOperator(
+    ClassDeclaration owner,
+    String receiverType,
+    String op,
+    List<String> argTypes,
+  ) {
+    FunctionDeclaration? best;
+    var bestScore = -1;
+    final head = _genericHead(unwrap(receiverType));
+    for (final method in _operatorMethods(owner, op, arity: argTypes.length)) {
+      var score = 0;
+      var matched = true;
+      for (var i = 0; i < argTypes.length; i++) {
+        final expected =
+            _qualifyType(head, method.parameters[i].type, owner.name);
+        if (expected != '<field>' && !compatible(argTypes[i], expected)) {
+          matched = false;
+          break;
+        }
+        if (expected == '<field>' || _sameType(argTypes[i], expected)) {
+          score += 100;
+        } else if (expected == 'Object' ||
+            expected == 'Object?' ||
+            expected == 'dynamic') {
+          score += 10;
+        } else {
+          score += 50;
+        }
+      }
+      if (matched && score > bestScore) {
+        bestScore = score;
+        best = method;
+      }
+    }
+    return best;
+  }
+
+  (FunctionDeclaration, String)? _selectExtensionOperator(
+    String receiverType,
+    String op,
+    List<String> argTypes,
+  ) {
+    final cleanReceiver = receiverType.startsWith('readonly ')
+        ? receiverType.substring(9).trim()
+        : receiverType;
+    FunctionDeclaration? bestMethod;
+    String? bestReturn;
+    var bestScore = -1;
+    for (final extension in model.extensions) {
+      final sub = _extensionMatch(extension, cleanReceiver);
+      if (sub == null) continue;
+      final instantiatedTarget = _substitute(extension.target, sub);
+      final receiverBonus =
+          _sameType(cleanReceiver, instantiatedTarget) ? 20 : 5;
+      for (final method in extension.methods) {
+        if (!method.isOperator ||
+            method.name != op ||
+            method.parameters.length != argTypes.length) {
+          continue;
+        }
+        var score = receiverBonus;
+        var matched = true;
+        for (var i = 0; i < argTypes.length; i++) {
+          final expected = _substitute(method.parameters[i].type, sub);
+          if (!compatible(argTypes[i], expected)) {
+            matched = false;
+            break;
+          }
+          if (_sameType(argTypes[i], expected)) {
+            score += 100;
+          } else if (expected == 'Object' ||
+              expected == 'Object?' ||
+              expected == 'dynamic') {
+            score += 10;
+          } else {
+            score += 50;
+          }
+        }
+        if (matched && score > bestScore) {
+          bestScore = score;
+          bestMethod = method;
+          final rawRet = model.declarations[method]?.type ??
+              method.returnType ??
+              cleanReceiver;
+          bestReturn =
+              rawRet == '<infer>' ? cleanReceiver : _substitute(rawRet, sub);
+        }
+      }
+    }
+    if (bestMethod == null) return null;
+    return (bestMethod, bestReturn!);
+  }
+
   ({String method, bool awaitCleanup})? _resolveUsingCleanup(
     String rawType, {
     required bool asyncUsing,
@@ -9275,6 +9482,23 @@ class Analyzer {
     }
     final type = unwrap(raw.startsWith('readonly ') ? raw.substring(9) : raw);
     final indexType = expression(node.index);
+    final owner = _typeSymbol(_genericHead(type))?.classDeclaration;
+    if (owner != null) {
+      final classOp = _selectClassOperator(owner, type, '[]', [indexType]);
+      if (classOp != null) {
+        model.operatorCalls[node] = classOp;
+        final returned = model.declarations[classOp]?.type ??
+            classOp.returnType ??
+            'dynamic';
+        return _readonlyView(
+            raw, _qualifyType(_genericHead(type), returned, owner.name));
+      }
+    }
+    final extOp = _selectExtensionOperator(type, '[]', [indexType]);
+    if (extOp != null) {
+      model.operatorCalls[node] = extOp.$1;
+      return _readonlyView(raw, extOp.$2);
+    }
     final listElement = _listElement(type);
     if (listElement != null) {
       if (!compatible(indexType, 'int')) {
@@ -9985,7 +10209,6 @@ class Analyzer {
       if (compatible(right, inner)) return inner;
       if (compatible(right, left)) return left;
     }
-    if (op == '==' || op == '!=') return 'bool';
     if (op == 'in' || op == 'not in') {
       if (!_membership(left, right)) {
         fail('Operator $op is incompatible with $left and $right', node);
@@ -10000,7 +10223,27 @@ class Analyzer {
             node);
       }
       if (left == 'bool' && right == 'bool') return 'bool';
-    } else if (op == '+' && left == 'String' && right == 'String') {
+    }
+    if (!isNullableType(left) && op != '??') {
+      final owner = _typeSymbol(_genericHead(unwrap(left)))?.classDeclaration;
+      if (owner != null) {
+        final classOp = _selectClassOperator(owner, left, op, [right]);
+        if (classOp != null) {
+          model.operatorCalls[node] = classOp;
+          final returned = model.declarations[classOp]?.type ??
+              classOp.returnType ??
+              owner.name;
+          return _qualifyType(_genericHead(unwrap(left)), returned, owner.name);
+        }
+      }
+      final extOp = _selectExtensionOperator(left, op, [right]);
+      if (extOp != null) {
+        model.operatorCalls[node] = extOp.$1;
+        return extOp.$2;
+      }
+    }
+    if (op == '==' || op == '!=') return 'bool';
+    if (op == '+' && left == 'String') {
       return 'String';
     } else if (op == '*' &&
         (left == 'String' && right == 'int' ||
@@ -10029,21 +10272,6 @@ class Analyzer {
     if (isNullableType(left) && op != '??') {
       error('E308',
           'A nullable value is used where a non-null value is required', node);
-    }
-    final owner = _typeSymbol(_genericHead(unwrap(left)))?.classDeclaration;
-    final method = owner == null ? null : _method(owner, op, arity: 1);
-    if (owner != null && method != null && method.isOperator) {
-      if (method.parameters.isNotEmpty) {
-        final expected = _qualifyType(_genericHead(unwrap(left)),
-            method.parameters.first.type, owner.name);
-        if (expected != '<field>' && !compatible(right, expected)) {
-          error(
-              'E300', 'Operator $op is not defined for $left and $right', node);
-        }
-      }
-      final returned =
-          model.declarations[method]?.type ?? method.returnType ?? owner.name;
-      return _qualifyType(_genericHead(unwrap(left)), returned, owner.name);
     }
     final native = _sdkMember(left, op);
     if (native != null &&
@@ -10729,14 +10957,22 @@ class Analyzer {
             'A nullable value is used where a non-null value is required',
             node);
       }
-      final owner = _typeSymbol(unwrap(type))?.classDeclaration;
-      final method =
-          owner == null ? null : _method(owner, node.operator, arity: 0);
-      if (method != null && method.isOperator) {
-        final returned = model.declarations[method]?.type ??
-            method.returnType ??
-            owner!.name;
-        return _qualifyType(_genericHead(unwrap(type)), returned, owner!.name);
+      final owner = _typeSymbol(_genericHead(unwrap(type)))?.classDeclaration;
+      if (owner != null) {
+        final method =
+            _selectClassOperator(owner, type, node.operator, const []);
+        if (method != null) {
+          model.operatorCalls[node] = method;
+          final returned = model.declarations[method]?.type ??
+              method.returnType ??
+              owner.name;
+          return _qualifyType(_genericHead(unwrap(type)), returned, owner.name);
+        }
+      }
+      final extOp = _selectExtensionOperator(type, node.operator, const []);
+      if (extOp != null) {
+        model.operatorCalls[node] = extOp.$1;
+        return extOp.$2;
       }
       final native =
           _sdkMember(type, node.operator == '-' ? 'unary-' : node.operator);

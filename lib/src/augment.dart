@@ -144,7 +144,7 @@ Map<String, Program> normalizeAugments(Map<String, Program> programs) {
       for (final method in methods) {
         if (method.conversionKind.isEmpty &&
             !names.add(method.isOperator
-                ? 'operator ${method.name}/${method.parameters.length}'
+                ? 'operator ${method.name}(${method.parameters.map((p) => p.type.trim()).join(",")})'
                 : method.name)) {
           fail('E201', 'Duplicate augmented member: ${method.name}', method);
         }

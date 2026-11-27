@@ -457,6 +457,7 @@ class QudsClass extends QudsCallable {
     this.superclass,
     this.mixins = const [],
     this.methods = const {},
+    this.operators = const {},
     this.staticMethods = const {},
     this.staticFields = const {},
     this.constructors = const {},
@@ -473,6 +474,7 @@ class QudsClass extends QudsCallable {
   final QudsClass? superclass;
   final List<QudsClass> mixins;
   final Map<String, QudsUserFunction> methods;
+  final Map<String, List<QudsUserFunction>> operators;
   final Map<String, QudsUserFunction> staticMethods;
   final Map<String, Object?> staticFields;
   final Map<String, ConstructorDeclaration> constructors;
@@ -506,6 +508,20 @@ class QudsClass extends QudsCallable {
       if (m != null) return m;
     }
     return superclass?.lookupMethod(methodName);
+  }
+
+  /// Collects all operator overloads for [op] across this class, mixins, and superclass.
+  List<QudsUserFunction> lookupOperators(String op) {
+    final out = <QudsUserFunction>[];
+    final own = operators[op];
+    if (own != null) out.addAll(own);
+    for (var i = mixins.length - 1; i >= 0; i--) {
+      out.addAll(mixins[i].lookupOperators(op));
+    }
+    if (superclass != null) {
+      out.addAll(superclass!.lookupOperators(op));
+    }
+    return out;
   }
 
   PropertyDeclaration? lookupProperty(String propName) {

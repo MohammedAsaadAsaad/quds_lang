@@ -1736,8 +1736,12 @@ class Parser {
     final token = take();
     if (at(TokenKind.newline) || at(TokenKind.eof)) fail('Expected operator');
     final op = take();
+    var opName = op.lexeme;
+    if (op.kind == TokenKind.leftBracket && match(TokenKind.rightBracket)) {
+      opName = match(TokenKind.equals) ? '[]=' : '[]';
+    }
     return function(const [],
-        operatorName: op.lexeme, operatorSpan: extent(token.span));
+        operatorName: opName, operatorSpan: extent(token.span));
   }
 
   ConstructorDeclaration constructorDeclaration() {
@@ -1889,6 +1893,10 @@ class Parser {
       final memberNotes = takeAnnotations();
       if (word('property')) {
         properties.add(propertyDeclaration(''));
+        continue;
+      }
+      if (word('operator')) {
+        methods.add(operatorDeclaration());
         continue;
       }
       final readonlyMethod = word('readonly');

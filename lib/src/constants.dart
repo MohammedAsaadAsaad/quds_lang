@@ -392,8 +392,18 @@ class ConstantEvaluator {
       case '+':
         final left = evaluate(node.left);
         final right = evaluate(node.right);
-        if (left is ConstString && right is ConstString) {
-          return ConstString(left.value + right.value);
+        if (left is ConstString) {
+          final suffix = switch (right) {
+            ConstString(:final value) => value,
+            ConstInt(:final value) => '$value',
+            ConstDouble(:final value) => '$value',
+            ConstBool(:final value) => '$value',
+            ConstNull() => 'null',
+            _ => null,
+          };
+          if (suffix != null) {
+            return ConstString(left.value + suffix);
+          }
         }
         return _numeric(left, '+', right, node);
       case '*':

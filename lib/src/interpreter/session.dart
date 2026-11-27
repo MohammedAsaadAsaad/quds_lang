@@ -997,9 +997,25 @@ class QudsSession {
       QudsNativeFunction(
         'print',
         (pos, named, ctx) {
-          final text = pos.isEmpty ? '' : pos.map(qudsFormatValue).join(' ');
-          ctx.emitPrint(text);
-          return null;
+          if (pos.isEmpty) {
+            ctx.emitPrint('');
+            return null;
+          }
+          final eval = _activeEvaluator;
+          if (eval == null || !pos.any((v) => v is QudsInstance)) {
+            ctx.emitPrint(pos.map(qudsFormatValue).join(' '));
+            return null;
+          }
+          return () async {
+            final parts = <String>[];
+            for (final item in pos) {
+              final formatted = eval.formatValueForOutput(item, ctx.span);
+              parts.add(
+                  formatted is Future<String> ? await formatted : formatted);
+            }
+            ctx.emitPrint(parts.join(' '));
+            return null;
+          }();
         },
         signature: 'print(value: Object?) -> void',
         documentation: 'Prints a value to the session output stream.',

@@ -17966,7 +17966,7 @@ drainChannel<T>(channel: Channel<T>) async -> List<T>:
 ''';
 
 const jsonSdkSource =
-    r'''# Type-safe JSON parsing, encoding, and typed field/path extraction for Quds.
+    r'''# Type-safe JSON parsing, encoding, typed field/path extraction, merging, and equality for Quds.
 
 use dart:convert show jsonDecode, jsonEncode, JsonEncoder
 
@@ -17981,6 +17981,15 @@ value class JsonError:
     if path.isEmpty:
       return "JsonError: {message}"
     return "JsonError({path}): {message}"
+
+_joinJsonPath(prefix: String, suffix: String) -> String:
+  if prefix.isEmpty:
+    return suffix
+  if suffix.isEmpty:
+    return prefix
+  if suffix.startsWith("["):
+    return "{prefix}{suffix}"
+  return "{prefix}.{suffix}"
 
 # Converts a decoded dynamic/raw map into a typed [Map<String, Object?>].
 jsonAsObject(value: Object?, [path: String = ""]) -> Result<Map<String, Object?>, JsonError>:
@@ -18035,6 +18044,12 @@ encodeJson(value: Object?, pretty: bool = false, indent: String = "  ") -> Strin
     return encoder.convert(value)
   return jsonEncode(value)
 
+# Encodes [value] as formatted multi-line JSON using [indent].
+# Example:
+#   text = jsonPretty(sample)
+jsonPretty(value: Object?, indent: String = "  ") -> String:
+  return encodeJson(value, pretty: true, indent: indent)
+
 # Encodes [value] to JSON, returning [Error] instead of throwing on unsupported objects.
 tryEncodeJson(value: Object?, pretty: bool = false, indent: String = "  ") -> Result<String, JsonError>:
   try:
@@ -18065,6 +18080,42 @@ jsonPath(root: Object?, path: String) -> Object?:
     else:
       return null
   return current
+
+# Walks [path] through [root] and verifies the resolved value is a [String].
+jsonPathString(root: Object?, path: String) -> Result<String, JsonError>:
+  found = jsonPath(root, path)
+  if found is String:
+    return Ok(found)
+  if found == null:
+    return Error(JsonError(message: "Missing required path", path: path))
+  return Error(JsonError(message: "Expected String", path: path))
+
+# Walks [path] through [root] and verifies the resolved value is an [int].
+jsonPathInt(root: Object?, path: String) -> Result<int, JsonError>:
+  found = jsonPath(root, path)
+  if found is int:
+    return Ok(found)
+  if found == null:
+    return Error(JsonError(message: "Missing required path", path: path))
+  return Error(JsonError(message: "Expected int", path: path))
+
+# Walks [path] through [root] and verifies the resolved value is a number (int or double).
+jsonPathDouble(root: Object?, path: String) -> Result<double, JsonError>:
+  found = jsonPath(root, path)
+  if found is num:
+    return Ok(found.toDouble())
+  if found == null:
+    return Error(JsonError(message: "Missing required path", path: path))
+  return Error(JsonError(message: "Expected number", path: path))
+
+# Walks [path] through [root] and verifies the resolved value is a [bool].
+jsonPathBool(root: Object?, path: String) -> Result<bool, JsonError>:
+  found = jsonPath(root, path)
+  if found is bool:
+    return Ok(found)
+  if found == null:
+    return Error(JsonError(message: "Missing required path", path: path))
+  return Error(JsonError(message: "Expected bool", path: path))
 
 # Reads a required [String] field from [data].
 jsonRequireString(data: Map<String, Object?>, key: String) -> Result<String, JsonError>:
@@ -18144,11 +18195,204 @@ jsonRequireObject(data: Map<String, Object?>, key: String) -> Result<Map<String,
     return Error(JsonError(message: "Missing required field", path: key))
   return jsonAsObject(data[key], key)
 
+# Reads an optional nested JSON object field from [data].
+jsonOptionalObject(data: Map<String, Object?>, key: String) -> Result<Map<String, Object?>?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  obj = jsonAsObject(data[key], key)?
+  return Ok(obj)
+
 # Reads a required nested JSON array field from [data].
 jsonRequireList(data: Map<String, Object?>, key: String) -> Result<List<Object?>, JsonError>:
   if not data.containsKey(key):
     return Error(JsonError(message: "Missing required field", path: key))
   return jsonAsList(data[key], key)
+
+# Reads an optional nested JSON array field from [data].
+jsonOptionalList(data: Map<String, Object?>, key: String) -> Result<List<Object?>?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  items = jsonAsList(data[key], key)?
+  return Ok(items)
+
+# Reads a required [List<String>] field from [data] with indexed error paths.
+jsonRequireStringList(data: Map<String, Object?>, key: String) -> Result<List<String>, JsonError>:
+  items = jsonRequireList(data, key)?
+  out: List<String> = []
+  for item in items:
+    if item is String:
+      out.add(item)
+    else:
+      return Error(JsonError(message: "Expected String", path: "{key}[{$.index}]"))
+  return Ok(out)
+
+# Reads a required [List<int>] field from [data] with indexed error paths.
+jsonRequireIntList(data: Map<String, Object?>, key: String) -> Result<List<int>, JsonError>:
+  items = jsonRequireList(data, key)?
+  out: List<int> = []
+  for item in items:
+    if item is int:
+      out.add(item)
+    else:
+      return Error(JsonError(message: "Expected int", path: "{key}[{$.index}]"))
+  return Ok(out)
+
+# Reads a required [List<double>] field from [data] (accepting ints and doubles).
+jsonRequireDoubleList(data: Map<String, Object?>, key: String) -> Result<List<double>, JsonError>:
+  items = jsonRequireList(data, key)?
+  out: List<double> = []
+  for item in items:
+    if item is num:
+      out.add(item.toDouble())
+    else:
+      return Error(JsonError(message: "Expected number", path: "{key}[{$.index}]"))
+  return Ok(out)
+
+# Reads a required [List<bool>] field from [data] with indexed error paths.
+jsonRequireBoolList(data: Map<String, Object?>, key: String) -> Result<List<bool>, JsonError>:
+  items = jsonRequireList(data, key)?
+  out: List<bool> = []
+  for item in items:
+    if item is bool:
+      out.add(item)
+    else:
+      return Error(JsonError(message: "Expected bool", path: "{key}[{$.index}]"))
+  return Ok(out)
+
+# Decodes a required nested object at [key] using [decoder], prefixing any [JsonError.path] with [key].
+jsonRequireObjectAs<T>(data: Map<String, Object?>, key: String, decoder: (Map<String, Object?>) -> Result<T, JsonError>) -> Result<T, JsonError>:
+  obj = jsonRequireObject(data, key)?
+  decoded = decoder(obj)
+  match decoded:
+    Ok(value):
+      return Ok(value)
+    Error(err):
+      return Error(JsonError(message: err.message, path: _joinJsonPath(key, err.path)))
+
+# Decodes an optional nested object at [key] using [decoder], prefixing any [JsonError.path] with [key].
+jsonOptionalObjectAs<T>(data: Map<String, Object?>, key: String, decoder: (Map<String, Object?>) -> Result<T, JsonError>) -> Result<T?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  value = jsonRequireObjectAs<T>(data, key, decoder)?
+  return Ok(value)
+
+# Decodes a required array at [key] element-by-element using [decoder], attaching indexed error paths like `"items[2].id"`.
+jsonRequireListOf<T>(data: Map<String, Object?>, key: String, decoder: (Object?, String) -> Result<T, JsonError>) -> Result<List<T>, JsonError>:
+  items = jsonRequireList(data, key)?
+  out: List<T> = []
+  for item in items:
+    itemPath = "{key}[{$.index}]"
+    decoded = decoder(item, itemPath)
+    match decoded:
+      Ok(value):
+        out.add(value)
+      Error(err):
+        fullPath = err.path if err.path.startsWith(itemPath) else _joinJsonPath(itemPath, err.path)
+        return Error(JsonError(message: err.message, path: fullPath))
+  return Ok(out)
+
+# Decodes an optional array at [key] element-by-element using [decoder].
+jsonOptionalListOf<T>(data: Map<String, Object?>, key: String, decoder: (Object?, String) -> Result<T, JsonError>) -> Result<List<T>?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  items = jsonRequireListOf<T>(data, key, decoder)?
+  return Ok(items)
+
+# Reads a required ISO-8601 [DateTime] string field from [data].
+jsonRequireDateTime(data: Map<String, Object?>, key: String) -> Result<DateTime, JsonError>:
+  raw = jsonRequireString(data, key)?
+  parsed = DateTime.tryParse(raw)
+  guard let dt = parsed else:
+    return Error(JsonError(message: "Invalid ISO-8601 DateTime: {raw}", path: key))
+  return Ok(dt)
+
+# Reads an optional ISO-8601 [DateTime?] string field from [data].
+jsonOptionalDateTime(data: Map<String, Object?>, key: String) -> Result<DateTime?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  dt = jsonRequireDateTime(data, key)?
+  return Ok(dt)
+
+# Reads a required string enum field from [data], mapping it through [allowed].
+jsonRequireEnum<T>(data: Map<String, Object?>, key: String, allowed: Map<String, T>) -> Result<T, JsonError>:
+  raw = jsonRequireString(data, key)?
+  if allowed.containsKey(raw):
+    return Ok(allowed[raw] as T)
+  return Error(JsonError(message: "Unknown enum value: {raw}", path: key))
+
+# Reads an optional string enum field from [data], mapping it through [allowed].
+jsonOptionalEnum<T>(data: Map<String, Object?>, key: String, allowed: Map<String, T>) -> Result<T?, JsonError>:
+  if not data.containsKey(key) or data[key] == null:
+    return Ok(null)
+  value = jsonRequireEnum<T>(data, key, allowed)?
+  return Ok(value)
+
+_cloneJsonValue(value: Object?) -> Object?:
+  if (value is Map<Object?, Object?>):
+    out: Map<String, Object?> = map:
+    for entry in value.entries:
+      out["{entry.key}"] = _cloneJsonValue(entry.value)
+    return out
+  if (value is List<Object?>):
+    outList: List<Object?> = []
+    for item in value:
+      outList.add(_cloneJsonValue(item))
+    return outList
+  return value
+
+# Returns a new JSON object produced by merging [overlay] onto [base] without mutating either input.
+# When [deep] is true, nested JSON objects are merged recursively; lists and scalars are replaced.
+jsonMerge(base: Map<String, Object?>, overlay: Map<String, Object?>, deep: bool = true) -> Map<String, Object?>:
+  out: Map<String, Object?> = map:
+  for entry in base.entries:
+    out[entry.key] = _cloneJsonValue(entry.value)
+  for entry in overlay.entries:
+    key = entry.key
+    overVal = entry.value
+    if deep and out.containsKey(key):
+      baseVal = out[key]
+      if (baseVal is Map<Object?, Object?>) and (overVal is Map<Object?, Object?>):
+        baseObjRes = jsonAsObject(baseVal)
+        overObjRes = jsonAsObject(overVal)
+        match baseObjRes:
+          Ok(baseObj):
+            match overObjRes:
+              Ok(overObj):
+                out[key] = jsonMerge(baseObj, overObj, deep: true)
+              Error(_):
+                out[key] = _cloneJsonValue(overVal)
+          Error(_):
+            out[key] = _cloneJsonValue(overVal)
+      else:
+        out[key] = _cloneJsonValue(overVal)
+    else:
+      out[key] = _cloneJsonValue(overVal)
+  return out
+
+# Performs deep structural equality on two decoded JSON values.
+# Objects compare equal regardless of key order; ints and doubles compare numerically (`1 == 1.0`).
+jsonEquals(a: Object?, b: Object?) -> bool:
+  if a == null or b == null:
+    return a == null and b == null
+  if (a is num) and (b is num):
+    return a.toDouble() == b.toDouble()
+  if (a is List<Object?>) and (b is List<Object?>):
+    if a.length != b.length:
+      return false
+    for item in a:
+      if not jsonEquals(item, b[$.index]):
+        return false
+    return true
+  if (a is Map<Object?, Object?>) and (b is Map<Object?, Object?>):
+    if a.length != b.length:
+      return false
+    for entry in a.entries:
+      if not b.containsKey(entry.key):
+        return false
+      if not jsonEquals(entry.value, b[entry.key]):
+        return false
+    return true
+  return a == b
 ''';
 
 const embeddedSdk = <String, String>{

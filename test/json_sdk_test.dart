@@ -19,6 +19,8 @@ void main() {
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     expect(result.stdout, contains('ok parseJson, parseJsonObject'));
     expect(result.stdout, contains('ok jsonPath and typed jsonRequire'));
+    expect(result.stdout, contains('ok typed primitive lists'));
+    expect(result.stdout, contains('ok jsonMerge (deep & shallow)'));
   }, timeout: const Timeout.factor(4));
 
   test('quds:json strict analyze and VM / JS parity pass', () async {
@@ -32,13 +34,31 @@ readName(src: String) -> Result<String, JsonError>:
   return jsonRequireString(obj, "name")
 
 main():
-  data: Map<String, Object?> = map:
-    "name": "Quds"
-    "ver": 1
-  encoded = encodeJson(data)
-  match readName(encoded):
-    Ok(name):
-      print "{name}|{encoded}"
+  baseRes = parseJsonObject(r'{"name":"Quds","cfg":{"a":1,"b":2},"tags":["x","y"],"at":"2026-11-26T00:00:00Z"}')
+  overRes = parseJsonObject(r'{"cfg":{"b":9,"c":3}}')
+  match baseRes:
+    Ok(baseObj):
+      match overRes:
+        Ok(overObj):
+          merged = jsonMerge(baseObj, overObj)
+          tagsVal = match jsonRequireStringList(merged, "tags"):
+            Ok(v): v.join(",")
+            Error(_): ""
+          dtYear = match jsonRequireDateTime(merged, "at"):
+            Ok(dt): dt.year
+            Error(_): 0
+          bVal = match jsonPathInt(merged, "cfg.b"):
+            Ok(v): v
+            Error(_): -1
+          eq = jsonEquals(merged, merged)
+          encoded = encodeJson(merged)
+          match readName(encoded):
+            Ok(name):
+              print "{name}|{bVal}|{tagsVal}|{dtYear}|{eq}"
+            Error(err):
+              print err.toString()
+        Error(err):
+          print err.toString()
     Error(err):
       print err.toString()
 ''');
@@ -56,7 +76,7 @@ main():
       workingDirectory: sandbox.path,
     );
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
-    expect(run.stdout, 'Quds|{"name":"Quds","ver":1}\n');
+    expect(run.stdout, 'Quds|9|x,y|2026|true\n');
 
     final jsOut = '${sandbox.path}/app.js';
     final jsBuild = await Process.run(
@@ -67,6 +87,6 @@ main():
     expect(jsBuild.exitCode, 0, reason: '${jsBuild.stdout}\n${jsBuild.stderr}');
     final nodeRun = await Process.run('node', [jsOut]);
     expect(nodeRun.exitCode, 0, reason: '${nodeRun.stdout}\n${nodeRun.stderr}');
-    expect(nodeRun.stdout, 'Quds|{"name":"Quds","ver":1}\n');
+    expect(nodeRun.stdout, 'Quds|9|x,y|2026|true\n');
   }, timeout: const Timeout.factor(4));
 }

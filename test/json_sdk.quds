@@ -3,6 +3,26 @@ use quds:json
 class _NotEncodable:
   x: int = 1
 
+enum _Role:
+  admin
+  editor
+  viewer
+
+value class _Item:
+  id: int required
+  title: String required
+
+_decodeItem(raw: Object?, path: String) -> Result<_Item, JsonError>:
+  obj = jsonAsObject(raw, path)?
+  id = jsonRequireInt(obj, "id")?
+  title = jsonRequireString(obj, "title")?
+  return Ok(_Item(id: id, title: title))
+
+_decodeProfile(obj: Map<String, Object?>) -> Result<String, JsonError>:
+  city = jsonRequireString(obj, "city")?
+  zip = jsonRequireInt(obj, "zip")?
+  return Ok("{city}-{zip}")
+
 _decodeUserSummary(raw: String) -> Result<String, JsonError>:
   obj = parseJsonObject(raw)?
   name = jsonRequireString(obj, "name")?
@@ -16,7 +36,7 @@ _decodeUserSummary(raw: String) -> Result<String, JsonError>:
   labelNick = nick ?? "none"
   return Ok("{name}:{age}:{score}:{active}:{labelNick}:{city}:{tags.length}")
 
-test "parseJson, parseJsonObject, parseJsonList, encodeJson, and tryEncodeJson work cleanly":
+test "parseJson, parseJsonObject, parseJsonList, encodeJson, jsonPretty, and tryEncodeJson work cleanly":
   parsed = parseJson("42")
   expect(parsed, equals(Ok(42)))
 
@@ -53,7 +73,7 @@ test "parseJson, parseJsonObject, parseJsonList, encodeJson, and tryEncodeJson w
 
   single: Map<String, Object?> = map:
     "ok": true
-  pretty = encodeJson(single, pretty: true)
+  pretty = jsonPretty(single)
   expect(pretty.contains("\n  \"ok\": true\n"), isTrue)
 
   badEncode = tryEncodeJson(_NotEncodable())
@@ -96,13 +116,169 @@ test "jsonPath and typed jsonRequire*/jsonOptional* readers propagate JsonError 
   expect(jsonOptionalBool(optObj, "b"), equals(Ok(true)))
   expect(jsonOptionalBool(optObj, "absent"), equals(Ok(null)))
   expect(jsonOptionalString(optObj, "n") is Error, isTrue)
+  expect(jsonOptionalObject(optObj, "absent"), equals(Ok(null)))
+  expect(jsonOptionalObject(optObj, "nil"), equals(Ok(null)))
+  expect(jsonOptionalObject(optObj, "n") is Error, isTrue)
+  expect(jsonOptionalList(optObj, "absent"), equals(Ok(null)))
+  expect(jsonOptionalList(optObj, "nil"), equals(Ok(null)))
+  expect(jsonOptionalList(optObj, "n") is Error, isTrue)
 
-  rootRes = parseJson(r'{"user":{"name":"A","roles":["admin","dev"]}}')
+  rootRes = parseJson(r'{"user":{"name":"A","age":21,"score":99.5,"active":true,"roles":["admin","dev"]}}')
   match rootRes:
     Ok(root):
       expect(jsonPath(root, "user.name"), equals("A"))
       expect(jsonPath(root, "user.roles.1"), equals("dev"))
       expect(jsonPath(root, "user.roles.9"), equals(null))
       expect(jsonPath(root, "user.missing.x"), equals(null))
+      expect(jsonPathString(root, "user.name"), equals(Ok("A")))
+      expect(jsonPathString(root, "user.roles.1"), equals(Ok("dev")))
+      expect(jsonPathInt(root, "user.age"), equals(Ok(21)))
+      expect(jsonPathDouble(root, "user.score"), equals(Ok(99.5)))
+      expect(jsonPathDouble(root, "user.age"), equals(Ok(21.0)))
+      expect(jsonPathBool(root, "user.active"), equals(Ok(true)))
+      match jsonPathInt(root, "user.name"):
+        Ok(_):
+          expect(false, isTrue)
+        Error(err):
+          expect(err.path, equals("user.name"))
+      match jsonPathString(root, "user.nope"):
+        Ok(_):
+          expect(false, isTrue)
+        Error(err):
+          expect(err.path, equals("user.nope"))
+    Error(_):
+      expect(false, isTrue)
+
+test "typed primitive lists, nested object/list decoders, DateTime, and enums report exact paths":
+  raw = r'{"tags":["a","b"],"nums":[1,2,3],"weights":[1,2.5],"flags":[true,false],"profile":{"city":"AlQuds","zip":91000},"items":[{"id":1,"title":"one"},{"id":2,"title":"two"}],"created":"2026-11-26T12:30:00Z","role":"admin"}'
+  objRes = parseJsonObject(raw)
+  match objRes:
+    Ok(obj):
+      match jsonRequireStringList(obj, "tags"):
+        Ok(v):
+          expect(v, equals(["a", "b"]))
+        Error(_):
+          expect(false, isTrue)
+      match jsonRequireIntList(obj, "nums"):
+        Ok(v):
+          expect(v, equals([1, 2, 3]))
+        Error(_):
+          expect(false, isTrue)
+      match jsonRequireDoubleList(obj, "weights"):
+        Ok(v):
+          expect(v, equals([1.0, 2.5]))
+        Error(_):
+          expect(false, isTrue)
+      match jsonRequireBoolList(obj, "flags"):
+        Ok(v):
+          expect(v, equals([true, false]))
+        Error(_):
+          expect(false, isTrue)
+
+      expect(jsonRequireObjectAs<String>(obj, "profile", _decodeProfile), equals(Ok("AlQuds-91000")))
+      expect(jsonOptionalObjectAs<String>(obj, "missingProfile", _decodeProfile), equals(Ok(null)))
+
+      match jsonRequireListOf<_Item>(obj, "items", _decodeItem):
+        Ok(v):
+          expect(v, equals([_Item(id: 1, title: "one"), _Item(id: 2, title: "two")]))
+        Error(_):
+          expect(false, isTrue)
+      expect(jsonOptionalListOf<_Item>(obj, "missingItems", _decodeItem), equals(Ok(null)))
+
+      dtRes = jsonRequireDateTime(obj, "created")
+      match dtRes:
+        Ok(dt):
+          expect(dt.year, equals(2026))
+          expect(dt.month, equals(11))
+          expect(dt.day, equals(26))
+        Error(_):
+          expect(false, isTrue)
+      expect(jsonOptionalDateTime(obj, "missingDate"), equals(Ok(null)))
+
+      roles: Map<String, _Role> = map:
+        "admin": _Role.admin
+        "editor": _Role.editor
+        "viewer": _Role.viewer
+      expect(jsonRequireEnum<_Role>(obj, "role", roles), equals(Ok(_Role.admin)))
+      expect(jsonOptionalEnum<_Role>(obj, "missingRole", roles), equals(Ok(null)))
+    Error(_):
+      expect(false, isTrue)
+
+  # Verify indexed and nested error paths
+  badListObjRes = parseJsonObject(r'{"nums":[1,"bad",3],"profile":{"city":"A","zip":"bad"},"items":[{"id":1,"title":"ok"},{"id":"oops","title":"bad"}],"created":"not-a-date","role":"ghost"}')
+  match badListObjRes:
+    Ok(badObj):
+      match jsonRequireIntList(badObj, "nums"):
+        Ok(_):
+          expect(false, isTrue)
+        Error(err):
+          expect(err.path, equals("nums[1]"))
+      match jsonRequireObjectAs<String>(badObj, "profile", _decodeProfile):
+        Ok(_):
+          expect(false, isTrue)
+        Error(err):
+          expect(err.path, equals("profile.zip"))
+      match jsonRequireListOf<_Item>(badObj, "items", _decodeItem):
+        Ok(_):
+          expect(false, isTrue)
+        Error(err):
+          expect(err.path, equals("items[1].id"))
+      match jsonRequireDateTime(badObj, "created"):
+        Ok(_):
+          expect(false, isTrue)
+        Error(err):
+          expect(err.path, equals("created"))
+      roles2: Map<String, _Role> = map:
+        "admin": _Role.admin
+      match jsonRequireEnum<_Role>(badObj, "role", roles2):
+        Ok(_):
+          expect(false, isTrue)
+        Error(err):
+          expect(err.path, equals("role"))
+    Error(_):
+      expect(false, isTrue)
+
+test "jsonMerge (deep & shallow) is immutable and jsonEquals handles key order and numeric equality":
+  baseRes = parseJsonObject(r'{"a":1,"nested":{"x":10,"y":20},"list":[1,2]}')
+  overRes = parseJsonObject(r'{"nested":{"y":99,"z":30},"list":[3],"b":true}')
+  match baseRes:
+    Ok(baseObj):
+      match overRes:
+        Ok(overObj):
+          deepMerged = jsonMerge(baseObj, overObj, deep: true)
+          expect(jsonPathInt(deepMerged, "a"), equals(Ok(1)))
+          expect(jsonPathInt(deepMerged, "nested.x"), equals(Ok(10)))
+          expect(jsonPathInt(deepMerged, "nested.y"), equals(Ok(99)))
+          expect(jsonPathInt(deepMerged, "nested.z"), equals(Ok(30)))
+          expect(jsonPathInt(deepMerged, "list.0"), equals(Ok(3)))
+          expect(jsonPathBool(deepMerged, "b"), equals(Ok(true)))
+          # Original base must remain untouched
+          expect(jsonPathInt(baseObj, "nested.y"), equals(Ok(20)))
+
+          shallowMerged = jsonMerge(baseObj, overObj, deep: false)
+          expect(jsonPath(shallowMerged, "nested.x"), equals(null))
+          expect(jsonPathInt(shallowMerged, "nested.y"), equals(Ok(99)))
+        Error(_):
+          expect(false, isTrue)
+    Error(_):
+      expect(false, isTrue)
+
+  leftRes = parseJson(r'{"b":2.0,"a":[1,{"k":"v"}]}')
+  rightRes = parseJson(r'{"a":[1.0,{"k":"v"}],"b":2}')
+  diffRes = parseJson(r'{"a":[1,{"k":"w"}],"b":2}')
+  match leftRes:
+    Ok(l):
+      match rightRes:
+        Ok(r):
+          match diffRes:
+            Ok(d):
+              expect(jsonEquals(l, r), isTrue)
+              expect(jsonEquals(l, d), isFalse)
+              expect(jsonEquals(null, null), isTrue)
+              expect(jsonEquals(null, 0), isFalse)
+            Error(_):
+              expect(false, isTrue)
+        Error(_):
+          expect(false, isTrue)
     Error(_):
       expect(false, isTrue)

@@ -319,42 +319,40 @@ Embed Quds directly inside **Flutter (Android, iOS, macOS, Windows, Linux, Web)*
 1. **Tier-1 Typed Register Bytecode VM (`QudsBytecodeVm`)**
    Compiles hot numeric/algorithmic functions to an unboxed register machine (`Int64List` / `Float64List` register banks) equipped with **14 fused superinstructions** (`iListFill`, `fListFill`, `iListStrideSet`, `iListSumRange`, `fListSumRange`, `fStridedDot`, `fSqrSum`, `fSqrSumAdd`, `fSqrDiffAdd`, `fMul2Add`, `fInvSqrt`, `fCube`, `fSubListGet`, `retSelfIfLeK`) — delivering multi-times CPython speed in pure Dart.
 2. **Universal Bytecode VM + 80 Native Dart SDK Intrinsics (`QudsUniversalVm` & [`sdk_intrinsics.dart`](lib/src/interpreter/sdk_intrinsics.dart))**
-   Full language execution (classes, closures, pattern matching, `Result`, `async/await`, extensions, multi-file workspaces) paired with **80 zero-copy / unboxed native Dart intrinsics** for read-only `quds:math`, `quds:json`, `quds:collection`, and `quds:text` — executing real-world SDK workloads at **~87% of native Dart AOT speed** while preserving 100% identical error contracts and UAX #29 Unicode semantics.
+   Full language execution (classes, closures, pattern matching, `Result`, `async/await`, extensions, multi-file workspaces) paired with **80 zero-copy / unboxed native Dart intrinsics** for read-only `quds:math`, `quds:json`, `quds:collection`, and `quds:text` — delivering **4.50× faster** throughput than CPython 3.12 on real-world SDK workloads while preserving 100% identical error contracts and UAX #29 Unicode semantics.
 3. **Interactive Workspace, Policy Sandbox & Native Debugger (`QudsSession`, `QudsExecutionPolicy`, `QudsDebugController`)**
    Persistent MATLAB/Jupyter-style sessions, fine-grained security policies (`strictSandbox`, `scientific`, `systemBridge`, custom step/memory/call-depth limits & capability guards), custom `QudsHostModule` APIs, breakpoints/stepping/live expression watch, and `quds:viz` interactive 2D geometry & plotting (with draggable handles, sliders, JSON & SVG export).
 
-### Cross-Runtime Benchmark Results (14 Benchmarks · Verified Identical Checksums)
+### Interpreter Benchmarks: Quds Register VM vs Python 3.12 (14 Benchmarks · Verified Identical Checksums)
 
-Measured sequentially on the same machine (`1 warmup + 5 timed runs`, reporting median in `ms`, compiled via `dart compile exe` AOT — the exact engine shipped inside Flutter release apps — against CPython 3.12.16 and native Dart AOT). **All 14/14 checksums match 100% identically across Python, Quds, and Dart.**
+Measured sequentially on the same machine (`1 warmup + 5 timed runs`, reporting median in `ms`, comparing the embedded Quds Register VM engine shipped inside Flutter/Dart release apps against CPython 3.12.16). **All 14/14 checksums match 100% identically across Quds and Python.**
 
 #### Part A — Raw User-Code CPU Algorithms (No SDK Intrinsics)
 
-| Benchmark | Python 3.12 | Quds Register VM (AOT) | Dart AOT | Quds vs Python | Quds / Dart AOT |
-| :--- | ---: | ---: | ---: | ---: | ---: |
-| Mandelbrot Fractal (`240×240×100`) | 259.36 ms | **145.58 ms** | 7.38 ms | **1.78× faster** | 19.71× |
-| Recursive `fib(30)` (`2.69M` calls) | 183.74 ms | **123.13 ms** | 6.75 ms | **1.49× faster** | 18.25× |
-| Sieve of Eratosthenes (`200k × 5`) | 183.66 ms | **21.01 ms** | 18.36 ms | **8.74× faster** | **1.14×** |
-| N-Body Gravity (`100 bodies × 80 steps`) | 217.92 ms | **100.00 ms** | 3.94 ms | **2.18× faster** | 25.36× |
-| Manual Dense MatMul (`72×72`) | 52.96 ms | **3.83 ms** | 1.27 ms | **13.83× faster** | **3.01×** |
-| Combined 4-in-1 CPU Stress Suite | 200.47 ms | **136.07 ms** | 8.74 ms | **1.47× faster** | 15.56× |
-| **Part A Geometric Mean (6 tests)** | baseline | **529.6 ms total** | 46.5 ms | **3.18× faster** | 8.88× |
+| Benchmark | Python 3.12 | Quds Register VM | Quds vs Python |
+| :--- | ---: | ---: | ---: |
+| Mandelbrot Fractal (`240×240×100`) | 259.36 ms | **145.58 ms** | **1.78× faster** |
+| Recursive `fib(30)` (`2.69M` calls) | 183.74 ms | **123.13 ms** | **1.49× faster** |
+| Sieve of Eratosthenes (`200k × 5`) | 183.66 ms | **21.01 ms** | **8.74× faster** |
+| N-Body Gravity (`100 bodies × 80 steps`) | 217.92 ms | **100.00 ms** | **2.18× faster** |
+| Manual Dense MatMul (`72×72`) | 52.96 ms | **3.83 ms** | **13.83× faster** |
+| Combined 4-in-1 CPU Stress Suite | 200.47 ms | **136.07 ms** | **1.47× faster** |
+| **Part A Geometric Mean (6 tests)** | **1,098.1 ms total** | **529.6 ms total** | **3.18× faster** |
 
 #### Part B — Real-World Quds SDK Workloads (`quds:math`, `quds:json`, `quds:collection`, `quds:text`)
 
-| Benchmark (Quds SDK) | Python 3.12 | Quds VM + SDK (AOT) | Dart AOT | Quds vs Python | Quds / Dart AOT |
-| :--- | ---: | ---: | ---: | ---: | ---: |
-| `quds:math` — Matrix Multiply `A * B` (`120×120`) | 105.11 ms | **32.00 ms** | 23.96 ms | **3.28× faster** | **1.34×** |
-| `quds:math` — Gauss-Jordan `inverse` (`60×60`) | 30.63 ms | **6.56 ms** | 6.38 ms | **4.67× faster** | **1.03×** |
-| `quds:math` — `fftReal`/`ifft` (`4096 × 5`) + `fftConvolve` | 153.62 ms | **17.22 ms** | 2.29 ms | **8.92× faster** | 7.51× |
-| `quds:math` — `primesUpTo(500k)` + 500× 64-bit `isPrime` | 39.61 ms | **18.18 ms** | 10.37 ms | **2.18× faster** | **1.75×** |
-| `quds:math` — Stats (`mean`/`median`/`stddev`/`p95` 100k) | 114.70 ms | **8.00 ms** | 78.38 ms\* | **14.34× faster** | **0.10×**\* |
-| `quds:json` — 1,500-record encode/parse/merge/equals | 27.64 ms (C) | **20.00 ms** | 20.00 ms | **1.38× faster** | **1.00×** |
-| `quds:collection` — 100k `frequencies`/chunk/window/flatten | 24.40 ms (C) | **16.18 ms** | 13.14 ms | **1.51× faster** | **1.23×** |
-| `quds:text` — Levenshtein `editDistance` (`500×500 × 5`) + CSV | 380.31 ms | **20.00 ms** | 15.33 ms | **19.02× faster** | **1.30×** |
-| **Part B Geometric Mean (8 SDK tests)** | baseline | **138.1 ms total** | 169.9 ms | **4.50× faster** | **1.15× (~87% native!)** |
-| **All 14 Benchmarks Combined (Geomean)** | **1,974.1 ms** | **667.8 ms** | **216.3 ms** | **3.88× faster (14/14 wins)** | **2.75×** |
-
-*\*`quds:math` `median` & `percentile` use $O(N)$ Quickselect on unboxed `Float64List` rather than full $O(N \log N)$ sorting.*
+| Benchmark (Quds SDK) | Python 3.12 | Quds VM + SDK | Quds vs Python |
+| :--- | ---: | ---: | ---: |
+| `quds:math` — Matrix Multiply `A * B` (`120×120`) | 105.11 ms | **32.00 ms** | **3.28× faster** |
+| `quds:math` — Gauss-Jordan `inverse` (`60×60`) | 30.63 ms | **6.56 ms** | **4.67× faster** |
+| `quds:math` — `fftReal`/`ifft` (`4096 × 5`) + `fftConvolve` | 153.62 ms | **17.22 ms** | **8.92× faster** |
+| `quds:math` — `primesUpTo(500k)` + 500× 64-bit `isPrime` | 39.61 ms | **18.18 ms** | **2.18× faster** |
+| `quds:math` — Stats (`mean`/`median`/`stddev`/`p95` 100k) | 114.70 ms | **8.00 ms** | **14.34× faster** |
+| `quds:json` — 1,500-record encode/parse/merge/equals | 27.64 ms (C) | **20.00 ms** | **1.38× faster** |
+| `quds:collection` — 100k `frequencies`/chunk/window/flatten | 24.40 ms (C) | **16.18 ms** | **1.51× faster** |
+| `quds:text` — Levenshtein `editDistance` (`500×500 × 5`) + CSV | 380.31 ms | **20.00 ms** | **19.02× faster** |
+| **Part B Geometric Mean (8 SDK tests)** | **876.0 ms total** | **138.1 ms total** | **4.50× faster** |
+| **All 14 Benchmarks Combined (Geomean)** | **1,974.1 ms** | **667.8 ms** | **3.88× faster (14/14 wins)** |
 
 ### Embedding Quds in 12 Lines of Dart
 

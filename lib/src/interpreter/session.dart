@@ -244,6 +244,7 @@ class QudsSession {
   Program? _cachedProgram;
   QudsUniversalChunk? _cachedUniversalChunk;
   QudsEvaluator? _activeEvaluator;
+  final List<(ExtensionDeclaration, QudsEnvironment)> _sessionExtensions = [];
   List<String>? _activePrinted;
   List<Object>? _activeOutputs;
 
@@ -488,7 +489,17 @@ class QudsSession {
       await _onImport(decl, env);
       return;
     }
-    await _moduleLoader.resolveImport(decl, env, fromFile: decl.span.file);
+    await _moduleLoader.resolveImport(
+      decl,
+      env,
+      fromFile: decl.span.file,
+      onExtension: (ext, extEnv) {
+        if (!_sessionExtensions.any((e) => identical(e.$1, ext))) {
+          _sessionExtensions.add((ext, extEnv));
+        }
+        _activeEvaluator?.registerExtension(ext, extEnv);
+      },
+    );
   }
 
   /// Executes a specific file inside the attached [projectWorkspace] (resolving
@@ -561,6 +572,7 @@ class QudsSession {
   }
 
   void _resetUserGlobals({bool allowTopLevelRebind = false}) {
+    _sessionExtensions.clear();
     final prevSlots = Map<String, QudsSlot>.from(_globalEnv.localSlots);
     _globalEnv = QudsEnvironment(
       isGlobal: true,
@@ -798,6 +810,9 @@ class QudsSession {
       profiler: profilerActive ? profiler : null,
     );
 
+    for (final (ext, extEnv) in _sessionExtensions) {
+      evaluator.registerExtension(ext, extEnv);
+    }
     _activeEvaluator = evaluator;
     final useUniversalVm =
         preferBytecode && !needsStatementHook && !needsCallHook;

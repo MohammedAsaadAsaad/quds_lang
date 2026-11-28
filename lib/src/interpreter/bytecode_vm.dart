@@ -1042,7 +1042,10 @@ class QudsBytecodeCompiler {
       return _RegKind.unknown;
     }
     if (expr is UnaryExpression) {
-      if (expr.operator == '-') return _inferExprKind(expr.operand, env);
+      if (expr.operator == '-' || expr.operator == '+') {
+        final k = _inferExprKind(expr.operand, env);
+        return _isNumKind(k) ? k : _RegKind.objT;
+      }
       return _RegKind.objT;
     }
     if (expr is BinaryExpression) {
@@ -3036,15 +3039,26 @@ class _RegFnCompiler {
           _emit(QudsOp.fNeg, dst, v.reg, 0, line);
           return _Val(_RegKind.doubleT, dst, isTemp: true);
         }
-        final o = _coerce(v, _RegKind.objT, line);
-        final dst = _allocO();
-        _emit(QudsOp.oUnaryOp, dst, o.reg, 0, line);
-        return _Val(_RegKind.objT, dst, isTemp: true);
+        // Lists, custom instances, BigInt, Duration, and extension operators
+        // use the Universal VM / Evaluator for full unary dispatch.
+        throw const _UnsupportedBytecode();
       }
-      if (expr.operator == 'not' || expr.operator == '!') {
+      if (expr.operator == '+') {
+        if (v.kind == _RegKind.intT || v.kind == _RegKind.doubleT) {
+          return v;
+        }
+        throw const _UnsupportedBytecode();
+      }
+      if (expr.operator == 'not') {
         final o = _coerce(v, _RegKind.objT, line);
         final dst = _allocO();
         _emit(QudsOp.oUnaryOp, dst, o.reg, 1, line);
+        return _Val(_RegKind.objT, dst, isTemp: true);
+      }
+      if (expr.operator == '!') {
+        final o = _coerce(v, _RegKind.objT, line);
+        final dst = _allocO();
+        _emit(QudsOp.oUnaryOp, dst, o.reg, 2, line);
         return _Val(_RegKind.objT, dst, isTemp: true);
       }
       throw const _UnsupportedBytecode();
@@ -4187,7 +4201,20 @@ class QudsBytecodeVm {
             if (oReg[oBp + a] == true) ip = c;
           case QudsOp.oUnaryOp:
             final v = oReg[oBp + b];
-            oReg[oBp + a] = c == 0 ? -(v! as num) : !(v! as bool);
+            if (c == 0) {
+              oReg[oBp + a] = -(v! as num);
+            } else if (c == 1) {
+              oReg[oBp + a] = !(v! as bool);
+            } else {
+              if (v == null) {
+                throw QudsRuntimeException(
+                  'Null assertion (`!`) failed on null value.',
+                  SourceSpan(1, 1, 1, file: program.file),
+                  code: 'R301',
+                );
+              }
+              oReg[oBp + a] = v;
+            }
           case QudsOp.oBinOp:
             final lv = oReg[oBp + b];
             final rv = oReg[oBp + (c >> 8)];

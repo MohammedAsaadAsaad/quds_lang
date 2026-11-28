@@ -100,8 +100,8 @@ class QudsEvaluator {
   final List<QudsStackFrame> _callStack = [];
   final List<Object?> _thrownStack = [];
   final Map<String, Map<String, QudsUserFunction>> _extensions = {};
-  final Map<String, Map<String, List<QudsUserFunction>>> _extensionOperators =
-      {};
+  final Map<String, Map<String, List<(String, QudsUserFunction)>>>
+      _extensionOperators = {};
   final List<QudsUserFunction> _customConversions = [];
   final Set<int> _executedOnceSites = {};
   final List<List<Object?>> _yieldStack = [];
@@ -142,7 +142,7 @@ class QudsEvaluator {
       if (method.conversionKind.isNotEmpty) {
         _customConversions.add(fn);
       } else if (method.isOperator) {
-        opBucket.putIfAbsent(method.name, () => []).add(fn);
+        opBucket.putIfAbsent(method.name, () => []).add((ext.target, fn));
       } else {
         bucket[method.name] = fn;
       }
@@ -1493,7 +1493,7 @@ class QudsEvaluator {
         if (m.conversionKind.isNotEmpty) {
           _customConversions.add(fn);
         } else if (m.isOperator) {
-          opBucket.putIfAbsent(m.name, () => []).add(fn);
+          opBucket.putIfAbsent(m.name, () => []).add((decl.name, fn));
         } else {
           bucket[m.name] = fn;
         }
@@ -2204,13 +2204,14 @@ class QudsEvaluator {
     if (value is Set) return const ['Set', 'Iterable', 'Object'];
     if (value is BigInt) return const ['BigInt', 'Object'];
     if (value is Duration) return const ['Duration', 'Object'];
+    if (value is math.Point) return const ['Point', 'Object'];
     return const ['Object'];
   }
 
   int _operatorArgSpecificity(Object? arg, String rawType) {
     final trimmed = rawType.trim();
     if (trimmed.isEmpty || trimmed == 'dynamic') return 10;
-    if (!_matchesType(arg, trimmed)) return -1;
+    if (!_matchesExtensionTarget(arg, trimmed)) return -1;
     final nonNull = trimmed.endsWith('?')
         ? trimmed.substring(0, trimmed.length - 1).trim()
         : trimmed;
@@ -2228,10 +2229,36 @@ class QudsEvaluator {
         (arg is Map && base == 'Map') ||
         (arg is Set && base == 'Set') ||
         (arg is BigInt && base == 'BigInt') ||
-        (arg is Duration && base == 'Duration')) {
-      return 100;
+        (arg is Duration && base == 'Duration') ||
+        (arg is math.Point && base == 'Point')) {
+      return nonNull.contains('<') ? 110 : 100;
     }
     return 50;
+  }
+
+  bool _matchesExtensionTarget(Object? value, String targetType) {
+    final trimmed = targetType.trim();
+    final nonNull = trimmed.endsWith('?')
+        ? trimmed.substring(0, trimmed.length - 1).trim()
+        : trimmed;
+    final bare =
+        nonNull.startsWith('readonly ') ? nonNull.substring(9).trim() : nonNull;
+    if (bare.startsWith('List<') && bare.endsWith('>')) {
+      if (value is! List) return false;
+      final elemType = bare.substring(5, bare.length - 1).trim();
+      if (value.isEmpty) return true;
+      return value.every((item) => _matchesExtensionTarget(item, elemType));
+    }
+    if (bare.startsWith('Point<') && bare.endsWith('>')) {
+      if (value is! math.Point) return false;
+      final coordType = bare.substring(6, bare.length - 1).trim();
+      return _matchesType(value.x, coordType) &&
+          _matchesType(value.y, coordType);
+    }
+    if (bare == 'Point') {
+      return value is math.Point || _matchesType(value, bare);
+    }
+    return _matchesType(value, bare);
   }
 
   (QudsUserFunction, bool)? _resolveOperatorOverload(
@@ -2270,8 +2297,10 @@ class QudsEvaluator {
         final ops = _extensionOperators[keys[i]]?[op];
         if (ops == null) continue;
         final bonus = (keys.length - i) * 10;
-        for (final fn in ops) {
-          consider(fn, true, bonus);
+        for (final (targetType, fn) in ops) {
+          if (!_matchesExtensionTarget(receiver, targetType)) continue;
+          final genericBonus = targetType.contains('<') ? 5 : 0;
+          consider(fn, true, bonus + genericBonus);
         }
       }
     }
@@ -2280,8 +2309,36 @@ class QudsEvaluator {
     return (bestFn!, bestIsExt);
   }
 
+  FutureOr<Object?> _applyUnaryList(
+      String op, List<Object?> items, SourceSpan span) {
+    final result = <Object?>[];
+    for (var i = 0; i < items.length; i++) {
+      final mapped = _applyUnaryOp(op, items[i], span);
+      if (mapped is Future<Object?>) {
+        return _finishUnaryListAsync(op, items, i, result, mapped, span);
+      }
+      result.add(mapped);
+    }
+    return result;
+  }
+
+  Future<List<Object?>> _finishUnaryListAsync(
+    String op,
+    List<Object?> items,
+    int index,
+    List<Object?> result,
+    Future<Object?> pending,
+    SourceSpan span,
+  ) async {
+    result.add(await pending);
+    for (var i = index + 1; i < items.length; i++) {
+      result.add(await _applyUnaryOp(op, items[i], span));
+    }
+    return result;
+  }
+
   FutureOr<Object?> _applyUnaryOp(String op, Object? v, SourceSpan span) {
-    if ((op == '-' || op == '~') &&
+    if ((op == '-' || op == '+' || op == '~') &&
         (v is QudsInstance || _extensionOperators.isNotEmpty)) {
       final overload = _resolveOperatorOverload(v, op, const []);
       if (overload != null) {
@@ -2293,13 +2350,26 @@ class QudsEvaluator {
             fn.bind(v as QudsInstance), const [], const {}, span);
       }
     }
+    if (v is List && (op == '-' || op == '+' || op == '~')) {
+      return _applyUnaryList(op, v, span);
+    }
     switch (op) {
       case '-':
         if (v is num) return -v;
         if (v is BigInt) return -v;
+        if (v is Duration) return -v;
+        if (v is math.Point) {
+          final x = -v.x;
+          final y = -v.y;
+          if (x is int && y is int) return math.Point<int>(x, y);
+          if (x is double && y is double) return math.Point<double>(x, y);
+          return math.Point<num>(x, y);
+        }
         throw QudsRuntimeException('Cannot negate `${qudsTypeName(v)}`.', span);
       case '+':
-        if (v is num || v is BigInt) return v;
+        if (v is num || v is BigInt || v is Duration || v is math.Point) {
+          return v;
+        }
         throw QudsRuntimeException('Unary `+` requires a number.', span);
       case 'not':
         return !_expectBool(v, span);

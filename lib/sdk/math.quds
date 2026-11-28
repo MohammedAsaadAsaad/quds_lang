@@ -788,6 +788,9 @@ value class Fraction:
     return _fractionAdd(this, other, false)
   operator -(other: Fraction) -> Fraction:
     return _fractionAdd(this, other, true)
+  operator -() -> Fraction:
+    return fraction(_checkedMultiply(numerator, -1), denominator)
+  operator +() -> Fraction = this
   operator *(other: Fraction) -> Fraction:
     a = gcd(numerator, other.denominator)
     b = gcd(other.numerator, denominator)
@@ -992,6 +995,9 @@ value class Complex:
     return Complex(real: real + other.real, imag: imag + other.imag)
   operator -(other: Complex) -> Complex:
     return Complex(real: real - other.real, imag: imag - other.imag)
+  operator -() -> Complex = Complex(real: -real, imag: -imag)
+  operator +() -> Complex = this
+  operator ~() -> Complex = conjugate()
   operator *(other: Complex) -> Complex:
     nextReal = real * other.real - imag * other.imag
     nextImag = real * other.imag + imag * other.real
@@ -1088,6 +1094,10 @@ value class Vec2:
     return Vec2(x: lerp(x, other.x, t), y: lerp(y, other.y, t))
   operator +(other: Vec2) -> Vec2 = Vec2(x: x + other.x, y: y + other.y)
   operator -(other: Vec2) -> Vec2 = Vec2(x: x - other.x, y: y - other.y)
+  operator -() -> Vec2 = Vec2(x: -x, y: -y)
+  operator +() -> Vec2 = this
+  operator *(scalar: double) -> Vec2 = scale(scalar)
+  operator /(scalar: double) -> Vec2 = Vec2(x: x / scalar, y: y / scalar)
 
 # A 3D vector.
 # Example:
@@ -1138,6 +1148,23 @@ value class Vec3:
     return Vec3(x: x + other.x, y: y + other.y, z: z + other.z)
   operator -(other: Vec3) -> Vec3:
     return Vec3(x: x - other.x, y: y - other.y, z: z - other.z)
+  operator -() -> Vec3 = Vec3(x: -x, y: -y, z: -z)
+  operator +() -> Vec3 = this
+  operator *(scalar: double) -> Vec3 = scale(scalar)
+  operator /(scalar: double) -> Vec3 = Vec3(x: x / scalar, y: y / scalar, z: z / scalar)
+
+# Unary operators for dart:math Point<T>.
+extend Point<int> IntPoints:
+  operator -() -> Point<int> = Point<int>(-this.x, -this.y)
+  operator +() -> Point<int> = this
+
+extend Point<double> DoublePoints:
+  operator -() -> Point<double> = Point<double>(-this.x, -this.y)
+  operator +() -> Point<double> = this
+
+extend Point<num> NumPoints:
+  operator -() -> Point<num> = Point<num>(-this.x, -this.y)
+  operator +() -> Point<num> = this
 
 :: interval
 
@@ -1320,6 +1347,10 @@ value class RealInterval:
   operator -() -> RealInterval:
     _checkRealInterval(this)
     return realInterval(-high, -low)
+
+  operator +() -> RealInterval:
+    _checkRealInterval(this)
+    return this
 
   operator *(other: RealInterval) -> RealInterval:
     _checkRealInterval(this)
@@ -3888,6 +3919,15 @@ transpose(rows: List<List<double>>) -> List<List<double>>:
     column = column + 1
   return made
 
+# Linear algebra operators for dense real matrices (`List<List<double>>`).
+# Unary `-A` and `+A` are built in element-wise for all numeric lists.
+extend List<List<double>> Matrices:
+  operator ~() -> List<List<double>> = transpose(this)
+  operator -(other: List<List<double>>) -> List<List<double>> = subtractMatrices(this, other)
+  operator *(other: List<List<double>>) -> List<List<double>> = matmul(this, other)
+  operator *(vector: List<double>) -> List<double> = matvec(this, vector)
+  operator *(scalar: double) -> List<List<double>> = scaleMatrix(this, scalar)
+
 # Matrix product. Columns of [left] must match rows of [right].
 # Example:
 #   print matmul([[1.0, 2.0]], [[3.0], [4.0]])[0][0]
@@ -4915,6 +4955,39 @@ class SparseMatrix:
   rowStart: List<int>
   columns: List<int>
   entries: List<double>
+
+  operator -() -> SparseMatrix:
+    return SparseMatrix(builds: 1, size: size, rowStart: +rowStart, columns: +columns, entries: -entries)
+
+  operator +() -> SparseMatrix:
+    return SparseMatrix(builds: 1, size: size, rowStart: +rowStart, columns: +columns, entries: +entries)
+
+  operator ~() -> SparseMatrix:
+    rows: List<int> = []
+    cols: List<int> = []
+    vals: List<double> = []
+    var row = 0
+    while row < size:
+      var cursor = rowStart[row]
+      stop = rowStart[row + 1]
+      while cursor < stop:
+        rows.add(columns[cursor])
+        cols.add(row)
+        vals.add(entries[cursor])
+        cursor += 1
+      row += 1
+    return sparseMatrix(size, rows, cols, vals)
+
+  operator *(vector: List<double>) -> List<double> = sparseMultiply(this, vector)
+
+  operator *(scalar: double) -> SparseMatrix:
+    if not _finite(scalar): throw "matrix entries must be finite"
+    scaled: List<double> = []
+    for entry in entries:
+      value = entry * scalar
+      if not _finite(value): throw "matrix entries must be finite"
+      scaled.add(value)
+    return SparseMatrix(builds: 1, size: size, rowStart: +rowStart, columns: +columns, entries: scaled)
 
 # One coordinate pass builds the pattern. Duplicate positions stay separate.
 # Example:
@@ -8853,6 +8926,10 @@ value class BigFraction:
 
   negated() -> BigFraction = bigFraction(-numerator, denominator)
 
+  operator -() -> BigFraction = negated()
+
+  operator +() -> BigFraction = this
+
   reciprocal() -> BigFraction = bigFraction(denominator, numerator)
 
   compareTo(other: BigFraction) -> int:
@@ -9033,6 +9110,10 @@ value class Decimal:
   digits: BigInt required
   scale: int required
 
+  operator -() -> Decimal = Decimal(digits: -digits, scale: scale)
+
+  operator +() -> Decimal = this
+
 # Parse decimal text at [scale], rounding extra digits by the named mode.
 # Example:
 #   print decimal("1.50", 2, "halfEven").digits
@@ -9191,6 +9272,10 @@ value class Dual:
   operator -() -> Dual:
     _checkDual(this)
     return _dualResult(-value, -tangent)
+
+  operator +() -> Dual:
+    _checkDual(this)
+    return this
 
   operator *(other: Dual) -> Dual:
     _checkDual(this)
@@ -9401,6 +9486,11 @@ value class HyperDual:
   operator -(other: HyperDual) -> HyperDual:
     return _hyper(value - other.value, dx - other.dx, dy - other.dy, dxy - other.dxy)
 
+  operator -() -> HyperDual:
+    return _hyper(-value, -dx, -dy, -dxy)
+
+  operator +() -> HyperDual = this
+
   operator *(other: HyperDual) -> HyperDual:
     return _hyper(value * other.value, dx * other.value + value * other.dx, dy * other.value + value * other.dy, dxy * other.value + value * other.dxy + dx * other.dy + dy * other.dx)
 
@@ -9475,6 +9565,15 @@ value class Reverse:
   operator +(other: Reverse) -> Reverse:
     _revSame(tape, other.tape)
     return _revPush(tape, _revAt(this) + _revAt(other), index, other.index, 1.0, 1.0)
+
+  operator -(other: Reverse) -> Reverse:
+    _revSame(tape, other.tape)
+    return _revPush(tape, _revAt(this) - _revAt(other), index, other.index, 1.0, -1.0)
+
+  operator -() -> Reverse:
+    return _revPush(tape, -_revAt(this), index, -1, -1.0, 0.0)
+
+  operator +() -> Reverse = this
 
   operator *(other: Reverse) -> Reverse:
     _revSame(tape, other.tape)
@@ -9829,6 +9928,18 @@ value class Expr:
   number: BigFraction required
   arguments: List<Expr> required
 
+  operator -() -> Expr = exprSubtract(exprNumber(_exprZero()), this)
+
+  operator +() -> Expr = this
+
+  operator +(other: Expr) -> Expr = exprAdd(this, other)
+
+  operator -(other: Expr) -> Expr = exprSubtract(this, other)
+
+  operator *(other: Expr) -> Expr = exprMultiply(this, other)
+
+  operator /(other: Expr) -> Expr = exprDivide(this, other)
+
 exprNumber(number: BigFraction) -> Expr:
   return Expr(kind: "number", name: "", number: bigFraction(number.numerator, number.denominator), arguments: _exprNone())
 
@@ -10066,6 +10177,74 @@ value class Tensor:
   shape: List<int> required
   values: List<double> required
 
+  operator -() -> Tensor = Tensor(shape: +shape, values: -values)
+
+  operator +() -> Tensor = Tensor(shape: +shape, values: +values)
+
+  operator ~() -> Tensor:
+    dims = shape.length
+    if dims <= 1: return Tensor(shape: +shape, values: +values)
+    if dims == 2:
+      rows = shape[0]
+      cols = shape[1]
+      made: List<double> = []
+      var c = 0
+      while c < cols:
+        var r = 0
+        while r < rows:
+          made.add(values[r * cols + c])
+          r += 1
+        c += 1
+      return Tensor(shape: [cols, rows], values: made)
+    revShape: List<int> = []
+    var i = dims - 1
+    while i >= 0:
+      revShape.add(shape[i])
+      i -= 1
+    inStrides = _zeroInts(dims)
+    var stride = 1
+    i = dims - 1
+    while i >= 0:
+      inStrides[i] = stride
+      stride = stride * shape[i]
+      i -= 1
+    outStrides = _zeroInts(dims)
+    stride = 1
+    i = dims - 1
+    while i >= 0:
+      outStrides[i] = stride
+      stride = stride * revShape[i]
+      i -= 1
+    made: List<double> = []
+    var flat = 0
+    while flat < values.length:
+      var rem = flat
+      var src = 0
+      var axis = 0
+      while axis < dims:
+        coord = rem ~/ outStrides[axis]
+        rem = rem % outStrides[axis]
+        src = src + coord * inStrides[dims - 1 - axis]
+        axis += 1
+      made.add(values[src])
+      flat += 1
+    return Tensor(shape: revShape, values: made)
+
+  operator +(other: Tensor) -> Tensor = tensorAdd(this, other)
+
+  operator -(other: Tensor) -> Tensor = tensorAdd(this, -other)
+
+  operator *(other: Tensor) -> Tensor = tensorMatmul(this, other)
+
+  operator *(scalar: double) -> Tensor:
+    if not _finite(scalar): throw "tensor scalar must be finite"
+    made: List<double> = []
+    for value in values:
+      scaled = value * scalar
+      if not _finite(scaled): throw "tensor values must be finite"
+      made.add(scaled)
+    return Tensor(shape: +shape, values: made)
+
 tensor(shape: List<int>, values: List<double>) -> Tensor:
   if shape.isEmpty or shape.length > 4: throw "tensor rank must be from 1 through 4"
   var count = 1
@@ -10126,6 +10305,16 @@ tensorMatmul(left: Tensor, right: Tensor) -> Tensor:
 value class FieldElement:
   residue: int required
   modulus: int required
+
+  operator -() -> FieldElement = fieldElement(modulus - residue, modulus)
+
+  operator +() -> FieldElement = this
+
+  operator +(other: FieldElement) -> FieldElement = fieldAdd(this, other)
+
+  operator -(other: FieldElement) -> FieldElement = fieldAdd(this, -other)
+
+  operator *(other: FieldElement) -> FieldElement = fieldMultiply(this, other)
 
 fieldElement(value: int, modulus: int) -> FieldElement:
   _fieldPrime(modulus)

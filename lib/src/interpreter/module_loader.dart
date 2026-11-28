@@ -55,11 +55,13 @@ class _LoadedModule {
     required this.uri,
     required this.publicExports,
     required this.sectionExports,
+    this.extensions = const [],
   });
 
   final String uri;
   final Map<String, Object?> publicExports;
   final Map<String, Map<String, Object?>> sectionExports;
+  final List<(ExtensionDeclaration, QudsEnvironment, String)> extensions;
 
   Map<String, Object?> select({
     String? section,
@@ -197,6 +199,7 @@ class QudsModuleLoader {
     QudsEnvironment targetEnv, {
     bool isInternalSdk = false,
     String? fromFile,
+    void Function(ExtensionDeclaration ext, QudsEnvironment env)? onExtension,
   }) async {
     final fullUri = decl.uri;
     final targetUri = libraryTarget(fullUri);
@@ -267,6 +270,17 @@ class QudsModuleLoader {
         for (final entry in selected.entries) {
           targetEnv.define(entry.key, entry.value);
         }
+      }
+    }
+    if (onExtension != null && decl.prefix == null) {
+      for (final (ext, extEnv, extSec) in module.extensions) {
+        if (section != null &&
+            section.isNotEmpty &&
+            extSec != section &&
+            !extSec.startsWith('$section::')) {
+          continue;
+        }
+        onExtension(ext, extEnv);
       }
     }
     return selected;
@@ -419,12 +433,18 @@ class QudsModuleLoader {
     final sectionSymbolNames = <String, Set<String>>{};
     final declaredPublicNames = <String>{};
     final exportSectionByDecl = <ImportDeclaration, String>{};
+    final moduleExtensions =
+        <(ExtensionDeclaration, QudsEnvironment, String)>[];
 
     // Track which top-level declarations and re-exports live under each `:: section`.
     var currentSection = '';
     for (final stmt in program.statements) {
       if (stmt is SectionDeclaration) {
         currentSection = stmt.path;
+        continue;
+      }
+      if (stmt is ExtensionDeclaration) {
+        moduleExtensions.add((stmt, modEnv, currentSection));
         continue;
       }
       if (stmt is ImportDeclaration && stmt.export) {
@@ -451,7 +471,8 @@ class QudsModuleLoader {
       }
     }
 
-    final evaluator = createModuleEvaluator(
+    late QudsEvaluator evaluator;
+    evaluator = createModuleEvaluator(
       modEnv,
       (imp, env) async {
         final exported = await resolveImport(
@@ -459,6 +480,13 @@ class QudsModuleLoader {
           env,
           isInternalSdk: isSdk,
           fromFile: fileName,
+          onExtension: (ext, extEnv) {
+            evaluator.registerExtension(ext, extEnv);
+            if (imp.export) {
+              moduleExtensions
+                  .add((ext, extEnv, exportSectionByDecl[imp] ?? ''));
+            }
+          },
         );
         if (imp.export) {
           reExports.addAll(exported);
@@ -509,6 +537,7 @@ class QudsModuleLoader {
       uri: targetUri,
       publicExports: publicExports,
       sectionExports: sectionExports,
+      extensions: moduleExtensions,
     );
   }
 }

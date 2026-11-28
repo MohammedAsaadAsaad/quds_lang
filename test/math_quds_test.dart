@@ -36,6 +36,7 @@ void main() {
     'math_api.quds': null,
     'math_operators.quds': null,
     'math_prefix.quds': null,
+    'unary_operators_linalg.quds': null,
   };
   for (final entry in suites.entries) {
     test('Quds primary suite ${entry.key}', () async {

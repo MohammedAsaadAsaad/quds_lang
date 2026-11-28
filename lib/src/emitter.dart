@@ -32,6 +32,7 @@ class DartEmitter {
   final _topLevelConsts = <String>{};
   final _usedNames = <String>{};
   var _useBoolHelper = false;
+  var _useUnaryApply = false;
   var _usePresent = false;
   var _useRange = false;
   var _useNumRange = false;
@@ -1171,6 +1172,17 @@ class DartEmitter {
       // identity call keeps Quds's read-once short-circuit behavior while
       // leaving the generated condition a runtime value.
       helpers.writeln('bool _qBool(bool value) => value;');
+    }
+    if (_useUnaryApply) {
+      helpers.writeln('dynamic _qUnary(String op, dynamic value) {\n'
+          '  if (value is List) return [for (final item in value) _qUnary(op, item)];\n'
+          '  return switch (op) {\n'
+          "    '-' => -value,\n"
+          "    '+' => value,\n"
+          "    '~' => ~value,\n"
+          '    _ => value,\n'
+          '  };\n'
+          '}');
     }
     if (_usePresent) {
       helpers.writeln('bool _qPresent(Object? value) => value != null;\n'
@@ -5077,29 +5089,8 @@ class DartEmitter {
               : '${node.value}',
           DurationLiteral() => formatDartDuration(node.microseconds),
           Identifier() => _identifier(node),
-          // Dart has no prefix +. Quds unary + is numeric identity.
-          UnaryExpression() => () {
-              final customOp = model.operatorCalls[node];
-              final customSym =
-                  customOp == null ? null : model.declarations[customOp];
-              if (customOp != null &&
-                  customSym != null &&
-                  customSym.dartName != customOp.name) {
-                return '(${expression(node.operand, constantContext: constantContext)}).${customSym.dartName}()';
-              }
-              return switch (node.operator) {
-                'not' =>
-                  '(!${expression(node.operand, constantContext: constantContext, opaqueBool: childOpaque)})',
-                '+' =>
-                  expression(node.operand, constantContext: constantContext),
-                '!' =>
-                  '(${expression(node.operand, constantContext: constantContext)}!)',
-                '-' when node.operand is DurationLiteral => formatDartDuration(
-                    -(node.operand as DurationLiteral).microseconds),
-                _ =>
-                  '(${node.operator}${expression(node.operand, constantContext: constantContext)})',
-              };
-            }(),
+          UnaryExpression() => _unary(node,
+              constantContext: constantContext, childOpaque: childOpaque),
           BinaryExpression() => _binary(node,
               constantContext: constantContext, childOpaque: childOpaque),
           ChainComparison() => _chain(node),
@@ -5184,6 +5175,79 @@ class DartEmitter {
     var value = type.startsWith('readonly ') ? type.substring(9) : type;
     if (value.endsWith('?')) value = value.substring(0, value.length - 1);
     return value;
+  }
+
+  String _emitUnaryList(
+    String op,
+    String sourceExpr,
+    UnaryListPlan plan,
+    int level,
+  ) {
+    final elemType = plan.levelElementTypes[level];
+    final dartElem = _dartType(elemType);
+    final varName = '_qu${_temps++}';
+    final String body;
+    if (level + 1 < plan.levelElementTypes.length) {
+      body = _emitUnaryList(op, varName, plan, level + 1);
+    } else if (elemType == 'Never') {
+      body = varName;
+    } else if (plan.leafDynamic) {
+      _useUnaryApply = true;
+      body = "_qUnary('$op', $varName)";
+    } else if (plan.leafOperator != null) {
+      final sym = model.declarations[plan.leafOperator];
+      if (sym != null && sym.dartName != plan.leafOperator!.name) {
+        body = '($varName).${sym.dartName}()';
+      } else if (op == '+') {
+        body = varName;
+      } else {
+        body = '($op($varName))';
+      }
+    } else if (op == '+') {
+      body = varName;
+    } else {
+      body = '($op($varName))';
+    }
+    return '<$dartElem>[for (final $varName in ($sourceExpr)) $body]';
+  }
+
+  String _unary(UnaryExpression node,
+      {required bool constantContext, required bool childOpaque}) {
+    if (constantContext && model.constants[node] is ConstList) {
+      return model.constants[node]!.dartSource;
+    }
+    final listPlan = model.unaryListPlans[node];
+    if (listPlan != null) {
+      final operandCode =
+          expression(node.operand, constantContext: constantContext);
+      return _emitUnaryList(node.operator, operandCode, listPlan, 0);
+    }
+    final customOp = model.operatorCalls[node];
+    final customSym = customOp == null ? null : model.declarations[customOp];
+    if (customOp != null &&
+        customSym != null &&
+        customSym.dartName != customOp.name) {
+      return '(${expression(node.operand, constantContext: constantContext)}).${customSym.dartName}()';
+    }
+    if (!constantContext &&
+        model.types[node.operand] == 'dynamic' &&
+        (node.operator == '-' ||
+            node.operator == '+' ||
+            node.operator == '~')) {
+      _useUnaryApply = true;
+      return "_qUnary('${node.operator}', ${expression(node.operand, constantContext: false)})";
+    }
+    // Dart has no prefix +. Quds unary + is numeric identity.
+    return switch (node.operator) {
+      'not' =>
+        '(!${expression(node.operand, constantContext: constantContext, opaqueBool: childOpaque)})',
+      '+' => expression(node.operand, constantContext: constantContext),
+      '!' => '(${expression(node.operand, constantContext: constantContext)}!)',
+      '-' when node.operand is DurationLiteral =>
+        formatDartDuration(-(node.operand as DurationLiteral).microseconds),
+      _ =>
+        '(${node.operator}${expression(node.operand, constantContext: constantContext)})',
+    };
   }
 
   String _binary(BinaryExpression node,

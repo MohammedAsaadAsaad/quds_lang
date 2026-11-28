@@ -399,6 +399,19 @@ class ConversionPlan {
   final String resultType;
 }
 
+/// Plan for element-wise built-in unary operators (`-`, `+`, `~`) on `List<T>`.
+class UnaryListPlan {
+  const UnaryListPlan({
+    required this.levelElementTypes,
+    required this.leafDynamic,
+    this.leafOperator,
+  });
+
+  final List<String> levelElementTypes;
+  final bool leafDynamic;
+  final FunctionDeclaration? leafOperator;
+}
+
 class SemanticModel {
   String library = '';
   String targetPlatform = 'vm';
@@ -412,6 +425,7 @@ class SemanticModel {
   final rebinding = <Pattern>{};
   final types = <Expression, String>{};
   final operatorCalls = <Node, FunctionDeclaration>{};
+  final unaryListPlans = <UnaryExpression, UnaryListPlan>{};
 
   /// Stable field views specialized in each declaring class’s formal parameters.
   final classFields = <ClassDeclaration, List<FieldDeclaration>>{};
@@ -1624,12 +1638,15 @@ class Analyzer {
         if (!seenOperatorSigs.add(sigKey)) {
           error('E201', 'Duplicate operator overload: ${method.name}', method);
         }
+        final isUnary = method.parameters.isEmpty;
         final arityKey = '${method.name}/${method.parameters.length}';
         final idx = seenOperatorArities[arityKey] ?? 0;
         seenOperatorArities[arityKey] = idx + 1;
-        dartName = idx == 0 && method.name != '**'
+        final isDartNativeOp =
+            method.name != '**' && !(method.name == '+' && isUnary);
+        dartName = idx == 0 && isDartNativeOp
             ? method.name
-            : _mangledOperatorName(method.name, idx);
+            : _mangledOperatorName(method.name, idx, unary: isUnary);
       } else {
         dartName =
             method.visibility == 'private' && !method.name.startsWith('_')
@@ -1650,10 +1667,11 @@ class Analyzer {
 
   int _extOpCounter = 0;
 
-  String _mangledOperatorName(String op, int index) {
+  String _mangledOperatorName(String op, int index,
+      {bool unary = false, String? prefix}) {
     final tag = switch (op) {
-      '+' => 'add',
-      '-' => 'sub',
+      '+' => unary ? 'uplus' : 'add',
+      '-' => unary ? 'uneg' : 'sub',
       '*' => 'mul',
       '/' => 'div',
       '~/' => 'idiv',
@@ -1667,7 +1685,7 @@ class Analyzer {
       '&' => 'band',
       '|' => 'bor',
       '^' => 'bxor',
-      '~' => 'bnot',
+      '~' => unary ? 'ubnot' : 'bnot',
       '<<' => 'shl',
       '>>' => 'shr',
       '>>>' => 'ushr',
@@ -1675,6 +1693,10 @@ class Analyzer {
       '[]=' => 'idxSet',
       _ => 'op',
     };
+    if (prefix != null && prefix.isNotEmpty) {
+      final safe = prefix.replaceAll(RegExp(r'[^A-Za-z0-9_]'), '_');
+      return '\$qudsOp_${safe}_${tag}_$index';
+    }
     return '\$qudsOp_${tag}_$index';
   }
 
@@ -1683,6 +1705,7 @@ class Analyzer {
     model.extensions.add(statement);
     final savedTypes = {..._typeNames};
     _typeNames.addAll(statement.typeParameters.map((item) => item.name));
+    final seenExtArities = <String, int>{};
     for (final method in statement.methods) {
       final added = method.typeParameters.map((item) => item.name).toList();
       _typeNames.addAll(added);
@@ -1703,9 +1726,23 @@ class Analyzer {
             allowVoid: false);
       }
       _typeNames.removeAll(added);
-      final dartName = method.isOperator
-          ? _mangledOperatorName(method.name, _extOpCounter++)
-          : method.name;
+      final String dartName;
+      if (method.isOperator) {
+        final isUnary = method.parameters.isEmpty;
+        final extName = statement.name;
+        if (extName != null && extName.isNotEmpty) {
+          final arityKey = '${method.name}/${method.parameters.length}';
+          final idx = seenExtArities[arityKey] ?? 0;
+          seenExtArities[arityKey] = idx + 1;
+          dartName = _mangledOperatorName(method.name, idx,
+              unary: isUnary, prefix: extName);
+        } else {
+          dartName = _mangledOperatorName(method.name, _extOpCounter++,
+              unary: isUnary);
+        }
+      } else {
+        dartName = method.name;
+      }
       final symbol = Symbol(method.name, dartName, type,
               function: method,
               library: library,
@@ -10948,47 +10985,100 @@ class Analyzer {
         function.parameters.map((p) => p.type).toList(), returns);
   }
 
+  String? _listUnaryElementType(String type) {
+    final bare =
+        type.startsWith('readonly ') ? type.substring(9).trim() : type.trim();
+    if (bare == 'List') return 'dynamic';
+    if (bare.startsWith('List<') && bare.endsWith('>')) {
+      return bare.substring(5, bare.length - 1).trim();
+    }
+    return null;
+  }
+
+  /// Resolves a unary `-`, `+`, or `~` on a non-nullable [type], returning
+  /// `(resultType, leafOperator, nestedElementTypes, leafDynamic)` or `null`
+  /// when [type] does not support [op].
+  (String, FunctionDeclaration?, List<String>, bool)? _resolveUnaryOp(
+      String op, String type) {
+    if (isNullableType(type)) return null;
+    final owner = _typeSymbol(_genericHead(unwrap(type)))?.classDeclaration;
+    if (owner != null) {
+      final method = _selectClassOperator(owner, type, op, const []);
+      if (method != null) {
+        final returned =
+            model.declarations[method]?.type ?? method.returnType ?? owner.name;
+        final result =
+            _qualifyType(_genericHead(unwrap(type)), returned, owner.name);
+        return (result, method, const [], false);
+      }
+    }
+    final extOp = _selectExtensionOperator(type, op, const []);
+    if (extOp != null) {
+      return (extOp.$2, extOp.$1, const [], false);
+    }
+    if (op == '-' || op == '~') {
+      final native = _sdkMember(type, op == '-' ? 'unary-' : op);
+      if (native != null && !native.getter && native.parameters.isEmpty) {
+        return (native.type, null, const [], false);
+      }
+    }
+    final listElem = _listUnaryElementType(type);
+    if (listElem != null) {
+      if (listElem == 'Never') {
+        return ('List<Never>', null, const ['Never'], false);
+      }
+      if (listElem == 'dynamic') {
+        return ('List<dynamic>', null, const ['dynamic'], true);
+      }
+      final inner = _resolveUnaryOp(op, listElem);
+      if (inner == null) return null;
+      final (innerResult, leafOp, innerLevels, leafDynamic) = inner;
+      return (
+        'List<$innerResult>',
+        leafOp,
+        [innerResult, ...innerLevels],
+        leafDynamic
+      );
+    }
+    if (op == '~') {
+      if (type == 'int' || type == 'dynamic') {
+        return (type, null, const [], type == 'dynamic');
+      }
+      return null;
+    }
+    if (numeric(type) || type == 'dynamic') {
+      return (type, null, const [], type == 'dynamic');
+    }
+    return null;
+  }
+
   String unary(UnaryExpression node) {
     final type = expression(node.operand);
-    if (node.operator == '-' || node.operator == '~') {
+    if (node.operator == '-' || node.operator == '+' || node.operator == '~') {
       if (isNullableType(type)) {
         error(
             'E308',
             'A nullable value is used where a non-null value is required',
             node);
       }
-      final owner = _typeSymbol(_genericHead(unwrap(type)))?.classDeclaration;
-      if (owner != null) {
-        final method =
-            _selectClassOperator(owner, type, node.operator, const []);
-        if (method != null) {
-          model.operatorCalls[node] = method;
-          final returned = model.declarations[method]?.type ??
-              method.returnType ??
-              owner.name;
-          return _qualifyType(_genericHead(unwrap(type)), returned, owner.name);
+      final resolved = _resolveUnaryOp(node.operator, type);
+      if (resolved != null) {
+        final (resultType, leafOp, levelElementTypes, leafDynamic) = resolved;
+        if (levelElementTypes.isNotEmpty) {
+          model.unaryListPlans[node] = UnaryListPlan(
+            levelElementTypes: levelElementTypes,
+            leafDynamic: leafDynamic,
+            leafOperator: leafOp,
+          );
+        } else if (leafOp != null) {
+          model.operatorCalls[node] = leafOp;
         }
+        return resultType;
       }
-      final extOp = _selectExtensionOperator(type, node.operator, const []);
-      if (extOp != null) {
-        model.operatorCalls[node] = extOp.$1;
-        return extOp.$2;
-      }
-      final native =
-          _sdkMember(type, node.operator == '-' ? 'unary-' : node.operator);
-      if (native != null && !native.getter && native.parameters.isEmpty) {
-        return native.type;
-      }
-    }
-    if (node.operator == '~') {
-      if (type == 'int') return 'int';
-      fail('Invalid unary operator ~ for $type', node);
+      fail('Invalid unary operator ${node.operator} for $type', node);
     }
     if (node.operator == '!' && isNullableType(type)) return unwrap(type);
     if (node.operator == 'not' && type == 'bool') return 'bool';
-    if (node.operator != 'not' && node.operator != '!' && numeric(type)) {
-      return type;
-    }
     fail('Invalid unary operator ${node.operator} for $type', node);
   }
 

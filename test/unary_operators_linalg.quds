@@ -1,0 +1,188 @@
+# Conformance tests for built-in element-wise unary operators, custom unary
+# overloading (-, +, ~), and quds:math linear algebra / algebraic operators.
+use quds:math
+
+class Coord2D:
+  x: int
+  y: int
+  init(this.x, this.y)
+  operator -() -> Coord2D = Coord2D(-x, -y)
+  operator +() -> Coord2D = Coord2D(x, y)
+  operator ~() -> Coord2D = Coord2D(y, x)
+  toString() -> String = "({x},{y})"
+
+class Offset2D:
+  dx: double
+  dy: double
+  init(this.dx, this.dy)
+
+augment Offset2D:
+  operator -() -> Offset2D = Offset2D(-dx, -dy)
+  operator +() -> Offset2D = Offset2D(dx, dy)
+  operator ~() -> Offset2D = Offset2D(dy, dx)
+
+const _constNegVec = -[1, -2, 3]
+const _constNegMat = -[[1, -2], [3, -4]]
+const _constBitVec = ~[0, 1]
+
+test "const and runtime element-wise unary operators on lists and matrices":
+  expect(_constNegVec, [-1, 2, -3])
+  expect(_constNegMat, [[-1, 2], [-3, 4]])
+  expect(_constBitVec, [-1, -2])
+
+  nums = [1, -2, 3]
+  expect(-nums, [-1, 2, -3])
+  expect(+nums, [1, -2, 3])
+  expect(~nums, [-2, 1, -4])
+
+  mat = [[1.0, -2.0], [3.0, -4.0]]
+  expect(-mat, [[-1.0, 2.0], [-3.0, 4.0]])
+  expect(+mat, [[1.0, -2.0], [3.0, -4.0]])
+
+  empty: List<int> = []
+  expect(-empty, empty)
+
+test "built-in dart:math Point plus custom class and augment unary operators":
+  mp = -Point(2, 3)
+  expect(mp.x, -2)
+  expect(mp.y, -3)
+  mpd = -Point(1.5, -2.5)
+  expect(mpd.x, -1.5)
+  expect(mpd.y, 2.5)
+  mpts = -[Point(2, 3), Point(-1, 4)]
+  expect(mpts[0].x, -2)
+  expect(mpts[0].y, -3)
+  expect(mpts[1].x, 1)
+  expect(mpts[1].y, -4)
+
+  p = Coord2D(2, 3)
+  neg = -p
+  expect(neg.x, -2)
+  expect(neg.y, -3)
+  pos = +p
+  expect(pos.x, 2)
+  expect(pos.y, 3)
+  swapped = ~p
+  expect(swapped.x, 3)
+  expect(swapped.y, 2)
+
+  pts = [Coord2D(2, 3), Coord2D(-1, 4)]
+  negPts = -pts
+  expect(negPts[0].toString(), "(-2,-3)")
+  expect(negPts[1].toString(), "(1,-4)")
+  swappedPts = ~pts
+  expect(swappedPts[0].toString(), "(3,2)")
+  expect(swappedPts[1].toString(), "(4,-1)")
+
+  off = Offset2D(1.5, -2.5)
+  negOff = -off
+  expect(negOff.dx, -1.5)
+  expect(negOff.dy, 2.5)
+  swapOff = ~off
+  expect(swapOff.dx, -2.5)
+  expect(swapOff.dy, 1.5)
+
+test "quds:math linear algebra unary and binary operators":
+  v2 = Vec2(x: 2.0, y: -3.0)
+  expect((-v2).x, -2.0)
+  expect((-v2).y, 3.0)
+  expect((+v2).x, 2.0)
+  expect((v2 * 2.0).y, -6.0)
+  expect((v2 / 2.0).x, 1.0)
+
+  v3 = Vec3(x: 1.0, y: -2.0, z: 3.0)
+  expect((-v3).x, -1.0)
+  expect((-v3).y, 2.0)
+  expect((-v3).z, -3.0)
+  expect((+v3).z, 3.0)
+  expect((v3 * 3.0).y, -6.0)
+  expect((v3 / 2.0).x, 0.5)
+
+  z = Complex(real: 3.0, imag: 4.0)
+  expect((-z).real, -3.0)
+  expect((-z).imag, -4.0)
+  expect((+z).real, 3.0)
+  expect((~z).real, 3.0)
+  expect((~z).imag, -4.0)
+  expect((z * ~z).real, 25.0)
+  expect((z * ~z).imag, 0.0)
+
+  a = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+  at = ~a
+  expect(at, [[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]])
+  expect(~at, a)
+  expect(-a, [[-1.0, -2.0, -3.0], [-4.0, -5.0, -6.0]])
+  expect(a * 2.0, [[2.0, 4.0, 6.0], [8.0, 10.0, 12.0]])
+  expect(a * [1.0, 0.0, -1.0], [-2.0, -2.0])
+  b = [[2.0, 0.0], [1.0, 3.0]]
+  c = [[1.0, 1.0], [0.0, 2.0]]
+  expect(b - c, [[1.0, -1.0], [1.0, 1.0]])
+  expect(b * c, [[2.0, 2.0], [1.0, 7.0]])
+
+  t = tensor([2, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  expect((-t).values, [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0])
+  expect((+t).values, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  tt = ~t
+  expect(tt.shape, [3, 2])
+  expect(tt.values, [1.0, 4.0, 2.0, 5.0, 3.0, 6.0])
+  expect((~tt).values, t.values)
+  prod = t * tt
+  expect(prod.shape, [2, 2])
+  expect(prod.values, [14.0, 32.0, 32.0, 77.0])
+  expect((t + t).values, (t * 2.0).values)
+  expect((t - t).values, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+  t3 = tensor([2, 1, 3], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+  t3t = ~t3
+  expect(t3t.shape, [3, 1, 2])
+  expect(t3t.values, [1.0, 4.0, 2.0, 5.0, 3.0, 6.0])
+
+  s = sparseMatrix(2, [0, 1], [1, 0], [3.0, 5.0])
+  expect((-s) * [1.0, 2.0], [-6.0, -5.0])
+  expect((+s) * [1.0, 2.0], [6.0, 5.0])
+  expect((~s) * [1.0, 2.0], [10.0, 3.0])
+  expect((s * 2.0) * [1.0, 2.0], [12.0, 10.0])
+
+test "quds:math exact, interval, autodiff, field, and symbolic unary operators":
+  f = fraction(2, 3)
+  expect((-f).numerator, -2)
+  expect((-f).denominator, 3)
+  expect((+f).numerator, 2)
+
+  bf = bigFraction(BigInt.from(3), BigInt.from(4))
+  expect((-bf).toString(), "-3/4")
+  expect((+bf).toString(), "3/4")
+
+  dec = decimal("12.34", 2, "halfEven")
+  expect((-dec).digits, BigInt.from(-1234))
+  expect((+dec).digits, BigInt.from(1234))
+
+  ri = realInterval(1.0, 3.0)
+  expect((-ri).low, -3.0)
+  expect((-ri).high, -1.0)
+  expect((+ri).low, 1.0)
+
+  d = dualVariable(2.0)
+  expect((-d).value, -2.0)
+  expect((-d).tangent, -1.0)
+  expect((+d).value, 2.0)
+
+  hd = HyperDual(value: 2.0, dx: 1.0, dy: 3.0, dxy: 4.0)
+  expect((-hd).value, -2.0)
+  expect((-hd).dxy, -4.0)
+  expect((+hd).dy, 3.0)
+
+  grad = reverseGradient((v: List<Reverse>) -> -(v[0] * v[0]) + v[1] - v[0], [3.0, 5.0])
+  expect(grad[0], -7.0)
+  expect(grad[1], 1.0)
+
+  fe = fieldElement(3, 7)
+  expect((-fe).residue, 4)
+  expect((fe + (-fe)).residue, 0)
+  expect((+fe).residue, 3)
+  expect((fe * fieldElement(5, 7)).residue, 1)
+
+  x = exprSymbol("x")
+  negX = -x
+  expect(exprText(simplifyExpr(deriveExpr(negX, "x"))), "-1/1")
+  expect(exprText(simplifyExpr(deriveExpr(+x, "x"))), "1/1")

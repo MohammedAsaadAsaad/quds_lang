@@ -326,7 +326,17 @@ class ConstantEvaluator {
 
   ConstValue _unary(UnaryExpression node) {
     final value = evaluate(node.operand);
-    switch (node.operator) {
+    return _applyConstUnary(node.operator, value);
+  }
+
+  ConstValue _applyConstUnary(String op, ConstValue value) {
+    if (value is ConstList && (op == '-' || op == '+' || op == '~')) {
+      return ConstList(
+        value.elementType,
+        [for (final item in value.elements) _applyConstUnary(op, item)],
+      );
+    }
+    switch (op) {
       case 'not':
         if (value is! ConstBool) {
           throw StateError('Unary not on ${value.runtimeType}');
@@ -348,7 +358,7 @@ class ConstantEvaluator {
         if (value is ConstInt) return ConstInt(~value.value);
         throw StateError('Unary ~ on ${value.runtimeType}');
       default:
-        throw StateError('Unknown unary ${node.operator}');
+        throw StateError('Unknown unary $op');
     }
   }
 

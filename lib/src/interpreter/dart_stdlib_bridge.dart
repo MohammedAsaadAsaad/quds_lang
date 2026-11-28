@@ -173,9 +173,13 @@ Map<String, Object?> _dartMath() => {
               isSync: true),
         },
       ),
-      'Point': QudsNativeFunction(
-          'Point', (p, n, c) => math.Point<num>(p[0] as num, p[1] as num),
-          isSync: true),
+      'Point': QudsNativeFunction('Point', (p, n, c) {
+        final x = p[0] as num;
+        final y = p[1] as num;
+        if (x is int && y is int) return math.Point<int>(x, y);
+        if (x is double && y is double) return math.Point<double>(x, y);
+        return math.Point<num>(x, y);
+      }, isSync: true),
       'Rectangle': QudsNativeFunction(
           'Rectangle',
           (p, n, c) => math.Rectangle<num>(

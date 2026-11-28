@@ -73,9 +73,9 @@ void main() {
   );
 
   test(
-    'All 7 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
+    'All 12 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
     () async {
-      expect(studioProjectTemplates, hasLength(7));
+      expect(studioProjectTemplates, hasLength(12));
 
       for (final tpl in studioProjectTemplates) {
         final ws = tpl.builder();
@@ -104,7 +104,10 @@ void main() {
                     maxSteps: 500000,
                     timeout: const Duration(seconds: 10),
                   )
-                : QudsExecutionPolicy.standard());
+                : QudsExecutionPolicy.standard(
+                    maxSteps: 400000,
+                    timeout: const Duration(seconds: 10),
+                  ));
         final session = QudsSession(
           policy: policy,
           hostModules: [buildAiToolsHostModule()],
@@ -121,6 +124,19 @@ void main() {
           expect(res.outputs.whereType<QudsTableOutput>(), hasLength(1));
           expect(res.outputs.whereType<QudsPlot2DOutput>(), hasLength(1));
           expect(res.lastForm, isNotNull);
+        } else if (const {
+          'v4_turbo_engine',
+          'cnc_robotic_arm',
+          'jet_turbine_cfd',
+          'smart_power_grid',
+          'cardiac_ecg_monitor',
+        }.contains(tpl.id)) {
+          expect(res.lastGeometryScene, isNotNull,
+              reason: '${tpl.id} must emit live animated geometry scene');
+          expect(res.animationSpec, isNotNull,
+              reason: '${tpl.id} must emit 60fps animation spec');
+          expect(res.outputs.whereType<QudsImageOutput>(), hasLength(1),
+              reason: '${tpl.id} must render its BMP blueprint asset');
         } else if (tpl.id == 'quds_shop_pos') {
           expect(restored.hasAnyFile('assets/last_receipt.json'), isTrue);
           expect(res.outputs.whereType<QudsImageOutput>(), hasLength(1));

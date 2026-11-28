@@ -920,4 +920,59 @@ MANDEL_ITER = 20
     expect(find.byKey(const Key('compiled_artifact_dialog')), findsOneWidget);
     expect(find.textContaining('vipDiscount()'), findsOneWidget);
   });
+
+  testWidgets(
+      'Mobile phone visual stage scrolls smoothly across combined plot + form + table + BMP blueprint + animated canvas without clipping',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('mobile_scroll_multi_output_test'),
+      autoRunInitial: false,
+    ));
+    await tester.pumpAndSettle();
+
+    // Open Workspaces tree and launch AI Agent Sandbox (plot + form + table)
+    await tester.tap(find.byKey(const Key('btn_open_workspaces_tree')));
+    await tester.pumpAndSettle();
+    final aiNode = find.byKey(const Key('tree_workspace_ai_agent_sandbox'));
+    await tester.ensureVisible(aiNode);
+    await tester.pumpAndSettle();
+    await tester.tap(aiNode);
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    // Verify visual_stage_scroll scrolls smoothly and renders ALL 3 outputs (plot + form + table)
+    final scrollFinder = find.byKey(const Key('visual_stage_scroll'));
+    expect(scrollFinder, findsOneWidget);
+    expect(find.byKey(const Key('quds_plot_canvas')), findsOneWidget);
+    await tester.drag(scrollFinder, const Offset(0, -350));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('quds_form_output_card')), findsOneWidget);
+    await tester.drag(scrollFinder, const Offset(0, -350));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('ORD-101'), findsOneWidget);
+
+    // Launch 4-Stroke Turbo Engine project (60fps geometry + dyno plot + BMP blueprint + form)
+    await tester.tap(find.byKey(const Key('btn_open_workspaces_tree')));
+    await tester.pumpAndSettle();
+    final engNode = find.byKey(const Key('tree_workspace_v4_turbo_engine'));
+    await tester.ensureVisible(engNode);
+    await tester.pumpAndSettle();
+    await tester.tap(engNode);
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+    await tester.drag(scrollFinder, const Offset(0, -450));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('quds_plot_canvas')), findsOneWidget);
+    await tester.drag(scrollFinder, const Offset(0, -400));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.byKey(const Key('quds_image_card_assets/engine_blueprint.bmp')),
+      findsOneWidget,
+    );
+  });
 }

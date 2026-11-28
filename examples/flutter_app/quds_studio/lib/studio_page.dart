@@ -193,8 +193,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
 
     final policy = switch (_policyMode) {
       StudioPolicyMode.standard => QudsExecutionPolicy.standard(
-          maxSteps: 150000,
-          timeout: const Duration(seconds: 6),
+          maxSteps: 400000,
+          timeout: const Duration(seconds: 10),
         ),
       StudioPolicyMode.strictSandbox => QudsExecutionPolicy.strictSandbox(
           maxSteps: 40000,
@@ -2331,13 +2331,14 @@ MANDEL_ITER = 64
         final tables =
             res?.outputs.whereType<QudsTableOutput>().toList() ?? const [];
         final readings = scene?.readings ?? const <QudsTelemetryReading>[];
-        final interactiveInputs = scene?.interactiveInputs ??
-            surface3d?.interactiveInputs ??
-            vectorField?.interactiveInputs ??
-            graph?.interactiveInputs ??
-            form?.interactiveInputs ??
-            plot?.interactiveInputs ??
-            const <QudsInteractiveInput>[];
+        final interactiveInputs = <QudsInteractiveInput>[
+          ...?scene?.interactiveInputs,
+          ...?surface3d?.interactiveInputs,
+          ...?vectorField?.interactiveInputs,
+          ...?graph?.interactiveInputs,
+          ...?form?.interactiveInputs,
+          ...?plot?.interactiveInputs,
+        ];
 
         final elapsedText = res == null
             ? ''
@@ -2347,9 +2348,11 @@ MANDEL_ITER = 64
         final engineBadge =
             res == null ? '' : (res.usedBytecodeVm ? '⚡ VM · ' : '');
 
-        Widget stageBody;
+        // 1. Primary interactive canvas (geometry, 3D surface, vector field, graph, or standalone plot)
+        Widget? primaryCanvas;
+        bool plotUsedAsPrimary = false;
         if (scene != null) {
-          stageBody = QudsGeometryCanvas(
+          primaryCanvas = QudsGeometryCanvas(
             scene: scene,
             isDark: _isDark,
             lineStyle: _lineStyle,
@@ -2358,7 +2361,7 @@ MANDEL_ITER = 64
             }),
           );
         } else if (surface3d != null && vectorField != null) {
-          stageBody = Column(
+          primaryCanvas = Column(
             children: [
               Expanded(
                 flex: 6,
@@ -2373,100 +2376,91 @@ MANDEL_ITER = 64
             ],
           );
         } else if (surface3d != null) {
-          stageBody = QudsSurface3DCanvas(surface: surface3d, isDark: _isDark);
+          primaryCanvas =
+              QudsSurface3DCanvas(surface: surface3d, isDark: _isDark);
         } else if (vectorField != null) {
-          stageBody =
+          primaryCanvas =
               QudsVectorFieldCanvas(field: vectorField, isDark: _isDark);
         } else if (graph != null) {
-          stageBody = QudsGraphCanvas(graph: graph, isDark: _isDark);
-        } else if (form != null || images.isNotEmpty) {
-          final cards = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final img in images) ...[
-                QudsImageOutputCard(image: img, isDark: _isDark),
-                const SizedBox(height: 10),
-              ],
-              if (form != null) ...[
-                QudsFormOutputCard(form: form, isDark: _isDark),
-                if (tables.isNotEmpty) const SizedBox(height: 10),
-              ],
-              for (final tbl in tables) ...[
-                QudsTableCard(table: tbl),
-                const SizedBox(height: 8),
-              ],
-            ],
-          );
-          stageBody = isCompact ? cards : SingleChildScrollView(child: cards);
-        } else if (plot != null) {
-          stageBody = Column(
-            children: [
-              Expanded(
-                child: QudsPlotCanvas(
-                  plot: plot,
-                  isDark: _isDark,
-                  lineStyle: _lineStyle,
-                ),
-              ),
-              if (tables.isNotEmpty) QudsTableCard(table: tables.first),
-            ],
-          );
-        } else if (tables.isNotEmpty) {
-          stageBody = isCompact
-              ? QudsTableCard(table: tables.first)
-              : SingleChildScrollView(
-                  child: QudsTableCard(table: tables.first),
-                );
-        } else if (_preset.category == StudioCategory.benchmarks) {
-          final benchCard = QudsBenchmarkStageCard(
-            preset: _preset,
-            result: res,
-            history: _benchHistory[_preset.id] ?? const [],
-            lastVmMs: _benchVmMs[_preset.id],
-            lastAstMs: _benchAstMs[_preset.id],
-            running: _running,
-            isArabic: _isArabic,
+          primaryCanvas = QudsGraphCanvas(graph: graph, isDark: _isDark);
+        } else if (plot != null && form == null && images.isEmpty) {
+          plotUsedAsPrimary = true;
+          primaryCanvas = QudsPlotCanvas(
+            plot: plot,
             isDark: _isDark,
-            onRunVm: () => _runBenchmarkSingle(useVm: true),
-            onRunMedian3: _runBenchmarkMedian3,
-            onRunAst: () => _runBenchmarkSingle(useVm: false),
-          );
-          stageBody =
-              isCompact ? benchCard : SingleChildScrollView(child: benchCard);
-        } else {
-          stageBody = Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  res != null && !res.succeeded
-                      ? Icons.shield_outlined
-                      : Icons.science_outlined,
-                  size: 36,
-                  color: res != null && !res.succeeded
-                      ? const Color(0xFFEF4444)
-                      : theme.hintColor,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  res != null && !res.succeeded
-                      ? '${res.error}'
-                      : (_isArabic
-                          ? _preset.subtitleAr
-                          : 'Press Run to execute Quds code and visualize results.'),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: res != null && !res.succeeded
-                        ? const Color(0xFFEF4444)
-                        : theme.hintColor,
-                  ),
-                ),
-              ],
-            ),
+            lineStyle: _lineStyle,
           );
         }
+
+        // 2. Rich secondary & card outputs (NEVER dropped when combined with a canvas or plot!)
+        final secondaryWidgets = <Widget>[
+          if (plot != null && !plotUsedAsPrimary)
+            SizedBox(
+              height: isCompact ? 230 : 250,
+              child: QudsPlotCanvas(
+                plot: plot,
+                isDark: _isDark,
+                lineStyle: _lineStyle,
+              ),
+            ),
+          for (final img in images)
+            QudsImageOutputCard(image: img, isDark: _isDark),
+          if (form != null) QudsFormOutputCard(form: form, isDark: _isDark),
+          for (final tbl in tables) QudsTableCard(table: tbl),
+        ];
+
+        final bool isBenchmarkView = primaryCanvas == null &&
+            secondaryWidgets.isEmpty &&
+            _preset.category == StudioCategory.benchmarks;
+
+        final Widget emptyOrBenchmarkWidget = isBenchmarkView
+            ? QudsBenchmarkStageCard(
+                preset: _preset,
+                result: res,
+                history: _benchHistory[_preset.id] ?? const [],
+                lastVmMs: _benchVmMs[_preset.id],
+                lastAstMs: _benchAstMs[_preset.id],
+                running: _running,
+                isArabic: _isArabic,
+                isDark: _isDark,
+                onRunVm: () => _runBenchmarkSingle(useVm: true),
+                onRunMedian3: _runBenchmarkMedian3,
+                onRunAst: () => _runBenchmarkSingle(useVm: false),
+              )
+            : Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        res != null && !res.succeeded
+                            ? Icons.shield_outlined
+                            : Icons.science_outlined,
+                        size: 36,
+                        color: res != null && !res.succeeded
+                            ? const Color(0xFFEF4444)
+                            : theme.hintColor,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        res != null && !res.succeeded
+                            ? '${res.error}'
+                            : (_isArabic
+                                ? _preset.subtitleAr
+                                : 'Press Run to execute Quds code and visualize results.'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: res != null && !res.succeeded
+                              ? const Color(0xFFEF4444)
+                              : theme.hintColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
 
         final headerRow = Row(
           children: [
@@ -2575,19 +2569,17 @@ MANDEL_ITER = 64
                 onSeekTime: _seekAnimTime,
               );
 
-        if (isCompact || _showLineQualityPanel) {
-          final isAutoHeightCard = scene == null &&
-              plot == null &&
-              surface3d == null &&
-              vectorField == null &&
-              graph == null &&
-              (form != null ||
-                  images.isNotEmpty ||
-                  tables.isNotEmpty ||
-                  _preset.category == StudioCategory.benchmarks);
+        // Use smooth scrollable stage whenever compact (mobile), when Line Quality
+        // is open, or whenever multiple rich cards/canvases are stacked together.
+        final bool useScrollableStack = isCompact ||
+            _showLineQualityPanel ||
+            secondaryWidgets.isNotEmpty ||
+            isBenchmarkView;
+
+        if (useScrollableStack) {
           final double canvasHeight = isCompact
               ? ((surface3d != null && vectorField != null) ? 420.0 : 320.0)
-              : ((surface3d != null && vectorField != null) ? 340.0 : 240.0);
+              : ((surface3d != null && vectorField != null) ? 360.0 : 310.0);
 
           return Container(
             padding: EdgeInsets.all(isCompact ? 10 : 12),
@@ -2600,6 +2592,7 @@ MANDEL_ITER = 64
             ),
             child: SingleChildScrollView(
               key: const Key('visual_stage_scroll'),
+              physics: const AlwaysScrollableScrollPhysics(),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -2609,10 +2602,10 @@ MANDEL_ITER = 64
                     lineQualityPanel,
                   ],
                   const SizedBox(height: 8),
-                  if (isAutoHeightCard)
-                    stageBody
-                  else
-                    SizedBox(height: canvasHeight, child: stageBody),
+                  if (primaryCanvas != null)
+                    SizedBox(height: canvasHeight, child: primaryCanvas)
+                  else if (secondaryWidgets.isEmpty)
+                    emptyOrBenchmarkWidget,
                   if (lineQualityPanel != null && isCompact) ...[
                     const SizedBox(height: 8),
                     lineQualityPanel,
@@ -2644,13 +2637,18 @@ MANDEL_ITER = 64
                       ),
                     ),
                   ],
-                  const SizedBox(height: 8),
+                  for (final w in secondaryWidgets) ...[
+                    const SizedBox(height: 10),
+                    w,
+                  ],
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
           );
         }
 
+        // Desktop standalone full-height canvas (geometry, 3D, vector field, graph, or empty)
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -2669,7 +2667,7 @@ MANDEL_ITER = 64
                 animBar,
               ],
               const SizedBox(height: 8),
-              Expanded(child: stageBody),
+              Expanded(child: primaryCanvas ?? emptyOrBenchmarkWidget),
               if (readings.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 QudsTelemetryHudBar(readings: readings, isDark: _isDark),

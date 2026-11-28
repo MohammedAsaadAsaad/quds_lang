@@ -975,4 +975,53 @@ MANDEL_ITER = 20
       findsOneWidget,
     );
   });
+
+  testWidgets(
+      'Full-Screen Standalone App mode launches touch-interactive Neon Brick Breaker cleanly on mobile with finger gestures',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('standalone_fullscreen_game_test'),
+      autoRunInitial: false,
+    ));
+    await tester.pumpAndSettle();
+
+    // Launch Neon Brick Breaker directly as a Full-Screen Standalone App from Gallery
+    await tester.tap(find.byKey(const Key('btn_open_workspaces_tree')));
+    await tester.pumpAndSettle();
+    final fullBtn = find.byKey(
+      const Key('tree_workspace_fullscreen_neon_brick_breaker'),
+    );
+    await tester.ensureVisible(fullBtn);
+    await tester.pumpAndSettle();
+    await tester.tap(fullBtn);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.byKey(const Key('quds_standalone_app_page')), findsOneWidget);
+    expect(
+        find.byKey(const Key('quds_touch_pointer_listener')), findsOneWidget);
+    expect(find.byKey(const Key('quds_telemetry_hud')), findsOneWidget);
+    expect(find.byKey(const Key('standalone_btn_reset_game')), findsOneWidget);
+
+    // Simulate finger tap + horizontal slide on the full-screen game canvas
+    final canvas = find.byKey(const Key('quds_geometry_canvas'));
+    expect(canvas, findsOneWidget);
+    await tester.tap(canvas);
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.drag(canvas, const Offset(80, 0));
+    await tester.pump(const Duration(milliseconds: 120));
+
+    // Toggle collapsible controls drawer inside standalone app
+    await tester.tap(find.byKey(const Key('btn_standalone_controls')));
+    await tester.pump(const Duration(milliseconds: 150));
+
+    // Exit standalone full-screen mode back to Quds Studio
+    await tester.tap(find.byKey(const Key('btn_exit_standalone_app')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('quds_standalone_app_page')), findsNothing);
+  });
 }

@@ -889,6 +889,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
     this.showGrid = true,
     this.showAxes = true,
     this.interactive = true,
+    this.interactiveTouch = false,
   });
 
   final List<QudsGeoPrimitive> primitives;
@@ -900,6 +901,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
   final bool showGrid;
   final bool showAxes;
   final bool interactive;
+  final bool interactiveTouch;
 
   @override
   String get kind => 'geometry_scene';
@@ -925,6 +927,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
         'showGrid': showGrid,
         'showAxes': showAxes,
         'interactive': interactive,
+        if (interactiveTouch) 'interactiveTouch': interactiveTouch,
         'bounds': bounds.toJson(),
         if (animation != null) 'animation': animation!.toJson(),
         'interactiveInputs': [for (final i in interactiveInputs) i.toJson()],
@@ -939,6 +942,7 @@ class QudsGeometrySceneOutput extends QudsOutput {
         showGrid: (json['showGrid'] as bool?) ?? true,
         showAxes: (json['showAxes'] as bool?) ?? true,
         interactive: (json['interactive'] as bool?) ?? true,
+        interactiveTouch: (json['interactiveTouch'] as bool?) ?? false,
         bounds: QudsGeoBounds.fromJson(
             (json['bounds'] as Map).cast<String, Object?>()),
         animation: json['animation'] is Map

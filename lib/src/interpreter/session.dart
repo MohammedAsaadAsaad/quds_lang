@@ -1109,10 +1109,18 @@ class QudsSession {
     return results;
   }
 
+  /// Updates interactive input state in-place without immediately re-running
+  /// the script (ideal for 60Hz–120Hz touch/pointer streams during active
+  /// animation loops).
+  void patchInteractiveInputs(Map<String, Object?> patch) {
+    _interactiveInputs.addAll(patch);
+  }
+
   /// Resets the animation clock back to `t = 0.0`, `frame = 0` and clears
   /// persistent cross-frame simulation state (`viz.state(...)`).
   void resetAnimation() {
     _simulationState.clear();
+    _interactiveInputs.remove('__quds_pointer');
     _interactiveInputs['__quds_anim_t'] = 0.0;
     _interactiveInputs['__quds_anim_dt'] = 1.0 / 60.0;
     _interactiveInputs['__quds_anim_frame'] = 0;

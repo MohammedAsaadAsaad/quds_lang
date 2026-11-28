@@ -44,6 +44,7 @@ class QudsWorkspacePanel extends StatefulWidget {
     this.onCompareAll3,
     this.onPrecompileAll,
     this.onQuickCodePushEdit,
+    this.onLaunchFullscreen,
   });
 
   final QudsWorkspace workspace;
@@ -71,6 +72,7 @@ class QudsWorkspacePanel extends StatefulWidget {
   final VoidCallback? onCompareAll3;
   final VoidCallback? onPrecompileAll;
   final VoidCallback? onQuickCodePushEdit;
+  final VoidCallback? onLaunchFullscreen;
 
   @override
   State<QudsWorkspacePanel> createState() => _QudsWorkspacePanelState();
@@ -534,6 +536,27 @@ class _QudsWorkspacePanelState extends State<QudsWorkspacePanel> {
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 ),
               ),
+              if (widget.onLaunchFullscreen != null) ...[
+                const SizedBox(width: 5),
+                FilledButton.icon(
+                  key: const Key('workspace_fullscreen_btn'),
+                  onPressed: widget.running ? null : widget.onLaunchFullscreen,
+                  icon: const Icon(Icons.open_in_full_rounded, size: 13),
+                  label: Text(
+                    widget.isArabic ? 'شاشة كاملة' : 'Full Screen',
+                    style: const TextStyle(
+                        fontSize: 10.5, fontWeight: FontWeight.w600),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF6366F1),
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  ),
+                ),
+              ],
               const SizedBox(width: 6),
               Expanded(
                 child: SingleChildScrollView(

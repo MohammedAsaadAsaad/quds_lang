@@ -73,9 +73,18 @@ void main() {
   );
 
   test(
-    'All 12 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
+    'All 18 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
     () async {
-      expect(studioProjectTemplates, hasLength(12));
+      expect(studioProjectTemplates, hasLength(18));
+
+      const touchGameIds = {
+        'neon_brick_breaker',
+        'sky_flappy_jet',
+        'space_defender_touch',
+        'slingshot_physics_angry',
+        'finger_paint_kaleidoscope',
+        'smart_calc_budget_app',
+      };
 
       for (final tpl in studioProjectTemplates) {
         final ws = tpl.builder();
@@ -115,8 +124,8 @@ void main() {
         final res = await session.runProject(preferBytecode: true);
         expect(res.succeeded, isTrue,
             reason: 'Project ${tpl.id} failed: ${res.error}');
-        expect(res.printedLines, isNotEmpty,
-            reason: 'Project ${tpl.id} produced no stdout');
+        expect(res.outputs.isNotEmpty || res.printedLines.isNotEmpty, isTrue,
+            reason: 'Project ${tpl.id} produced no outputs or stdout');
 
         if (tpl.id == 'heavy_vm_lab') {
           expect(res.outputs.whereType<QudsTableOutput>(), hasLength(1));
@@ -124,6 +133,57 @@ void main() {
           expect(res.outputs.whereType<QudsTableOutput>(), hasLength(1));
           expect(res.outputs.whereType<QudsPlot2DOutput>(), hasLength(1));
           expect(res.lastForm, isNotNull);
+        } else if (touchGameIds.contains(tpl.id)) {
+          expect(res.lastGeometryScene, isNotNull,
+              reason: '${tpl.id} must emit interactive touch scene');
+          expect(res.lastGeometryScene!.interactiveTouch, isTrue,
+              reason:
+                  '${tpl.id} must enable interactiveTouch via viz.pointer()');
+          expect(res.outputs.whereType<QudsImageOutput>(), hasLength(1),
+              reason: '${tpl.id} must render its BMP sprite/banner asset');
+
+          // Simulate live finger tap & drag across frames
+          session.patchInteractiveInputs({
+            '__quds_pointer': {
+              'x': 2.2,
+              'y': -1.0,
+              'down': true,
+              'tapX': 2.2,
+              'tapY': -1.0,
+              'taps': 1,
+              'vx': 4.0,
+              'vy': 1.5,
+              'active': true,
+            },
+          });
+          final f1 = await session.stepFrame(
+            1.0 / 60.0,
+            source: restored.readFile(restored.entryPoint),
+            file: restored.entryPoint,
+          );
+          expect(f1.succeeded, isTrue,
+              reason: '${tpl.id} finger-down frame failed: ${f1.error}');
+
+          session.patchInteractiveInputs({
+            '__quds_pointer': {
+              'x': 2.9,
+              'y': -0.4,
+              'down': false,
+              'tapX': 2.2,
+              'tapY': -1.0,
+              'taps': 1,
+              'vx': 0.0,
+              'vy': 0.0,
+              'active': true,
+            },
+          });
+          final f2 = await session.stepFrame(
+            1.0 / 60.0,
+            source: restored.readFile(restored.entryPoint),
+            file: restored.entryPoint,
+          );
+          expect(f2.succeeded, isTrue,
+              reason: '${tpl.id} finger-release frame failed: ${f2.error}');
         } else if (const {
           'v4_turbo_engine',
           'cnc_robotic_arm',

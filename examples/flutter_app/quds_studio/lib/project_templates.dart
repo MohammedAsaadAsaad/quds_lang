@@ -9,6 +9,7 @@ import 'package:quds/interpreter.dart';
 
 import 'ai_agent_lab.dart';
 import 'projects_engineering.dart';
+import 'projects_games_apps.dart';
 
 class StudioProjectTemplate {
   const StudioProjectTemplate({
@@ -813,6 +814,7 @@ final List<StudioProjectTemplate> studioProjectTemplates = [
     builder: buildAiAgentSandboxProject,
     usesSystemBridgePolicy: true,
   ),
+  ...interactiveGamesAndAppsTemplates,
   ...engineeringProjectTemplates,
   StudioProjectTemplate(
     id: 'sales_analytics_hub',

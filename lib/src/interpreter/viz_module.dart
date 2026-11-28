@@ -39,11 +39,57 @@ QudsHostModule buildQudsVizModule({
   final interactiveRegistry =
       sharedInteractiveRegistry ?? <String, QudsInteractiveInput>{};
   QudsAnimationSpec? activeAnimation;
+  var pointerRequested = false;
 
   final builder = QudsHostModule.builder(
     'quds:viz',
     description:
-        'Scientific plotting, 3D surfaces, vector fields, graphs, time-based animations, color gradients, live telemetry readouts, micro-app controls, tables, matrices, LaTeX, and interactive 2D geometry scenes.',
+        'Scientific plotting, 3D surfaces, vector fields, graphs, time-based animations, live finger/pointer touch input, color gradients, live telemetry readouts, micro-app controls, tables, matrices, LaTeX, and interactive 2D geometry scenes.',
+  );
+
+  // Real-time finger / touch / mouse pointer state in world coordinates:
+  // p = viz.pointer() -> {x, y, down, tapX, tapY, taps, vx, vy, active}
+  builder.function(
+    'pointer',
+    (pos, named, ctx) {
+      pointerRequested = true;
+      final raw = ctx.interactiveInputs['__quds_pointer'];
+      var x = 0.0;
+      var y = 0.0;
+      var down = false;
+      var tapX = 0.0;
+      var tapY = 0.0;
+      var taps = 0;
+      var vx = 0.0;
+      var vy = 0.0;
+      var active = false;
+      if (raw is Map) {
+        if (raw['x'] is num) x = (raw['x'] as num).toDouble();
+        if (raw['y'] is num) y = (raw['y'] as num).toDouble();
+        if (raw['down'] is bool) down = raw['down'] as bool;
+        if (raw['tapX'] is num) tapX = (raw['tapX'] as num).toDouble();
+        if (raw['tapY'] is num) tapY = (raw['tapY'] as num).toDouble();
+        if (raw['taps'] is num) taps = (raw['taps'] as num).toInt();
+        if (raw['vx'] is num) vx = (raw['vx'] as num).toDouble();
+        if (raw['vy'] is num) vy = (raw['vy'] as num).toDouble();
+        if (raw['active'] is bool) active = raw['active'] as bool;
+      }
+      return QudsNamespace('PointerState', {
+        'x': x,
+        'y': y,
+        'down': down,
+        'tapX': tapX,
+        'tapY': tapY,
+        'taps': taps,
+        'vx': vx,
+        'vy': vy,
+        'active': active,
+      });
+    },
+    signature:
+        'pointer() -> PointerState {x, y, down, tapX, tapY, taps, vx, vy, active}',
+    documentation:
+        'Reads real-time finger touch / cursor coordinates in scene world units and automatically enables direct touch input on the canvas.',
   );
 
   // Interactive draggable point handle: viz.point("A", 0.0, 0.0, draggable: true)
@@ -474,6 +520,7 @@ QudsHostModule buildQudsVizModule({
       final showGrid = (named['grid'] as bool?) ?? true;
       final showAxes = (named['axes'] as bool?) ?? true;
       final interactive = (named['interactive'] as bool?) ?? true;
+      final explicitTouch = named['touch'] as bool?;
 
       QudsGeoBounds? fixedBounds;
       if (named['bounds'] is Iterable) {
@@ -872,6 +919,7 @@ QudsHostModule buildQudsVizModule({
             showGrid: showGrid,
             showAxes: showAxes,
             interactive: interactive,
+            interactiveTouch: explicitTouch ?? pointerRequested,
           );
           c.emitOutput(output);
           return output;

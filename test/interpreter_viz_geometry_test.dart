@@ -167,6 +167,56 @@ s.render()
       expect(tree.label, isNull);
       expect(sun.label, equals('الشمس'));
       expect(handle.label, equals('A'));
+      expect(scene.interactiveTouch, isFalse);
+    });
+
+    test(
+        'viz.pointer() enables interactiveTouch and streams live finger coordinates across frames',
+        () async {
+      final session = QudsSession(policy: QudsExecutionPolicy.scientific());
+      const script = '''
+use quds:viz as viz
+p = viz.pointer()
+s = viz.scene(title: "Touch Pad", bounds: [-5.0, 5.0, -5.0, 5.0])
+s.circle("finger", [p.x, p.y], 0.4, stroke: "#38BDF8")
+s.readout("taps", p.taps)
+s.render()
+''';
+      final initial = await session.run(script);
+      expect(initial.succeeded, isTrue, reason: '${initial.error}');
+      expect(initial.lastGeometryScene!.interactiveTouch, isTrue);
+      final c0 =
+          initial.lastGeometryScene!.findPrimitive('finger') as QudsGeoCircle;
+      expect(c0.cx, closeTo(0.0, 1e-6));
+
+      session.patchInteractiveInputs({
+        '__quds_pointer': {
+          'x': 2.5,
+          'y': -1.25,
+          'down': true,
+          'tapX': 2.5,
+          'tapY': -1.25,
+          'taps': 3,
+          'vx': 1.2,
+          'vy': -0.4,
+          'active': true,
+        },
+      });
+      final next = await session.stepFrame(1.0 / 60.0, source: script);
+      expect(next.succeeded, isTrue, reason: '${next.error}');
+      final c1 =
+          next.lastGeometryScene!.findPrimitive('finger') as QudsGeoCircle;
+      expect(c1.cx, closeTo(2.5, 1e-6));
+      expect(c1.cy, closeTo(-1.25, 1e-6));
+      expect(next.lastGeometryScene!.readings.first.value, equals('3'));
+
+      // Round-trip JSON preserves interactiveTouch
+      final roundTrip =
+          QudsGeometrySceneOutput.fromJson(next.lastGeometryScene!.toJson());
+      expect(roundTrip.interactiveTouch, isTrue);
+
+      session.resetAnimation();
+      expect(session.interactiveInputs.containsKey('__quds_pointer'), isFalse);
     });
   });
 }

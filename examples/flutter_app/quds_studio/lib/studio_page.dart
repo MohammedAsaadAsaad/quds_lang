@@ -21,6 +21,7 @@ import 'notebook_panel.dart';
 import 'preset_gallery.dart';
 import 'presets.dart';
 import 'project_templates.dart';
+import 'standalone_app_page.dart';
 import 'viz2_widgets.dart';
 import 'viz_widgets.dart';
 import 'workspace_panel.dart';
@@ -597,6 +598,51 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     );
   }
 
+  Future<void> _launchStandaloneApp({StudioProjectTemplate? template}) async {
+    _stopAnimTimer();
+    if (_workspaceMode &&
+        !_projectWorkspace.isBinaryFile(_activeWorkspaceFile)) {
+      _projectWorkspace.writeFile(_activeWorkspaceFile, _codeController.text);
+    }
+
+    final StudioProjectTemplate? matchedTpl = template ??
+        (_workspaceMode
+            ? studioProjectTemplates
+                .where((t) => t.id == _activeProjectId)
+                .firstOrNull
+            : null);
+
+    final QudsWorkspace? ws = template != null
+        ? template.builder()
+        : (_workspaceMode ? _projectWorkspace : null);
+
+    final title = matchedTpl != null
+        ? (_isArabic ? matchedTpl.nameAr : matchedTpl.nameEn)
+        : (_workspaceMode
+            ? _projectWorkspace.name
+            : (_isArabic ? _preset.titleAr : _preset.titleEn));
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => QudsStandaloneAppPage(
+          title: title,
+          isArabic: _isArabic,
+          isDark: _isDark,
+          workspace: ws,
+          source: ws == null ? _codeController.text : null,
+          fileName: ws?.entryPoint ?? _preset.fileName,
+          icon: matchedTpl?.icon ?? Icons.apps_rounded,
+          accentColor: matchedTpl?.accentColor ?? const Color(0xFF38BDF8),
+          usesSystemBridge: matchedTpl?.usesSystemBridgePolicy ??
+              (_policyMode == StudioPolicyMode.systemBridge),
+          usesBenchmarkPolicy: matchedTpl?.usesBenchmarkPolicy ??
+              (_policyMode == StudioPolicyMode.benchmark),
+          lineStyle: _lineStyle,
+        ),
+      ),
+    );
+  }
+
   void _importQprojWorkspace(QudsWorkspace imported) {
     _stopAnimTimer();
     _session.stop();
@@ -1152,11 +1198,15 @@ MANDEL_ITER = 64
     );
     if (picked != null && mounted) {
       if (picked.workspaceTemplate != null) {
-        _selectProjectTemplate(
-          picked.workspaceTemplate!,
-          switchMobileTab: true,
-        );
-        _inspectorTabs.index = 5; // Show Project files/assets tab on desktop!
+        if (picked.launchFullscreen) {
+          _launchStandaloneApp(template: picked.workspaceTemplate!);
+        } else {
+          _selectProjectTemplate(
+            picked.workspaceTemplate!,
+            switchMobileTab: true,
+          );
+          _inspectorTabs.index = 5; // Show Project files/assets tab on desktop!
+        }
       } else if (picked.preset != null) {
         setState(() => _activeFilter = picked.filter);
         _selectPreset(picked.preset!);
@@ -1505,6 +1555,7 @@ MANDEL_ITER = 64
               onCompareAll3: _compareAllThreeWorkspaceModes,
               onPrecompileAll: _precompileWorkspaceAll,
               onQuickCodePushEdit: _applyQuickCodePushEdit,
+              onLaunchFullscreen: _launchStandaloneApp,
             );
 
             final editorView = Column(
@@ -2356,6 +2407,13 @@ MANDEL_ITER = 64
             scene: scene,
             isDark: _isDark,
             lineStyle: _lineStyle,
+            onPointerEvent: (ptr) {
+              if (_animPlaying) {
+                _session.patchInteractiveInputs({'__quds_pointer': ptr});
+              } else {
+                _updateInteractive({'__quds_pointer': ptr});
+              }
+            },
             onDragPoint: (id, x, y) => _updateInteractive({
               id: {'x': x, 'y': y},
             }),
@@ -2480,22 +2538,61 @@ MANDEL_ITER = 64
             ),
             if (res != null && !isCompact) ...[
               const SizedBox(width: 6),
-              Directionality(
-                textDirection: TextDirection.ltr,
-                child: Text(
-                  '$engineBadge${res.stepsExecuted} steps · $elapsedText',
-                  style: TextStyle(
-                    fontFamily: 'JetBrainsMono',
-                    fontFamilyFallback: const ['IBMPlexSansArabic'],
-                    fontSize: 10.5,
-                    color: res.usedBytecodeVm
-                        ? const Color(0xFF10B981)
-                        : theme.hintColor,
+              Flexible(
+                child: Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Text(
+                    '$engineBadge${res.stepsExecuted} · $elapsedText',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontFamilyFallback: const ['IBMPlexSansArabic'],
+                      fontSize: 10,
+                      color: res.usedBytecodeVm
+                          ? const Color(0xFF10B981)
+                          : theme.hintColor,
+                    ),
                   ),
                 ),
               ),
             ],
             const SizedBox(width: 6),
+            InkWell(
+              key: const Key('btn_launch_standalone_app'),
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => _launchStandaloneApp(),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.55),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.open_in_full_rounded,
+                      size: 13,
+                      color: Color(0xFF818CF8),
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      _isArabic ? 'شاشة كاملة' : 'Full',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF818CF8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 5),
             InkWell(
               key: const Key('btn_line_quality'),
               borderRadius: BorderRadius.circular(8),
@@ -2503,7 +2600,7 @@ MANDEL_ITER = 64
                 () => _showLineQualityPanel = !_showLineQualityPanel,
               ),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
                   color: _showLineQualityPanel
                       ? const Color(0xFF38BDF8).withValues(alpha: 0.2)
@@ -2527,17 +2624,19 @@ MANDEL_ITER = 64
                           ? const Color(0xFF38BDF8)
                           : theme.hintColor,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _isArabic ? 'النعومة والحدة' : 'Smoothness',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: _showLineQualityPanel
-                            ? const Color(0xFF38BDF8)
-                            : null,
+                    if (!isCompact) ...[
+                      const SizedBox(width: 3),
+                      Text(
+                        _isArabic ? 'الجودة' : 'Quality',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: _showLineQualityPanel
+                              ? const Color(0xFF38BDF8)
+                              : null,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

@@ -471,12 +471,16 @@ class QudsGeometryCanvas extends StatefulWidget {
     required this.onDragPoint,
     required this.isDark,
     this.lineStyle = const QudsLineStyleSettings(),
+    this.onPointerEvent,
+    this.padding = 36.0,
   });
 
   final QudsGeometrySceneOutput scene;
   final void Function(String id, double x, double y) onDragPoint;
   final bool isDark;
   final QudsLineStyleSettings lineStyle;
+  final void Function(Map<String, Object?> pointerState)? onPointerEvent;
+  final double padding;
 
   @override
   State<QudsGeometryCanvas> createState() => _QudsGeometryCanvasState();
@@ -485,10 +489,15 @@ class QudsGeometryCanvas extends StatefulWidget {
 class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
   String? _draggingId;
   QudsGeoBounds? _lockedBounds;
+  int _tapCount = 0;
+  double _tapX = 0.0;
+  double _tapY = 0.0;
+  Offset? _lastWorld;
+  int _lastEventUs = 0;
 
   _GeoViewport _viewportFor(Size size) {
     final bounds = _lockedBounds ?? widget.scene.bounds;
-    const pad = 36.0;
+    final pad = widget.padding;
     final viewW = math.max(size.width - pad * 2, 10.0);
     final viewH = math.max(size.height - pad * 2, 10.0);
     final scale = math.min(
@@ -505,6 +514,45 @@ class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
     );
   }
 
+  void _emitPointer(
+    _GeoViewport vp,
+    Offset localPos, {
+    required bool down,
+    bool isTapStart = false,
+  }) {
+    final cb = widget.onPointerEvent;
+    if (cb == null) return;
+    final world = vp.toWorld(localPos);
+    final nowUs = DateTime.now().microsecondsSinceEpoch;
+    var vx = 0.0;
+    var vy = 0.0;
+    if (_lastWorld != null && _lastEventUs > 0) {
+      final dt = (nowUs - _lastEventUs) / 1000000.0;
+      if (dt > 0.0005 && dt < 0.25) {
+        vx = (world.dx - _lastWorld!.dx) / dt;
+        vy = (world.dy - _lastWorld!.dy) / dt;
+      }
+    }
+    if (isTapStart) {
+      _tapCount++;
+      _tapX = world.dx;
+      _tapY = world.dy;
+    }
+    _lastWorld = world;
+    _lastEventUs = nowUs;
+    cb({
+      'x': double.parse(world.dx.toStringAsFixed(3)),
+      'y': double.parse(world.dy.toStringAsFixed(3)),
+      'down': down,
+      'tapX': double.parse(_tapX.toStringAsFixed(3)),
+      'tapY': double.parse(_tapY.toStringAsFixed(3)),
+      'taps': _tapCount,
+      'vx': double.parse(vx.toStringAsFixed(2)),
+      'vy': double.parse(vy.toStringAsFixed(2)),
+      'active': true,
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -515,75 +563,117 @@ class _QudsGeometryCanvasState extends State<QudsGeometryCanvas> {
         );
         final vp = _viewportFor(size);
         final hasDraggable = widget.scene.draggablePoints.isNotEmpty;
-        return MouseRegion(
-          cursor: !hasDraggable
-              ? MouseCursor.defer
-              : _draggingId != null
-                  ? SystemMouseCursors.grabbing
-                  : SystemMouseCursors.grab,
-          child: GestureDetector(
-            key: const Key('quds_geometry_canvas'),
-            onPanStart: !hasDraggable
-                ? null
-                : (details) {
-                    final local = details.localPosition;
-                    String? hitId;
-                    var bestDist = 38.0;
-                    for (final p in widget.scene.draggablePoints) {
-                      final pos = vp.toScreen(p.x, p.y);
-                      final d = (pos - local).distance;
-                      if (d < bestDist) {
-                        bestDist = d;
-                        hitId = p.id;
-                      }
+        final wantsTouch =
+            widget.scene.interactiveTouch && widget.onPointerEvent != null;
+        final claimPan = hasDraggable || wantsTouch;
+
+        Widget canvasWidget = GestureDetector(
+          key: const Key('quds_geometry_canvas'),
+          behavior:
+              wantsTouch ? HitTestBehavior.opaque : HitTestBehavior.translucent,
+          onPanStart: !claimPan
+              ? null
+              : (details) {
+                  if (!hasDraggable) return;
+                  final local = details.localPosition;
+                  String? hitId;
+                  var bestDist = 38.0;
+                  for (final p in widget.scene.draggablePoints) {
+                    final pos = vp.toScreen(p.x, p.y);
+                    final d = (pos - local).distance;
+                    if (d < bestDist) {
+                      bestDist = d;
+                      hitId = p.id;
                     }
-                    if (hitId != null) {
-                      setState(() {
-                        _draggingId = hitId;
-                        _lockedBounds = widget.scene.bounds;
-                      });
-                    }
-                  },
-            onPanUpdate: !hasDraggable
-                ? null
-                : (details) {
-                    if (_draggingId == null) return;
-                    final world = vp.toWorld(details.localPosition);
-                    widget.onDragPoint(
-                      _draggingId!,
-                      double.parse(world.dx.toStringAsFixed(2)),
-                      double.parse(world.dy.toStringAsFixed(2)),
-                    );
-                  },
-            onPanEnd: !hasDraggable
-                ? null
-                : (_) {
+                  }
+                  if (hitId != null) {
                     setState(() {
-                      _draggingId = null;
-                      _lockedBounds = null;
+                      _draggingId = hitId;
+                      _lockedBounds = widget.scene.bounds;
                     });
-                  },
-            onPanCancel: !hasDraggable
-                ? null
-                : () {
-                    setState(() {
-                      _draggingId = null;
-                      _lockedBounds = null;
-                    });
-                  },
-            child: RepaintBoundary(
-              child: CustomPaint(
-                size: size,
-                painter: _GeometryScenePainter(
-                  scene: widget.scene,
-                  viewport: vp,
-                  draggingId: _draggingId,
-                  isDark: widget.isDark,
-                  lineStyle: widget.lineStyle,
-                ),
+                  }
+                },
+          onPanUpdate: !claimPan
+              ? null
+              : (details) {
+                  if (_draggingId == null) return;
+                  final world = vp.toWorld(details.localPosition);
+                  widget.onDragPoint(
+                    _draggingId!,
+                    double.parse(world.dx.toStringAsFixed(2)),
+                    double.parse(world.dy.toStringAsFixed(2)),
+                  );
+                },
+          onPanEnd: !claimPan
+              ? null
+              : (_) {
+                  if (_draggingId == null) return;
+                  setState(() {
+                    _draggingId = null;
+                    _lockedBounds = null;
+                  });
+                },
+          onPanCancel: !claimPan
+              ? null
+              : () {
+                  if (_draggingId == null) return;
+                  setState(() {
+                    _draggingId = null;
+                    _lockedBounds = null;
+                  });
+                },
+          child: RepaintBoundary(
+            child: CustomPaint(
+              size: size,
+              painter: _GeometryScenePainter(
+                scene: widget.scene,
+                viewport: vp,
+                draggingId: _draggingId,
+                isDark: widget.isDark,
+                lineStyle: widget.lineStyle,
               ),
             ),
           ),
+        );
+
+        if (wantsTouch) {
+          canvasWidget = Listener(
+            key: const Key('quds_touch_pointer_listener'),
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) => _emitPointer(
+              vp,
+              e.localPosition,
+              down: true,
+              isTapStart: true,
+            ),
+            onPointerMove: (e) => _emitPointer(
+              vp,
+              e.localPosition,
+              down: true,
+            ),
+            onPointerUp: (e) => _emitPointer(
+              vp,
+              e.localPosition,
+              down: false,
+            ),
+            onPointerCancel: (e) => _emitPointer(
+              vp,
+              e.localPosition,
+              down: false,
+            ),
+            child: canvasWidget,
+          );
+        }
+
+        return MouseRegion(
+          cursor: wantsTouch
+              ? SystemMouseCursors.precise
+              : !hasDraggable
+                  ? MouseCursor.defer
+                  : _draggingId != null
+                      ? SystemMouseCursors.grabbing
+                      : SystemMouseCursors.grab,
+          child: canvasWidget,
         );
       },
     );

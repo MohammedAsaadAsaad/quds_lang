@@ -347,16 +347,19 @@ class QudsGallerySelection {
   const QudsGallerySelection.preset({
     required StudioPreset this.preset,
     required this.filter,
+    this.launchFullscreen = false,
   }) : workspaceTemplate = null;
 
   const QudsGallerySelection.workspace({
     required StudioProjectTemplate this.workspaceTemplate,
+    this.launchFullscreen = false,
   })  : preset = null,
         filter = StudioFilterKind.all;
 
   final StudioPreset? preset;
   final StudioProjectTemplate? workspaceTemplate;
   final StudioFilterKind filter;
+  final bool launchFullscreen;
 }
 
 /// Opens the Hierarchical Collapsible Tree Explorer for all 138 Quds presets
@@ -911,20 +914,62 @@ class _QudsExamplesTreeDialogState extends State<_QudsExamplesTreeDialog> {
                   ],
                 ),
               ),
+              const SizedBox(width: 6),
+              InkWell(
+                key: Key('tree_workspace_fullscreen_${tpl.id}'),
+                borderRadius: BorderRadius.circular(6),
+                onTap: () => Navigator.of(context).pop(
+                  QudsGallerySelection.workspace(
+                    workspaceTemplate: tpl,
+                    launchFullscreen: true,
+                  ),
+                ),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.open_in_full_rounded,
+                        size: 11,
+                        color: Color(0xFF818CF8),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        widget.isArabic ? 'تطبيق' : 'App',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF818CF8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               if (selected)
                 _buildSelectedLeafBadge(tpl.accentColor)
               else
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
                     color: tpl.accentColor.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    widget.isArabic ? 'فتح المشروع' : 'Open',
+                    widget.isArabic ? 'فتح' : 'Open',
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w700,
                       color: tpl.accentColor,
                     ),

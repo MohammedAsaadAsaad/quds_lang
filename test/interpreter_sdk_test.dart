@@ -389,13 +389,13 @@ calc():
   while i < 5:
     e = e + pi
     i = i + 1
-  return e
+  return (e * 100.0) ~/ 1 + 7
 ans = calc()
 ans
 ''', preferBytecode: true);
       expect(res.succeeded, isTrue, reason: '${res.error}');
       expect(res.usedBytecodeVm, isTrue);
-      expect(res.value, 50.0);
+      expect(res.value, 5007);
       await session.dispose();
     });
   });

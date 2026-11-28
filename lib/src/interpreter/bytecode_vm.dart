@@ -3107,13 +3107,25 @@ class _RegFnCompiler {
         final rv = (expr.right as Literal).value as int;
         final delta = op == '+' ? rv : -rv;
         if (delta >= -2147483648 && delta <= 2147483647) {
-          final l = _compileExpr(expr.left, desired: _RegKind.intT);
+          final l = _coerce(
+            _compileExpr(expr.left, desired: _RegKind.intT),
+            _RegKind.intT,
+            line,
+          );
           _emit(QudsOp.iAddImm, dstReg, l.reg, delta, line);
           return true;
         }
       }
-      final l = _compileExpr(expr.left, desired: _RegKind.intT);
-      final r = _compileExpr(expr.right, desired: _RegKind.intT);
+      final l = _coerce(
+        _compileExpr(expr.left, desired: _RegKind.intT),
+        _RegKind.intT,
+        line,
+      );
+      final r = _coerce(
+        _compileExpr(expr.right, desired: _RegKind.intT),
+        _RegKind.intT,
+        line,
+      );
       final opcode = switch (op) {
         '+' => QudsOp.iAdd,
         '-' => QudsOp.iSub,
@@ -3360,14 +3372,26 @@ class _RegFnCompiler {
         final rv = (expr.right as Literal).value as int;
         final delta = op == '+' ? rv : -rv;
         if (delta >= -2147483648 && delta <= 2147483647) {
-          final l = _compileExpr(expr.left, desired: _RegKind.intT);
+          final l = _coerce(
+            _compileExpr(expr.left, desired: _RegKind.intT),
+            _RegKind.intT,
+            line,
+          );
           final dst = _allocI();
           _emit(QudsOp.iAddImm, dst, l.reg, delta, line);
           return _Val(_RegKind.intT, dst, isTemp: true);
         }
       }
-      final l = _compileExpr(expr.left, desired: _RegKind.intT);
-      final r = _compileExpr(expr.right, desired: _RegKind.intT);
+      final l = _coerce(
+        _compileExpr(expr.left, desired: _RegKind.intT),
+        _RegKind.intT,
+        line,
+      );
+      final r = _coerce(
+        _compileExpr(expr.right, desired: _RegKind.intT),
+        _RegKind.intT,
+        line,
+      );
       final opcode = switch (op) {
         '+' => QudsOp.iAdd,
         '-' => QudsOp.iSub,

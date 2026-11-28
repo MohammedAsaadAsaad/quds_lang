@@ -376,5 +376,27 @@ print editDistance("a\r\nb", "a\nb")
       ]);
       await session.dispose();
     });
+
+    test(
+        'Tier-1 Register VM lets local variables named e and pi shadow math constants',
+        () async {
+      final session = QudsSession();
+      final res = await session.run('''
+calc():
+  var e = 0.0
+  var pi = 10.0
+  var i = 0
+  while i < 5:
+    e = e + pi
+    i = i + 1
+  return e
+ans = calc()
+ans
+''', preferBytecode: true);
+      expect(res.succeeded, isTrue, reason: '${res.error}');
+      expect(res.usedBytecodeVm, isTrue);
+      expect(res.value, 50.0);
+      await session.dispose();
+    });
   });
 }

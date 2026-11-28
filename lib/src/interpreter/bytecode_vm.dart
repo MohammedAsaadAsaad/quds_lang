@@ -1088,11 +1088,11 @@ class QudsBytecodeCompiler {
       return _RegKind.objT;
     }
     if (expr is Identifier) {
-      if (expr.name == 'pi' || expr.name == 'e') return _RegKind.doubleT;
       if (_sharedGlobals.contains(expr.name)) return _RegKind.objT;
       final local = env[expr.name];
       if (local != null) return local;
       if (_globalSlots.containsKey(expr.name)) return _RegKind.objT;
+      if (expr.name == 'pi' || expr.name == 'e') return _RegKind.doubleT;
       return _RegKind.unknown;
     }
     if (expr is UnaryExpression) {
@@ -3602,16 +3602,6 @@ class _RegFnCompiler {
     }
 
     if (expr is Identifier) {
-      if (expr.name == 'pi') {
-        final dst = _allocF();
-        _emit(QudsOp.fLoadK, dst, 0, _addFConst(math.pi), line);
-        return _Val(_RegKind.doubleT, dst, isTemp: true);
-      }
-      if (expr.name == 'e') {
-        final dst = _allocF();
-        _emit(QudsOp.fLoadK, dst, 0, _addFConst(math.e), line);
-        return _Val(_RegKind.doubleT, dst, isTemp: true);
-      }
       if (isMain && compiler._sharedGlobals.contains(expr.name)) {
         final dst = _allocO();
         _emit(
@@ -3633,6 +3623,16 @@ class _RegFnCompiler {
         final dst = _allocO();
         _emit(QudsOp.oLoadGlobal, dst, 0, gSlot, line);
         return _Val(_RegKind.objT, dst, isTemp: true);
+      }
+      if (expr.name == 'pi') {
+        final dst = _allocF();
+        _emit(QudsOp.fLoadK, dst, 0, _addFConst(math.pi), line);
+        return _Val(_RegKind.doubleT, dst, isTemp: true);
+      }
+      if (expr.name == 'e') {
+        final dst = _allocF();
+        _emit(QudsOp.fLoadK, dst, 0, _addFConst(math.e), line);
+        return _Val(_RegKind.doubleT, dst, isTemp: true);
       }
       throw const _UnsupportedBytecode();
     }

@@ -372,7 +372,7 @@ void installQudsMathIntrinsics(
     }, isSync: true),
     'solveLinear': QudsNativeFunction('solveLinear', (p, n, c) {
       final grid = _squareCopy(p[0], c.span);
-      final rhs = _asVector(p[1], c.span);
+      final rhs = _asVector(p[1], c.span, copy: true);
       final size = grid.length;
       if (rhs.length != size) {
         throw _qudsThrow('solveLinear needs a square system', c.span);
@@ -563,12 +563,16 @@ void installQudsMathIntrinsics(
       return _meanDoubles(values);
     }, isSync: true),
     'median': QudsNativeFunction('median', (p, n, c) {
-      final values = _asVector(p[0], c.span);
+      final values = _asFloat64Copy(p[0], c.span);
       if (values.isEmpty) throw _qudsThrow('median of an empty list', c.span);
-      values.sort();
       final mid = values.length ~/ 2;
-      if (values.length.isOdd) return values[mid];
-      return values[mid - 1] / 2.0 + values[mid] / 2.0;
+      final hiVal = _selectFloat64(values, mid);
+      if (values.length.isOdd) return hiVal;
+      var loVal = values[0];
+      for (var i = 1; i < mid; i++) {
+        if (values[i] > loVal) loVal = values[i];
+      }
+      return loVal / 2.0 + hiVal / 2.0;
     }, isSync: true),
     'minimum': QudsNativeFunction('minimum', (p, n, c) {
       final values = _asVector(p[0], c.span);
@@ -617,7 +621,7 @@ void installQudsMathIntrinsics(
       return _spreadDoubles(values, values.length.toDouble());
     }, isSync: true),
     'percentile': QudsNativeFunction('percentile', (p, n, c) {
-      final values = _asVector(p[0], c.span);
+      final values = _asFloat64Copy(p[0], c.span);
       final percent = (p[1] as num).toDouble();
       if (values.isEmpty) {
         throw _qudsThrow('percentile of an empty list', c.span);
@@ -625,14 +629,18 @@ void installQudsMathIntrinsics(
       if (percent < 0.0 || percent > 100.0) {
         throw _qudsThrow('percent must be from 0 through 100', c.span);
       }
-      values.sort();
       if (values.length == 1) return values[0];
       final place = percent / 100.0 * (values.length - 1).toDouble();
       final lo = place.floor();
       final hi = place.ceil();
-      if (lo == hi) return values[lo];
+      final hiVal = _selectFloat64(values, hi);
+      if (lo == hi) return hiVal;
+      var loVal = values[0];
+      for (var i = 1; i < hi; i++) {
+        if (values[i] > loVal) loVal = values[i];
+      }
       final frac = place - lo.toDouble();
-      return values[lo] * (1.0 - frac) + values[hi] * frac;
+      return loVal * (1.0 - frac) + hiVal * frac;
     }, isSync: true),
     'covariance': QudsNativeFunction('covariance', (p, n, c) {
       final xs = _asVector(p[0], c.span);
@@ -1887,10 +1895,91 @@ int? _asciiBoundedEditDistance(String left, String right, int maxDistance) {
   return dist > maxDistance ? null : dist;
 }
 
-List<double> _asVector(Object? raw, SourceSpan span) {
+Float64List _asFloat64Copy(Object? raw, SourceSpan span) {
   if (raw is! List) {
     throw QudsRuntimeException('Expected List<double>.', span);
   }
+  final len = raw.length;
+  final out = Float64List(len);
+  if (raw is List<double>) {
+    out.setAll(0, raw);
+  } else {
+    for (var i = 0; i < len; i++) {
+      out[i] = (raw[i] as num).toDouble();
+    }
+  }
+  return out;
+}
+
+/// Linear-time O(N) quickselect with median-of-3 pivoting and sort fallback.
+/// After returning `a[k]`, all elements `a[0..k-1]` are `<= a[k]`.
+double _selectFloat64(Float64List a, int k) {
+  for (var i = 0; i < a.length; i++) {
+    if (a[i].isNaN) {
+      a.sort();
+      return a[k];
+    }
+  }
+  var left = 0;
+  var right = a.length - 1;
+  var budget = a.length * 4 + 64;
+  while (left < right) {
+    if (budget <= 0) {
+      a.sort();
+      return a[k];
+    }
+    final mid = (left + right) >> 1;
+    // Median-of-3 pivot placed at `mid`
+    if (a[mid] < a[left]) {
+      final t = a[left];
+      a[left] = a[mid];
+      a[mid] = t;
+    }
+    if (a[right] < a[left]) {
+      final t = a[left];
+      a[left] = a[right];
+      a[right] = t;
+    }
+    if (a[right] < a[mid]) {
+      final t = a[mid];
+      a[mid] = a[right];
+      a[right] = t;
+    }
+    final pivot = a[mid];
+    var i = left;
+    var j = right;
+    while (i <= j) {
+      while (a[i] < pivot) {
+        i++;
+      }
+      while (a[j] > pivot) {
+        j--;
+      }
+      if (i <= j) {
+        final t = a[i];
+        a[i] = a[j];
+        a[j] = t;
+        i++;
+        j--;
+      }
+    }
+    budget -= (right - left + 1);
+    if (k <= j) {
+      right = j;
+    } else if (k >= i) {
+      left = i;
+    } else {
+      return a[k];
+    }
+  }
+  return a[k];
+}
+
+List<double> _asVector(Object? raw, SourceSpan span, {bool copy = false}) {
+  if (raw is! List) {
+    throw QudsRuntimeException('Expected List<double>.', span);
+  }
+  if (!copy && raw is List<double>) return raw;
   return List<double>.generate(
     raw.length,
     (i) => (raw[i] as num).toDouble(),
@@ -1902,6 +1991,7 @@ List<List<double>> _asMatrix(
   Object? raw,
   SourceSpan span, {
   bool allowEmpty = false,
+  bool copy = false,
 }) {
   if (raw is! List) {
     throw QudsRuntimeException('Expected List<List<double>>.', span);
@@ -1909,15 +1999,20 @@ List<List<double>> _asMatrix(
   if (!allowEmpty && raw.isEmpty) {
     throw _qudsThrow('matrix must not be empty', span);
   }
+  if (!copy && raw is List<List<double>>) return raw;
   return List<List<double>>.generate(
     raw.length,
-    (i) => _asVector(raw[i], span),
+    (i) => _asVector(raw[i], span, copy: copy),
     growable: true,
   );
 }
 
-List<List<double>> _rectCopy(Object? raw, SourceSpan span) {
-  final rows = _asMatrix(raw, span, allowEmpty: true);
+List<List<double>> _rectCopy(
+  Object? raw,
+  SourceSpan span, {
+  bool copy = false,
+}) {
+  final rows = _asMatrix(raw, span, allowEmpty: true, copy: copy);
   if (rows.isEmpty || rows[0].isEmpty) {
     throw _qudsThrow('matrix must not be empty', span);
   }
@@ -1931,7 +2026,7 @@ List<List<double>> _rectCopy(Object? raw, SourceSpan span) {
 }
 
 List<List<double>> _squareCopy(Object? raw, SourceSpan span) {
-  final grid = _rectCopy(raw, span);
+  final grid = _rectCopy(raw, span, copy: true);
   if (grid.length != grid[0].length) {
     throw _qudsThrow('matrix must be square', span);
   }

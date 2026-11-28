@@ -74,9 +74,7 @@ T _optArg<T>(
 // quds:math intrinsics (Linear Algebra, Tensor, Sparse, Number, Stats, FFT)
 // ============================================================================
 
-const int _maxInt64 = 0x7fffffffffffffff;
-const int _minInt64 = -0x8000000000000000;
-final BigInt _bigMaxInt64 = BigInt.from(_maxInt64);
+final BigInt _bigMaxInt64 = BigInt.parse('7fffffffffffffff', radix: 16);
 
 /// Replaces hot read-only `quds:math` functions with equivalent native Dart
 /// implementations in [modEnv], [publicExports], and [sectionExports].
@@ -1542,7 +1540,7 @@ int _gcdInt(int a, int b, SourceSpan span) {
     x = y;
     y = next;
   }
-  if (x == _minInt64) {
+  if (x < 0 && -x == x) {
     throw _qudsThrow('gcd result is outside int range', span);
   }
   return x < 0 ? -x : x;

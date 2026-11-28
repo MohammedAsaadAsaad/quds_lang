@@ -230,15 +230,19 @@ if (\$user -split ';' -notcontains \$bin) {
   [Environment]::SetEnvironmentVariable('Path', \$next, 'User')
 }
 ''';
-  final result =
-      Process.runSync('powershell', ['-NoProfile', '-Command', script]);
-  if (result.exitCode == 0) return;
-  stdout.writeln('Administrator permission is required to update PATH.');
-  Process.runSync('powershell', [
-    '-NoProfile',
-    '-Command',
-    "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-Command','${script.replaceAll("'", "''")}'",
-  ]);
+  try {
+    final result =
+        Process.runSync('powershell', ['-NoProfile', '-Command', script]);
+    if (result.exitCode == 0) return;
+    stdout.writeln('Administrator permission is required to update PATH.');
+    Process.runSync('powershell', [
+      '-NoProfile',
+      '-Command',
+      "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-Command','${script.replaceAll("'", "''")}'",
+    ]);
+  } on ProcessException {
+    // PowerShell unavailable (e.g. restricted PATH in offline/CI test environments).
+  }
 }
 
 Future<bool> _installEditors({

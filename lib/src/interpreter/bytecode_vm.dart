@@ -4177,9 +4177,10 @@ class QudsBytecodeVm {
     var ilBp = 0;
     var flBp = 0;
 
-    final int stepLimit = maxSteps ?? 0x3FFFFFFFFFFFFFFF;
-    final int collLimit = maxCollectionLength ?? 0x3FFFFFFFFFFFFFFF;
-    final int timeoutMicros = timeout?.inMicroseconds ?? 0x3FFFFFFFFFFFFFFF;
+    const int unboundedLimit = 0x1FFFFFFFFFFFFF;
+    final int stepLimit = maxSteps ?? unboundedLimit;
+    final int collLimit = maxCollectionLength ?? unboundedLimit;
+    final int timeoutMicros = timeout?.inMicroseconds ?? unboundedLimit;
     var steps = 0;
     var timeoutTicks = 4096;
 

@@ -766,14 +766,19 @@ class QudsAnimationControlsBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final duration = spec.duration;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       key: const Key('quds_animation_bar'),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B).withValues(alpha: 0.55),
+        color: isDark
+            ? const Color(0xFF1E293B).withValues(alpha: 0.72)
+            : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(10),
-        border:
-            Border.all(color: const Color(0xFF38BDF8).withValues(alpha: 0.3)),
+        border: Border.all(
+          color:
+              const Color(0xFF38BDF8).withValues(alpha: isDark ? 0.35 : 0.45),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -847,10 +852,13 @@ class QudsAnimationControlsBar extends StatelessWidget {
                     duration != null && duration > 0
                         ? 't=${spec.time.toStringAsFixed(2)}/${duration.toStringAsFixed(1)}s · #${spec.frame}'
                         : 't=${spec.time.toStringAsFixed(2)}s · #${spec.frame}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'JetBrainsMono',
                       fontSize: 10.5,
-                      color: Color(0xFF94A3B8),
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? const Color(0xFFCBD5E1)
+                          : const Color(0xFF334155),
                     ),
                   ),
                 ),

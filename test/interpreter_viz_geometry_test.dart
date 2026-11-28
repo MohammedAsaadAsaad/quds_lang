@@ -146,5 +146,27 @@ viz.latex("b = 2")
       expect((outRes.error as QudsPolicyViolationException).kind,
           QudsPolicyViolationKind.outputLimit);
     });
+
+    test(
+        'unlabeled non-draggable points omit noisy internal IDs while draggable and explicitly labeled points keep labels',
+        () async {
+      final session = QudsSession(policy: QudsExecutionPolicy.scientific());
+      final res = await session.run('''
+use quds:viz as viz
+s = viz.scene(title: "Clean Grid")
+s.point("t0_0", 1.0, 2.0, color: "#10B981")
+s.point("sun", 0.0, 0.0, label: "الشمس")
+s.point("A", 3.0, 4.0, draggable: true)
+s.render()
+''');
+      expect(res.succeeded, isTrue, reason: '${res.error}');
+      final scene = res.lastGeometryScene!;
+      final tree = scene.findPrimitive('t0_0') as QudsGeoPoint;
+      final sun = scene.findPrimitive('sun') as QudsGeoPoint;
+      final handle = scene.findPrimitive('A') as QudsGeoPoint;
+      expect(tree.label, isNull);
+      expect(sun.label, equals('الشمس'));
+      expect(handle.label, equals('A'));
+    });
   });
 }

@@ -1123,9 +1123,12 @@ class _GeometryScenePainter extends CustomPainter {
               ..strokeWidth = p.draggable ? 2.2 : 1.2,
           );
           if (p.label != null && p.label!.isNotEmpty) {
+            final labelText = p.draggable
+                ? '${p.label} (${p.x.toStringAsFixed(1)}, ${p.y.toStringAsFixed(1)})'
+                : p.label!;
             _drawLabel(
               canvas,
-              '${p.label} (${p.x.toStringAsFixed(1)}, ${p.y.toStringAsFixed(1)})',
+              labelText,
               c + const Offset(10, -14),
               textColor,
             );

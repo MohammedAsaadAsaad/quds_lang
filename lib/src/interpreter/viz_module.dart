@@ -544,7 +544,7 @@ QudsHostModule buildQudsVizModule({
               id: id,
               x: x,
               y: y,
-              label: label ?? id,
+              label: label ?? (draggable ? id : null),
               color: color,
               radius: (n['radius'] as num?)?.toDouble() ?? 5.0,
               draggable: draggable,

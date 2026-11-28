@@ -11,6 +11,7 @@ import 'dart:math' as math;
 import '../ast.dart';
 import '../lexer.dart';
 import '../parser.dart';
+import 'assets_module.dart';
 import 'bytecode_vm.dart';
 import 'universal_vm.dart';
 import 'dart_stdlib_bridge.dart';
@@ -463,6 +464,12 @@ class QudsSession {
     final dataMod = buildQudsDataModule();
     _hostModules[dataMod.uri] = dataMod;
     _moduleLoader.registerVirtualModule(dataMod.uri, dataMod.exports);
+    final assetsMod = buildQudsAssetsModule(
+      getWorkspace: () => _projectWorkspace,
+      allowMutation: () => policy.allowMutation,
+    );
+    _hostModules[assetsMod.uri] = assetsMod;
+    _moduleLoader.registerVirtualModule(assetsMod.uri, assetsMod.exports);
   }
 
   Future<void> _handleImport(

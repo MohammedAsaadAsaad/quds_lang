@@ -1,13 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quds/interpreter.dart';
 import 'package:quds_studio/presets.dart';
+import 'package:quds_studio/project_templates.dart';
 
 void main() {
   test(
     'Every single Quds Studio preset executes cleanly on the Universal Register Bytecode VM',
     () async {
       // Verify massive catalog count & complete category coverage
-      expect(studioPresets.length, greaterThanOrEqualTo(115));
+      expect(studioPresets.length, greaterThanOrEqualTo(128));
       for (final cat in StudioCategory.values) {
         final count = studioPresets.where((p) => p.category == cat).length;
         expect(count, greaterThan(0), reason: 'Category ${cat.name} is empty');
@@ -66,7 +67,50 @@ void main() {
         reason:
             'Preset VM failures (${failures.length}):\n${failures.join('\n')}',
       );
-      expect(vmAcceleratedCount, greaterThanOrEqualTo(100));
+      expect(vmAcceleratedCount, greaterThanOrEqualTo(110));
+    },
+  );
+
+  test(
+    'All 5 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
+    () async {
+      expect(studioProjectTemplates, hasLength(5));
+
+      for (final tpl in studioProjectTemplates) {
+        final ws = tpl.builder();
+        expect(ws.assetCount, greaterThan(0),
+            reason: 'Project ${tpl.id} must include assets/');
+        final deps = ws.analyzeDependencies();
+        expect(deps.hasCycles, isFalse, reason: 'Project ${tpl.id} has cycles');
+        expect(deps.hasUnresolvedImports, isFalse,
+            reason:
+                'Project ${tpl.id} has unresolved imports: ${deps.unresolvedImports}');
+
+        // Round-trip through .qproj v2 JSON (including binary BMP assets)
+        final restored = QudsWorkspace.fromJsonString(ws.toJsonString());
+        final session = QudsSession(policy: QudsExecutionPolicy.standard())
+          ..attachWorkspace(restored);
+        final res = await session.runProject(preferBytecode: true);
+        expect(res.succeeded, isTrue,
+            reason: 'Project ${tpl.id} failed: ${res.error}');
+        expect(res.printedLines, isNotEmpty,
+            reason: 'Project ${tpl.id} produced no stdout');
+
+        if (tpl.id == 'quds_shop_pos') {
+          expect(restored.hasAnyFile('assets/last_receipt.json'), isTrue);
+          expect(res.outputs.whereType<QudsImageOutput>(), hasLength(1));
+          expect(res.lastForm, isNotNull);
+        } else if (tpl.id == 'quds_extensions_host') {
+          expect(restored.hasAnyFile('assets/audit.json'), isTrue);
+          expect(res.lastForm, isNotNull);
+        } else if (tpl.id == 'pixel_asset_studio') {
+          expect(res.outputs.whereType<QudsImageOutput>(), hasLength(2));
+        } else if (tpl.id == 'sales_analytics_hub') {
+          expect(res.lastPlot, isNotNull);
+        }
+
+        await session.dispose();
+      }
     },
   );
 }

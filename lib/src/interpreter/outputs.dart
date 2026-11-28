@@ -1694,6 +1694,43 @@ class QudsFormOutput extends QudsOutput {
       );
 }
 
+/// Structured binary image output emitted by `quds:assets` (`renderImage`,
+/// `renderPixelGrid`) and rendered directly in Flutter via `Image.memory`.
+class QudsImageOutput extends QudsOutput {
+  const QudsImageOutput({
+    required this.bytes,
+    this.mimeType = 'image/bmp',
+    this.title,
+    this.caption,
+    this.assetPath,
+    this.width,
+    this.height,
+  });
+
+  final List<int> bytes;
+  final String mimeType;
+  final String? title;
+  final String? caption;
+  final String? assetPath;
+  final int? width;
+  final int? height;
+
+  @override
+  String get kind => 'image';
+
+  @override
+  Map<String, Object?> toJson() => {
+        'kind': kind,
+        'mimeType': mimeType,
+        'byteLength': bytes.length,
+        if (title != null) 'title': title,
+        if (caption != null) 'caption': caption,
+        if (assetPath != null) 'assetPath': assetPath,
+        if (width != null) 'width': width,
+        if (height != null) 'height': height,
+      };
+}
+
 String _colorMapHex(String mapName, double t) {
   final v = t.clamp(0.0, 1.0);
   int r, g, b;

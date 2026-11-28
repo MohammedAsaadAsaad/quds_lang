@@ -287,6 +287,7 @@ class QudsExecutionPolicy {
       'quds:ext',
       'quds:viz',
       'quds:data',
+      'quds:assets',
       'dart:math',
       'dart:convert',
     },

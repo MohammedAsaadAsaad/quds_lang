@@ -7,6 +7,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:quds/interpreter.dart';
@@ -617,6 +618,117 @@ class QudsFormOutputCard extends StatelessWidget {
                 ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 4b. Binary Image & Pixel-Grid Asset Output Card (`quds:assets`)
+// ---------------------------------------------------------------------------
+
+class QudsImageOutputCard extends StatelessWidget {
+  const QudsImageOutputCard({
+    super.key,
+    required this.image,
+    required this.isDark,
+  });
+
+  final QudsImageOutput image;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = isDark ? const Color(0xFF0F172A) : Colors.white;
+    final border = isDark ? const Color(0xFF1E293B) : const Color(0xFFCBD5E1);
+    final fg = isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A);
+    final sub = fg.withValues(alpha: 0.65);
+    final dims = (image.width != null && image.height != null)
+        ? '${image.width}×${image.height}px'
+        : null;
+    final kb = image.bytes.length >= 1024
+        ? '${(image.bytes.length / 1024).toStringAsFixed(1)} KB'
+        : '${image.bytes.length} B';
+
+    return Container(
+      key: Key('quds_image_card_${image.assetPath ?? image.title ?? 'img'}'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.image_rounded,
+                  size: 16, color: Color(0xFFEC4899)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  image.title ?? image.assetPath ?? 'Asset Image',
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEC4899).withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    [if (dims != null) dims, image.mimeType, kb].join(' · '),
+                    style: const TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 10,
+                      color: Color(0xFFEC4899),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            constraints: const BoxConstraints(maxHeight: 220, minHeight: 80),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF060B16) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: border.withValues(alpha: 0.7)),
+            ),
+            child: Center(
+              child: Image.memory(
+                Uint8List.fromList(image.bytes),
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.none,
+                errorBuilder: (_, err, __) => Text(
+                  'Unsupported image bytes (${image.mimeType})',
+                  style: TextStyle(color: sub, fontSize: 11.5),
+                ),
+              ),
+            ),
+          ),
+          if (image.caption != null && image.caption!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              image.caption!,
+              style: TextStyle(color: sub, fontSize: 11.5),
+            ),
+          ],
         ],
       ),
     );

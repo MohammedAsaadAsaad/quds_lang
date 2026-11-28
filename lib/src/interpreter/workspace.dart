@@ -17,24 +17,29 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../ast.dart';
 import '../lexer.dart';
 import '../library_uri.dart';
 import '../parser.dart';
 
-/// Hierarchical tree node representing either a folder or a file inside [QudsWorkspace].
+/// Hierarchical tree node representing a folder, text file, or binary asset inside [QudsWorkspace].
 class QudsWorkspaceNode {
   const QudsWorkspaceNode({
     required this.name,
     required this.path,
     required this.isDirectory,
+    this.isBinary = false,
+    this.byteSize = 0,
     this.children = const [],
   });
 
   final String name;
   final String path;
   final bool isDirectory;
+  final bool isBinary;
+  final int byteSize;
   final List<QudsWorkspaceNode> children;
 }
 
@@ -68,13 +73,15 @@ class QudsWorkspaceDependencyReport {
 typedef QudsWorkspaceChangeListener = void Function(String normalizedPath);
 
 /// In-memory multi-file, nested-folder project workspace attachable to
-/// [QudsSession] and [QudsEditorEngine].
+/// [QudsSession] and [QudsEditorEngine], supporting both `.quds` source files
+/// and arbitrary text/binary project assets (`assets/*.json`, `.csv`, `.bmp`, `.png`, ...).
 class QudsWorkspace {
   QudsWorkspace({
     this.name = 'quds_project',
     this.packageName,
     this.entryPoint = 'main.quds',
     Map<String, String>? files,
+    Map<String, Uint8List>? binaryAssets,
     Iterable<String> folders = const [],
   }) {
     for (final folder in folders) {
@@ -85,6 +92,11 @@ class QudsWorkspace {
         writeFile(entry.key, entry.value);
       }
     }
+    if (binaryAssets != null) {
+      for (final entry in binaryAssets.entries) {
+        writeAssetBytes(entry.key, entry.value);
+      }
+    }
   }
 
   String name;
@@ -92,6 +104,7 @@ class QudsWorkspace {
   String entryPoint;
 
   final Map<String, String> _files = {};
+  final Map<String, Uint8List> _binaryAssets = {};
   final Set<String> _folders = {};
   final List<QudsWorkspaceChangeListener> _listeners = [];
 
@@ -137,11 +150,35 @@ class QudsWorkspace {
     return idx < 0 ? '' : norm.substring(0, idx);
   }
 
-  /// Returns all files as an unmodifiable map of `normalizedPath -> content`.
+  /// Best-effort MIME type inferred from file extension.
+  static String mimeTypeForPath(String path) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.json')) return 'application/json';
+    if (lower.endsWith('.csv')) return 'text/csv';
+    if (lower.endsWith('.md')) return 'text/markdown';
+    if (lower.endsWith('.txt') || lower.endsWith('.quds')) return 'text/plain';
+    if (lower.endsWith('.svg')) return 'image/svg+xml';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.bmp')) return 'image/bmp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return 'application/octet-stream';
+  }
+
+  /// Returns all text files as an unmodifiable map of `normalizedPath -> content`.
   Map<String, String> get files => Map.unmodifiable(_files);
 
-  /// Number of files in this workspace.
+  /// Returns all binary assets as an unmodifiable map of `normalizedPath -> bytes`.
+  Map<String, Uint8List> get binaryAssets => Map.unmodifiable(_binaryAssets);
+
+  /// Number of text files in this workspace.
   int get fileCount => _files.length;
+
+  /// Total number of non-`.quds` assets (text + binary) in this workspace.
+  int get assetCount =>
+      _binaryAssets.length +
+      _files.keys.where((p) => !p.endsWith('.quds')).length;
 
   /// Creates a folder (and all its parent folders) inside the workspace.
   void createFolder(String folderPath) {
@@ -153,7 +190,7 @@ class QudsWorkspace {
     }
   }
 
-  /// Creates or updates a file at [path] (automatically creating parent folders).
+  /// Creates or updates a text file at [path] (automatically creating parent folders).
   void writeFile(String path, String content) {
     final norm = normalizePath(path);
     if (norm.isEmpty) {
@@ -161,43 +198,91 @@ class QudsWorkspace {
     }
     final dir = dirname(norm);
     if (dir.isNotEmpty) createFolder(dir);
+    _binaryAssets.remove(norm);
     _files[norm] = content;
     _notifyChanged(norm);
   }
 
-  /// Reads the content of [path], or returns `null` if not found.
+  /// Creates or updates a binary asset at [path] (automatically creating parent folders).
+  void writeAssetBytes(String path, Uint8List bytes) {
+    final norm = normalizePath(path);
+    if (norm.isEmpty) {
+      throw ArgumentError('Asset path cannot be empty.');
+    }
+    final dir = dirname(norm);
+    if (dir.isNotEmpty) createFolder(dir);
+    _files.remove(norm);
+    _binaryAssets[norm] = Uint8List.fromList(bytes);
+    _notifyChanged(norm);
+  }
+
+  /// Reads the text content of [path], or returns `null` if not found.
   String? readFile(String path) {
     final norm = normalizePath(path);
     return _files[norm];
   }
 
-  /// Returns true if a file exists at [path].
+  /// Reads raw bytes of [path] (works for both binary assets and UTF-8 text files).
+  Uint8List? readAssetBytes(String path) {
+    final norm = normalizePath(path);
+    final bin = _binaryAssets[norm];
+    if (bin != null) return Uint8List.fromList(bin);
+    final txt = _files[norm];
+    if (txt != null) return Uint8List.fromList(utf8.encode(txt));
+    return null;
+  }
+
+  /// Returns true if [path] is stored as a binary asset.
+  bool isBinaryFile(String path) =>
+      _binaryAssets.containsKey(normalizePath(path));
+
+  /// Returns true if a text file exists at [path].
   bool hasFile(String path) => _files.containsKey(normalizePath(path));
 
-  /// Deletes the file at [path].
+  /// Returns true if either a text file or binary asset exists at [path].
+  bool hasAnyFile(String path) {
+    final norm = normalizePath(path);
+    return _files.containsKey(norm) || _binaryAssets.containsKey(norm);
+  }
+
+  /// Deletes the text file or binary asset at [path].
   bool deleteFile(String path) {
     final norm = normalizePath(path);
-    final removed = _files.remove(norm) != null;
+    final removedText = _files.remove(norm) != null;
+    final removedBin = _binaryAssets.remove(norm) != null;
+    final removed = removedText || removedBin;
     if (removed) _notifyChanged(norm);
     return removed;
   }
 
-  /// Renames or moves a file from [oldPath] to [newPath].
+  /// Renames or moves a file or binary asset from [oldPath] to [newPath].
   bool renameFile(String oldPath, String newPath) {
     final oldNorm = normalizePath(oldPath);
     final newNorm = normalizePath(newPath);
-    if (!_files.containsKey(oldNorm) || oldNorm == newNorm) return false;
-    final content = _files.remove(oldNorm)!;
-    final dir = dirname(newNorm);
-    if (dir.isNotEmpty) createFolder(dir);
-    _files[newNorm] = content;
-    if (entryPoint == oldNorm) entryPoint = newNorm;
-    _notifyChanged(oldNorm);
-    _notifyChanged(newNorm);
-    return true;
+    if (oldNorm == newNorm) return false;
+    if (_files.containsKey(oldNorm)) {
+      final content = _files.remove(oldNorm)!;
+      final dir = dirname(newNorm);
+      if (dir.isNotEmpty) createFolder(dir);
+      _files[newNorm] = content;
+      if (entryPoint == oldNorm) entryPoint = newNorm;
+      _notifyChanged(oldNorm);
+      _notifyChanged(newNorm);
+      return true;
+    }
+    if (_binaryAssets.containsKey(oldNorm)) {
+      final bytes = _binaryAssets.remove(oldNorm)!;
+      final dir = dirname(newNorm);
+      if (dir.isNotEmpty) createFolder(dir);
+      _binaryAssets[newNorm] = bytes;
+      _notifyChanged(oldNorm);
+      _notifyChanged(newNorm);
+      return true;
+    }
+    return false;
   }
 
-  /// Recursively deletes [folderPath] and all nested files/subfolders inside it.
+  /// Recursively deletes [folderPath] and all nested files/assets/subfolders inside it.
   int deleteFolder(String folderPath) {
     final norm = normalizePath(folderPath);
     if (norm.isEmpty) return 0;
@@ -205,16 +290,19 @@ class QudsWorkspace {
     final toDelete = [
       for (final f in _files.keys)
         if (f.startsWith(prefix)) f,
+      for (final b in _binaryAssets.keys)
+        if (b.startsWith(prefix)) b,
     ];
     for (final f in toDelete) {
       _files.remove(f);
+      _binaryAssets.remove(f);
       _notifyChanged(f);
     }
     _folders.removeWhere((d) => d == norm || d.startsWith(prefix));
     return toDelete.length;
   }
 
-  /// Lists sorted file paths, optionally filtered to [inFolder] or [extension].
+  /// Lists sorted text file paths, optionally filtered to [inFolder] or [extension].
   List<String> listFiles({String? inFolder, String? extension}) {
     final folderNorm = inFolder == null ? '' : normalizePath(inFolder);
     final prefix = folderNorm.isEmpty ? '' : '$folderNorm/';
@@ -227,10 +315,24 @@ class QudsWorkspace {
     return out;
   }
 
+  /// Lists all sorted paths (text files AND binary assets), optionally filtered.
+  List<String> listAllEntries({String? inFolder, String? extension}) {
+    final folderNorm = inFolder == null ? '' : normalizePath(inFolder);
+    final prefix = folderNorm.isEmpty ? '' : '$folderNorm/';
+    final all = <String>{..._files.keys, ..._binaryAssets.keys};
+    final out = <String>[
+      for (final path in all)
+        if ((prefix.isEmpty || path.startsWith(prefix)) &&
+            (extension == null || path.endsWith(extension)))
+          path,
+    ]..sort();
+    return out;
+  }
+
   /// Lists all sorted folder paths in the workspace.
   List<String> listFolders() => _folders.toList()..sort();
 
-  /// Builds a sorted hierarchical directory/file tree rooted at `''`.
+  /// Builds a sorted hierarchical directory/file/asset tree rooted at `''`.
   QudsWorkspaceNode buildTree() {
     final dirChildren = <String, Set<String>>{'': <String>{}};
     for (final folder in _folders) {
@@ -242,6 +344,10 @@ class QudsWorkspace {
       final parent = dirname(file);
       dirChildren.putIfAbsent(parent, () => <String>{}).add(file);
     }
+    for (final asset in _binaryAssets.keys) {
+      final parent = dirname(asset);
+      dirChildren.putIfAbsent(parent, () => <String>{}).add(asset);
+    }
 
     QudsWorkspaceNode buildNode(String path, bool isDir) {
       final base = path.isEmpty
@@ -250,13 +356,23 @@ class QudsWorkspace {
               ? path.substring(path.lastIndexOf('/') + 1)
               : path);
       if (!isDir) {
-        return QudsWorkspaceNode(name: base, path: path, isDirectory: false);
+        final bin = _binaryAssets[path];
+        final isBin = bin != null;
+        final size =
+            isBin ? bin.length : utf8.encode(_files[path] ?? '').length;
+        return QudsWorkspaceNode(
+          name: base,
+          path: path,
+          isDirectory: false,
+          isBinary: isBin,
+          byteSize: size,
+        );
       }
       final rawChildren = (dirChildren[path] ?? const <String>{}).toList();
       final childDirs = <String>[];
       final childFiles = <String>[];
       for (final child in rawChildren) {
-        if (_files.containsKey(child)) {
+        if (_files.containsKey(child) || _binaryAssets.containsKey(child)) {
           childFiles.add(child);
         } else {
           childDirs.add(child);
@@ -496,18 +612,28 @@ class QudsWorkspace {
     return visited;
   }
 
-  /// Serializes the entire multi-file workspace to a portable `.qproj` JSON map.
-  Map<String, Object?> toJson() => {
-        'format': 'quds-workspace',
-        'version': 1,
-        'name': name,
-        if (packageName != null) 'packageName': packageName,
-        'entryPoint': entryPoint,
-        'folders': listFolders(),
-        'files': Map<String, String>.fromEntries(
-          listFiles().map((p) => MapEntry(p, _files[p]!)),
+  /// Serializes the entire multi-file workspace (including binary assets via
+  /// Base64) to a portable `.qproj` JSON map.
+  Map<String, Object?> toJson() {
+    final sortedBinaryKeys = _binaryAssets.keys.toList()..sort();
+    return {
+      'format': 'quds-workspace',
+      'version': 2,
+      'name': name,
+      if (packageName != null) 'packageName': packageName,
+      'entryPoint': entryPoint,
+      'folders': listFolders(),
+      'files': Map<String, String>.fromEntries(
+        listFiles().map((p) => MapEntry(p, _files[p]!)),
+      ),
+      if (sortedBinaryKeys.isNotEmpty)
+        'binaryAssets': Map<String, String>.fromEntries(
+          sortedBinaryKeys.map(
+            (p) => MapEntry(p, base64Encode(_binaryAssets[p]!)),
+          ),
         ),
-      };
+    };
+  }
 
   /// Encodes this workspace as a formatted `.qproj` JSON string.
   String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());
@@ -515,13 +641,20 @@ class QudsWorkspace {
   /// Restores a [QudsWorkspace] from a `.qproj` JSON map.
   static QudsWorkspace fromJson(Map<String, Object?> json) {
     final rawFiles = (json['files'] as Map? ?? const {});
+    final rawBinary = (json['binaryAssets'] as Map? ?? const {});
     final rawFolders = (json['folders'] as List? ?? const []);
+    final decodedBinary = <String, Uint8List>{};
+    for (final entry in rawBinary.entries) {
+      decodedBinary['${entry.key}'] =
+          Uint8List.fromList(base64Decode('${entry.value}'));
+    }
     return QudsWorkspace(
       name: (json['name'] as String?) ?? 'quds_project',
       packageName: json['packageName'] as String?,
       entryPoint: (json['entryPoint'] as String?) ?? 'main.quds',
       folders: [for (final f in rawFolders) '$f'],
       files: {for (final e in rawFiles.entries) '${e.key}': '${e.value}'},
+      binaryAssets: decodedBinary,
     );
   }
 

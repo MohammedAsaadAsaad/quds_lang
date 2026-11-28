@@ -20,6 +20,8 @@ export 'src/interpreter/universal_vm.dart'
         QudsUniversalCompiler,
         QudsUniversalOp,
         QudsUniversalVm;
+export 'src/interpreter/assets_module.dart'
+    show buildQudsAssetsModule, encodeQudsBmp24;
 export 'src/interpreter/data_module.dart' show buildQudsDataModule;
 export 'src/interpreter/debugger.dart'
     show
@@ -81,6 +83,7 @@ export 'src/interpreter/outputs.dart'
         QudsGraphEdge,
         QudsGraphNode,
         QudsGraphOutput,
+        QudsImageOutput,
         QudsInteractiveInput,
         QudsMatrixOutput,
         QudsOutput,

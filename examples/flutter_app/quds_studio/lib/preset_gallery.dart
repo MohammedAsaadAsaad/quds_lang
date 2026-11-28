@@ -9,6 +9,7 @@ import 'presets.dart';
 enum StudioFilterKind {
   all,
   animatedOnly,
+  apps,
   games,
   simulations,
   engineering,
@@ -31,6 +32,7 @@ extension StudioFilterExt on StudioFilterKind {
   String label(bool isArabic) => switch (this) {
         StudioFilterKind.all => isArabic ? 'الكل' : 'All',
         StudioFilterKind.animatedOnly => isArabic ? '⚡ حركة حية' : '⚡ Motion',
+        StudioFilterKind.apps => StudioCategory.apps.shortLabel(isArabic),
         StudioFilterKind.games => StudioCategory.games.shortLabel(isArabic),
         StudioFilterKind.simulations =>
           StudioCategory.simulations.shortLabel(isArabic),
@@ -59,6 +61,7 @@ extension StudioFilterExt on StudioFilterKind {
       };
 
   StudioCategory? get category => switch (this) {
+        StudioFilterKind.apps => StudioCategory.apps,
         StudioFilterKind.games => StudioCategory.games,
         StudioFilterKind.simulations => StudioCategory.simulations,
         StudioFilterKind.engineering => StudioCategory.engineering,
@@ -81,6 +84,7 @@ extension StudioFilterExt on StudioFilterKind {
   bool matches(StudioPreset p) => switch (this) {
         StudioFilterKind.all => true,
         StudioFilterKind.animatedOnly => p.isAnimated,
+        StudioFilterKind.apps => p.category == StudioCategory.apps,
         StudioFilterKind.games => p.category == StudioCategory.games,
         StudioFilterKind.simulations =>
           p.category == StudioCategory.simulations,
@@ -104,6 +108,7 @@ extension StudioFilterExt on StudioFilterKind {
 }
 
 StudioFilterKind filterForCategory(StudioCategory c) => switch (c) {
+      StudioCategory.apps => StudioFilterKind.apps,
       StudioCategory.games => StudioFilterKind.games,
       StudioCategory.simulations => StudioFilterKind.simulations,
       StudioCategory.engineering => StudioFilterKind.engineering,
@@ -974,6 +979,7 @@ Widget _buildExamplesList({
 }
 
 Color _categoryColor(StudioCategory c) => switch (c) {
+      StudioCategory.apps => const Color(0xFF10B981),
       StudioCategory.games => const Color(0xFFA855F7),
       StudioCategory.simulations => const Color(0xFF0EA5E9),
       StudioCategory.engineering => const Color(0xFF3B82F6),
@@ -993,6 +999,7 @@ Color _categoryColor(StudioCategory c) => switch (c) {
     };
 
 IconData _categoryIcon(StudioCategory c) => switch (c) {
+      StudioCategory.apps => Icons.widgets_rounded,
       StudioCategory.games => Icons.sports_esports_rounded,
       StudioCategory.simulations => Icons.location_city_rounded,
       StudioCategory.engineering => Icons.precision_manufacturing_rounded,

@@ -661,4 +661,65 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 8));
     expect(find.textContaining('Median of 3 runs'), findsOneWidget);
   });
+
+  testWidgets(
+      'Multi-Project Workspace Manager switches between asset-enabled projects, renders binary BMP images, and creates custom JSON assets',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('assets_projects_test'),
+      autoRunInitial: false,
+    ));
+    await tester.pumpAndSettle();
+
+    // Open Project Workspace tab
+    final projTab = find.byKey(const Key('inspector_project_tab'));
+    await tester.ensureVisible(projTab);
+    await tester.pumpAndSettle();
+    await tester.tap(projTab);
+    await tester.pumpAndSettle();
+
+    // Switch to Quds Shop POS project (JSON catalog + CSV coupons + binary BMP banner)
+    await tester.tap(find.byKey(const Key('project_template_quds_shop_pos')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+
+    expect(
+        find.byKey(const Key('ws_file_assets/catalog.json')), findsOneWidget);
+    expect(find.byKey(const Key('ws_file_assets/banner.bmp')), findsOneWidget);
+    expect(find.byKey(const Key('quds_form_output_card')), findsOneWidget);
+    expect(find.byKey(const Key('quds_image_card_assets/banner.bmp')),
+        findsOneWidget);
+
+    // Add a custom JSON asset via "+ أصل" dialog
+    final newAssetBtn = find.byKey(const Key('workspace_new_asset_btn'));
+    await tester.ensureVisible(newAssetBtn);
+    await tester.pumpAndSettle();
+    await tester.tap(newAssetBtn);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const Key('new_asset_path_field')),
+      'assets/promo.json',
+    );
+    await tester.tap(find.byKey(const Key('confirm_new_asset_button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('ws_file_assets/promo.json')), findsOneWidget);
+
+    // Switch to Extensions Host project and verify it executes live
+    final extChip =
+        find.byKey(const Key('project_template_quds_extensions_host'));
+    await tester.ensureVisible(extChip);
+    await tester.pumpAndSettle();
+    await tester.tap(extChip);
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(
+        find.byKey(const Key('ws_file_assets/plugins.json')), findsOneWidget);
+    expect(
+      find.byKey(const Key('ws_file_extensions/smart_discount.quds')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('quds_form_output_card')), findsOneWidget);
+  });
 }

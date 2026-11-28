@@ -6,6 +6,7 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -17,6 +18,7 @@ import 'editor_widget.dart';
 import 'notebook_panel.dart';
 import 'preset_gallery.dart';
 import 'presets.dart';
+import 'project_templates.dart';
 import 'viz2_widgets.dart';
 import 'viz_widgets.dart';
 import 'workspace_panel.dart';
@@ -50,6 +52,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   StudioFilterKind _activeFilter = StudioFilterKind.all;
 
   late QudsWorkspace _projectWorkspace;
+  String _activeProjectId = 'orbital_lab';
   bool _workspaceMode = false;
   String _activeWorkspaceFile = 'main.quds';
 
@@ -117,6 +120,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     'quds:ext',
     'quds:viz',
     'quds:data',
+    'quds:assets',
     'dart:math',
     'dart:convert',
   };
@@ -138,7 +142,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _breakpoints = Set<int>.from(_preset.defaultBreakpoints);
     _preferBytecode = true;
     _enableProfiling = _preset.id == 'profiler_bytecode_lab';
-    _projectWorkspace = QudsWorkspace.scientificProjectTemplate();
+    _projectWorkspace = buildOrbitalLabProject();
     _activeWorkspaceFile = _projectWorkspace.entryPoint;
     _inspectorTabs = TabController(length: 6, vsync: this);
 
@@ -275,7 +279,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   Future<void> _runCode({bool switchMobileTab = true}) async {
     if (_running) return;
     _stopAnimTimer();
-    if (_workspaceMode) {
+    if (_workspaceMode &&
+        !_projectWorkspace.isBinaryFile(_activeWorkspaceFile)) {
       _projectWorkspace.writeFile(_activeWorkspaceFile, _codeController.text);
     }
     _debugger.setLineBreakpoints(_activeFileName, _breakpoints);
@@ -308,6 +313,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         res.lastVectorField != null ||
         res.lastGraph != null ||
         res.lastForm != null ||
+        res.outputs.whereType<QudsImageOutput>().isNotEmpty ||
         res.outputs.whereType<QudsTableOutput>().isNotEmpty;
     setState(() {
       _running = false;
@@ -446,7 +452,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   void _openWorkspaceFile(String path, {bool switchToEditorOnMobile = true}) {
     final content = _projectWorkspace.readFile(path);
     if (content == null) return;
-    if (_workspaceMode) {
+    if (_workspaceMode &&
+        !_projectWorkspace.isBinaryFile(_activeWorkspaceFile)) {
       _projectWorkspace.writeFile(_activeWorkspaceFile, _codeController.text);
     }
     _stopAnimTimer();
@@ -481,6 +488,21 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _openWorkspaceFile(norm);
   }
 
+  void _createWorkspaceAsset(
+    String path, {
+    String? textContent,
+    Uint8List? binaryBytes,
+  }) {
+    final norm = QudsWorkspace.normalizePath(path);
+    if (binaryBytes != null) {
+      _projectWorkspace.writeAssetBytes(norm, binaryBytes);
+      setState(() {});
+    } else {
+      _projectWorkspace.writeFile(norm, textContent ?? '');
+      _openWorkspaceFile(norm);
+    }
+  }
+
   void _createWorkspaceFolder(String folderPath) {
     _projectWorkspace.createFolder(folderPath);
     setState(() {});
@@ -496,8 +518,53 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     }
   }
 
+  void _selectProjectTemplate(StudioProjectTemplate tpl) {
+    _stopAnimTimer();
+    _session.stop();
+    _session.resetAnimation();
+    _pendingInteractivePatch = null;
+    _projectWorkspace = tpl.builder();
+    _session.attachWorkspace(_projectWorkspace);
+    setState(() {
+      _activeProjectId = tpl.id;
+      _workspaceMode = true;
+      _activeWorkspaceFile = _projectWorkspace.entryPoint;
+      _policyMode = StudioPolicyMode.standard;
+      _breakpoints = {};
+    });
+    _openWorkspaceFile(
+      _projectWorkspace.entryPoint,
+      switchToEditorOnMobile: false,
+    );
+    _runCode(switchMobileTab: false);
+  }
+
+  void _importQprojWorkspace(QudsWorkspace imported) {
+    _stopAnimTimer();
+    _session.stop();
+    _session.resetAnimation();
+    _pendingInteractivePatch = null;
+    _projectWorkspace = imported;
+    _session.attachWorkspace(_projectWorkspace);
+    setState(() {
+      _activeProjectId = imported.name;
+      _workspaceMode = true;
+      _activeWorkspaceFile = _projectWorkspace.entryPoint;
+      _breakpoints = {};
+    });
+    _openWorkspaceFile(
+      _projectWorkspace.entryPoint,
+      switchToEditorOnMobile: false,
+    );
+    _runCode(switchMobileTab: false);
+  }
+
   void _resetWorkspaceTemplate() {
-    _projectWorkspace = QudsWorkspace.scientificProjectTemplate();
+    final tpl = studioProjectTemplates.firstWhere(
+      (t) => t.id == _activeProjectId,
+      orElse: () => studioProjectTemplates.first,
+    );
+    _projectWorkspace = tpl.builder();
     _session.attachWorkspace(_projectWorkspace);
     _openWorkspaceFile(
       _projectWorkspace.entryPoint,
@@ -617,11 +684,16 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       while (_pendingInteractivePatch != null && mounted && !_running) {
         final nextPatch = _pendingInteractivePatch!;
         _pendingInteractivePatch = null;
-        final res = await _session.updateInteractiveInputs(
-          nextPatch,
-          source: _activeExecutionSource(),
-          file: _activeExecutionFile(),
-        );
+        final res = _workspaceMode
+            ? await _session.runProject(
+                interactiveInputs: nextPatch,
+                preferBytecode: _preferBytecode,
+              )
+            : await _session.updateInteractiveInputs(
+                nextPatch,
+                source: _activeExecutionSource(),
+                file: _activeExecutionFile(),
+              );
         if (!mounted) return;
         _lastResult = res;
         // Update ONLY the visual canvas & sliders via ValueNotifier (no editor rebuild!)
@@ -808,6 +880,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                       for (final lib in const [
                         'quds:math',
                         'quds:viz',
+                        'quds:assets',
                         'quds:json',
                         'quds:async',
                         'quds:text',
@@ -993,6 +1066,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             final isCompact = constraints.maxWidth < 840;
             final workspacePanel = QudsWorkspacePanel(
               workspace: _projectWorkspace,
+              activeProjectId: _activeProjectId,
               activeFile: _activeWorkspaceFile,
               workspaceMode: _workspaceMode,
               isArabic: _isArabic,
@@ -1001,8 +1075,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               onOpenFile: (path) => _openWorkspaceFile(path),
               onRunProject: _runWorkspaceProject,
               onCreateFile: _createWorkspaceFile,
+              onCreateAsset: _createWorkspaceAsset,
               onCreateFolder: _createWorkspaceFolder,
               onDeleteFile: _deleteWorkspaceFile,
+              onSelectTemplate: _selectProjectTemplate,
+              onImportQproj: _importQprojWorkspace,
               onResetTemplate: _resetWorkspaceTemplate,
             );
 
@@ -1777,6 +1854,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         final form = res?.lastForm;
         final plot = res?.lastPlot;
         final animSpec = res?.animationSpec;
+        final images =
+            res?.outputs.whereType<QudsImageOutput>().toList() ?? const [];
         final tables =
             res?.outputs.whereType<QudsTableOutput>().toList() ?? const [];
         final readings = scene?.readings ?? const <QudsTelemetryReading>[];
@@ -1828,12 +1907,26 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               QudsVectorFieldCanvas(field: vectorField, isDark: _isDark);
         } else if (graph != null) {
           stageBody = QudsGraphCanvas(graph: graph, isDark: _isDark);
-        } else if (form != null) {
-          stageBody = isCompact
-              ? QudsFormOutputCard(form: form, isDark: _isDark)
-              : SingleChildScrollView(
-                  child: QudsFormOutputCard(form: form, isDark: _isDark),
-                );
+        } else if (form != null || images.isNotEmpty) {
+          final cards = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final img in images) ...[
+                QudsImageOutputCard(image: img, isDark: _isDark),
+                const SizedBox(height: 10),
+              ],
+              if (form != null) ...[
+                QudsFormOutputCard(form: form, isDark: _isDark),
+                if (tables.isNotEmpty) const SizedBox(height: 10),
+              ],
+              for (final tbl in tables) ...[
+                QudsTableCard(table: tbl),
+                const SizedBox(height: 8),
+              ],
+            ],
+          );
+          stageBody = isCompact ? cards : SingleChildScrollView(child: cards);
         } else if (plot != null) {
           stageBody = Column(
             children: [
@@ -2017,6 +2110,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               vectorField == null &&
               graph == null &&
               (form != null ||
+                  images.isNotEmpty ||
                   tables.isNotEmpty ||
                   _preset.category == StudioCategory.benchmarks);
           final double canvasHeight = isCompact
@@ -2168,8 +2262,8 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               Tab(
                 key: const Key('inspector_project_tab'),
                 text: _isArabic
-                    ? 'المشروع (${_projectWorkspace.listFiles().length})'
-                    : 'Project (${_projectWorkspace.listFiles().length})',
+                    ? 'المشروع (${_projectWorkspace.listAllEntries().length})'
+                    : 'Project (${_projectWorkspace.listAllEntries().length})',
               ),
             ],
           ),

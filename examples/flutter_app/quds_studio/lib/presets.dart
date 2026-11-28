@@ -1,6 +1,7 @@
 /// Curated Quds scientific, real-world simulation, games & VM presets for Quds Studio.
 library;
 
+import 'presets_apps.dart';
 import 'presets_benchmarks.dart';
 import 'presets_cs_science.dart';
 import 'presets_domains.dart';
@@ -8,7 +9,7 @@ import 'presets_extra.dart';
 import 'presets_games.dart';
 import 'presets_simulations.dart';
 
-/// Top-level thematic super-groups organizing all 16 Studio categories cleanly.
+/// Top-level thematic super-groups organizing all 17 Studio categories cleanly.
 enum StudioDomain {
   gamesAndSims,
   sciences,
@@ -19,8 +20,8 @@ enum StudioDomain {
 extension StudioDomainLabels on StudioDomain {
   String label(bool isArabic) => switch (this) {
         StudioDomain.gamesAndSims => isArabic
-            ? '🎮 الألعاب والمحاكاة الواقعية'
-            : '🎮 Games & Real-World Sims',
+            ? '📱 التطبيقات والألعاب والمحاكاة'
+            : '📱 Apps, Games & Real-World Sims',
         StudioDomain.sciences =>
           isArabic ? '🔬 العلوم والطبيعة والفضاء' : '🔬 Sciences & Nature',
         StudioDomain.mathAndCs => isArabic
@@ -33,6 +34,7 @@ extension StudioDomainLabels on StudioDomain {
 
   List<StudioCategory> get categories => switch (this) {
         StudioDomain.gamesAndSims => const [
+            StudioCategory.apps,
             StudioCategory.games,
             StudioCategory.simulations,
             StudioCategory.engineering,
@@ -60,6 +62,7 @@ extension StudioDomainLabels on StudioDomain {
 }
 
 enum StudioCategory {
+  apps,
   games,
   simulations,
   engineering,
@@ -80,6 +83,7 @@ enum StudioCategory {
 
 extension StudioCategoryLabels on StudioCategory {
   StudioDomain get domain => switch (this) {
+        StudioCategory.apps ||
         StudioCategory.games ||
         StudioCategory.simulations ||
         StudioCategory.engineering ||
@@ -103,6 +107,8 @@ extension StudioCategoryLabels on StudioCategory {
       };
 
   String label(bool isArabic) => switch (this) {
+        StudioCategory.apps =>
+          isArabic ? 'التطبيقات التفاعلية' : 'Interactive Apps',
         StudioCategory.games =>
           isArabic ? 'الألعاب التفاعلية' : 'Interactive Games',
         StudioCategory.simulations =>
@@ -136,6 +142,7 @@ extension StudioCategoryLabels on StudioCategory {
       };
 
   String shortLabel(bool isArabic) => switch (this) {
+        StudioCategory.apps => isArabic ? '📱 تطبيقات' : '📱 Apps',
         StudioCategory.games => isArabic ? '🎮 ألعاب' : '🎮 Games',
         StudioCategory.simulations => isArabic ? '🏙️ محاكاة' : '🏙️ Sims',
         StudioCategory.engineering => isArabic ? '⚙️ هندسة' : '⚙️ Eng',
@@ -155,6 +162,9 @@ extension StudioCategoryLabels on StudioCategory {
       };
 
   String description(bool isArabic) => switch (this) {
+        StudioCategory.apps => isArabic
+            ? 'الفواتير، مدير المهام الحي، محوّل العملات والوحدات، تقسيم الفاتورة، GPA، السعرات، الاختبارات والمخزون'
+            : 'Invoice Builder, Stateful Tasks, Unit/Currency Hub, Bill Splitter, GPA, Macros, Quiz & Inventory',
         StudioCategory.games => isArabic
             ? 'بونج، كسر الطوب، الأفعى، المدفع، النيازك، فلابي، الفقاعات، السباق، إكس-أو والمتاهة'
             : 'Pong, Brick Breaker, Snake, Artillery, Asteroids, Flappy, Racer & Maze',
@@ -243,6 +253,7 @@ enum StudioPolicyMode {
 final List<StudioPreset> studioPresets = <StudioPreset>[
   ..._baseStudioPresets,
   ...extraAnimatedPresets,
+  ...studioAppPresets,
   ...gamePresets,
   ...realWorldSimPresets,
   ...financeAndEngineeringPresets,

@@ -261,6 +261,16 @@ class QudsSession {
   bool hasCompiledWorkspaceFile(String path) =>
       _moduleLoader.hasCompiledArtifact(path);
 
+  /// Detailed metadata and disassembly snapshots for every compiled `.quds`
+  /// file currently in the workspace bytecode cache.
+  List<QudsCompiledArtifactInfo> get compiledWorkspaceArtifacts =>
+      _moduleLoader.compiledWorkspaceArtifacts;
+
+  /// Inspects the compiled bytecode artifact for workspace file [path], or
+  /// returns `null` if [path] has not been compiled yet.
+  QudsCompiledArtifactInfo? inspectCompiledWorkspaceFile(String path) =>
+      _moduleLoader.inspectCompiledArtifact(path);
+
   /// Eagerly compiles all (or the specified) `.quds` files in the attached
   /// [QudsWorkspace] into the content-hashed bytecode cache, skipping files
   /// whose compiled artifacts are already up to date.

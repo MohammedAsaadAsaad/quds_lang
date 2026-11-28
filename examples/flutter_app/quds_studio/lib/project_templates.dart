@@ -17,6 +17,7 @@ class StudioProjectTemplate {
     required this.icon,
     required this.accentColor,
     required this.builder,
+    this.usesBenchmarkPolicy = false,
   });
 
   final String id;
@@ -27,6 +28,7 @@ class StudioProjectTemplate {
   final IconData icon;
   final Color accentColor;
   final QudsWorkspace Function() builder;
+  final bool usesBenchmarkPolicy;
 }
 
 Uint8List _buildShopBannerBmp() {
@@ -555,7 +557,214 @@ print "تم عرض assets/logo.bmp وتوليد شبكة {resSize}x{resSize} ب�
       },
     );
 
-/// All 5 multi-folder Quds project templates ready to switch in 1 tap.
+/// 6. Heavy Multi-Folder Algorithm & Compiled Bytecode Lab
+///
+/// 5 nested folders (`core/config/`, `math/kernels/`, `math/`, `domain/report/`,
+/// `assets/`) designed specifically to compare AST vs Cold Bytecode vs
+/// Precompiled/Cached `.qbc` Artifacts and inspect compiled bytecode files live.
+QudsWorkspace buildHeavyVmLabProject() => QudsWorkspace(
+      name: 'quds_heavy_vm_lab',
+      packageName: 'quds_heavy_vm_lab',
+      entryPoint: 'main.quds',
+      bundleVersion: '1.0.0',
+      files: {
+        'assets/suite.json': '''{
+  "suite": "Quds Heavy Multi-Folder VM Lab",
+  "version": "1.0.0",
+  "kernels": [
+    "math/kernels/sieve.quds",
+    "math/kernels/matmul.quds",
+    "math/kernels/nbody.quds",
+    "math/kernels/mandelbrot.quds"
+  ],
+  "modes": ["AST", "Cold Bytecode", "Precompiled Cached"]
+}
+''',
+        'core/config/workload.quds':
+            '''# Heavy benchmark parameters — edit any value and watch only this file recompile!
+SUITE_LABEL = "Heavy 4-Kernel Suite"
+SIEVE_LIMIT = 120000
+SIEVE_ROUNDS = 4
+MATMUL_N = 64
+NBODY_COUNT = 64
+NBODY_STEPS = 40
+MANDEL_SIZE = 140
+MANDEL_ITER = 64
+''',
+        'math/kernels/sieve.quds':
+            '''# Sieve of Eratosthenes — promotes to Tier-1 unboxed Int64List + fused superops
+countPrimesRepeated(limit: int, rounds: int) -> int:
+  var total = 0
+  var r = 0
+  while r < rounds:
+    var isPrime = List.filled(limit + 1, 1)
+    isPrime[0] = 0
+    isPrime[1] = 0
+    var p = 2
+    while p * p <= limit:
+      if isPrime[p] == 1:
+        var m = p * p
+        while m <= limit:
+          isPrime[m] = 0
+          m = m + p
+      p = p + 1
+    var c = 0
+    var i = 2
+    while i <= limit:
+      c = c + isPrime[i]
+      i = i + 1
+    total = total + c
+    r = r + 1
+  return total
+''',
+        'math/kernels/matmul.quds':
+            '''# Dense Matrix Multiplication O(N^3) — promotes to Tier-1 Float64List + F_MUL_ADD
+denseMatMulChecksum(n: int) -> double:
+  var a = List.filled(n * n, 0.0)
+  var b = List.filled(n * n, 0.0)
+  var i = 0
+  while i < n:
+    var j = 0
+    while j < n:
+      a[i * n + j] = ((i * 3 + j * 7) % 19) * 0.25
+      b[i * n + j] = ((i * 5 + j * 2) % 17) * 0.25
+      j = j + 1
+    i = i + 1
+  var total = 0.0
+  i = 0
+  while i < n:
+    var j = 0
+    while j < n:
+      var acc = 0.0
+      var k = 0
+      while k < n:
+        acc = acc + a[i * n + k] * b[k * n + j]
+        k = k + 1
+      total = total + acc
+      j = j + 1
+    i = i + 1
+  return total
+''',
+        'math/kernels/nbody.quds':
+            '''# Gravitational N-Body Simulation O(N^2 * steps) — Tier-1 F_INV_SQRT + F_CUBE + F_MUL_ADD
+use dart:math as m
+
+nbodyEnergy(n: int, steps: int) -> double:
+  var px = List.filled(n, 0.0)
+  var py = List.filled(n, 0.0)
+  var vx = List.filled(n, 0.0)
+  var vy = List.filled(n, 0.0)
+  var i = 0
+  while i < n:
+    px[i] = (i * 0.37) - 10.0
+    py[i] = (i * 0.53) - 12.0
+    vx[i] = (i % 5 - 2) * 0.01
+    vy[i] = (i % 7 - 3) * 0.01
+    i = i + 1
+  var s = 0
+  while s < steps:
+    i = 0
+    while i < n:
+      var ax = 0.0
+      var ay = 0.0
+      var j = 0
+      while j < n:
+        if i != j:
+          dx = px[j] - px[i]
+          dy = py[j] - py[i]
+          d2 = dx * dx + dy * dy + 0.05
+          inv = 1.0 / m.sqrt(d2)
+          f = inv * inv * inv * 0.001
+          ax = ax + dx * f
+          ay = ay + dy * f
+        j = j + 1
+      vx[i] = vx[i] + ax
+      vy[i] = vy[i] + ay
+      i = i + 1
+    i = 0
+    while i < n:
+      px[i] = px[i] + vx[i]
+      py[i] = py[i] + vy[i]
+      i = i + 1
+    s = s + 1
+  var energy = 0.0
+  i = 0
+  while i < n:
+    energy = energy + px[i] * px[i] + py[i] * py[i]
+    i = i + 1
+  return energy
+''',
+        'math/kernels/mandelbrot.quds':
+            '''# Mandelbrot Escape-Time Fractal — promotes to Tier-1 F_SQR_SUM + F_MUL2_ADD
+mandelbrotChecksum(size: int, maxIter: int) -> int:
+  var total = 0
+  var py = 0
+  while py < size:
+    cy = (py / size) * 2.4 - 1.2
+    var px = 0
+    while px < size:
+      cx = (px / size) * 3.0 - 2.1
+      var zr = 0.0
+      var zi = 0.0
+      var it = 0
+      while it < maxIter:
+        zr2 = zr * zr
+        zi2 = zi * zi
+        if zr2 + zi2 > 4.0:
+          break
+        zi = 2.0 * zr * zi + cy
+        zr = zr2 - zi2 + cx
+        it = it + 1
+      total = total + it
+      px = px + 1
+    py = py + 1
+  return total
+''',
+        'math/index.quds':
+            '''# Barrel module re-exporting all 4 heavy compute kernels
+export kernels.sieve show countPrimesRepeated
+export kernels.matmul show denseMatMulChecksum
+export kernels.nbody show nbodyEnergy
+export kernels.mandelbrot show mandelbrotChecksum
+''',
+        'domain/report/summary.quds':
+            '''# Formats verified checksums from all 4 heavy kernels
+use ^^.core.config.workload show SUITE_LABEL, SIEVE_LIMIT, SIEVE_ROUNDS, MATMUL_N, NBODY_COUNT, NBODY_STEPS, MANDEL_SIZE, MANDEL_ITER
+
+buildReportLine(primes: int, matSum: double, energy: double, mandel: int) -> String:
+  return "{SUITE_LABEL} | Sieve({SIEVE_LIMIT}x{SIEVE_ROUNDS})={primes} | MatMul({MATMUL_N}x{MATMUL_N})={matSum.toStringAsFixed(2)} | NBody({NBODY_COUNT}x{NBODY_STEPS})={energy.toStringAsFixed(2)} | Mandel({MANDEL_SIZE}x{MANDEL_ITER})={mandel}"
+''',
+        'main.quds':
+            '''# Entry point for Heavy Multi-Folder VM & Compiled Bytecode Benchmark
+use quds:viz as viz
+use core.config.workload show SUITE_LABEL, SIEVE_LIMIT, SIEVE_ROUNDS, MATMUL_N, NBODY_COUNT, NBODY_STEPS, MANDEL_SIZE, MANDEL_ITER
+use math.index as kernels
+use domain.report.summary show buildReportLine
+
+primes = kernels.countPrimesRepeated(SIEVE_LIMIT, SIEVE_ROUNDS)
+matSum = kernels.denseMatMulChecksum(MATMUL_N)
+energy = kernels.nbodyEnergy(NBODY_COUNT, NBODY_STEPS)
+mandel = kernels.mandelbrotChecksum(MANDEL_SIZE, MANDEL_ITER)
+
+rows = [
+  ["Sieve of Eratosthenes", "math/kernels/sieve.quds", "{SIEVE_LIMIT} x {SIEVE_ROUNDS}", "{primes}"],
+  ["Dense MatMul O(N^3)", "math/kernels/matmul.quds", "{MATMUL_N} x {MATMUL_N}", "{matSum.toStringAsFixed(2)}"],
+  ["N-Body Gravity", "math/kernels/nbody.quds", "{NBODY_COUNT} bodies x {NBODY_STEPS}", "{energy.toStringAsFixed(2)}"],
+  ["Mandelbrot Fractal", "math/kernels/mandelbrot.quds", "{MANDEL_SIZE}x{MANDEL_SIZE}x{MANDEL_ITER}", "{mandel}"],
+]
+
+viz.table(
+  ["الخوارزمية / Kernel", "الملف / File", "الحجم / Size", "Checksum"],
+  rows,
+  title: "⚡ {SUITE_LABEL} — Verified Checksums",
+)
+
+print buildReportLine(primes, matSum, energy, mandel)
+''',
+      },
+    );
+
+/// All 6 multi-folder Quds project templates ready to switch in 1 tap.
 final List<StudioProjectTemplate> studioProjectTemplates = [
   StudioProjectTemplate(
     id: 'orbital_lab',
@@ -576,6 +785,17 @@ final List<StudioProjectTemplate> studioProjectTemplates = [
     icon: Icons.point_of_sale_rounded,
     accentColor: const Color(0xFF10B981),
     builder: buildQudsShopPosProject,
+  ),
+  StudioProjectTemplate(
+    id: 'heavy_vm_lab',
+    nameAr: 'مختبر الأداء والملفات المترجمة',
+    nameEn: 'Heavy VM & Compiled Lab',
+    subtitleAr: '5 مجلدات + 4 خوارزميات ثقيلة (AST / Bytecode / مترجم)',
+    subtitleEn: '5 folders + 4 heavy kernels (AST / Bytecode / Compiled)',
+    icon: Icons.speed_rounded,
+    accentColor: const Color(0xFFF97316),
+    builder: buildHeavyVmLabProject,
+    usesBenchmarkPolicy: true,
   ),
   StudioProjectTemplate(
     id: 'sales_analytics_hub',

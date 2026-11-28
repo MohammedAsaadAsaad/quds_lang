@@ -5,11 +5,14 @@
 /// so `use quds:math` is fast even across repeated interactive runs.
 library;
 
+import 'dart:convert';
+
 import '../ast.dart';
 import '../lexer.dart';
 import '../library_uri.dart';
 import '../parser.dart';
 import '../sdk_sources.dart';
+import 'bytecode_vm.dart';
 import 'dart_stdlib_bridge.dart';
 import 'environment.dart';
 import 'evaluator.dart';
@@ -86,6 +89,48 @@ class QudsCompilationStats {
   final int cachedCompiledCount;
 }
 
+/// Detailed metadata and disassembly snapshot of a compiled workspace `.quds`
+/// bytecode artifact produced by [QudsModuleLoader].
+class QudsCompiledArtifactInfo {
+  const QudsCompiledArtifactInfo({
+    required this.sourcePath,
+    required this.compiledPath,
+    required this.fingerprint,
+    required this.compiledAt,
+    required this.compileTimeMicros,
+    required this.sourceBytes,
+    required this.universalInstructionCount,
+    required this.universalConstantCount,
+    required this.universalRegisterCount,
+    required this.tier1Promoted,
+    required this.tier1Functions,
+    required this.tier1InstructionCount,
+    required this.tier1Superinstructions,
+    required this.estimatedBytecodeBytes,
+    required this.isUpToDate,
+    required this.universalDisassembly,
+    this.tier1Disassembly,
+  });
+
+  final String sourcePath;
+  final String compiledPath;
+  final String fingerprint;
+  final DateTime compiledAt;
+  final int compileTimeMicros;
+  final int sourceBytes;
+  final int universalInstructionCount;
+  final int universalConstantCount;
+  final int universalRegisterCount;
+  final bool tier1Promoted;
+  final List<String> tier1Functions;
+  final int tier1InstructionCount;
+  final List<String> tier1Superinstructions;
+  final int estimatedBytecodeBytes;
+  final bool isUpToDate;
+  final String universalDisassembly;
+  final String? tier1Disassembly;
+}
+
 class _CompiledWorkspaceArtifact {
   const _CompiledWorkspaceArtifact({
     required this.path,
@@ -93,6 +138,9 @@ class _CompiledWorkspaceArtifact {
     required this.source,
     required this.program,
     required this.chunk,
+    required this.tier1Program,
+    required this.compiledAt,
+    required this.compileTimeMicros,
   });
 
   final String path;
@@ -100,6 +148,86 @@ class _CompiledWorkspaceArtifact {
   final String source;
   final Program program;
   final QudsUniversalChunk chunk;
+  final QudsBytecodeProgram? tier1Program;
+  final DateTime compiledAt;
+  final int compileTimeMicros;
+
+  static const Set<String> _superOpNames = {
+    'I_INC_JUMP',
+    'I_ADD_JUMP',
+    'I_INC_JLT',
+    'I_INC_JLE',
+    'I_ADD_LIST_GET',
+    'I_LIST_FILL',
+    'F_LIST_FILL',
+    'I_LIST_STRIDE_SET',
+    'I_LIST_SUM_RANGE',
+    'F_LIST_SUM_RANGE',
+    'F_STRIDED_DOT',
+    'F_MUL_ADD',
+    'F_SQR_SUM',
+    'F_SQR_SUM_ADD',
+    'F_SQR_DIFF_ADD',
+    'F_MUL2_ADD',
+    'F_INV_SQRT',
+    'F_CUBE',
+    'F_SUB_LIST_GET',
+    'RET_SELF_IF_LE_K',
+    'CALL_FN_SELF_I1_SUB',
+  };
+
+  QudsCompiledArtifactInfo toInfo({required bool isUpToDate}) {
+    final compiledPath = path.endsWith('.quds')
+        ? '.quds_cache/${path.substring(0, path.length - 5)}.qbc'
+        : '.quds_cache/$path.qbc';
+    final srcBytes = utf8.encode(source).length;
+    final uniOps = chunk.instructionCount;
+    final uniConsts = chunk.constants.length;
+    final t1 = tier1Program;
+    var t1Ops = 0;
+    var t1ConstBytes = 0;
+    final superOps = <String>{};
+    if (t1 != null) {
+      for (final fn in t1.functions) {
+        t1Ops += fn.code.length ~/ 2;
+        t1ConstBytes += fn.iConsts.length * 8 +
+            fn.fConsts.length * 8 +
+            fn.oConsts.length * 16;
+        for (var ip = 0; ip < fn.code.length; ip += 2) {
+          final op = fn.code[ip] & 0xFF;
+          if (op < QudsOp.names.length) {
+            final name = QudsOp.names[op];
+            if (_superOpNames.contains(name)) superOps.add(name);
+          }
+        }
+      }
+    }
+    final estBytes = 48 +
+        chunk.code.length * 4 +
+        uniConsts * 16 +
+        (t1 != null ? (t1Ops * 8 + t1ConstBytes) : 0);
+    return QudsCompiledArtifactInfo(
+      sourcePath: path,
+      compiledPath: compiledPath,
+      fingerprint: fingerprint,
+      compiledAt: compiledAt,
+      compileTimeMicros: compileTimeMicros,
+      sourceBytes: srcBytes,
+      universalInstructionCount: uniOps,
+      universalConstantCount: uniConsts,
+      universalRegisterCount: chunk.numRegs,
+      tier1Promoted: t1 != null && t1.functionDecls.isNotEmpty,
+      tier1Functions: t1 != null
+          ? List.unmodifiable([for (final d in t1.functionDecls) d.name])
+          : const [],
+      tier1InstructionCount: t1Ops,
+      tier1Superinstructions: List.unmodifiable(superOps.toList()..sort()),
+      estimatedBytecodeBytes: estBytes,
+      isUpToDate: isUpToDate,
+      universalDisassembly: chunk.disassemble(),
+      tier1Disassembly: t1?.disassemble(),
+    );
+  }
 }
 
 /// Cached evaluated module with section-level symbol mapping.
@@ -259,6 +387,32 @@ class QudsModuleLoader {
     return null;
   }
 
+  /// Returns detailed metadata & disassembly for every compiled workspace
+  /// artifact currently cached, sorted by source path.
+  List<QudsCompiledArtifactInfo> get compiledWorkspaceArtifacts {
+    final entries = _compiledWorkspaceCache.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return [
+      for (final entry in entries)
+        entry.value.toInfo(
+          isUpToDate:
+              workspace?.fileFingerprint(entry.key) == entry.value.fingerprint,
+        ),
+    ];
+  }
+
+  /// Returns detailed metadata & disassembly for the compiled artifact of
+  /// [path], or `null` if [path] has not been compiled yet.
+  QudsCompiledArtifactInfo? inspectCompiledArtifact(String path) {
+    final norm = QudsWorkspace.normalizePath(path);
+    final artifact = _compiledWorkspaceCache[norm];
+    if (artifact == null) return null;
+    final currentFp = workspace?.fileFingerprint(norm);
+    return artifact.toInfo(
+      isUpToDate: currentFp != null && currentFp == artifact.fingerprint,
+    );
+  }
+
   /// Registers or updates a virtual host module (e.g. `quds:viz` or `host:sensors`).
   void registerVirtualModule(String uri, Map<String, Object?> symbols) {
     _sessionCache[uri] = _LoadedModule(
@@ -284,15 +438,32 @@ class QudsModuleLoader {
       return existing;
     }
     final isRecompile = _compiledHistory.contains(normPath);
+    final sw = Stopwatch()..start();
     final tokens = const Lexer().tokenize(source, file: normPath);
     final program = Parser(tokens).parse();
     final chunk = QudsUniversalCompiler.compile(program, name: normPath);
+    QudsBytecodeProgram? tier1;
+    if (enableTier1Promotion) {
+      final fnDecls =
+          chunk.hoistedStatements.whereType<FunctionDeclaration>().toList();
+      if (fnDecls.isNotEmpty) {
+        tier1 = QudsBytecodeCompiler.tryCompilePureFunctions(
+          fnDecls,
+          file: normPath,
+          mathPrefixes: chunk.mathPrefixes,
+        );
+      }
+    }
+    sw.stop();
     final artifact = _CompiledWorkspaceArtifact(
       path: normPath,
       fingerprint: fp,
       source: source,
       program: program,
       chunk: chunk,
+      tier1Program: tier1,
+      compiledAt: DateTime.now(),
+      compileTimeMicros: sw.elapsedMicroseconds,
     );
     _compiledWorkspaceCache[normPath] = artifact;
     _compiledHistory.add(normPath);
@@ -588,6 +759,8 @@ class QudsModuleLoader {
         isSdk: false,
         precompiledProgram: artifact.program,
         precompiledChunk: artifact.chunk,
+        precompiledTier1: artifact.tier1Program,
+        precompiledTier1Checked: true,
         fingerprint: artifact.fingerprint,
       );
       _sessionCache[cacheKey] = mod;
@@ -650,6 +823,8 @@ class QudsModuleLoader {
     bool isSdk = false,
     Program? precompiledProgram,
     QudsUniversalChunk? precompiledChunk,
+    QudsBytecodeProgram? precompiledTier1,
+    bool precompiledTier1Checked = false,
     String? fingerprint,
   }) async {
     final program = precompiledProgram ??
@@ -738,6 +913,8 @@ class QudsModuleLoader {
         modEnv,
         resetBudget: false,
         enableTier1Promotion: enableTier1Promotion,
+        precompiledTier1: precompiledTier1,
+        precompiledTier1Checked: precompiledTier1Checked,
       );
     } else {
       await evaluator.executeProgram(program, env: modEnv, resetBudget: false);

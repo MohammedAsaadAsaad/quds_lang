@@ -51,6 +51,7 @@ export 'src/interpreter/host_bridge.dart'
 export 'src/interpreter/module_loader.dart'
     show
         QudsCompilationStats,
+        QudsCompiledArtifactInfo,
         QudsImportAllow,
         QudsImportDeny,
         QudsImportProvideSource,

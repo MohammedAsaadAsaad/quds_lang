@@ -60,6 +60,39 @@ abstract final class QudsUniversalOp {
   static const int setLastExpr = 27;
   static const int expectBool = 28;
   static const int deferExpr = 29;
+
+  static const List<String> names = [
+    'HALT',
+    'LOAD_CONST',
+    'MOVE',
+    'LOAD_ENV',
+    'BIND_VAR',
+    'ASSIGN_COMPOUND',
+    'BINARY_OP',
+    'UNARY_OP',
+    'JUMP',
+    'JUMP_IF_FALSE',
+    'JUMP_IF_TRUE',
+    'JUMP_IF_PRESENT',
+    'GET_MEMBER',
+    'SET_MEMBER',
+    'GET_INDEX',
+    'SET_INDEX',
+    'CALL_ANY',
+    'CALL_MEMBER',
+    'MAKE_LIST',
+    'MAKE_MAP',
+    'MAKE_SET',
+    'MAKE_STRING',
+    'PUSH_SCOPE',
+    'POP_SCOPE',
+    'EXEC_IMPORT',
+    'EXEC_RUNTIME_STMT',
+    'EVAL_RUNTIME_EXPR',
+    'SET_LAST_EXPR',
+    'EXPECT_BOOL',
+    'DEFER_EXPR',
+  ];
 }
 
 class _BindSpec {
@@ -117,6 +150,36 @@ class QudsUniversalChunk {
   final int numRegs;
   final List<Statement> hoistedStatements;
   final Set<String> mathPrefixes;
+
+  int get instructionCount => code.length ~/ 4;
+
+  /// Returns a human-readable disassembly of this Universal Bytecode chunk.
+  String disassemble({int maxInstructions = 120}) {
+    final total = instructionCount;
+    final buf = StringBuffer(
+      'chunk $name (ops=$total, regs=$numRegs, consts=${constants.length}):\n',
+    );
+    final limit = total < maxInstructions ? total : maxInstructions;
+    for (var i = 0; i < limit; i++) {
+      final base = i * 4;
+      final op = code[base];
+      final dst = code[base + 1];
+      final a = code[base + 2];
+      final b = code[base + 3];
+      final opName = op >= 0 && op < QudsUniversalOp.names.length
+          ? QudsUniversalOp.names[op]
+          : 'OP_$op';
+      final line = i < spans.length ? spans[i].line : 0;
+      buf.writeln(
+        '  ${i.toString().padLeft(4, '0')} [L$line] '
+        '${opName.padRight(18)} r$dst a=$a b=$b',
+      );
+    }
+    if (total > limit) {
+      buf.writeln('  ... (+${total - limit} more instructions)');
+    }
+    return buf.toString();
+  }
 }
 
 /// Compiles any Quds [Program] AST (100% coverage) into [QudsUniversalChunk].
@@ -603,6 +666,8 @@ class QudsUniversalVm {
     QudsEnvironment rootEnv, {
     bool resetBudget = true,
     bool enableTier1Promotion = true,
+    QudsBytecodeProgram? precompiledTier1,
+    bool precompiledTier1Checked = false,
   }) async {
     runtime.vmBeginRun(resetBudget: resetBudget);
     final deferred = <Expression>[];
@@ -619,55 +684,59 @@ class QudsUniversalVm {
 
       // 2. Automatic Tier-1 unboxed register promotion for pure-compute functions!
       if (enableTier1Promotion) {
-        final fnDecls =
-            chunk.hoistedStatements.whereType<FunctionDeclaration>().toList();
-        if (fnDecls.isNotEmpty) {
-          final tier1 = QudsBytecodeCompiler.tryCompilePureFunctions(
-            fnDecls,
-            file: chunk.name,
-            mathPrefixes: chunk.mathPrefixes,
-          );
-          if (tier1 != null) {
-            for (var i = 0; i < tier1.functionDecls.length; i++) {
-              final decl = tier1.functionDecls[i];
-              final fallbackSlot = rootEnv.localSlots[decl.name];
-              final fallbackFn = fallbackSlot?.value;
-              if (fallbackFn is QudsUserFunction) {
-                final promoted = QudsNativeFunction(
-                  decl.name,
-                  (pos, named, ctx) {
-                    // Unified call syntax (named args) or active extension operators
-                    // delegate seamlessly to Tier-2 fallback.
-                    if (named.isNotEmpty || runtime.hasExtensionOperators) {
-                      return runtime.invokeCallable(
-                        fallbackFn,
-                        pos,
-                        named,
-                        ctx.span,
-                      );
-                    }
-                    final res = QudsBytecodeVm.invokeFunction(
-                      tier1,
-                      i,
+        QudsBytecodeProgram? tier1 = precompiledTier1;
+        if (tier1 == null && !precompiledTier1Checked) {
+          final fnDecls =
+              chunk.hoistedStatements.whereType<FunctionDeclaration>().toList();
+          if (fnDecls.isNotEmpty) {
+            tier1 = QudsBytecodeCompiler.tryCompilePureFunctions(
+              fnDecls,
+              file: chunk.name,
+              mathPrefixes: chunk.mathPrefixes,
+            );
+          }
+        }
+        if (tier1 != null) {
+          final promotedProgram = tier1;
+          for (var i = 0; i < promotedProgram.functionDecls.length; i++) {
+            final decl = promotedProgram.functionDecls[i];
+            final fallbackSlot = rootEnv.localSlots[decl.name];
+            final fallbackFn = fallbackSlot?.value;
+            if (fallbackFn is QudsUserFunction) {
+              final promoted = QudsNativeFunction(
+                decl.name,
+                (pos, named, ctx) {
+                  // Unified call syntax (named args) or active extension operators
+                  // delegate seamlessly to Tier-2 fallback.
+                  if (named.isNotEmpty || runtime.hasExtensionOperators) {
+                    return runtime.invokeCallable(
+                      fallbackFn,
                       pos,
-                      maxSteps: runtime.maxSteps,
-                      maxCallDepth: runtime.maxCallDepth,
-                      maxCollectionLength: runtime.maxCollectionLength,
-                      timeout: runtime.timeout,
-                      onPrint: (line) => runtime.onPrint(line, ctx.span),
+                      named,
+                      ctx.span,
                     );
-                    if (!res.succeeded) {
-                      final err = res.error;
-                      if (err is QudsPolicyViolationException) throw err;
-                      if (err is QudsRuntimeException) throw err;
-                      throw QudsRuntimeException('$err', ctx.span);
-                    }
-                    return res.value;
-                  },
-                  isSync: true,
-                );
-                fallbackSlot!.value = promoted;
-              }
+                  }
+                  final res = QudsBytecodeVm.invokeFunction(
+                    promotedProgram,
+                    i,
+                    pos,
+                    maxSteps: runtime.maxSteps,
+                    maxCallDepth: runtime.maxCallDepth,
+                    maxCollectionLength: runtime.maxCollectionLength,
+                    timeout: runtime.timeout,
+                    onPrint: (line) => runtime.onPrint(line, ctx.span),
+                  );
+                  if (!res.succeeded) {
+                    final err = res.error;
+                    if (err is QudsPolicyViolationException) throw err;
+                    if (err is QudsRuntimeException) throw err;
+                    throw QudsRuntimeException('$err', ctx.span);
+                  }
+                  return res.value;
+                },
+                isSync: true,
+              );
+              fallbackSlot!.value = promoted;
             }
           }
         }

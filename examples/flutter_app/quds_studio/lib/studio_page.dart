@@ -14,6 +14,7 @@ import 'package:quds/editor_engine.dart';
 import 'package:quds/interpreter.dart';
 
 import 'benchmark_card.dart';
+import 'compile_lab_panel.dart';
 import 'editor_widget.dart';
 import 'notebook_panel.dart';
 import 'preset_gallery.dart';
@@ -57,6 +58,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
   String _activeProjectId = 'orbital_lab';
   bool _workspaceMode = false;
   String _activeWorkspaceFile = 'main.quds';
+  WorkspaceBenchComparison _workspaceComparison =
+      const WorkspaceBenchComparison();
+  String? _workspaceRunStatus;
+  int _quickPatchVersion = 1;
 
   late QudsDebugController _debugger;
   late QudsProfiler _profiler;
@@ -200,10 +205,11 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           timeout: const Duration(seconds: 8),
         ),
       StudioPolicyMode.benchmark => QudsExecutionPolicy.standard(
-          maxSteps: 120000000,
+          maxSteps: 180000000,
           maxCallDepth: 256,
-          timeout: const Duration(seconds: 20),
-        ),
+          maxCollectionLength: 500000,
+          timeout: const Duration(seconds: 30),
+        ).copyWith(yieldEveryNSteps: 4000),
       StudioPolicyMode.custom => QudsExecutionPolicy(
           name: 'custom',
           maxSteps: _customMaxSteps,
@@ -530,14 +536,24 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _session.resetAnimation();
     _pendingInteractivePatch = null;
     _projectWorkspace = tpl.builder();
-    _session.attachWorkspace(_projectWorkspace);
+    final targetPolicy = tpl.usesBenchmarkPolicy
+        ? StudioPolicyMode.benchmark
+        : StudioPolicyMode.standard;
+    final policyChanged = _policyMode != targetPolicy;
     setState(() {
       _activeProjectId = tpl.id;
       _workspaceMode = true;
       _activeWorkspaceFile = _projectWorkspace.entryPoint;
-      _policyMode = StudioPolicyMode.standard;
+      _policyMode = targetPolicy;
       _breakpoints = {};
+      _workspaceComparison = const WorkspaceBenchComparison();
+      _quickPatchVersion = 1;
     });
+    if (policyChanged) {
+      _buildRuntime();
+    } else {
+      _session.attachWorkspace(_projectWorkspace);
+    }
     _openWorkspaceFile(
       _projectWorkspace.entryPoint,
       switchToEditorOnMobile: false,
@@ -557,6 +573,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _workspaceMode = true;
       _activeWorkspaceFile = _projectWorkspace.entryPoint;
       _breakpoints = {};
+      _workspaceComparison = const WorkspaceBenchComparison();
     });
     _openWorkspaceFile(
       _projectWorkspace.entryPoint,
@@ -572,10 +589,347 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     );
     _projectWorkspace = tpl.builder();
     _session.attachWorkspace(_projectWorkspace);
+    setState(() {
+      _workspaceComparison = const WorkspaceBenchComparison();
+      _quickPatchVersion = 1;
+    });
     _openWorkspaceFile(
       _projectWorkspace.entryPoint,
       switchToEditorOnMobile: false,
     );
+  }
+
+  QudsExecutionPolicy _workspaceLabPolicy() => QudsExecutionPolicy.standard(
+        maxSteps: 180000000,
+        maxCallDepth: 256,
+        maxCollectionLength: 500000,
+        timeout: const Duration(seconds: 30),
+      ).copyWith(yieldEveryNSteps: 4000);
+
+  void _precompileWorkspaceAll() {
+    if (_running) return;
+    final sw = Stopwatch()..start();
+    final compiled = _session.precompileWorkspace();
+    sw.stop();
+    final ms = sw.elapsedMicroseconds / 1000.0;
+    setState(() {
+      _workspaceMode = true;
+      _workspaceComparison = _workspaceComparison.copyWith(
+        precompileMs: ms,
+        clearError: true,
+        lastPatchSummary: _isArabic
+            ? (compiled.isEmpty
+                ? '✓ جميع الملفات (${_session.compiledWorkspaceArtifacts.length}) مترجمة ومحدّثة بالفعل في .quds_cache/'
+                : '📦 تمت ترجمة ${compiled.length} ملفًا إلى .quds_cache/ خلال ${formatLabDurationMs(ms)}')
+            : (compiled.isEmpty
+                ? '✓ All ${_session.compiledWorkspaceArtifacts.length} files are already compiled & fresh in .quds_cache/'
+                : '📦 Compiled ${compiled.length} files into .quds_cache/ in ${formatLabDurationMs(ms)}'),
+      );
+    });
+  }
+
+  Future<QudsRunResult> _executeWorkspaceModeInternal(
+      WorkspaceRunMode mode) async {
+    final policy = _workspaceLabPolicy();
+    if (mode == WorkspaceRunMode.ast) {
+      final temp = QudsSession(
+        policy: policy,
+        allowTopLevelRebind: true,
+        projectWorkspace: _projectWorkspace,
+      );
+      try {
+        final sw = Stopwatch()..start();
+        final res = await temp.runProject(
+          preferBytecode: false,
+          resetWorkspaceModules: true,
+        );
+        sw.stop();
+        return QudsRunResult(
+          succeeded: res.succeeded,
+          value: res.value,
+          printedLines: res.printedLines,
+          outputs: res.outputs,
+          stepsExecuted: res.stepsExecuted,
+          elapsed: sw.elapsed,
+          error: res.error,
+          usedBytecodeVm: false,
+        );
+      } finally {
+        await temp.dispose();
+      }
+    }
+
+    if (mode == WorkspaceRunMode.coldBytecode) {
+      final temp = QudsSession(
+        policy: policy,
+        allowTopLevelRebind: true,
+        projectWorkspace: _projectWorkspace,
+      );
+      try {
+        final sw = Stopwatch()..start();
+        final res = await temp.runProject(
+          preferBytecode: true,
+          resetWorkspaceModules: true,
+        );
+        sw.stop();
+        // Ensure the live Studio session also exposes the compiled .qbc tree.
+        _session.precompileWorkspace();
+        return QudsRunResult(
+          succeeded: res.succeeded,
+          value: res.value,
+          printedLines: res.printedLines,
+          outputs: res.outputs,
+          stepsExecuted: res.stepsExecuted,
+          elapsed: sw.elapsed,
+          error: res.error,
+          usedBytecodeVm: true,
+        );
+      } finally {
+        await temp.dispose();
+      }
+    }
+
+    // Mode 3: Compiled & Cached (.qbc) — ensure benchmark policy on _session
+    // and precompile all nested files first, then time pure cached execution.
+    if (_policyMode != StudioPolicyMode.benchmark) {
+      _policyMode = StudioPolicyMode.benchmark;
+      _buildRuntime();
+    }
+    _session.precompileWorkspace();
+    final sw = Stopwatch()..start();
+    final res = await _session.runProject(
+      preferBytecode: true,
+      resetWorkspaceModules: false,
+    );
+    sw.stop();
+    return QudsRunResult(
+      succeeded: res.succeeded,
+      value: res.value,
+      printedLines: res.printedLines,
+      outputs: res.outputs,
+      stepsExecuted: res.stepsExecuted,
+      elapsed: sw.elapsed,
+      error: res.error,
+      usedBytecodeVm: true,
+    );
+  }
+
+  Future<void> _runWorkspaceInMode(WorkspaceRunMode mode) async {
+    if (_running) return;
+    _stopAnimTimer();
+    final statusLabel = switch (mode) {
+      WorkspaceRunMode.ast => _isArabic
+          ? '🐢 جاري التشغيل بمفسّر AST (بدون بايت كود)...'
+          : '🐢 Running with AST interpreter (no bytecode)...',
+      WorkspaceRunMode.coldBytecode => _isArabic
+          ? '⚡ جاري الترجمة والتشغيل بـ Bytecode (أول مرة)...'
+          : '⚡ Compiling & running Cold Bytecode...',
+      WorkspaceRunMode.compiledCached => _isArabic
+          ? '🚀 جاري التشغيل من الملفات المترجمة (.qbc)...'
+          : '🚀 Running from compiled .qbc artifacts...',
+    };
+    setState(() {
+      _workspaceMode = true;
+      _running = true;
+      _workspaceRunStatus = statusLabel;
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+    if (!mounted) return;
+
+    final res = await _executeWorkspaceModeInternal(mode);
+    if (!mounted) return;
+    final ms = res.elapsed.inMicroseconds / 1000.0;
+    final checksum = res.stdout.trim();
+
+    setState(() {
+      _running = false;
+      _workspaceRunStatus = null;
+      _lastResult = res;
+      _visualResult.value = res;
+      if (!res.succeeded) {
+        _workspaceComparison = _workspaceComparison.copyWith(
+          error: '${res.error}',
+          lastMode: mode,
+        );
+      } else {
+        _workspaceComparison = switch (mode) {
+          WorkspaceRunMode.ast => _workspaceComparison.copyWith(
+              astMs: ms,
+              astChecksum: checksum,
+              lastMode: mode,
+              clearError: true,
+            ),
+          WorkspaceRunMode.coldBytecode => _workspaceComparison.copyWith(
+              coldBytecodeMs: ms,
+              coldChecksum: checksum,
+              lastMode: mode,
+              clearError: true,
+            ),
+          WorkspaceRunMode.compiledCached => _workspaceComparison.copyWith(
+              compiledCachedMs: ms,
+              compiledChecksum: checksum,
+              lastMode: mode,
+              clearError: true,
+            ),
+        };
+      }
+    });
+  }
+
+  Future<void> _compareAllThreeWorkspaceModes() async {
+    if (_running) return;
+    _stopAnimTimer();
+    setState(() {
+      _workspaceMode = true;
+      _running = true;
+      _workspaceComparison = const WorkspaceBenchComparison();
+      _workspaceRunStatus = _isArabic
+          ? '1/3 🐢 جاري قياس مفسّر AST (قد يستغرق بضع ثوانٍ)...'
+          : '1/3 🐢 Measuring AST interpreter...';
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+    if (!mounted) return;
+
+    // 1. AST Mode
+    final astRes = await _executeWorkspaceModeInternal(WorkspaceRunMode.ast);
+    if (!mounted) return;
+    final astMs = astRes.elapsed.inMicroseconds / 1000.0;
+    setState(() {
+      _lastResult = astRes;
+      _visualResult.value = astRes;
+      _workspaceComparison = _workspaceComparison.copyWith(
+        astMs: astRes.succeeded ? astMs : null,
+        astChecksum: astRes.succeeded ? astRes.stdout.trim() : null,
+        error: astRes.succeeded ? null : '${astRes.error}',
+        clearError: astRes.succeeded,
+      );
+      _workspaceRunStatus = _isArabic
+          ? '2/3 ⚡ جاري قياس Bytecode (أول ترجمة + تشغيل)...'
+          : '2/3 ⚡ Measuring Cold Bytecode (compile + run)...';
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+    if (!mounted) return;
+
+    // 2. Cold Bytecode Mode
+    final coldRes =
+        await _executeWorkspaceModeInternal(WorkspaceRunMode.coldBytecode);
+    if (!mounted) return;
+    final coldMs = coldRes.elapsed.inMicroseconds / 1000.0;
+    setState(() {
+      _lastResult = coldRes;
+      _visualResult.value = coldRes;
+      _workspaceComparison = _workspaceComparison.copyWith(
+        coldBytecodeMs: coldRes.succeeded ? coldMs : null,
+        coldChecksum: coldRes.succeeded ? coldRes.stdout.trim() : null,
+        error: coldRes.succeeded ? null : '${coldRes.error}',
+        clearError: coldRes.succeeded,
+      );
+      _workspaceRunStatus = _isArabic
+          ? '3/3 🚀 جاري ترجمة الملفات وقياس التشغيل بعد الترجمة...'
+          : '3/3 🚀 Precompiling & measuring cached .qbc run...';
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 24));
+    if (!mounted) return;
+
+    // 3. Precompile fresh + Compiled Cached Mode
+    if (_policyMode != StudioPolicyMode.benchmark) {
+      _policyMode = StudioPolicyMode.benchmark;
+      _buildRuntime();
+    }
+    _session.attachWorkspace(_projectWorkspace);
+    final swPre = Stopwatch()..start();
+    _session.precompileWorkspace();
+    swPre.stop();
+    final preMs = swPre.elapsedMicroseconds / 1000.0;
+
+    final compiledRes =
+        await _executeWorkspaceModeInternal(WorkspaceRunMode.compiledCached);
+    if (!mounted) return;
+    final compiledMs = compiledRes.elapsed.inMicroseconds / 1000.0;
+
+    setState(() {
+      _running = false;
+      _workspaceRunStatus = null;
+      _lastResult = compiledRes;
+      _visualResult.value = compiledRes;
+      _workspaceComparison = _workspaceComparison.copyWith(
+        precompileMs: preMs,
+        compiledCachedMs: compiledRes.succeeded ? compiledMs : null,
+        compiledChecksum:
+            compiledRes.succeeded ? compiledRes.stdout.trim() : null,
+        lastMode: WorkspaceRunMode.compiledCached,
+        error: compiledRes.succeeded ? null : '${compiledRes.error}',
+        clearError: compiledRes.succeeded,
+      );
+    });
+  }
+
+  Future<void> _applyQuickCodePushEdit() async {
+    if (_running) return;
+    // Ensure compiled artifacts exist before applying a surgical live edit
+    _session.precompileWorkspace();
+    _quickPatchVersion++;
+    final versionTag = '1.$_quickPatchVersion.0-live';
+
+    late final String targetPath;
+    late final String nextContent;
+    if (_projectWorkspace.hasFile('core/config/workload.quds')) {
+      targetPath = 'core/config/workload.quds';
+      final heavyAlt = _quickPatchVersion.isEven;
+      nextContent = heavyAlt
+          ? '''# Live CodePush Patch v$versionTag — only this file is recompiled!
+SUITE_LABEL = "Heavy 4-Kernel Suite (Live Patch #$versionTag)"
+SIEVE_LIMIT = 140000
+SIEVE_ROUNDS = 5
+MATMUL_N = 64
+NBODY_COUNT = 64
+NBODY_STEPS = 40
+MANDEL_SIZE = 140
+MANDEL_ITER = 64
+'''
+          : '''# Heavy benchmark parameters — restored via Live CodePush v$versionTag
+SUITE_LABEL = "Heavy 4-Kernel Suite"
+SIEVE_LIMIT = 120000
+SIEVE_ROUNDS = 4
+MATMUL_N = 64
+NBODY_COUNT = 64
+NBODY_STEPS = 40
+MANDEL_SIZE = 140
+MANDEL_ITER = 64
+''';
+    } else {
+      targetPath = _projectWorkspace.entryPoint;
+      final existing = _projectWorkspace.readFile(targetPath) ?? '';
+      final cleaned =
+          existing.replaceFirst(RegExp(r'^# Live CodePush Patch .*?\n'), '');
+      nextContent = '# Live CodePush Patch $versionTag\n$cleaned';
+    }
+
+    final sw = Stopwatch()..start();
+    final pushRes = await _session.applyWorkspacePatch(
+      QudsWorkspacePatch(
+        bundleVersion: versionTag,
+        upsertFiles: {targetPath: nextContent},
+      ),
+      precompileAffected: true,
+    );
+    sw.stop();
+    final patchMs = sw.elapsedMicroseconds / 1000.0;
+
+    if (_workspaceMode && _activeWorkspaceFile == targetPath) {
+      _codeController.value = TextEditingValue(
+        text: nextContent,
+        selection: const TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    setState(() {
+      _workspaceComparison = _workspaceComparison.copyWith(
+        lastPatchSummary: _isArabic
+            ? '🧪 تحديث حي ($versionTag) خلال ${formatLabDurationMs(patchMs)}: أُعيدت ترجمة ${pushRes.recompiledFiles.length} ملف فقط (${pushRes.recompiledFiles.join(', ')}) · الملفات المعتمدة أُبطل تشغيلها فقط وبقي بايت كودها محفوظًا'
+            : '🧪 Live Patch ($versionTag) in ${formatLabDurationMs(patchMs)}: recompiled ${pushRes.recompiledFiles.length} file (${pushRes.recompiledFiles.join(', ')}); unchanged .qbc files stayed cached',
+      );
+    });
   }
 
   void _stopAnimTimer() {
@@ -1099,6 +1453,14 @@ class _QudsStudioPageState extends State<QudsStudioPage>
               onSelectTemplate: _selectProjectTemplate,
               onImportQproj: _importQprojWorkspace,
               onResetTemplate: _resetWorkspaceTemplate,
+              compilationStats: _session.compilationStats,
+              compiledArtifacts: _session.compiledWorkspaceArtifacts,
+              comparison: _workspaceComparison,
+              runningStatusLabel: _workspaceRunStatus,
+              onRunMode: _runWorkspaceInMode,
+              onCompareAll3: _compareAllThreeWorkspaceModes,
+              onPrecompileAll: _precompileWorkspaceAll,
+              onQuickCodePushEdit: _applyQuickCodePushEdit,
             );
 
             final editorView = Column(

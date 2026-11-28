@@ -72,9 +72,9 @@ void main() {
   );
 
   test(
-    'All 5 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
+    'All 6 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
     () async {
-      expect(studioProjectTemplates, hasLength(5));
+      expect(studioProjectTemplates, hasLength(6));
 
       for (final tpl in studioProjectTemplates) {
         final ws = tpl.builder();
@@ -88,15 +88,23 @@ void main() {
 
         // Round-trip through .qproj v2 JSON (including binary BMP assets)
         final restored = QudsWorkspace.fromJsonString(ws.toJsonString());
-        final session = QudsSession(policy: QudsExecutionPolicy.standard())
-          ..attachWorkspace(restored);
+        final policy = tpl.usesBenchmarkPolicy
+            ? QudsExecutionPolicy.standard(
+                maxSteps: 180000000,
+                maxCollectionLength: 500000,
+                timeout: const Duration(seconds: 30),
+              )
+            : QudsExecutionPolicy.standard();
+        final session = QudsSession(policy: policy)..attachWorkspace(restored);
         final res = await session.runProject(preferBytecode: true);
         expect(res.succeeded, isTrue,
             reason: 'Project ${tpl.id} failed: ${res.error}');
         expect(res.printedLines, isNotEmpty,
             reason: 'Project ${tpl.id} produced no stdout');
 
-        if (tpl.id == 'quds_shop_pos') {
+        if (tpl.id == 'heavy_vm_lab') {
+          expect(res.outputs.whereType<QudsTableOutput>(), hasLength(1));
+        } else if (tpl.id == 'quds_shop_pos') {
           expect(restored.hasAnyFile('assets/last_receipt.json'), isTrue);
           expect(res.outputs.whereType<QudsImageOutput>(), hasLength(1));
           expect(res.lastForm, isNotNull);

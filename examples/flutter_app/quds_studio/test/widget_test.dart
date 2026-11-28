@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:quds/interpreter.dart';
 import 'package:quds_studio/main.dart';
 import 'package:quds_studio/presets.dart';
+import 'package:quds_studio/project_templates.dart';
 import 'package:quds_studio/viz_widgets.dart';
 
 void main() {
@@ -284,7 +285,10 @@ void main() {
     expect(find.byKey(const Key('ws_file_math/vec.quds')), findsOneWidget);
 
     // Open nested file `core/constants.quds` into editor
-    await tester.tap(find.byKey(const Key('ws_file_core/constants.quds')));
+    final constantsNode = find.byKey(const Key('ws_file_core/constants.quds'));
+    await tester.ensureVisible(constantsNode);
+    await tester.pumpAndSettle();
+    await tester.tap(constantsNode);
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('workspace_active_file_bar')), findsOneWidget);
     expect(find.textContaining('orbital_lab / core/constants.quds'),
@@ -723,5 +727,112 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('quds_form_output_card')), findsOneWidget);
+  });
+
+  test(
+      'Heavy VM Lab template promotes all 4 nested kernels to Tier-1 and matches AST checksums identically',
+      () async {
+    final ws = buildHeavyVmLabProject();
+    // Use lighter parameters in unit test for fast AST verification while exercising all 4 kernels.
+    ws.writeFile('core/config/workload.quds', '''
+SUITE_LABEL = "Unit Parity Suite"
+SIEVE_LIMIT = 2000
+SIEVE_ROUNDS = 2
+MATMUL_N = 12
+NBODY_COUNT = 12
+NBODY_STEPS = 5
+MANDEL_SIZE = 24
+MANDEL_ITER = 20
+''');
+    final policy = QudsExecutionPolicy.standard(
+      maxSteps: 10000000,
+      maxCollectionLength: 50000,
+      timeout: const Duration(seconds: 10),
+    );
+    final astSession = QudsSession(policy: policy, projectWorkspace: ws);
+    final vmSession = QudsSession(policy: policy, projectWorkspace: ws);
+
+    final precompiled = vmSession.precompileWorkspace();
+    expect(precompiled.length, 8);
+    for (final kernel in [
+      'math/kernels/sieve.quds',
+      'math/kernels/matmul.quds',
+      'math/kernels/nbody.quds',
+      'math/kernels/mandelbrot.quds',
+    ]) {
+      final info = vmSession.inspectCompiledWorkspaceFile(kernel);
+      expect(info, isNotNull, reason: 'Expected compiled artifact for $kernel');
+      expect(info!.tier1Promoted, isTrue,
+          reason: '$kernel must promote to Tier-1');
+      expect(info.tier1Functions, isNotEmpty);
+      expect(info.tier1Disassembly, isNotNull);
+      expect(info.isUpToDate, isTrue);
+    }
+
+    final astRes = await astSession.runProject(preferBytecode: false);
+    final vmRes = await vmSession.runProject(preferBytecode: true);
+    expect(astRes.succeeded, isTrue, reason: '${astRes.error}');
+    expect(vmRes.succeeded, isTrue, reason: '${vmRes.error}');
+    expect(vmRes.stdout, astRes.stdout);
+
+    await astSession.dispose();
+    await vmSession.dispose();
+  });
+
+  testWidgets(
+      'Heavy VM & Compiled Lab UI precompiles nested files, opens .qbc artifact inspector, and runs live CodePush edit',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('heavy_vm_lab_ui_test'),
+      autoRunInitial: false,
+    ));
+    await tester.pumpAndSettle();
+
+    final projTab = find.byKey(const Key('inspector_project_tab'));
+    await tester.ensureVisible(projTab);
+    await tester.pumpAndSettle();
+    await tester.tap(projTab);
+    await tester.pumpAndSettle();
+
+    // Select Heavy VM & Compiled Lab template
+    final labChip = find.byKey(const Key('project_template_heavy_vm_lab'));
+    await tester.ensureVisible(labChip);
+    await tester.pumpAndSettle();
+    expect(labChip, findsOneWidget);
+    await tester.tap(labChip);
+    await tester.pumpAndSettle(const Duration(seconds: 4));
+
+    expect(find.byKey(const Key('workspace_compile_lab_card')), findsOneWidget);
+    expect(find.byKey(const Key('ws_file_math/kernels/sieve.quds')),
+        findsOneWidget);
+
+    // Precompile all 8 .quds files and inspect generated .quds_cache/ tree
+    await tester.tap(find.byKey(const Key('lab_precompile_btn')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('ws_compiled_cache_folder')), findsOneWidget);
+
+    final sieveQbc = find.byKey(const Key('ws_qbc_math/kernels/sieve.quds'));
+    await tester.ensureVisible(sieveQbc);
+    await tester.pumpAndSettle();
+    await tester.tap(sieveQbc);
+    await tester.pumpAndSettle();
+
+    // Compiled Artifact Inspector dialog displays Tier-1 details & disassembly
+    expect(find.byKey(const Key('compiled_artifact_dialog')), findsOneWidget);
+    expect(find.textContaining('countPrimesRepeated()'), findsOneWidget);
+    await tester.tap(find.text('إغلاق'));
+    await tester.pumpAndSettle();
+
+    // Run live CodePush edit and verify surgical single-file recompile summary
+    final liveEditBtn = find.byKey(const Key('lab_codepush_edit_btn'));
+    await tester.ensureVisible(liveEditBtn);
+    await tester.pumpAndSettle();
+    await tester.tap(liveEditBtn);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('core/config/workload.quds'), findsWidgets);
   });
 }

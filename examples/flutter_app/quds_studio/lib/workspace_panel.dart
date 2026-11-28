@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:quds/interpreter.dart';
 
+import 'compile_lab_panel.dart';
 import 'project_templates.dart';
 
 class QudsWorkspacePanel extends StatefulWidget {
@@ -35,6 +36,14 @@ class QudsWorkspacePanel extends StatefulWidget {
     required this.onSelectTemplate,
     required this.onImportQproj,
     required this.onResetTemplate,
+    this.compilationStats,
+    this.compiledArtifacts = const [],
+    this.comparison = const WorkspaceBenchComparison(),
+    this.runningStatusLabel,
+    this.onRunMode,
+    this.onCompareAll3,
+    this.onPrecompileAll,
+    this.onQuickCodePushEdit,
   });
 
   final QudsWorkspace workspace;
@@ -54,6 +63,14 @@ class QudsWorkspacePanel extends StatefulWidget {
   final ValueChanged<StudioProjectTemplate> onSelectTemplate;
   final ValueChanged<QudsWorkspace> onImportQproj;
   final VoidCallback onResetTemplate;
+  final QudsCompilationStats? compilationStats;
+  final List<QudsCompiledArtifactInfo> compiledArtifacts;
+  final WorkspaceBenchComparison comparison;
+  final String? runningStatusLabel;
+  final ValueChanged<WorkspaceRunMode>? onRunMode;
+  final VoidCallback? onCompareAll3;
+  final VoidCallback? onPrecompileAll;
+  final VoidCallback? onQuickCodePushEdit;
 
   @override
   State<QudsWorkspacePanel> createState() => _QudsWorkspacePanelState();
@@ -63,6 +80,13 @@ enum _AssetKind { json, csv, text, imageBmp }
 
 class _QudsWorkspacePanelState extends State<QudsWorkspacePanel> {
   final Set<String> _collapsedDirs = {};
+  bool _labManualExpanded = false;
+
+  bool get _isLabExpanded =>
+      _labManualExpanded ||
+      widget.activeProjectId == 'heavy_vm_lab' ||
+      widget.comparison.hasAnyResult ||
+      widget.running;
 
   Future<void> _showNewFileDialog() async {
     final controller = TextEditingController(text: 'math/helper.quds');
@@ -651,33 +675,355 @@ class _QudsWorkspacePanelState extends State<QudsWorkspacePanel> {
           ],
           const SizedBox(height: 5),
 
-          // 3. Hierarchical File & Asset Tree
+          // 3. Scrollable Compile Lab + Source Tree + Generated .quds_cache/ Tree
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: widget.isDark
-                    ? const Color(0xFF0B1120)
-                    : const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: theme.dividerColor.withValues(alpha: 0.2),
-                ),
-              ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (final child in tree.children)
-                      ..._buildTreeRows(child, 0, theme),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (widget.onRunMode != null) ...[
+                    if (_isLabExpanded)
+                      QudsWorkspaceCompileLabCard(
+                        isArabic: widget.isArabic,
+                        isDark: widget.isDark,
+                        running: widget.running,
+                        runningLabel: widget.runningStatusLabel,
+                        stats: widget.compilationStats ??
+                            const QudsCompilationStats(
+                              compiledModules: 0,
+                              recompiledModules: 0,
+                              bytecodeCacheHits: 0,
+                              runtimeCacheHits: 0,
+                              invalidatedRuntimeModules: 0,
+                              evictedCompiledModules: 0,
+                              cachedCompiledCount: 0,
+                            ),
+                        compiledCount: widget.compiledArtifacts
+                            .where((a) => a.isUpToDate)
+                            .length,
+                        totalQudsFiles: qudsCount,
+                        comparison: widget.comparison,
+                        onRunMode: widget.onRunMode!,
+                        onCompareAll3: widget.onCompareAll3 ?? () {},
+                        onPrecompileAll: widget.onPrecompileAll ?? () {},
+                        onQuickCodePushEdit:
+                            widget.onQuickCodePushEdit ?? () {},
+                      )
+                    else
+                      InkWell(
+                        key: const Key('expand_compile_lab_btn'),
+                        onTap: () => setState(() => _labManualExpanded = true),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFFF97316).withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: const Color(0xFFF97316)
+                                  .withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.speed_rounded,
+                                  size: 14, color: Color(0xFFF97316)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  widget.isArabic
+                                      ? '⚡ مختبر التنفيذ (AST · Bytecode · بعد الترجمة)'
+                                      : '⚡ Execution Lab (AST · Bytecode · Compiled)',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFF97316),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const Icon(Icons.expand_more_rounded,
+                                  size: 16, color: Color(0xFFF97316)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 6),
                   ],
-                ),
+
+                  // Hierarchical Source File & Asset Tree
+                  Container(
+                    decoration: BoxDecoration(
+                      color: widget.isDark
+                          ? const Color(0xFF0B1120)
+                          : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: theme.dividerColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_isLabExpanded ||
+                            widget.compiledArtifacts.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.folder_copy_rounded,
+                                    size: 13, color: Color(0xFFF59E0B)),
+                                const SizedBox(width: 5),
+                                Text(
+                                  widget.isArabic
+                                      ? 'مجلد المشروع والملفات المصدرية'
+                                      : 'Project Source Folders & Files',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.hintColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        for (final child in tree.children)
+                          ..._buildTreeRows(
+                            child,
+                            0,
+                            theme,
+                            {
+                              for (final a in widget.compiledArtifacts)
+                                a.sourcePath: a,
+                            },
+                          ),
+                        if (widget.compiledArtifacts.isNotEmpty) ...[
+                          Divider(
+                            height: 12,
+                            color: theme.dividerColor.withValues(alpha: 0.2),
+                          ),
+                          ..._buildCompiledCacheTree(theme),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  void _openArtifactDialog(QudsCompiledArtifactInfo artifact) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => QudsCompiledArtifactDialog(
+        artifact: artifact,
+        isArabic: widget.isArabic,
+        isDark: widget.isDark,
+      ),
+    );
+  }
+
+  List<Widget> _buildCompiledCacheTree(ThemeData theme) {
+    const cacheRootKey = '__quds_cache_root__';
+    final rootCollapsed = _collapsedDirs.contains(cacheRootKey);
+    final totalBytes = widget.compiledArtifacts.fold<int>(
+      0,
+      (sum, a) => sum + a.estimatedBytecodeBytes,
+    );
+    final tier1Count =
+        widget.compiledArtifacts.where((a) => a.tier1Promoted).length;
+
+    // Group artifacts by their nested subfolder path inside `.quds_cache/`
+    final byFolder = <String, List<QudsCompiledArtifactInfo>>{};
+    for (final a in widget.compiledArtifacts) {
+      final slash = a.sourcePath.lastIndexOf('/');
+      final folder = slash < 0 ? '' : a.sourcePath.substring(0, slash);
+      byFolder.putIfAbsent(folder, () => []).add(a);
+    }
+    final sortedFolders = byFolder.keys.toList()..sort();
+
+    return [
+      InkWell(
+        key: const Key('ws_compiled_cache_folder'),
+        onTap: () => setState(() {
+          if (rootCollapsed) {
+            _collapsedDirs.remove(cacheRootKey);
+          } else {
+            _collapsedDirs.add(cacheRootKey);
+          }
+        }),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              Icon(
+                rootCollapsed
+                    ? Icons.chevron_right_rounded
+                    : Icons.expand_more_rounded,
+                size: 15,
+                color: const Color(0xFF10B981),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.memory_rounded,
+                  size: 14, color: Color(0xFF10B981)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  widget.isArabic
+                      ? '.quds_cache/ (الملفات المترجمة الناتجة)'
+                      : '.quds_cache/ (Compiled Bytecode Artifacts)',
+                  style: const TextStyle(
+                    fontFamily: 'JetBrainsMono',
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF10B981),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF10B981).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${widget.compiledArtifacts.length} .qbc · ${formatByteSize(totalBytes)} · $tier1Count T1',
+                  style: const TextStyle(
+                    fontFamily: 'JetBrainsMono',
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF10B981),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (!rootCollapsed)
+        for (final folder in sortedFolders) ...[
+          if (folder.isNotEmpty)
+            Padding(
+              padding: const EdgeInsetsDirectional.only(
+                  start: 24, end: 8, top: 3, bottom: 1),
+              child: Row(
+                children: [
+                  const Icon(Icons.folder_special_rounded,
+                      size: 13, color: Color(0xFF38BDF8)),
+                  const SizedBox(width: 5),
+                  Text(
+                    '$folder/',
+                    style: TextStyle(
+                      fontFamily: 'JetBrainsMono',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: theme.hintColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          for (final artifact in byFolder[folder]!)
+            InkWell(
+              key: Key('ws_qbc_${artifact.sourcePath}'),
+              onTap: () => _openArtifactDialog(artifact),
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: folder.isEmpty ? 24.0 : 38.0,
+                  end: 8,
+                  top: 3,
+                  bottom: 3,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      artifact.tier1Promoted
+                          ? Icons.bolt_rounded
+                          : Icons.memory_rounded,
+                      size: 14,
+                      color: artifact.isUpToDate
+                          ? (artifact.tier1Promoted
+                              ? const Color(0xFF10B981)
+                              : const Color(0xFF38BDF8))
+                          : const Color(0xFFF59E0B),
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Directionality(
+                            textDirection: TextDirection.ltr,
+                            child: Text(
+                              artifact.compiledPath.split('/').last,
+                              style: const TextStyle(
+                                fontFamily: 'JetBrainsMono',
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Directionality(
+                            textDirection: TextDirection.ltr,
+                            child: Text(
+                              '${formatByteSize(artifact.estimatedBytecodeBytes)} · '
+                              '${artifact.tier1Promoted ? 'Tier-1 (${artifact.tier1InstructionCount} ops)' : 'Universal (${artifact.universalInstructionCount} ops)'} · '
+                              '${formatLabDurationMs(artifact.compileTimeMicros / 1000.0)} · #${artifact.fingerprint.substring(0, 6)}',
+                              style: TextStyle(
+                                fontFamily: 'JetBrainsMono',
+                                fontSize: 9.5,
+                                color: theme.hintColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: (artifact.isUpToDate
+                                ? (artifact.tier1Promoted
+                                    ? const Color(0xFF10B981)
+                                    : const Color(0xFF38BDF8))
+                                : const Color(0xFFF59E0B))
+                            .withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        artifact.isUpToDate
+                            ? (artifact.tier1Promoted ? '⚡ T1' : '✓ VM')
+                            : (widget.isArabic ? 'قديم' : 'stale'),
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: artifact.isUpToDate
+                              ? (artifact.tier1Promoted
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFF38BDF8))
+                              : const Color(0xFFF59E0B),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+    ];
   }
 
   (IconData, Color) _iconForFile(
@@ -715,6 +1061,7 @@ class _QudsWorkspacePanelState extends State<QudsWorkspacePanel> {
     QudsWorkspaceNode node,
     int depth,
     ThemeData theme,
+    Map<String, QudsCompiledArtifactInfo> artifactBySource,
   ) {
     final indent = 8.0 + depth * 14.0;
     if (node.isDirectory) {
@@ -767,13 +1114,14 @@ class _QudsWorkspacePanelState extends State<QudsWorkspacePanel> {
         ),
         if (!collapsed)
           for (final child in node.children)
-            ..._buildTreeRows(child, depth + 1, theme),
+            ..._buildTreeRows(child, depth + 1, theme, artifactBySource),
       ];
     }
 
     final isSelected = widget.workspaceMode && node.path == widget.activeFile;
     final isEntry = node.path == widget.workspace.entryPoint;
     final isAsset = !node.name.endsWith('.quds');
+    final compiledArtifact = artifactBySource[node.path];
     final (iconData, iconColor) =
         _iconForFile(node, isEntry, isSelected, theme);
 
@@ -811,6 +1159,43 @@ class _QudsWorkspacePanelState extends State<QudsWorkspacePanel> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (compiledArtifact != null)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 4),
+                  child: InkWell(
+                    onTap: () => _openArtifactDialog(compiledArtifact),
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: (compiledArtifact.isUpToDate
+                                ? (compiledArtifact.tier1Promoted
+                                    ? const Color(0xFF10B981)
+                                    : const Color(0xFF38BDF8))
+                                : const Color(0xFFF59E0B))
+                            .withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        compiledArtifact.isUpToDate
+                            ? (compiledArtifact.tier1Promoted
+                                ? '⚡ T1'
+                                : '✓ .qbc')
+                            : (widget.isArabic ? '● عدّل' : '● stale'),
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: compiledArtifact.isUpToDate
+                              ? (compiledArtifact.tier1Promoted
+                                  ? const Color(0xFF10B981)
+                                  : const Color(0xFF38BDF8))
+                              : const Color(0xFFF59E0B),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               if (isAsset && node.byteSize > 0)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 4),

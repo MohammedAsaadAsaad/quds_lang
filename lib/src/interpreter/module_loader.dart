@@ -534,8 +534,13 @@ class QudsModuleLoader {
       sectionExports[entry.key] = map;
     }
 
-    if (isSdk && targetUri == 'quds:math') {
-      installQudsMathIntrinsics(modEnv, publicExports, sectionExports);
+    if (isSdk) {
+      installQudsSdkIntrinsics(
+        targetUri,
+        modEnv,
+        publicExports,
+        sectionExports,
+      );
     }
 
     return _LoadedModule(

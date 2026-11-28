@@ -3027,6 +3027,15 @@ class QudsEvaluator {
     final instance = QudsInstance(klass, fields);
 
     if (effectiveCtor != null) {
+      for (final f in allFields) {
+        if (!f.isStatic &&
+            !f.isEvent &&
+            f.lazyBody == null &&
+            !f.isConst &&
+            !instance.fields.containsKey(f.name)) {
+          instance.fields[f.name] = null;
+        }
+      }
       final ctorEnv = klass.definingEnv.child(isFunctionBoundary: true)
         ..define('this', instance);
       await _bindParameters(

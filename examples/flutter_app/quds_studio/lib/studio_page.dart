@@ -13,6 +13,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:quds/editor_engine.dart';
 import 'package:quds/interpreter.dart';
 
+import 'ai_agent_lab.dart';
 import 'benchmark_card.dart';
 import 'compile_lab_panel.dart';
 import 'editor_widget.dart';
@@ -200,16 +201,26 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           timeout: const Duration(seconds: 2),
         ),
       StudioPolicyMode.systemBridge => QudsExecutionPolicy.systemBridge(
-          capabilities: [QudsCapability.custom('sensors.read')],
-          maxSteps: 200000,
-          timeout: const Duration(seconds: 8),
+          capabilities: [
+            QudsCapability.custom('sensors.read'),
+            QudsCapability.custom('ai.orders.read'),
+            QudsCapability.custom('ai.sensors.read'),
+          ],
+          maxSteps: 500000,
+          timeout: const Duration(seconds: 10),
         ),
       StudioPolicyMode.benchmark => QudsExecutionPolicy.standard(
           maxSteps: 180000000,
           maxCallDepth: 256,
           maxCollectionLength: 500000,
           timeout: const Duration(seconds: 30),
-        ).copyWith(yieldEveryNSteps: 4000),
+        ).copyWith(
+          yieldEveryNSteps: 4000,
+          capabilities: [
+            QudsCapability.custom('ai.orders.read'),
+            QudsCapability.custom('ai.sensors.read'),
+          ],
+        ),
       StudioPolicyMode.custom => QudsExecutionPolicy(
           name: 'custom',
           maxSteps: _customMaxSteps,
@@ -220,9 +231,12 @@ class _QudsStudioPageState extends State<QudsStudioPage>
           allowedLibraries: {
             ..._customLibraries,
             if (_customAllowSensors) 'host:sensors',
+            'host:ai_tools',
           },
           capabilities: [
             if (_customAllowSensors) QudsCapability.custom('sensors.read'),
+            QudsCapability.custom('ai.orders.read'),
+            QudsCapability.custom('ai.sensors.read'),
           ],
         ),
     };
@@ -232,7 +246,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       debugger: _debugger,
       profiler: _profiler,
       allowTopLevelRebind: true,
-      hostModules: [sensorsMod],
+      hostModules: [sensorsMod, buildAiToolsHostModule()],
       projectWorkspace: _projectWorkspace,
     );
     _engine = QudsEditorEngine(session: _session);
@@ -538,7 +552,9 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _projectWorkspace = tpl.builder();
     final targetPolicy = tpl.usesBenchmarkPolicy
         ? StudioPolicyMode.benchmark
-        : StudioPolicyMode.standard;
+        : (tpl.usesSystemBridgePolicy
+            ? StudioPolicyMode.systemBridge
+            : StudioPolicyMode.standard);
     final policyChanged = _policyMode != targetPolicy;
     setState(() {
       _activeProjectId = tpl.id;
@@ -559,6 +575,26 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       switchToEditorOnMobile: false,
     );
     _runCode(switchMobileTab: switchMobileTab);
+  }
+
+  void _openAiAgentLab() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => QudsAiAgentLabPage(
+          isArabic: _isArabic,
+          isDark: _isDark,
+          onOpenAiWorkspaceInStudio: () {
+            final aiTpl = studioProjectTemplates
+                .firstWhere((t) => t.id == 'ai_agent_sandbox');
+            _selectProjectTemplate(aiTpl, switchMobileTab: false);
+            setState(() {
+              _mobileTabIndex = 4; // Jump directly to Project tab on mobile
+              _inspectorTabs.index = 5; // Project tab on desktop
+            });
+          },
+        ),
+      ),
+    );
   }
 
   void _importQprojWorkspace(QudsWorkspace imported) {
@@ -604,7 +640,13 @@ class _QudsStudioPageState extends State<QudsStudioPage>
         maxCallDepth: 256,
         maxCollectionLength: 500000,
         timeout: const Duration(seconds: 30),
-      ).copyWith(yieldEveryNSteps: 4000);
+      ).copyWith(
+        yieldEveryNSteps: 4000,
+        capabilities: [
+          QudsCapability.custom('ai.orders.read'),
+          QudsCapability.custom('ai.sensors.read'),
+        ],
+      );
 
   void _precompileWorkspaceAll() {
     if (_running) return;
@@ -635,6 +677,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       final temp = QudsSession(
         policy: policy,
         allowTopLevelRebind: true,
+        hostModules: [buildAiToolsHostModule()],
         projectWorkspace: _projectWorkspace,
       );
       try {
@@ -663,6 +706,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       final temp = QudsSession(
         policy: policy,
         allowTopLevelRebind: true,
+        hostModules: [buildAiToolsHostModule()],
         projectWorkspace: _projectWorkspace,
       );
       try {
@@ -1844,6 +1888,30 @@ MANDEL_ITER = 64
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                OutlinedButton.icon(
+                  key: const Key('btn_open_ai_lab'),
+                  onPressed: _openAiAgentLab,
+                  icon: const Icon(Icons.smart_toy_rounded,
+                      size: 14, color: Color(0xFF06B6D4)),
+                  label: Text(
+                    _isArabic ? 'مختبر AI' : 'AI Lab',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF06B6D4),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    side: BorderSide(
+                      color: const Color(0xFF06B6D4).withValues(alpha: 0.55),
+                    ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  ),
+                ),
+                const SizedBox(width: 5),
                 if (!_running)
                   FilledButton.icon(
                     key: const Key('btn_run'),
@@ -1998,6 +2066,28 @@ MANDEL_ITER = 64
                     fontWeight: FontWeight.w700, fontSize: 14.5),
               ),
             ],
+          ),
+          OutlinedButton.icon(
+            key: const Key('btn_open_ai_lab'),
+            onPressed: _openAiAgentLab,
+            icon: const Icon(Icons.smart_toy_rounded,
+                size: 14, color: Color(0xFF06B6D4)),
+            label: Text(
+              _isArabic ? 'AI' : 'AI',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF06B6D4),
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              side: BorderSide(
+                color: const Color(0xFF06B6D4).withValues(alpha: 0.55),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+            ),
           ),
 
           // Preset selector + 1-tap Prev/Next stepper

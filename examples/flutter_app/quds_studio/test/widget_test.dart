@@ -835,4 +835,89 @@ MANDEL_ITER = 20
     await tester.pumpAndSettle();
     expect(find.textContaining('core/config/workload.quds'), findsWidgets);
   });
+
+  testWidgets(
+      'AI Agent Sandbox Lab runs CodeAct, Edge AI FFT, blocks Prompt-Injection, and executes Self-Healing CodePush Skill',
+      (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const QudsStudioApp(
+      key: ValueKey('ai_agent_lab_ui_test'),
+      autoRunInitial: false,
+    ));
+    await tester.pumpAndSettle();
+
+    // Open AI Agent Lab directly from the toolbar
+    await tester.tap(find.byKey(const Key('btn_open_ai_lab')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('ai_agent_lab_page')), findsOneWidget);
+
+    // 1. Run CodeAct Tool-Calling Agent
+    await tester.tap(find.byKey(const Key('ai_lab_run_btn')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('ai_lab_result_banner')), findsOneWidget);
+    expect(find.textContaining('CodeAct done | paid=7'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ai_security_audit_log')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.byKey(const Key('ai_security_audit_log')), findsOneWidget);
+
+    // Scroll back up to scenario selector chips
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ai_scenario_edge_ai_fft')),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
+
+    // 2. Run Edge AI FFT Signal Pipeline
+    await tester.tap(find.byKey(const Key('ai_scenario_edge_ai_fft')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ai_lab_run_btn')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.textContaining('Edge FFT ready | peak1=bin7'), findsOneWidget);
+
+    // 3. Run Prompt-Injection Defense (blocked by QudsCapability!)
+    final injChip = find.byKey(const Key('ai_scenario_prompt_injection'));
+    await tester.ensureVisible(injChip);
+    await tester.pumpAndSettle();
+    await tester.tap(injChip);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ai_lab_run_btn')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.textContaining('ai.email.send'), findsWidgets);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ai_security_audit_log')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.textContaining('BLOCKED'), findsOneWidget);
+
+    // 4. Run Self-Extending AI Skill + Atomic Verifier Loop + inspect vip.qbc
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('ai_scenario_self_healing_skill')),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final healChip = find.byKey(const Key('ai_scenario_self_healing_skill'));
+    await tester.ensureVisible(healChip);
+    await tester.pumpAndSettle();
+    await tester.tap(healChip);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('ai_lab_run_btn')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('ai_self_heal_timeline')), findsOneWidget);
+    expect(find.textContaining('Self-Healed Skill OK'), findsOneWidget);
+
+    final inspectBtn = find.byKey(const Key('ai_inspect_skill_qbc_btn'));
+    await tester.ensureVisible(inspectBtn);
+    await tester.pumpAndSettle();
+    await tester.tap(inspectBtn);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('compiled_artifact_dialog')), findsOneWidget);
+    expect(find.textContaining('vipDiscount()'), findsOneWidget);
+  });
 }

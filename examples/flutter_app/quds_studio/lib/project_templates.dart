@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:quds/interpreter.dart';
 
+import 'ai_agent_lab.dart';
+
 class StudioProjectTemplate {
   const StudioProjectTemplate({
     required this.id,
@@ -18,6 +20,7 @@ class StudioProjectTemplate {
     required this.accentColor,
     required this.builder,
     this.usesBenchmarkPolicy = false,
+    this.usesSystemBridgePolicy = false,
   });
 
   final String id;
@@ -29,6 +32,7 @@ class StudioProjectTemplate {
   final Color accentColor;
   final QudsWorkspace Function() builder;
   final bool usesBenchmarkPolicy;
+  final bool usesSystemBridgePolicy;
 }
 
 Uint8List _buildShopBannerBmp() {
@@ -796,6 +800,17 @@ final List<StudioProjectTemplate> studioProjectTemplates = [
     accentColor: const Color(0xFFF97316),
     builder: buildHeavyVmLabProject,
     usesBenchmarkPolicy: true,
+  ),
+  StudioProjectTemplate(
+    id: 'ai_agent_sandbox',
+    nameAr: 'وكيل الذكاء الاصطناعي (AI Sandbox)',
+    nameEn: 'AI Agent Sandbox',
+    subtitleAr: 'CodeAct + Neuro-Symbolic + Edge AI FFT بصلاحيات معزولة',
+    subtitleEn: 'CodeAct + Neuro-Symbolic + Edge AI FFT under capability guard',
+    icon: Icons.smart_toy_rounded,
+    accentColor: const Color(0xFF06B6D4),
+    builder: buildAiAgentSandboxProject,
+    usesSystemBridgePolicy: true,
   ),
   StudioProjectTemplate(
     id: 'sales_analytics_hub',

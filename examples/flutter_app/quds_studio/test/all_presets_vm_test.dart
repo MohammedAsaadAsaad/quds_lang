@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:quds/interpreter.dart';
+import 'package:quds_studio/ai_agent_lab.dart';
 import 'package:quds_studio/presets.dart';
 import 'package:quds_studio/project_templates.dart';
 
@@ -72,9 +73,9 @@ void main() {
   );
 
   test(
-    'All 6 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
+    'All 7 multi-folder Quds projects with assets/ execute cleanly on Register VM and round-trip .qproj v2 JSON',
     () async {
-      expect(studioProjectTemplates, hasLength(6));
+      expect(studioProjectTemplates, hasLength(7));
 
       for (final tpl in studioProjectTemplates) {
         final ws = tpl.builder();
@@ -94,8 +95,20 @@ void main() {
                 maxCollectionLength: 500000,
                 timeout: const Duration(seconds: 30),
               )
-            : QudsExecutionPolicy.standard();
-        final session = QudsSession(policy: policy)..attachWorkspace(restored);
+            : (tpl.usesSystemBridgePolicy
+                ? QudsExecutionPolicy.systemBridge(
+                    capabilities: [
+                      QudsCapability.custom('ai.orders.read'),
+                      QudsCapability.custom('ai.sensors.read'),
+                    ],
+                    maxSteps: 500000,
+                    timeout: const Duration(seconds: 10),
+                  )
+                : QudsExecutionPolicy.standard());
+        final session = QudsSession(
+          policy: policy,
+          hostModules: [buildAiToolsHostModule()],
+        )..attachWorkspace(restored);
         final res = await session.runProject(preferBytecode: true);
         expect(res.succeeded, isTrue,
             reason: 'Project ${tpl.id} failed: ${res.error}');
@@ -104,6 +117,10 @@ void main() {
 
         if (tpl.id == 'heavy_vm_lab') {
           expect(res.outputs.whereType<QudsTableOutput>(), hasLength(1));
+        } else if (tpl.id == 'ai_agent_sandbox') {
+          expect(res.outputs.whereType<QudsTableOutput>(), hasLength(1));
+          expect(res.outputs.whereType<QudsPlot2DOutput>(), hasLength(1));
+          expect(res.lastForm, isNotNull);
         } else if (tpl.id == 'quds_shop_pos') {
           expect(restored.hasAnyFile('assets/last_receipt.json'), isTrue);
           expect(res.outputs.whereType<QudsImageOutput>(), hasLength(1));

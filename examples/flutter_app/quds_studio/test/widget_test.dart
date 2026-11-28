@@ -563,9 +563,12 @@ void main() {
         key: ValueKey('folder_hub_test'), autoRunInitial: false));
     await tester.pumpAndSettle();
 
-    // 1. Open Tree Explorer -> ALL root nodes start COLLAPSED cleanly!
+    // 1. Open Tree Explorer -> ALL root nodes start COLLAPSED cleanly in Dark Mode!
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
     await tester.pumpAndSettle();
+    final dialogCtx =
+        tester.element(find.byKey(const Key('quds_examples_tree_dialog')));
+    expect(Theme.of(dialogCtx).brightness, Brightness.dark);
     expect(find.byKey(const Key('examples_tree_list')), findsOneWidget);
     expect(find.byKey(const Key('tree_node_workspaces')), findsOneWidget);
     expect(find.byKey(const Key('folder_card_biology')), findsNothing);

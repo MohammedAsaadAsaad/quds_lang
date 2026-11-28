@@ -31,6 +31,7 @@ class QudsStudioPage extends StatefulWidget {
     this.initialDark = true,
     this.autoRunInitial = true,
     this.autoPlayAnimations = false,
+    this.onDarkModeChanged,
   });
 
   final int initialPresetIndex;
@@ -38,6 +39,7 @@ class QudsStudioPage extends StatefulWidget {
   final bool initialDark;
   final bool autoRunInitial;
   final bool autoPlayAnimations;
+  final ValueChanged<bool>? onDarkModeChanged;
 
   @override
   State<QudsStudioPage> createState() => _QudsStudioPageState();
@@ -1414,6 +1416,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                         child: OutlinedButton.icon(
                           onPressed: () {
                             setState(() => _isDark = !_isDark);
+                            widget.onDarkModeChanged?.call(_isDark);
                             _reanalyze();
                             setSheetState(() {});
                           },
@@ -1845,6 +1848,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
             tooltip: _isDark ? 'Light Mode' : 'Dark Mode',
             onPressed: () {
               setState(() => _isDark = !_isDark);
+              widget.onDarkModeChanged?.call(_isDark);
               _codeController.palette = _palette;
             },
             icon: Icon(

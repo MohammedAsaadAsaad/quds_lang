@@ -489,10 +489,21 @@ class _QudsExamplesTreeDialogState extends State<_QudsExamplesTreeDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final dialogTheme = ThemeData(
+      useMaterial3: true,
+      brightness: widget.isDark ? Brightness.dark : Brightness.light,
+      fontFamily: 'IBMPlexSansArabic',
+      colorSchemeSeed: const Color(0xFF2563EB),
+    );
     final bg = widget.isDark ? const Color(0xFF0F172A) : Colors.white;
     final panelBg =
         widget.isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC);
+    final fg =
+        widget.isDark ? const Color(0xFFF1F5F9) : const Color(0xFF0F172A);
+    final sub =
+        widget.isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+    final chipBg =
+        widget.isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0);
     final q = _query.trim().toLowerCase();
     final isSearching = q.isNotEmpty;
 
@@ -522,203 +533,232 @@ class _QudsExamplesTreeDialogState extends State<_QudsExamplesTreeDialog> {
 
     final totalCount = studioPresets.length + studioProjectTemplates.length;
 
-    return Directionality(
-      textDirection: widget.isArabic ? TextDirection.rtl : TextDirection.ltr,
-      child: Dialog(
-        backgroundColor: bg,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 860, maxHeight: 740),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 1. Header
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF2563EB), Color(0xFF10B981)],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.account_tree_rounded,
-                          size: 18, color: Colors.white),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.isArabic
-                                ? 'مستعرض شجرة الأمثلة والمشاريع ($totalCount)'
-                                : 'Quds Examples & Workspaces Tree ($totalCount)',
-                            style: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w800),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            widget.isArabic
-                                ? '${studioProjectTemplates.length} مشاريع كاملة (Workspaces) · ${studioPresets.length} مثالاً في ${StudioCategory.values.length} تصنيفاً — كل الفروع مطوية افتراضياً'
-                                : '${studioProjectTemplates.length} full Workspaces · ${studioPresets.length} presets across ${StudioCategory.values.length} categories',
-                            style:
-                                TextStyle(fontSize: 11, color: theme.hintColor),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: const Icon(Icons.close_rounded),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-
-                // 2. Search + Quick Tree Controls (Reveal Active / Collapse All / Motion Only)
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        key: const Key('gallery_search_input'),
-                        controller: _searchController,
-                        onChanged: (v) => setState(() => _query = v),
-                        style: const TextStyle(fontSize: 12.5),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          filled: true,
-                          fillColor: panelBg,
-                          prefixIcon:
-                              const Icon(Icons.search_rounded, size: 18),
-                          suffixIcon: _query.isNotEmpty
-                              ? IconButton(
-                                  icon:
-                                      const Icon(Icons.clear_rounded, size: 16),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _query = '');
-                                  },
-                                )
-                              : null,
-                          hintText: widget.isArabic
-                              ? 'ابحث في 138 مثالاً و5 مشاريع (مثل: pen، فراكتل، POS، ECG، إضافات)...'
-                              : 'Search 138 presets & 5 Workspaces (e.g. pen, fractal, POS, ECG)...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(
-                              color: theme.dividerColor.withValues(alpha: 0.3),
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                // 3. Active Item Banner + Reveal / Collapse All / Motion filter
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
+    return Theme(
+      data: dialogTheme,
+      child: Directionality(
+        textDirection: widget.isArabic ? TextDirection.rtl : TextDirection.ltr,
+        child: Dialog(
+          key: const Key('quds_examples_tree_dialog'),
+          backgroundColor: bg,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860, maxHeight: 740),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1. Header
+                  Row(
                     children: [
-                      // Active currently-open item indicator + 1-tap Reveal in Tree!
-                      ActionChip(
-                        key: const Key('btn_reveal_active'),
-                        avatar: const Icon(Icons.my_location_rounded,
-                            size: 14, color: Color(0xFF38BDF8)),
-                        label: Text(
-                          widget.isArabic
-                              ? 'المفتوح الآن: ${activeWs != null ? activeWs.nameAr : (activePreset?.titleAr ?? '')}'
-                              : 'Open: ${activeWs != null ? activeWs.nameEn : (activePreset?.titleEn ?? '')}',
-                          style: const TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w700),
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF2563EB), Color(0xFF10B981)],
+                          ),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        backgroundColor:
-                            const Color(0xFF2563EB).withValues(alpha: 0.14),
-                        side: BorderSide(
-                          color:
-                              const Color(0xFF38BDF8).withValues(alpha: 0.45),
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _revealActiveInTree,
+                        child: const Icon(Icons.account_tree_rounded,
+                            size: 18, color: Colors.white),
                       ),
-                      const SizedBox(width: 6),
-                      ActionChip(
-                        key: const Key('btn_collapse_all'),
-                        avatar: const Icon(Icons.unfold_less_rounded, size: 14),
-                        label: Text(
-                          widget.isArabic ? 'طي الكل' : 'Collapse All',
-                          style: const TextStyle(fontSize: 11),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.isArabic
+                                  ? 'مستعرض شجرة الأمثلة والمشاريع ($totalCount)'
+                                  : 'Quds Examples & Workspaces Tree ($totalCount)',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: fg,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              widget.isArabic
+                                  ? '${studioProjectTemplates.length} مشاريع كاملة (Workspaces) · ${studioPresets.length} مثالاً في ${StudioCategory.values.length} تصنيفاً — كل الفروع مطوية افتراضياً'
+                                  : '${studioProjectTemplates.length} full Workspaces · ${studioPresets.length} presets across ${StudioCategory.values.length} categories',
+                              style: TextStyle(fontSize: 11, color: sub),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        visualDensity: VisualDensity.compact,
-                        onPressed: _collapseAll,
                       ),
-                      const SizedBox(width: 6),
-                      FilterChip(
-                        key: const Key('chip_tree_motion_only'),
-                        selected: _motionOnly,
-                        avatar: const Icon(Icons.bolt_rounded,
-                            size: 14, color: Color(0xFFF59E0B)),
-                        label: Text(
-                          widget.isArabic ? 'الحركة الحية فقط' : 'Motion Only',
-                          style: const TextStyle(fontSize: 11),
-                        ),
+                      IconButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: Icon(Icons.close_rounded, color: sub),
                         visualDensity: VisualDensity.compact,
-                        onSelected: (v) => setState(() => _motionOnly = v),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 8),
+                  const SizedBox(height: 10),
 
-                // 4. Main Tree Body (or Instant Search Results)
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: panelBg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: theme.dividerColor.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: isSearching
-                        ? _buildSearchResults(
-                            theme, matchingWorkspaces, matchingPresets)
-                        : ListView(
-                            key: const Key('examples_tree_list'),
-                            controller: _scrollController,
-                            padding: const EdgeInsets.all(8),
-                            children: [
-                              // Root Node 0: Full Multi-Folder Workspaces (with assets/)
-                              _buildWorkspacesRootNode(theme),
-                              const SizedBox(height: 6),
-                              // Root Nodes 1..4: Super-Domains -> Categories -> Examples
-                              for (final domain in StudioDomain.values) ...[
-                                _buildDomainTreeNode(
-                                  theme,
-                                  domain,
-                                  containsActive: !widget.workspaceMode &&
-                                      activeDomain == domain,
-                                  activeCategory: activeCategory,
-                                ),
-                                const SizedBox(height: 6),
-                              ],
-                            ],
+                  // 2. Search
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          key: const Key('gallery_search_input'),
+                          controller: _searchController,
+                          onChanged: (v) => setState(() => _query = v),
+                          style: TextStyle(fontSize: 12.5, color: fg),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            filled: true,
+                            fillColor: panelBg,
+                            prefixIcon: Icon(Icons.search_rounded,
+                                size: 18, color: sub),
+                            suffixIcon: _query.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.clear_rounded,
+                                        size: 16, color: sub),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _query = '');
+                                    },
+                                  )
+                                : null,
+                            hintText: widget.isArabic
+                                ? 'ابحث في 138 مثالاً و5 مشاريع (مثل: pen، فراكتل، POS، ECG، إضافات)...'
+                                : 'Search 138 presets & 5 Workspaces (e.g. pen, fractal, POS, ECG)...',
+                            hintStyle: TextStyle(fontSize: 12, color: sub),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: dialogTheme.dividerColor
+                                    .withValues(alpha: 0.35),
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
                           ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+
+                  // 3. Active Item Banner + Reveal / Collapse All / Motion filter
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        // Active currently-open item indicator + 1-tap Reveal in Tree!
+                        ActionChip(
+                          key: const Key('btn_reveal_active'),
+                          avatar: const Icon(Icons.my_location_rounded,
+                              size: 14, color: Color(0xFF38BDF8)),
+                          label: Text(
+                            widget.isArabic
+                                ? 'المفتوح الآن: ${activeWs != null ? activeWs.nameAr : (activePreset?.titleAr ?? '')}'
+                                : 'Open: ${activeWs != null ? activeWs.nameEn : (activePreset?.titleEn ?? '')}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: fg,
+                            ),
+                          ),
+                          backgroundColor:
+                              const Color(0xFF2563EB).withValues(alpha: 0.24),
+                          side: BorderSide(
+                            color:
+                                const Color(0xFF38BDF8).withValues(alpha: 0.55),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _revealActiveInTree,
+                        ),
+                        const SizedBox(width: 6),
+                        ActionChip(
+                          key: const Key('btn_collapse_all'),
+                          avatar: Icon(Icons.unfold_less_rounded,
+                              size: 14, color: fg),
+                          label: Text(
+                            widget.isArabic ? 'طي الكل' : 'Collapse All',
+                            style: TextStyle(fontSize: 11, color: fg),
+                          ),
+                          backgroundColor: chipBg,
+                          side: BorderSide(
+                            color:
+                                dialogTheme.dividerColor.withValues(alpha: 0.3),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _collapseAll,
+                        ),
+                        const SizedBox(width: 6),
+                        FilterChip(
+                          key: const Key('chip_tree_motion_only'),
+                          selected: _motionOnly,
+                          avatar: const Icon(Icons.bolt_rounded,
+                              size: 14, color: Color(0xFFF59E0B)),
+                          label: Text(
+                            widget.isArabic
+                                ? 'الحركة الحية فقط'
+                                : 'Motion Only',
+                            style: TextStyle(fontSize: 11, color: fg),
+                          ),
+                          backgroundColor: chipBg,
+                          selectedColor:
+                              const Color(0xFFF59E0B).withValues(alpha: 0.24),
+                          side: BorderSide(
+                            color:
+                                dialogTheme.dividerColor.withValues(alpha: 0.3),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (v) => setState(() => _motionOnly = v),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // 4. Main Tree Body (or Instant Search Results)
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: panelBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color:
+                              dialogTheme.dividerColor.withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: isSearching
+                          ? _buildSearchResults(
+                              dialogTheme, matchingWorkspaces, matchingPresets)
+                          : ListView(
+                              key: const Key('examples_tree_list'),
+                              controller: _scrollController,
+                              padding: const EdgeInsets.all(8),
+                              children: [
+                                // Root Node 0: Full Multi-Folder Workspaces (with assets/)
+                                _buildWorkspacesRootNode(dialogTheme),
+                                const SizedBox(height: 6),
+                                // Root Nodes 1..4: Super-Domains -> Categories -> Examples
+                                for (final domain in StudioDomain.values) ...[
+                                  _buildDomainTreeNode(
+                                    dialogTheme,
+                                    domain,
+                                    containsActive: !widget.workspaceMode &&
+                                        activeDomain == domain,
+                                    activeCategory: activeCategory,
+                                  ),
+                                  const SizedBox(height: 6),
+                                ],
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

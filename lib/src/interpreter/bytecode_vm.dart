@@ -1196,6 +1196,15 @@ class QudsBytecodeCompiler {
             return _RegKind.doubleT;
           }
         }
+        if (mem.object is Identifier &&
+            (mem.object as Identifier).name == 'List' &&
+            mem.name == 'filled' &&
+            expr.arguments.length == 2 &&
+            expr.arguments.every((a) => a.name == null)) {
+          final valKind = _inferExprKind(expr.arguments[1].value, env);
+          if (valKind == _RegKind.intT) return _RegKind.listIntT;
+          if (valKind == _RegKind.doubleT) return _RegKind.listDoubleT;
+        }
       }
       return _RegKind.objT;
     }
@@ -2064,6 +2073,49 @@ class _RegFnCompiler {
             _emit(QudsOp.newFloatList, reg, 0, 0, line);
           } else {
             _emit(QudsOp.newObjList, reg, 0, 0, line);
+          }
+        } else if ((kind == _RegKind.listIntT ||
+                kind == _RegKind.listDoubleT) &&
+            stmt.value is CallExpression &&
+            (stmt.value as CallExpression).callee is MemberAccess &&
+            ((stmt.value as CallExpression).callee as MemberAccess).object
+                is Identifier &&
+            (((stmt.value as CallExpression).callee as MemberAccess).object
+                        as Identifier)
+                    .name ==
+                'List' &&
+            ((stmt.value as CallExpression).callee as MemberAccess).name ==
+                'filled' &&
+            (stmt.value as CallExpression).arguments.length == 2 &&
+            (stmt.value as CallExpression)
+                .arguments
+                .every((a) => a.name == null)) {
+          final call = stmt.value as CallExpression;
+          final lenReg = _coerce(
+            _compileExpr(call.arguments[0].value, desired: _RegKind.intT),
+            _RegKind.intT,
+            line,
+          ).reg;
+          final zeroReg = _allocI();
+          _emit(QudsOp.iLoadImm, zeroReg, 0, 0, line);
+          if (kind == _RegKind.listIntT) {
+            final valReg = _coerce(
+              _compileExpr(call.arguments[1].value, desired: _RegKind.intT),
+              _RegKind.intT,
+              line,
+            ).reg;
+            _emit(QudsOp.newIntList, reg, 0, 0, line);
+            final descIdx = _addOConst(Int32List.fromList([2, lenReg, valReg]));
+            _emit(QudsOp.iListFill, reg, zeroReg, descIdx, line);
+          } else {
+            final valReg = _coerce(
+              _compileExpr(call.arguments[1].value, desired: _RegKind.doubleT),
+              _RegKind.doubleT,
+              line,
+            ).reg;
+            _emit(QudsOp.newFloatList, reg, 0, 0, line);
+            final descIdx = _addOConst(Int32List.fromList([2, lenReg, valReg]));
+            _emit(QudsOp.fListFill, reg, zeroReg, descIdx, line);
           }
         } else {
           _compileExprInto(stmt.value, kind, reg);
@@ -4286,11 +4338,18 @@ class QudsBytecodeVm {
                 fReg[fBp + (c >> 10)];
           case QudsOp.iListFill:
             final desc = oConsts[c]! as Int32List;
-            final inclusive = desc[0] != 0;
+            final mode = desc[0];
             final lim = iReg[iBp + desc[1]];
+            if (mode == 2 && lim < 0) {
+              throw QudsRuntimeException(
+                'RangeError: Invalid length ($lim) for List.filled.',
+                SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                    file: program.file),
+              );
+            }
             final val = iReg[iBp + desc[2]];
             final k = iReg[iBp + b];
-            final count = inclusive ? (lim - k + 1) : (lim - k);
+            final count = mode == 1 ? (lim - k + 1) : (lim - k);
             if (count > 0) {
               final slot = ilBp + a;
               final lst = ilReg[slot]!;
@@ -4321,11 +4380,18 @@ class QudsBytecodeVm {
             }
           case QudsOp.fListFill:
             final desc = oConsts[c]! as Int32List;
-            final inclusive = desc[0] != 0;
+            final mode = desc[0];
             final lim = iReg[iBp + desc[1]];
+            if (mode == 2 && lim < 0) {
+              throw QudsRuntimeException(
+                'RangeError: Invalid length ($lim) for List.filled.',
+                SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                    file: program.file),
+              );
+            }
             final val = fReg[fBp + desc[2]];
             final k = iReg[iBp + b];
-            final count = inclusive ? (lim - k + 1) : (lim - k);
+            final count = mode == 1 ? (lim - k + 1) : (lim - k);
             if (count > 0) {
               final slot = flBp + a;
               final lst = flReg[slot]!;

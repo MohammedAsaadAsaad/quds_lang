@@ -243,6 +243,8 @@ class QudsSession {
   String? _cachedProgramFile;
   Program? _cachedProgram;
   QudsUniversalChunk? _cachedUniversalChunk;
+  QudsBytecodeProgram? _cachedTier1Program;
+  bool _cachedTier1Attempted = false;
   QudsEvaluator? _activeEvaluator;
   final List<(ExtensionDeclaration, QudsEnvironment)> _sessionExtensions = [];
   List<String>? _activePrinted;
@@ -259,6 +261,21 @@ class QudsSession {
   bool hasCompiledWorkspaceFile(String path) =>
       _moduleLoader.hasCompiledArtifact(path);
 
+  /// Eagerly compiles all (or the specified) `.quds` files in the attached
+  /// [QudsWorkspace] into the content-hashed bytecode cache, skipping files
+  /// whose compiled artifacts are already up to date.
+  List<String> precompileWorkspace({Iterable<String>? paths}) {
+    final ws = _projectWorkspace;
+    if (ws == null) {
+      throw StateError(
+        'No QudsWorkspace is attached to this session. Call attachWorkspace() first.',
+      );
+    }
+    final targetPaths =
+        paths ?? ws.files.keys.where((p) => p.endsWith('.quds'));
+    return _moduleLoader.precompileWorkspaceFiles(targetPaths);
+  }
+
   /// Attaches (or detaches when `null`) a multi-file [QudsWorkspace] to this
   /// session with automatic surgical bytecode & transitive module invalidation
   /// on single-file edits or CodePush-style bundle updates.
@@ -270,6 +287,8 @@ class QudsSession {
     _cachedProgram = null;
     _cachedProgramSource = null;
     _cachedUniversalChunk = null;
+    _cachedTier1Program = null;
+    _cachedTier1Attempted = false;
     workspace?.addBatchChangeListener(_onWorkspaceBatchChanged);
   }
 
@@ -281,6 +300,8 @@ class QudsSession {
       _cachedProgram = null;
       _cachedProgramSource = null;
       _cachedUniversalChunk = null;
+      _cachedTier1Program = null;
+      _cachedTier1Attempted = false;
     }
   }
 
@@ -705,23 +726,38 @@ class QudsSession {
         _cachedProgramFile == file) {
       program = _cachedProgram!;
     } else {
-      try {
-        final tokens = Lexer().tokenize(source, file: file);
-        program = Parser(tokens).parse();
+      final cachedArtifact = _projectWorkspace != null
+          ? _moduleLoader.getCachedWorkspaceArtifact(file, source)
+          : null;
+      if (cachedArtifact != null) {
+        program = cachedArtifact.$1;
         _cachedProgramSource = source;
         _cachedProgramFile = file;
         _cachedProgram = program;
-        _cachedUniversalChunk = null;
-      } catch (err) {
-        stopwatch.stop();
-        _events.add(QudsErrorEvent(err));
-        return QudsRunResult(
-          succeeded: false,
-          printedLines: printed,
-          outputs: outputs,
-          elapsed: stopwatch.elapsed,
-          error: err,
-        );
+        _cachedUniversalChunk = cachedArtifact.$2;
+        _cachedTier1Program = null;
+        _cachedTier1Attempted = false;
+      } else {
+        try {
+          final tokens = Lexer().tokenize(source, file: file);
+          program = Parser(tokens).parse();
+          _cachedProgramSource = source;
+          _cachedProgramFile = file;
+          _cachedProgram = program;
+          _cachedUniversalChunk = null;
+          _cachedTier1Program = null;
+          _cachedTier1Attempted = false;
+        } catch (err) {
+          stopwatch.stop();
+          _events.add(QudsErrorEvent(err));
+          return QudsRunResult(
+            succeeded: false,
+            printedLines: printed,
+            outputs: outputs,
+            elapsed: stopwatch.elapsed,
+            error: err,
+          );
+        }
       }
     }
 
@@ -753,7 +789,12 @@ class QudsSession {
       if (importsAllowed &&
           _sessionExtensions.isEmpty &&
           (!hasPriorUserBindings || _globalEnv.allowTopLevelRebind)) {
-        final compiled = QudsBytecodeCompiler.tryCompile(program, file: file);
+        if (!_cachedTier1Attempted) {
+          _cachedTier1Program =
+              QudsBytecodeCompiler.tryCompile(program, file: file);
+          _cachedTier1Attempted = true;
+        }
+        final compiled = _cachedTier1Program;
         if (compiled != null) {
           final vmRes = QudsBytecodeVm.run(
             compiled,

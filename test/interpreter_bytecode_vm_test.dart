@@ -349,5 +349,56 @@ fib(20)
       await vmSession.dispose();
       await depthLimited.dispose();
     });
+
+    test(
+        'compiles List.filled(n, int/double) to unboxed Tier-1 typed lists and validates negative length',
+        () async {
+      const src = '''
+sumFilled(n: int) -> double:
+  var ints = List.filled(n, 3)
+  var floats = List.filled(n, 1.5)
+  ints[0] = 10
+  floats[n - 1] = 2.5
+  var acc = 0.0
+  var i = 0
+  while i < n:
+    acc = acc + ints[i] + floats[i]
+    i = i + 1
+  return acc
+
+print sumFilled(10).toStringAsFixed(1)
+''';
+      final compiled = QudsBytecodeCompiler.tryCompileSource(src);
+      expect(compiled, isNotNull);
+      final dis = compiled!.disassemble();
+      expect(dis, contains('NEW_INT_LIST'));
+      expect(dis, contains('I_LIST_FILL'));
+      expect(dis, contains('NEW_FLOAT_LIST'));
+      expect(dis, contains('F_LIST_FILL'));
+
+      final astSess = QudsSession();
+      final vmSess = QudsSession();
+      final astRes = await astSess.run(src, preferBytecode: false);
+      final vmRes = await vmSess.run(src, preferBytecode: true);
+      expect(astRes.succeeded, isTrue, reason: '${astRes.error}');
+      expect(vmRes.succeeded, isTrue, reason: '${vmRes.error}');
+      expect(vmRes.usedBytecodeVm, isTrue);
+      // ints: 10 + 9*3 = 37; floats: 9*1.5 + 2.5 = 16.0 -> 53.0
+      expect(vmRes.stdout, '53.0');
+      expect(vmRes.stdout, astRes.stdout);
+
+      final negRes = await vmSess.run(
+        '''
+var bad = List.filled(-2, 0)
+print bad.length
+''',
+        preferBytecode: true,
+      );
+      expect(negRes.succeeded, isFalse);
+      expect(negRes.error, isA<QudsRuntimeException>());
+
+      await astSess.dispose();
+      await vmSess.dispose();
+    });
   });
 }

@@ -240,6 +240,25 @@ class QudsModuleLoader {
     return currentFp != null && cached.fingerprint == currentFp;
   }
 
+  /// Returns an already-compiled `(Program, QudsUniversalChunk)` artifact for
+  /// [path] when its cached fingerprint and source match [source], recording a
+  /// bytecode cache hit. Returns `null` on cache miss.
+  (Program, QudsUniversalChunk)? getCachedWorkspaceArtifact(
+    String path,
+    String source,
+  ) {
+    final norm = QudsWorkspace.normalizePath(path);
+    final existing = _compiledWorkspaceCache[norm];
+    if (existing == null) return null;
+    final fp =
+        workspace?.fileFingerprint(norm) ?? qudsContentFingerprint(source);
+    if (existing.fingerprint == fp && existing.source == source) {
+      _bytecodeCacheHits++;
+      return (existing.program, existing.chunk);
+    }
+    return null;
+  }
+
   /// Registers or updates a virtual host module (e.g. `quds:viz` or `host:sensors`).
   void registerVirtualModule(String uri, Map<String, Object?> symbols) {
     _sessionCache[uri] = _LoadedModule(

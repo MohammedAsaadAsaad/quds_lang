@@ -261,5 +261,64 @@ computeSum(n: int) -> int:
 
       await session.dispose();
     });
+
+    test(
+        'precompileWorkspace compiles all nested files + entry point once and Tier-1 cache invalidates on code change',
+        () async {
+      final ws = buildNestedProject();
+      final session = QudsSession(projectWorkspace: ws);
+
+      final precompiled = session.precompileWorkspace();
+      expect(precompiled.length, 5);
+      expect(session.compilationStats.compiledModules, 5);
+
+      // Second precompile call is a complete no-op (all fingerprints match).
+      expect(session.precompileWorkspace(), isEmpty);
+
+      // Running the project hits the precompiled bytecode cache for main.quds
+      // AND every imported nested file with zero extra compilations.
+      final r1 = await session.runProject();
+      expect(r1.succeeded, isTrue, reason: '${r1.error}');
+      expect(r1.printedLines, ['Quds Store: 110.00 USD']);
+      expect(session.compilationStats.compiledModules, 5);
+      expect(
+          session.compilationStats.bytecodeCacheHits, greaterThanOrEqualTo(5));
+
+      // Tier-1 single-file cached execution reuses compiled bytecode on repeat
+      // runs and immediately updates when source content changes.
+      final standalone = QudsSession(allowTopLevelRebind: true);
+      const srcV1 = '''
+sumTo(n: int) -> int:
+  var s = 0
+  var i = 1
+  while i <= n:
+    s = s + i
+    i = i + 1
+  return s
+print sumTo(100)
+''';
+      const srcV2 = '''
+sumTo(n: int) -> int:
+  var s = 0
+  var i = 1
+  while i <= n:
+    s = s + i * 2
+    i = i + 1
+  return s
+print sumTo(100)
+''';
+      final t1 = await standalone.run(srcV1);
+      final t2 = await standalone.run(srcV1);
+      final t3 = await standalone.run(srcV2);
+      expect(t1.usedBytecodeVm, isTrue);
+      expect(t2.usedBytecodeVm, isTrue);
+      expect(t3.usedBytecodeVm, isTrue);
+      expect(t1.printedLines, ['5050']);
+      expect(t2.printedLines, ['5050']);
+      expect(t3.printedLines, ['10100']);
+
+      await standalone.dispose();
+      await session.dispose();
+    });
   });
 }

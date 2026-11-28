@@ -251,23 +251,110 @@ class QudsSession {
   /// Attached multi-file [QudsWorkspace] project, if any.
   QudsWorkspace? get projectWorkspace => _projectWorkspace;
 
+  /// Compilation and bytecode/runtime cache telemetry for attached workspace modules.
+  QudsCompilationStats get compilationStats => _moduleLoader.stats;
+
+  /// Returns true if [path] currently has an up-to-date compiled bytecode
+  /// artifact cached for its latest workspace content.
+  bool hasCompiledWorkspaceFile(String path) =>
+      _moduleLoader.hasCompiledArtifact(path);
+
   /// Attaches (or detaches when `null`) a multi-file [QudsWorkspace] to this
-  /// session with automatic transitive cache invalidation on file edits.
+  /// session with automatic surgical bytecode & transitive module invalidation
+  /// on single-file edits or CodePush-style bundle updates.
   void attachWorkspace(QudsWorkspace? workspace) {
-    _projectWorkspace?.removeChangeListener(_onWorkspaceFileChanged);
+    _projectWorkspace?.removeBatchChangeListener(_onWorkspaceBatchChanged);
     _projectWorkspace = workspace;
     _moduleLoader.workspace = workspace;
-    _moduleLoader.clearWorkspaceCache();
-    workspace?.addChangeListener(_onWorkspaceFileChanged);
+    _moduleLoader.clearWorkspaceCache(clearCompiledBytecode: true);
+    _cachedProgram = null;
+    _cachedProgramSource = null;
+    _cachedUniversalChunk = null;
+    workspace?.addBatchChangeListener(_onWorkspaceBatchChanged);
   }
 
-  void _onWorkspaceFileChanged(String path) {
-    _moduleLoader.invalidateWorkspaceFile(path);
-    if (_cachedProgramFile == path) {
+  void _onWorkspaceBatchChanged(QudsWorkspaceBatchChange change) {
+    _moduleLoader.applyWorkspaceBatchChange(change);
+    if (_cachedProgramFile != null &&
+        (change.changedFiles.contains(_cachedProgramFile) ||
+            change.deletedFiles.contains(_cachedProgramFile))) {
       _cachedProgram = null;
       _cachedProgramSource = null;
       _cachedUniversalChunk = null;
     }
+  }
+
+  /// Applies a CodePush-style atomic [patch] to the attached [QudsWorkspace],
+  /// surgically invalidating changed nested files and their transitive
+  /// dependents, optionally pre-compiling changed `.quds` modules to bytecode
+  /// and re-running the project entry point.
+  Future<QudsCodePushResult> applyWorkspacePatch(
+    QudsWorkspacePatch patch, {
+    bool validateSyntax = true,
+    bool atomicRollback = true,
+    bool precompileAffected = true,
+    bool resetGlobalScope = true,
+    bool reRunEntryPoint = false,
+  }) async {
+    final ws = _projectWorkspace;
+    if (ws == null) {
+      throw StateError(
+        'No QudsWorkspace is attached to this session. Call attachWorkspace() first.',
+      );
+    }
+    final result = ws.applyPatch(
+      patch,
+      validateSyntax: validateSyntax,
+      atomicRollback: atomicRollback,
+    );
+    if (!result.applied) return result;
+
+    var finalResult = result;
+    if (precompileAffected && result.changedFiles.isNotEmpty) {
+      final recompiled =
+          _moduleLoader.precompileWorkspaceFiles(result.changedFiles);
+      finalResult = result.copyWith(recompiledFiles: recompiled);
+    }
+    if (resetGlobalScope &&
+        (result.changedFiles.isNotEmpty || result.deletedFiles.isNotEmpty)) {
+      _resetUserGlobals(allowTopLevelRebind: true);
+    }
+    if (reRunEntryPoint) {
+      await runProject(resetGlobalScope: true);
+    }
+    return finalResult;
+  }
+
+  /// Rolls back the attached [QudsWorkspace] to a previously captured
+  /// [snapshot], surgically refreshing compiled bytecode and runtime module
+  /// caches for all reverted nested files.
+  Future<QudsCodePushResult> restoreWorkspaceSnapshot(
+    QudsWorkspaceSnapshot snapshot, {
+    bool precompileAffected = true,
+    bool resetGlobalScope = true,
+    bool reRunEntryPoint = false,
+  }) async {
+    final ws = _projectWorkspace;
+    if (ws == null) {
+      throw StateError(
+        'No QudsWorkspace is attached to this session. Call attachWorkspace() first.',
+      );
+    }
+    final result = ws.restoreSnapshot(snapshot);
+    var finalResult = result;
+    if (precompileAffected && result.changedFiles.isNotEmpty) {
+      final recompiled =
+          _moduleLoader.precompileWorkspaceFiles(result.changedFiles);
+      finalResult = result.copyWith(recompiledFiles: recompiled);
+    }
+    if (resetGlobalScope &&
+        (result.changedFiles.isNotEmpty || result.deletedFiles.isNotEmpty)) {
+      _resetUserGlobals(allowTopLevelRebind: true);
+    }
+    if (reRunEntryPoint) {
+      await runProject(resetGlobalScope: true);
+    }
+    return finalResult;
   }
 
   /// Live broadcast stream of print lines, rich outputs, debug pauses, errors, and progress.
@@ -369,7 +456,7 @@ class QudsSession {
   /// Releases the event stream controller and detaches any workspace listener.
   Future<void> dispose() async {
     stop();
-    _projectWorkspace?.removeChangeListener(_onWorkspaceFileChanged);
+    _projectWorkspace?.removeBatchChangeListener(_onWorkspaceBatchChanged);
     await _events.close();
   }
 
@@ -817,6 +904,9 @@ class QudsSession {
     _activeEvaluator = evaluator;
     final useUniversalVm =
         preferBytecode && !needsStatementHook && !needsCallHook;
+    final allowTier1 = policy.maxLoopIterations == null && policy.allowMutation;
+    _moduleLoader.preferBytecodeModules = useUniversalVm;
+    _moduleLoader.enableTier1Promotion = allowTier1;
     try {
       final Object? value;
       if (useUniversalVm) {
@@ -826,8 +916,7 @@ class QudsSession {
           chunk,
           evaluator,
           _globalEnv,
-          enableTier1Promotion:
-              policy.maxLoopIterations == null && policy.allowMutation,
+          enableTier1Promotion: allowTier1,
         );
       } else {
         value = await evaluator.executeProgram(program);

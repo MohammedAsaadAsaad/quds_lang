@@ -50,6 +50,7 @@ export 'src/interpreter/host_bridge.dart'
     show QudsHostModule, QudsHostModuleBuilder, QudsHostSymbolDoc;
 export 'src/interpreter/module_loader.dart'
     show
+        QudsCompilationStats,
         QudsImportAllow,
         QudsImportDeny,
         QudsImportProvideSource,
@@ -146,7 +147,13 @@ export 'src/interpreter/pen_module.dart' show buildQudsPenModule;
 export 'src/interpreter/viz_module.dart' show buildQudsVizModule;
 export 'src/interpreter/workspace.dart'
     show
+        QudsCodePushResult,
         QudsWorkspace,
+        QudsWorkspaceBatchChange,
+        QudsWorkspaceBatchChangeListener,
         QudsWorkspaceChangeListener,
         QudsWorkspaceDependencyReport,
-        QudsWorkspaceNode;
+        QudsWorkspaceNode,
+        QudsWorkspacePatch,
+        QudsWorkspaceSnapshot,
+        qudsContentFingerprint;

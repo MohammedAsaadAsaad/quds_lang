@@ -68,9 +68,213 @@ class QudsWorkspaceDependencyReport {
   bool get hasUnresolvedImports => unresolvedImports.isNotEmpty;
 }
 
+/// Pure-Dart deterministic 64-bit content fingerprint (dual 32-bit FNV-1a + length)
+/// used to detect file changes across nested workspaces without `dart:io`.
+String qudsContentFingerprint(String content) {
+  var h1 = 0x811c9dc5;
+  var h2 = 0x9e3779b1;
+  final len = content.length;
+  for (var i = 0; i < len; i++) {
+    final c = content.codeUnitAt(i);
+    h1 ^= c;
+    h1 = (h1 * 0x01000193) & 0xffffffff;
+    h2 ^= (c + i) & 0xffff;
+    h2 = (h2 * 0x85ebca6b) & 0xffffffff;
+  }
+  final s1 = h1.toRadixString(16).padLeft(8, '0');
+  final s2 = h2.toRadixString(16).padLeft(8, '0');
+  return '$len:$s1$s2';
+}
+
 /// Callback invoked whenever a file in [QudsWorkspace] is created, edited,
 /// renamed, or deleted.
 typedef QudsWorkspaceChangeListener = void Function(String normalizedPath);
+
+/// Summary of an atomic single-file or multi-file CodePush update in
+/// [QudsWorkspace], including all transitively invalidated dependents.
+class QudsWorkspaceBatchChange {
+  const QudsWorkspaceBatchChange({
+    required this.changedFiles,
+    required this.deletedFiles,
+    required this.invalidatedFiles,
+    required this.unchangedFiles,
+    required this.revision,
+    this.bundleVersion,
+  });
+
+  /// Files created or modified with different content (need bytecode recompile).
+  final Set<String> changedFiles;
+
+  /// Files removed from the workspace (bytecode & runtime caches evicted).
+  final Set<String> deletedFiles;
+
+  /// Union of [changedFiles], [deletedFiles], and every file that directly or
+  /// transitively imports them (runtime module cache must be re-evaluated).
+  final Set<String> invalidatedFiles;
+
+  /// Files included in a patch whose content matched the existing file (skipped).
+  final Set<String> unchangedFiles;
+
+  /// New monotonic workspace revision after this change.
+  final int revision;
+
+  /// Optional bundle / CodePush version tag associated with this change.
+  final String? bundleVersion;
+
+  bool get hasChanges => changedFiles.isNotEmpty || deletedFiles.isNotEmpty;
+}
+
+/// Callback invoked once per atomic file/bundle mutation with full transitive
+/// dependency invalidation metadata.
+typedef QudsWorkspaceBatchChangeListener = void Function(
+  QudsWorkspaceBatchChange change,
+);
+
+/// Serializable CodePush-style delta or full bundle patch targeting nested
+/// files, folders, and binary assets inside a [QudsWorkspace].
+class QudsWorkspacePatch {
+  const QudsWorkspacePatch({
+    this.upsertFiles = const {},
+    this.upsertBinaryAssets = const {},
+    this.deleteFiles = const [],
+    this.deleteFolders = const [],
+    this.newEntryPoint,
+    this.bundleVersion,
+  });
+
+  /// Text/Quds files to create or update (supports arbitrarily nested paths).
+  final Map<String, String> upsertFiles;
+
+  /// Binary assets to create or update (supports arbitrarily nested paths).
+  final Map<String, Uint8List> upsertBinaryAssets;
+
+  /// Specific file or asset paths to delete.
+  final List<String> deleteFiles;
+
+  /// Folder paths to delete recursively along with all nested contents.
+  final List<String> deleteFolders;
+
+  /// Optional updated workspace entry point (e.g. `'app/main.quds'`).
+  final String? newEntryPoint;
+
+  /// Optional OTA / CodePush release identifier (e.g. `'1.4.2-hotfix.1'`).
+  final String? bundleVersion;
+
+  Map<String, Object?> toJson() => {
+        'format': 'quds-workspace-patch',
+        'version': 1,
+        if (bundleVersion != null) 'bundleVersion': bundleVersion,
+        if (newEntryPoint != null) 'newEntryPoint': newEntryPoint,
+        if (upsertFiles.isNotEmpty) 'upsertFiles': upsertFiles,
+        if (upsertBinaryAssets.isNotEmpty)
+          'upsertBinaryAssets': {
+            for (final e in upsertBinaryAssets.entries)
+              e.key: base64Encode(e.value),
+          },
+        if (deleteFiles.isNotEmpty) 'deleteFiles': deleteFiles,
+        if (deleteFolders.isNotEmpty) 'deleteFolders': deleteFolders,
+      };
+
+  String toJsonString() => const JsonEncoder.withIndent('  ').convert(toJson());
+
+  static QudsWorkspacePatch fromJson(Map<String, Object?> json) {
+    final rawUpsert = (json['upsertFiles'] as Map?) ?? const {};
+    final rawBin = (json['upsertBinaryAssets'] as Map?) ?? const {};
+    final rawDelFiles = (json['deleteFiles'] as List?) ?? const [];
+    final rawDelFolders = (json['deleteFolders'] as List?) ?? const [];
+    return QudsWorkspacePatch(
+      upsertFiles: {
+        for (final e in rawUpsert.entries) '${e.key}': '${e.value}'
+      },
+      upsertBinaryAssets: {
+        for (final e in rawBin.entries)
+          '${e.key}': Uint8List.fromList(base64Decode('${e.value}')),
+      },
+      deleteFiles: [for (final f in rawDelFiles) '$f'],
+      deleteFolders: [for (final d in rawDelFolders) '$d'],
+      newEntryPoint: json['newEntryPoint'] as String?,
+      bundleVersion: json['bundleVersion'] as String?,
+    );
+  }
+
+  static QudsWorkspacePatch fromJsonString(String raw) {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, Object?>) {
+      throw const FormatException(
+        'Expected a JSON object for QudsWorkspacePatch.',
+      );
+    }
+    return fromJson(decoded);
+  }
+}
+
+/// Immutable point-in-time snapshot of a [QudsWorkspace] for instant rollback
+/// after a CodePush update.
+class QudsWorkspaceSnapshot {
+  const QudsWorkspaceSnapshot({
+    required this.name,
+    required this.packageName,
+    required this.entryPoint,
+    required this.revision,
+    required this.bundleVersion,
+    required this.files,
+    required this.binaryAssets,
+    required this.folders,
+  });
+
+  final String name;
+  final String? packageName;
+  final String entryPoint;
+  final int revision;
+  final String? bundleVersion;
+  final Map<String, String> files;
+  final Map<String, Uint8List> binaryAssets;
+  final Set<String> folders;
+}
+
+/// Outcome of applying a [QudsWorkspacePatch] or restoring a
+/// [QudsWorkspaceSnapshot].
+class QudsCodePushResult {
+  const QudsCodePushResult({
+    required this.applied,
+    required this.revision,
+    this.bundleVersion,
+    this.changedFiles = const [],
+    this.deletedFiles = const [],
+    this.unchangedFiles = const [],
+    this.invalidatedModules = const [],
+    this.recompiledFiles = const [],
+    this.errors = const [],
+    this.previousSnapshot,
+  });
+
+  final bool applied;
+  final int revision;
+  final String? bundleVersion;
+  final List<String> changedFiles;
+  final List<String> deletedFiles;
+  final List<String> unchangedFiles;
+  final List<String> invalidatedModules;
+  final List<String> recompiledFiles;
+  final List<String> errors;
+  final QudsWorkspaceSnapshot? previousSnapshot;
+
+  QudsCodePushResult copyWith({
+    List<String>? recompiledFiles,
+  }) =>
+      QudsCodePushResult(
+        applied: applied,
+        revision: revision,
+        bundleVersion: bundleVersion,
+        changedFiles: changedFiles,
+        deletedFiles: deletedFiles,
+        unchangedFiles: unchangedFiles,
+        invalidatedModules: invalidatedModules,
+        recompiledFiles: recompiledFiles ?? this.recompiledFiles,
+        errors: errors,
+        previousSnapshot: previousSnapshot,
+      );
+}
 
 /// In-memory multi-file, nested-folder project workspace attachable to
 /// [QudsSession] and [QudsEditorEngine], supporting both `.quds` source files
@@ -80,10 +284,11 @@ class QudsWorkspace {
     this.name = 'quds_project',
     this.packageName,
     this.entryPoint = 'main.quds',
+    String? bundleVersion,
     Map<String, String>? files,
     Map<String, Uint8List>? binaryAssets,
     Iterable<String> folders = const [],
-  }) {
+  }) : _bundleVersion = bundleVersion {
     for (final folder in folders) {
       createFolder(folder);
     }
@@ -103,10 +308,37 @@ class QudsWorkspace {
   String? packageName;
   String entryPoint;
 
+  int _revision = 0;
+  String? _bundleVersion;
   final Map<String, String> _files = {};
+  final Map<String, String> _fileFingerprints = {};
   final Map<String, Uint8List> _binaryAssets = {};
   final Set<String> _folders = {};
   final List<QudsWorkspaceChangeListener> _listeners = [];
+  final List<QudsWorkspaceBatchChangeListener> _batchListeners = [];
+
+  /// Monotonically increasing revision counter incremented on every mutation.
+  int get revision => _revision;
+
+  /// Optional CodePush / bundle version label for this workspace.
+  String? get bundleVersion => _bundleVersion;
+
+  /// Returns the deterministic content fingerprint for [path], or `null` if absent.
+  String? fileFingerprint(String path) =>
+      _fileFingerprints[normalizePath(path)];
+
+  /// Deterministic fingerprint covering every text file path & content in the workspace.
+  String get workspaceFingerprint {
+    final sorted = _files.keys.toList()..sort();
+    final buf = StringBuffer();
+    for (final p in sorted) {
+      buf.write(p);
+      buf.write('=');
+      buf.write(_fileFingerprints[p] ?? '');
+      buf.write(';');
+    }
+    return qudsContentFingerprint(buf.toString());
+  }
 
   /// Registers a listener notified when any file changes.
   void addChangeListener(QudsWorkspaceChangeListener listener) =>
@@ -116,9 +348,27 @@ class QudsWorkspace {
   void removeChangeListener(QudsWorkspaceChangeListener listener) =>
       _listeners.remove(listener);
 
-  void _notifyChanged(String path) {
-    for (final listener in List<QudsWorkspaceChangeListener>.from(_listeners)) {
-      listener(path);
+  /// Registers a listener notified once per atomic file or CodePush batch change.
+  void addBatchChangeListener(QudsWorkspaceBatchChangeListener listener) =>
+      _batchListeners.add(listener);
+
+  /// Removes a previously registered batch change listener.
+  void removeBatchChangeListener(QudsWorkspaceBatchChangeListener listener) =>
+      _batchListeners.remove(listener);
+
+  void _emitBatchChange(QudsWorkspaceBatchChange change) {
+    for (final listener
+        in List<QudsWorkspaceBatchChangeListener>.from(_batchListeners)) {
+      listener(change);
+    }
+    if (_listeners.isNotEmpty) {
+      final allPaths = <String>{...change.changedFiles, ...change.deletedFiles};
+      for (final p in allPaths) {
+        for (final listener
+            in List<QudsWorkspaceChangeListener>.from(_listeners)) {
+          listener(p);
+        }
+      }
     }
   }
 
@@ -191,16 +441,39 @@ class QudsWorkspace {
   }
 
   /// Creates or updates a text file at [path] (automatically creating parent folders).
+  ///
+  /// When the existing file already has byte-identical content, no revision bump
+  /// or cache invalidation is emitted.
   void writeFile(String path, String content) {
     final norm = normalizePath(path);
     if (norm.isEmpty) {
       throw ArgumentError('File path cannot be empty.');
     }
+    if (_files[norm] == content && !_binaryAssets.containsKey(norm)) {
+      return;
+    }
+    final preInvalidated = _hasListeners
+        ? <String>{norm, ...transitiveDependentsOf(norm)}
+        : <String>{norm};
     final dir = dirname(norm);
     if (dir.isNotEmpty) createFolder(dir);
     _binaryAssets.remove(norm);
     _files[norm] = content;
-    _notifyChanged(norm);
+    _fileFingerprints[norm] = qudsContentFingerprint(content);
+    _revision++;
+    if (_hasListeners) {
+      preInvalidated.addAll(transitiveDependentsOf(norm));
+      _emitBatchChange(
+        QudsWorkspaceBatchChange(
+          changedFiles: {norm},
+          deletedFiles: const {},
+          invalidatedFiles: preInvalidated,
+          unchangedFiles: const {},
+          revision: _revision,
+          bundleVersion: _bundleVersion,
+        ),
+      );
+    }
   }
 
   /// Creates or updates a binary asset at [path] (automatically creating parent folders).
@@ -212,9 +485,24 @@ class QudsWorkspace {
     final dir = dirname(norm);
     if (dir.isNotEmpty) createFolder(dir);
     _files.remove(norm);
+    _fileFingerprints.remove(norm);
     _binaryAssets[norm] = Uint8List.fromList(bytes);
-    _notifyChanged(norm);
+    _revision++;
+    if (_hasListeners) {
+      _emitBatchChange(
+        QudsWorkspaceBatchChange(
+          changedFiles: {norm},
+          deletedFiles: const {},
+          invalidatedFiles: {norm},
+          unchangedFiles: const {},
+          revision: _revision,
+          bundleVersion: _bundleVersion,
+        ),
+      );
+    }
   }
+
+  bool get _hasListeners => _listeners.isNotEmpty || _batchListeners.isNotEmpty;
 
   /// Reads the text content of [path], or returns `null` if not found.
   String? readFile(String path) {
@@ -248,10 +536,28 @@ class QudsWorkspace {
   /// Deletes the text file or binary asset at [path].
   bool deleteFile(String path) {
     final norm = normalizePath(path);
+    final preInvalidated = _hasListeners
+        ? <String>{norm, ...transitiveDependentsOf(norm)}
+        : <String>{norm};
     final removedText = _files.remove(norm) != null;
+    _fileFingerprints.remove(norm);
     final removedBin = _binaryAssets.remove(norm) != null;
     final removed = removedText || removedBin;
-    if (removed) _notifyChanged(norm);
+    if (removed) {
+      _revision++;
+      if (_hasListeners) {
+        _emitBatchChange(
+          QudsWorkspaceBatchChange(
+            changedFiles: const {},
+            deletedFiles: {norm},
+            invalidatedFiles: preInvalidated,
+            unchangedFiles: const {},
+            revision: _revision,
+            bundleVersion: _bundleVersion,
+          ),
+        );
+      }
+    }
     return removed;
   }
 
@@ -260,14 +566,37 @@ class QudsWorkspace {
     final oldNorm = normalizePath(oldPath);
     final newNorm = normalizePath(newPath);
     if (oldNorm == newNorm) return false;
+    final preInvalidated = _hasListeners
+        ? <String>{
+            oldNorm,
+            newNorm,
+            ...transitiveDependentsOf(oldNorm),
+            ...transitiveDependentsOf(newNorm),
+          }
+        : <String>{oldNorm, newNorm};
     if (_files.containsKey(oldNorm)) {
       final content = _files.remove(oldNorm)!;
+      final fp =
+          _fileFingerprints.remove(oldNorm) ?? qudsContentFingerprint(content);
       final dir = dirname(newNorm);
       if (dir.isNotEmpty) createFolder(dir);
       _files[newNorm] = content;
+      _fileFingerprints[newNorm] = fp;
       if (entryPoint == oldNorm) entryPoint = newNorm;
-      _notifyChanged(oldNorm);
-      _notifyChanged(newNorm);
+      _revision++;
+      if (_hasListeners) {
+        preInvalidated.addAll(transitiveDependentsOf(newNorm));
+        _emitBatchChange(
+          QudsWorkspaceBatchChange(
+            changedFiles: {newNorm},
+            deletedFiles: {oldNorm},
+            invalidatedFiles: preInvalidated,
+            unchangedFiles: const {},
+            revision: _revision,
+            bundleVersion: _bundleVersion,
+          ),
+        );
+      }
       return true;
     }
     if (_binaryAssets.containsKey(oldNorm)) {
@@ -275,8 +604,19 @@ class QudsWorkspace {
       final dir = dirname(newNorm);
       if (dir.isNotEmpty) createFolder(dir);
       _binaryAssets[newNorm] = bytes;
-      _notifyChanged(oldNorm);
-      _notifyChanged(newNorm);
+      _revision++;
+      if (_hasListeners) {
+        _emitBatchChange(
+          QudsWorkspaceBatchChange(
+            changedFiles: {newNorm},
+            deletedFiles: {oldNorm},
+            invalidatedFiles: {oldNorm, newNorm},
+            unchangedFiles: const {},
+            revision: _revision,
+            bundleVersion: _bundleVersion,
+          ),
+        );
+      }
       return true;
     }
     return false;
@@ -293,13 +633,356 @@ class QudsWorkspace {
       for (final b in _binaryAssets.keys)
         if (b.startsWith(prefix)) b,
     ];
+    final invalidated = <String>{...toDelete};
+    if (_hasListeners && toDelete.isNotEmpty) {
+      for (final f in toDelete) {
+        invalidated.addAll(transitiveDependentsOf(f));
+      }
+    }
     for (final f in toDelete) {
       _files.remove(f);
+      _fileFingerprints.remove(f);
       _binaryAssets.remove(f);
-      _notifyChanged(f);
     }
     _folders.removeWhere((d) => d == norm || d.startsWith(prefix));
+    if (toDelete.isNotEmpty) {
+      _revision++;
+      if (_hasListeners) {
+        _emitBatchChange(
+          QudsWorkspaceBatchChange(
+            changedFiles: const {},
+            deletedFiles: toDelete.toSet(),
+            invalidatedFiles: invalidated,
+            unchangedFiles: const {},
+            revision: _revision,
+            bundleVersion: _bundleVersion,
+          ),
+        );
+      }
+    }
     return toDelete.length;
+  }
+
+  /// Captures an immutable snapshot of the entire workspace (all nested files,
+  /// binary assets, folders, entry point, revision, and bundle version) so a
+  /// host app can roll back cleanly after a CodePush update.
+  QudsWorkspaceSnapshot takeSnapshot() => QudsWorkspaceSnapshot(
+        name: name,
+        packageName: packageName,
+        entryPoint: entryPoint,
+        revision: _revision,
+        bundleVersion: _bundleVersion,
+        files: Map<String, String>.from(_files),
+        binaryAssets: {
+          for (final e in _binaryAssets.entries)
+            e.key: Uint8List.fromList(e.value),
+        },
+        folders: Set<String>.from(_folders),
+      );
+
+  /// Restores a previously captured [snapshot] and notifies listeners of the
+  /// exact diff (changed, deleted, and transitively invalidated files).
+  QudsCodePushResult restoreSnapshot(QudsWorkspaceSnapshot snapshot) {
+    final prevSnapshot = takeSnapshot();
+    final changed = <String>{};
+    final deleted = <String>{};
+    final unchanged = <String>{};
+
+    for (final p in _files.keys) {
+      if (!snapshot.files.containsKey(p)) {
+        deleted.add(p);
+      }
+    }
+    for (final p in _binaryAssets.keys) {
+      if (!snapshot.binaryAssets.containsKey(p)) {
+        deleted.add(p);
+      }
+    }
+    for (final entry in snapshot.files.entries) {
+      if (_files[entry.key] == entry.value) {
+        unchanged.add(entry.key);
+      } else {
+        changed.add(entry.key);
+      }
+    }
+    for (final entry in snapshot.binaryAssets.entries) {
+      changed.add(entry.key);
+    }
+
+    final invalidated = <String>{...changed, ...deleted};
+    if (changed.isNotEmpty || deleted.isNotEmpty) {
+      for (final f in [...changed, ...deleted]) {
+        invalidated.addAll(transitiveDependentsOf(f));
+      }
+    }
+
+    name = snapshot.name;
+    packageName = snapshot.packageName;
+    entryPoint = snapshot.entryPoint;
+    _bundleVersion = snapshot.bundleVersion;
+    _files
+      ..clear()
+      ..addAll(snapshot.files);
+    _fileFingerprints
+      ..clear()
+      ..addEntries(
+        snapshot.files.entries.map(
+          (e) => MapEntry(e.key, qudsContentFingerprint(e.value)),
+        ),
+      );
+    _binaryAssets
+      ..clear()
+      ..addEntries(
+        snapshot.binaryAssets.entries.map(
+          (e) => MapEntry(e.key, Uint8List.fromList(e.value)),
+        ),
+      );
+    _folders
+      ..clear()
+      ..addAll(snapshot.folders);
+    _revision++;
+
+    if (changed.isNotEmpty || deleted.isNotEmpty) {
+      for (final f in changed) {
+        invalidated.addAll(transitiveDependentsOf(f));
+      }
+      _emitBatchChange(
+        QudsWorkspaceBatchChange(
+          changedFiles: changed,
+          deletedFiles: deleted,
+          invalidatedFiles: invalidated,
+          unchangedFiles: unchanged,
+          revision: _revision,
+          bundleVersion: _bundleVersion,
+        ),
+      );
+    }
+
+    return QudsCodePushResult(
+      applied: true,
+      revision: _revision,
+      bundleVersion: _bundleVersion,
+      changedFiles: changed.toList()..sort(),
+      deletedFiles: deleted.toList()..sort(),
+      unchangedFiles: unchanged.toList()..sort(),
+      invalidatedModules: invalidated.toList()..sort(),
+      previousSnapshot: prevSnapshot,
+    );
+  }
+
+  /// Applies a CodePush-style atomic [patch] across arbitrarily nested files
+  /// and folders in this workspace.
+  ///
+  /// - Byte-identical files in [patch.upsertFiles] are automatically skipped so
+  ///   their compiled bytecode & runtime modules stay warm.
+  /// - When [validateSyntax] is true (default), every new/modified `.quds` file
+  ///   is lexed & parsed before mutating the workspace; if any file has a syntax
+  ///   error and [atomicRollback] is true, the workspace remains completely
+  ///   untouched and [QudsCodePushResult.applied] is `false`.
+  /// - Transitive dependents are computed both before and after the patch so
+  ///   changed imports, barrel `export`s, and deleted nested modules always
+  ///   invalidate every affected dependent cleanly.
+  QudsCodePushResult applyPatch(
+    QudsWorkspacePatch patch, {
+    bool validateSyntax = true,
+    bool atomicRollback = true,
+  }) {
+    final normalizedUpserts = <String, String>{};
+    final normalizedBinary = <String, Uint8List>{};
+    final normalizedDeleteFiles = <String>{};
+    final normalizedDeleteFolders = <String>{};
+    final errors = <String>[];
+
+    try {
+      for (final entry in patch.upsertFiles.entries) {
+        final norm = normalizePath(entry.key);
+        if (norm.isEmpty) {
+          throw ArgumentError('File path cannot be empty.');
+        }
+        normalizedUpserts[norm] = entry.value;
+      }
+      for (final entry in patch.upsertBinaryAssets.entries) {
+        final norm = normalizePath(entry.key);
+        if (norm.isEmpty) {
+          throw ArgumentError('Asset path cannot be empty.');
+        }
+        normalizedBinary[norm] = entry.value;
+      }
+      for (final f in patch.deleteFiles) {
+        final norm = normalizePath(f);
+        if (norm.isNotEmpty) normalizedDeleteFiles.add(norm);
+      }
+      for (final d in patch.deleteFolders) {
+        final norm = normalizePath(d);
+        if (norm.isNotEmpty) normalizedDeleteFolders.add(norm);
+      }
+    } catch (e) {
+      return QudsCodePushResult(
+        applied: false,
+        revision: _revision,
+        bundleVersion: _bundleVersion,
+        errors: ['$e'],
+      );
+    }
+
+    // Expand folder deletions to concrete existing paths.
+    final expandedDeletes = <String>{};
+    for (final f in normalizedDeleteFiles) {
+      if (_files.containsKey(f) || _binaryAssets.containsKey(f)) {
+        expandedDeletes.add(f);
+      }
+    }
+    for (final dir in normalizedDeleteFolders) {
+      final prefix = '$dir/';
+      for (final f in _files.keys) {
+        if (f.startsWith(prefix)) expandedDeletes.add(f);
+      }
+      for (final b in _binaryAssets.keys) {
+        if (b.startsWith(prefix)) expandedDeletes.add(b);
+      }
+    }
+    // An explicit upsert in the same patch takes precedence over a folder delete.
+    expandedDeletes.removeAll(normalizedUpserts.keys);
+    expandedDeletes.removeAll(normalizedBinary.keys);
+
+    // Partition upserts into genuinely changed vs byte-identical unchanged files.
+    final changed = <String>{};
+    final unchanged = <String>{};
+    for (final entry in normalizedUpserts.entries) {
+      if (_files[entry.key] == entry.value &&
+          !_binaryAssets.containsKey(entry.key)) {
+        unchanged.add(entry.key);
+      } else {
+        changed.add(entry.key);
+      }
+    }
+    for (final p in normalizedBinary.keys) {
+      changed.add(p);
+    }
+
+    // Pre-validate every changed `.quds` file before mutating anything.
+    if (validateSyntax) {
+      for (final path in changed) {
+        if (!path.endsWith('.quds')) continue;
+        final src = normalizedUpserts[path];
+        if (src == null) continue;
+        try {
+          final tokens = const Lexer().tokenize(src, file: path);
+          Parser(tokens).parse();
+        } catch (err) {
+          errors.add('$path: $err');
+        }
+      }
+      if (errors.isNotEmpty && atomicRollback) {
+        return QudsCodePushResult(
+          applied: false,
+          revision: _revision,
+          bundleVersion: _bundleVersion,
+          unchangedFiles: unchanged.toList()..sort(),
+          errors: errors,
+        );
+      }
+    }
+
+    final prevSnapshot = takeSnapshot();
+
+    // Compute pre-patch transitive dependents (catches deleted files & removed exports).
+    final invalidated = <String>{...changed, ...expandedDeletes};
+    if (changed.isNotEmpty || expandedDeletes.isNotEmpty) {
+      final preReport = analyzeDependencies();
+      final queue = <String>[...changed, ...expandedDeletes];
+      final visited = <String>{...queue};
+      while (queue.isNotEmpty) {
+        final cur = queue.removeAt(0);
+        for (final dep in (preReport.importedByFile[cur] ?? const <String>{})) {
+          if (visited.add(dep)) {
+            invalidated.add(dep);
+            queue.add(dep);
+          }
+        }
+      }
+    }
+
+    // Apply deletions.
+    for (final f in expandedDeletes) {
+      _files.remove(f);
+      _fileFingerprints.remove(f);
+      _binaryAssets.remove(f);
+    }
+    for (final dir in normalizedDeleteFolders) {
+      final prefix = '$dir/';
+      _folders.removeWhere((d) => d == dir || d.startsWith(prefix));
+    }
+
+    // Apply upserts (creating any new nested parent folders automatically).
+    for (final path in changed) {
+      final dir = dirname(path);
+      if (dir.isNotEmpty) createFolder(dir);
+      if (normalizedUpserts.containsKey(path)) {
+        final content = normalizedUpserts[path]!;
+        _binaryAssets.remove(path);
+        _files[path] = content;
+        _fileFingerprints[path] = qudsContentFingerprint(content);
+      } else if (normalizedBinary.containsKey(path)) {
+        _files.remove(path);
+        _fileFingerprints.remove(path);
+        _binaryAssets[path] = Uint8List.fromList(normalizedBinary[path]!);
+      }
+    }
+
+    if (patch.newEntryPoint != null && patch.newEntryPoint!.trim().isNotEmpty) {
+      entryPoint = normalizePath(patch.newEntryPoint!);
+    }
+    if (patch.bundleVersion != null) {
+      _bundleVersion = patch.bundleVersion;
+    }
+
+    final hasDiff = changed.isNotEmpty ||
+        expandedDeletes.isNotEmpty ||
+        patch.newEntryPoint != null ||
+        patch.bundleVersion != null;
+    if (hasDiff) {
+      _revision++;
+    }
+
+    // Compute post-patch transitive dependents (catches newly wired imports).
+    if (changed.isNotEmpty || expandedDeletes.isNotEmpty) {
+      final postReport = analyzeDependencies();
+      final queue = <String>[...changed, ...expandedDeletes];
+      final visited = <String>{...queue};
+      while (queue.isNotEmpty) {
+        final cur = queue.removeAt(0);
+        for (final dep
+            in (postReport.importedByFile[cur] ?? const <String>{})) {
+          if (visited.add(dep)) {
+            invalidated.add(dep);
+            queue.add(dep);
+          }
+        }
+      }
+      _emitBatchChange(
+        QudsWorkspaceBatchChange(
+          changedFiles: changed,
+          deletedFiles: expandedDeletes,
+          invalidatedFiles: invalidated,
+          unchangedFiles: unchanged,
+          revision: _revision,
+          bundleVersion: _bundleVersion,
+        ),
+      );
+    }
+
+    return QudsCodePushResult(
+      applied: true,
+      revision: _revision,
+      bundleVersion: _bundleVersion,
+      changedFiles: changed.toList()..sort(),
+      deletedFiles: expandedDeletes.toList()..sort(),
+      unchangedFiles: unchanged.toList()..sort(),
+      invalidatedModules: invalidated.toList()..sort(),
+      errors: errors,
+      previousSnapshot: prevSnapshot,
+    );
   }
 
   /// Lists sorted text file paths, optionally filtered to [inFolder] or [extension].
@@ -621,6 +1304,7 @@ class QudsWorkspace {
       'version': 2,
       'name': name,
       if (packageName != null) 'packageName': packageName,
+      if (_bundleVersion != null) 'bundleVersion': _bundleVersion,
       'entryPoint': entryPoint,
       'folders': listFolders(),
       'files': Map<String, String>.fromEntries(
@@ -652,6 +1336,7 @@ class QudsWorkspace {
       name: (json['name'] as String?) ?? 'quds_project',
       packageName: json['packageName'] as String?,
       entryPoint: (json['entryPoint'] as String?) ?? 'main.quds',
+      bundleVersion: json['bundleVersion'] as String?,
       folders: [for (final f in rawFolders) '$f'],
       files: {for (final e in rawFiles.entries) '${e.key}': '${e.value}'},
       binaryAssets: decodedBinary,

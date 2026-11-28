@@ -5211,6 +5211,10 @@ class QudsBytecodeVm {
       );
     } catch (e) {
       stopwatch.stop();
+      final instrIdx = ip >= 2 ? (ip - 2) >> 1 : 0;
+      final errLine = (instrIdx >= 0 && instrIdx < curFn.lines.length)
+          ? curFn.lines[instrIdx]
+          : 1;
       return QudsBytecodeRunResult(
         succeeded: false,
         printedLines: List.unmodifiable(printed),
@@ -5218,7 +5222,7 @@ class QudsBytecodeVm {
         elapsed: stopwatch.elapsed,
         error: QudsRuntimeException(
           'Bytecode VM runtime error: $e',
-          SourceSpan(1, 1, 1, file: program.file),
+          SourceSpan(errLine, 1, 1, file: program.file),
         ),
       );
     }
@@ -5282,7 +5286,7 @@ class QudsBytecodeVm {
         final reg = nextI++;
         final kIdx = iConsts.length;
         iConsts.add(arg);
-        emit(QudsOp.iLoadK, reg, kIdx, 0);
+        emit(QudsOp.iLoadK, reg, 0, kIdx);
         srcBanks[i] = _Bank.i;
         srcRegs[i] = reg;
       } else if (expectedBank == _Bank.f) {
@@ -5298,14 +5302,14 @@ class QudsBytecodeVm {
         final reg = nextF++;
         final kIdx = fConsts.length;
         fConsts.add(arg.toDouble());
-        emit(QudsOp.fLoadK, reg, kIdx, 0);
+        emit(QudsOp.fLoadK, reg, 0, kIdx);
         srcBanks[i] = _Bank.f;
         srcRegs[i] = reg;
       } else {
         final reg = nextO++;
         final kIdx = oConsts.length;
         oConsts.add(arg);
-        emit(QudsOp.oLoadK, reg, kIdx, 0);
+        emit(QudsOp.oLoadK, reg, 0, kIdx);
         srcBanks[i] = _Bank.o;
         srcRegs[i] = reg;
       }

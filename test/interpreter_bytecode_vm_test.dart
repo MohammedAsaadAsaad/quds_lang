@@ -253,10 +253,13 @@ f14 + ms + ss
       expect(dis, contains('RET_SELF_I'));
       expect(dis, contains('NEW_INT_LIST'));
       expect(dis, contains('NEW_FLOAT_LIST'));
-      expect(dis, contains('I_INC_JLE'));
+      expect(dis, contains('I_LIST_FILL'));
+      expect(dis, contains('I_LIST_STRIDE_SET'));
+      expect(dis, contains('I_LIST_SUM_RANGE'));
       expect(dis, contains('I_INC_JLT'));
-      expect(dis, contains('I_ADD_LIST_GET'));
       expect(dis, contains('F_MUL_ADD'));
+      expect(dis, contains('F_INV_SQRT'));
+      expect(dis, contains('F_CUBE'));
 
       final astSession = QudsSession(policy: QudsExecutionPolicy.standard());
       final vmSession = QudsSession(policy: QudsExecutionPolicy.standard());

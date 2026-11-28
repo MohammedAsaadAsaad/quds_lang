@@ -15,6 +15,7 @@ import 'environment.dart';
 import 'evaluator.dart';
 import 'exceptions.dart';
 import 'sdk_intrinsics.dart';
+import 'universal_vm.dart';
 import 'values.dart';
 import 'workspace.dart';
 
@@ -50,6 +51,57 @@ class QudsImportProvideSymbols extends QudsImportResolution {
 
 typedef QudsImportResolver = QudsImportResolution Function(String uri);
 
+/// Telemetry counters tracking workspace compilation, bytecode cache hits, and
+/// CodePush-style incremental invalidations.
+class QudsCompilationStats {
+  const QudsCompilationStats({
+    required this.compiledModules,
+    required this.recompiledModules,
+    required this.bytecodeCacheHits,
+    required this.runtimeCacheHits,
+    required this.invalidatedRuntimeModules,
+    required this.evictedCompiledModules,
+    required this.cachedCompiledCount,
+  });
+
+  /// Total number of workspace modules compiled to AST + Universal Bytecode.
+  final int compiledModules;
+
+  /// Number of workspace modules recompiled after their file contents changed.
+  final int recompiledModules;
+
+  /// Times a module load reused an already-compiled bytecode artifact.
+  final int bytecodeCacheHits;
+
+  /// Times a module import was served directly from the evaluated module cache.
+  final int runtimeCacheHits;
+
+  /// Runtime module entries invalidated due to direct or transitive file edits.
+  final int invalidatedRuntimeModules;
+
+  /// Compiled bytecode artifacts evicted due to file edits or deletions.
+  final int evictedCompiledModules;
+
+  /// Current number of compiled workspace modules stored in cache.
+  final int cachedCompiledCount;
+}
+
+class _CompiledWorkspaceArtifact {
+  const _CompiledWorkspaceArtifact({
+    required this.path,
+    required this.fingerprint,
+    required this.source,
+    required this.program,
+    required this.chunk,
+  });
+
+  final String path;
+  final String fingerprint;
+  final String source;
+  final Program program;
+  final QudsUniversalChunk chunk;
+}
+
 /// Cached evaluated module with section-level symbol mapping.
 class _LoadedModule {
   _LoadedModule({
@@ -57,12 +109,14 @@ class _LoadedModule {
     required this.publicExports,
     required this.sectionExports,
     this.extensions = const [],
+    this.fingerprint,
   });
 
   final String uri;
   final Map<String, Object?> publicExports;
   final Map<String, Map<String, Object?>> sectionExports;
   final List<(ExtensionDeclaration, QudsEnvironment, String)> extensions;
+  final String? fingerprint;
 
   Map<String, Object?> select({
     String? section,
@@ -113,8 +167,10 @@ class _LoadedModule {
 }
 
 /// Loads `quds:*`, pure `dart:*`, nested [QudsWorkspace] project files, and
-/// virtual host modules into an interpreter session with AST caching,
-/// singleton diamond resolution, cycle detection, and section filtering.
+/// virtual host modules into an interpreter session with content-hashed
+/// bytecode caching, automatic Tier-1 promotion, surgical CodePush
+/// invalidation, singleton diamond resolution, cycle detection, and section
+/// filtering.
 class QudsModuleLoader {
   QudsModuleLoader({
     required this.createBaseEnvironment,
@@ -124,6 +180,8 @@ class QudsModuleLoader {
     this.deniedLibraries = const {},
     this.importResolver,
     this.workspace,
+    this.preferBytecodeModules = true,
+    this.enableTier1Promotion = true,
   });
 
   /// Shared parsed-AST cache across sessions for embedded SDK libraries.
@@ -141,8 +199,46 @@ class QudsModuleLoader {
   final QudsImportResolver? importResolver;
   QudsWorkspace? workspace;
 
+  /// When true, workspace modules execute via compiled [QudsUniversalChunk]
+  /// bytecode (with optional Tier-1 Register VM promotion for hot functions).
+  bool preferBytecodeModules;
+
+  /// When true, pure-compute functions inside imported workspace modules are
+  /// automatically promoted to Tier-1 unboxed register bytecode.
+  bool enableTier1Promotion;
+
   final Map<String, _LoadedModule> _sessionCache = {};
+  final Map<String, _CompiledWorkspaceArtifact> _compiledWorkspaceCache = {};
+  final Set<String> _compiledHistory = {};
   final List<String> _loadingStack = [];
+
+  int _compiledModules = 0;
+  int _recompiledModules = 0;
+  int _bytecodeCacheHits = 0;
+  int _runtimeCacheHits = 0;
+  int _invalidatedRuntimeModules = 0;
+  int _evictedCompiledModules = 0;
+
+  /// Current compilation & cache hit/miss telemetry snapshot.
+  QudsCompilationStats get stats => QudsCompilationStats(
+        compiledModules: _compiledModules,
+        recompiledModules: _recompiledModules,
+        bytecodeCacheHits: _bytecodeCacheHits,
+        runtimeCacheHits: _runtimeCacheHits,
+        invalidatedRuntimeModules: _invalidatedRuntimeModules,
+        evictedCompiledModules: _evictedCompiledModules,
+        cachedCompiledCount: _compiledWorkspaceCache.length,
+      );
+
+  /// Returns whether [path] currently has an up-to-date compiled bytecode
+  /// artifact cached for its latest workspace content.
+  bool hasCompiledArtifact(String path) {
+    final norm = QudsWorkspace.normalizePath(path);
+    final cached = _compiledWorkspaceCache[norm];
+    if (cached == null) return false;
+    final currentFp = workspace?.fileFingerprint(norm);
+    return currentFp != null && cached.fingerprint == currentFp;
+  }
 
   /// Registers or updates a virtual host module (e.g. `quds:viz` or `host:sensors`).
   void registerVirtualModule(String uri, Map<String, Object?> symbols) {
@@ -153,20 +249,121 @@ class QudsModuleLoader {
     );
   }
 
-  /// Invalidates a cached workspace module and its transitive dependents.
-  void invalidateWorkspaceFile(String path) {
-    final norm = QudsWorkspace.normalizePath(path);
-    _sessionCache.remove('workspace:$norm');
-    if (workspace != null) {
-      for (final dep in workspace!.transitiveDependentsOf(norm)) {
-        _sessionCache.remove('workspace:$dep');
+  /// Compiles (or returns the cached compiled bytecode artifact for) a
+  /// workspace `.quds` file at [path].
+  _CompiledWorkspaceArtifact _getOrCompileWorkspaceArtifact(
+    String normPath,
+    String source,
+  ) {
+    final fp =
+        workspace?.fileFingerprint(normPath) ?? qudsContentFingerprint(source);
+    final existing = _compiledWorkspaceCache[normPath];
+    if (existing != null &&
+        existing.fingerprint == fp &&
+        existing.source == source) {
+      _bytecodeCacheHits++;
+      return existing;
+    }
+    final isRecompile = _compiledHistory.contains(normPath);
+    final tokens = const Lexer().tokenize(source, file: normPath);
+    final program = Parser(tokens).parse();
+    final chunk = QudsUniversalCompiler.compile(program, name: normPath);
+    final artifact = _CompiledWorkspaceArtifact(
+      path: normPath,
+      fingerprint: fp,
+      source: source,
+      program: program,
+      chunk: chunk,
+    );
+    _compiledWorkspaceCache[normPath] = artifact;
+    _compiledHistory.add(normPath);
+    _compiledModules++;
+    if (isRecompile) _recompiledModules++;
+    return artifact;
+  }
+
+  /// Eagerly pre-compiles the specified workspace `.quds` files into the
+  /// content-hashed bytecode cache, returning the list of files compiled or
+  /// recompiled (unchanged already-cached files are skipped).
+  List<String> precompileWorkspaceFiles(Iterable<String> paths) {
+    final ws = workspace;
+    if (ws == null) return const [];
+    final recompiled = <String>[];
+    for (final rawPath in paths) {
+      final norm = QudsWorkspace.normalizePath(rawPath);
+      if (!norm.endsWith('.quds')) continue;
+      final src = ws.readFile(norm);
+      if (src == null) continue;
+      final before = _compiledModules;
+      _getOrCompileWorkspaceArtifact(norm, src);
+      if (_compiledModules > before) {
+        recompiled.add(norm);
+      }
+    }
+    return recompiled;
+  }
+
+  /// Surgically applies a CodePush / workspace [change] to both the compiled
+  /// bytecode cache and the evaluated runtime module cache:
+  /// - Deleted files are evicted from both caches.
+  /// - Changed files are evicted from both caches (so they recompile cleanly).
+  /// - Transitive dependents whose own source did NOT change have ONLY their
+  ///   runtime evaluated exports invalidated while keeping their compiled
+  ///   bytecode artifact warm!
+  void applyWorkspaceBatchChange(QudsWorkspaceBatchChange change) {
+    for (final path in change.deletedFiles) {
+      if (_compiledWorkspaceCache.remove(path) != null) {
+        _evictedCompiledModules++;
+      }
+      if (_sessionCache.remove('workspace:$path') != null) {
+        _invalidatedRuntimeModules++;
+      }
+    }
+    for (final path in change.changedFiles) {
+      if (_compiledWorkspaceCache.remove(path) != null) {
+        _evictedCompiledModules++;
+      }
+      if (_sessionCache.remove('workspace:$path') != null) {
+        _invalidatedRuntimeModules++;
+      }
+    }
+    for (final path in change.invalidatedFiles) {
+      if (change.changedFiles.contains(path) ||
+          change.deletedFiles.contains(path)) {
+        continue;
+      }
+      if (_sessionCache.remove('workspace:$path') != null) {
+        _invalidatedRuntimeModules++;
       }
     }
   }
 
-  /// Clears all cached workspace modules (preserving built-in host modules).
-  void clearWorkspaceCache() {
+  /// Invalidates a cached workspace module and its transitive dependents.
+  void invalidateWorkspaceFile(String path) {
+    final norm = QudsWorkspace.normalizePath(path);
+    if (_compiledWorkspaceCache.remove(norm) != null) {
+      _evictedCompiledModules++;
+    }
+    if (_sessionCache.remove('workspace:$norm') != null) {
+      _invalidatedRuntimeModules++;
+    }
+    if (workspace != null) {
+      for (final dep in workspace!.transitiveDependentsOf(norm)) {
+        if (_sessionCache.remove('workspace:$dep') != null) {
+          _invalidatedRuntimeModules++;
+        }
+      }
+    }
+  }
+
+  /// Clears all cached workspace runtime modules (preserving built-in host
+  /// modules and, unless [clearCompiledBytecode] is true, compiled bytecode
+  /// artifacts whose content fingerprints still match).
+  void clearWorkspaceCache({bool clearCompiledBytecode = false}) {
     _sessionCache.removeWhere((key, _) => key.startsWith('workspace:'));
+    if (clearCompiledBytecode) {
+      _compiledWorkspaceCache.clear();
+    }
   }
 
   /// Runs [action] with [workspacePath] recorded on the active loading stack so
@@ -331,9 +528,25 @@ class QudsModuleLoader {
     String workspacePath,
     SourceSpan span,
   ) async {
+    final source = workspace?.readFile(workspacePath);
+    if (source == null) {
+      _sessionCache.remove('workspace:$workspacePath');
+      _compiledWorkspaceCache.remove(workspacePath);
+      throw QudsRuntimeException(
+        'Workspace file `$workspacePath` not found.',
+        span,
+        code: 'E900',
+      );
+    }
+
+    final currentFp = workspace?.fileFingerprint(workspacePath) ??
+        qudsContentFingerprint(source);
     final cacheKey = 'workspace:$workspacePath';
     final cached = _sessionCache[cacheKey];
-    if (cached != null) return cached;
+    if (cached != null && cached.fingerprint == currentFp) {
+      _runtimeCacheHits++;
+      return cached;
+    }
 
     if (_loadingStack.contains(workspacePath)) {
       final startIdx = _loadingStack.indexOf(workspacePath);
@@ -345,23 +558,18 @@ class QudsModuleLoader {
       );
     }
 
-    final source = workspace?.readFile(workspacePath);
-    if (source == null) {
-      throw QudsRuntimeException(
-        'Workspace file `$workspacePath` not found.',
-        span,
-        code: 'E900',
-      );
-    }
-
     _loadingStack.add(workspacePath);
     try {
+      final artifact = _getOrCompileWorkspaceArtifact(workspacePath, source);
       final mod = await _loadFromSource(
         workspacePath,
         source,
         fileName: workspacePath,
         cacheable: false,
         isSdk: false,
+        precompiledProgram: artifact.program,
+        precompiledChunk: artifact.chunk,
+        fingerprint: artifact.fingerprint,
       );
       _sessionCache[cacheKey] = mod;
       return mod;
@@ -421,13 +629,17 @@ class QudsModuleLoader {
     required String fileName,
     required bool cacheable,
     bool isSdk = false,
+    Program? precompiledProgram,
+    QudsUniversalChunk? precompiledChunk,
+    String? fingerprint,
   }) async {
-    final program = cacheable
-        ? _parsedSdkCache.putIfAbsent(
-            targetUri,
-            () => Parser(Lexer().tokenize(source, file: fileName)).parse(),
-          )
-        : Parser(Lexer().tokenize(source, file: fileName)).parse();
+    final program = precompiledProgram ??
+        (cacheable
+            ? _parsedSdkCache.putIfAbsent(
+                targetUri,
+                () => Parser(Lexer().tokenize(source, file: fileName)).parse(),
+              )
+            : Parser(Lexer().tokenize(source, file: fileName)).parse());
 
     final modEnv = createBaseEnvironment();
     final reExports = <String, Object?>{};
@@ -500,7 +712,17 @@ class QudsModuleLoader {
       isSdk: isSdk,
     );
 
-    await evaluator.executeProgram(program, env: modEnv, resetBudget: false);
+    if (!isSdk && preferBytecodeModules && precompiledChunk != null) {
+      await QudsUniversalVm.execute(
+        precompiledChunk,
+        evaluator,
+        modEnv,
+        resetBudget: false,
+        enableTier1Promotion: enableTier1Promotion,
+      );
+    } else {
+      await evaluator.executeProgram(program, env: modEnv, resetBudget: false);
+    }
 
     final publicExports = <String, Object?>{...reExports};
     for (final name in declaredPublicNames) {
@@ -548,6 +770,7 @@ class QudsModuleLoader {
       publicExports: publicExports,
       sectionExports: sectionExports,
       extensions: moduleExtensions,
+      fingerprint: fingerprint,
     );
   }
 }

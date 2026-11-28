@@ -8,7 +8,7 @@ void main() {
     'Every single Quds Studio preset executes cleanly on the Universal Register Bytecode VM',
     () async {
       // Verify massive catalog count & complete category coverage
-      expect(studioPresets.length, greaterThanOrEqualTo(128));
+      expect(studioPresets.length, greaterThanOrEqualTo(138));
       for (final cat in StudioCategory.values) {
         final count = studioPresets.where((p) => p.category == cat).length;
         expect(count, greaterThan(0), reason: 'Category ${cat.name} is empty');
@@ -67,7 +67,7 @@ void main() {
         reason:
             'Preset VM failures (${failures.length}):\n${failures.join('\n')}',
       );
-      expect(vmAcceleratedCount, greaterThanOrEqualTo(110));
+      expect(vmAcceleratedCount, greaterThanOrEqualTo(120));
     },
   );
 

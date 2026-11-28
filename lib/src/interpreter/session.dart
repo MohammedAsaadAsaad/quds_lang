@@ -23,6 +23,7 @@ import 'exceptions.dart';
 import 'host_bridge.dart';
 import 'module_loader.dart';
 import 'outputs.dart';
+import 'pen_module.dart';
 import 'policy.dart';
 import 'profiler.dart';
 import 'values.dart';
@@ -454,13 +455,22 @@ class QudsSession {
   }
 
   void _installBuiltInVizModule() {
+    final sharedInteractive = <String, QudsInteractiveInput>{};
     final viz = buildQudsVizModule(
       maxPrimitives: policy.maxPrimitives,
       maxOutputs: policy.maxOutputCount,
       persistentState: _simulationState,
+      sharedInteractiveRegistry: sharedInteractive,
     );
     _hostModules[viz.uri] = viz;
     _moduleLoader.registerVirtualModule(viz.uri, viz.exports);
+    final pen = buildQudsPenModule(
+      maxPrimitives: policy.maxPrimitives,
+      maxOutputs: policy.maxOutputCount,
+      sharedInteractiveRegistry: sharedInteractive,
+    );
+    _hostModules[pen.uri] = pen;
+    _moduleLoader.registerVirtualModule(pen.uri, pen.exports);
     final dataMod = buildQudsDataModule();
     _hostModules[dataMod.uri] = dataMod;
     _moduleLoader.registerVirtualModule(dataMod.uri, dataMod.exports);

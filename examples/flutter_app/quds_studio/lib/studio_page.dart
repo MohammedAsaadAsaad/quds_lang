@@ -119,6 +119,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     'quds:async',
     'quds:ext',
     'quds:viz',
+    'quds:pen',
     'quds:data',
     'quds:assets',
     'dart:math',
@@ -518,7 +519,10 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     }
   }
 
-  void _selectProjectTemplate(StudioProjectTemplate tpl) {
+  void _selectProjectTemplate(
+    StudioProjectTemplate tpl, {
+    bool switchMobileTab = false,
+  }) {
     _stopAnimTimer();
     _session.stop();
     _session.resetAnimation();
@@ -536,7 +540,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
       _projectWorkspace.entryPoint,
       switchToEditorOnMobile: false,
     );
-    _runCode(switchMobileTab: false);
+    _runCode(switchMobileTab: switchMobileTab);
   }
 
   void _importQprojWorkspace(QudsWorkspace imported) {
@@ -735,17 +739,28 @@ class _QudsStudioPageState extends State<QudsStudioPage>
     _selectPreset(list[nextIdx]);
   }
 
-  Future<void> _openPresetGallery() async {
+  Future<void> _openPresetGallery({bool expandWorkspaces = false}) async {
     final picked = await showQudsPresetGalleryDialog(
       context,
       initialFilter: _activeFilter,
       activePresetId: _preset.id,
+      workspaceMode: _workspaceMode,
+      activeWorkspaceId: _activeProjectId,
       isArabic: _isArabic,
       isDark: _isDark,
+      expandWorkspaces: expandWorkspaces,
     );
     if (picked != null && mounted) {
-      setState(() => _activeFilter = picked.filter);
-      _selectPreset(picked.preset);
+      if (picked.workspaceTemplate != null) {
+        _selectProjectTemplate(
+          picked.workspaceTemplate!,
+          switchMobileTab: true,
+        );
+        _inspectorTabs.index = 5; // Show Project files/assets tab on desktop!
+      } else if (picked.preset != null) {
+        setState(() => _activeFilter = picked.filter);
+        _selectPreset(picked.preset!);
+      }
     }
   }
 
@@ -880,6 +895,7 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                       for (final lib in const [
                         'quds:math',
                         'quds:viz',
+                        'quds:pen',
                         'quds:assets',
                         'quds:json',
                         'quds:async',
@@ -1167,14 +1183,14 @@ class _QudsStudioPageState extends State<QudsStudioPage>
                     _buildToolbar(theme, isCompact: isCompact),
                     QudsPresetQuickBar(
                       activeFilter: _activeFilter,
-                      activePresetId: _preset.id,
+                      activePreset: _preset,
+                      workspaceMode: _workspaceMode,
+                      activeWorkspaceName: _projectWorkspace.name,
                       isArabic: _isArabic,
                       isDark: _isDark,
-                      onFilterChanged: (kind) {
-                        setState(() => _activeFilter = kind);
-                      },
-                      onSelectPreset: _selectPreset,
-                      onOpenGallery: _openPresetGallery,
+                      onOpenGallery: () => _openPresetGallery(),
+                      onOpenWorkspaces: () =>
+                          _openPresetGallery(expandWorkspaces: true),
                     ),
                     Expanded(
                       child: Padding(

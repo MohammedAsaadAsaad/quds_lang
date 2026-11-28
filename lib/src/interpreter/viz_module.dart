@@ -20,6 +20,7 @@ QudsHostModule buildQudsVizModule({
   int? maxPrimitives,
   int? maxOutputs,
   Map<String, Object?>? persistentState,
+  Map<String, QudsInteractiveInput>? sharedInteractiveRegistry,
 }) {
   var outputCounter = 0;
   final simState = persistentState ?? <String, Object?>{};
@@ -35,7 +36,8 @@ QudsHostModule buildQudsVizModule({
     }
   }
 
-  final interactiveRegistry = <String, QudsInteractiveInput>{};
+  final interactiveRegistry =
+      sharedInteractiveRegistry ?? <String, QudsInteractiveInput>{};
   QudsAnimationSpec? activeAnimation;
 
   final builder = QudsHostModule.builder(

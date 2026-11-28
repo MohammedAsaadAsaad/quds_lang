@@ -142,6 +142,7 @@ export 'src/interpreter/values.dart'
         qudsFormatValue,
         qudsSummarizeValue,
         qudsTypeName;
+export 'src/interpreter/pen_module.dart' show buildQudsPenModule;
 export 'src/interpreter/viz_module.dart' show buildQudsVizModule;
 export 'src/interpreter/workspace.dart'
     show

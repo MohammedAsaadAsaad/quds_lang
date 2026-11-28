@@ -373,7 +373,7 @@ void main() {
   });
 
   testWidgets(
-      'Quick-Switch category bar, Prev/Next stepper, and Examples Gallery switch motion presets seamlessly',
+      'Examples Tree Explorer navigates domains, launches Solar Orbit and Pen presets, and Prev/Next steppers work seamlessly',
       (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -385,12 +385,12 @@ void main() {
 
     expect(find.byKey(const Key('preset_quick_bar')), findsOneWidget);
 
-    // Filter to live motion presets (`⚡ حركة حية (12)`)
-    await tester.tap(find.byKey(const Key('filter_animatedOnly')));
-    await tester.pumpAndSettle();
-
-    // Open full categorized Examples Gallery dialog and select Solar Orbit
+    // Open Collapsible Tree Explorer -> expand Sciences -> Astronomy -> Solar Orbit
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('tree_domain_sciences')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('folder_card_astronomy')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('gallery_item_solar_orbit')));
     await tester.pumpAndSettle(const Duration(seconds: 2));
@@ -406,10 +406,26 @@ void main() {
       findsOneWidget,
     );
 
-    // Step to next motion preset via 1-tap Next button (`btn_next_preset`) -> Spirograph Rose
-    await tester.tap(find.byKey(const Key('btn_next_preset')));
+    // Reopen Tree -> tap Reveal Active -> Solar Orbit is highlighted as active!
+    await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('btn_reveal_active')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gallery_item_solar_orbit')), findsOneWidget);
+    expect(find.byKey(const Key('tree_active_badge')), findsOneWidget);
+
+    // Collapse all -> expand Pen category -> launch quds:pen Islamic Star!
+    await tester.tap(find.byKey(const Key('btn_collapse_all')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('gallery_item_solar_orbit')), findsNothing);
+    await tester.tap(find.byKey(const Key('tree_domain_gamesAndSims')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('folder_card_pen')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('gallery_item_pen_islamic_star')));
     await tester.pumpAndSettle(const Duration(seconds: 2));
-    expect(find.textContaining('البتلات'), findsWidgets);
+    expect(find.byKey(const Key('quds_geometry_canvas')), findsOneWidget);
+    expect(find.textContaining('المحاور'), findsWidgets);
   });
 
   testWidgets(
@@ -458,7 +474,7 @@ void main() {
   });
 
   testWidgets(
-      'Line Quality panel controls sharpness, smoothness, glow, and anti-aliasing live, and Chemistry/Math categories run smoothly',
+      'Line Quality panel controls sharpness, smoothness, glow, and anti-aliasing live, and Chemistry/Math categories run smoothly via Tree',
       (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -500,21 +516,12 @@ void main() {
     expect(geoCanvas.lineStyle.glowIntensity,
         QudsLineStyleSettings.softGlow.glowIntensity);
 
-    // 5. Filter by Chemistry and run Titration pH curve live via Gallery
-    final quickBarScroll = find.descendant(
-      of: find.byKey(const Key('preset_quick_bar')),
-      matching: find.byType(Scrollable),
-    );
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('filter_chemistry')),
-      220,
-      scrollable: quickBarScroll,
-    );
-    await tester.ensureVisible(find.byKey(const Key('filter_chemistry')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('filter_chemistry')));
-    await tester.pumpAndSettle();
+    // 5. Launch Chemistry Titration pH curve via Collapsible Tree
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('tree_domain_sciences')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('folder_card_chemistry')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('gallery_item_chem_titration_ph')));
     await tester.pumpAndSettle(const Duration(seconds: 2));
@@ -526,17 +533,12 @@ void main() {
       findsOneWidget,
     );
 
-    // 6. Filter by Mathematics and run Riemann Integral live via Gallery
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('filter_mathematics')),
-      220,
-      scrollable: quickBarScroll,
-    );
-    await tester.ensureVisible(find.byKey(const Key('filter_mathematics')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('filter_mathematics')));
-    await tester.pumpAndSettle();
+    // 6. Launch Mathematics Riemann Integral via Collapsible Tree
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('tree_domain_mathAndCs')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('folder_card_mathematics')));
     await tester.pumpAndSettle();
     await tester
         .tap(find.byKey(const Key('gallery_item_math_riemann_integral')));
@@ -551,7 +553,7 @@ void main() {
   });
 
   testWidgets(
-      'Creative 3-tier Domain -> Folder -> Examples Hub drills into folders, navigates back, and live-searches across 120 presets',
+      'Collapsible Tree starts all-collapsed, launches full Workspaces directly, tracks active selection, and live-searches across 138 presets + 5 Workspaces',
       (tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -561,36 +563,24 @@ void main() {
         key: ValueKey('folder_hub_test'), autoRunInitial: false));
     await tester.pumpAndSettle();
 
-    // 1. Open Folder Hub from Quick Bar -> starts on grouped Folders Grid
+    // 1. Open Tree Explorer -> ALL root nodes start COLLAPSED cleanly!
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('gallery_folders_grid')), findsOneWidget);
-    expect(find.byKey(const Key('folder_card_games')), findsOneWidget);
-    expect(find.byKey(const Key('folder_card_simulations')), findsOneWidget);
-    final hubScroll = find.descendant(
-      of: find.byKey(const Key('gallery_folders_grid')),
-      matching: find.byType(Scrollable),
-    );
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('folder_card_biology')),
-      240,
-      scrollable: hubScroll,
-    );
-    expect(find.byKey(const Key('folder_card_biology')), findsOneWidget);
+    expect(find.byKey(const Key('examples_tree_list')), findsOneWidget);
+    expect(find.byKey(const Key('tree_node_workspaces')), findsOneWidget);
+    expect(find.byKey(const Key('folder_card_biology')), findsNothing);
+    expect(find.byKey(const Key('tree_workspace_quds_shop_pos')), findsNothing);
 
-    // 2. Drill into Biology & Medicine folder -> lists ECG, SIR, Lotka-Volterra
+    // 2. Expand Sciences -> Biology -> verifies SIR Epidemic inside collapsed branch
+    await tester.tap(find.byKey(const Key('tree_domain_sciences')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('folder_card_biology')), findsOneWidget);
     await tester.tap(find.byKey(const Key('folder_card_biology')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('gallery_examples_list')), findsOneWidget);
     expect(
         find.byKey(const Key('gallery_item_bio_sir_epidemic')), findsOneWidget);
 
-    // 3. Breadcrumb back to Folders Grid
-    await tester.tap(find.byKey(const Key('btn_gallery_back_folders')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const Key('gallery_folders_grid')), findsOneWidget);
-
-    // 4. Live search "ECG" across all 54 presets and launch Live ECG Monitor!
+    // 3. Live search "ECG" across all presets and launch Live ECG Monitor!
     await tester.enterText(
         find.byKey(const Key('gallery_search_input')), 'ECG');
     await tester.pumpAndSettle();
@@ -604,6 +594,17 @@ void main() {
       ),
       findsOneWidget,
     );
+
+    // 4. Direct 1-tap "المشاريع (5)" button opens Workspaces branch & launches POS Shop!
+    await tester.tap(find.byKey(const Key('btn_open_workspaces_tree')));
+    await tester.pumpAndSettle();
+    expect(
+        find.byKey(const Key('tree_workspace_quds_shop_pos')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('tree_workspace_quds_shop_pos')));
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+    expect(find.byKey(const Key('quds_image_card_assets/banner.bmp')),
+        findsOneWidget);
+    expect(find.byKey(const Key('quds_form_output_card')), findsOneWidget);
   });
 
   testWidgets(
@@ -621,7 +622,7 @@ void main() {
           reason: 'Benchmark ${b.id} must compile to Register Bytecode VM');
     }
 
-    // 2. Open Quds Studio on phone viewport, select Benchmarks folder, launch Fib(30)
+    // 2. Open Quds Studio on phone viewport, expand Quds 1.2 & VM -> Benchmarks -> Fib(30)
     tester.view.physicalSize = const Size(412, 915);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -634,21 +635,19 @@ void main() {
 
     await tester.tap(find.byKey(const Key('btn_preset_gallery')));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.byKey(const Key('folder_card_benchmarks')),
-      200,
-      scrollable: find.descendant(
-        of: find.byKey(const Key('gallery_folders_grid')),
-        matching: find.byType(Scrollable),
-      ),
-    );
+    await tester.tap(find.byKey(const Key('tree_domain_languageAndVm')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('folder_card_benchmarks')), findsOneWidget);
-    await tester.tap(find.byKey(const Key('folder_card_benchmarks')));
+    final benchFolder = find.byKey(const Key('folder_card_benchmarks'));
+    await tester.ensureVisible(benchFolder);
+    await tester.pumpAndSettle();
+    await tester.tap(benchFolder);
     await tester.pumpAndSettle();
 
     // Launch Recursive fib(30) benchmark -> runs automatically on Register VM!
-    await tester.tap(find.byKey(const Key('gallery_item_bench_fib_30')));
+    final fibItem = find.byKey(const Key('gallery_item_bench_fib_30'));
+    await tester.ensureVisible(fibItem);
+    await tester.pumpAndSettle();
+    await tester.tap(fibItem);
     await tester.pumpAndSettle(const Duration(seconds: 5));
 
     expect(find.byKey(const Key('quds_benchmark_card')), findsOneWidget);

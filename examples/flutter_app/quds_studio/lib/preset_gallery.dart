@@ -1,14 +1,16 @@
-/// Redesigned 3-Tier Domain -> Folder -> Examples Library Explorer & Quick Bar
-/// for Quds Studio (120+ Register-VM-accelerated presets across 16 categories).
+/// Hierarchical Collapsible Tree Explorer & Sleek Context Bar for Quds Studio
+/// (138 Register-VM presets across 18 categories + 5 full multi-folder Workspaces).
 library;
 
 import 'package:flutter/material.dart';
 
 import 'presets.dart';
+import 'project_templates.dart';
 
 enum StudioFilterKind {
   all,
   animatedOnly,
+  pen,
   apps,
   games,
   simulations,
@@ -32,6 +34,7 @@ extension StudioFilterExt on StudioFilterKind {
   String label(bool isArabic) => switch (this) {
         StudioFilterKind.all => isArabic ? 'الكل' : 'All',
         StudioFilterKind.animatedOnly => isArabic ? '⚡ حركة حية' : '⚡ Motion',
+        StudioFilterKind.pen => StudioCategory.pen.shortLabel(isArabic),
         StudioFilterKind.apps => StudioCategory.apps.shortLabel(isArabic),
         StudioFilterKind.games => StudioCategory.games.shortLabel(isArabic),
         StudioFilterKind.simulations =>
@@ -61,6 +64,7 @@ extension StudioFilterExt on StudioFilterKind {
       };
 
   StudioCategory? get category => switch (this) {
+        StudioFilterKind.pen => StudioCategory.pen,
         StudioFilterKind.apps => StudioCategory.apps,
         StudioFilterKind.games => StudioCategory.games,
         StudioFilterKind.simulations => StudioCategory.simulations,
@@ -84,6 +88,7 @@ extension StudioFilterExt on StudioFilterKind {
   bool matches(StudioPreset p) => switch (this) {
         StudioFilterKind.all => true,
         StudioFilterKind.animatedOnly => p.isAnimated,
+        StudioFilterKind.pen => p.category == StudioCategory.pen,
         StudioFilterKind.apps => p.category == StudioCategory.apps,
         StudioFilterKind.games => p.category == StudioCategory.games,
         StudioFilterKind.simulations =>
@@ -108,6 +113,7 @@ extension StudioFilterExt on StudioFilterKind {
 }
 
 StudioFilterKind filterForCategory(StudioCategory c) => switch (c) {
+      StudioCategory.pen => StudioFilterKind.pen,
       StudioCategory.apps => StudioFilterKind.apps,
       StudioCategory.games => StudioFilterKind.games,
       StudioCategory.simulations => StudioFilterKind.simulations,
@@ -132,37 +138,53 @@ List<StudioPreset> filterStudioPresets(StudioFilterKind filter) => [
         if (filter.matches(p)) p,
     ];
 
-/// Compact horizontal quick-access bar with the prominent Library launcher,
-/// thematic category pills, and instant 1-tap preset switching.
+/// Clean, uncluttered top Explorer Bar replacing the crowded horizontal strip:
+/// - 1-tap Tree Explorer launcher (`btn_preset_gallery`)
+/// - 1-tap Full Workspaces launcher (`btn_open_workspaces_tree`)
+/// - Current active item breadcrumb (preset or multi-folder Workspace)
+/// - Quick Prev/Next stepping buttons
 class QudsPresetQuickBar extends StatelessWidget {
   const QudsPresetQuickBar({
     super.key,
     required this.activeFilter,
-    required this.activePresetId,
+    required this.activePreset,
+    required this.workspaceMode,
+    required this.activeWorkspaceName,
     required this.isArabic,
     required this.isDark,
-    required this.onFilterChanged,
-    required this.onSelectPreset,
     required this.onOpenGallery,
+    required this.onOpenWorkspaces,
   });
 
   final StudioFilterKind activeFilter;
-  final String activePresetId;
+  final StudioPreset activePreset;
+  final bool workspaceMode;
+  final String activeWorkspaceName;
   final bool isArabic;
   final bool isDark;
-  final ValueChanged<StudioFilterKind> onFilterChanged;
-  final ValueChanged<StudioPreset> onSelectPreset;
   final VoidCallback onOpenGallery;
+  final VoidCallback onOpenWorkspaces;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final surface = isDark ? const Color(0xFF0B1120) : const Color(0xFFF1F5F9);
-    final filtered = filterStudioPresets(activeFilter);
+    final totalItems = studioPresets.length + studioProjectTemplates.length;
+
+    final activeTitle = workspaceMode
+        ? activeWorkspaceName
+        : (isArabic ? activePreset.titleAr : activePreset.titleEn);
+    final activeCategoryLabel = workspaceMode
+        ? (isArabic ? '📦 مشروع متكامل' : '📦 Workspace')
+        : activePreset.category.shortLabel(isArabic);
+    final activeColor = workspaceMode
+        ? const Color(0xFF10B981)
+        : _categoryColor(activePreset.category);
 
     return Container(
       key: const Key('preset_quick_bar'),
-      height: 42,
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: surface,
         border: Border(
@@ -171,104 +193,1066 @@ class QudsPresetQuickBar extends StatelessWidget {
           ),
         ),
       ),
-      child: Row(
-        children: [
-          // Always-visible pinned Library Hub launcher
-          Padding(
-            padding: const EdgeInsetsDirectional.only(
-                start: 8, end: 6, top: 4, bottom: 4),
-            child: ActionChip(
-              key: const Key('btn_preset_gallery'),
-              avatar: const Icon(Icons.auto_awesome_mosaic_rounded,
-                  size: 15, color: Color(0xFF38BDF8)),
-              label: Text(
-                isArabic
-                    ? 'المكتبة (${studioPresets.length})'
-                    : 'Library (${studioPresets.length})',
-                style: const TextStyle(
-                    fontSize: 11.2, fontWeight: FontWeight.w800),
-              ),
-              backgroundColor: const Color(0xFF2563EB).withValues(alpha: 0.16),
-              side: BorderSide(
-                color: const Color(0xFF38BDF8).withValues(alpha: 0.55),
-              ),
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 5),
-              onPressed: onOpenGallery,
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
-              children: [
-                // Category filter pills with live counts
-                for (final kind in StudioFilterKind.values)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 5),
-                    child: ChoiceChip(
-                      key: Key('filter_${kind.name}'),
-                      avatar: kind.category != null
-                          ? Icon(
-                              _categoryIcon(kind.category!),
-                              size: 13,
-                              color: activeFilter == kind
-                                  ? Colors.white
-                                  : _categoryColor(kind.category!),
-                            )
-                          : null,
-                      label: Text(
-                        kind == StudioFilterKind.all
-                            ? kind.label(isArabic)
-                            : '${kind.label(isArabic)} (${filterStudioPresets(kind).length})',
-                        style: const TextStyle(
-                            fontSize: 10.8, fontWeight: FontWeight.w600),
-                      ),
-                      selected: activeFilter == kind,
-                      onSelected: (_) => onFilterChanged(kind),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final narrow = constraints.maxWidth < 560;
+          return Row(
+            children: [
+              // 1. Hierarchical Examples & Projects Tree Explorer Launcher
+              if (narrow)
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    key: const Key('btn_preset_gallery'),
+                    onPressed: onOpenGallery,
+                    icon: const Icon(Icons.account_tree_rounded,
+                        size: 15, color: Color(0xFF38BDF8)),
+                    label: Text(
+                      isArabic
+                          ? 'شجرة الأمثلة ($totalItems)'
+                          : 'Examples Tree ($totalItems)',
+                      style: const TextStyle(
+                          fontSize: 11.2, fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor:
+                          const Color(0xFF2563EB).withValues(alpha: 0.16),
+                      foregroundColor:
+                          isDark ? Colors.white : const Color(0xFF0F172A),
                       visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      side: BorderSide(
+                        color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+                      ),
                     ),
                   ),
-                VerticalDivider(
-                  width: 14,
-                  thickness: 1,
-                  color: theme.dividerColor.withValues(alpha: 0.35),
+                )
+              else
+                FilledButton.tonalIcon(
+                  key: const Key('btn_preset_gallery'),
+                  onPressed: onOpenGallery,
+                  icon: const Icon(Icons.account_tree_rounded,
+                      size: 15, color: Color(0xFF38BDF8)),
+                  label: Text(
+                    isArabic
+                        ? 'شجرة الأمثلة ($totalItems)'
+                        : 'Examples Tree ($totalItems)',
+                    style: const TextStyle(
+                        fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                  style: FilledButton.styleFrom(
+                    backgroundColor:
+                        const Color(0xFF2563EB).withValues(alpha: 0.16),
+                    foregroundColor:
+                        isDark ? Colors.white : const Color(0xFF0F172A),
+                    visualDensity: VisualDensity.compact,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    side: BorderSide(
+                      color: const Color(0xFF38BDF8).withValues(alpha: 0.5),
+                    ),
+                  ),
                 ),
-                // Direct 1-tap preset chips for the currently selected folder
-                for (final p in filtered)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 5),
-                    child: InputChip(
-                      key: Key('quick_preset_${p.id}'),
-                      label: Text(
-                        isArabic
-                            ? _shortTitle(p.titleAr)
-                            : _shortTitle(p.titleEn),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: p.id == activePresetId
-                              ? FontWeight.w700
-                              : FontWeight.w500,
+              const SizedBox(width: 6),
+
+              // 2. Direct 1-tap Full Multi-Folder Workspaces Launcher
+              OutlinedButton.icon(
+                key: const Key('btn_open_workspaces_tree'),
+                onPressed: onOpenWorkspaces,
+                icon: const Icon(Icons.workspaces_rounded,
+                    size: 14, color: Color(0xFF10B981)),
+                label: Text(
+                  isArabic
+                      ? 'المشاريع (${studioProjectTemplates.length})'
+                      : 'Workspaces (${studioProjectTemplates.length})',
+                  style: const TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700),
+                ),
+                style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  side: BorderSide(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.45),
+                  ),
+                ),
+              ),
+
+              // 3. Active Item Breadcrumb Pill on wide layouts (mobile toolbar already shows it)
+              if (!narrow) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: InkWell(
+                    onTap: onOpenGallery,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: activeColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: activeColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: activeColor.withValues(alpha: 0.20),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              activeCategoryLabel,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: activeColor,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              activeTitle,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Icon(Icons.unfold_more_rounded,
+                              size: 15, color: theme.hintColor),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Result returned when picking an item from the Examples & Workspaces Tree.
+class QudsGallerySelection {
+  const QudsGallerySelection.preset({
+    required StudioPreset this.preset,
+    required this.filter,
+  }) : workspaceTemplate = null;
+
+  const QudsGallerySelection.workspace({
+    required StudioProjectTemplate this.workspaceTemplate,
+  })  : preset = null,
+        filter = StudioFilterKind.all;
+
+  final StudioPreset? preset;
+  final StudioProjectTemplate? workspaceTemplate;
+  final StudioFilterKind filter;
+}
+
+/// Opens the Hierarchical Collapsible Tree Explorer for all 138 Quds presets
+/// (grouped by Domain -> Category -> Example) AND all 5 full multi-folder
+/// Workspace projects (`quds_shop_pos`, `sales_analytics_hub`,
+/// `quds_extensions_host`, `pixel_asset_studio`, `orbital_lab`).
+///
+/// - Starts with ALL nodes collapsed by default (unless `expandWorkspaces` is
+///   true), keeping navigation ultra-clean and uncluttered.
+/// - Clearly marks the branch containing the currently open example/workspace
+///   with an active badge, highlights the open item when expanded, and offers a
+///   1-tap "إظهار المفتوح / Reveal Active" button + live instant search!
+Future<QudsGallerySelection?> showQudsPresetGalleryDialog(
+  BuildContext context, {
+  required String activePresetId,
+  required bool workspaceMode,
+  required String activeWorkspaceId,
+  required StudioFilterKind initialFilter,
+  required bool isArabic,
+  required bool isDark,
+  bool expandWorkspaces = false,
+}) {
+  return showDialog<QudsGallerySelection>(
+    context: context,
+    builder: (_) => _QudsExamplesTreeDialog(
+      activePresetId: activePresetId,
+      workspaceMode: workspaceMode,
+      activeWorkspaceId: activeWorkspaceId,
+      isArabic: isArabic,
+      isDark: isDark,
+      expandWorkspaces: expandWorkspaces,
+    ),
+  );
+}
+
+class _QudsExamplesTreeDialog extends StatefulWidget {
+  const _QudsExamplesTreeDialog({
+    required this.activePresetId,
+    required this.workspaceMode,
+    required this.activeWorkspaceId,
+    required this.isArabic,
+    required this.isDark,
+    required this.expandWorkspaces,
+  });
+
+  final String activePresetId;
+  final bool workspaceMode;
+  final String activeWorkspaceId;
+  final bool isArabic;
+  final bool isDark;
+  final bool expandWorkspaces;
+
+  @override
+  State<_QudsExamplesTreeDialog> createState() =>
+      _QudsExamplesTreeDialogState();
+}
+
+class _QudsExamplesTreeDialogState extends State<_QudsExamplesTreeDialog> {
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  // All nodes start COLLAPSED cleanly by default (unless Workspaces shortcut was tapped)
+  late bool _workspacesExpanded;
+  final Set<StudioDomain> _expandedDomains = {};
+  final Set<StudioCategory> _expandedCategories = {};
+  bool _motionOnly = false;
+  String _query = '';
+
+  StudioPreset? get _activePreset {
+    if (widget.workspaceMode) return null;
+    for (final p in studioPresets) {
+      if (p.id == widget.activePresetId) return p;
+    }
+    return null;
+  }
+
+  StudioProjectTemplate? get _activeWorkspace {
+    if (!widget.workspaceMode) return null;
+    for (final t in studioProjectTemplates) {
+      if (t.id == widget.activeWorkspaceId) return t;
+    }
+    return null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _workspacesExpanded = widget.expandWorkspaces;
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _collapseAll() {
+    setState(() {
+      _workspacesExpanded = false;
+      _expandedDomains.clear();
+      _expandedCategories.clear();
+    });
+  }
+
+  void _revealActiveInTree() {
+    setState(() {
+      _query = '';
+      _searchController.clear();
+      _motionOnly = false;
+      _workspacesExpanded = false;
+      _expandedDomains.clear();
+      _expandedCategories.clear();
+      if (widget.workspaceMode) {
+        _workspacesExpanded = true;
+      } else {
+        final active = _activePreset;
+        if (active != null) {
+          _expandedDomains.add(active.category.domain);
+          _expandedCategories.add(active.category);
+        }
+      }
+    });
+  }
+
+  List<StudioPreset> _presetsInCategory(StudioCategory cat) => [
+        for (final p in studioPresets)
+          if (p.category == cat && (!_motionOnly || p.isAnimated)) p,
+      ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bg = widget.isDark ? const Color(0xFF0F172A) : Colors.white;
+    final panelBg =
+        widget.isDark ? const Color(0xFF0B1120) : const Color(0xFFF8FAFC);
+    final q = _query.trim().toLowerCase();
+    final isSearching = q.isNotEmpty;
+
+    final activePreset = _activePreset;
+    final activeWs = _activeWorkspace;
+    final activeDomain = activePreset?.category.domain;
+    final activeCategory = activePreset?.category;
+
+    final matchingWorkspaces = isSearching
+        ? studioProjectTemplates.where((t) {
+            final hay =
+                '${t.id} ${t.nameAr} ${t.nameEn} ${t.subtitleAr} ${t.subtitleEn}'
+                    .toLowerCase();
+            return hay.contains(q);
+          }).toList()
+        : const <StudioProjectTemplate>[];
+
+    final matchingPresets = isSearching
+        ? studioPresets.where((p) {
+            if (_motionOnly && !p.isAnimated) return false;
+            final hay =
+                '${p.id} ${p.titleAr} ${p.titleEn} ${p.subtitleAr} ${p.fileName} ${p.category.label(true)} ${p.category.label(false)}'
+                    .toLowerCase();
+            return hay.contains(q);
+          }).toList()
+        : const <StudioPreset>[];
+
+    final totalCount = studioPresets.length + studioProjectTemplates.length;
+
+    return Directionality(
+      textDirection: widget.isArabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Dialog(
+        backgroundColor: bg,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 18),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 860, maxHeight: 740),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF2563EB), Color(0xFF10B981)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.account_tree_rounded,
+                          size: 18, color: Colors.white),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.isArabic
+                                ? 'مستعرض شجرة الأمثلة والمشاريع ($totalCount)'
+                                : 'Quds Examples & Workspaces Tree ($totalCount)',
+                            style: const TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w800),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            widget.isArabic
+                                ? '${studioProjectTemplates.length} مشاريع كاملة (Workspaces) · ${studioPresets.length} مثالاً في ${StudioCategory.values.length} تصنيفاً — كل الفروع مطوية افتراضياً'
+                                : '${studioProjectTemplates.length} full Workspaces · ${studioPresets.length} presets across ${StudioCategory.values.length} categories',
+                            style:
+                                TextStyle(fontSize: 11, color: theme.hintColor),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+
+                // 2. Search + Quick Tree Controls (Reveal Active / Collapse All / Motion Only)
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        key: const Key('gallery_search_input'),
+                        controller: _searchController,
+                        onChanged: (v) => setState(() => _query = v),
+                        style: const TextStyle(fontSize: 12.5),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: panelBg,
+                          prefixIcon:
+                              const Icon(Icons.search_rounded, size: 18),
+                          suffixIcon: _query.isNotEmpty
+                              ? IconButton(
+                                  icon:
+                                      const Icon(Icons.clear_rounded, size: 16),
+                                  onPressed: () {
+                                    _searchController.clear();
+                                    setState(() => _query = '');
+                                  },
+                                )
+                              : null,
+                          hintText: widget.isArabic
+                              ? 'ابحث في 138 مثالاً و5 مشاريع (مثل: pen، فراكتل، POS، ECG، إضافات)...'
+                              : 'Search 138 presets & 5 Workspaces (e.g. pen, fractal, POS, ECG)...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(
+                              color: theme.dividerColor.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
                         ),
                       ),
-                      avatar: p.category == StudioCategory.games
-                          ? const Icon(Icons.sports_esports_rounded,
-                              size: 13, color: Color(0xFFA855F7))
-                          : (p.isAnimated
-                              ? const Icon(Icons.bolt_rounded,
-                                  size: 13, color: Color(0xFFF59E0B))
-                              : null),
-                      selected: p.id == activePresetId,
-                      showCheckmark: false,
-                      selectedColor:
-                          const Color(0xFF2563EB).withValues(alpha: 0.22),
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      onPressed: () => onSelectPreset(p),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // 3. Active Item Banner + Reveal / Collapse All / Motion filter
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      // Active currently-open item indicator + 1-tap Reveal in Tree!
+                      ActionChip(
+                        key: const Key('btn_reveal_active'),
+                        avatar: const Icon(Icons.my_location_rounded,
+                            size: 14, color: Color(0xFF38BDF8)),
+                        label: Text(
+                          widget.isArabic
+                              ? 'المفتوح الآن: ${activeWs != null ? activeWs.nameAr : (activePreset?.titleAr ?? '')}'
+                              : 'Open: ${activeWs != null ? activeWs.nameEn : (activePreset?.titleEn ?? '')}',
+                          style: const TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.w700),
+                        ),
+                        backgroundColor:
+                            const Color(0xFF2563EB).withValues(alpha: 0.14),
+                        side: BorderSide(
+                          color:
+                              const Color(0xFF38BDF8).withValues(alpha: 0.45),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _revealActiveInTree,
+                      ),
+                      const SizedBox(width: 6),
+                      ActionChip(
+                        key: const Key('btn_collapse_all'),
+                        avatar: const Icon(Icons.unfold_less_rounded, size: 14),
+                        label: Text(
+                          widget.isArabic ? 'طي الكل' : 'Collapse All',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _collapseAll,
+                      ),
+                      const SizedBox(width: 6),
+                      FilterChip(
+                        key: const Key('chip_tree_motion_only'),
+                        selected: _motionOnly,
+                        avatar: const Icon(Icons.bolt_rounded,
+                            size: 14, color: Color(0xFFF59E0B)),
+                        label: Text(
+                          widget.isArabic ? 'الحركة الحية فقط' : 'Motion Only',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        onSelected: (v) => setState(() => _motionOnly = v),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // 4. Main Tree Body (or Instant Search Results)
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: panelBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: theme.dividerColor.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: isSearching
+                        ? _buildSearchResults(
+                            theme, matchingWorkspaces, matchingPresets)
+                        : ListView(
+                            key: const Key('examples_tree_list'),
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(8),
+                            children: [
+                              // Root Node 0: Full Multi-Folder Workspaces (with assets/)
+                              _buildWorkspacesRootNode(theme),
+                              const SizedBox(height: 6),
+                              // Root Nodes 1..4: Super-Domains -> Categories -> Examples
+                              for (final domain in StudioDomain.values) ...[
+                                _buildDomainTreeNode(
+                                  theme,
+                                  domain,
+                                  containsActive: !widget.workspaceMode &&
+                                      activeDomain == domain,
+                                  activeCategory: activeCategory,
+                                ),
+                                const SizedBox(height: 6),
+                              ],
+                            ],
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkspacesRootNode(ThemeData theme) {
+    final containsActive = widget.workspaceMode;
+    const accent = Color(0xFF10B981);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.isDark ? const Color(0xFF0F172A) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: containsActive
+              ? accent
+              : accent.withValues(alpha: _workspacesExpanded ? 0.5 : 0.25),
+          width: containsActive ? 1.5 : 1.0,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            key: const Key('tree_node_workspaces'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: () =>
+                setState(() => _workspacesExpanded = !_workspacesExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              child: Row(
+                children: [
+                  Icon(
+                    _workspacesExpanded
+                        ? Icons.expand_more_rounded
+                        : (widget.isArabic
+                            ? Icons.chevron_left_rounded
+                            : Icons.chevron_right_rounded),
+                    size: 20,
+                    color: accent,
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                    child: const Icon(Icons.workspaces_rounded,
+                        size: 16, color: accent),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.isArabic
+                              ? '📦 مشاريع كاملة متعددة المجلدات والأصول (Workspaces)'
+                              : '📦 Full Multi-Folder Projects with Assets (Workspaces)',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w800),
+                        ),
+                        Text(
+                          widget.isArabic
+                              ? 'متجر POS، تحليلات CSV، مضيف الإضافات Extensions، استوديو BMP، والمختبر الفيزيائي'
+                              : 'POS Shop, Sales Analytics, Extensions Host, Pixel BMP Studio & Orbital Lab',
+                          style:
+                              TextStyle(fontSize: 10.5, color: theme.hintColor),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
-              ],
+                  if (containsActive) _buildActiveDotBadge(accent),
+                  const SizedBox(width: 6),
+                  _buildCountPill('${studioProjectTemplates.length}', accent),
+                ],
+              ),
+            ),
+          ),
+          if (_workspacesExpanded) ...[
+            Divider(
+                height: 1, color: theme.dividerColor.withValues(alpha: 0.2)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+              child: Column(
+                children: [
+                  for (final tpl in studioProjectTemplates)
+                    _buildWorkspaceLeafRow(theme, tpl),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWorkspaceLeafRow(ThemeData theme, StudioProjectTemplate tpl) {
+    final selected = widget.workspaceMode && widget.activeWorkspaceId == tpl.id;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: InkWell(
+        key: Key('tree_workspace_${tpl.id}'),
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => Navigator.of(context)
+            .pop(QudsGallerySelection.workspace(workspaceTemplate: tpl)),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? tpl.accentColor.withValues(alpha: 0.16)
+                : (widget.isDark
+                    ? const Color(0xFF1E293B).withValues(alpha: 0.45)
+                    : const Color(0xFFF1F5F9)),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? tpl.accentColor
+                  : theme.dividerColor.withValues(alpha: 0.2),
+              width: selected ? 1.5 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(tpl.icon, size: 17, color: tpl.accentColor),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.isArabic ? tpl.nameAr : tpl.nameEn,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: selected ? tpl.accentColor : null,
+                      ),
+                    ),
+                    Text(
+                      widget.isArabic ? tpl.subtitleAr : tpl.subtitleEn,
+                      style: TextStyle(fontSize: 10.5, color: theme.hintColor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              if (selected)
+                _buildSelectedLeafBadge(tpl.accentColor)
+              else
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: tpl.accentColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    widget.isArabic ? 'فتح المشروع' : 'Open',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: tpl.accentColor,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDomainTreeNode(
+    ThemeData theme,
+    StudioDomain domain, {
+    required bool containsActive,
+    required StudioCategory? activeCategory,
+  }) {
+    final expanded = _expandedDomains.contains(domain);
+    final accent = _domainAccent(domain);
+    final domainTotal = domain.categories
+        .fold<int>(0, (sum, cat) => sum + _presetsInCategory(cat).length);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: widget.isDark ? const Color(0xFF0F172A) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: containsActive
+              ? const Color(0xFF38BDF8)
+              : theme.dividerColor.withValues(alpha: 0.25),
+          width: containsActive ? 1.5 : 1.0,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            key: Key('tree_domain_${domain.name}'),
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => setState(() {
+              if (expanded) {
+                _expandedDomains.remove(domain);
+              } else {
+                _expandedDomains.add(domain);
+              }
+            }),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+              child: Row(
+                children: [
+                  Icon(
+                    expanded
+                        ? Icons.expand_more_rounded
+                        : (widget.isArabic
+                            ? Icons.chevron_left_rounded
+                            : Icons.chevron_right_rounded),
+                    size: 20,
+                    color: accent,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      domain.label(widget.isArabic),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w800),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (containsActive)
+                    _buildActiveDotBadge(const Color(0xFF38BDF8)),
+                  const SizedBox(width: 6),
+                  _buildCountPill('$domainTotal', accent),
+                ],
+              ),
+            ),
+          ),
+          if (expanded) ...[
+            Divider(
+                height: 1, color: theme.dividerColor.withValues(alpha: 0.18)),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+              child: Column(
+                children: [
+                  for (final cat in domain.categories)
+                    _buildCategoryTreeNode(
+                      theme,
+                      cat,
+                      containsActive:
+                          !widget.workspaceMode && activeCategory == cat,
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryTreeNode(
+    ThemeData theme,
+    StudioCategory cat, {
+    required bool containsActive,
+  }) {
+    final items = _presetsInCategory(cat);
+    if (items.isEmpty) return const SizedBox.shrink();
+    final expanded = _expandedCategories.contains(cat);
+    final accent = _categoryColor(cat);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Container(
+        decoration: BoxDecoration(
+          color: widget.isDark
+              ? const Color(0xFF1E293B).withValues(alpha: 0.4)
+              : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: containsActive
+                ? accent
+                : theme.dividerColor.withValues(alpha: 0.2),
+            width: containsActive ? 1.4 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              key: Key('folder_card_${cat.name}'),
+              borderRadius: BorderRadius.circular(9),
+              onTap: () => setState(() {
+                if (expanded) {
+                  _expandedCategories.remove(cat);
+                } else {
+                  _expandedCategories.add(cat);
+                }
+              }),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                child: Row(
+                  children: [
+                    Icon(
+                      expanded
+                          ? Icons.expand_more_rounded
+                          : (widget.isArabic
+                              ? Icons.chevron_left_rounded
+                              : Icons.chevron_right_rounded),
+                      size: 18,
+                      color: accent,
+                    ),
+                    const SizedBox(width: 5),
+                    Icon(_categoryIcon(cat), size: 16, color: accent),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            cat.label(widget.isArabic),
+                            style: const TextStyle(
+                                fontSize: 12.2, fontWeight: FontWeight.w700),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            cat.description(widget.isArabic),
+                            style:
+                                TextStyle(fontSize: 10, color: theme.hintColor),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (containsActive) _buildActiveDotBadge(accent),
+                    const SizedBox(width: 5),
+                    _buildCountPill('${items.length}', accent),
+                  ],
+                ),
+              ),
+            ),
+            if (expanded) ...[
+              Divider(
+                  height: 1, color: theme.dividerColor.withValues(alpha: 0.16)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 5, 10, 6),
+                child: Column(
+                  children: [
+                    for (final preset in items)
+                      _buildPresetLeafRow(theme, preset),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPresetLeafRow(ThemeData theme, StudioPreset p) {
+    final selected = !widget.workspaceMode && p.id == widget.activePresetId;
+    final accent = _categoryColor(p.category);
+    final lineCount = '\n'.allMatches(p.code).length + 1;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: InkWell(
+        key: Key('gallery_item_${p.id}'),
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => Navigator.of(context).pop(
+          QudsGallerySelection.preset(
+            preset: p,
+            filter: filterForCategory(p.category),
+          ),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFF2563EB).withValues(alpha: 0.18)
+                : (widget.isDark
+                    ? const Color(0xFF0F172A).withValues(alpha: 0.7)
+                    : Colors.white),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFF38BDF8)
+                  : theme.dividerColor.withValues(alpha: 0.16),
+              width: selected ? 1.5 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : (p.isAnimated
+                        ? Icons.bolt_rounded
+                        : _categoryIcon(p.category)),
+                size: 15,
+                color: selected
+                    ? const Color(0xFF38BDF8)
+                    : (p.isAnimated ? const Color(0xFFF59E0B) : accent),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.isArabic ? p.titleAr : p.titleEn,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            selected ? FontWeight.w800 : FontWeight.w600,
+                        color: selected ? const Color(0xFF38BDF8) : null,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      p.subtitleAr,
+                      style: TextStyle(fontSize: 10.2, color: theme.hintColor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (selected)
+                _buildSelectedLeafBadge(const Color(0xFF38BDF8))
+              else
+                Text(
+                  widget.isArabic ? '$lineCount سطر' : '$lineCount L',
+                  style: TextStyle(
+                    fontFamily: 'JetBrainsMono',
+                    fontSize: 9.8,
+                    color: theme.hintColor,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResults(
+    ThemeData theme,
+    List<StudioProjectTemplate> workspaces,
+    List<StudioPreset> presets,
+  ) {
+    if (workspaces.isEmpty && presets.isEmpty) {
+      return Center(
+        child: Text(
+          widget.isArabic
+              ? 'لا توجد نتائج مطابقة للبحث «$_query»'
+              : 'No matching examples or workspaces for "$_query".',
+          style: TextStyle(fontSize: 12.5, color: theme.hintColor),
+        ),
+      );
+    }
+    return ListView(
+      key: const Key('gallery_examples_list'),
+      padding: const EdgeInsets.all(10),
+      children: [
+        if (workspaces.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              widget.isArabic
+                  ? '📦 مشاريع كاملة (${workspaces.length})'
+                  : '📦 Workspaces (${workspaces.length})',
+              style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF10B981)),
+            ),
+          ),
+          for (final tpl in workspaces) _buildWorkspaceLeafRow(theme, tpl),
+          const SizedBox(height: 8),
+        ],
+        if (presets.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              widget.isArabic
+                  ? '✨ الأمثلة المطابقة (${presets.length})'
+                  : '✨ Matching Examples (${presets.length})',
+              style: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF38BDF8)),
+            ),
+          ),
+          for (final p in presets) _buildPresetLeafRow(theme, p),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildActiveDotBadge(Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            widget.isArabic ? 'مفتوح' : 'open',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              color: color,
             ),
           ),
         ],
@@ -276,709 +1260,54 @@ class QudsPresetQuickBar extends StatelessWidget {
     );
   }
 
-  String _shortTitle(String full) {
-    final idx = full.indexOf(':');
-    return idx >= 0 ? full.substring(idx + 1).trim() : full;
-  }
-}
-
-/// Result returned when picking an example from the Library Explorer.
-class QudsGallerySelection {
-  const QudsGallerySelection({required this.preset, required this.filter});
-  final StudioPreset preset;
-  final StudioFilterKind filter;
-}
-
-/// Opens the redesigned 3-Tier Domain -> Folder -> Examples Library Explorer.
-///
-/// - Groups all 16 categories cleanly under 4 thematic Super-Domains
-///   (Games & Real-World Sims, Sciences & Nature, Math/AI/CS, Quds 1.2 & VM).
-/// - Provides instant bilingual search across all 120+ presets, 1-tap
-///   highlighted filters, motion-only toggle inside folders, and VM badges.
-Future<QudsGallerySelection?> showQudsPresetGalleryDialog(
-  BuildContext context, {
-  required String activePresetId,
-  required StudioFilterKind initialFilter,
-  required bool isArabic,
-  required bool isDark,
-}) {
-  StudioFilterKind? openFolder =
-      initialFilter == StudioFilterKind.all ? null : initialFilter;
-  var searchQuery = '';
-  var animatedOnlyInFolder = false;
-  final searchController = TextEditingController();
-
-  return showDialog<QudsGallerySelection>(
-    context: context,
-    builder: (ctx) => StatefulBuilder(
-      builder: (ctx, setState) {
-        final q = searchQuery.trim().toLowerCase();
-        final isSearching = q.isNotEmpty;
-
-        final List<StudioPreset> items = isSearching
-            ? studioPresets
-                .where((p) =>
-                    p.titleAr.toLowerCase().contains(q) ||
-                    p.titleEn.toLowerCase().contains(q) ||
-                    p.subtitleAr.toLowerCase().contains(q) ||
-                    p.fileName.toLowerCase().contains(q) ||
-                    p.category.label(true).toLowerCase().contains(q) ||
-                    p.category.label(false).toLowerCase().contains(q) ||
-                    p.category.domain.label(true).toLowerCase().contains(q))
-                .toList()
-            : openFolder != null
-                ? filterStudioPresets(openFolder!)
-                    .where((p) => !animatedOnlyInFolder || p.isAnimated)
-                    .toList()
-                : const <StudioPreset>[];
-
-        final totalAnimated = studioPresets.where((p) => p.isAnimated).length;
-        final totalGames = studioPresets
-            .where((p) => p.category == StudioCategory.games)
-            .length;
-
-        return Dialog(
-          insetPadding: const EdgeInsets.all(12),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 860, maxHeight: 720),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Top Header with title + VM speed pill + close
-                  Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF2563EB), Color(0xFF06B6D4)],
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(Icons.auto_awesome_mosaic_rounded,
-                            size: 20, color: Colors.white),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              isArabic
-                                  ? 'مكتبة قدس التفاعلية (${studioPresets.length} مثال)'
-                                  : 'Quds Interactive Library (${studioPresets.length} presets)',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            Text(
-                              isArabic
-                                  ? '16 تصنيفاً منظماً · $totalGames ألعاب · $totalAnimated محاكاة حية · محرك ⚡ Register VM'
-                                  : '16 categories · $totalGames games · $totalAnimated animated · ⚡ Register VM',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                color: Theme.of(ctx).hintColor,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        icon: const Icon(Icons.close_rounded, size: 20),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Search input with clear button
-                  TextField(
-                    key: const Key('gallery_search_input'),
-                    controller: searchController,
-                    decoration: InputDecoration(
-                      hintText: isArabic
-                          ? 'ابحث في ${studioPresets.length} مثالاً (لعبة، مرور، روبوت، بورصة، فيزياء، قدس...)'
-                          : 'Search ${studioPresets.length} presets (game, traffic, robot, finance, physics...)',
-                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                      suffixIcon: isSearching
-                          ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 16),
-                              onPressed: () {
-                                searchController.clear();
-                                setState(() => searchQuery = '');
-                              },
-                            )
-                          : null,
-                      isDense: true,
-                      filled: true,
-                      fillColor: isDark
-                          ? const Color(0xFF0F172A)
-                          : const Color(0xFFF1F5F9),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                    onChanged: (v) => setState(() => searchQuery = v),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Quick spotlight filter bar when browsing folders
-                  if (!isSearching && openFolder == null)
-                    SizedBox(
-                      height: 34,
-                      child: ListView(
-                        scrollDirection: Axis.horizontal,
-                        children: [
-                          _spotlightChip(
-                            label: isArabic
-                                ? '🎮 ألعاب ($totalGames)'
-                                : '🎮 Games ($totalGames)',
-                            color: const Color(0xFFA855F7),
-                            onTap: () => setState(() {
-                              openFolder = StudioFilterKind.games;
-                              animatedOnlyInFolder = false;
-                            }),
-                          ),
-                          _spotlightChip(
-                            label: isArabic
-                                ? '🏙️ محاكاة واقعية (${filterStudioPresets(StudioFilterKind.simulations).length})'
-                                : '🏙️ Real Sims (${filterStudioPresets(StudioFilterKind.simulations).length})',
-                            color: const Color(0xFF0EA5E9),
-                            onTap: () => setState(() {
-                              openFolder = StudioFilterKind.simulations;
-                              animatedOnlyInFolder = false;
-                            }),
-                          ),
-                          _spotlightChip(
-                            label: isArabic
-                                ? '⚡ حركة حية ($totalAnimated)'
-                                : '⚡ Live Motion ($totalAnimated)',
-                            color: const Color(0xFFF59E0B),
-                            onTap: () => setState(() {
-                              openFolder = StudioFilterKind.animatedOnly;
-                              animatedOnlyInFolder = false;
-                            }),
-                          ),
-                          _spotlightChip(
-                            label: isArabic
-                                ? '🚀 اختبارات VM (${filterStudioPresets(StudioFilterKind.benchmarks).length})'
-                                : '🚀 VM Bench (${filterStudioPresets(StudioFilterKind.benchmarks).length})',
-                            color: const Color(0xFFF97316),
-                            onTap: () => setState(() {
-                              openFolder = StudioFilterKind.benchmarks;
-                              animatedOnlyInFolder = false;
-                            }),
-                          ),
-                          _spotlightChip(
-                            label: isArabic
-                                ? '✨ قدس 1.2 (${filterStudioPresets(StudioFilterKind.language).length})'
-                                : '✨ Quds 1.2 (${filterStudioPresets(StudioFilterKind.language).length})',
-                            color: const Color(0xFF10B981),
-                            onTap: () => setState(() {
-                              openFolder = StudioFilterKind.language;
-                              animatedOnlyInFolder = false;
-                            }),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  // Breadcrumb bar when inside a folder or searching
-                  if (openFolder != null || isSearching)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        children: [
-                          TextButton.icon(
-                            key: const Key('btn_gallery_back_folders'),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            icon: Icon(
-                              isArabic
-                                  ? Icons.arrow_forward_rounded
-                                  : Icons.arrow_back_rounded,
-                              size: 16,
-                            ),
-                            label: Text(
-                              isArabic ? 'كل التصنيفات' : 'All Categories',
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                            onPressed: () {
-                              searchController.clear();
-                              setState(() {
-                                openFolder = null;
-                                searchQuery = '';
-                                animatedOnlyInFolder = false;
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 6),
-                          if (openFolder?.category != null && !isSearching) ...[
-                            Icon(
-                              _categoryIcon(openFolder!.category!),
-                              size: 16,
-                              color: _categoryColor(openFolder!.category!),
-                            ),
-                            const SizedBox(width: 5),
-                          ],
-                          Expanded(
-                            child: Text(
-                              isSearching
-                                  ? (isArabic
-                                      ? 'نتائج البحث (${items.length})'
-                                      : 'Search results (${items.length})')
-                                  : (openFolder == StudioFilterKind.animatedOnly
-                                      ? (isArabic
-                                          ? '⚡ حركة حية (${items.length})'
-                                          : '⚡ Live Motion (${items.length})')
-                                      : '${openFolder!.category!.label(isArabic)} (${items.length})'),
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w800),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (!isSearching &&
-                              openFolder != null &&
-                              openFolder != StudioFilterKind.animatedOnly &&
-                              filterStudioPresets(openFolder!)
-                                  .any((p) => p.isAnimated))
-                            FilterChip(
-                              label: Text(
-                                isArabic ? '⚡ حركي فقط' : '⚡ Live only',
-                                style: const TextStyle(fontSize: 10.5),
-                              ),
-                              selected: animatedOnlyInFolder,
-                              onSelected: (v) =>
-                                  setState(() => animatedOnlyInFolder = v),
-                              visualDensity: VisualDensity.compact,
-                            ),
-                        ],
-                      ),
-                    ),
-
-                  if (!isSearching && openFolder == null)
-                    const SizedBox(height: 8),
-
-                  // Body: Either Grouped 4-Domain Folder Hub OR Examples List
-                  Expanded(
-                    child: (!isSearching && openFolder == null)
-                        ? _buildGroupedFoldersHub(
-                            ctx: ctx,
-                            isArabic: isArabic,
-                            isDark: isDark,
-                            onOpenFolder: (f) => setState(() {
-                              openFolder = f;
-                              animatedOnlyInFolder = false;
-                            }),
-                          )
-                        : _buildExamplesList(
-                            ctx: ctx,
-                            items: items,
-                            activePresetId: activePresetId,
-                            isArabic: isArabic,
-                            isDark: isDark,
-                            onSelect: (p) => Navigator.of(ctx).pop(
-                              QudsGallerySelection(
-                                preset: p,
-                                filter:
-                                    openFolder ?? filterForCategory(p.category),
-                              ),
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    ),
-  );
-}
-
-Widget _spotlightChip({
-  required String label,
-  required Color color,
-  required VoidCallback onTap,
-}) {
-  return Padding(
-    padding: const EdgeInsetsDirectional.only(end: 6),
-    child: ActionChip(
-      label: Text(
-        label,
+  Widget _buildSelectedLeafBadge(Color color) {
+    return Container(
+      key: const Key('tree_active_badge'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Text(
+        widget.isArabic ? 'مفتوح الآن' : 'Active',
         style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
           color: color,
         ),
       ),
-      backgroundColor: color.withValues(alpha: 0.12),
-      side: BorderSide(color: color.withValues(alpha: 0.4)),
-      visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.symmetric(horizontal: 5),
-      onPressed: onTap,
-    ),
-  );
-}
+    );
+  }
 
-Widget _buildGroupedFoldersHub({
-  required BuildContext ctx,
-  required bool isArabic,
-  required bool isDark,
-  required ValueChanged<StudioFilterKind> onOpenFolder,
-}) {
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      final crossCount = constraints.maxWidth >= 640 ? 3 : 2;
-      final slivers = <Widget>[];
-
-      for (final domain in StudioDomain.values) {
-        final cats = domain.categories;
-        final domainTotal = cats.fold<int>(
-          0,
-          (sum, c) => sum + studioPresets.where((p) => p.category == c).length,
-        );
-
-        slivers.add(
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 10, bottom: 7),
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      domain.label(isArabic),
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF38BDF8).withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                    child: Text(
-                      '$domainTotal',
-                      style: const TextStyle(
-                        fontFamily: 'JetBrainsMono',
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF38BDF8),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-
-        slivers.add(
-          SliverGrid(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: crossCount,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: crossCount == 3 ? 1.52 : 1.30,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (context, idx) {
-                final cat = cats[idx];
-                final color = _categoryColor(cat);
-                final allInCat =
-                    studioPresets.where((p) => p.category == cat).toList();
-                final animCount = allInCat.where((p) => p.isAnimated).length;
-
-                return InkWell(
-                  key: Key('folder_card_${cat.name}'),
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: () => onOpenFolder(filterForCategory(cat)),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? const Color(0xFF0F172A)
-                          : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: color.withValues(alpha: 0.42),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: color.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                _categoryIcon(cat),
-                                size: 17,
-                                color: color,
-                              ),
-                            ),
-                            const Spacer(),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: color.withValues(alpha: 0.14),
-                                borderRadius: BorderRadius.circular(99),
-                              ),
-                              child: Text(
-                                '${allInCat.length}',
-                                style: TextStyle(
-                                  fontFamily: 'JetBrainsMono',
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: color,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          cat.label(isArabic),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Expanded(
-                          child: Text(
-                            cat.description(isArabic),
-                            style: TextStyle(
-                              fontSize: 9.8,
-                              color: Theme.of(ctx).hintColor,
-                              height: 1.35,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            if (animCount > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 5, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF59E0B)
-                                      .withValues(alpha: 0.16),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: Text(
-                                  '⚡ $animCount',
-                                  style: const TextStyle(
-                                    fontFamily: 'JetBrainsMono',
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFFF59E0B),
-                                  ),
-                                ),
-                              ),
-                            const Spacer(),
-                            Icon(
-                              isArabic
-                                  ? Icons.chevron_left_rounded
-                                  : Icons.chevron_right_rounded,
-                              size: 16,
-                              color: color.withValues(alpha: 0.8),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-              childCount: cats.length,
-            ),
-          ),
-        );
-      }
-
-      return CustomScrollView(
-        key: const Key('gallery_folders_grid'),
-        slivers: slivers,
-      );
-    },
-  );
-}
-
-Widget _buildExamplesList({
-  required BuildContext ctx,
-  required List<StudioPreset> items,
-  required String activePresetId,
-  required bool isArabic,
-  required bool isDark,
-  required ValueChanged<StudioPreset> onSelect,
-}) {
-  if (items.isEmpty) {
-    return Center(
+  Widget _buildCountPill(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(99),
+      ),
       child: Text(
-        isArabic ? 'لا توجد أمثلة مطابقة للبحث' : 'No matching presets found',
-        style: TextStyle(fontSize: 13, color: Theme.of(ctx).hintColor),
+        text,
+        style: TextStyle(
+          fontFamily: 'JetBrainsMono',
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
       ),
     );
   }
-  return ListView.separated(
-    key: const Key('gallery_examples_list'),
-    itemCount: items.length,
-    separatorBuilder: (_, __) => const SizedBox(height: 6),
-    itemBuilder: (ctx, i) {
-      final p = items[i];
-      final selected = p.id == activePresetId;
-      final lineCount = p.code.trim().split('\n').length;
-      final color = _categoryColor(p.category);
-      return InkWell(
-        key: Key('gallery_item_${p.id}'),
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => onSelect(p),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFF2563EB).withValues(alpha: 0.16)
-                : (isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC)),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFF38BDF8)
-                  : color.withValues(alpha: 0.28),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Icon(_categoryIcon(p.category), size: 19, color: color),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isArabic ? p.titleAr : p.titleEn,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      p.subtitleAr,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(ctx).hintColor,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (p.isAnimated)
-                        Container(
-                          margin: const EdgeInsetsDirectional.only(end: 4),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFFF59E0B).withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                          child: Text(
-                            isArabic ? '⚡ حي' : '⚡ Live',
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFFF59E0B),
-                            ),
-                          ),
-                        ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(
-                          color:
-                              const Color(0xFF2563EB).withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: const Text(
-                          'VM',
-                          style: TextStyle(
-                            fontFamily: 'JetBrainsMono',
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF38BDF8),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    isArabic ? '$lineCount سطر' : '$lineCount lines',
-                    style: TextStyle(
-                      fontFamily: 'JetBrainsMono',
-                      fontSize: 10,
-                      color: Theme.of(ctx).hintColor,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
 }
 
+Color _domainAccent(StudioDomain d) => switch (d) {
+      StudioDomain.gamesAndSims => const Color(0xFF0EA5E9),
+      StudioDomain.sciences => const Color(0xFF10B981),
+      StudioDomain.mathAndCs => const Color(0xFF8B5CF6),
+      StudioDomain.languageAndVm => const Color(0xFFF59E0B),
+    };
+
 Color _categoryColor(StudioCategory c) => switch (c) {
+      StudioCategory.pen => const Color(0xFF06B6D4),
       StudioCategory.apps => const Color(0xFF10B981),
       StudioCategory.games => const Color(0xFFA855F7),
       StudioCategory.simulations => const Color(0xFF0EA5E9),
@@ -999,6 +1328,7 @@ Color _categoryColor(StudioCategory c) => switch (c) {
     };
 
 IconData _categoryIcon(StudioCategory c) => switch (c) {
+      StudioCategory.pen => Icons.draw_rounded,
       StudioCategory.apps => Icons.widgets_rounded,
       StudioCategory.games => Icons.sports_esports_rounded,
       StudioCategory.simulations => Icons.location_city_rounded,

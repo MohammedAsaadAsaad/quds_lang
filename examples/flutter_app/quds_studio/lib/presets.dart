@@ -7,9 +7,10 @@ import 'presets_cs_science.dart';
 import 'presets_domains.dart';
 import 'presets_extra.dart';
 import 'presets_games.dart';
+import 'presets_pen.dart';
 import 'presets_simulations.dart';
 
-/// Top-level thematic super-groups organizing all 17 Studio categories cleanly.
+/// Top-level thematic super-groups organizing all 18 Studio categories cleanly.
 enum StudioDomain {
   gamesAndSims,
   sciences,
@@ -20,8 +21,8 @@ enum StudioDomain {
 extension StudioDomainLabels on StudioDomain {
   String label(bool isArabic) => switch (this) {
         StudioDomain.gamesAndSims => isArabic
-            ? '📱 التطبيقات والألعاب والمحاكاة'
-            : '📱 Apps, Games & Real-World Sims',
+            ? '🖊️ القلم والتطبيقات والألعاب والمحاكاة'
+            : '🖊️ Pen, Apps, Games & Sims',
         StudioDomain.sciences =>
           isArabic ? '🔬 العلوم والطبيعة والفضاء' : '🔬 Sciences & Nature',
         StudioDomain.mathAndCs => isArabic
@@ -34,6 +35,7 @@ extension StudioDomainLabels on StudioDomain {
 
   List<StudioCategory> get categories => switch (this) {
         StudioDomain.gamesAndSims => const [
+            StudioCategory.pen,
             StudioCategory.apps,
             StudioCategory.games,
             StudioCategory.simulations,
@@ -62,6 +64,7 @@ extension StudioDomainLabels on StudioDomain {
 }
 
 enum StudioCategory {
+  pen,
   apps,
   games,
   simulations,
@@ -83,6 +86,7 @@ enum StudioCategory {
 
 extension StudioCategoryLabels on StudioCategory {
   StudioDomain get domain => switch (this) {
+        StudioCategory.pen ||
         StudioCategory.apps ||
         StudioCategory.games ||
         StudioCategory.simulations ||
@@ -107,6 +111,8 @@ extension StudioCategoryLabels on StudioCategory {
       };
 
   String label(bool isArabic) => switch (this) {
+        StudioCategory.pen =>
+          isArabic ? 'رسوم القلم (quds:pen)' : 'Pen Graphics (quds:pen)',
         StudioCategory.apps =>
           isArabic ? 'التطبيقات التفاعلية' : 'Interactive Apps',
         StudioCategory.games =>
@@ -142,6 +148,7 @@ extension StudioCategoryLabels on StudioCategory {
       };
 
   String shortLabel(bool isArabic) => switch (this) {
+        StudioCategory.pen => isArabic ? '🖊️ القلم' : '🖊️ Pen',
         StudioCategory.apps => isArabic ? '📱 تطبيقات' : '📱 Apps',
         StudioCategory.games => isArabic ? '🎮 ألعاب' : '🎮 Games',
         StudioCategory.simulations => isArabic ? '🏙️ محاكاة' : '🏙️ Sims',
@@ -162,6 +169,9 @@ extension StudioCategoryLabels on StudioCategory {
       };
 
   String description(bool isArabic) => switch (this) {
+        StudioCategory.pen => isArabic
+            ? 'زخارف نجمية، شجرة فراكتل، ندفة كوخ، حلزون قوس قزح، سيربينسكي، ماندالا، هيلبرت ومنحنى التنين'
+            : 'Geometric stars, fractal tree, Koch snowflake, rainbow spiral, Sierpinski, mandala, Hilbert & dragon',
         StudioCategory.apps => isArabic
             ? 'الفواتير، مدير المهام الحي، محوّل العملات والوحدات، تقسيم الفاتورة، GPA، السعرات، الاختبارات والمخزون'
             : 'Invoice Builder, Stateful Tasks, Unit/Currency Hub, Bill Splitter, GPA, Macros, Quiz & Inventory',
@@ -253,6 +263,7 @@ enum StudioPolicyMode {
 final List<StudioPreset> studioPresets = <StudioPreset>[
   ..._baseStudioPresets,
   ...extraAnimatedPresets,
+  ...studioPenPresets,
   ...studioAppPresets,
   ...gamePresets,
   ...realWorldSimPresets,

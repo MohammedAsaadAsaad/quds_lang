@@ -2,6 +2,25 @@
 
 All notable changes to the Quds compiler, SDK, and CLI are documented here.
 
+## 0.1.0-alpha.3
+
+Major release introducing the pure-Dart Embedded Interpreter, Universal Register Bytecode VM, Embedded Code Editor Engine, expanded SDKs, and language/operator enhancements:
+
+### Embedded Interpreter & Universal Register Bytecode VM
+- Added pure-Dart embedded Quds interpreter (`package:quds/interpreter.dart`) and isolate runner (`package:quds/interpreter_isolate.dart`) with `QudsSession`, AST parse caching, `FutureOr` synchronous fast-paths, multi-file nested-folder `QudsWorkspace`, and `QudsHostModule` host bridges.
+- Added the Universal Register Bytecode VM (`QudsUniversalVm` / `QudsBytecodeVm`) as the default execution engine with 100% language coverage, Tier-1 typed register promotion, 14 general-purpose superinstructions, and native Dart AOT intrinsics for `quds:math`, `quds:json`, `quds:collection`, and `quds:text`.
+- Added policy-driven sandboxing (`QudsExecutionPolicy`), native AST debugger (`QudsDebugController`), Time-Travel debugging, `QudsProfiler` (call tree + hotspots), `QudsFormulaEngine`, reactive `QudsNotebook`, and capability-gated `QudsStreamBridge`.
+- Added built-in interactive interpreter modules: `quds:viz` 2.0 (interactive geometry, plots, 3D surfaces, vector fields, graphs, animation/timeline engine), `quds:pen` graphics, `quds:data` (`DataTable`, CSV/JSON, regression, FFT), and `quds:assets` binary/text workspace assets.
+- Added `quds eval` and `quds repl` CLI commands and `example/scientific_interpreter_demo.dart`.
+
+### Embedded Code Editor Engine
+- Added pure-Dart `package:quds/editor_engine.dart` (`QudsEditorEngine`) providing live syntax & semantic highlighting, formatting, real-time syntax/policy diagnostics with quick fixes, context-aware autocomplete, hover documentation, signature help, and SDK catalog metadata.
+
+### Language, Compiler & SDK
+- Added `String + any` concatenation, multi-type binary operator overloading in `class` / `augment` / `extend`, unary operator overloading (`-`, `+`, `~`), recursive element-wise `List` unary operations, and linear algebra operators in `quds:math`.
+- Completed `quds:async` (timeouts, cancellation, `race`/`waitAll`, `mapConcurrent`, `retryAsync`, `AsyncGate`, `BroadcastChannel`, `Debouncer`/`Throttler`) and `quds:json` (typed decoders, merge, equality) SDKs, and expanded `quds:math` (Tarjan graph algorithms, polygon triangulation, PACF/AR/Holt time series, combinatorics generators, Cohen's d, ridge & logistic regression).
+- Hardened `quds migrate` (block-lambda hoisting, single-named-arg widget blocks, nullable callback inference, and Dart SDK >= 3.3.0 validation) and duplicate function signature diagnostics (`E201`).
+
 ## 0.1.0-alpha.2
 
 Maintenance and package-quality release targeting full Windows compatibility and 160/160 pub.dev score readiness:

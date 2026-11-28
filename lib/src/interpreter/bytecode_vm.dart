@@ -595,8 +595,9 @@ class QudsBytecodeCompiler {
     }
     final candidates = <FunctionDeclaration>[];
     for (final fn in allFns) {
-      if ((nameCounts[fn.name] ?? 0) > 1)
+      if ((nameCounts[fn.name] ?? 0) > 1) {
         continue; // Overloads use Universal VM
+      }
       if (fn.isAsync ||
           fn.generator.isNotEmpty ||
           fn.typeParameters.isNotEmpty ||

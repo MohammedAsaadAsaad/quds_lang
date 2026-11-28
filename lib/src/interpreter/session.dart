@@ -664,6 +664,7 @@ class QudsSession {
           .every(
               (imp) => policy.allowImports && policy.isLibraryAllowed(imp.uri));
       if (importsAllowed &&
+          _sessionExtensions.isEmpty &&
           (!hasPriorUserBindings || _globalEnv.allowTopLevelRebind)) {
         final compiled = QudsBytecodeCompiler.tryCompile(program, file: file);
         if (compiled != null) {

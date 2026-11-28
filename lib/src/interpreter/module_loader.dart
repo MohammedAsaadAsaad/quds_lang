@@ -14,6 +14,7 @@ import 'dart_stdlib_bridge.dart';
 import 'environment.dart';
 import 'evaluator.dart';
 import 'exceptions.dart';
+import 'sdk_intrinsics.dart';
 import 'values.dart';
 import 'workspace.dart';
 
@@ -531,6 +532,10 @@ class QudsModuleLoader {
         }
       }
       sectionExports[entry.key] = map;
+    }
+
+    if (isSdk && targetUri == 'quds:math') {
+      installQudsMathIntrinsics(modEnv, publicExports, sectionExports);
     }
 
     return _LoadedModule(

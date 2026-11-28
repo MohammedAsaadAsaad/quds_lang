@@ -50,6 +50,19 @@ final class _QudsIntList {
   }
 
   @pragma('vm:prefer-inline')
+  Int64List ensureCapacity(int needed) {
+    if (needed <= data.length) return data;
+    var cap = data.length;
+    while (cap < needed) {
+      cap <<= 1;
+    }
+    final grown = Int64List(cap);
+    grown.setRange(0, length, data);
+    data = grown;
+    return grown;
+  }
+
+  @pragma('vm:prefer-inline')
   void add(int value) {
     final len = length;
     var buf = data;
@@ -73,6 +86,19 @@ final class _QudsFloatList {
     final len = length;
     final grown = Float64List(len << 1);
     grown.setRange(0, len, data);
+    data = grown;
+    return grown;
+  }
+
+  @pragma('vm:prefer-inline')
+  Float64List ensureCapacity(int needed) {
+    if (needed <= data.length) return data;
+    var cap = data.length;
+    while (cap < needed) {
+      cap <<= 1;
+    }
+    final grown = Float64List(cap);
+    grown.setRange(0, length, data);
     data = grown;
     return grown;
   }
@@ -192,6 +218,20 @@ abstract final class QudsOp {
   static const int iIncJlt = 89;
   static const int iIncJle = 90;
   static const int iAddListGet = 91;
+  static const int iListFill = 92;
+  static const int fListFill = 93;
+  static const int iListStrideSet = 94;
+  static const int iListSumRange = 95;
+  static const int fListSumRange = 96;
+  static const int fStridedDot = 97;
+  static const int fSqrSum = 98;
+  static const int fSqrDiffAdd = 99;
+  static const int fMul2Add = 100;
+  static const int fInvSqrt = 101;
+  static const int fCube = 102;
+  static const int fSubListGet = 103;
+  static const int retSelfIfLeK = 104;
+  static const int fSqrSumAdd = 105;
 
   static const List<String> names = [
     'HALT',
@@ -286,6 +326,20 @@ abstract final class QudsOp {
     'I_INC_JLT',
     'I_INC_JLE',
     'I_ADD_LIST_GET',
+    'I_LIST_FILL',
+    'F_LIST_FILL',
+    'I_LIST_STRIDE_SET',
+    'I_LIST_SUM_RANGE',
+    'F_LIST_SUM_RANGE',
+    'F_STRIDED_DOT',
+    'F_SQR_SUM',
+    'F_SQR_DIFF_ADD',
+    'F_MUL2_ADD',
+    'F_INV_SQRT',
+    'F_CUBE',
+    'F_SUB_LIST_GET',
+    'RET_SELF_IF_LE_K',
+    'F_SQR_SUM_ADD',
   ];
 }
 
@@ -558,9 +612,9 @@ class QudsBytecodeCompiler {
     // First try compiling all candidates together (supports mutual calls).
     final synthetic = <Statement>[
       for (final p in mathPrefixes)
-        ImportDeclaration('quds:math', p, candidates.first.span),
+        ImportDeclaration('dart:math', p, candidates.first.span),
       if (mathPrefixes.isEmpty)
-        ImportDeclaration('quds:math', null, candidates.first.span),
+        ImportDeclaration('dart:math', null, candidates.first.span),
       ...candidates,
     ];
     final combined = tryCompile(
@@ -575,9 +629,9 @@ class QudsBytecodeCompiler {
       final probe = tryCompile(
         Program([
           for (final p in mathPrefixes)
-            ImportDeclaration('quds:math', p, fn.span),
+            ImportDeclaration('dart:math', p, fn.span),
           if (mathPrefixes.isEmpty)
-            ImportDeclaration('quds:math', null, fn.span),
+            ImportDeclaration('dart:math', null, fn.span),
           ...accepted,
           fn,
         ], fn.span),
@@ -591,9 +645,9 @@ class QudsBytecodeCompiler {
     return tryCompile(
       Program([
         for (final p in mathPrefixes)
-          ImportDeclaration('quds:math', p, accepted.first.span),
+          ImportDeclaration('dart:math', p, accepted.first.span),
         if (mathPrefixes.isEmpty)
-          ImportDeclaration('quds:math', null, accepted.first.span),
+          ImportDeclaration('dart:math', null, accepted.first.span),
         ...accepted,
       ], accepted.first.span),
       file: file,
@@ -697,7 +751,7 @@ class QudsBytecodeCompiler {
 
     for (final stmt in program.statements) {
       if (stmt is ImportDeclaration) {
-        if (stmt.uri == 'dart:math' || stmt.uri == 'quds:math') {
+        if (stmt.uri == 'dart:math') {
           if (stmt.deferred || stmt.show.isNotEmpty || stmt.hide.isNotEmpty) {
             throw const _UnsupportedBytecode();
           }
@@ -1444,6 +1498,13 @@ class _RegFnCompiler {
       case QudsOp.iDivF:
       case QudsOp.floatListGet:
       case QudsOp.oToF:
+      case QudsOp.fSqrSum:
+      case QudsOp.fSqrDiffAdd:
+      case QudsOp.fMul2Add:
+      case QudsOp.fInvSqrt:
+      case QudsOp.fCube:
+      case QudsOp.fSubListGet:
+      case QudsOp.fSqrSumAdd:
         _invalidateF(a);
       case QudsOp.iLoadK:
       case QudsOp.iLoadImm:
@@ -1468,6 +1529,12 @@ class _RegFnCompiler {
       case QudsOp.iAddJump:
       case QudsOp.iIncJlt:
       case QudsOp.iIncJle:
+      case QudsOp.iListFill:
+      case QudsOp.fListFill:
+      case QudsOp.iListStrideSet:
+      case QudsOp.iListSumRange:
+      case QudsOp.fListSumRange:
+      case QudsOp.fStridedDot:
       case QudsOp.callFn:
       case QudsOp.callFnI1:
       case QudsOp.callSelfI1Sub:
@@ -1476,6 +1543,7 @@ class _RegFnCompiler {
       case QudsOp.retO:
       case QudsOp.retVoid:
       case QudsOp.retSelfI:
+      case QudsOp.retSelfIfLeK:
         _clearCse();
       default:
         break;
@@ -2059,6 +2127,10 @@ class _RegFnCompiler {
     }
 
     if (stmt is IfStatement) {
+      if (_tryEmitRetSelfIfLeK(stmt, expectedReturnKind, line)) {
+        restoreTemps();
+        return;
+      }
       final jFalse = _emitJumpIfFalse(stmt.condition, line);
       for (final s in stmt.thenBody) {
         _compileStmt(s, expectedReturnKind: expectedReturnKind);
@@ -2081,6 +2153,10 @@ class _RegFnCompiler {
 
     if (stmt is WhileStatement) {
       if (stmt.elseBody.isNotEmpty) throw const _UnsupportedBytecode();
+      if (_tryEmitFusedArrayLoop(stmt, line)) {
+        restoreTemps();
+        return;
+      }
       // Loop Inversion with fused counted back-edge (`I_INC_JLT` / `I_INC_JLE`)
       // when `while i < limit:` or `while i <= limit:` ends with `i = i + 1`
       // (or `i += 1`) and has no `continue` statements in the body.
@@ -2358,6 +2434,355 @@ class _RegFnCompiler {
     if (!isPlusOne) return null;
     if (_containsContinue(stmt.body)) return null;
     return (iterReg, limitReg, cond.operator == '<=');
+  }
+
+  /// Matches `if n <= k: return n` inside a pure-int self-recursive function,
+  /// fusing branch + return into a single `RET_SELF_IF_LE_K` dispatch.
+  bool _tryEmitRetSelfIfLeK(
+    IfStatement stmt,
+    _RegKind? expectedReturnKind,
+    int line,
+  ) {
+    if (!_isPureIntSelfRec || selfFnIdx < 0) return false;
+    if (expectedReturnKind != _RegKind.intT) return false;
+    if (stmt.elseBody.isNotEmpty || stmt.thenBody.length != 1) return false;
+    final ret = stmt.thenBody.first;
+    if (ret is! ReturnStatement || ret.value is! Identifier) return false;
+    final cond = stmt.condition;
+    if (cond is! BinaryExpression || cond.operator != '<=') return false;
+    if (cond.left is! Identifier || cond.right is! Literal) return false;
+    final varName = (cond.left as Identifier).name;
+    if ((ret.value as Identifier).name != varName) return false;
+    final k = (cond.right as Literal).value;
+    if (k is! int || k < 0 || k > 1023) return false;
+    if (_varKinds[varName] != _RegKind.intT) return false;
+    final reg = _varRegs[varName];
+    if (reg == null) return false;
+    final ip = _emit(QudsOp.retSelfIfLeK, reg, k, 0, line);
+    _selfRetPatches.add(ip);
+    return true;
+  }
+
+  int? _localIntReg(String name) {
+    if (isMain && compiler._sharedGlobals.contains(name)) return null;
+    if (_varKinds[name] != _RegKind.intT) return null;
+    return _varRegs[name];
+  }
+
+  int? _localFloatReg(String name) {
+    if (isMain && compiler._sharedGlobals.contains(name)) return null;
+    if (_varKinds[name] != _RegKind.doubleT) return null;
+    return _varRegs[name];
+  }
+
+  int? _localIntListReg(String name) {
+    if (isMain && compiler._sharedGlobals.contains(name)) return null;
+    if (_varKinds[name] != _RegKind.listIntT) return null;
+    return _varRegs[name];
+  }
+
+  int? _localFloatListReg(String name) {
+    if (isMain && compiler._sharedGlobals.contains(name)) return null;
+    if (_varKinds[name] != _RegKind.listDoubleT) return null;
+    return _varRegs[name];
+  }
+
+  /// Parses an index expression linear in [iterName]:
+  /// `base + iter * stride` where `base` and `stride` are loop-invariant local
+  /// `intT` registers (`-1` for constant `0` base or constant `1` stride).
+  (int baseReg, int strideReg)? _parseLinearIndex(
+    Expression expr,
+    String iterName,
+  ) {
+    if (expr is Identifier && expr.name == iterName) {
+      return (-1, -1);
+    }
+    if (expr is BinaryExpression && expr.operator == '*') {
+      if (expr.left is Identifier &&
+          (expr.left as Identifier).name == iterName &&
+          expr.right is Identifier) {
+        final rName = (expr.right as Identifier).name;
+        if (rName == iterName) return null;
+        final sReg = _localIntReg(rName);
+        if (sReg != null) return (-1, sReg);
+      }
+      if (expr.right is Identifier &&
+          (expr.right as Identifier).name == iterName &&
+          expr.left is Identifier) {
+        final lName = (expr.left as Identifier).name;
+        if (lName == iterName) return null;
+        final sReg = _localIntReg(lName);
+        if (sReg != null) return (-1, sReg);
+      }
+      return null;
+    }
+    if (expr is BinaryExpression && expr.operator == '+') {
+      if (expr.left is Identifier &&
+          (expr.left as Identifier).name != iterName) {
+        final bReg = _localIntReg((expr.left as Identifier).name);
+        if (bReg != null) {
+          final r = _parseLinearIndex(expr.right, iterName);
+          if (r != null && r.$1 == -1) return (bReg, r.$2);
+        }
+      }
+      if (expr.right is Identifier &&
+          (expr.right as Identifier).name != iterName) {
+        final bReg = _localIntReg((expr.right as Identifier).name);
+        if (bReg != null) {
+          final l = _parseLinearIndex(expr.left, iterName);
+          if (l != null && l.$1 == -1) return (bReg, l.$2);
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Matches general-purpose 2-statement counted array loops:
+  /// - `I_LIST_FILL` / `F_LIST_FILL`: `while k <=/< lim: list.add(val); k += 1`
+  /// - `I_LIST_STRIDE_SET`: `while m <=/< lim: list[m] = val; m += stride`
+  /// - `I_LIST_SUM_RANGE` / `F_LIST_SUM_RANGE`: `while i <=/< lim: acc += list[i]; i += 1`
+  /// - `F_STRIDED_DOT`: `while p <=/< lim: acc += a[lin1(p)] * b[lin2(p)]; p += 1`
+  bool _tryEmitFusedArrayLoop(WhileStatement stmt, int line) {
+    if (stmt.body.length != 2) return false;
+    final cond = stmt.condition;
+    if (cond is! BinaryExpression) return false;
+    if (cond.operator != '<' && cond.operator != '<=') return false;
+    if (cond.left is! Identifier || cond.right is! Identifier) return false;
+    final iterName = (cond.left as Identifier).name;
+    final limitName = (cond.right as Identifier).name;
+    if (iterName == limitName) return false;
+    final iterReg = _localIntReg(iterName);
+    final limitReg = _localIntReg(limitName);
+    if (iterReg == null || limitReg == null) return false;
+    final inclusive = cond.operator == '<=';
+
+    final stepStmt = stmt.body[1];
+    if (stepStmt is! Binding || stepStmt.name != iterName) return false;
+    if (stepStmt.mode == BindingMode.lateFinal ||
+        stepStmt.mode == BindingMode.lateMutable) {
+      return false;
+    }
+
+    // Determine step: constant +1 or loop-invariant int stride.
+    var isPlusOne = false;
+    Expression? strideExpr;
+    if (stepStmt.operator == '=' && stepStmt.value is BinaryExpression) {
+      final bin = stepStmt.value as BinaryExpression;
+      if (bin.operator == '+' &&
+          bin.left is Identifier &&
+          (bin.left as Identifier).name == iterName) {
+        if (bin.right is Literal && (bin.right as Literal).value == 1) {
+          isPlusOne = true;
+        } else {
+          strideExpr = bin.right;
+        }
+      }
+    } else if (stepStmt.operator == '+=') {
+      if (stepStmt.value is Literal && (stepStmt.value as Literal).value == 1) {
+        isPlusOne = true;
+      } else {
+        strideExpr = stepStmt.value;
+      }
+    }
+    if (!isPlusOne && strideExpr == null) return false;
+
+    final body0 = stmt.body[0];
+
+    // 1. `I_LIST_STRIDE_SET`: `list[iter] = val; iter += stride`
+    if (body0 is IndexAssignment &&
+        body0.operator == '=' &&
+        body0.target.object is Identifier &&
+        body0.target.index is Identifier &&
+        (body0.target.index as Identifier).name == iterName) {
+      final listName = (body0.target.object as Identifier).name;
+      final listReg = _localIntListReg(listName);
+      if (listReg != null) {
+        final valExpr = body0.value;
+        final isInvariantVal = (valExpr is Literal && valExpr.value is int) ||
+            (valExpr is Identifier &&
+                valExpr.name != iterName &&
+                _localIntReg(valExpr.name) != null);
+        final isInvariantStride = isPlusOne ||
+            (strideExpr is Literal && strideExpr.value is int) ||
+            (strideExpr is Identifier &&
+                strideExpr.name != iterName &&
+                _localIntReg(strideExpr.name) != null);
+        if (isInvariantVal && isInvariantStride) {
+          final valReg = _coerce(
+            _compileExpr(valExpr, desired: _RegKind.intT),
+            _RegKind.intT,
+            line,
+          ).reg;
+          final int strideReg;
+          if (isPlusOne) {
+            strideReg = _allocI();
+            _emit(QudsOp.iLoadImm, strideReg, 0, 1, line);
+          } else {
+            strideReg = _coerce(
+              _compileExpr(strideExpr!, desired: _RegKind.intT),
+              _RegKind.intT,
+              line,
+            ).reg;
+          }
+          final descIdx = _addOConst(Int32List.fromList([
+            inclusive ? 1 : 0,
+            limitReg,
+            strideReg,
+            valReg,
+          ]));
+          _emit(QudsOp.iListStrideSet, listReg, iterReg, descIdx, line);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (!isPlusOne) return false;
+
+    // 2. `I_LIST_FILL` / `F_LIST_FILL`: `list.add(val); iter += 1`
+    if (body0 is ExpressionStatement && body0.expression is CallExpression) {
+      final call = body0.expression as CallExpression;
+      if (call.arguments.length == 1 &&
+          call.arguments.first.name == null &&
+          call.callee is MemberAccess) {
+        final mem = call.callee as MemberAccess;
+        if (mem.name == 'add' && mem.object is Identifier) {
+          final listName = (mem.object as Identifier).name;
+          final valExpr = call.arguments.first.value;
+          final iListReg = _localIntListReg(listName);
+          if (iListReg != null) {
+            final isPure = (valExpr is Literal && valExpr.value is int) ||
+                (valExpr is Identifier &&
+                    valExpr.name != iterName &&
+                    _localIntReg(valExpr.name) != null);
+            if (isPure) {
+              final valReg = _coerce(
+                _compileExpr(valExpr, desired: _RegKind.intT),
+                _RegKind.intT,
+                line,
+              ).reg;
+              final descIdx = _addOConst(Int32List.fromList([
+                inclusive ? 1 : 0,
+                limitReg,
+                valReg,
+              ]));
+              _emit(QudsOp.iListFill, iListReg, iterReg, descIdx, line);
+              return true;
+            }
+          }
+          final fListReg = _localFloatListReg(listName);
+          if (fListReg != null) {
+            final isPure = (valExpr is Literal && valExpr.value is num) ||
+                (valExpr is Identifier &&
+                    valExpr.name != iterName &&
+                    _localFloatReg(valExpr.name) != null);
+            if (isPure) {
+              final valReg = _coerce(
+                _compileExpr(valExpr, desired: _RegKind.doubleT),
+                _RegKind.doubleT,
+                line,
+              ).reg;
+              final descIdx = _addOConst(Int32List.fromList([
+                inclusive ? 1 : 0,
+                limitReg,
+                valReg,
+              ]));
+              _emit(QudsOp.fListFill, fListReg, iterReg, descIdx, line);
+              return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    // 3. `I_LIST_SUM_RANGE` / `F_LIST_SUM_RANGE` / `F_STRIDED_DOT`
+    if (body0 is Binding &&
+        body0.name != iterName &&
+        body0.mode != BindingMode.lateFinal &&
+        body0.mode != BindingMode.lateMutable) {
+      final accName = body0.name;
+      Expression? addend;
+      if (body0.operator == '+=') {
+        addend = body0.value;
+      } else if (body0.operator == '=' && body0.value is BinaryExpression) {
+        final bin = body0.value as BinaryExpression;
+        if (bin.operator == '+') {
+          if (bin.left is Identifier &&
+              (bin.left as Identifier).name == accName) {
+            addend = bin.right;
+          } else if (bin.right is Identifier &&
+              (bin.right as Identifier).name == accName) {
+            addend = bin.left;
+          }
+        }
+      }
+      if (addend == null) return false;
+
+      // 3a. `acc += list[iter]`
+      if (addend is IndexExpression &&
+          addend.object is Identifier &&
+          addend.index is Identifier &&
+          (addend.index as Identifier).name == iterName) {
+        final listName = (addend.object as Identifier).name;
+        final accIReg = _localIntReg(accName);
+        final listIReg = _localIntListReg(listName);
+        if (accIReg != null && listIReg != null) {
+          final descIdx = _addOConst(Int32List.fromList([
+            inclusive ? 1 : 0,
+            limitReg,
+            listIReg,
+          ]));
+          _emit(QudsOp.iListSumRange, accIReg, iterReg, descIdx, line);
+          return true;
+        }
+        final accFReg = _localFloatReg(accName);
+        final listFReg = _localFloatListReg(listName);
+        if (accFReg != null && listFReg != null) {
+          final descIdx = _addOConst(Int32List.fromList([
+            inclusive ? 1 : 0,
+            limitReg,
+            listFReg,
+          ]));
+          _emit(QudsOp.fListSumRange, accFReg, iterReg, descIdx, line);
+          return true;
+        }
+      }
+
+      // 3b. `F_STRIDED_DOT`: `acc += a[lin1(iter)] * b[lin2(iter)]`
+      if (addend is BinaryExpression &&
+          addend.operator == '*' &&
+          addend.left is IndexExpression &&
+          addend.right is IndexExpression) {
+        final accFReg = _localFloatReg(accName);
+        if (accFReg == null) return false;
+        final lIdx = addend.left as IndexExpression;
+        final rIdx = addend.right as IndexExpression;
+        if (lIdx.object is! Identifier || rIdx.object is! Identifier) {
+          return false;
+        }
+        final aReg = _localFloatListReg((lIdx.object as Identifier).name);
+        final bReg = _localFloatListReg((rIdx.object as Identifier).name);
+        if (aReg == null || bReg == null) return false;
+        final linA = _parseLinearIndex(lIdx.index, iterName);
+        final linB = _parseLinearIndex(rIdx.index, iterName);
+        if (linA == null || linB == null) return false;
+        final descIdx = _addOConst(Int32List.fromList([
+          inclusive ? 1 : 0,
+          limitReg,
+          aReg,
+          linA.$1,
+          linA.$2,
+          bReg,
+          linB.$1,
+          linB.$2,
+        ]));
+        _emit(QudsOp.fStridedDot, accFReg, iterReg, descIdx, line);
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /// Compiles void-returning statement calls (`list.add(x)`, `print(x)`)
@@ -2726,6 +3151,7 @@ class _RegFnCompiler {
         _emit(QudsOp.iDivF, dstReg, l.reg, r.reg, line);
         return true;
       }
+      if (_tryEmitFusedFloatBinary(expr, dstReg, line)) return true;
       final l = _coerce(
         _compileExpr(expr.left, desired: _RegKind.doubleT),
         _RegKind.doubleT,
@@ -2754,6 +3180,165 @@ class _RegFnCompiler {
         _cseF[key] = dstReg;
       }
       return true;
+    }
+
+    return false;
+  }
+
+  /// Emits fused general-purpose floating-point superinstructions directly
+  /// into [dstReg] (shared by both `_tryCompileBinaryInto` and
+  /// `_tryCompileTypedBinaryExpr`).
+  bool _tryEmitFusedFloatBinary(BinaryExpression expr, int dstReg, int line) {
+    final op = expr.operator;
+
+    // Fused `1.0 / sqrt(x)` -> `F_INV_SQRT`
+    if (op == '/' &&
+        expr.left is Literal &&
+        ((expr.left as Literal).value == 1.0 ||
+            (expr.left as Literal).value == 1) &&
+        expr.right is CallExpression) {
+      final call = expr.right as CallExpression;
+      if (call.arguments.length == 1 &&
+          call.arguments.first.name == null &&
+          _isMathCallNamed(call, 'sqrt')) {
+        final arg = _coerce(
+          _compileExpr(call.arguments.first.value, desired: _RegKind.doubleT),
+          _RegKind.doubleT,
+          line,
+        );
+        _emit(QudsOp.fInvSqrt, dstReg, arg.reg, 0, line);
+        return true;
+      }
+    }
+
+    // Fused `list[idx] - x` -> `F_SUB_LIST_GET`
+    if (op == '-' && expr.left is IndexExpression) {
+      final idxExpr = expr.left as IndexExpression;
+      if (idxExpr.object is Identifier) {
+        final listReg = _localFloatListReg((idxExpr.object as Identifier).name);
+        if (listReg != null && listReg < 1024) {
+          final idx = _coerce(
+            _compileExpr(idxExpr.index, desired: _RegKind.intT),
+            _RegKind.intT,
+            line,
+          );
+          final sub = _coerce(
+            _compileExpr(expr.right, desired: _RegKind.doubleT),
+            _RegKind.doubleT,
+            line,
+          );
+          if (idx.reg < 1024 && sub.reg < 1024) {
+            _emit(
+              QudsOp.fSubListGet,
+              dstReg,
+              listReg,
+              idx.reg | (sub.reg << 10),
+              line,
+            );
+            return true;
+          }
+        }
+      }
+    }
+
+    // Fused `x * x * x` -> `F_CUBE`
+    if (op == '*') {
+      final lSq = _localFloatSquareReg(expr.left);
+      if (lSq != null &&
+          expr.right is Identifier &&
+          _localFloatReg((expr.right as Identifier).name) == lSq) {
+        _emit(QudsOp.fCube, dstReg, lSq, 0, line);
+        return true;
+      }
+      final rSq = _localFloatSquareReg(expr.right);
+      if (rSq != null &&
+          expr.left is Identifier &&
+          _localFloatReg((expr.left as Identifier).name) == rSq) {
+        _emit(QudsOp.fCube, dstReg, rSq, 0, line);
+        return true;
+      }
+    }
+
+    if (op == '+') {
+      // Fused `x * x + y * y` -> `F_SQR_SUM`
+      final lSq = _localFloatSquareReg(expr.left);
+      final rSq = _localFloatSquareReg(expr.right);
+      if (lSq != null && rSq != null) {
+        _emit(QudsOp.fSqrSum, dstReg, lSq, rSq, line);
+        return true;
+      }
+
+      // Fused `(x * x + y * y) + z` -> `F_SQR_SUM_ADD`
+      if (expr.left is BinaryExpression &&
+          (expr.left as BinaryExpression).operator == '+') {
+        final sum = expr.left as BinaryExpression;
+        final xSq = _localFloatSquareReg(sum.left);
+        final ySq = _localFloatSquareReg(sum.right);
+        if (xSq != null && ySq != null && ySq < 1024) {
+          final z = _coerce(
+            _compileExpr(expr.right, desired: _RegKind.doubleT),
+            _RegKind.doubleT,
+            line,
+          );
+          if (z.reg < 1024) {
+            _emit(QudsOp.fSqrSumAdd, dstReg, xSq, ySq | (z.reg << 10), line);
+            return true;
+          }
+        }
+      }
+
+      // Fused `(x * x - y * y) + z` -> `F_SQR_DIFF_ADD`
+      if (expr.left is BinaryExpression &&
+          (expr.left as BinaryExpression).operator == '-') {
+        final sub = expr.left as BinaryExpression;
+        final xSq = _localFloatSquareReg(sub.left);
+        final ySq = _localFloatSquareReg(sub.right);
+        if (xSq != null && ySq != null && ySq < 1024) {
+          final z = _coerce(
+            _compileExpr(expr.right, desired: _RegKind.doubleT),
+            _RegKind.doubleT,
+            line,
+          );
+          if (z.reg < 1024) {
+            _emit(QudsOp.fSqrDiffAdd, dstReg, xSq, ySq | (z.reg << 10), line);
+            return true;
+          }
+        }
+      }
+
+      // Fused `(2.0 * x * y) + z` -> `F_MUL2_ADD`
+      if (expr.left is BinaryExpression &&
+          (expr.left as BinaryExpression).operator == '*') {
+        final mul = expr.left as BinaryExpression;
+        if (mul.left is BinaryExpression &&
+            (mul.left as BinaryExpression).operator == '*') {
+          final inner = mul.left as BinaryExpression;
+          if (inner.left is Literal &&
+              ((inner.left as Literal).value == 2.0 ||
+                  (inner.left as Literal).value == 2)) {
+            final x = _coerce(
+              _compileExpr(inner.right, desired: _RegKind.doubleT),
+              _RegKind.doubleT,
+              line,
+            );
+            final y = _coerce(
+              _compileExpr(mul.right, desired: _RegKind.doubleT),
+              _RegKind.doubleT,
+              line,
+            );
+            final z = _coerce(
+              _compileExpr(expr.right, desired: _RegKind.doubleT),
+              _RegKind.doubleT,
+              line,
+            );
+            if (x.reg < 1024 && y.reg < 1024 && z.reg < 1024) {
+              _emit(
+                  QudsOp.fMul2Add, dstReg, x.reg, y.reg | (z.reg << 10), line);
+              return true;
+            }
+          }
+        }
+      }
     }
 
     return false;
@@ -2820,6 +3405,11 @@ class _RegFnCompiler {
         _emit(QudsOp.iDivF, dst, l.reg, r.reg, line);
         return _Val(_RegKind.doubleT, dst, isTemp: true);
       }
+      final probeDst = _allocF();
+      if (_tryEmitFusedFloatBinary(expr, probeDst, line)) {
+        return _Val(_RegKind.doubleT, probeDst, isTemp: true);
+      }
+      _fNext--;
       final l = _coerce(
         _compileExpr(expr.left, desired: _RegKind.doubleT),
         _RegKind.doubleT,
@@ -2849,6 +3439,27 @@ class _RegFnCompiler {
     }
 
     return null;
+  }
+
+  int? _localFloatSquareReg(Expression expr) {
+    if (expr is! BinaryExpression || expr.operator != '*') return null;
+    if (expr.left is! Identifier || expr.right is! Identifier) return null;
+    final name = (expr.left as Identifier).name;
+    if ((expr.right as Identifier).name != name) return null;
+    return _localFloatReg(name);
+  }
+
+  bool _isMathCallNamed(CallExpression expr, String expected) {
+    if (expr.callee is Identifier) {
+      return (expr.callee as Identifier).name == expected;
+    }
+    if (expr.callee is MemberAccess) {
+      final m = expr.callee as MemberAccess;
+      return m.name == expected &&
+          m.object is Identifier &&
+          compiler._mathPrefixes.contains((m.object as Identifier).name);
+    }
+    return false;
   }
 
   bool _isMathIntrinsicCall(CallExpression expr) {
@@ -3624,6 +4235,247 @@ class QudsBytecodeVm {
             fReg[fBp + a] = fReg[fBp + b];
           case QudsOp.fSqrt:
             fReg[fBp + a] = math.sqrt(fReg[fBp + b]);
+          case QudsOp.fSqrSum:
+            final x = fReg[fBp + b];
+            final y = fReg[fBp + c];
+            fReg[fBp + a] = x * x + y * y;
+          case QudsOp.fSqrSumAdd:
+            final x = fReg[fBp + b];
+            final y = fReg[fBp + (c & 0x3FF)];
+            fReg[fBp + a] = x * x + y * y + fReg[fBp + (c >> 10)];
+          case QudsOp.fSqrDiffAdd:
+            final x = fReg[fBp + b];
+            final y = fReg[fBp + (c & 0x3FF)];
+            fReg[fBp + a] = x * x - y * y + fReg[fBp + (c >> 10)];
+          case QudsOp.fMul2Add:
+            fReg[fBp + a] = 2.0 * fReg[fBp + b] * fReg[fBp + (c & 0x3FF)] +
+                fReg[fBp + (c >> 10)];
+          case QudsOp.fInvSqrt:
+            fReg[fBp + a] = 1.0 / math.sqrt(fReg[fBp + b]);
+          case QudsOp.fCube:
+            final x = fReg[fBp + b];
+            fReg[fBp + a] = x * x * x;
+          case QudsOp.fSubListGet:
+            fReg[fBp + a] = flData[flBp + b][iReg[iBp + (c & 0x3FF)]] -
+                fReg[fBp + (c >> 10)];
+          case QudsOp.iListFill:
+            final desc = oConsts[c]! as Int32List;
+            final inclusive = desc[0] != 0;
+            final lim = iReg[iBp + desc[1]];
+            final val = iReg[iBp + desc[2]];
+            final k = iReg[iBp + b];
+            final count = inclusive ? (lim - k + 1) : (lim - k);
+            if (count > 0) {
+              final slot = ilBp + a;
+              final lst = ilReg[slot]!;
+              final start = lst.length;
+              final nextLen = start + count;
+              if (nextLen > collLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.collectionLimit,
+                  'Collection size ($nextLen) exceeded maximum limit ($maxCollectionLength).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              steps += count * 3;
+              if (steps > stepLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.stepLimit,
+                  'Bytecode VM exceeded maximum step limit ($maxSteps).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              final data = lst.ensureCapacity(nextLen);
+              ilData[slot] = data;
+              data.fillRange(start, nextLen, val);
+              lst.length = nextLen;
+              iReg[iBp + b] = k + count;
+            }
+          case QudsOp.fListFill:
+            final desc = oConsts[c]! as Int32List;
+            final inclusive = desc[0] != 0;
+            final lim = iReg[iBp + desc[1]];
+            final val = fReg[fBp + desc[2]];
+            final k = iReg[iBp + b];
+            final count = inclusive ? (lim - k + 1) : (lim - k);
+            if (count > 0) {
+              final slot = flBp + a;
+              final lst = flReg[slot]!;
+              final start = lst.length;
+              final nextLen = start + count;
+              if (nextLen > collLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.collectionLimit,
+                  'Collection size ($nextLen) exceeded maximum limit ($maxCollectionLength).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              steps += count * 3;
+              if (steps > stepLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.stepLimit,
+                  'Bytecode VM exceeded maximum step limit ($maxSteps).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              final data = lst.ensureCapacity(nextLen);
+              flData[slot] = data;
+              data.fillRange(start, nextLen, val);
+              lst.length = nextLen;
+              iReg[iBp + b] = k + count;
+            }
+          case QudsOp.iListStrideSet:
+            final desc = oConsts[c]! as Int32List;
+            final inclusive = desc[0] != 0;
+            final end =
+                inclusive ? iReg[iBp + desc[1]] : iReg[iBp + desc[1]] - 1;
+            final stride = iReg[iBp + desc[2]];
+            final val = iReg[iBp + desc[3]];
+            var m = iReg[iBp + b];
+            if (m <= end) {
+              if (stride <= 0) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.stepLimit,
+                  'Bytecode VM exceeded maximum step limit ($maxSteps).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              final iters = ((end - m) ~/ stride) + 1;
+              steps += iters * 3;
+              if (steps > stepLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.stepLimit,
+                  'Bytecode VM exceeded maximum step limit ($maxSteps).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              final data = ilData[ilBp + a];
+              for (; m <= end; m += stride) {
+                data[m] = val;
+              }
+              iReg[iBp + b] = m;
+            }
+          case QudsOp.iListSumRange:
+            final desc = oConsts[c]! as Int32List;
+            final inclusive = desc[0] != 0;
+            final end =
+                inclusive ? iReg[iBp + desc[1]] : iReg[iBp + desc[1]] - 1;
+            var i = iReg[iBp + b];
+            if (i <= end) {
+              final count = end - i + 1;
+              steps += count * 3;
+              if (steps > stepLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.stepLimit,
+                  'Bytecode VM exceeded maximum step limit ($maxSteps).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              final data = ilData[ilBp + desc[2]];
+              var acc = iReg[iBp + a];
+              for (; i <= end; i++) {
+                acc += data[i];
+              }
+              iReg[iBp + a] = acc;
+              iReg[iBp + b] = i;
+            }
+          case QudsOp.fListSumRange:
+            final desc = oConsts[c]! as Int32List;
+            final inclusive = desc[0] != 0;
+            final end =
+                inclusive ? iReg[iBp + desc[1]] : iReg[iBp + desc[1]] - 1;
+            var i = iReg[iBp + b];
+            if (i <= end) {
+              final count = end - i + 1;
+              steps += count * 3;
+              if (steps > stepLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.stepLimit,
+                  'Bytecode VM exceeded maximum step limit ($maxSteps).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              final data = flData[flBp + desc[2]];
+              var acc = fReg[fBp + a];
+              for (; i <= end; i++) {
+                acc += data[i];
+              }
+              fReg[fBp + a] = acc;
+              iReg[iBp + b] = i;
+            }
+          case QudsOp.fStridedDot:
+            final desc = oConsts[c]! as Int32List;
+            final inclusive = desc[0] != 0;
+            final end =
+                inclusive ? iReg[iBp + desc[1]] : iReg[iBp + desc[1]] - 1;
+            var p = iReg[iBp + b];
+            if (p <= end) {
+              final count = end - p + 1;
+              steps += count * 4;
+              if (steps > stepLimit) {
+                throw QudsPolicyViolationException(
+                  QudsPolicyViolationKind.stepLimit,
+                  'Bytecode VM exceeded maximum step limit ($maxSteps).',
+                  SourceSpan(curFn.lines[(ip - 2) >> 1], 1, 1,
+                      file: program.file),
+                );
+              }
+              final aData = flData[flBp + desc[2]];
+              final aBase = desc[3] >= 0 ? iReg[iBp + desc[3]] : 0;
+              final aStride = desc[4] >= 0 ? iReg[iBp + desc[4]] : 1;
+              final bData = flData[flBp + desc[5]];
+              final bBase = desc[6] >= 0 ? iReg[iBp + desc[6]] : 0;
+              final bStride = desc[7] >= 0 ? iReg[iBp + desc[7]] : 1;
+              var acc = fReg[fBp + a];
+              var idxA = aBase + p * aStride;
+              var idxB = bBase + p * bStride;
+              for (; p <= end; p++, idxA += aStride, idxB += bStride) {
+                acc += aData[idxA] * bData[idxB];
+              }
+              fReg[fBp + a] = acc;
+              iReg[iBp + b] = p;
+            }
+          case QudsOp.retSelfIfLeK:
+            final v = iReg[iBp + a];
+            if (v <= b) {
+              spFrame--;
+              final callerIdx = retFn[spFrame];
+              ip = retIp[spFrame];
+              if (callerIdx == curFnIdx) {
+                iBp -= c;
+                iReg[iBp + retDst[spFrame]] = v;
+              } else {
+                iBp = retIBp[spFrame];
+                fBp = retFBp[spFrame];
+                oBp = retOBp[spFrame];
+                ilBp = retILBp[spFrame];
+                flBp = retFLBp[spFrame];
+                final dst = retDst[spFrame];
+                final rb = retBank[spFrame];
+                if (rb == _Bank.i) {
+                  iReg[iBp + dst] = v;
+                } else if (rb == _Bank.f) {
+                  fReg[fBp + dst] = v.toDouble();
+                } else {
+                  oReg[oBp + dst] = v;
+                }
+                curFnIdx = callerIdx;
+                curFn = functions[callerIdx];
+                code = curFn.code;
+                iConsts = curFn.iConsts;
+                fConsts = curFn.fConsts;
+                oConsts = curFn.oConsts;
+                callSites = curFn.callSites;
+              }
+            }
           case QudsOp.fJgt:
             if (fReg[fBp + a] > fReg[fBp + b]) ip = c;
           case QudsOp.fJge:

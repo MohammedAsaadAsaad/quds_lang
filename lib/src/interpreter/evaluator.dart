@@ -2246,6 +2246,11 @@ class QudsEvaluator {
     if (bare.startsWith('List<') && bare.endsWith('>')) {
       if (value is! List) return false;
       final elemType = bare.substring(5, bare.length - 1).trim();
+      if (elemType == 'double' && value is List<double>) return true;
+      if (elemType == 'int' && value is List<int>) return true;
+      if (elemType == 'List<double>' && value is List<List<double>>) {
+        return true;
+      }
       if (value.isEmpty) return true;
       return value.every((item) => _matchesExtensionTarget(item, elemType));
     }

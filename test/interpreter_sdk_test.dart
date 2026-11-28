@@ -113,5 +113,60 @@ print ok
       expect(res.succeeded, isTrue, reason: '${res.error}');
       expect(res.printedLines, ['[10, 20, 30]', '70']);
     });
+
+    test(
+        'quds:math native Dart intrinsics match exact linalg results and errors across runs',
+        () async {
+      final session = QudsSession(allowTopLevelRebind: true);
+      final r1 = await session.run('''
+use quds:math
+a = [[2.0, 1.0], [5.0, 3.0]]
+b = [[1.0, 0.0], [2.0, 4.0]]
+print a * b
+print(~a)
+print determinant(a).toStringAsFixed(1)
+print solveLinear(a, [4.0, 11.0])
+inv = inverse(a)
+print((a * inv)[0][0].toStringAsFixed(1))
+print((a * inv)[1][1].toStringAsFixed(1))
+print dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
+print trace(a)
+print norm1(a)
+print normInf(a)
+t1 = tensor([2, 2], [1.0, 2.0, 3.0, 4.0])
+t2 = tensor([2, 2], [2.0, 0.0, 1.0, 2.0])
+print((t1 * t2).values)
+s = sparseMatrix(2, [0, 1], [1, 0], [3.0, 5.0])
+print s * [2.0, 4.0]
+var caught = ""
+try:
+  matmul([], [])
+catch e:
+  caught = "{e}"
+print caught
+''');
+      expect(r1.succeeded, isTrue, reason: '${r1.error}');
+      expect(r1.printedLines, [
+        '[[4.0, 4.0], [11.0, 12.0]]',
+        '[[2.0, 5.0], [1.0, 3.0]]',
+        '1.0',
+        '[1.0, 2.0]',
+        '1.0',
+        '1.0',
+        '32.0',
+        '5.0',
+        '7.0',
+        '8.0',
+        '[4.0, 4.0, 10.0, 8.0]',
+        '[12.0, 10.0]',
+        'matmul needs non-empty matrices',
+      ]);
+
+      // Cross-run persistence: Matrices operators remain active in follow-up cells.
+      final r2 = await session.run('print((a * b)[1][1])');
+      expect(r2.succeeded, isTrue, reason: '${r2.error}');
+      expect(r2.printedLines, ['12.0']);
+      await session.dispose();
+    });
   });
 }
